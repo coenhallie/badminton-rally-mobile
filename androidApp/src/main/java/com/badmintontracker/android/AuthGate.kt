@@ -18,6 +18,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
+import com.badmintontracker.android.clipdetail.ClipDetailScreen
+import com.badmintontracker.android.clipdetail.ClipDetailViewModel
 import com.badmintontracker.android.cliplist.ClipListScreen
 import com.badmintontracker.android.cliplist.ClipListViewModel
 import com.badmintontracker.android.nav.Route
@@ -76,7 +78,14 @@ fun AuthGate(rally: RallyApp) {
                 }
                 composable<Route.ClipDetail> { entry ->
                     val args = entry.toRoute<Route.ClipDetail>()
-                    Text("ClipDetail (placeholder — Task 15) clipId=${args.clipId}")
+                    val vm: ClipDetailViewModel = viewModel(
+                        factory = viewModelFactory {
+                            initializer {
+                                ClipDetailViewModel(args.clipId, rally.clips, rally.annotations, rally.media)
+                            }
+                        }
+                    )
+                    ClipDetailScreen(vm = vm, onBack = { nav.popBackStack() })
                 }
             }
         }
