@@ -11,11 +11,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.badmintontracker.android.nav.Route
+import com.badmintontracker.android.signin.SignInScreen
+import com.badmintontracker.android.signin.SignInViewModel
 import com.badmintontracker.shared.RallyApp
 import io.github.jan.supabase.auth.status.SessionStatus
 
@@ -41,7 +46,19 @@ fun AuthGate(rally: RallyApp) {
 
             NavHost(navController = nav, startDestination = start) {
                 composable<Route.SignIn> {
-                    Text("SignIn (placeholder — Task 11)")
+                    val signInVm: SignInViewModel = viewModel(
+                        factory = viewModelFactory {
+                            initializer { SignInViewModel(rally.auth) }
+                        }
+                    )
+                    SignInScreen(
+                        vm = signInVm,
+                        onSignedIn = {
+                            nav.navigate(Route.ClipList) {
+                                popUpTo(Route.SignIn) { inclusive = true }
+                            }
+                        },
+                    )
                 }
                 composable<Route.ClipList> {
                     Text("ClipList (placeholder — Task 13)")
