@@ -1,5 +1,6 @@
 package com.badmintontracker.shared.repo
 
+import app.cash.turbine.turbineScope
 import com.badmintontracker.shared.testing.TestSupabase
 import com.badmintontracker.shared.testing.jsonResponse
 import io.kotest.matchers.collections.shouldHaveSize
@@ -36,5 +37,19 @@ class ClipsRepositoryTest {
         clips[0].id shouldBe "c1"
         capturedQuery!!.shouldContain("rally_clips")
         capturedQuery!!.shouldContain("order=created_at.desc")
+    }
+
+    @Test
+    fun observeClips_emits_initial_empty_then_refreshed_list() = runTest {
+        val client = TestSupabase.client { _ -> jsonResponse(twoClips) }
+        val repo = ClipsRepositoryImpl(client)
+
+        turbineScope {
+            val flow = repo.observeClips().testIn(backgroundScope)
+            flow.awaitItem() shouldBe emptyList()
+            repo.refresh()
+            flow.awaitItem().map { it.id } shouldBe listOf("c1", "c2")
+            flow.cancelAndIgnoreRemainingEvents()
+        }
     }
 }
