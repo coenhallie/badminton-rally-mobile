@@ -18,6 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -50,7 +51,7 @@ fun ShuttlOutlinedTextField(
         if (type == ShuttlFieldType.Password) PasswordVisualTransformation()
         else                                   VisualTransformation.None
 
-    Column(modifier = modifier) {
+    Column(modifier = modifier.alpha(if (enabled) 1f else 0.6f)) {
         FieldLabel(label)
         Spacer(Modifier.height(6.dp))
         Box(

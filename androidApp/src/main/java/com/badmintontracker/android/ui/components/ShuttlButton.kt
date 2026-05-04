@@ -15,6 +15,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -39,7 +40,8 @@ fun ShuttlButton(
 
     Row(
         modifier = modifier
-            .background(bg.copy(alpha = if (effective) 1f else 0.5f))
+            .alpha(if (effective) 1f else 0.5f)
+            .background(bg)
             .border(width = if (isPrimary) 0.dp else 1.dp, color = borderColor)
             .clickable(enabled = effective, onClick = onClick)
             .padding(horizontal = 24.dp, vertical = 12.dp),
