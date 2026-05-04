@@ -27,6 +27,7 @@ kotlinx-datetime    = { module = "org.jetbrains.kotlinx:kotlinx-datetime",      
 
 settings            = { module = "com.russhwolf:multiplatform-settings",           version.ref = "settings" }
 settings-no-arg     = { module = "com.russhwolf:multiplatform-settings-no-arg",    version.ref = "settings" }
+settings-test       = { module = "com.russhwolf:multiplatform-settings-test",      version.ref = "settings" }
 
 kotest-assertions   = { module = "io.kotest:kotest-assertions-core",               version.ref = "kotest-assertions" }
 turbine             = { module = "app.cash.turbine:turbine",                       version.ref = "turbine" }

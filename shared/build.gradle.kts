@@ -43,6 +43,7 @@ kotlin {
             implementation(libs.ktor.client.mock)
             implementation(libs.kotest.assertions)
             implementation(libs.turbine)
+            implementation(libs.settings.test)
         }
         androidMain.dependencies {
             implementation(libs.ktor.client.cio)
