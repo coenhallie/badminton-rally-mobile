@@ -56,6 +56,9 @@ kotlin {
 dependencies {
     implementation(project(":shared"))
 
+    implementation(platform(libs.supabase.bom))
+    implementation(libs.supabase.auth)
+
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
