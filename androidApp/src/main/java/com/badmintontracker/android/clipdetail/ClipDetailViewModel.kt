@@ -18,6 +18,7 @@ data class ClipDetailState(
     val annotations: List<RallyAnnotation> = emptyList(),
     val signedClipUrl: String? = null,
     val error: String? = null,
+    val actionError: String? = null,
 )
 
 class ClipDetailViewModel(
@@ -73,6 +74,47 @@ class ClipDetailViewModel(
                 .onSuccess { url -> state.update { it.copy(signedClipUrl = url, error = null) } }
                 .onFailure { e -> state.update { it.copy(error = e.message ?: "Couldn't load video") } }
         }
+    }
+
+    fun addAnnotation(timestampSeconds: Float, body: String) {
+        val trimmed = body.trim()
+        if (trimmed.isEmpty()) return
+        val ts = timestampSeconds.coerceAtLeast(0f)
+        viewModelScope.launch {
+            annotations.add(clipId, ts, trimmed)
+                .onSuccess { row ->
+                    state.update {
+                        it.copy(
+                            annotations = (it.annotations + row).sortedBy { a -> a.timestampSeconds },
+                            actionError = null,
+                        )
+                    }
+                }
+                .onFailure { e ->
+                    state.update { it.copy(actionError = e.message ?: "Couldn't add annotation") }
+                }
+        }
+    }
+
+    fun deleteAnnotation(id: String) {
+        viewModelScope.launch {
+            annotations.delete(id)
+                .onSuccess {
+                    state.update {
+                        it.copy(
+                            annotations = it.annotations.filterNot { a -> a.id == id },
+                            actionError = null,
+                        )
+                    }
+                }
+                .onFailure { e ->
+                    state.update { it.copy(actionError = e.message ?: "Couldn't delete annotation") }
+                }
+        }
+    }
+
+    fun clearActionError() {
+        state.update { it.copy(actionError = null) }
     }
 
     fun onManualRetry() {

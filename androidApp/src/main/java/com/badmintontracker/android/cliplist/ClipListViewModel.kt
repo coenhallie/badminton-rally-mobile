@@ -10,12 +10,33 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.datetime.Instant
+
+data class MatchSummary(
+    val videoId: String,
+    val rallyCount: Int,
+    val latestCreatedAt: Instant,
+    val coverClip: RallyClip,
+)
 
 data class ClipListState(
     val clips: List<RallyClip> = emptyList(),
+    val matches: List<MatchSummary> = emptyList(),
     val isRefreshing: Boolean = false,
     val error: String? = null,
 )
+
+private fun List<RallyClip>.toMatches(): List<MatchSummary> =
+    groupBy { it.videoId }
+        .map { (videoId, list) ->
+            MatchSummary(
+                videoId = videoId,
+                rallyCount = list.size,
+                latestCreatedAt = list.maxOf { it.createdAt },
+                coverClip = list.minByOrNull { it.rallyIndex } ?: list.first(),
+            )
+        }
+        .sortedByDescending { it.latestCreatedAt }
 
 class ClipListViewModel(
     private val clips: ClipsRepository,
@@ -25,7 +46,7 @@ class ClipListViewModel(
     private val errors     = MutableStateFlow<String?>(null)
 
     val state = combine(clips.observeClips(), refreshing, errors) { list, r, e ->
-        ClipListState(list, r, e)
+        ClipListState(clips = list, matches = list.toMatches(), isRefreshing = r, error = e)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ClipListState())
 
     init { refresh() }

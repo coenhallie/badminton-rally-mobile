@@ -41,13 +41,16 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.badmintontracker.shared.model.RallyClip
 import com.badmintontracker.shared.repo.MediaRepository
+import kotlinx.datetime.Instant
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ClipListScreen(
     vm: ClipListViewModel,
     media: MediaRepository,
-    onClipClick: (RallyClip) -> Unit,
+    onMatchClick: (MatchSummary) -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -63,7 +66,7 @@ fun ClipListScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Clips") },
+                title = { Text("Matches") },
                 actions = {
                     IconButton(onClick = { menuOpen = true }) {
                         Icon(Icons.Default.MoreVert, contentDescription = "Menu")
@@ -84,14 +87,14 @@ fun ClipListScreen(
             onRefresh = vm::refresh,
             modifier = Modifier.padding(padding).fillMaxSize(),
         ) {
-            if (state.clips.isEmpty() && !state.isRefreshing) {
+            if (state.matches.isEmpty() && !state.isRefreshing) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No clips yet. Record one in the desktop app.")
+                    Text("No matches yet. Record one in the desktop app.")
                 }
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(state.clips, key = { it.id }) { clip ->
-                        ClipRow(clip, media, onClick = { onClipClick(clip) })
+                    items(state.matches, key = { it.videoId }) { match ->
+                        MatchRow(match, media, onClick = { onMatchClick(match) })
                         HorizontalDivider()
                     }
                 }
@@ -101,7 +104,50 @@ fun ClipListScreen(
 }
 
 @Composable
-private fun ClipRow(
+private fun MatchRow(
+    match: MatchSummary,
+    media: MediaRepository,
+    onClick: () -> Unit,
+) {
+    val thumbUrl by produceState<String?>(initialValue = null, match.videoId) {
+        value = runCatching { media.signedThumbnailUrl(match.coverClip) }.getOrNull()
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AsyncImage(
+            model = thumbUrl,
+            contentDescription = null,
+            modifier = Modifier.size(96.dp, 54.dp),
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                "Match · ${formatDate(match.latestCreatedAt)}",
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                "${match.rallyCount} ${if (match.rallyCount == 1) "rally" else "rallies"}",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
+}
+
+private val MONTHS = listOf(
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+)
+
+internal fun formatDate(instant: Instant): String {
+    val ldt = instant.toLocalDateTime(TimeZone.currentSystemDefault())
+    return "${MONTHS[ldt.monthNumber - 1]} ${ldt.dayOfMonth}, ${ldt.year}"
+}
+
+@Composable
+internal fun ClipRow(
     clip: RallyClip,
     media: MediaRepository,
     onClick: () -> Unit,

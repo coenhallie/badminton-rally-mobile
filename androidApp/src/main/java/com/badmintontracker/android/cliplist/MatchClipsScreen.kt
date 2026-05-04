@@ -1,0 +1,87 @@
+package com.badmintontracker.android.cliplist
+
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.badmintontracker.shared.model.RallyClip
+import com.badmintontracker.shared.repo.MediaRepository
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MatchClipsScreen(
+    vm: ClipListViewModel,
+    media: MediaRepository,
+    videoId: String,
+    onBack: () -> Unit,
+    onClipClick: (RallyClip) -> Unit,
+) {
+    val state by vm.state.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(state.error) {
+        val err = state.error ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(err)
+        vm.dismissError()
+    }
+
+    val match = state.matches.firstOrNull { it.videoId == videoId }
+    val clipsForMatch = state.clips
+        .filter { it.videoId == videoId }
+        .sortedBy { it.rallyIndex }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(match?.let { "Match · ${formatDate(it.latestCreatedAt)}" } ?: "Rallies")
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+    ) { padding ->
+        PullToRefreshBox(
+            isRefreshing = state.isRefreshing,
+            onRefresh = vm::refresh,
+            modifier = Modifier.padding(padding).fillMaxSize(),
+        ) {
+            if (clipsForMatch.isEmpty() && !state.isRefreshing) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("No rallies in this match.")
+                }
+            } else {
+                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    items(clipsForMatch, key = { it.id }) { clip ->
+                        ClipRow(clip, media, onClick = { onClipClick(clip) })
+                        HorizontalDivider()
+                    }
+                }
+            }
+        }
+    }
+}

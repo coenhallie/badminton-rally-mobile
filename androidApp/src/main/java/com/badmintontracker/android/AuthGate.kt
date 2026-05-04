@@ -22,6 +22,7 @@ import com.badmintontracker.android.clipdetail.ClipDetailScreen
 import com.badmintontracker.android.clipdetail.ClipDetailViewModel
 import com.badmintontracker.android.cliplist.ClipListScreen
 import com.badmintontracker.android.cliplist.ClipListViewModel
+import com.badmintontracker.android.cliplist.MatchClipsScreen
 import com.badmintontracker.android.nav.Route
 import com.badmintontracker.android.signin.SignInScreen
 import com.badmintontracker.android.signin.SignInViewModel
@@ -73,6 +74,21 @@ fun AuthGate(rally: RallyApp) {
                     ClipListScreen(
                         vm = clipListVm,
                         media = rally.media,
+                        onMatchClick = { nav.navigate(Route.MatchClips(it.videoId)) },
+                    )
+                }
+                composable<Route.MatchClips> { entry ->
+                    val args = entry.toRoute<Route.MatchClips>()
+                    val clipListVm: ClipListViewModel = viewModel(
+                        factory = viewModelFactory {
+                            initializer { ClipListViewModel(rally.clips, rally.auth) }
+                        }
+                    )
+                    MatchClipsScreen(
+                        vm = clipListVm,
+                        media = rally.media,
+                        videoId = args.videoId,
+                        onBack = { nav.popBackStack() },
                         onClipClick = { nav.navigate(Route.ClipDetail(it.id)) },
                     )
                 }

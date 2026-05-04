@@ -14,26 +14,38 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -53,6 +65,9 @@ fun ClipDetailScreen(
     val state by vm.state.collectAsStateWithLifecycle()
     val ctx = LocalContext.current
     val player = remember { ExoPlayer.Builder(ctx).build() }
+    val snackbar = remember { SnackbarHostState() }
+    var addDialog by remember { mutableStateOf<Float?>(null) }
+    var pendingDelete by remember { mutableStateOf<RallyAnnotation?>(null) }
 
     DisposableEffect(player) {
         val listener = object : Player.Listener {
@@ -76,6 +91,12 @@ fun ClipDetailScreen(
         vm.seekTo.collect { ms -> player.seekTo(ms) }
     }
 
+    LaunchedEffect(state.actionError) {
+        val msg = state.actionError ?: return@LaunchedEffect
+        snackbar.showSnackbar(msg)
+        vm.clearActionError()
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -87,6 +108,17 @@ fun ClipDetailScreen(
                 },
             )
         },
+        floatingActionButton = {
+            if (state.clip != null) {
+                FloatingActionButton(onClick = {
+                    val ms = player.currentPosition.coerceAtLeast(0L)
+                    addDialog = ms / 1000f
+                }) {
+                    Icon(Icons.Default.Add, contentDescription = "Add annotation")
+                }
+            }
+        },
+        snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
             Box(modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
@@ -119,23 +151,89 @@ fun ClipDetailScreen(
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(state.annotations, key = { it.id }) { a ->
-                        AnnotationRow(a, onClick = { vm.onAnnotationTap(a) })
+                        AnnotationRow(
+                            a = a,
+                            onClick = { vm.onAnnotationTap(a) },
+                            onDelete = { pendingDelete = a },
+                        )
                         HorizontalDivider()
                     }
                 }
             }
         }
     }
+
+    addDialog?.let { ts ->
+        AddAnnotationDialog(
+            onDismiss = { addDialog = null },
+            onConfirm = { body ->
+                vm.addAnnotation(ts, body)
+                addDialog = null
+            },
+        )
+    }
+
+    pendingDelete?.let { a ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("Delete annotation?") },
+            text = { Text("\"${a.body}\"") },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.deleteAnnotation(a.id)
+                    pendingDelete = null
+                }) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) { Text("Cancel") }
+            },
+        )
+    }
 }
 
 @Composable
-private fun AnnotationRow(a: RallyAnnotation, onClick: () -> Unit) {
+private fun AnnotationRow(a: RallyAnnotation, onClick: () -> Unit, onDelete: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("%.1fs".format(a.timestampSeconds), style = MaterialTheme.typography.labelLarge)
-        Spacer(Modifier.width(12.dp))
-        Text(a.body, style = MaterialTheme.typography.bodyMedium)
+        Text(
+            a.body,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1f),
+        )
+        IconButton(onClick = onDelete) {
+            Icon(Icons.Default.Delete, contentDescription = "Delete annotation")
+        }
     }
+}
+
+@Composable
+private fun AddAnnotationDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var body by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add annotation") },
+        text = {
+            OutlinedTextField(
+                value = body,
+                onValueChange = { body = it },
+                placeholder = { Text("Note") },
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = {
+            TextButton(
+                enabled = body.isNotBlank(),
+                onClick = { onConfirm(body) },
+            ) { Text("Add") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }
