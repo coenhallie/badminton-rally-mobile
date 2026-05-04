@@ -6,6 +6,7 @@ import com.badmintontracker.shared.testing.jsonResponse
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.ktor.http.content.TextContent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 
@@ -37,6 +38,23 @@ class ClipsRepositoryTest {
         clips[0].id shouldBe "c1"
         capturedQuery!!.shouldContain("rally_clips")
         capturedQuery!!.shouldContain("order=created_at.desc")
+    }
+
+    @Test
+    fun updateTitle_sends_patch_with_title_field() = runTest {
+        var captured: Pair<String, String>? = null
+        val client = TestSupabase.client { request ->
+            val body = (request.body as? TextContent)?.text ?: ""
+            captured = request.method.value to body
+            jsonResponse("[]")
+        }
+        val repo = ClipsRepositoryImpl(client)
+
+        val result = repo.updateTitle("c1", "renamed")
+
+        result.isSuccess shouldBe true
+        captured!!.first shouldBe "PATCH"
+        captured!!.second.shouldContain(""""title":"renamed"""")
     }
 
     @Test
