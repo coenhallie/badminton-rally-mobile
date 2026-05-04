@@ -59,4 +59,22 @@ class AnnotationsRepositoryTest {
         captured!!.first shouldBe "POST"
         captured!!.second.shouldContain(""""body":"hi"""")
     }
+
+    @Test
+    fun delete_sends_delete_for_id() = runTest {
+        var capturedUrl: String? = null
+        var capturedMethod: String? = null
+        val client = TestSupabase.client { request ->
+            capturedMethod = request.method.value
+            capturedUrl = request.url.toString()
+            jsonResponse("[]")
+        }
+        val repo = AnnotationsRepositoryImpl(client)
+
+        val result = repo.delete("a1")
+
+        result.isSuccess shouldBe true
+        capturedMethod shouldBe "DELETE"
+        capturedUrl!!.shouldContain("id=eq.a1")
+    }
 }
