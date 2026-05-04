@@ -37,8 +37,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import com.badmintontracker.android.data.ThemeMode
+import com.badmintontracker.android.data.ThemePreferenceRepository
+import com.badmintontracker.android.ui.components.ThemeToggleButton
 import com.badmintontracker.shared.model.RallyClip
 import com.badmintontracker.shared.repo.MediaRepository
 import kotlinx.datetime.Instant
@@ -50,9 +54,11 @@ import kotlinx.datetime.toLocalDateTime
 fun ClipListScreen(
     vm: ClipListViewModel,
     media: MediaRepository,
+    themePrefs: ThemePreferenceRepository,
     onMatchClick: (MatchSummary) -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val themeMode by themePrefs.mode.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(state.error) {
@@ -66,8 +72,21 @@ fun ClipListScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Matches") },
+                title = {
+                    Text(
+                        "MATCHES",
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 14.sp),
+                    )
+                },
                 actions = {
+                    ThemeToggleButton(
+                        mode = themeMode,
+                        onToggle = {
+                            themePrefs.set(
+                                if (themeMode == ThemeMode.LIGHT) ThemeMode.DARK else ThemeMode.LIGHT,
+                            )
+                        },
+                    )
                     IconButton(onClick = { menuOpen = true }) {
                         Icon(Icons.Default.MoreVert, contentDescription = "Menu")
                     }

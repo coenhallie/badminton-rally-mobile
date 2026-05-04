@@ -23,6 +23,7 @@ import com.badmintontracker.android.clipdetail.ClipDetailViewModel
 import com.badmintontracker.android.cliplist.ClipListScreen
 import com.badmintontracker.android.cliplist.ClipListViewModel
 import com.badmintontracker.android.cliplist.MatchClipsScreen
+import com.badmintontracker.android.data.ThemePreferenceRepository
 import com.badmintontracker.android.nav.Route
 import com.badmintontracker.android.signin.SignInScreen
 import com.badmintontracker.android.signin.SignInViewModel
@@ -30,7 +31,7 @@ import com.badmintontracker.shared.RallyApp
 import io.github.jan.supabase.auth.status.SessionStatus
 
 @Composable
-fun AuthGate(rally: RallyApp) {
+fun AuthGate(rally: RallyApp, themePrefs: ThemePreferenceRepository) {
     val session by rally.auth.sessionFlow.collectAsStateWithLifecycle(initialValue = null)
 
     when (val s = session) {
@@ -74,6 +75,7 @@ fun AuthGate(rally: RallyApp) {
                     ClipListScreen(
                         vm = clipListVm,
                         media = rally.media,
+                        themePrefs = themePrefs,
                         onMatchClick = { nav.navigate(Route.MatchClips(it.videoId)) },
                     )
                 }
@@ -88,6 +90,7 @@ fun AuthGate(rally: RallyApp) {
                         vm = clipListVm,
                         media = rally.media,
                         videoId = args.videoId,
+                        themePrefs = themePrefs,
                         onBack = { nav.popBackStack() },
                         onClipClick = { nav.navigate(Route.ClipDetail(it.id)) },
                     )

@@ -11,6 +11,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -23,7 +24,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.badmintontracker.android.data.ThemeMode
+import com.badmintontracker.android.data.ThemePreferenceRepository
+import com.badmintontracker.android.ui.components.ThemeToggleButton
 import com.badmintontracker.shared.model.RallyClip
 import com.badmintontracker.shared.repo.MediaRepository
 
@@ -33,10 +38,12 @@ fun MatchClipsScreen(
     vm: ClipListViewModel,
     media: MediaRepository,
     videoId: String,
+    themePrefs: ThemePreferenceRepository,
     onBack: () -> Unit,
     onClipClick: (RallyClip) -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val themeMode by themePrefs.mode.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(state.error) {
@@ -54,12 +61,28 @@ fun MatchClipsScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(match?.let { "Match · ${formatDate(it.latestCreatedAt)}" } ?: "Rallies")
+                    val titleText = match
+                        ?.let { "MATCH · ${formatDate(it.latestCreatedAt).uppercase()}" }
+                        ?: "RALLIES"
+                    Text(
+                        titleText,
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 14.sp),
+                    )
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
+                },
+                actions = {
+                    ThemeToggleButton(
+                        mode = themeMode,
+                        onToggle = {
+                            themePrefs.set(
+                                if (themeMode == ThemeMode.LIGHT) ThemeMode.DARK else ThemeMode.LIGHT,
+                            )
+                        },
+                    )
                 },
             )
         },

@@ -19,7 +19,7 @@ class MainActivity : ComponentActivity() {
             val mode by app.themePrefs.mode.collectAsStateWithLifecycle()
             RallyTheme(darkTheme = mode == ThemeMode.DARK) {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    AuthGate(rally = app.rally)
+                    AuthGate(rally = app.rally, themePrefs = app.themePrefs)
                 }
             }
         }
