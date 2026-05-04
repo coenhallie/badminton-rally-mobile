@@ -1,0 +1,23 @@
+# Gradle
+.gradle/
+build/
+*.gradle.kts.bak
+
+# IntelliJ / Android Studio
+.idea/
+*.iml
+local.properties
+
+# Xcode / iOS
+xcuserdata/
+*.xcworkspace/xcuserdata/
+*.xcuserstate
+DerivedData/
+.swiftpm/
+
+# Kotlin / KMP
+.kotlin/
+kotlin-js-store/
+
+# Secrets
+**/Config.xcconfig
