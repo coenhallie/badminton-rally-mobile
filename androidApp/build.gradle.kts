@@ -83,4 +83,5 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.turbine)
     testImplementation(libs.kotest.assertions)
+    testImplementation(libs.settings.test)
 }
