@@ -5,6 +5,8 @@ import com.badmintontracker.shared.testing.jsonResponse
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.content.TextContent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 
@@ -35,5 +37,26 @@ class AnnotationsRepositoryTest {
         capturedUrl!!.shouldContain("rally_annotations")
         capturedUrl!!.shouldContain("clip_id=eq.c1")
         capturedUrl!!.shouldContain("order=timestamp_seconds.asc")
+    }
+
+    @Test
+    fun add_posts_to_rally_annotations() = runTest {
+        var captured: Pair<String, String>? = null
+        val client = TestSupabase.client { request ->
+            val body = (request.body as? TextContent)?.text ?: ""
+            captured = request.method.value to body
+            jsonResponse(
+                """[{"id":"a1","clip_id":"c1","timestamp_seconds":1.5,"body":"hi","created_at":"2026-05-04T12:00:00Z"}]""",
+                HttpStatusCode.Created,
+            )
+        }
+        val repo = AnnotationsRepositoryImpl(client)
+
+        val result = repo.add("c1", 1.5f, "hi")
+
+        result.isSuccess shouldBe true
+        result.getOrThrow().body shouldBe "hi"
+        captured!!.first shouldBe "POST"
+        captured!!.second.shouldContain(""""body":"hi"""")
     }
 }
