@@ -7,10 +7,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -28,11 +31,15 @@ fun ThemeToggleButton(
     }
     Box(
         modifier = modifier
+            .minimumInteractiveComponentSize()
             .size(36.dp)
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .border(width = 1.dp, color = MaterialTheme.colorScheme.outlineVariant)
             .clickable(onClick = onToggle)
-            .semantics { contentDescription = desc },
+            .semantics {
+                role = Role.Button
+                contentDescription = desc
+            },
         contentAlignment = Alignment.Center,
     ) {
         Text(
