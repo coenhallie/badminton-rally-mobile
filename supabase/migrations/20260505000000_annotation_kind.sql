@@ -15,6 +15,10 @@ alter table public.rally_annotations
 alter table public.rally_annotations
     alter column body drop not null;
 
+-- Drop the legacy body non-empty CHECK; superseded by body_or_kind below.
+alter table public.rally_annotations
+    drop constraint if exists rally_annotations_body_check;
+
 alter table public.rally_annotations
     drop constraint if exists rally_annotations_body_or_kind_check;
 
