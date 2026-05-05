@@ -2,6 +2,7 @@ package com.badmintontracker.android.clipdetail
 
 import android.app.Activity
 import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -48,6 +49,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
@@ -74,6 +76,7 @@ fun ClipDetailScreen(
     val state by vm.state.collectAsStateWithLifecycle()
     val ctx = LocalContext.current
     val activity = ctx as? Activity
+    val orientation = LocalConfiguration.current.orientation
     val player = remember { ExoPlayer.Builder(ctx).build() }
     val snackbar = remember { SnackbarHostState() }
     var addDialog by remember { mutableStateOf<Float?>(null) }
@@ -94,6 +97,10 @@ fun ClipDetailScreen(
             a.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             controller.show(WindowInsetsCompat.Type.systemBars())
         }
+    }
+
+    LaunchedEffect(orientation) {
+        isFullscreen = (orientation == Configuration.ORIENTATION_LANDSCAPE)
     }
 
     DisposableEffect(player) {
