@@ -20,7 +20,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -54,6 +53,8 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import com.badmintontracker.android.ui.components.ShuttlButton
+import com.badmintontracker.android.ui.components.ShuttlButtonVariant
 import com.badmintontracker.shared.model.RallyAnnotation
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -138,7 +139,11 @@ fun ClipDetailScreen(
                         ) {
                             Text(state.error!!, color = MaterialTheme.colorScheme.onErrorContainer)
                             Spacer(Modifier.height(8.dp))
-                            Button(onClick = vm::onManualRetry) { Text("Retry") }
+                            ShuttlButton(
+                                text = "Retry",
+                                onClick = vm::onManualRetry,
+                                variant = ShuttlButtonVariant.Primary,
+                            )
                         }
                     }
                 }

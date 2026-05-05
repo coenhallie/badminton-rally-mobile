@@ -128,7 +128,10 @@ private fun MatchRow(
     }
 
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AsyncImage(
@@ -141,10 +144,12 @@ private fun MatchRow(
             Text(
                 "Match · ${formatDate(match.latestCreatedAt)}",
                 style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onBackground,
             )
             Text(
-                "${match.rallyCount} ${if (match.rallyCount == 1) "rally" else "rallies"}",
-                style = MaterialTheme.typography.bodySmall,
+                "${match.rallyCount} ${if (match.rallyCount == 1) "rally" else "rallies"}".uppercase(),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
@@ -171,7 +176,10 @@ internal fun ClipRow(
     }
 
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AsyncImage(
@@ -184,10 +192,12 @@ internal fun ClipRow(
             Text(
                 clip.title ?: "Rally #${clip.rallyIndex + 1}",
                 style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onBackground,
             )
             Text(
-                "${clip.durationSeconds}s · ${clip.annotationCount} notes",
-                style = MaterialTheme.typography.bodySmall,
+                "${clip.durationSeconds}s · ${clip.annotationCount} notes".uppercase(),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
