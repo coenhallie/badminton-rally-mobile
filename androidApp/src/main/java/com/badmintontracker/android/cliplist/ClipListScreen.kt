@@ -47,6 +47,7 @@ import com.badmintontracker.shared.repo.MediaRepository
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -147,7 +148,7 @@ private fun MatchRow(
                 color = MaterialTheme.colorScheme.onBackground,
             )
             Text(
-                "${match.rallyCount} ${if (match.rallyCount == 1) "rally" else "rallies"}".uppercase(),
+                "${match.rallyCount} ${if (match.rallyCount == 1) "rally" else "rallies"}".uppercase(Locale.ROOT),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -195,7 +196,7 @@ internal fun ClipRow(
                 color = MaterialTheme.colorScheme.onBackground,
             )
             Text(
-                "${clip.durationSeconds}s · ${clip.annotationCount} notes".uppercase(),
+                "${clip.durationSeconds}s · ${clip.annotationCount} notes".uppercase(Locale.ROOT),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

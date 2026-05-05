@@ -13,6 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.badmintontracker.android.ui.theme.ShuttlTheme
+import java.util.Locale
 
 @Composable
 fun DividerWithText(text: String = "or", modifier: Modifier = Modifier) {
@@ -22,7 +23,7 @@ fun DividerWithText(text: String = "or", modifier: Modifier = Modifier) {
     ) {
         Box(Modifier.weight(1f).height(1.dp).background(MaterialTheme.colorScheme.outlineVariant))
         Text(
-            text     = text.uppercase(),
+            text     = text.uppercase(Locale.ROOT),
             color    = ShuttlTheme.extended.textTertiary,
             style    = MaterialTheme.typography.labelSmall,
             modifier = Modifier.padding(horizontal = 12.dp),

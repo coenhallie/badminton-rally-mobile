@@ -30,6 +30,7 @@ import com.badmintontracker.android.data.ThemePreferenceRepository
 import com.badmintontracker.android.ui.components.ThemeToggleButton
 import com.badmintontracker.shared.model.RallyClip
 import com.badmintontracker.shared.repo.MediaRepository
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -61,7 +62,7 @@ fun MatchClipsScreen(
             TopAppBar(
                 title = {
                     val titleText = match
-                        ?.let { "MATCH · ${formatDate(it.latestCreatedAt).uppercase()}" }
+                        ?.let { "MATCH · ${formatDate(it.latestCreatedAt).uppercase(Locale.ROOT)}" }
                         ?: "RALLIES"
                     Text(
                         titleText,
