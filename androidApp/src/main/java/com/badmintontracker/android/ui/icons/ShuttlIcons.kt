@@ -33,7 +33,7 @@ private fun buildSun(): ImageVector = ImageVector.Builder(
     path(
         fill = SolidColor(Color.Transparent),
         stroke = SolidColor(Color.Unspecified),
-        strokeLineWidth = 2f,
+        strokeLineWidth = 2.5f,
         strokeLineCap = StrokeCap.Round,
         strokeLineJoin = StrokeJoin.Round,
     ) {
@@ -80,7 +80,7 @@ private fun buildMoon(): ImageVector = ImageVector.Builder(
     path(
         fill = SolidColor(Color.Transparent),
         stroke = SolidColor(Color.Unspecified),
-        strokeLineWidth = 2f,
+        strokeLineWidth = 2.5f,
         strokeLineCap = StrokeCap.Round,
         strokeLineJoin = StrokeJoin.Round,
     ) {
@@ -118,7 +118,7 @@ private fun buildInfo(): ImageVector = ImageVector.Builder(
     path(
         fill = SolidColor(Color.Transparent),
         stroke = SolidColor(Color.Unspecified),
-        strokeLineWidth = 2f,
+        strokeLineWidth = 2.5f,
         strokeLineCap = StrokeCap.Round,
         strokeLineJoin = StrokeJoin.Round,
     ) {

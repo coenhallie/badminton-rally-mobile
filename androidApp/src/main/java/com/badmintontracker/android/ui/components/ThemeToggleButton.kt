@@ -48,7 +48,7 @@ fun ThemeToggleButton(
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.size(18.dp),
             )
         }
