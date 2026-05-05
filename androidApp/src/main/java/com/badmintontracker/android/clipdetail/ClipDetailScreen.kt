@@ -111,6 +111,11 @@ fun ClipDetailScreen(
         onDispose {
             player.removeListener(listener)
             player.release()
+            activity?.let { a ->
+                a.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                WindowCompat.getInsetsController(a.window, a.window.decorView)
+                    .show(WindowInsetsCompat.Type.systemBars())
+            }
         }
     }
 
