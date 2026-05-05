@@ -1,5 +1,6 @@
 package com.badmintontracker.android.testing
 
+import com.badmintontracker.shared.model.AnnotationKind
 import com.badmintontracker.shared.model.RallyAnnotation
 import com.badmintontracker.shared.repo.AnnotationsRepository
 import kotlinx.datetime.Instant
@@ -9,7 +10,15 @@ class FakeAnnotationsRepository : AnnotationsRepository {
     var listError: Throwable? = null
     var addError: Throwable? = null
     var deleteError: Throwable? = null
-    val addCalls = mutableListOf<Triple<String, Float, String>>()
+
+    data class AddCall(
+        val clipId: String,
+        val timestampSeconds: Float,
+        val body: String,
+        val kind: AnnotationKind?,
+    )
+
+    val addCalls = mutableListOf<AddCall>()
     val deleteCalls = mutableListOf<String>()
     private var nextId = 0
 
@@ -19,15 +28,19 @@ class FakeAnnotationsRepository : AnnotationsRepository {
     }
 
     override suspend fun add(
-        clipId: String, timestampSeconds: Float, body: String,
+        clipId: String,
+        timestampSeconds: Float,
+        body: String,
+        kind: AnnotationKind?,
     ): Result<RallyAnnotation> {
-        addCalls += Triple(clipId, timestampSeconds, body)
+        addCalls += AddCall(clipId, timestampSeconds, body, kind)
         addError?.let { return Result.failure(it) }
         val row = RallyAnnotation(
             id = "new-${++nextId}",
             clipId = clipId,
             timestampSeconds = timestampSeconds,
             body = body,
+            kind = kind,
             createdAt = Instant.parse("2026-05-04T12:00:00Z"),
         )
         byClipId = byClipId + (clipId to ((byClipId[clipId] ?: emptyList()) + row))
