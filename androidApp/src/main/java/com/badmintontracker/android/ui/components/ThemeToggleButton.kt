@@ -5,8 +5,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -16,8 +16,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.badmintontracker.android.data.ThemeMode
+import com.badmintontracker.android.ui.icons.ShuttlIcons
 
 @Composable
 fun ThemeToggleButton(
@@ -25,9 +25,9 @@ fun ThemeToggleButton(
     onToggle: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val (glyph, desc) = when (mode) {
-        ThemeMode.LIGHT -> "☾" to "Switch to dark mode"
-        ThemeMode.DARK -> "☀" to "Switch to light mode"
+    val (icon, desc) = when (mode) {
+        ThemeMode.LIGHT -> ShuttlIcons.Moon to "Switch to dark mode"
+        ThemeMode.DARK -> ShuttlIcons.Sun to "Switch to light mode"
     }
     Box(
         modifier = modifier
@@ -42,10 +42,11 @@ fun ThemeToggleButton(
             },
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = glyph,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 16.sp,
+        Icon(
+            imageVector = icon,
+            contentDescription = null, // announced by the Box's semantics block
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(18.dp),
         )
     }
 }
