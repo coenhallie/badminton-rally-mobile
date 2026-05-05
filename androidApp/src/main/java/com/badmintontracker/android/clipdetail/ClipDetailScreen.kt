@@ -69,6 +69,7 @@ fun ClipDetailScreen(
     val snackbar = remember { SnackbarHostState() }
     var addDialog by remember { mutableStateOf<Float?>(null) }
     var pendingDelete by remember { mutableStateOf<RallyAnnotation?>(null) }
+    var isFullscreen by remember { mutableStateOf(false) }
 
     DisposableEffect(player) {
         val listener = object : Player.Listener {
@@ -124,7 +125,13 @@ fun ClipDetailScreen(
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
             Box(modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
                 AndroidView(
-                    factory = { PlayerView(ctx).apply { this.player = player } },
+                    factory = { c ->
+                        PlayerView(c).apply {
+                            this.player = player
+                            setFullscreenButtonClickListener { isFullscreen = !isFullscreen }
+                        }
+                    },
+                    update = { it.setFullscreenButtonState(isFullscreen) },
                     modifier = Modifier.fillMaxSize(),
                 )
                 if (state.error != null) {
