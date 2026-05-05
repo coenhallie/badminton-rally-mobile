@@ -1,5 +1,7 @@
 package com.badmintontracker.android.clipdetail
 
+import android.app.Activity
+import android.content.pm.ActivityInfo
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -50,6 +52,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -68,6 +73,7 @@ fun ClipDetailScreen(
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val ctx = LocalContext.current
+    val activity = ctx as? Activity
     val player = remember { ExoPlayer.Builder(ctx).build() }
     val snackbar = remember { SnackbarHostState() }
     var addDialog by remember { mutableStateOf<Float?>(null) }
@@ -75,6 +81,20 @@ fun ClipDetailScreen(
     var isFullscreen by remember { mutableStateOf(false) }
 
     BackHandler(enabled = isFullscreen) { isFullscreen = false }
+
+    LaunchedEffect(isFullscreen, activity) {
+        val a = activity ?: return@LaunchedEffect
+        val controller = WindowCompat.getInsetsController(a.window, a.window.decorView)
+        if (isFullscreen) {
+            a.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            controller.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+        } else {
+            a.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            controller.show(WindowInsetsCompat.Type.systemBars())
+        }
+    }
 
     DisposableEffect(player) {
         val listener = object : Player.Listener {
