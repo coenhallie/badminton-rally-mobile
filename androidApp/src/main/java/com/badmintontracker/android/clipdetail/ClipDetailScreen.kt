@@ -1,5 +1,6 @@
 package com.badmintontracker.android.clipdetail
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -43,6 +44,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
@@ -99,19 +101,56 @@ fun ClipDetailScreen(
         vm.clearActionError()
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(state.clip?.title ?: state.clip?.let { "Rally #${it.rallyIndex}" } ?: "") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+    val playerSurface: @Composable (Modifier) -> Unit = { modifier ->
+        Box(modifier = modifier) {
+            AndroidView(
+                factory = { c ->
+                    PlayerView(c).apply {
+                        this.player = player
+                        setFullscreenButtonClickListener { isFullscreen = !isFullscreen }
                     }
                 },
+                update = { it.setFullscreenButtonState(isFullscreen) },
+                modifier = Modifier.fillMaxSize(),
             )
+            if (state.error != null) {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.9f),
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Text(state.error!!, color = MaterialTheme.colorScheme.onErrorContainer)
+                        Spacer(Modifier.height(8.dp))
+                        ShuttlButton(
+                            text = "Retry",
+                            onClick = vm::onManualRetry,
+                            variant = ShuttlButtonVariant.Primary,
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            if (!isFullscreen) {
+                TopAppBar(
+                    title = { Text(state.clip?.title ?: state.clip?.let { "Rally #${it.rallyIndex}" } ?: "") },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                    },
+                )
+            }
         },
         floatingActionButton = {
-            if (state.clip != null) {
+            if (!isFullscreen && state.clip != null) {
                 FloatingActionButton(onClick = {
                     val ms = player.currentPosition.coerceAtLeast(0L)
                     addDialog = ms / 1000f
@@ -123,37 +162,8 @@ fun ClipDetailScreen(
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
-            Box(modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
-                AndroidView(
-                    factory = { c ->
-                        PlayerView(c).apply {
-                            this.player = player
-                            setFullscreenButtonClickListener { isFullscreen = !isFullscreen }
-                        }
-                    },
-                    update = { it.setFullscreenButtonState(isFullscreen) },
-                    modifier = Modifier.fillMaxSize(),
-                )
-                if (state.error != null) {
-                    Surface(
-                        modifier = Modifier.fillMaxSize(),
-                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.9f),
-                    ) {
-                        Column(
-                            modifier = Modifier.fillMaxSize(),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center,
-                        ) {
-                            Text(state.error!!, color = MaterialTheme.colorScheme.onErrorContainer)
-                            Spacer(Modifier.height(8.dp))
-                            ShuttlButton(
-                                text = "Retry",
-                                onClick = vm::onManualRetry,
-                                variant = ShuttlButtonVariant.Primary,
-                            )
-                        }
-                    }
-                }
+            if (!isFullscreen) {
+                playerSurface(Modifier.fillMaxWidth().aspectRatio(16f / 9f))
             }
 
             if (state.annotations.isEmpty()) {
@@ -172,6 +182,16 @@ fun ClipDetailScreen(
                     }
                 }
             }
+        }
+    }
+
+    if (isFullscreen) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black),
+        ) {
+            playerSurface(Modifier.fillMaxSize())
         }
     }
 
