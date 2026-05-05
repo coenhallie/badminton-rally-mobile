@@ -248,7 +248,7 @@ fun ClipDetailScreen(
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
             title = { Text("Delete annotation?") },
-            text = { Text("\"${a.body}\"") },
+            text = { Text(if (a.body.isNotBlank()) "\"${a.body}\"" else a.kind?.style()?.label.orEmpty()) },
             confirmButton = {
                 TextButton(onClick = {
                     vm.deleteAnnotation(a.id)
