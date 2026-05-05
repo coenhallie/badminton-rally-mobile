@@ -169,7 +169,7 @@ private fun AlphaBadge() {
             .padding(horizontal = 8.dp, vertical = 3.dp),
     ) {
         Text(
-            text          = "ALPHA V1.9",
+            text          = "BETA 2.0",
             color         = Color.Black,
             fontWeight    = FontWeight.SemiBold,
             fontSize      = 9.sp,
