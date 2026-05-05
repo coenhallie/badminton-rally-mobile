@@ -57,7 +57,7 @@ class ClipDetailViewModelTest {
     fun init_loads_clip_annotations_and_signs_url() = runTest {
         val (vm, media, _, _) = setup(
             annotations = listOf(
-                RallyAnnotation("a1", "c1", 1.5f, "great", Instant.parse("2026-05-04T12:00:00Z"))
+                RallyAnnotation("a1", "c1", 1.5f, "great", createdAt = Instant.parse("2026-05-04T12:00:00Z"))
             ),
             media = FakeMediaRepository().apply { nextClipUrl = { "https://signed/c1?token=1" } },
         )
@@ -76,7 +76,7 @@ class ClipDetailViewModelTest {
         advanceUntilIdle()
 
         vm.seekTo.test {
-            vm.onAnnotationTap(RallyAnnotation("a", "c1", 4.2f, "x", Instant.parse("2026-05-04T12:00:00Z")))
+            vm.onAnnotationTap(RallyAnnotation("a", "c1", 4.2f, "x", createdAt = Instant.parse("2026-05-04T12:00:00Z")))
             awaitItem() shouldBe 4200L
             cancelAndIgnoreRemainingEvents()
         }
@@ -127,7 +127,7 @@ class ClipDetailViewModelTest {
     fun addAnnotation_appends_to_state_in_timestamp_order() = runTest {
         val existing = RallyAnnotation(
             "a1", "c1", 5.0f, "later",
-            Instant.parse("2026-05-04T12:00:00Z"),
+            createdAt = Instant.parse("2026-05-04T12:00:00Z"),
         )
         val (vm, _, _, ann) = setup(annotations = listOf(existing))
         advanceUntilIdle()
@@ -167,8 +167,8 @@ class ClipDetailViewModelTest {
 
     @Test
     fun deleteAnnotation_removes_from_state() = runTest {
-        val a1 = RallyAnnotation("a1", "c1", 1f, "one", Instant.parse("2026-05-04T12:00:00Z"))
-        val a2 = RallyAnnotation("a2", "c1", 2f, "two", Instant.parse("2026-05-04T12:00:00Z"))
+        val a1 = RallyAnnotation("a1", "c1", 1f, "one", createdAt = Instant.parse("2026-05-04T12:00:00Z"))
+        val a2 = RallyAnnotation("a2", "c1", 2f, "two", createdAt = Instant.parse("2026-05-04T12:00:00Z"))
         val (vm, _, _, ann) = setup(annotations = listOf(a1, a2))
         advanceUntilIdle()
 
@@ -181,7 +181,7 @@ class ClipDetailViewModelTest {
 
     @Test
     fun deleteAnnotation_failure_keeps_state_and_sets_actionError() = runTest {
-        val a1 = RallyAnnotation("a1", "c1", 1f, "one", Instant.parse("2026-05-04T12:00:00Z"))
+        val a1 = RallyAnnotation("a1", "c1", 1f, "one", createdAt = Instant.parse("2026-05-04T12:00:00Z"))
         val (vm, _, _, ann) = setup(annotations = listOf(a1))
         ann.deleteError = RuntimeException("nope")
         advanceUntilIdle()
