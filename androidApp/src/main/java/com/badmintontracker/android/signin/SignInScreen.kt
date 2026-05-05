@@ -8,7 +8,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -26,7 +28,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.badmintontracker.android.data.ThemeMode
 import com.badmintontracker.android.data.ThemePreferenceRepository
 import com.badmintontracker.android.ui.components.DividerWithText
 import com.badmintontracker.android.ui.components.ErrorBanner
@@ -55,13 +56,13 @@ fun SignInScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding()
+            .imePadding()
             .padding(horizontal = 16.dp, vertical = 32.dp),
     ) {
         ThemeToggleButton(
             mode     = themeMode,
-            onToggle = {
-                themePrefs.set(if (themeMode == ThemeMode.LIGHT) ThemeMode.DARK else ThemeMode.LIGHT)
-            },
+            onToggle = themePrefs::toggle,
             modifier = Modifier.align(Alignment.TopEnd),
         )
 
@@ -69,6 +70,7 @@ fun SignInScreen(
             modifier = Modifier
                 .align(Alignment.Center)
                 .widthIn(max = 400.dp)
+                .padding(top = 56.dp)
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {

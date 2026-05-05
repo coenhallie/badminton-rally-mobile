@@ -17,6 +17,10 @@ class ThemePreferenceRepository(private val settings: Settings) {
         state.value = mode
     }
 
+    fun toggle() {
+        set(if (mode.value == ThemeMode.LIGHT) ThemeMode.DARK else ThemeMode.LIGHT)
+    }
+
     private fun load(): ThemeMode =
         settings.getStringOrNull(KEY)
             ?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() }

@@ -28,4 +28,13 @@ class ThemePreferenceRepositoryTest {
         // New repo over the same settings rehydrates DARK.
         ThemePreferenceRepository(settings).mode.value shouldBe ThemeMode.DARK
     }
+
+    @Test
+    fun `toggle flips LIGHT to DARK and back`() = runTest {
+        val repo = ThemePreferenceRepository(MapSettings())
+        repo.toggle()
+        repo.mode.value shouldBe ThemeMode.DARK
+        repo.toggle()
+        repo.mode.value shouldBe ThemeMode.LIGHT
+    }
 }

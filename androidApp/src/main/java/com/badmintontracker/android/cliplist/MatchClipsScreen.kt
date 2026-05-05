@@ -26,7 +26,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.badmintontracker.android.data.ThemeMode
 import com.badmintontracker.android.data.ThemePreferenceRepository
 import com.badmintontracker.android.ui.components.ThemeToggleButton
 import com.badmintontracker.shared.model.RallyClip
@@ -77,11 +76,7 @@ fun MatchClipsScreen(
                 actions = {
                     ThemeToggleButton(
                         mode = themeMode,
-                        onToggle = {
-                            themePrefs.set(
-                                if (themeMode == ThemeMode.LIGHT) ThemeMode.DARK else ThemeMode.LIGHT,
-                            )
-                        },
+                        onToggle = themePrefs::toggle,
                     )
                 },
             )
