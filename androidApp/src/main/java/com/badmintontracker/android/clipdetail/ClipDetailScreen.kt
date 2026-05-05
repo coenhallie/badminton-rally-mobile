@@ -1,5 +1,6 @@
 package com.badmintontracker.android.clipdetail
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -72,6 +73,8 @@ fun ClipDetailScreen(
     var addDialog by remember { mutableStateOf<Float?>(null) }
     var pendingDelete by remember { mutableStateOf<RallyAnnotation?>(null) }
     var isFullscreen by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = isFullscreen) { isFullscreen = false }
 
     DisposableEffect(player) {
         val listener = object : Player.Listener {
