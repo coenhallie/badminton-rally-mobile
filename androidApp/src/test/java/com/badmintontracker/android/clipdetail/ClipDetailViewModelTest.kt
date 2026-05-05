@@ -2,8 +2,10 @@ package com.badmintontracker.android.clipdetail
 
 import app.cash.turbine.test
 import com.badmintontracker.android.testing.FakeAnnotationsRepository
+import com.badmintontracker.android.testing.FakeAnnotationsRepository.AddCall
 import com.badmintontracker.android.testing.FakeClipsRepository
 import com.badmintontracker.android.testing.FakeMediaRepository
+import com.badmintontracker.shared.model.AnnotationKind
 import com.badmintontracker.shared.model.RallyAnnotation
 import com.badmintontracker.shared.model.RallyClip
 import io.kotest.matchers.shouldBe
@@ -132,24 +134,36 @@ class ClipDetailViewModelTest {
         val (vm, _, _, ann) = setup(annotations = listOf(existing))
         advanceUntilIdle()
 
-        vm.addAnnotation(timestampSeconds = 2.0f, body = "earlier")
+        vm.addAnnotation(timestampSeconds = 2.0f, body = "earlier", kind = null)
         advanceUntilIdle()
 
-        ann.addCalls shouldBe listOf(Triple("c1", 2.0f, "earlier"))
+        ann.addCalls shouldBe listOf(AddCall("c1", 2.0f, "earlier", null))
         vm.state.value.annotations.map { it.body } shouldBe listOf("earlier", "later")
         vm.state.value.actionError shouldBe null
     }
 
     @Test
-    fun addAnnotation_blank_body_is_ignored() = runTest {
+    fun addAnnotation_blank_body_and_no_kind_is_ignored() = runTest {
         val (vm, _, _, ann) = setup()
         advanceUntilIdle()
 
-        vm.addAnnotation(timestampSeconds = 1f, body = "   ")
+        vm.addAnnotation(timestampSeconds = 1f, body = "   ", kind = null)
         advanceUntilIdle()
 
         ann.addCalls.size shouldBe 0
         vm.state.value.annotations.size shouldBe 0
+    }
+
+    @Test
+    fun addAnnotation_blank_body_with_kind_is_persisted() = runTest {
+        val (vm, _, _, ann) = setup()
+        advanceUntilIdle()
+
+        vm.addAnnotation(timestampSeconds = 3f, body = "", kind = AnnotationKind.GOOD_SHOT)
+        advanceUntilIdle()
+
+        ann.addCalls shouldBe listOf(AddCall("c1", 3f, "", AnnotationKind.GOOD_SHOT))
+        vm.state.value.annotations.map { it.kind } shouldBe listOf(AnnotationKind.GOOD_SHOT)
     }
 
     @Test
@@ -158,7 +172,7 @@ class ClipDetailViewModelTest {
         ann.addError = RuntimeException("boom")
         advanceUntilIdle()
 
-        vm.addAnnotation(1f, "x")
+        vm.addAnnotation(1f, "x", null)
         advanceUntilIdle()
 
         vm.state.value.annotations.size shouldBe 0

@@ -2,6 +2,7 @@ package com.badmintontracker.android.clipdetail
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.badmintontracker.shared.model.AnnotationKind
 import com.badmintontracker.shared.model.RallyAnnotation
 import com.badmintontracker.shared.model.RallyClip
 import com.badmintontracker.shared.repo.AnnotationsRepository
@@ -76,12 +77,12 @@ class ClipDetailViewModel(
         }
     }
 
-    fun addAnnotation(timestampSeconds: Float, body: String) {
+    fun addAnnotation(timestampSeconds: Float, body: String, kind: AnnotationKind?) {
         val trimmed = body.trim()
-        if (trimmed.isEmpty()) return
+        if (trimmed.isEmpty() && kind == null) return
         val ts = timestampSeconds.coerceAtLeast(0f)
         viewModelScope.launch {
-            annotations.add(clipId, ts, trimmed)
+            annotations.add(clipId, ts, trimmed, kind)
                 .onSuccess { row ->
                     state.update {
                         it.copy(

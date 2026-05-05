@@ -234,7 +234,7 @@ fun ClipDetailScreen(
         AddAnnotationDialog(
             onDismiss = { addDialog = null },
             onConfirm = { body ->
-                vm.addAnnotation(ts, body)
+                vm.addAnnotation(ts, body, null)
                 addDialog = null
             },
         )
