@@ -14,8 +14,8 @@ import androidx.compose.ui.unit.dp
  * cost). Path data is taken verbatim from the web app reference
  * `badminton-tracker/src/views/LoginView.vue`.
  *
- * All paths use stroke = SolidColor(Color.Unspecified) so that the
- * `tint` parameter on [androidx.compose.material3.Icon] applies.
+ * Stroke is a solid color so Icon's ColorFilter.tint can recolor it via
+ * SrcIn — Color.Unspecified renders transparent and would not be tinted.
  */
 object ShuttlIcons {
     val Sun: ImageVector by lazy { buildSun() }
@@ -32,7 +32,7 @@ private fun buildSun(): ImageVector = ImageVector.Builder(
 ).apply {
     path(
         fill = SolidColor(Color.Transparent),
-        stroke = SolidColor(Color.Unspecified),
+        stroke = SolidColor(Color.Black),
         strokeLineWidth = 2.5f,
         strokeLineCap = StrokeCap.Round,
         strokeLineJoin = StrokeJoin.Round,
@@ -79,7 +79,7 @@ private fun buildMoon(): ImageVector = ImageVector.Builder(
 ).apply {
     path(
         fill = SolidColor(Color.Transparent),
-        stroke = SolidColor(Color.Unspecified),
+        stroke = SolidColor(Color.Black),
         strokeLineWidth = 2.5f,
         strokeLineCap = StrokeCap.Round,
         strokeLineJoin = StrokeJoin.Round,
@@ -117,7 +117,7 @@ private fun buildInfo(): ImageVector = ImageVector.Builder(
 ).apply {
     path(
         fill = SolidColor(Color.Transparent),
-        stroke = SolidColor(Color.Unspecified),
+        stroke = SolidColor(Color.Black),
         strokeLineWidth = 2.5f,
         strokeLineCap = StrokeCap.Round,
         strokeLineJoin = StrokeJoin.Round,
