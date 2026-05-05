@@ -270,7 +270,7 @@ fun ClipDetailScreen(
 }
 
 private fun formatTimestamp(seconds: Float): String {
-    val total = seconds.toInt().coerceAtLeast(0)
+    val total = kotlin.math.round(seconds).toInt().coerceAtLeast(0)
     val m = total / 60
     val s = total % 60
     return "%d:%02d".format(m, s)
