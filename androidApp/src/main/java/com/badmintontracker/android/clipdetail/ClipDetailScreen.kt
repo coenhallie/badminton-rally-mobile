@@ -27,6 +27,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -66,6 +68,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlButtonVariant
+import com.badmintontracker.shared.model.AnnotationKind
 import com.badmintontracker.shared.model.RallyAnnotation
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -234,8 +237,8 @@ fun ClipDetailScreen(
     addDialog?.let { ts ->
         AddAnnotationDialog(
             onDismiss = { addDialog = null },
-            onConfirm = { body ->
-                vm.addAnnotation(ts, body, null)
+            onConfirm = { body, kind ->
+                vm.addAnnotation(ts, body, kind)
                 addDialog = null
             },
         )
@@ -298,29 +301,62 @@ private fun AnnotationRow(a: RallyAnnotation, onClick: () -> Unit, onDelete: () 
 @Composable
 private fun AddAnnotationDialog(
     onDismiss: () -> Unit,
-    onConfirm: (String) -> Unit,
+    onConfirm: (body: String, kind: AnnotationKind?) -> Unit,
 ) {
     var body by remember { mutableStateOf("") }
+    var kind by remember { mutableStateOf<AnnotationKind?>(null) }
+
+    val canAdd = kind != null || body.isNotBlank()
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Add annotation") },
         text = {
-            OutlinedTextField(
-                value = body,
-                onValueChange = { body = it },
-                placeholder = { Text("Note") },
-                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                modifier = Modifier.fillMaxWidth(),
-            )
+            Column {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    KindChip("Good shot",      AnnotationKind.GOOD_SHOT,      kind) { kind = if (kind == it) null else it }
+                    KindChip("Forced error",   AnnotationKind.FORCED_ERROR,   kind) { kind = if (kind == it) null else it }
+                    KindChip("Unforced error", AnnotationKind.UNFORCED_ERROR, kind) { kind = if (kind == it) null else it }
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = body,
+                    onValueChange = { body = it },
+                    placeholder = { Text("Note (optional)") },
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         },
         confirmButton = {
             TextButton(
-                enabled = body.isNotBlank(),
-                onClick = { onConfirm(body) },
+                enabled = canAdd,
+                onClick = { onConfirm(body, kind) },
             ) { Text("Add") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
         },
+    )
+}
+
+@Composable
+private fun KindChip(
+    label: String,
+    target: AnnotationKind,
+    selected: AnnotationKind?,
+    onClick: (AnnotationKind) -> Unit,
+) {
+    val s = target.style()
+    val isSelected = selected == target
+    FilterChip(
+        selected = isSelected,
+        onClick = { onClick(target) },
+        label = { Text(label) },
+        shape = RoundedCornerShape(50),
+        colors = FilterChipDefaults.filterChipColors(
+            selectedContainerColor = s.container,
+            selectedLabelColor = s.onContainer,
+        ),
     )
 }
