@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -264,11 +265,30 @@ private fun AnnotationRow(a: RallyAnnotation, onClick: () -> Unit, onDelete: () 
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            a.body,
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.weight(1f),
-        )
+        a.kind?.let { kind ->
+            val s = kind.style()
+            Surface(
+                shape = RoundedCornerShape(50),
+                color = s.container,
+            ) {
+                Text(
+                    s.label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = s.onContainer,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+        }
+        if (a.body.isNotBlank()) {
+            Text(
+                a.body,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f),
+            )
+        } else {
+            Spacer(Modifier.weight(1f))
+        }
         IconButton(onClick = onDelete) {
             Icon(Icons.Default.Delete, contentDescription = "Delete annotation")
         }
