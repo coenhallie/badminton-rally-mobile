@@ -1,84 +1,177 @@
 package com.badmintontracker.android.signin
 
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Button
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.badmintontracker.android.data.ThemeMode
+import com.badmintontracker.android.data.ThemePreferenceRepository
+import com.badmintontracker.android.ui.components.DividerWithText
+import com.badmintontracker.android.ui.components.ErrorBanner
+import com.badmintontracker.android.ui.components.ShuttlButton
+import com.badmintontracker.android.ui.components.ShuttlButtonVariant
+import com.badmintontracker.android.ui.components.ShuttlCard
+import com.badmintontracker.android.ui.components.ShuttlFieldType
+import com.badmintontracker.android.ui.components.ShuttlOutlinedTextField
+import com.badmintontracker.android.ui.components.ThemeToggleButton
+import com.badmintontracker.android.ui.theme.ShuttlTheme
 
 @Composable
 fun SignInScreen(
-    vm: SignInViewModel,
-    onSignedIn: () -> Unit,
+    vm:          SignInViewModel,
+    themePrefs:  ThemePreferenceRepository,
+    onSignedIn:  () -> Unit,
 ) {
-    val state by vm.state.collectAsStateWithLifecycle()
+    val state     by vm.state.collectAsStateWithLifecycle()
+    val themeMode by themePrefs.mode.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) {
         vm.events.collect { if (it is SignInEvent.SignedIn) onSignedIn() }
     }
 
-    Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(horizontal = 16.dp, vertical = 32.dp),
     ) {
-        Text("Rally Clips", style = MaterialTheme.typography.headlineLarge)
-        Spacer(Modifier.height(32.dp))
-
-        OutlinedTextField(
-            value = state.email,
-            onValueChange = vm::onEmailChange,
-            label = { Text("Email") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-            modifier = Modifier.fillMaxWidth(),
+        ThemeToggleButton(
+            mode     = themeMode,
+            onToggle = {
+                themePrefs.set(if (themeMode == ThemeMode.LIGHT) ThemeMode.DARK else ThemeMode.LIGHT)
+            },
+            modifier = Modifier.align(Alignment.TopEnd),
         )
-        Spacer(Modifier.height(12.dp))
-        OutlinedTextField(
-            value = state.password,
-            onValueChange = vm::onPasswordChange,
-            label = { Text("Password") },
-            singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(Modifier.height(20.dp))
 
-        Button(
-            onClick = vm::submitEmail,
-            enabled = !state.isSubmitting,
-            modifier = Modifier.fillMaxWidth(),
+        Column(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .widthIn(max = 400.dp)
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text(if (state.isSubmitting) "Signing in…" else "Sign in")
-        }
-        Spacer(Modifier.height(8.dp))
-        OutlinedButton(
-            onClick = vm::submitGoogle,
-            enabled = !state.isSubmitting,
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text("Continue with Google") }
+            Brand()
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Sign in to continue",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Spacer(Modifier.height(24.dp))
 
-        if (state.error != null) {
-            Spacer(Modifier.height(16.dp))
-            Text(state.error!!, color = MaterialTheme.colorScheme.error)
+            ShuttlCard(modifier = Modifier.fillMaxWidth()) {
+                Column {
+                    ShuttlOutlinedTextField(
+                        value         = state.email,
+                        onValueChange = vm::onEmailChange,
+                        label         = "Email",
+                        type          = ShuttlFieldType.Email,
+                        enabled       = !state.isSubmitting,
+                        modifier      = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    ShuttlOutlinedTextField(
+                        value         = state.password,
+                        onValueChange = vm::onPasswordChange,
+                        label         = "Password",
+                        type          = ShuttlFieldType.Password,
+                        enabled       = !state.isSubmitting,
+                        modifier      = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    ShuttlButton(
+                        text     = if (state.isSubmitting) "Signing in…" else "Sign in",
+                        onClick  = vm::submitEmail,
+                        enabled  = !state.isSubmitting,
+                        loading  = state.isSubmitting,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+
+                    if (state.error != null) {
+                        Spacer(Modifier.height(16.dp))
+                        ErrorBanner(state.error!!)
+                    }
+
+                    DividerWithText("or")
+
+                    ShuttlButton(
+                        text     = "Continue with Google",
+                        onClick  = vm::submitGoogle,
+                        variant  = ShuttlButtonVariant.Secondary,
+                        enabled  = !state.isSubmitting,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(24.dp))
+            Text(
+                text  = "Registration is closed. Contact the admin if you need an account.",
+                color = ShuttlTheme.extended.textTertiary,
+                style = MaterialTheme.typography.bodySmall,
+                textAlign = TextAlign.Center,
+                modifier  = Modifier.widthIn(max = 320.dp),
+            )
         }
+    }
+}
+
+@Composable
+private fun Brand() {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            "SHUTTL.",
+            color         = MaterialTheme.colorScheme.onBackground,
+            fontWeight    = FontWeight.Bold,
+            fontSize      = 24.sp,
+            letterSpacing = (-0.24).sp,
+        )
+        Spacer(Modifier.padding(start = 8.dp))
+        AlphaBadge()
+    }
+}
+
+@Composable
+private fun AlphaBadge() {
+    val gradient = Brush.linearGradient(
+        colors = listOf(
+            MaterialTheme.colorScheme.primary,
+            ShuttlTheme.extended.accentDark,
+        ),
+    )
+    Box(
+        modifier = Modifier
+            .background(gradient)
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+    ) {
+        Text(
+            text          = "ALPHA V1.9",
+            color         = Color.Black,
+            fontWeight    = FontWeight.SemiBold,
+            fontSize      = 9.sp,
+            letterSpacing = 0.5.sp,
+        )
     }
 }

@@ -59,6 +59,7 @@ fun AuthGate(rally: RallyApp, themePrefs: ThemePreferenceRepository) {
                     )
                     SignInScreen(
                         vm = signInVm,
+                        themePrefs = themePrefs,
                         onSignedIn = {
                             nav.navigate(Route.ClipList) {
                                 popUpTo(Route.SignIn) { inclusive = true }
