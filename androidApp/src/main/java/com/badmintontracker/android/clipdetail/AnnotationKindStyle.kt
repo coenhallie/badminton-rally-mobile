@@ -20,7 +20,7 @@ internal fun AnnotationKind.style(): AnnotationKindStyle = when (this) {
     AnnotationKind.FORCED_ERROR   -> AnnotationKindStyle(
         label = "Forced error",
         container = Color(0xFFB26A00),
-        onContainer = Color.White,
+        onContainer = Color.Black,
     )
     AnnotationKind.UNFORCED_ERROR -> AnnotationKindStyle(
         label = "Unforced error",
