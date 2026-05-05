@@ -10,5 +10,6 @@ data class RallyAnnotation(
     @SerialName("clip_id")             val clipId: String,
     @SerialName("timestamp_seconds")   val timestampSeconds: Float,
     val body: String,
+    val kind: AnnotationKind? = null,
     @SerialName("created_at")          val createdAt: Instant,
 )
