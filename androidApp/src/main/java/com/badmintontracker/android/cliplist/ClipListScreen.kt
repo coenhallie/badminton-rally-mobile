@@ -191,7 +191,7 @@ internal fun ClipRow(
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                clip.title ?: "Rally #${clip.rallyIndex + 1}",
+                clip.title ?: "Rally #${clip.rallyIndex}",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onBackground,
             )

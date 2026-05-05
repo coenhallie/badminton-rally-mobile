@@ -101,7 +101,7 @@ fun ClipDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(state.clip?.title ?: state.clip?.let { "Rally #${it.rallyIndex + 1}" } ?: "") },
+                title = { Text(state.clip?.title ?: state.clip?.let { "Rally #${it.rallyIndex}" } ?: "") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
