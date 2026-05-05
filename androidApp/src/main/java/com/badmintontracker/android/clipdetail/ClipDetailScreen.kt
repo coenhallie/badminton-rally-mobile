@@ -269,12 +269,25 @@ fun ClipDetailScreen(
     }
 }
 
+private fun formatTimestamp(seconds: Float): String {
+    val total = seconds.toInt().coerceAtLeast(0)
+    val m = total / 60
+    val s = total % 60
+    return "%d:%02d".format(m, s)
+}
+
 @Composable
 private fun AnnotationRow(a: RallyAnnotation, onClick: () -> Unit, onDelete: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        Text(
+            formatTimestamp(a.timestampSeconds),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.width(12.dp))
         a.kind?.let { kind ->
             val s = kind.style()
             Surface(
