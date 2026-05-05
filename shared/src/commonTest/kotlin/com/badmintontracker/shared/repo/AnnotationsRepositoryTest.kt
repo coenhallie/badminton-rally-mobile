@@ -1,5 +1,6 @@
 package com.badmintontracker.shared.repo
 
+import com.badmintontracker.shared.model.AnnotationKind
 import com.badmintontracker.shared.testing.TestSupabase
 import com.badmintontracker.shared.testing.jsonResponse
 import io.kotest.matchers.collections.shouldHaveSize
@@ -52,12 +53,32 @@ class AnnotationsRepositoryTest {
         }
         val repo = AnnotationsRepositoryImpl(client)
 
-        val result = repo.add("c1", 1.5f, "hi")
+        val result = repo.add("c1", 1.5f, "hi", null)
 
         result.isSuccess shouldBe true
         result.getOrThrow().body shouldBe "hi"
         captured!!.first shouldBe "POST"
         captured!!.second.shouldContain(""""body":"hi"""")
+    }
+
+    @Test
+    fun add_includes_kind_in_post_body_when_provided() = runTest {
+        var captured: String? = null
+        val client = TestSupabase.client { request ->
+            captured = (request.body as? TextContent)?.text ?: ""
+            jsonResponse(
+                """[{"id":"a1","clip_id":"c1","timestamp_seconds":1.5,"body":"",
+                    "kind":"unforced_error","created_at":"2026-05-04T12:00:00Z"}]""",
+                HttpStatusCode.Created,
+            )
+        }
+        val repo = AnnotationsRepositoryImpl(client)
+
+        val result = repo.add("c1", 1.5f, "", AnnotationKind.UNFORCED_ERROR)
+
+        result.isSuccess shouldBe true
+        result.getOrThrow().kind shouldBe AnnotationKind.UNFORCED_ERROR
+        captured!!.shouldContain(""""kind":"unforced_error"""")
     }
 
     @Test

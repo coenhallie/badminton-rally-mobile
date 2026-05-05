@@ -1,5 +1,6 @@
 package com.badmintontracker.shared.repo
 
+import com.badmintontracker.shared.model.AnnotationKind
 import com.badmintontracker.shared.model.RallyAnnotation
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.postgrest
@@ -9,7 +10,12 @@ import kotlinx.serialization.Serializable
 
 interface AnnotationsRepository {
     suspend fun list(clipId: String): List<RallyAnnotation>
-    suspend fun add(clipId: String, timestampSeconds: Float, body: String): Result<RallyAnnotation>
+    suspend fun add(
+        clipId: String,
+        timestampSeconds: Float,
+        body: String,
+        kind: AnnotationKind?,
+    ): Result<RallyAnnotation>
     suspend fun delete(id: String): Result<Unit>
 }
 
@@ -20,6 +26,7 @@ class AnnotationsRepositoryImpl(private val client: SupabaseClient) : Annotation
         @SerialName("clip_id")           val clipId: String,
         @SerialName("timestamp_seconds") val timestampSeconds: Float,
         val body: String,
+        val kind: AnnotationKind? = null,
     )
 
     override suspend fun list(clipId: String): List<RallyAnnotation> =
@@ -31,11 +38,14 @@ class AnnotationsRepositoryImpl(private val client: SupabaseClient) : Annotation
             .decodeList()
 
     override suspend fun add(
-        clipId: String, timestampSeconds: Float, body: String,
+        clipId: String,
+        timestampSeconds: Float,
+        body: String,
+        kind: AnnotationKind?,
     ): Result<RallyAnnotation> = runCatching {
         // owner_id is filled server-side via the column's `default auth.uid()`.
         client.postgrest.from("rally_annotations")
-            .insert(NewAnnotationRow(clipId, timestampSeconds, body)) { select() }
+            .insert(NewAnnotationRow(clipId, timestampSeconds, body, kind)) { select() }
             .decodeSingle<RallyAnnotation>()
     }
 
