@@ -17,23 +17,27 @@ data class MatchSummary(
     val rallyCount: Int,
     val latestCreatedAt: Instant,
     val coverClip: RallyClip,
+    val isOwned: Boolean,
 )
 
 data class ClipListState(
     val clips: List<RallyClip> = emptyList(),
-    val matches: List<MatchSummary> = emptyList(),
+    val ownedMatches: List<MatchSummary> = emptyList(),
+    val sharedMatches: List<MatchSummary> = emptyList(),
     val isRefreshing: Boolean = false,
     val error: String? = null,
 )
 
-private fun List<RallyClip>.toMatches(): List<MatchSummary> =
+private fun List<RallyClip>.toMatches(currentUserId: String?): List<MatchSummary> =
     groupBy { it.videoId }
         .map { (videoId, list) ->
+            val cover = list.minByOrNull { it.rallyIndex } ?: list.first()
             MatchSummary(
                 videoId = videoId,
                 rallyCount = list.size,
                 latestCreatedAt = list.maxOf { it.createdAt },
-                coverClip = list.minByOrNull { it.rallyIndex } ?: list.first(),
+                coverClip = cover,
+                isOwned = currentUserId != null && cover.ownerId == currentUserId,
             )
         }
         .sortedByDescending { it.latestCreatedAt }
@@ -46,7 +50,15 @@ class ClipListViewModel(
     private val errors     = MutableStateFlow<String?>(null)
 
     val state = combine(clips.observeClips(), refreshing, errors) { list, r, e ->
-        ClipListState(clips = list, matches = list.toMatches(), isRefreshing = r, error = e)
+        val matches = list.toMatches(auth.currentUserId())
+        val (owned, shared) = matches.partition { it.isOwned }
+        ClipListState(
+            clips = list,
+            ownedMatches = owned,
+            sharedMatches = shared,
+            isRefreshing = r,
+            error = e,
+        )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ClipListState())
 
     init { refresh() }

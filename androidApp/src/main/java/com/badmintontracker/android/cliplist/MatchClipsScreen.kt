@@ -52,7 +52,7 @@ fun MatchClipsScreen(
         vm.dismissError()
     }
 
-    val match = state.matches.firstOrNull { it.videoId == videoId }
+    val match = (state.ownedMatches + state.sharedMatches).firstOrNull { it.videoId == videoId }
     val clipsForMatch = state.clips
         .filter { it.videoId == videoId }
         .sortedBy { it.rallyIndex }

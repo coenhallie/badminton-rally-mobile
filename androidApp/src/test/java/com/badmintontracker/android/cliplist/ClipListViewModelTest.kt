@@ -31,6 +31,11 @@ class ClipListViewModelTest {
         createdAt = Instant.parse("2026-05-04T12:00:00Z"),
     )
 
+    private fun ownedClip(id: String, videoId: String) =
+        clip(id).copy(videoId = videoId, ownerId = "user-self")
+    private fun sharedClip(id: String, videoId: String) =
+        clip(id).copy(videoId = videoId, ownerId = "user-other")
+
     @Test
     fun init_triggers_refresh() = runTest {
         val clips = FakeClipsRepository()
@@ -47,6 +52,28 @@ class ClipListViewModelTest {
             var s = awaitItem()
             while (s.clips.isEmpty()) s = awaitItem()
             s.clips.map { it.id } shouldBe listOf("a", "b")
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun state_partitions_owned_and_shared_matches() = runTest {
+        val clips = FakeClipsRepository().apply {
+            this.clips.value = listOf(
+                ownedClip("a", "v-own"),
+                sharedClip("b", "v-shared"),
+                sharedClip("c", "v-shared"),
+            )
+        }
+        val auth = FakeAuthRepository().apply { currentUserIdValue = "user-self" }
+        val vm = ClipListViewModel(clips, auth)
+        vm.state.test {
+            var s = awaitItem()
+            while (s.ownedMatches.isEmpty() && s.sharedMatches.isEmpty()) s = awaitItem()
+            s.ownedMatches.map { it.videoId } shouldBe listOf("v-own")
+            s.sharedMatches.map { it.videoId } shouldBe listOf("v-shared")
+            s.ownedMatches.first().isOwned shouldBe true
+            s.sharedMatches.first().isOwned shouldBe false
             cancelAndIgnoreRemainingEvents()
         }
     }
