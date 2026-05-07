@@ -8,6 +8,7 @@ import kotlinx.serialization.Serializable
 data class RallyClip(
     val id: String,
     @SerialName("video_id")               val videoId: String,
+    @SerialName("owner_id")               val ownerId: String,
     @SerialName("rally_index")            val rallyIndex: Int,
     @SerialName("start_timestamp")        val startTimestamp: Float,
     @SerialName("end_timestamp")          val endTimestamp: Float,

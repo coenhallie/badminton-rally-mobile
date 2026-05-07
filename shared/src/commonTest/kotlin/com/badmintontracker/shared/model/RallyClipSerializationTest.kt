@@ -15,6 +15,7 @@ class RallyClipSerializationTest {
             {
               "id": "11111111-1111-1111-1111-111111111111",
               "video_id": "22222222-2222-2222-2222-222222222222",
+              "owner_id": "33333333-3333-3333-3333-333333333333",
               "rally_index": 7,
               "start_timestamp": 12.5,
               "end_timestamp": 18.25,
@@ -30,6 +31,7 @@ class RallyClipSerializationTest {
         val clip = json.decodeFromString(RallyClip.serializer(), payload)
 
         clip.id shouldBe "11111111-1111-1111-1111-111111111111"
+        clip.ownerId shouldBe "33333333-3333-3333-3333-333333333333"
         clip.rallyIndex shouldBe 7
         clip.startTimestamp shouldBe 12.5f
         clip.thumbnailStoragePath shouldBe "uid/video/clip-7.jpg"
@@ -44,6 +46,7 @@ class RallyClipSerializationTest {
             {
               "id": "11111111-1111-1111-1111-111111111111",
               "video_id": "22222222-2222-2222-2222-222222222222",
+              "owner_id": "33333333-3333-3333-3333-333333333333",
               "rally_index": 0,
               "start_timestamp": 0.0,
               "end_timestamp": 1.0,

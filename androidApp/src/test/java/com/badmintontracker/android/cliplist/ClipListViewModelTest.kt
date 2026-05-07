@@ -24,7 +24,7 @@ class ClipListViewModelTest {
     @AfterTest  fun resetMain() = Dispatchers.resetMain()
 
     private fun clip(id: String) = RallyClip(
-        id = id, videoId = "v", rallyIndex = 0,
+        id = id, videoId = "v", ownerId = "user-self", rallyIndex = 0,
         startTimestamp = 0f, endTimestamp = 1f, durationSeconds = 1f,
         clipStoragePath = "p/$id.mp4", thumbnailStoragePath = null,
         title = null, annotationCount = 0,

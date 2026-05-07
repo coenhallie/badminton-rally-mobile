@@ -16,7 +16,7 @@ class MediaRepositoryTest {
         clipPath: String = "uid/video/clip-7.mp4",
         thumbPath: String? = "uid/video/clip-7.jpg",
     ) = RallyClip(
-        id = "c1", videoId = "v1", rallyIndex = 7,
+        id = "c1", videoId = "v1", ownerId = "u1", rallyIndex = 7,
         startTimestamp = 0f, endTimestamp = 1f, durationSeconds = 1f,
         clipStoragePath = clipPath, thumbnailStoragePath = thumbPath,
         title = null, annotationCount = 0,

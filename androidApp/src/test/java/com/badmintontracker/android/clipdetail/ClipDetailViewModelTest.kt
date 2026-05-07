@@ -28,7 +28,7 @@ class ClipDetailViewModelTest {
     @AfterTest  fun resetMain() = Dispatchers.resetMain()
 
     private val sampleClip = RallyClip(
-        id = "c1", videoId = "v", rallyIndex = 0,
+        id = "c1", videoId = "v", ownerId = "user-self", rallyIndex = 0,
         startTimestamp = 0f, endTimestamp = 1f, durationSeconds = 1f,
         clipStoragePath = "p/c1.mp4", thumbnailStoragePath = null,
         title = null, annotationCount = 1,
