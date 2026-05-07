@@ -199,7 +199,7 @@ fun ClipDetailScreen(
             }
         },
         floatingActionButton = {
-            if (!isFullscreen && state.clip != null) {
+            if (!isFullscreen && state.clip != null && state.isOwner) {
                 FloatingActionButton(onClick = {
                     val ms = player.currentPosition.coerceAtLeast(0L)
                     addDialog = ms / 1000f
@@ -225,7 +225,7 @@ fun ClipDetailScreen(
                         AnnotationRow(
                             a = a,
                             onClick = { vm.onAnnotationTap(a) },
-                            onDelete = { pendingDelete = a },
+                            onDelete = if (state.isOwner) ({ pendingDelete = a }) else null,
                         )
                         HorizontalDivider()
                     }
@@ -280,7 +280,7 @@ private fun formatTimestamp(seconds: Float): String {
 }
 
 @Composable
-private fun AnnotationRow(a: RallyAnnotation, onClick: () -> Unit, onDelete: () -> Unit) {
+private fun AnnotationRow(a: RallyAnnotation, onClick: () -> Unit, onDelete: (() -> Unit)?) {
     Row(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -315,8 +315,10 @@ private fun AnnotationRow(a: RallyAnnotation, onClick: () -> Unit, onDelete: () 
         } else {
             Spacer(Modifier.weight(1f))
         }
-        IconButton(onClick = onDelete) {
-            Icon(Icons.Default.Delete, contentDescription = "Delete annotation")
+        if (onDelete != null) {
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Default.Delete, contentDescription = "Delete annotation")
+            }
         }
     }
 }
