@@ -101,7 +101,7 @@ fun AuthGate(rally: RallyApp, themePrefs: ThemePreferenceRepository) {
                     val vm: ClipDetailViewModel = viewModel(
                         factory = viewModelFactory {
                             initializer {
-                                ClipDetailViewModel(args.clipId, rally.clips, rally.annotations, rally.media)
+                                ClipDetailViewModel(args.clipId, rally.clips, rally.annotations, rally.media, rally.auth)
                             }
                         }
                     )

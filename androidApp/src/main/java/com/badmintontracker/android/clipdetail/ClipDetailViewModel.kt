@@ -6,6 +6,7 @@ import com.badmintontracker.shared.model.AnnotationKind
 import com.badmintontracker.shared.model.RallyAnnotation
 import com.badmintontracker.shared.model.RallyClip
 import com.badmintontracker.shared.repo.AnnotationsRepository
+import com.badmintontracker.shared.repo.AuthRepository
 import com.badmintontracker.shared.repo.ClipsRepository
 import com.badmintontracker.shared.repo.MediaRepository
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -20,6 +21,7 @@ data class ClipDetailState(
     val signedClipUrl: String? = null,
     val error: String? = null,
     val actionError: String? = null,
+    val isOwner: Boolean = false,
 )
 
 class ClipDetailViewModel(
@@ -27,6 +29,7 @@ class ClipDetailViewModel(
     private val clips: ClipsRepository,
     private val annotations: AnnotationsRepository,
     private val media: MediaRepository,
+    private val auth: AuthRepository,
 ) : ViewModel() {
 
     val state  = MutableStateFlow(ClipDetailState())
@@ -55,7 +58,15 @@ class ClipDetailViewModel(
                 state.update { it.copy(error = e.message ?: "Couldn't sign clip URL") }
                 null
             }
-            state.update { it.copy(clip = clip, annotations = ann, signedClipUrl = url) }
+            val isOwner = clip.ownerId == auth.currentUserId()
+            state.update {
+                it.copy(
+                    clip = clip,
+                    annotations = ann,
+                    signedClipUrl = url,
+                    isOwner = isOwner,
+                )
+            }
         }
     }
 
@@ -78,6 +89,7 @@ class ClipDetailViewModel(
     }
 
     fun addAnnotation(timestampSeconds: Float, body: String, kind: AnnotationKind?) {
+        if (!state.value.isOwner) return
         val trimmed = body.trim()
         if (trimmed.isEmpty() && kind == null) return
         val ts = timestampSeconds.coerceAtLeast(0f)
@@ -98,6 +110,7 @@ class ClipDetailViewModel(
     }
 
     fun deleteAnnotation(id: String) {
+        if (!state.value.isOwner) return
         viewModelScope.launch {
             annotations.delete(id)
                 .onSuccess {

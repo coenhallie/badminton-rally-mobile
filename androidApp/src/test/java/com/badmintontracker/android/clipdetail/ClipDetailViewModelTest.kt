@@ -3,6 +3,7 @@ package com.badmintontracker.android.clipdetail
 import app.cash.turbine.test
 import com.badmintontracker.android.testing.FakeAnnotationsRepository
 import com.badmintontracker.android.testing.FakeAnnotationsRepository.AddCall
+import com.badmintontracker.android.testing.FakeAuthRepository
 import com.badmintontracker.android.testing.FakeClipsRepository
 import com.badmintontracker.android.testing.FakeMediaRepository
 import com.badmintontracker.shared.model.AnnotationKind
@@ -40,19 +41,21 @@ class ClipDetailViewModelTest {
         val media: FakeMediaRepository,
         val clips: FakeClipsRepository,
         val annotations: FakeAnnotationsRepository,
+        val auth: FakeAuthRepository,
     )
 
     private fun setup(
         clipsList: List<RallyClip> = listOf(sampleClip),
         annotations: List<RallyAnnotation> = emptyList(),
         media: FakeMediaRepository = FakeMediaRepository(),
+        auth: FakeAuthRepository = FakeAuthRepository().apply { currentUserIdValue = "user-self" },
     ): Setup {
         val clips = FakeClipsRepository().apply { this.clips.value = clipsList }
         val ann = FakeAnnotationsRepository().apply {
             byClipId = mapOf("c1" to annotations)
         }
-        val vm = ClipDetailViewModel("c1", clips, ann, media)
-        return Setup(vm, media, clips, ann)
+        val vm = ClipDetailViewModel("c1", clips, ann, media, auth)
+        return Setup(vm, media, clips, ann, auth)
     }
 
     @Test
@@ -205,5 +208,48 @@ class ClipDetailViewModelTest {
 
         vm.state.value.annotations.map { it.id } shouldBe listOf("a1")
         vm.state.value.actionError shouldBe "nope"
+    }
+
+    @Test
+    fun isOwner_true_when_current_user_matches_clip_owner() = runTest {
+        val (vm) = setup(
+            auth = FakeAuthRepository().apply { currentUserIdValue = "user-self" },
+        )
+        advanceUntilIdle()
+        vm.state.value.isOwner shouldBe true
+    }
+
+    @Test
+    fun isOwner_false_when_current_user_differs_from_clip_owner() = runTest {
+        val (vm) = setup(
+            auth = FakeAuthRepository().apply { currentUserIdValue = "user-other" },
+        )
+        advanceUntilIdle()
+        vm.state.value.isOwner shouldBe false
+    }
+
+    @Test
+    fun addAnnotation_ignored_when_not_owner() = runTest {
+        val (vm, _, _, ann) = setup(
+            auth = FakeAuthRepository().apply { currentUserIdValue = "user-other" },
+        )
+        advanceUntilIdle()
+        vm.addAnnotation(timestampSeconds = 1f, body = "x", kind = null)
+        advanceUntilIdle()
+        ann.addCalls.size shouldBe 0
+    }
+
+    @Test
+    fun deleteAnnotation_ignored_when_not_owner() = runTest {
+        val a1 = RallyAnnotation("a1", "c1", 1f, "one", createdAt = Instant.parse("2026-05-04T12:00:00Z"))
+        val (vm, _, _, ann) = setup(
+            annotations = listOf(a1),
+            auth = FakeAuthRepository().apply { currentUserIdValue = "user-other" },
+        )
+        advanceUntilIdle()
+        vm.deleteAnnotation("a1")
+        advanceUntilIdle()
+        ann.deleteCalls.size shouldBe 0
+        vm.state.value.annotations.map { it.id } shouldBe listOf("a1")
     }
 }
