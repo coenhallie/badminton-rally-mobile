@@ -31,16 +31,9 @@ create policy "shares: select own or received"
 -- 2. Extend SELECT policies on rally_clips and rally_annotations
 ------------------------------------------------------------------
 
--- Existing owner-only SELECT policies were created via Supabase Studio and
--- their exact names are unknown; drop a list of likely names defensively.
--- If `db push` errors with "policy already exists" on rally_clips/rally_annotations,
--- add the existing policy name to the drop list and re-run.
-drop policy if exists "clips: select own"             on public.rally_clips;
-drop policy if exists "rally_clips_select_own"        on public.rally_clips;
-drop policy if exists "Enable read access for owner"  on public.rally_clips;
-drop policy if exists "Enable read access for users based on user_id"
-                                                      on public.rally_clips;
-drop policy if exists "Users can view own clips"      on public.rally_clips;
+-- Replace the existing owner-only SELECT policy with the owner-or-shared one.
+-- The owner-only INSERT/UPDATE/DELETE policies on rally_clips remain untouched.
+drop policy if exists "clips_owner_select"            on public.rally_clips;
 drop policy if exists "clips: select own or shared"   on public.rally_clips;
 
 create policy "clips: select own or shared"
@@ -54,12 +47,10 @@ create policy "clips: select own or shared"
         )
     );
 
-drop policy if exists "annotations: select own"             on public.rally_annotations;
-drop policy if exists "rally_annotations_select_own"        on public.rally_annotations;
-drop policy if exists "Enable read access for owner"        on public.rally_annotations;
-drop policy if exists "Enable read access for users based on user_id"
-                                                            on public.rally_annotations;
-drop policy if exists "Users can view own annotations"      on public.rally_annotations;
+-- Replace the existing owner-only SELECT policy with the owner-or-shared one.
+-- The annotations_owner_insert/update/delete policies remain untouched, so only
+-- the match owner can write — shared recipients are read-only.
+drop policy if exists "annotations_owner_select"            on public.rally_annotations;
 drop policy if exists "annotations: select own or shared"   on public.rally_annotations;
 
 create policy "annotations: select own or shared"
