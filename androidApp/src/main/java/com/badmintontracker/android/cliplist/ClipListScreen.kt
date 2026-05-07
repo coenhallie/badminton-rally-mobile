@@ -102,20 +102,40 @@ fun ClipListScreen(
             onRefresh = vm::refresh,
             modifier = Modifier.padding(padding).fillMaxSize(),
         ) {
-            if (state.matches.isEmpty() && !state.isRefreshing) {
+            if (state.ownedMatches.isEmpty() && state.sharedMatches.isEmpty() && !state.isRefreshing) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text("No matches yet. Record one in the desktop app.")
                 }
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(state.matches, key = { it.videoId }) { match ->
-                        MatchRow(match, media, onClick = { onMatchClick(match) })
-                        HorizontalDivider()
+                    if (state.ownedMatches.isNotEmpty()) {
+                        item(key = "header-owned") { SectionHeader("My matches") }
+                        items(state.ownedMatches, key = { "owned-${it.videoId}" }) { match ->
+                            MatchRow(match, media, onClick = { onMatchClick(match) })
+                            HorizontalDivider()
+                        }
+                    }
+                    if (state.sharedMatches.isNotEmpty()) {
+                        item(key = "header-shared") { SectionHeader("Shared with me") }
+                        items(state.sharedMatches, key = { "shared-${it.videoId}" }) { match ->
+                            MatchRow(match, media, onClick = { onMatchClick(match) })
+                            HorizontalDivider()
+                        }
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun SectionHeader(text: String) {
+    Text(
+        text = text.uppercase(Locale.ROOT),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+    )
 }
 
 @Composable
