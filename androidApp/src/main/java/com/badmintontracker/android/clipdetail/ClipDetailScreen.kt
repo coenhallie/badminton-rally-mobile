@@ -71,6 +71,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.ui.PlayerView
 import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlButtonVariant
@@ -88,7 +89,11 @@ fun ClipDetailScreen(
     val ctx = LocalContext.current
     val activity = ctx as? Activity
     val orientation = LocalConfiguration.current.orientation
-    val player = remember { ExoPlayer.Builder(ctx).build() }
+    val player = remember {
+        ExoPlayer.Builder(ctx).build().apply {
+            setSeekParameters(SeekParameters.EXACT)
+        }
+    }
     val snackbar = remember { SnackbarHostState() }
     var addDialog by remember { mutableStateOf<Float?>(null) }
     var pendingDelete by remember { mutableStateOf<RallyAnnotation?>(null) }
@@ -213,6 +218,12 @@ fun ClipDetailScreen(
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
             if (!isFullscreen) {
                 playerSurface(Modifier.fillMaxWidth().aspectRatio(16f / 9f))
+                FrameStepBar(
+                    player = player,
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .padding(vertical = 8.dp),
+                )
             }
 
             if (state.annotations.isEmpty()) {
@@ -241,6 +252,13 @@ fun ClipDetailScreen(
                 .background(Color.Black),
         ) {
             playerSurface(Modifier.fillMaxSize())
+            FrameStepBar(
+                player = player,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 24.dp),
+                backgroundColor = Color.Black.copy(alpha = 0.4f),
+            )
         }
     }
 
