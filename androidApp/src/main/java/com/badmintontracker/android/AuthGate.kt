@@ -76,6 +76,7 @@ fun AuthGate(rally: RallyApp, themePrefs: ThemePreferenceRepository) {
                     ClipListScreen(
                         vm = clipListVm,
                         media = rally.media,
+                        shares = rally.shares,
                         themePrefs = themePrefs,
                         onMatchClick = { nav.navigate(Route.MatchClips(it.videoId)) },
                     )

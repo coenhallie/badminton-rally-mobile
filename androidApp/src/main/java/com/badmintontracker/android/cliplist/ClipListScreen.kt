@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -41,9 +42,11 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.badmintontracker.android.data.ThemePreferenceRepository
+import com.badmintontracker.android.share.ShareSheet
 import com.badmintontracker.android.ui.components.ThemeToggleButton
 import com.badmintontracker.shared.model.RallyClip
 import com.badmintontracker.shared.repo.MediaRepository
+import com.badmintontracker.shared.repo.SharesRepository
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -54,12 +57,14 @@ import java.util.Locale
 fun ClipListScreen(
     vm: ClipListViewModel,
     media: MediaRepository,
+    shares: SharesRepository,
     themePrefs: ThemePreferenceRepository,
     onMatchClick: (MatchSummary) -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val themeMode by themePrefs.mode.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    var sheetVideoId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(state.error) {
         val err = state.error ?: return@LaunchedEffect
@@ -111,20 +116,38 @@ fun ClipListScreen(
                     if (state.ownedMatches.isNotEmpty()) {
                         item(key = "header-owned") { SectionHeader("My matches") }
                         items(state.ownedMatches, key = { "owned-${it.videoId}" }) { match ->
-                            MatchRow(match, media, onClick = { onMatchClick(match) })
+                            MatchRow(
+                                match = match,
+                                media = media,
+                                onClick = { onMatchClick(match) },
+                                onShareClick = { sheetVideoId = match.videoId },
+                            )
                             HorizontalDivider()
                         }
                     }
                     if (state.sharedMatches.isNotEmpty()) {
                         item(key = "header-shared") { SectionHeader("Shared with me") }
                         items(state.sharedMatches, key = { "shared-${it.videoId}" }) { match ->
-                            MatchRow(match, media, onClick = { onMatchClick(match) })
+                            MatchRow(
+                                match = match,
+                                media = media,
+                                onClick = { onMatchClick(match) },
+                                onShareClick = null,
+                            )
                             HorizontalDivider()
                         }
                     }
                 }
             }
         }
+    }
+
+    sheetVideoId?.let { vid ->
+        ShareSheet(
+            videoId = vid,
+            sharesRepository = shares,
+            onDismiss = { sheetVideoId = null },
+        )
     }
 }
 
@@ -143,6 +166,7 @@ private fun MatchRow(
     match: MatchSummary,
     media: MediaRepository,
     onClick: () -> Unit,
+    onShareClick: (() -> Unit)?,
 ) {
     val thumbUrl by produceState<String?>(initialValue = null, match.videoId) {
         value = runCatching { media.signedThumbnailUrl(match.coverClip) }.getOrNull()
@@ -172,6 +196,11 @@ private fun MatchRow(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+        if (onShareClick != null) {
+            IconButton(onClick = onShareClick) {
+                Icon(Icons.Default.Share, contentDescription = "Share match")
+            }
         }
     }
 }
