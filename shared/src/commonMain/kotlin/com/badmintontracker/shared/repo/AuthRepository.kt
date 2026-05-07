@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.Flow
 
 interface AuthRepository {
     val sessionFlow: Flow<SessionStatus>
+    fun currentUserId(): String?
     suspend fun signInEmail(email: String, password: String): Result<Unit>
     suspend fun signInWithGoogle(): Result<Unit>
     suspend fun signOut(): Result<Unit>
@@ -17,6 +18,8 @@ interface AuthRepository {
 class AuthRepositoryImpl(private val client: SupabaseClient) : AuthRepository {
 
     override val sessionFlow: Flow<SessionStatus> = client.auth.sessionStatus
+
+    override fun currentUserId(): String? = client.auth.currentUserOrNull()?.id
 
     override suspend fun signInEmail(email: String, password: String): Result<Unit> =
         runCatching {

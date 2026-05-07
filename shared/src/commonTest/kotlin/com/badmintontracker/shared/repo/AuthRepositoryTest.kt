@@ -28,6 +28,13 @@ class AuthRepositoryTest {
     }
 
     @Test
+    fun currentUserId_returns_null_when_not_signed_in() = runTest {
+        val client = TestSupabase.client { _ -> respond("", HttpStatusCode.OK) }
+        val repo = AuthRepositoryImpl(client)
+        repo.currentUserId() shouldBe null
+    }
+
+    @Test
     fun signInEmail_calls_token_grant_endpoint() = runTest {
         val tokenResponse = """
             {
