@@ -90,6 +90,7 @@ fun AuthGate(rally: RallyApp, themePrefs: ThemePreferenceRepository) {
                     MatchClipsScreen(
                         vm = clipListVm,
                         media = rally.media,
+                        shares = rally.shares,
                         videoId = args.videoId,
                         themePrefs = themePrefs,
                         onBack = { nav.popBackStack() },
