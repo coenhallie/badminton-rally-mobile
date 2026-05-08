@@ -220,9 +220,7 @@ fun ClipDetailScreen(
                 playerSurface(Modifier.fillMaxWidth().aspectRatio(16f / 9f))
                 FrameStepBar(
                     player = player,
-                    modifier = Modifier
-                        .align(Alignment.CenterHorizontally)
-                        .padding(vertical = 8.dp),
+                    modifier = Modifier.padding(vertical = 8.dp),
                 )
             }
 
@@ -257,7 +255,6 @@ fun ClipDetailScreen(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 24.dp),
-                backgroundColor = Color.Black.copy(alpha = 0.4f),
             )
         }
     }
