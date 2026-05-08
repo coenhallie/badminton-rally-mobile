@@ -160,7 +160,8 @@ fun ClipDetailScreen(
                         this.player = player
                         setFullscreenButtonClickListener { isFullscreen = !isFullscreen }
                         controllerShowTimeoutMs = 1500
-                        controllerAutoShow = true
+                        controllerAutoShow = false
+                        hideController()
                     }
                 },
                 update = { it.setFullscreenButtonState(isFullscreen) },
