@@ -92,7 +92,8 @@ In `androidApp/src/main/java/com/badmintontracker/android/cliplist/ClipListViewM
 
 - Inject `SharesRepository` (already used by `ShareSheetViewModel`; constructor wiring will follow the same DI pattern).
 - Add `val sharerEmail: String? = null` to `MatchSummary`. Owned rows leave it null.
-- In the flow that builds `MatchSummary` (around line 40), in parallel with the clips fetch, call `sharesRepo.listReceived()` once per refresh and build a `Map<String, String>` keyed by `videoId`. Look up `sharerEmail` for each shared `MatchSummary`. Owned summaries skip the lookup.
+- Cache a `sharerByVideoId: Map<String, String>` in the view model. Refresh it on each `refresh()` call by invoking `sharesRepo.listReceived()` in parallel with `clipsRepo.refresh()`. The Flow that builds `MatchSummary` (around line 40) reads from this cached map, so subsequent `observeClips()` emissions reuse it without re-fetching shares.
+- In the `MatchSummary` builder, look up `sharerEmail` for each shared row from the cached map. Owned summaries skip the lookup (`sharerEmail = null`).
 - If `listReceived()` fails, log and proceed with `sharerEmail = null` for all rows. The label is a soft enhancement — the row must still render. The existing error-surfacing for clip-load failure is unchanged; share-lookup failure does not propagate to the screen-level error state.
 
 ### 4. UI — `ClipListScreen`
