@@ -3,6 +3,7 @@ package com.badmintontracker.android.clipdetail
 import android.app.Activity
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
+import android.view.LayoutInflater
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -73,6 +74,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.ui.PlayerView
+import com.badmintontracker.android.R
 import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlButtonVariant
 import com.badmintontracker.shared.model.AnnotationKind
@@ -156,7 +158,9 @@ fun ClipDetailScreen(
         Box(modifier = modifier) {
             AndroidView(
                 factory = { c ->
-                    PlayerView(c).apply {
+                    val view = LayoutInflater.from(c)
+                        .inflate(R.layout.exo_player_view, null) as PlayerView
+                    view.apply {
                         this.player = player
                         setFullscreenButtonClickListener { isFullscreen = !isFullscreen }
                         controllerShowTimeoutMs = 1500
