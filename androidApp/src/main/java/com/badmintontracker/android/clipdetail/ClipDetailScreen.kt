@@ -159,7 +159,7 @@ fun ClipDetailScreen(
             AndroidView(
                 factory = { c ->
                     val view = LayoutInflater.from(c)
-                        .inflate(R.layout.exo_player_view, null) as PlayerView
+                        .inflate(R.layout.clip_player_view, null) as PlayerView
                     view.apply {
                         this.player = player
                         setFullscreenButtonClickListener { isFullscreen = !isFullscreen }
