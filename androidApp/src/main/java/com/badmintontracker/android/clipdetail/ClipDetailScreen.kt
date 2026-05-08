@@ -139,7 +139,7 @@ fun ClipDetailScreen(
         val url = state.signedClipUrl ?: return@LaunchedEffect
         player.setMediaItem(MediaItem.fromUri(url))
         player.prepare()
-        player.playWhenReady = true
+        player.playWhenReady = false
     }
 
     LaunchedEffect(Unit) {
@@ -160,8 +160,7 @@ fun ClipDetailScreen(
                         this.player = player
                         setFullscreenButtonClickListener { isFullscreen = !isFullscreen }
                         controllerShowTimeoutMs = 1500
-                        controllerAutoShow = false
-                        hideController()
+                        controllerAutoShow = true
                     }
                 },
                 update = { it.setFullscreenButtonState(isFullscreen) },
