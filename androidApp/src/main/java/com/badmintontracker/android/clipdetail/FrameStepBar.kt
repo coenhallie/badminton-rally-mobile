@@ -31,36 +31,55 @@ fun FrameStepBar(
     player: ExoPlayer,
     modifier: Modifier = Modifier,
 ) {
-    val step: (Int) -> Unit = { dir ->
+    fun frameMs(): Long {
         val fps = player.videoFormat?.frameRate?.takeIf { it > 0f } ?: 30f
-        val frameMs = (1000f / fps).toLong().coerceAtLeast(1L)
+        return (1000f / fps).toLong().coerceAtLeast(1L)
+    }
+
+    fun seekRel(deltaMs: Long) {
         val maxPos = player.duration.takeIf { it > 0L } ?: Long.MAX_VALUE
-        val target = (player.currentPosition + dir * frameMs).coerceIn(0L, maxPos)
-        if (player.isPlaying) player.pause()
+        val target = (player.currentPosition + deltaMs).coerceIn(0L, maxPos)
         player.seekTo(target)
     }
 
     Row(modifier = modifier.fillMaxWidth()) {
-        RepeatingTextButton(
+        // Backward: tap = -1 frame. Hold = backward seek loop at ~10 steps/sec
+        // (the cadence ExoPlayer's exact-seek pipeline can render between).
+        HoldButton(
             text = "Previous frame",
-            onStep = { step(-1) },
             modifier = Modifier.weight(1f),
+            onTap = {
+                if (player.isPlaying) player.pause()
+                seekRel(-frameMs())
+            },
+            onHoldTick = { seekRel(-100L) },
+            holdTickPeriodMs = 100L,
         )
-        RepeatingTextButton(
+        // Forward: tap = +1 frame. Hold = real playback so the user sees
+        // continuous motion rather than a stack of cancelled seeks.
+        HoldButton(
             text = "Next frame",
-            onStep = { step(+1) },
             modifier = Modifier.weight(1f),
+            onTap = {
+                if (player.isPlaying) player.pause()
+                seekRel(frameMs())
+            },
+            onHoldActivate = { player.play() },
+            onRelease = { if (player.isPlaying) player.pause() },
         )
     }
 }
 
 @Composable
-private fun RepeatingTextButton(
+private fun HoldButton(
     text: String,
-    onStep: () -> Unit,
     modifier: Modifier = Modifier,
-    initialDelayMs: Long = 400L,
-    repeatPeriodMs: Long = 80L,
+    onTap: () -> Unit = {},
+    holdActivationDelayMs: Long = 400L,
+    onHoldActivate: () -> Unit = {},
+    onHoldTick: () -> Unit = {},
+    holdTickPeriodMs: Long = 100L,
+    onRelease: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     var pressed by remember { mutableStateOf(false) }
@@ -77,19 +96,21 @@ private fun RepeatingTextButton(
                 detectTapGestures(
                     onPress = {
                         pressed = true
-                        val job = scope.launch {
-                            onStep()
-                            delay(initialDelayMs)
+                        onTap()
+                        val holdJob = scope.launch {
+                            delay(holdActivationDelayMs)
+                            onHoldActivate()
                             while (isActive) {
-                                onStep()
-                                delay(repeatPeriodMs)
+                                onHoldTick()
+                                delay(holdTickPeriodMs)
                             }
                         }
                         try {
                             tryAwaitRelease()
                         } finally {
-                            job.cancel()
+                            holdJob.cancel()
                             pressed = false
+                            onRelease()
                         }
                     },
                 )
