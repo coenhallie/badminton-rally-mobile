@@ -46,7 +46,7 @@ class ClipListViewModel(
     private val clips: ClipsRepository,
     private val auth: AuthRepository,
 ) : ViewModel() {
-    private val refreshing = MutableStateFlow(false)
+    private val refreshing = MutableStateFlow(true)
     private val errors     = MutableStateFlow<String?>(null)
 
     val state = combine(clips.observeClips(), refreshing, errors) { list, r, e ->
