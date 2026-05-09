@@ -1,6 +1,7 @@
 package com.badmintontracker.android.testing
 
 import com.badmintontracker.shared.model.MatchShare
+import com.badmintontracker.shared.repo.ReceivedShare
 import com.badmintontracker.shared.repo.SharesRepository
 
 class FakeSharesRepository : SharesRepository {
@@ -9,6 +10,10 @@ class FakeSharesRepository : SharesRepository {
     var nextShareResult:   Result<Unit> = Result.success(Unit)
     var nextUnshareResult: Result<Unit> = Result.success(Unit)
     var sharesByVideo: Map<String, List<MatchShare>> = emptyMap()
+
+    var receivedShares: List<ReceivedShare> = emptyList()
+    var listReceivedError: Throwable? = null
+    var listReceivedCalls: Int = 0
 
     override suspend fun share(videoId: String, email: String): Result<Unit> {
         shareCalls += videoId to email
@@ -22,4 +27,10 @@ class FakeSharesRepository : SharesRepository {
 
     override suspend fun listShares(videoId: String): Result<List<MatchShare>> =
         Result.success(sharesByVideo[videoId].orEmpty())
+
+    override suspend fun listReceived(): List<ReceivedShare> {
+        listReceivedCalls += 1
+        listReceivedError?.let { throw it }
+        return receivedShares
+    }
 }
