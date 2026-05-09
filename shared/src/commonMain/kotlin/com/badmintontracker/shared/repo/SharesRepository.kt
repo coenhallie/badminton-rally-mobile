@@ -4,13 +4,22 @@ import com.badmintontracker.shared.model.MatchShare
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.rpc
+import kotlinx.datetime.Instant
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+
+@Serializable
+data class ReceivedShare(
+    @SerialName("video_id")     val videoId: String,
+    @SerialName("sharer_email") val sharerEmail: String,
+    @SerialName("shared_at")    val sharedAt: Instant,
+)
 
 interface SharesRepository {
     suspend fun share(videoId: String, email: String): Result<Unit>
     suspend fun unshare(videoId: String, userId: String): Result<Unit>
     suspend fun listShares(videoId: String): Result<List<MatchShare>>
+    suspend fun listReceived(): List<ReceivedShare>
 }
 
 class SharesRepositoryImpl(private val client: SupabaseClient) : SharesRepository {
@@ -41,4 +50,8 @@ class SharesRepositoryImpl(private val client: SupabaseClient) : SharesRepositor
         client.postgrest.rpc("list_match_shares", ListArgs(videoId))
             .decodeList<MatchShare>()
     }
+
+    override suspend fun listReceived(): List<ReceivedShare> =
+        client.postgrest.rpc("list_received_match_shares")
+            .decodeList<ReceivedShare>()
 }
