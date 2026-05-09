@@ -11,7 +11,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class ReceivedShare(
     @SerialName("video_id")     val videoId: String,
-    @SerialName("sharer_email") val sharerEmail: String,
+    @SerialName("sharer_email") val sharerEmail: String?,
     @SerialName("shared_at")    val sharedAt: Instant,
 )
 

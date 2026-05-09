@@ -112,6 +112,22 @@ class SharesRepositoryTest {
     }
 
     @Test
+    fun listReceived_handles_null_sharer_email() = runTest {
+        val client = TestSupabase.client { _ ->
+            jsonResponse("""[
+              {"video_id":"v1","sharer_email":null,"shared_at":"2026-05-07T10:00:00Z"},
+              {"video_id":"v2","sharer_email":"bob@example.com","shared_at":"2026-05-08T11:00:00Z"}
+            ]""")
+        }
+
+        val result = SharesRepositoryImpl(client).listReceived()
+
+        result shouldHaveSize 2
+        result[0].sharerEmail shouldBe null
+        result[1].sharerEmail shouldBe "bob@example.com"
+    }
+
+    @Test
     fun unshare_calls_unshare_match_rpc() = runTest {
         var capturedUrl: String? = null
         var capturedBody: String? = null
