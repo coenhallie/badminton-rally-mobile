@@ -1,5 +1,6 @@
 -- Sharer-email lookup for received matches.
 -- See docs/plans/2026-05-08-shared-match-sharer-label-design.md
+-- Note: sharer_email may be NULL (auth.users.email is nullable for phone-only / SSO accounts).
 
 create or replace function public.list_received_match_shares()
 returns table (video_id uuid, sharer_email text, shared_at timestamptz)

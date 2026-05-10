@@ -113,7 +113,7 @@ class ClipListViewModelTest {
         val vm = ClipListViewModel(clips, auth, shares)
         vm.state.test {
             var s = awaitItem()
-            while (s.sharedMatches.isEmpty() || s.sharedMatches.first().sharerEmail == null) {
+            while (s.sharedMatches.isEmpty() || s.ownedMatches.isEmpty() || s.sharedMatches.first().sharerEmail == null) {
                 s = awaitItem()
             }
             s.sharedMatches.first().sharerEmail shouldBe "alice@example.com"
