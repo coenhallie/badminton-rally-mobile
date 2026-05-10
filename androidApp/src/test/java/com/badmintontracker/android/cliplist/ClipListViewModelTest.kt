@@ -3,7 +3,9 @@ package com.badmintontracker.android.cliplist
 import app.cash.turbine.test
 import com.badmintontracker.android.testing.FakeAuthRepository
 import com.badmintontracker.android.testing.FakeClipsRepository
+import com.badmintontracker.android.testing.FakeSharesRepository
 import com.badmintontracker.shared.model.RallyClip
+import com.badmintontracker.shared.repo.ReceivedShare
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.Dispatchers
@@ -39,7 +41,7 @@ class ClipListViewModelTest {
     @Test
     fun init_triggers_refresh() = runTest {
         val clips = FakeClipsRepository()
-        ClipListViewModel(clips, FakeAuthRepository())
+        ClipListViewModel(clips, FakeAuthRepository(), FakeSharesRepository())
         advanceUntilIdle()
         clips.refreshCalls shouldHaveSize 1
     }
@@ -47,7 +49,7 @@ class ClipListViewModelTest {
     @Test
     fun state_reflects_observed_clips() = runTest {
         val clips = FakeClipsRepository().apply { this.clips.value = listOf(clip("a"), clip("b")) }
-        val vm = ClipListViewModel(clips, FakeAuthRepository())
+        val vm = ClipListViewModel(clips, FakeAuthRepository(), FakeSharesRepository())
         vm.state.test {
             var s = awaitItem()
             while (s.clips.isEmpty()) s = awaitItem()
@@ -66,7 +68,7 @@ class ClipListViewModelTest {
             )
         }
         val auth = FakeAuthRepository().apply { currentUserIdValue = "user-self" }
-        val vm = ClipListViewModel(clips, auth)
+        val vm = ClipListViewModel(clips, auth, FakeSharesRepository())
         vm.state.test {
             var s = awaitItem()
             while (s.ownedMatches.isEmpty() && s.sharedMatches.isEmpty()) s = awaitItem()
@@ -81,11 +83,60 @@ class ClipListViewModelTest {
     @Test
     fun refresh_failure_surfaces_in_error() = runTest {
         val clips = FakeClipsRepository().apply { refreshError = IllegalStateException("net down") }
-        val vm = ClipListViewModel(clips, FakeAuthRepository())
+        val vm = ClipListViewModel(clips, FakeAuthRepository(), FakeSharesRepository())
         vm.state.test {
             var s = awaitItem()
             while (s.error == null) s = awaitItem()
             s.error shouldBe "net down"
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun shared_matches_carry_sharer_email() = runTest {
+        val clips = FakeClipsRepository().apply {
+            this.clips.value = listOf(
+                ownedClip("a", "v-own"),
+                sharedClip("b", "v-shared"),
+            )
+        }
+        val auth = FakeAuthRepository().apply { currentUserIdValue = "user-self" }
+        val shares = FakeSharesRepository().apply {
+            receivedShares = listOf(
+                ReceivedShare(
+                    videoId = "v-shared",
+                    sharerEmail = "alice@example.com",
+                    sharedAt = Instant.parse("2026-05-07T10:00:00Z"),
+                ),
+            )
+        }
+        val vm = ClipListViewModel(clips, auth, shares)
+        vm.state.test {
+            var s = awaitItem()
+            while (s.sharedMatches.isEmpty() || s.sharedMatches.first().sharerEmail == null) {
+                s = awaitItem()
+            }
+            s.sharedMatches.first().sharerEmail shouldBe "alice@example.com"
+            s.ownedMatches.first().sharerEmail shouldBe null
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun listReceived_failure_does_not_surface_error_or_block_rows() = runTest {
+        val clips = FakeClipsRepository().apply {
+            this.clips.value = listOf(sharedClip("b", "v-shared"))
+        }
+        val auth = FakeAuthRepository().apply { currentUserIdValue = "user-self" }
+        val shares = FakeSharesRepository().apply {
+            listReceivedError = IllegalStateException("shares fetch failed")
+        }
+        val vm = ClipListViewModel(clips, auth, shares)
+        vm.state.test {
+            var s = awaitItem()
+            while (s.sharedMatches.isEmpty()) s = awaitItem()
+            s.sharedMatches.first().sharerEmail shouldBe null
+            s.error shouldBe null
             cancelAndIgnoreRemainingEvents()
         }
     }

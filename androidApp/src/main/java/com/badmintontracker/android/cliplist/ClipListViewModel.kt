@@ -5,6 +5,9 @@ import androidx.lifecycle.viewModelScope
 import com.badmintontracker.shared.model.RallyClip
 import com.badmintontracker.shared.repo.AuthRepository
 import com.badmintontracker.shared.repo.ClipsRepository
+import com.badmintontracker.shared.repo.SharesRepository
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
@@ -18,6 +21,7 @@ data class MatchSummary(
     val latestCreatedAt: Instant,
     val coverClip: RallyClip,
     val isOwned: Boolean,
+    val sharerEmail: String? = null,
 )
 
 data class ClipListState(
@@ -28,16 +32,21 @@ data class ClipListState(
     val error: String? = null,
 )
 
-private fun List<RallyClip>.toMatches(currentUserId: String?): List<MatchSummary> =
+private fun List<RallyClip>.toMatches(
+    currentUserId: String?,
+    sharerByVideoId: Map<String, String>,
+): List<MatchSummary> =
     groupBy { it.videoId }
         .map { (videoId, list) ->
             val cover = list.minByOrNull { it.rallyIndex } ?: list.first()
+            val owned = currentUserId != null && cover.ownerId == currentUserId
             MatchSummary(
                 videoId = videoId,
                 rallyCount = list.size,
                 latestCreatedAt = list.maxOf { it.createdAt },
                 coverClip = cover,
-                isOwned = currentUserId != null && cover.ownerId == currentUserId,
+                isOwned = owned,
+                sharerEmail = if (owned) null else sharerByVideoId[videoId],
             )
         }
         .sortedByDescending { it.latestCreatedAt }
@@ -45,12 +54,19 @@ private fun List<RallyClip>.toMatches(currentUserId: String?): List<MatchSummary
 class ClipListViewModel(
     private val clips: ClipsRepository,
     private val auth: AuthRepository,
+    private val shares: SharesRepository,
 ) : ViewModel() {
-    private val refreshing = MutableStateFlow(true)
-    private val errors     = MutableStateFlow<String?>(null)
+    private val refreshing      = MutableStateFlow(true)
+    private val errors          = MutableStateFlow<String?>(null)
+    private val sharerByVideoId = MutableStateFlow<Map<String, String>>(emptyMap())
 
-    val state = combine(clips.observeClips(), refreshing, errors) { list, r, e ->
-        val matches = list.toMatches(auth.currentUserId())
+    val state = combine(
+        clips.observeClips(),
+        sharerByVideoId,
+        refreshing,
+        errors,
+    ) { list, sharerMap, r, e ->
+        val matches = list.toMatches(auth.currentUserId(), sharerMap)
         val (owned, shared) = matches.partition { it.isOwned }
         ClipListState(
             clips = list,
@@ -66,7 +82,21 @@ class ClipListViewModel(
     fun refresh() {
         viewModelScope.launch {
             refreshing.value = true
-            runCatching { clips.refresh() }.onFailure { errors.value = it.message }
+            coroutineScope {
+                val clipsJob = async {
+                    runCatching { clips.refresh() }.onFailure { errors.value = it.message }
+                }
+                val sharesJob = async {
+                    runCatching { shares.listReceived() }
+                        .onSuccess { received ->
+                            sharerByVideoId.value =
+                                received.mapNotNull { r -> r.sharerEmail?.let { r.videoId to it } }.toMap()
+                        }
+                        // Soft failure: leave sharerByVideoId untouched, no user-facing error.
+                }
+                clipsJob.await()
+                sharesJob.await()
+            }
             refreshing.value = false
         }
     }

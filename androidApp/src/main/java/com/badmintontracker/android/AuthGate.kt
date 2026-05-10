@@ -70,7 +70,7 @@ fun AuthGate(rally: RallyApp, themePrefs: ThemePreferenceRepository) {
                 composable<Route.ClipList> {
                     val clipListVm: ClipListViewModel = viewModel(
                         factory = viewModelFactory {
-                            initializer { ClipListViewModel(rally.clips, rally.auth) }
+                            initializer { ClipListViewModel(rally.clips, rally.auth, rally.shares) }
                         }
                     )
                     ClipListScreen(
@@ -85,7 +85,7 @@ fun AuthGate(rally: RallyApp, themePrefs: ThemePreferenceRepository) {
                     val args = entry.toRoute<Route.MatchClips>()
                     val clipListVm: ClipListViewModel = viewModel(
                         factory = viewModelFactory {
-                            initializer { ClipListViewModel(rally.clips, rally.auth) }
+                            initializer { ClipListViewModel(rally.clips, rally.auth, rally.shares) }
                         }
                     )
                     MatchClipsScreen(
