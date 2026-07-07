@@ -35,7 +35,7 @@ class SignInViewModel(private val auth: AuthRepository) : ViewModel() {
                     state.update { it.copy(isSubmitting = false) }
                 }
                 .onFailure { e ->
-                    state.update { it.copy(isSubmitting = false, error = e.message) }
+                    state.update { it.copy(isSubmitting = false, error = friendlyAuthError(e)) }
                 }
         }
     }
@@ -44,7 +44,7 @@ class SignInViewModel(private val auth: AuthRepository) : ViewModel() {
         viewModelScope.launch {
             state.update { it.copy(isSubmitting = true, error = null) }
             auth.signInWithGoogle()
-                .onFailure { e -> state.update { it.copy(isSubmitting = false, error = e.message) } }
+                .onFailure { e -> state.update { it.copy(isSubmitting = false, error = friendlyAuthError(e)) } }
         }
     }
 }

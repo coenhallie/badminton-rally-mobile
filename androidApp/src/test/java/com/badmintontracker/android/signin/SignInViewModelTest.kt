@@ -55,7 +55,7 @@ class SignInViewModelTest {
         vm.submitEmail()
         dispatcher.scheduler.advanceUntilIdle()
 
-        vm.state.value.error shouldBe "bad creds"
+        vm.state.value.error shouldBe "Something went wrong. Please check your connection and try again."
         vm.state.value.isSubmitting shouldBe false
     }
 }
