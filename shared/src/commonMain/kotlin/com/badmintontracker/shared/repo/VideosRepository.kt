@@ -6,14 +6,20 @@ import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.functions.functions
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
+import io.github.jan.supabase.storage.storage
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 import io.ktor.http.isSuccess
+import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -25,6 +31,15 @@ data class ProcessingUpdate(val status: String, val progress: Float?, val error:
     val isTerminal: Boolean get() = isSuccess || isFailure
 }
 
+sealed interface UploadState {
+    data class InProgress(val progress: Float) : UploadState
+    data object Done : UploadState
+    data class Failed(val message: String) : UploadState
+}
+
+internal fun toUploadState(progress: Float, isDone: Boolean): UploadState =
+    if (isDone) UploadState.Done else UploadState.InProgress(progress)
+
 interface VideosRepository {
     /** Insert the videos row. Call AFTER the upload succeeds (same order as web). */
     suspend fun createVideo(videoId: String, filename: String, sizeBytes: Long): Result<Unit>
@@ -33,6 +48,17 @@ interface VideosRepository {
     suspend fun startProcessing(videoId: String): Result<Unit>
     /** Poll the videos row until a terminal status, emitting every change of state. */
     fun observeProcessing(videoId: String, pollIntervalMs: Long = 5_000): Flow<ProcessingUpdate>
+    /**
+     * Resumable (TUS) upload to videos/{uid}/{videoId}.mp4. [channelProvider] must
+     * return a channel positioned at the requested byte offset so interrupted
+     * uploads resume instead of restarting. Terminates with [UploadState.Done]
+     * or [UploadState.Failed].
+     */
+    fun uploadVideo(
+        videoId: String,
+        sizeBytes: Long,
+        channelProvider: suspend (offset: Long) -> ByteReadChannel,
+    ): Flow<UploadState>
 }
 
 class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepository {
@@ -111,6 +137,29 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
             delay(pollIntervalMs)
         }
     }
+
+    // channelFlow (not flow{}): progress is emitted from a child coroutine while
+    // startOrResumeUploading() suspends, which plain flow{} forbids.
+    override fun uploadVideo(
+        videoId: String,
+        sizeBytes: Long,
+        channelProvider: suspend (offset: Long) -> ByteReadChannel,
+    ): Flow<UploadState> = channelFlow {
+        val uid = client.auth.currentUserOrNull()?.id ?: error("Not signed in")
+        val upload = client.storage.from("videos").resumable.createOrContinueUpload(
+            channel = channelProvider,
+            source = videoId,          // stable key so retries resume the TUS session
+            size = sizeBytes,
+            path = storagePath(uid, videoId),
+        )
+        val progressJob = launch {
+            upload.stateFlow.collect { send(toUploadState(it.progress, it.isDone)) }
+        }
+        upload.startOrResumeUploading()   // suspends until finished
+        progressJob.cancel()
+        send(UploadState.Done)
+    }.distinctUntilChanged()
+        .catch { emit(UploadState.Failed(it.message ?: "Upload failed")) }
 
     companion object {
         fun storagePath(uid: String, videoId: String) = "$uid/$videoId.mp4"
