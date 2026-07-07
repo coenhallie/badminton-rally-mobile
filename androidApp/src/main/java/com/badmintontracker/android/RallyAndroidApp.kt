@@ -2,6 +2,7 @@ package com.badmintontracker.android
 
 import android.app.Application
 import android.net.Uri
+import android.util.Log
 import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
@@ -51,6 +52,7 @@ class RallyAndroidApp : Application(), SingletonImageLoader.Factory {
                 stream.skip(offset)
                 stream.toByteReadChannel()
             },
+            log = { Log.i("AnalyzeCoordinator", it) },
         )
         analyzeCoordinator.reattachToProcessing()
     }

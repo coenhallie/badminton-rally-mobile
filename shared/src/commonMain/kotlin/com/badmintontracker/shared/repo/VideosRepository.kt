@@ -25,7 +25,10 @@ import kotlinx.coroutines.flow.map
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-/** Snapshot of the cloud pipeline's state for one video (from the videos row). */
+/**
+ * Snapshot of the cloud pipeline's state for one video (from the videos row).
+ * [progress] is normalized to 0f..1f (the DB stores it as a 0..100 percentage).
+ */
 data class ProcessingUpdate(val status: String, val progress: Float?, val error: String?) {
     // Phase 1 produces the rally clips; phase 2 analytics is desktop-only.
     val isSuccess: Boolean get() = status == "phase1_complete" || status == "completed"
@@ -161,7 +164,8 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
                     filter { eq("id", videoId) }
                 }
                 .decodeSingle<StatusRow>()
-            val update = ProcessingUpdate(row.status, row.progress, row.error)
+            // DB progress is a 0..100 percentage; normalize to 0..1 for the UI.
+            val update = ProcessingUpdate(row.status, row.progress?.let { (it / 100f).coerceIn(0f, 1f) }, row.error)
             emit(update)
             if (update.isTerminal) break
             delay(pollIntervalMs)

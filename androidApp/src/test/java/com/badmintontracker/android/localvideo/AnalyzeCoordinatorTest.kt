@@ -3,9 +3,11 @@ package com.badmintontracker.android.localvideo
 import com.badmintontracker.android.testing.FakeClipsRepository
 import com.badmintontracker.android.testing.FakeVideosRepository
 import com.badmintontracker.shared.model.CourtKeypoints
+import com.badmintontracker.shared.model.RallyClip
 import com.badmintontracker.shared.repo.ProcessingUpdate
 import com.badmintontracker.shared.repo.UploadState
 import com.russhwolf.settings.MapSettings
+import kotlinx.datetime.Instant
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
@@ -39,6 +41,13 @@ class AnalyzeCoordinatorTest {
         durationMs = 1000, sizeBytes = 10, addedAtEpochMs = 0,
     )
 
+    private fun clipFor(videoId: String) = RallyClip(
+        id = "clip-$videoId", videoId = videoId, ownerId = "user-self", rallyIndex = 1,
+        startTimestamp = 0f, endTimestamp = 5f, durationSeconds = 5f,
+        clipStoragePath = "user-self/$videoId/rally_1.mp4", annotationCount = 0,
+        createdAt = Instant.fromEpochMilliseconds(0),
+    )
+
     private fun TestScope.coordinator() = AnalyzeCoordinator(
         localVideos = localVideos,
         videos = videos,
@@ -50,6 +59,7 @@ class AnalyzeCoordinatorTest {
     @Test
     fun happy_path_uploads_creates_row_sets_keypoints_triggers_polls_and_removes_entry() = runTest {
         localVideos.add(entry())
+        clips.clips.value = listOf(clipFor("e1"))   // pipeline produced rally clips
         val c = coordinator()
         c.startAnalysis("e1", keypoints())
         runCurrent()
@@ -74,6 +84,7 @@ class AnalyzeCoordinatorTest {
         failed.keypoints.shouldNotBeNull()     // never re-tap
 
         videos.uploadStates = listOf(UploadState.Done)
+        clips.clips.value = listOf(clipFor("e1"))   // retry now completes end-to-end
         c.retry("e1")
         runCurrent()
         videos.uploadCalls shouldBe listOf("e1", "e1")
@@ -83,6 +94,7 @@ class AnalyzeCoordinatorTest {
     @Test
     fun trigger_failure_retry_skips_upload_and_row_creation() = runTest {
         localVideos.add(entry())
+        clips.clips.value = listOf(clipFor("e1"))
         videos.nextStartResult = Result.failure(IllegalStateException("409"))
         val c = coordinator()
         c.startAnalysis("e1", keypoints())
@@ -101,6 +113,7 @@ class AnalyzeCoordinatorTest {
     @Test
     fun duplicate_row_on_retry_is_treated_as_success() = runTest {
         localVideos.add(entry())
+        clips.clips.value = listOf(clipFor("e1"))
         videos.nextCreateResult = Result.failure(
             IllegalStateException("""duplicate key value violates unique constraint "videos_pkey""""),
         )
@@ -124,8 +137,23 @@ class AnalyzeCoordinatorTest {
     }
 
     @Test
+    fun success_but_no_clips_marks_no_rallies_instead_of_vanishing() = runTest {
+        localVideos.add(entry())
+        // Pipeline completes but produced no rally clips for this video.
+        clips.clips.value = emptyList()
+        val c = coordinator()
+        c.startAnalysis("e1", keypoints())
+        runCurrent()
+        val failed = localVideos.get("e1").shouldNotBeNull()
+        failed.stage shouldBe AnalyzeStage.FAILED
+        failed.failedStep shouldBe AnalyzeStep.PROCESSING
+        failed.failureMessage shouldBe "Analysis finished but found no rallies in this video."
+    }
+
+    @Test
     fun reattach_resumes_polling_for_persisted_processing_entries() = runTest {
         localVideos.add(entry().copy(stage = AnalyzeStage.PROCESSING, keypoints = keypoints()))
+        clips.clips.value = listOf(clipFor("e1"))
         val c = coordinator()
         c.reattachToProcessing()
         runCurrent()

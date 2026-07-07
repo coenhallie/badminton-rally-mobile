@@ -96,12 +96,14 @@ class VideosRepositoryTest {
         val client = TestSupabase.client {
             call++
             when {
-                call <= 1 -> jsonResponse("""[{"status":"processing_phase1","progress":0.4,"error":null}]""")
-                else      -> jsonResponse("""[{"status":"phase1_complete","progress":1.0,"error":null}]""")
+                // DB stores progress as a 0..100 percentage.
+                call <= 1 -> jsonResponse("""[{"status":"processing_phase1","progress":40.0,"error":null}]""")
+                else      -> jsonResponse("""[{"status":"phase1_complete","progress":100.0,"error":null}]""")
             }
         }
         val repo = VideosRepositoryImpl(client)
         repo.observeProcessing("vid-1", pollIntervalMs = 1).test {
+            // …surfaced to the UI normalized to 0..1.
             awaitItem() shouldBe ProcessingUpdate("processing_phase1", 0.4f, null)
             val last = awaitItem()
             last shouldBe ProcessingUpdate("phase1_complete", 1.0f, null)

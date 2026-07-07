@@ -9,6 +9,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -31,6 +32,7 @@ class AnalyzeCoordinator(
     private val clips: ClipsRepository,
     private val scope: CoroutineScope,
     private val openChannel: suspend (uri: String, offset: Long) -> ByteReadChannel,
+    private val log: (String) -> Unit = {},
 ) {
     private val _progress = MutableStateFlow<Map<String, AnalyzeProgress>>(emptyMap())
     val progress: StateFlow<Map<String, AnalyzeProgress>> = _progress.asStateFlow()
@@ -119,13 +121,29 @@ class AnalyzeCoordinator(
             it.copy(stage = AnalyzeStage.PROCESSING, failedStep = null, failureMessage = null)
         }
         var pipelineError: String? = null
+        var terminalStatus = ""
         videos.observeProcessing(entry.id).collect { update ->
+            terminalStatus = update.status
             setProgress(entryId) { it.copy(pipelineProgress = update.progress) }
             if (update.isFailure) pipelineError = update.error ?: "Analysis failed"
         }
-        pipelineError?.let { return fail(entryId, AnalyzeStep.PROCESSING, it) }
+        pipelineError?.let {
+            log("video ${entry.id} pipeline failed ($terminalStatus): $it")
+            return fail(entryId, AnalyzeStep.PROCESSING, it)
+        }
 
         runCatching { clips.refresh() }
+        val clipCount = runCatching { clips.observeClips().first().count { it.videoId == entry.id } }
+            .getOrDefault(0)
+        log("video ${entry.id} terminal=$terminalStatus clips=$clipCount")
+        if (clipCount == 0) {
+            // Pipeline succeeded but detected no rallies — don't vanish silently.
+            return fail(
+                entryId,
+                AnalyzeStep.PROCESSING,
+                "Analysis finished but found no rallies in this video.",
+            )
+        }
         localVideos.remove(entryId)
     }
 
