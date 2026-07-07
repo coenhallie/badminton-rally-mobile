@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -20,6 +21,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -66,6 +68,23 @@ private fun LocalVideoRowItem(
 ) {
     val entry = row.entry
     var menuOpen by remember { mutableStateOf(false) }
+    var errorDialogOpen by remember { mutableStateOf(false) }
+
+    if (errorDialogOpen) {
+        AlertDialog(
+            onDismissRequest = { errorDialogOpen = false },
+            title = {
+                Text("Analysis failed" + (entry.failedStep?.let { " (${it.label()})" } ?: ""))
+            },
+            text = { Text(entry.failureMessage ?: "Unknown error") },
+            confirmButton = {
+                TextButton(onClick = { errorDialogOpen = false; onAnalyze() }) { Text("Retry") }
+            },
+            dismissButton = {
+                TextButton(onClick = { errorDialogOpen = false }) { Text("Close") }
+            },
+        )
+    }
 
     Row(
         modifier = Modifier
@@ -95,16 +114,22 @@ private fun LocalVideoRowItem(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             row.statusText?.let { status ->
+                val failed = entry.stage == AnalyzeStage.FAILED
                 Text(
-                    text = status,
+                    text = if (failed) "$status · tap for details" else status,
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (entry.stage == AnalyzeStage.FAILED) {
+                    color = if (failed) {
                         MaterialTheme.colorScheme.error
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = if (failed) {
+                        Modifier.clickable { errorDialogOpen = true }
+                    } else {
+                        Modifier
+                    },
                 )
             }
         }
@@ -131,4 +156,12 @@ private fun LocalVideoRowItem(
             )
         }
     }
+}
+
+private fun AnalyzeStep.label(): String = when (this) {
+    AnalyzeStep.UPLOAD -> "upload"
+    AnalyzeStep.CREATE_ROW -> "registration"
+    AnalyzeStep.KEYPOINTS -> "court points"
+    AnalyzeStep.TRIGGER -> "start"
+    AnalyzeStep.PROCESSING -> "processing"
 }
