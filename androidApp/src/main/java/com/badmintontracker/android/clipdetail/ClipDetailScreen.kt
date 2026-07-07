@@ -1,7 +1,5 @@
 package com.badmintontracker.android.clipdetail
 
-import android.app.Activity
-import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.view.LayoutInflater
 import androidx.activity.compose.BackHandler
@@ -64,9 +62,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -75,6 +70,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.ui.PlayerView
 import com.badmintontracker.android.R
+import com.badmintontracker.android.ui.components.FullscreenEffect
 import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlButtonVariant
 import com.badmintontracker.shared.model.AnnotationKind
@@ -89,7 +85,6 @@ fun ClipDetailScreen(
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val ctx = LocalContext.current
-    val activity = ctx as? Activity
     val orientation = LocalConfiguration.current.orientation
     val player = remember {
         ExoPlayer.Builder(ctx).build().apply {
@@ -103,19 +98,7 @@ fun ClipDetailScreen(
 
     BackHandler(enabled = isFullscreen) { isFullscreen = false }
 
-    LaunchedEffect(isFullscreen, activity) {
-        val a = activity ?: return@LaunchedEffect
-        val controller = WindowCompat.getInsetsController(a.window, a.window.decorView)
-        if (isFullscreen) {
-            a.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-            controller.systemBarsBehavior =
-                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            controller.hide(WindowInsetsCompat.Type.systemBars())
-        } else {
-            a.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-            controller.show(WindowInsetsCompat.Type.systemBars())
-        }
-    }
+    FullscreenEffect(isFullscreen)
 
     LaunchedEffect(orientation) {
         isFullscreen = (orientation == Configuration.ORIENTATION_LANDSCAPE)
@@ -129,11 +112,6 @@ fun ClipDetailScreen(
         onDispose {
             player.removeListener(listener)
             player.release()
-            activity?.let { a ->
-                a.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-                WindowCompat.getInsetsController(a.window, a.window.decorView)
-                    .show(WindowInsetsCompat.Type.systemBars())
-            }
         }
     }
 

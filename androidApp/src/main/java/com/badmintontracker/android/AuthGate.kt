@@ -1,5 +1,6 @@
 package com.badmintontracker.android
 
+import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -8,8 +9,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -24,6 +29,15 @@ import com.badmintontracker.android.cliplist.ClipListScreen
 import com.badmintontracker.android.cliplist.ClipListViewModel
 import com.badmintontracker.android.cliplist.MatchClipsScreen
 import com.badmintontracker.android.data.ThemePreferenceRepository
+import com.badmintontracker.android.localvideo.AnalyzeCoordinator
+import com.badmintontracker.android.localvideo.AnalyzeStage
+import com.badmintontracker.android.localvideo.LocalPlayerScreen
+import com.badmintontracker.android.localvideo.LocalVideoListViewModel
+import com.badmintontracker.android.localvideo.LocalVideoRepository
+import com.badmintontracker.android.localvideo.court.CourtMarkingScreen
+import com.badmintontracker.android.localvideo.court.CourtMarkingViewModel
+import com.badmintontracker.android.localvideo.court.loadFirstFrame
+import com.badmintontracker.android.localvideo.rememberVideoIntake
 import com.badmintontracker.android.nav.Route
 import com.badmintontracker.android.signin.SignInScreen
 import com.badmintontracker.android.signin.SignInViewModel
@@ -31,7 +45,12 @@ import com.badmintontracker.shared.RallyApp
 import io.github.jan.supabase.auth.status.SessionStatus
 
 @Composable
-fun AuthGate(rally: RallyApp, themePrefs: ThemePreferenceRepository) {
+fun AuthGate(
+    rally: RallyApp,
+    themePrefs: ThemePreferenceRepository,
+    localVideos: LocalVideoRepository,
+    coordinator: AnalyzeCoordinator,
+) {
     val session by rally.auth.sessionFlow.collectAsStateWithLifecycle(initialValue = null)
 
     when (val s = session) {
@@ -73,12 +92,37 @@ fun AuthGate(rally: RallyApp, themePrefs: ThemePreferenceRepository) {
                             initializer { ClipListViewModel(rally.clips, rally.auth, rally.shares) }
                         }
                     )
+                    val localVm: LocalVideoListViewModel = viewModel(
+                        factory = viewModelFactory {
+                            initializer { LocalVideoListViewModel(localVideos, coordinator) }
+                        }
+                    )
+                    val localRows by localVm.rows.collectAsStateWithLifecycle()
+                    var intakeError by remember { mutableStateOf<String?>(null) }
+                    val intake = rememberVideoIntake(
+                        onAdded = localVideos::add,
+                        onError = { intakeError = it },
+                    )
                     ClipListScreen(
                         vm = clipListVm,
                         media = rally.media,
                         shares = rally.shares,
                         themePrefs = themePrefs,
                         onMatchClick = { nav.navigate(Route.MatchClips(it.videoId)) },
+                        localRows = localRows,
+                        intakeError = intakeError,
+                        onIntakeErrorShown = { intakeError = null },
+                        onLocalClick = { nav.navigate(Route.LocalPlayer(it.id)) },
+                        onLocalAnalyze = { row ->
+                            if (row.entry.stage == AnalyzeStage.FAILED && row.entry.keypoints != null) {
+                                localVm.retry(row.entry.id)   // resume; court points already saved
+                            } else {
+                                nav.navigate(Route.CourtMarking(row.entry.id))
+                            }
+                        },
+                        onLocalRemove = { localVm.remove(it.id) },
+                        onRecord = intake.record,
+                        onImport = intake.import,
                     )
                 }
                 composable<Route.MatchClips> { entry ->
@@ -108,6 +152,43 @@ fun AuthGate(rally: RallyApp, themePrefs: ThemePreferenceRepository) {
                         }
                     )
                     ClipDetailScreen(vm = vm, onBack = { nav.popBackStack() })
+                }
+                composable<Route.LocalPlayer> { entry ->
+                    val args = entry.toRoute<Route.LocalPlayer>()
+                    val entries by localVideos.entries.collectAsStateWithLifecycle()
+                    val e = entries.firstOrNull { it.id == args.entryId }
+                    if (e == null) {
+                        LaunchedEffect(Unit) { nav.popBackStack() }
+                    } else {
+                        LocalPlayerScreen(
+                            entry = e,
+                            canAnalyze = e.stage == AnalyzeStage.LOCAL || e.stage == AnalyzeStage.FAILED,
+                            onAnalyze = { nav.navigate(Route.CourtMarking(e.id)) },
+                            onBack = { nav.popBackStack() },
+                        )
+                    }
+                }
+                composable<Route.CourtMarking> { entry ->
+                    val args = entry.toRoute<Route.CourtMarking>()
+                    val appCtx = LocalContext.current.applicationContext
+                    val vm: CourtMarkingViewModel = viewModel(
+                        factory = viewModelFactory {
+                            initializer {
+                                val e = localVideos.get(args.entryId) ?: error("Local video not found")
+                                CourtMarkingViewModel(args.entryId) {
+                                    loadFirstFrame(appCtx, Uri.parse(e.uri))
+                                }
+                            }
+                        }
+                    )
+                    CourtMarkingScreen(
+                        vm = vm,
+                        onStartAnalysis = { keypoints ->
+                            coordinator.startAnalysis(args.entryId, keypoints)
+                            nav.popBackStack(Route.ClipList, inclusive = false)
+                        },
+                        onBack = { nav.popBackStack() },
+                    )
                 }
             }
         }
