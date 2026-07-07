@@ -10,6 +10,8 @@ import com.badmintontracker.shared.repo.MediaRepository
 import com.badmintontracker.shared.repo.MediaRepositoryImpl
 import com.badmintontracker.shared.repo.SharesRepository
 import com.badmintontracker.shared.repo.SharesRepositoryImpl
+import com.badmintontracker.shared.repo.VideosRepository
+import com.badmintontracker.shared.repo.VideosRepositoryImpl
 import com.russhwolf.settings.Settings
 import io.github.jan.supabase.SupabaseClient
 import io.ktor.client.engine.HttpClientEngine
@@ -25,4 +27,5 @@ class RallyApp(
     val annotations: AnnotationsRepository = AnnotationsRepositoryImpl(client)
     val media:       MediaRepository       = MediaRepositoryImpl(client)
     val shares:      SharesRepository      = SharesRepositoryImpl(client)
+    val videos:      VideosRepository      = VideosRepositoryImpl(client)
 }
