@@ -11,6 +11,11 @@ The mobile app is versioned independently from the web app.
 
 ### Added
 - Version indicator in the home screen overflow menu.
+- Record or import match videos on the phone; they stay on-device under "On this phone".
+- Play local videos with the same frame-step controls as rally clips.
+- Analyze a local video from the phone: 12-point court mapping (identical to the
+  desktop flow), resumable upload with progress, and live pipeline progress until
+  the match's rally clips appear.
 
 ## [0.1.0] - 2026-05-18
 
