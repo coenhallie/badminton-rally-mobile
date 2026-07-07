@@ -76,6 +76,8 @@ dependencies {
 
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
+    implementation(libs.coil.video)
+    implementation(libs.kotlinx.serialization.json)
 
     implementation(libs.settings)
 
