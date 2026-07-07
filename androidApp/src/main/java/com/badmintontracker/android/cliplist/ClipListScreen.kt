@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import com.badmintontracker.android.BuildConfig
 import com.badmintontracker.android.data.ThemePreferenceRepository
 import com.badmintontracker.android.share.ShareSheet
 import com.badmintontracker.android.ui.components.ThemeToggleButton
@@ -96,6 +97,17 @@ fun ClipListScreen(
                         DropdownMenuItem(
                             text = { Text("Sign out") },
                             onClick = { menuOpen = false; vm.signOut() },
+                        )
+                        HorizontalDivider()
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    "Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            },
+                            onClick = {},
+                            enabled = false,
                         )
                     }
                 },
