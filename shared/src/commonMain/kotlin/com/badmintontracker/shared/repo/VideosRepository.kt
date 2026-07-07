@@ -19,8 +19,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.map
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -40,6 +41,20 @@ sealed interface UploadState {
 
 internal fun toUploadState(progress: Float, isDone: Boolean): UploadState =
     if (isDone) UploadState.Done else UploadState.InProgress(progress)
+
+/**
+ * Emit an [UploadState] for each (progress, isDone) pair and complete ONLY after a
+ * done state. supabase-kt's startOrResumeUploading() launches the transfer in its
+ * own scope and returns immediately, so completion is observable solely through the
+ * upload's state flow — reporting Done any earlier triggers processing on a file
+ * that isn't in storage yet. Throws if the source ends without ever being done.
+ */
+internal fun awaitUploadStates(states: Flow<Pair<Float, Boolean>>): Flow<UploadState> = flow {
+    states.first { (progress, isDone) ->
+        emit(toUploadState(progress, isDone))
+        isDone
+    }
+}
 
 /**
  * Prefix Supabase errors with their HTTP status. Unparseable bodies (e.g. an
@@ -153,8 +168,6 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
         }
     }
 
-    // channelFlow (not flow{}): progress is emitted from a child coroutine while
-    // startOrResumeUploading() suspends, which plain flow{} forbids.
     override fun uploadVideo(
         videoId: String,
         sizeBytes: Long,
@@ -167,12 +180,11 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
             size = sizeBytes,
             path = storagePath(uid, videoId),
         )
-        val progressJob = launch {
-            upload.stateFlow.collect { send(toUploadState(it.progress, it.isDone)) }
-        }
-        upload.startOrResumeUploading()   // suspends until finished
-        progressJob.cancel()
-        send(UploadState.Done)
+        // startOrResumeUploading() is fire-and-forget (launches in its own scope and
+        // returns at once); real completion is awaited via the state flow below.
+        upload.startOrResumeUploading()
+        awaitUploadStates(upload.stateFlow.map { it.progress to it.isDone })
+            .collect { send(it) }
     }.distinctUntilChanged()
         .catch { e ->
             val message = if (e is RestException) "HTTP ${e.statusCode} — ${e.message}" else e.message
