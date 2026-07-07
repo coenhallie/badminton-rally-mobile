@@ -10,6 +10,7 @@ import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -18,8 +19,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
@@ -97,11 +96,12 @@ fun CourtMarkingScreen(
             )
         },
     ) { padding ->
+        // No scrolling: the frame flexes to the leftover space (weight), so the
+        // controls below are always on screen — portrait videos included.
         Column(
             modifier = Modifier
                 .padding(padding)
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState()),
+                .fillMaxSize(),
         ) {
             val error = state.error
             val marking = state.marking
@@ -122,71 +122,22 @@ fun CourtMarkingScreen(
 }
 
 @Composable
-private fun MarkingContent(
+private fun ColumnScope.MarkingContent(
     vm: CourtMarkingViewModel,
     marking: CourtMarkingState,
     onStartAnalysis: (CourtKeypoints) -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
 
-    var scale by remember { mutableFloatStateOf(1f) }
-    var offset by remember { mutableStateOf(Offset.Zero) }
-    var layoutSize by remember { mutableStateOf(IntSize.Zero) }
-    val textMeasurer = rememberTextMeasurer()
-    val density = LocalDensity.current
-
+    // The frame flexes to whatever height is left after the pinned controls,
+    // so it can never push them off screen (the original bug on portrait video).
     Box(
         modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(marking.videoWidth.toFloat() / marking.videoHeight.toFloat())
-            .clipToBounds()
-            .onSizeChanged { layoutSize = it }
-            .pointerInput(Unit) {
-                detectTransformGestures { centroid, pan, zoom, _ ->
-                    val newScale = (scale * zoom).coerceIn(1f, 6f)
-                    val effectiveZoom = newScale / scale
-                    // Zoom around the gesture centroid, then apply the pan.
-                    offset = centroid - (centroid - offset) * effectiveZoom + pan
-                    scale = newScale
-                    if (scale == 1f) offset = Offset.Zero
-                }
-            }
-            .pointerInput(Unit) {
-                detectTapGestures { tap ->
-                    // Inverse of the graphicsLayer transform (origin top-left).
-                    val x = (tap.x - offset.x) / scale
-                    val y = (tap.y - offset.y) / scale
-                    if (x in 0f..layoutSize.width.toFloat() && y in 0f..layoutSize.height.toFloat()) {
-                        vm.onTap(x, y, layoutSize.width.toFloat(), layoutSize.height.toFloat())
-                    }
-                }
-            },
+            .weight(1f)
+            .fillMaxWidth(),
+        contentAlignment = Alignment.Center,
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer {
-                    transformOrigin = TransformOrigin(0f, 0f)
-                    scaleX = scale
-                    scaleY = scale
-                    translationX = offset.x
-                    translationY = offset.y
-                },
-        ) {
-            state.frame?.let { bmp ->
-                Image(
-                    bitmap = bmp.asImageBitmap(),
-                    contentDescription = "Video frame for court mapping",
-                    contentScale = ContentScale.FillBounds,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                drawCourtGuide()
-                drawCornerRectangle(marking)
-                drawPlacedPoints(marking, scale, density.density, textMeasurer)
-            }
-        }
+        FrameWithOverlay(vm = vm, marking = marking, frame = state.frame)
     }
 
     InstructionRow(marking)
@@ -223,6 +174,76 @@ private fun MarkingContent(
                 .padding(horizontal = 16.dp)
                 .padding(bottom = 16.dp),
         )
+    }
+}
+
+@Composable
+private fun FrameWithOverlay(
+    vm: CourtMarkingViewModel,
+    marking: CourtMarkingState,
+    frame: android.graphics.Bitmap?,
+) {
+    // MutableState (not plain values) so the pointerInput(Unit) closures below
+    // always read fresh values instead of stale captures.
+    var scale by remember { mutableFloatStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+    var layoutSize by remember { mutableStateOf(IntSize.Zero) }
+    val textMeasurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+
+    // aspectRatio inside bounded constraints picks the largest fitting box:
+    // width-limited for landscape videos, height-limited for portrait ones.
+    Box(
+        modifier = Modifier
+            .aspectRatio(marking.videoWidth.toFloat() / marking.videoHeight.toFloat())
+            .clipToBounds()
+            .onSizeChanged { layoutSize = it }
+            .pointerInput(Unit) {
+                detectTransformGestures { centroid, pan, zoom, _ ->
+                    val newScale = (scale * zoom).coerceIn(1f, 6f)
+                    val effectiveZoom = newScale / scale
+                    // Zoom around the gesture centroid, then apply the pan.
+                    offset = centroid - (centroid - offset) * effectiveZoom + pan
+                    scale = newScale
+                    if (scale == 1f) offset = Offset.Zero
+                }
+            }
+            .pointerInput(Unit) {
+                detectTapGestures { tap ->
+                    // Inverse of the graphicsLayer transform (origin top-left).
+                    val x = (tap.x - offset.x) / scale
+                    val y = (tap.y - offset.y) / scale
+                    if (x in 0f..layoutSize.width.toFloat() && y in 0f..layoutSize.height.toFloat()) {
+                        vm.onTap(x, y, layoutSize.width.toFloat(), layoutSize.height.toFloat())
+                    }
+                }
+            },
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    transformOrigin = TransformOrigin(0f, 0f)
+                    scaleX = scale
+                    scaleY = scale
+                    translationX = offset.x
+                    translationY = offset.y
+                },
+        ) {
+            frame?.let { bmp ->
+                Image(
+                    bitmap = bmp.asImageBitmap(),
+                    contentDescription = "Video frame for court mapping",
+                    contentScale = ContentScale.FillBounds,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                drawCourtGuide()
+                drawCornerRectangle(marking)
+                drawPlacedPoints(marking, scale, density.density, textMeasurer)
+            }
+        }
     }
 }
 
