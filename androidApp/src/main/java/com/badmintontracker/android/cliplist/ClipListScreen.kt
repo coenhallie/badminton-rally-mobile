@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.DropdownMenu
@@ -44,6 +45,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.badmintontracker.android.BuildConfig
 import com.badmintontracker.android.data.ThemePreferenceRepository
+import com.badmintontracker.android.localvideo.LocalVideoEntry
+import com.badmintontracker.android.localvideo.LocalVideoRow
+import com.badmintontracker.android.localvideo.localVideoSection
 import com.badmintontracker.android.share.ShareSheet
 import com.badmintontracker.android.ui.components.ThemeToggleButton
 import com.badmintontracker.shared.model.RallyClip
@@ -62,6 +66,14 @@ fun ClipListScreen(
     shares: SharesRepository,
     themePrefs: ThemePreferenceRepository,
     onMatchClick: (MatchSummary) -> Unit,
+    localRows: List<LocalVideoRow> = emptyList(),
+    intakeError: String? = null,
+    onIntakeErrorShown: () -> Unit = {},
+    onLocalClick: (LocalVideoEntry) -> Unit = {},
+    onLocalAnalyze: (LocalVideoRow) -> Unit = {},
+    onLocalRemove: (LocalVideoEntry) -> Unit = {},
+    onRecord: () -> Unit = {},
+    onImport: () -> Unit = {},
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val themeMode by themePrefs.mode.collectAsStateWithLifecycle()
@@ -74,7 +86,14 @@ fun ClipListScreen(
         vm.dismissError()
     }
 
+    LaunchedEffect(intakeError) {
+        val err = intakeError ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(err)
+        onIntakeErrorShown()
+    }
+
     var menuOpen by remember { mutableStateOf(false) }
+    var addMenuOpen by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -86,6 +105,19 @@ fun ClipListScreen(
                     )
                 },
                 actions = {
+                    IconButton(onClick = { addMenuOpen = true }) {
+                        Icon(Icons.Default.Add, contentDescription = "Add video")
+                    }
+                    DropdownMenu(expanded = addMenuOpen, onDismissRequest = { addMenuOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Record video") },
+                            onClick = { addMenuOpen = false; onRecord() },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Import video") },
+                            onClick = { addMenuOpen = false; onImport() },
+                        )
+                    }
                     ThemeToggleButton(
                         mode = themeMode,
                         onToggle = themePrefs::toggle,
@@ -120,12 +152,21 @@ fun ClipListScreen(
             onRefresh = vm::refresh,
             modifier = Modifier.padding(padding).fillMaxSize(),
         ) {
-            if (state.ownedMatches.isEmpty() && state.sharedMatches.isEmpty() && !state.isRefreshing) {
+            if (state.ownedMatches.isEmpty() && state.sharedMatches.isEmpty() &&
+                localRows.isEmpty() && !state.isRefreshing
+            ) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No matches yet. Record one in the desktop app.")
+                    Text("No matches yet. Record one with the + button above.")
                 }
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    localVideoSection(
+                        rows = localRows,
+                        header = { SectionHeader(it) },
+                        onRowClick = onLocalClick,
+                        onAnalyzeClick = onLocalAnalyze,
+                        onRemove = onLocalRemove,
+                    )
                     if (state.ownedMatches.isNotEmpty()) {
                         item(key = "header-owned") { SectionHeader("My matches") }
                         items(state.ownedMatches, key = { "owned-${it.videoId}" }) { match ->

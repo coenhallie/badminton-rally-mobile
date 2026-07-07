@@ -2,6 +2,10 @@ package com.badmintontracker.android
 
 import android.app.Application
 import android.net.Uri
+import coil3.ImageLoader
+import coil3.PlatformContext
+import coil3.SingletonImageLoader
+import coil3.video.VideoFrameDecoder
 import com.badmintontracker.android.data.ThemePreferenceRepository
 import com.badmintontracker.android.localvideo.AnalyzeCoordinator
 import com.badmintontracker.android.localvideo.LocalVideoRepository
@@ -13,7 +17,13 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 
-class RallyAndroidApp : Application() {
+class RallyAndroidApp : Application(), SingletonImageLoader.Factory {
+
+    /** App-wide Coil loader that can also decode video frames (local thumbnails). */
+    override fun newImageLoader(context: PlatformContext): ImageLoader =
+        ImageLoader.Builder(context)
+            .components { add(VideoFrameDecoder.Factory()) }
+            .build()
 
     lateinit var rally:              RallyApp                   private set
     lateinit var themePrefs:         ThemePreferenceRepository  private set
