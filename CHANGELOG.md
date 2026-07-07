@@ -17,6 +17,17 @@ The mobile app is versioned independently from the web app.
   desktop flow), resumable upload with progress, and live pipeline progress until
   the match's rally clips appear.
 
+### Fixed
+- Court-marking controls (including "Start Analysis") stayed on screen for
+  portrait videos instead of being pushed out of view.
+- Analyze failures now show the full error with the HTTP status and a Retry,
+  instead of being clipped behind the button.
+- Local-video upload waited for the transfer to actually finish before starting
+  cloud processing (previously it could trigger against a not-yet-uploaded file).
+- Analysis progress now shows a correct 0–100% instead of values like 9245%.
+- A finished analysis that detects no rallies now keeps the entry with a clear
+  message rather than silently disappearing.
+
 ## [0.1.0] - 2026-05-18
 
 Initial pre-release of the Android companion app.
