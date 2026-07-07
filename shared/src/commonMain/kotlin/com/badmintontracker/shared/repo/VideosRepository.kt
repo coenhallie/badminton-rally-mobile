@@ -3,6 +3,7 @@ package com.badmintontracker.shared.repo
 import com.badmintontracker.shared.model.CourtKeypoints
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
+import io.github.jan.supabase.exceptions.RestException
 import io.github.jan.supabase.functions.functions
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
@@ -39,6 +40,20 @@ sealed interface UploadState {
 
 internal fun toUploadState(progress: Float, isDone: Boolean): UploadState =
     if (isDone) UploadState.Done else UploadState.InProgress(progress)
+
+/**
+ * Prefix Supabase errors with their HTTP status. Unparseable bodies (e.g. an
+ * HTML page from the edge) otherwise surface as a bare "Unknown error", which
+ * hides the one fact that identifies the culprit.
+ */
+internal fun <T> Result<T>.annotateHttpStatus(): Result<T> = fold(
+    onSuccess = { this },
+    onFailure = { e ->
+        Result.failure(
+            if (e is RestException) IllegalStateException("HTTP ${e.statusCode} — ${e.message}", e) else e,
+        )
+    },
+)
 
 interface VideosRepository {
     /** Insert the videos row. Call AFTER the upload succeeds (same order as web). */
@@ -102,7 +117,7 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
                 )
             )
             Unit
-        }
+        }.annotateHttpStatus()
 
     override suspend fun setCourtKeypoints(videoId: String, keypoints: CourtKeypoints): Result<Unit> =
         runCatching {
@@ -111,7 +126,7 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
                     filter { eq("id", videoId) }
                 }
             Unit
-        }
+        }.annotateHttpStatus()
 
     override suspend fun startProcessing(videoId: String): Result<Unit> = runCatching {
         val response = client.functions(
@@ -122,7 +137,7 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
             },
         )
         check(response.status.isSuccess()) { response.bodyAsText() }
-    }
+    }.annotateHttpStatus()
 
     override fun observeProcessing(videoId: String, pollIntervalMs: Long): Flow<ProcessingUpdate> = flow {
         while (true) {
@@ -159,7 +174,10 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
         progressJob.cancel()
         send(UploadState.Done)
     }.distinctUntilChanged()
-        .catch { emit(UploadState.Failed(it.message ?: "Upload failed")) }
+        .catch { e ->
+            val message = if (e is RestException) "HTTP ${e.statusCode} — ${e.message}" else e.message
+            emit(UploadState.Failed(message ?: "Upload failed"))
+        }
 
     companion object {
         fun storagePath(uid: String, videoId: String) = "$uid/$videoId.mp4"

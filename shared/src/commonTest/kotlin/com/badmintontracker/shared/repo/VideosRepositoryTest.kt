@@ -77,6 +77,20 @@ class VideosRepositoryTest {
     }
 
     @Test
+    fun html_error_body_surfaces_http_status_instead_of_unknown_error() = runTest {
+        // Edge/CDN hiccups return HTML, which postgrest can't parse into an error.
+        val client = TestSupabase.client {
+            respondError(
+                HttpStatusCode.BadRequest,
+                "<!DOCTYPE html><html><body>Attention Required</body></html>",
+            )
+        }
+        val repo = VideosRepositoryImpl(client)
+        val error = repo.setCourtKeypoints("vid-1", testKeypoints()).exceptionOrNull()
+        (error?.message ?: "") shouldContain "HTTP 400"
+    }
+
+    @Test
     fun observeProcessing_emits_until_terminal_status() = runTest {
         var call = 0
         val client = TestSupabase.client {
