@@ -21,3 +21,8 @@ kotlin-js-store/
 
 # Secrets
 **/Config.xcconfig
+
+# OS / tooling
+.DS_Store
+.claude/
+supabase/.temp/
