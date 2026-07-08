@@ -47,7 +47,7 @@ class LocalVideoListViewModelTest {
         val vm = LocalVideoListViewModel(localVideos, coordinator(localVideos))
         val rows = vm.rows.value
         rows.map { it.entry.id } shouldBe listOf("b", "a")
-        rows[0].statusText shouldBe "Failed: network — tap Analyze to retry"
+        rows[0].statusText shouldBe null            // FAILED surfaces via dialog, not card text
         rows[1].statusText shouldBe null            // plain LOCAL entry
         rows[1].durationText shouldBe "1:05"
         rows[1].canAnalyze shouldBe true

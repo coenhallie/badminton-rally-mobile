@@ -29,6 +29,9 @@ class LocalVideoListViewModel(
 
     fun remove(id: String) = localVideos.remove(id)
     fun retry(id: String) = coordinator.retry(id)
+
+    /** Marks a failure's result dialog as shown so it isn't re-displayed. */
+    fun acknowledgeResult(id: String) = localVideos.update(id) { it.copy(resultSeen = true) }
 }
 
 internal fun LocalVideoEntry.toRow(progress: AnalyzeProgress?): LocalVideoRow {
@@ -38,7 +41,8 @@ internal fun LocalVideoEntry.toRow(progress: AnalyzeProgress?): LocalVideoRow {
             ?.let { "Uploading ${(it * 100).toInt()}%…" } ?: "Uploading…"
         AnalyzeStage.PROCESSING -> progress?.pipelineProgress
             ?.let { "Analyzing ${(it * 100).toInt()}%…" } ?: "Analyzing…"
-        AnalyzeStage.FAILED -> "Failed: ${failureMessage ?: "unknown error"} — tap Analyze to retry"
+        // Failures are surfaced via a result dialog, not inline card text.
+        AnalyzeStage.FAILED -> null
     }
     return LocalVideoRow(
         entry = this,

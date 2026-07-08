@@ -149,7 +149,8 @@ class AnalyzeCoordinator(
 
     private fun fail(entryId: String, step: AnalyzeStep, message: String) {
         localVideos.update(entryId) {
-            it.copy(stage = AnalyzeStage.FAILED, failedStep = step, failureMessage = message)
+            // resultSeen = false so the UI shows the result dialog for this new failure.
+            it.copy(stage = AnalyzeStage.FAILED, failedStep = step, failureMessage = message, resultSeen = false)
         }
     }
 

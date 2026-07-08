@@ -20,4 +20,5 @@ data class LocalVideoEntry(
     val stage: AnalyzeStage = AnalyzeStage.LOCAL,
     val failedStep: AnalyzeStep? = null,
     val failureMessage: String? = null,
+    val resultSeen: Boolean = false,         // result dialog already shown for this failure
 )

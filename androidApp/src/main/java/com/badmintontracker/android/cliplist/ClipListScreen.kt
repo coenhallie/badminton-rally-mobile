@@ -45,6 +45,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.badmintontracker.android.BuildConfig
 import com.badmintontracker.android.data.ThemePreferenceRepository
+import com.badmintontracker.android.localvideo.AnalyzeResultDialog
+import com.badmintontracker.android.localvideo.AnalyzeStage
 import com.badmintontracker.android.localvideo.LocalVideoEntry
 import com.badmintontracker.android.localvideo.LocalVideoRow
 import com.badmintontracker.android.localvideo.localVideoSection
@@ -72,6 +74,7 @@ fun ClipListScreen(
     onLocalClick: (LocalVideoEntry) -> Unit = {},
     onLocalAnalyze: (LocalVideoRow) -> Unit = {},
     onLocalRemove: (LocalVideoEntry) -> Unit = {},
+    onLocalResultSeen: (LocalVideoEntry) -> Unit = {},
     onRecord: () -> Unit = {},
     onImport: () -> Unit = {},
 ) {
@@ -90,6 +93,18 @@ fun ClipListScreen(
         val err = intakeError ?: return@LaunchedEffect
         snackbarHostState.showSnackbar(err)
         onIntakeErrorShown()
+    }
+
+    // Auto-show the result modal once per failure. `resultSeen` is persisted on the
+    // entry, so dismissing it survives navigation and relaunch; a later retry that
+    // fails again resets the flag (in AnalyzeCoordinator.fail) and shows it anew.
+    var resultDialog by remember { mutableStateOf<LocalVideoRow?>(null) }
+    LaunchedEffect(localRows) {
+        if (resultDialog == null) {
+            resultDialog = localRows.firstOrNull {
+                it.entry.stage == AnalyzeStage.FAILED && !it.entry.resultSeen
+            }
+        }
     }
 
     var menuOpen by remember { mutableStateOf(false) }
@@ -201,6 +216,14 @@ fun ClipListScreen(
             videoId = vid,
             sharesRepository = shares,
             onDismiss = { sheetVideoId = null },
+        )
+    }
+
+    resultDialog?.let { row ->
+        AnalyzeResultDialog(
+            entry = row.entry,
+            onRetry = { resultDialog = null; onLocalResultSeen(row.entry); onLocalAnalyze(row) },
+            onDismiss = { resultDialog = null; onLocalResultSeen(row.entry) },
         )
     }
 }

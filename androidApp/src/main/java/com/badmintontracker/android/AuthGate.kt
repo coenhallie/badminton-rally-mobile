@@ -121,6 +121,7 @@ fun AuthGate(
                             }
                         },
                         onLocalRemove = { localVm.remove(it.id) },
+                        onLocalResultSeen = { localVm.acknowledgeResult(it.id) },
                         onRecord = intake.record,
                         onImport = intake.import,
                     )

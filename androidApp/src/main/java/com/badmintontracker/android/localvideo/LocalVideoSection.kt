@@ -68,23 +68,6 @@ private fun LocalVideoRowItem(
 ) {
     val entry = row.entry
     var menuOpen by remember { mutableStateOf(false) }
-    var errorDialogOpen by remember { mutableStateOf(false) }
-
-    if (errorDialogOpen) {
-        AlertDialog(
-            onDismissRequest = { errorDialogOpen = false },
-            title = {
-                Text("Analysis failed" + (entry.failedStep?.let { " (${it.label()})" } ?: ""))
-            },
-            text = { Text(entry.failureMessage ?: "Unknown error") },
-            confirmButton = {
-                TextButton(onClick = { errorDialogOpen = false; onAnalyze() }) { Text("Retry") }
-            },
-            dismissButton = {
-                TextButton(onClick = { errorDialogOpen = false }) { Text("Close") }
-            },
-        )
-    }
 
     Row(
         modifier = Modifier
@@ -114,22 +97,12 @@ private fun LocalVideoRowItem(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             row.statusText?.let { status ->
-                val failed = entry.stage == AnalyzeStage.FAILED
                 Text(
-                    text = if (failed) "$status · tap for details" else status,
+                    text = status,
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (failed) {
-                        MaterialTheme.colorScheme.error
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = if (failed) {
-                        Modifier.clickable { errorDialogOpen = true }
-                    } else {
-                        Modifier
-                    },
                 )
             }
         }
@@ -158,10 +131,20 @@ private fun LocalVideoRowItem(
     }
 }
 
-private fun AnalyzeStep.label(): String = when (this) {
-    AnalyzeStep.UPLOAD -> "upload"
-    AnalyzeStep.CREATE_ROW -> "registration"
-    AnalyzeStep.KEYPOINTS -> "court points"
-    AnalyzeStep.TRIGGER -> "start"
-    AnalyzeStep.PROCESSING -> "processing"
+/** Modal shown when a local video's analysis ends in a failure or a no-rallies result. */
+@Composable
+fun AnalyzeResultDialog(
+    entry: LocalVideoEntry,
+    onRetry: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val message = entry.failureMessage ?: "Unknown error"
+    val noRallies = message.contains("no rallies", ignoreCase = true)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (noRallies) "No rallies found" else "Analysis failed") },
+        text = { Text(message) },
+        confirmButton = { TextButton(onClick = onRetry) { Text("Retry") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+    )
 }
