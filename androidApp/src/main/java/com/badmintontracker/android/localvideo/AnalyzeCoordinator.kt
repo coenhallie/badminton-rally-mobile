@@ -33,6 +33,7 @@ class AnalyzeCoordinator(
     private val scope: CoroutineScope,
     private val openChannel: suspend (uri: String, offset: Long) -> ByteReadChannel,
     private val log: (String) -> Unit = {},
+    private val localAnnotations: LocalAnnotationsRepository,
 ) {
     private val _progress = MutableStateFlow<Map<String, AnalyzeProgress>>(emptyMap())
     val progress: StateFlow<Map<String, AnalyzeProgress>> = _progress.asStateFlow()
@@ -144,7 +145,14 @@ class AnalyzeCoordinator(
                 "Analysis finished but found no rallies in this video.",
             )
         }
-        localVideos.remove(entryId)
+        if (localAnnotations.hasAnnotations(entryId)) {
+            // Keep annotated videos so the notes survive; mark them Analyzed.
+            localVideos.update(entryId) {
+                it.copy(stage = AnalyzeStage.ANALYZED, failedStep = null, failureMessage = null)
+            }
+        } else {
+            localVideos.remove(entryId)
+        }
     }
 
     private fun fail(entryId: String, step: AnalyzeStep, message: String) {

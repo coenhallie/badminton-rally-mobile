@@ -56,6 +56,7 @@ class RallyAndroidApp : Application(), SingletonImageLoader.Factory {
                 stream.toByteReadChannel()
             },
             log = { Log.i("AnalyzeCoordinator", it) },
+            localAnnotations = localAnnotations,
         )
         analyzeCoordinator.reattachToProcessing()
     }

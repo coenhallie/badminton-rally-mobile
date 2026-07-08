@@ -17,6 +17,7 @@ data class LocalVideoRow(
 class LocalVideoListViewModel(
     private val localVideos: LocalVideoRepository,
     private val coordinator: AnalyzeCoordinator,
+    private val localAnnotations: LocalAnnotationsRepository,
 ) : ViewModel() {
 
     val rows = combine(localVideos.entries, coordinator.progress) { entries, progress ->
@@ -27,7 +28,11 @@ class LocalVideoListViewModel(
         localVideos.entries.value.map { it.toRow(null) },
     )
 
-    fun remove(id: String) = localVideos.remove(id)
+    fun remove(id: String) {
+        localVideos.remove(id)
+        localAnnotations.removeAllFor(id)
+    }
+
     fun retry(id: String) = coordinator.retry(id)
 
     /** Marks a failure's result dialog as shown so it isn't re-displayed. */

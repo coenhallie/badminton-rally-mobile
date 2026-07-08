@@ -26,6 +26,7 @@ class AnalyzeCoordinatorTest {
     private val localVideos = LocalVideoRepository(MapSettings())
     private val videos = FakeVideosRepository()
     private val clips = FakeClipsRepository()
+    private val localAnnotations = LocalAnnotationsRepository(MapSettings())
 
     private fun keypoints() = CourtKeypoints(
         topLeft = listOf(1f, 2f), topRight = listOf(3f, 4f),
@@ -54,6 +55,7 @@ class AnalyzeCoordinatorTest {
         clips = clips,
         scope = CoroutineScope(backgroundScope.coroutineContext + UnconfinedTestDispatcher(testScheduler)),
         openChannel = { _, _ -> ByteReadChannel(ByteArray(0)) },
+        localAnnotations = localAnnotations,
     )
 
     @Test
@@ -159,6 +161,18 @@ class AnalyzeCoordinatorTest {
         runCurrent()
         videos.uploadCalls shouldBe emptyList<String>()
         localVideos.get("e1").shouldBeNull()   // completed via observeProcessing
+    }
+
+    @Test
+    fun success_with_annotations_keeps_entry_as_analyzed() = runTest {
+        localVideos.add(entry())
+        clips.clips.value = listOf(clipFor("e1"))
+        localAnnotations.add("e1", 1f, "note", null)   // has an annotation
+        val c = coordinator()
+        c.startAnalysis("e1", keypoints())
+        runCurrent()
+        val kept = localVideos.get("e1").shouldNotBeNull()
+        kept.stage shouldBe AnalyzeStage.ANALYZED
     }
 
     @Test

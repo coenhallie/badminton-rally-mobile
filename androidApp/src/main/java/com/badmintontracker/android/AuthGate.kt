@@ -97,7 +97,7 @@ fun AuthGate(
                     )
                     val localVm: LocalVideoListViewModel = viewModel(
                         factory = viewModelFactory {
-                            initializer { LocalVideoListViewModel(localVideos, coordinator) }
+                            initializer { LocalVideoListViewModel(localVideos, coordinator, localAnnotations) }
                         }
                     )
                     val localRows by localVm.rows.collectAsStateWithLifecycle()
