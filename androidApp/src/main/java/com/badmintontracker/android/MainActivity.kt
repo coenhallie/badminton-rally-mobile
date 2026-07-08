@@ -39,6 +39,7 @@ class MainActivity : ComponentActivity() {
                         themePrefs = app.themePrefs,
                         localVideos = app.localVideos,
                         coordinator = app.analyzeCoordinator,
+                        localAnnotations = app.localAnnotations,
                     )
                 }
             }

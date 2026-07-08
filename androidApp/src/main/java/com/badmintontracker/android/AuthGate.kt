@@ -31,7 +31,9 @@ import com.badmintontracker.android.cliplist.MatchClipsScreen
 import com.badmintontracker.android.data.ThemePreferenceRepository
 import com.badmintontracker.android.localvideo.AnalyzeCoordinator
 import com.badmintontracker.android.localvideo.AnalyzeStage
+import com.badmintontracker.android.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.android.localvideo.LocalPlayerScreen
+import com.badmintontracker.android.localvideo.LocalPlayerViewModel
 import com.badmintontracker.android.localvideo.LocalVideoListViewModel
 import com.badmintontracker.android.localvideo.LocalVideoRepository
 import com.badmintontracker.android.localvideo.court.CourtMarkingScreen
@@ -50,6 +52,7 @@ fun AuthGate(
     themePrefs: ThemePreferenceRepository,
     localVideos: LocalVideoRepository,
     coordinator: AnalyzeCoordinator,
+    localAnnotations: LocalAnnotationsRepository,
 ) {
     val session by rally.auth.sessionFlow.collectAsStateWithLifecycle(initialValue = null)
 
@@ -161,7 +164,13 @@ fun AuthGate(
                     if (e == null) {
                         LaunchedEffect(Unit) { nav.popBackStack() }
                     } else {
+                        val playerVm: LocalPlayerViewModel = viewModel(
+                            factory = viewModelFactory {
+                                initializer { LocalPlayerViewModel(args.entryId, localAnnotations) }
+                            }
+                        )
                         LocalPlayerScreen(
+                            vm = playerVm,
                             entry = e,
                             canAnalyze = e.stage == AnalyzeStage.LOCAL || e.stage == AnalyzeStage.FAILED,
                             onAnalyze = { nav.navigate(Route.CourtMarking(e.id)) },
