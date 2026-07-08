@@ -3,7 +3,7 @@ package com.badmintontracker.android.localvideo
 import com.badmintontracker.shared.model.CourtKeypoints
 import kotlinx.serialization.Serializable
 
-enum class AnalyzeStage { LOCAL, UPLOADING, PROCESSING, FAILED }
+enum class AnalyzeStage { LOCAL, UPLOADING, PROCESSING, FAILED, ANALYZED }
 
 /** Pipeline steps in execution order; retry resumes from the failed one. */
 enum class AnalyzeStep { UPLOAD, CREATE_ROW, KEYPOINTS, TRIGGER, PROCESSING }

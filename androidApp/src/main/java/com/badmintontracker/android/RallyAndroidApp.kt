@@ -9,6 +9,7 @@ import coil3.SingletonImageLoader
 import coil3.video.VideoFrameDecoder
 import com.badmintontracker.android.data.ThemePreferenceRepository
 import com.badmintontracker.android.localvideo.AnalyzeCoordinator
+import com.badmintontracker.android.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.android.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.RallyApp
 import com.badmintontracker.shared.SupabaseConfig
@@ -29,6 +30,7 @@ class RallyAndroidApp : Application(), SingletonImageLoader.Factory {
     lateinit var rally:              RallyApp                   private set
     lateinit var themePrefs:         ThemePreferenceRepository  private set
     lateinit var localVideos:        LocalVideoRepository       private set
+    lateinit var localAnnotations:   LocalAnnotationsRepository private set
     lateinit var analyzeCoordinator: AnalyzeCoordinator         private set
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -39,6 +41,7 @@ class RallyAndroidApp : Application(), SingletonImageLoader.Factory {
         rally       = RallyApp(SupabaseConfig(BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_ANON_KEY), settings)
         themePrefs  = ThemePreferenceRepository(settings)
         localVideos = LocalVideoRepository(settings)
+        localAnnotations = LocalAnnotationsRepository(settings)
         analyzeCoordinator = AnalyzeCoordinator(
             localVideos = localVideos,
             videos = rally.videos,

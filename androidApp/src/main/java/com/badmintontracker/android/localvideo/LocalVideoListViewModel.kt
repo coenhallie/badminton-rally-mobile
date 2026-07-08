@@ -43,6 +43,7 @@ internal fun LocalVideoEntry.toRow(progress: AnalyzeProgress?): LocalVideoRow {
             ?.let { "Analyzing ${(it * 100).toInt()}%…" } ?: "Analyzing…"
         // Failures are surfaced via a result dialog, not inline card text.
         AnalyzeStage.FAILED -> null
+        AnalyzeStage.ANALYZED -> "Analyzed"
     }
     return LocalVideoRow(
         entry = this,
