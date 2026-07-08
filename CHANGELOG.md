@@ -16,6 +16,9 @@ The mobile app is versioned independently from the web app.
 - Analyze a local video from the phone: 12-point court mapping (identical to the
   desktop flow), resumable upload with progress, and live pipeline progress until
   the match's rally clips appear.
+- Add timestamped annotations (shot-quality chips + notes) to local on-phone videos.
+  Annotations are stored on the phone; a video keeps its annotations after analysis
+  (marked "Analyzed") and loses them only when removed from the app.
 
 ### Fixed
 - Court-marking controls (including "Start Analysis") stayed on screen for
