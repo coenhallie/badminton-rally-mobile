@@ -22,6 +22,7 @@
 		A3E7CE695279E31B5DE51490 /* ClipDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89FA84FB777601A064F7BD1C /* ClipDetailView.swift */; };
 		CFC74B86E0256055E87B5EAC /* RallyIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = E169E538F23D04ED878E1EFF /* RallyIOSApp.swift */; };
 		D3A0C6A3CA64CF44286066FC /* ClipListModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36DA4D40D7C6052946C3CC35 /* ClipListModel.swift */; };
+		D90B20576A674D829140588B /* ShareSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CEBABF3818F4829339E77D7 /* ShareSheetView.swift */; };
 		EB93197882D94A5AF008CD13 /* ShuttlTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C55FBA93C98A27AC7EE21BE /* ShuttlTheme.swift */; };
 		EE7A9B1A1CC005EC4BCF015B /* ErrorBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = F445C67CB4C46F120008DAD3 /* ErrorBanner.swift */; };
 		F34C70DAE58109539EEA2D7B /* AddAnnotationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B46560A5190E75D7D9644D0 /* AddAnnotationSheet.swift */; };
@@ -41,6 +42,7 @@
 		0C55FBA93C98A27AC7EE21BE /* ShuttlTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShuttlTheme.swift; sourceTree = "<group>"; };
 		18B28237BDD6785E014E9F62 /* SmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmokeTests.swift; sourceTree = "<group>"; };
 		36DA4D40D7C6052946C3CC35 /* ClipListModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipListModel.swift; sourceTree = "<group>"; };
+		3CEBABF3818F4829339E77D7 /* ShareSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareSheetView.swift; sourceTree = "<group>"; };
 		42CBF6009AF78F80778FDBA5 /* MatchClipsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchClipsView.swift; sourceTree = "<group>"; };
 		4A94F21AB0AEE5F66047B679 /* MatchGrouping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchGrouping.swift; sourceTree = "<group>"; };
 		4B46560A5190E75D7D9644D0 /* AddAnnotationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddAnnotationSheet.swift; sourceTree = "<group>"; };
@@ -131,6 +133,14 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		B175162860559A14F1D4ACCF /* Share */ = {
+			isa = PBXGroup;
+			children = (
+				3CEBABF3818F4829339E77D7 /* ShareSheetView.swift */,
+			);
+			path = Share;
+			sourceTree = "<group>";
+		};
 		B53BB82DD7780F3657A03A11 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
@@ -141,6 +151,7 @@
 				161D482132B1A836D1C0C8E6 /* ClipDetail */,
 				70D1FC2C808C15B61B3F5D67 /* ClipList */,
 				2DCC9661F24164FE480C72F7 /* Components */,
+				B175162860559A14F1D4ACCF /* Share */,
 				5FDF58FB201ACBADD1DA850C /* SignIn */,
 				F382516A24A5D01B051FF4D9 /* Theme */,
 			);
@@ -270,6 +281,7 @@
 				7424550AE59BF1354C4DD5F4 /* PrimaryButtonStyle.swift in Sources */,
 				CFC74B86E0256055E87B5EAC /* RallyIOSApp.swift in Sources */,
 				77F381D4EA05BBFC12F5FFD2 /* RootView.swift in Sources */,
+				D90B20576A674D829140588B /* ShareSheetView.swift in Sources */,
 				60AC11B9815BD71920288100 /* ShuttlCard.swift in Sources */,
 				EB93197882D94A5AF008CD13 /* ShuttlTheme.swift in Sources */,
 				8D09944EA6E8B198E3D0073C /* SignInView.swift in Sources */,

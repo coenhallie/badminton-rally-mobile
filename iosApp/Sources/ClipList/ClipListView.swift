@@ -121,10 +121,3 @@ struct ClipListView: View {
 extension MatchSummary: Identifiable {
     var id: String { videoId }
 }
-
-// Temporary placeholder — Task 9 replaces this with the real share sheet.
-struct ShareSheetView: View {
-    let rally: RallyApp
-    let videoId: String
-    var body: some View { Text("Share — TODO Task 9") }
-}
