@@ -2,6 +2,7 @@ package com.badmintontracker.android.signin
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.badmintontracker.shared.auth.friendlyAuthError
 import com.badmintontracker.shared.repo.AuthRepository
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow

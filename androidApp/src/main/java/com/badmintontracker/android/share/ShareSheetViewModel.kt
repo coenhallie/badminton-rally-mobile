@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.badmintontracker.shared.model.MatchShare
 import com.badmintontracker.shared.repo.ShareError
 import com.badmintontracker.shared.repo.SharesRepository
+import com.badmintontracker.shared.repo.userMessage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -43,7 +44,7 @@ class ShareSheetViewModel(
                 .onFailure { e ->
                     _state.value = _state.value.copy(
                         isBusy = false,
-                        error = (e as? ShareError).toMessage(),
+                        error = (e as? ShareError).userMessage(),
                     )
                 }
         }
@@ -66,12 +67,4 @@ class ShareSheetViewModel(
             }
         }
     }
-}
-
-private fun ShareError?.toMessage(): String = when (this) {
-    ShareError.NotOwner        -> "You can only share matches you uploaded."
-    ShareError.NoSuchUser      -> "No Shuttl user found with that email."
-    ShareError.CannotShareSelf -> "You can't share a match with yourself."
-    is ShareError.Unknown      -> "Could not share — please try again."
-    null                       -> "Unknown error."
 }

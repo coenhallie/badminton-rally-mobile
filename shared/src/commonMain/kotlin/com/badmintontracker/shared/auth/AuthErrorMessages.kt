@@ -1,4 +1,4 @@
-package com.badmintontracker.android.signin
+package com.badmintontracker.shared.auth
 
 import io.github.jan.supabase.auth.exception.AuthRestException
 import io.github.jan.supabase.auth.exception.AuthErrorCode

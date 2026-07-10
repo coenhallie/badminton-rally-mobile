@@ -4,6 +4,7 @@ import com.badmintontracker.shared.repo.AnnotationsRepository
 import com.badmintontracker.shared.repo.AnnotationsRepositoryImpl
 import com.badmintontracker.shared.repo.AuthRepository
 import com.badmintontracker.shared.repo.AuthRepositoryImpl
+import com.badmintontracker.shared.repo.AuthState
 import com.badmintontracker.shared.repo.ClipsRepository
 import com.badmintontracker.shared.repo.ClipsRepositoryImpl
 import com.badmintontracker.shared.repo.MediaRepository
@@ -12,9 +13,12 @@ import com.badmintontracker.shared.repo.SharesRepository
 import com.badmintontracker.shared.repo.SharesRepositoryImpl
 import com.badmintontracker.shared.repo.VideosRepository
 import com.badmintontracker.shared.repo.VideosRepositoryImpl
+import com.badmintontracker.shared.repo.toAuthState
 import com.russhwolf.settings.Settings
 import io.github.jan.supabase.SupabaseClient
 import io.ktor.client.engine.HttpClientEngine
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 
 class RallyApp(
     config: SupabaseConfig,
@@ -28,4 +32,6 @@ class RallyApp(
     val media:       MediaRepository       = MediaRepositoryImpl(client)
     val shares:      SharesRepository      = SharesRepositoryImpl(client)
     val videos:      VideosRepository      = VideosRepositoryImpl(client)
+
+    val authState: Flow<AuthState> = auth.sessionFlow.map { it.toAuthState() }
 }
