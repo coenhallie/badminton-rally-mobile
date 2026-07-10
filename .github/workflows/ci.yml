@@ -52,7 +52,9 @@ jobs:
       - run: ./gradlew :androidApp:assembleDebug
 
   ios-app:
-    runs-on: macos-14
+    # macos-15+: the committed pbxproj uses project format 77, unreadable by
+    # macos-14's Xcode 15.
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -61,12 +63,15 @@ jobs:
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
       - run: cp iosApp/Config/Supabase.xcconfig.example iosApp/Config/Supabase.xcconfig
-      - run: >
-          xcodebuild test
-          -project iosApp/iosApp.xcodeproj
-          -scheme iosApp
-          -destination 'platform=iOS Simulator,name=iPhone 15'
-          CODE_SIGNING_ALLOWED=NO
+      - name: Run iOS tests on first available iPhone simulator
+        run: |
+          DEVICE=$(xcrun simctl list devices available | grep -oE 'iPhone [0-9][^(]*' | head -1 | sed 's/ *$//')
+          echo "Using simulator: $DEVICE"
+          xcodebuild test \
+            -project iosApp/iosApp.xcodeproj \
+            -scheme iosApp \
+            -destination "platform=iOS Simulator,name=$DEVICE" \
+            CODE_SIGNING_ALLOWED=NO
 
   version-tag-check:
     if: startsWith(github.ref, 'refs/tags/v')
