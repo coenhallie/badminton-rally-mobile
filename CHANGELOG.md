@@ -10,6 +10,10 @@ The mobile app is versioned independently from the web app.
 ## [Unreleased]
 
 ### Added
+- iOS app (initial release, remote-clips parity): email sign-in, match list with
+  thumbnails, rally clips, clip detail with AVPlayer and annotations, match sharing.
+- Single shared version source `Config/Version.xcconfig` read by both Android and iOS;
+  release tags `vX.Y.Z` are CI-verified against it. Version shown on both sign-in screens.
 - Version indicator in the home screen overflow menu.
 - Record or import match videos on the phone; they stay on-device under "On this phone".
 - Play local videos with the same frame-step controls as rally clips.
