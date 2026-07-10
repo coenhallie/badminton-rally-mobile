@@ -112,8 +112,9 @@ view-state over the shared repositories:
 - **Clip detail** — AVPlayer (`VideoPlayer` / `AVPlayerViewController` for fullscreen)
   playing `MediaRepository.signedClipUrl`; annotation list with kind badges
   (good shot / forced error / unforced error), tap-to-seek, add-annotation sheet, delete;
-  title editing via `ClipsRepository.updateTitle`. Frame-accurate stepping is NOT in
-  scope (belongs to the local-video milestone).
+  clip title shown read-only, matching Android (`ClipsRepository.updateTitle` exists but
+  is unused by clip detail on either platform). Frame-accurate stepping is NOT in scope
+  (belongs to the local-video milestone).
 - **Share sheet** — modal sheet for email-based match sharing over `SharesRepository`
   (share, unshare, list), mirroring `ShareSheet.kt`; errors map through the shared
   `ShareError` hierarchy.
