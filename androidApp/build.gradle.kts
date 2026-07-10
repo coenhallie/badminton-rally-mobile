@@ -15,6 +15,20 @@ val localProperties = Properties().apply {
 val supabaseUrl     = (localProperties["SUPABASE_URL"] as? String).orEmpty()
 val supabaseAnonKey = (localProperties["SUPABASE_ANON_KEY"] as? String).orEmpty()
 
+// Shared Android/iOS version source — see Config/Version.xcconfig.
+val versionConfig: Map<String, String> = rootProject.file("Config/Version.xcconfig")
+    .readLines()
+    .filterNot { it.trimStart().startsWith("//") }
+    .mapNotNull { line ->
+        val parts = line.split("=", limit = 2)
+        if (parts.size == 2) parts[0].trim() to parts[1].trim() else null
+    }
+    .toMap()
+val sharedVersionName: String = versionConfig["MARKETING_VERSION"]
+    ?: error("MARKETING_VERSION missing from Config/Version.xcconfig")
+val sharedVersionCode: Int = versionConfig["CURRENT_PROJECT_VERSION"]?.toIntOrNull()
+    ?: error("CURRENT_PROJECT_VERSION missing or not an Int in Config/Version.xcconfig")
+
 android {
     namespace = "com.badmintontracker.android"
     compileSdk = 36
@@ -23,8 +37,8 @@ android {
         applicationId = "com.badmintontracker.android"
         minSdk = 26
         targetSdk = 36
-        versionCode = 8
-        versionName = "0.1.7"
+        versionCode = sharedVersionCode
+        versionName = sharedVersionName
 
         buildConfigField("String", "SUPABASE_URL",      "\"$supabaseUrl\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")

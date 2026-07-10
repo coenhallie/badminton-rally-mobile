@@ -28,6 +28,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.badmintontracker.android.BuildConfig
 import com.badmintontracker.android.data.ThemePreferenceRepository
 import com.badmintontracker.android.ui.components.ErrorBanner
 import com.badmintontracker.android.ui.components.ShuttlButton
@@ -123,6 +124,13 @@ fun SignInScreen(
                 style = MaterialTheme.typography.bodySmall,
                 textAlign = TextAlign.Center,
                 modifier  = Modifier.widthIn(max = 320.dp),
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                style = MaterialTheme.typography.bodySmall,
+                color = ShuttlTheme.extended.textTertiary,
+                textAlign = TextAlign.Center,
             )
         }
     }
