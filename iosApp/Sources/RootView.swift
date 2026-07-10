@@ -26,11 +26,6 @@ struct RootView: View {
     }
 }
 
-struct SignInView: View {
-    let rally: RallyApp
-    var body: some View { Text("Sign in — TODO Task 6") }
-}
-
 struct ClipListView: View {
     let rally: RallyApp
     var body: some View { Text("Clips — TODO Task 7") }
