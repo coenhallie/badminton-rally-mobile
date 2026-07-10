@@ -29,10 +29,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.badmintontracker.android.data.ThemePreferenceRepository
-import com.badmintontracker.android.ui.components.DividerWithText
 import com.badmintontracker.android.ui.components.ErrorBanner
 import com.badmintontracker.android.ui.components.ShuttlButton
-import com.badmintontracker.android.ui.components.ShuttlButtonVariant
 import com.badmintontracker.android.ui.components.ShuttlCard
 import com.badmintontracker.android.ui.components.ShuttlFieldType
 import com.badmintontracker.android.ui.components.ShuttlOutlinedTextField
@@ -115,16 +113,6 @@ fun SignInScreen(
                         Spacer(Modifier.height(16.dp))
                         ErrorBanner(state.error!!)
                     }
-
-                    DividerWithText("or")
-
-                    ShuttlButton(
-                        text     = "Continue with Google",
-                        onClick  = vm::submitGoogle,
-                        variant  = ShuttlButtonVariant.Secondary,
-                        enabled  = !state.isSubmitting,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
                 }
             }
 

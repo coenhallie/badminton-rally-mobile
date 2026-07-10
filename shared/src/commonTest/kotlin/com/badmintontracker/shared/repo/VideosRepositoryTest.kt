@@ -113,6 +113,38 @@ class VideosRepositoryTest {
     }
 
     @Test
+    fun observeProcessing_survives_transient_poll_errors() = runTest {
+        var call = 0
+        val client = TestSupabase.client {
+            call++
+            when {
+                call <= 1 -> respondError(HttpStatusCode.ServiceUnavailable, "blip")
+                else      -> jsonResponse("""[{"status":"phase1_complete","progress":100.0,"error":null}]""")
+            }
+        }
+        val repo = VideosRepositoryImpl(client)
+        repo.observeProcessing("vid-1", pollIntervalMs = 1).test {
+            val last = awaitItem()
+            last shouldBe ProcessingUpdate("phase1_complete", 1.0f, null)
+            awaitComplete()
+        }
+    }
+
+    @Test
+    fun observeProcessing_reports_failure_after_persistent_poll_errors() = runTest {
+        val client = TestSupabase.client {
+            respondError(HttpStatusCode.ServiceUnavailable, "down")
+        }
+        val repo = VideosRepositoryImpl(client)
+        repo.observeProcessing("vid-1", pollIntervalMs = 1).test {
+            val last = awaitItem()
+            last.isFailure.shouldBeTrue()
+            last.status shouldBe "failed_connection"
+            awaitComplete()
+        }
+    }
+
+    @Test
     fun processing_update_classifies_statuses() {
         ProcessingUpdate("failed_phase1", null, "boom").isFailure.shouldBeTrue()
         ProcessingUpdate("failed_phase2", null, null).isFailure.shouldBeTrue()

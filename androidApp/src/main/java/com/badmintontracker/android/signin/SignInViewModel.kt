@@ -39,12 +39,4 @@ class SignInViewModel(private val auth: AuthRepository) : ViewModel() {
                 }
         }
     }
-
-    fun submitGoogle() {
-        viewModelScope.launch {
-            state.update { it.copy(isSubmitting = true, error = null) }
-            auth.signInWithGoogle()
-                .onFailure { e -> state.update { it.copy(isSubmitting = false, error = friendlyAuthError(e)) } }
-        }
-    }
 }

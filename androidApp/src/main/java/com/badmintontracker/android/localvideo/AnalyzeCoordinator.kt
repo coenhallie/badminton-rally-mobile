@@ -41,7 +41,8 @@ class AnalyzeCoordinator(
     private val _hasActiveUpload = MutableStateFlow(false)
     val hasActiveUpload: StateFlow<Boolean> = _hasActiveUpload.asStateFlow()
 
-    private val active = mutableSetOf<String>()
+    // Guarded by itself: mutated from concurrent pipeline coroutines on scope.
+    private val active = java.util.Collections.synchronizedSet(mutableSetOf<String>())
 
     fun startAnalysis(entryId: String, keypoints: CourtKeypoints) {
         localVideos.update(entryId) { it.copy(keypoints = keypoints) }
@@ -55,9 +56,16 @@ class AnalyzeCoordinator(
 
     /** Re-attach to backend jobs that kept running while the app was dead. */
     fun reattachToProcessing() {
-        localVideos.entries.value
-            .filter { it.stage == AnalyzeStage.PROCESSING }
-            .forEach { launchPipeline(it.id, AnalyzeStep.PROCESSING) }
+        localVideos.entries.value.forEach { entry ->
+            when (entry.stage) {
+                AnalyzeStage.PROCESSING -> launchPipeline(entry.id, AnalyzeStep.PROCESSING)
+                // Process died before the trigger succeeded; the upload itself is
+                // resumable and the later steps tolerate re-runs, so restart the
+                // pipeline instead of leaving the entry stuck on a spinner.
+                AnalyzeStage.UPLOADING -> launchPipeline(entry.id, AnalyzeStep.UPLOAD)
+                else -> Unit
+            }
+        }
     }
 
     private fun launchPipeline(entryId: String, startFrom: AnalyzeStep) {

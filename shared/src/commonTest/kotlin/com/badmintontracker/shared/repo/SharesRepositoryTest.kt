@@ -91,6 +91,22 @@ class SharesRepositoryTest {
     }
 
     @Test
+    fun listShares_handles_null_recipient_email() = runTest {
+        // auth.users.email is nullable (phone-only / SSO accounts); one such
+        // recipient must not break decoding of the whole list.
+        val client = TestSupabase.client { _ ->
+            jsonResponse("""[
+              {"shared_with_user_id":"u1","email":null,"created_at":"2026-05-06T12:00:00Z"},
+              {"shared_with_user_id":"u2","email":"b@x","created_at":"2026-05-06T12:01:00Z"}
+            ]""")
+        }
+        val result = SharesRepositoryImpl(client).listShares("v1")
+        result.getOrThrow() shouldHaveSize 2
+        result.getOrThrow()[0].email shouldBe null
+        result.getOrThrow()[1].email shouldBe "b@x"
+    }
+
+    @Test
     fun listReceived_decodes_rpc_response() = runTest {
         var capturedUrl: String? = null
         val client = TestSupabase.client { req ->

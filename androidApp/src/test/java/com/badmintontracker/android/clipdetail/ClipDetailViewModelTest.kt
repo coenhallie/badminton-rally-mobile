@@ -76,6 +76,55 @@ class ClipDetailViewModelTest {
     }
 
     @Test
+    fun annotation_load_failure_does_not_block_playback() = runTest {
+        val (vm, _, _, ann) = setup(
+            media = FakeMediaRepository().apply { nextClipUrl = { "https://signed/c1?token=1" } },
+        )
+        ann.listError = RuntimeException("annotations down")
+        advanceUntilIdle()
+
+        val s = vm.state.value
+        s.signedClipUrl shouldContain "token=1"
+        s.error shouldBe null                    // player overlay must not appear
+        s.actionError shouldBe "annotations down" // surfaced as snackbar instead
+    }
+
+    @Test
+    fun isLoading_true_until_load_completes() = runTest {
+        val (vm, _, _, _) = setup()
+        vm.state.value.isLoading shouldBe true
+
+        advanceUntilIdle()
+
+        vm.state.value.isLoading shouldBe false
+    }
+
+    @Test
+    fun refresh_failure_surfaces_cause_instead_of_clip_not_found() = runTest {
+        val (vm, _, _, _) = setup(clipsList = emptyList()).also {
+            it.clips.refreshError = RuntimeException("network down")
+        }
+        advanceUntilIdle()
+
+        vm.state.value.error shouldContain "network down"
+        vm.state.value.isLoading shouldBe false
+    }
+
+    @Test
+    fun manual_retry_reloads_when_clip_never_loaded() = runTest {
+        val s = setup(clipsList = emptyList())
+        advanceUntilIdle()
+        s.vm.state.value.error shouldBe "Clip not found"
+
+        s.clips.clips.value = listOf(sampleClip)   // clip appears (e.g. network back)
+        s.vm.onManualRetry()
+        advanceUntilIdle()
+
+        s.vm.state.value.clip?.id shouldBe "c1"
+        s.vm.state.value.error shouldBe null
+    }
+
+    @Test
     fun onAnnotationTap_emits_seek_in_ms() = runTest {
         val (vm, _, _, _) = setup()
         advanceUntilIdle()

@@ -51,7 +51,11 @@ class ShareSheetViewModel(
 
     fun onUnshare(userId: String) {
         viewModelScope.launch {
-            shares.unshare(videoId, userId).onSuccess { refresh() }
+            shares.unshare(videoId, userId)
+                .onSuccess { refresh() }
+                .onFailure {
+                    _state.value = _state.value.copy(error = "Couldn't remove access — please try again.")
+                }
         }
     }
 

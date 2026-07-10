@@ -164,6 +164,18 @@ class AnalyzeCoordinatorTest {
     }
 
     @Test
+    fun reattach_restarts_pipeline_for_entries_stuck_in_uploading() = runTest {
+        // Process died mid-upload: stage persisted as UPLOADING, no failedStep.
+        localVideos.add(entry().copy(stage = AnalyzeStage.UPLOADING, keypoints = keypoints()))
+        clips.clips.value = listOf(clipFor("e1"))
+        val c = coordinator()
+        c.reattachToProcessing()
+        runCurrent()
+        videos.uploadCalls shouldBe listOf("e1")   // resumed from the UPLOAD step
+        localVideos.get("e1").shouldBeNull()       // completed end-to-end
+    }
+
+    @Test
     fun success_with_annotations_keeps_entry_as_analyzed() = runTest {
         localVideos.add(entry())
         clips.clips.value = listOf(clipFor("e1"))

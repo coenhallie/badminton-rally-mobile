@@ -63,11 +63,21 @@ fun AuthGate(
             val start: Route = if (s is SessionStatus.Authenticated) Route.ClipList else Route.SignIn
 
             LaunchedEffect(s) {
-                if (s is SessionStatus.NotAuthenticated &&
-                    nav.currentDestination?.route?.contains("ClipList") == true
-                ) {
-                    nav.navigate(Route.SignIn) {
-                        popUpTo(Route.ClipList) { inclusive = true }
+                val onSignIn = nav.currentDestination?.route?.contains("SignIn") == true
+                when {
+                    // Session ended anywhere in the app (sign-out, token revocation):
+                    // clear the whole back stack and land on SignIn.
+                    s is SessionStatus.NotAuthenticated && !onSignIn -> {
+                        nav.navigate(Route.SignIn) {
+                            popUpTo(nav.graph.id) { inclusive = true }
+                        }
+                    }
+                    // Session arrived while on SignIn (Google OAuth returns via deep
+                    // link, so SignInViewModel never sees the completed sign-in).
+                    s is SessionStatus.Authenticated && onSignIn -> {
+                        nav.navigate(Route.ClipList) {
+                            popUpTo(Route.SignIn) { inclusive = true }
+                        }
                     }
                 }
             }

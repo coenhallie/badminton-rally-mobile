@@ -14,6 +14,7 @@ import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 import io.ktor.http.isSuccess
 import io.ktor.utils.io.ByteReadChannel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -158,12 +159,35 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
     }.annotateHttpStatus()
 
     override fun observeProcessing(videoId: String, pollIntervalMs: Long): Flow<ProcessingUpdate> = flow {
+        // Collectors run in an app scope where an uncaught throw is fatal, and
+        // processing spans minutes — a poll error must never escape this flow.
+        // Tolerate transient errors; only persistent ones become a terminal update.
+        var consecutiveErrors = 0
         while (true) {
-            val row = client.postgrest.from("videos")
-                .select(Columns.list("status", "progress", "error")) {
-                    filter { eq("id", videoId) }
+            val row = try {
+                client.postgrest.from("videos")
+                    .select(Columns.list("status", "progress", "error")) {
+                        filter { eq("id", videoId) }
+                    }
+                    .decodeSingle<StatusRow>()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (++consecutiveErrors >= MAX_POLL_ERRORS) {
+                    val message = if (e is RestException) "HTTP ${e.statusCode} — ${e.message}" else e.message
+                    emit(
+                        ProcessingUpdate(
+                            status = "failed_connection",
+                            progress = null,
+                            error = message ?: "Lost connection while checking progress",
+                        )
+                    )
+                    break
                 }
-                .decodeSingle<StatusRow>()
+                delay(pollIntervalMs)
+                continue
+            }
+            consecutiveErrors = 0
             // DB progress is a 0..100 percentage; normalize to 0..1 for the UI.
             val update = ProcessingUpdate(row.status, row.progress?.let { (it / 100f).coerceIn(0f, 1f) }, row.error)
             emit(update)
@@ -197,5 +221,6 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
 
     companion object {
         fun storagePath(uid: String, videoId: String) = "$uid/$videoId.mp4"
+        private const val MAX_POLL_ERRORS = 3
     }
 }

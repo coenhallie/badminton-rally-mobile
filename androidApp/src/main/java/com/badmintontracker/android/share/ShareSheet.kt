@@ -81,7 +81,7 @@ fun ShareSheet(
                         Modifier.fillMaxWidth().padding(vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(r.email, modifier = Modifier.weight(1f))
+                        Text(r.email ?: "Unknown user", modifier = Modifier.weight(1f))
                         IconButton(onClick = { vm.onUnshare(r.sharedWithUserId) }) {
                             Icon(Icons.Default.Close, contentDescription = "Remove access")
                         }

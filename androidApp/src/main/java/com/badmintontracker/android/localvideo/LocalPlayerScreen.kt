@@ -4,11 +4,14 @@ import android.content.res.Configuration
 import android.view.LayoutInflater
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -23,6 +26,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -38,11 +42,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.ui.PlayerView
@@ -79,6 +86,7 @@ fun LocalPlayerScreen(
     var isFullscreen by remember { mutableStateOf(false) }
     var addDialog by remember { mutableStateOf<Float?>(null) }
     var pendingDelete by remember { mutableStateOf<LocalAnnotation?>(null) }
+    var playbackError by remember { mutableStateOf<String?>(null) }
 
     BackHandler(enabled = isFullscreen) { isFullscreen = false }
 
@@ -88,7 +96,20 @@ fun LocalPlayerScreen(
         isFullscreen = (orientation == Configuration.ORIENTATION_LANDSCAPE)
     }
 
-    DisposableEffect(player) { onDispose { player.release() } }
+    DisposableEffect(player) {
+        // Local content:// grants can be revoked or the file deleted behind our
+        // back — without this listener the player just freezes silently.
+        val listener = object : Player.Listener {
+            override fun onPlayerError(error: PlaybackException) {
+                playbackError = "Couldn't play this video. The file may have been moved or deleted."
+            }
+        }
+        player.addListener(listener)
+        onDispose {
+            player.removeListener(listener)
+            player.release()
+        }
+    }
 
     LaunchedEffect(entry.uri) {
         player.setMediaItem(MediaItem.fromUri(entry.uri))
@@ -101,21 +122,51 @@ fun LocalPlayerScreen(
     }
 
     val playerSurface: @Composable (Modifier) -> Unit = { modifier ->
-        AndroidView(
-            factory = { c ->
-                val view = LayoutInflater.from(c)
-                    .inflate(R.layout.clip_player_view, null) as PlayerView
-                view.apply {
-                    this.player = player
-                    setFullscreenButtonClickListener { isFullscreen = !isFullscreen }
-                    controllerShowTimeoutMs = 1500
-                    controllerAutoShow = false
-                    hideController()
+        Box(modifier = modifier) {
+            AndroidView(
+                factory = { c ->
+                    val view = LayoutInflater.from(c)
+                        .inflate(R.layout.clip_player_view, null) as PlayerView
+                    view.apply {
+                        this.player = player
+                        setFullscreenButtonClickListener { isFullscreen = !isFullscreen }
+                        controllerShowTimeoutMs = 1500
+                        controllerAutoShow = false
+                        hideController()
+                    }
+                },
+                update = { it.setFullscreenButtonState(isFullscreen) },
+                modifier = Modifier.fillMaxSize(),
+            )
+            if (playbackError != null) {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.9f),
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxSize().padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Text(
+                            playbackError!!,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            textAlign = TextAlign.Center,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        ShuttlButton(
+                            text = "Retry",
+                            onClick = {
+                                playbackError = null
+                                player.setMediaItem(MediaItem.fromUri(entry.uri))
+                                player.prepare()
+                            },
+                            variant = ShuttlButtonVariant.Primary,
+                        )
+                    }
                 }
-            },
-            update = { it.setFullscreenButtonState(isFullscreen) },
-            modifier = modifier,
-        )
+            }
+        }
     }
 
     Scaffold(

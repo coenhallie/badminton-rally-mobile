@@ -7,6 +7,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class MatchShare(
     @SerialName("shared_with_user_id") val sharedWithUserId: String,
-    val email: String,
+    // Null for phone-only / SSO accounts: auth.users.email is nullable.
+    val email: String? = null,
     @SerialName("created_at")          val createdAt: Instant,
 )

@@ -21,6 +21,10 @@ class LocalAnnotationsRepository(private val settings: Settings) {
     private val state = MutableStateFlow(load())
     val byVideoId: StateFlow<Map<String, List<LocalAnnotation>>> = state.asStateFlow()
 
+    // Serializes read-modify-write cycles; callers include app-scoped analyze
+    // pipelines running concurrently on Dispatchers.Default.
+    private val lock = Any()
+
     fun annotationsFor(videoId: String): List<LocalAnnotation> =
         state.value[videoId].orEmpty()
 
@@ -42,16 +46,17 @@ class LocalAnnotationsRepository(private val settings: Settings) {
     fun delete(videoId: String, annotationId: String) =
         mutate(videoId) { list -> list.filterNot { it.id == annotationId } }
 
-    fun removeAllFor(videoId: String) {
+    fun removeAllFor(videoId: String) = synchronized(lock) {
         val next = state.value - videoId
         persist(next)
     }
 
-    private fun mutate(videoId: String, transform: (List<LocalAnnotation>) -> List<LocalAnnotation>) {
-        val current = state.value[videoId].orEmpty()
-        val updated = transform(current).sortedBy { it.timestampSeconds }
-        persist(state.value + (videoId to updated))
-    }
+    private fun mutate(videoId: String, transform: (List<LocalAnnotation>) -> List<LocalAnnotation>) =
+        synchronized(lock) {
+            val current = state.value[videoId].orEmpty()
+            val updated = transform(current).sortedBy { it.timestampSeconds }
+            persist(state.value + (videoId to updated))
+        }
 
     private fun persist(next: Map<String, List<LocalAnnotation>>) {
         settings.putString(KEY, json.encodeToString(serializer, next))

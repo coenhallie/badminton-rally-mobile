@@ -5,6 +5,11 @@ import com.russhwolf.settings.MapSettings
 import io.kotest.matchers.booleans.shouldBeFalse
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.shouldBe
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlin.test.Test
 
 class LocalAnnotationsRepositoryTest {
@@ -28,6 +33,22 @@ class LocalAnnotationsRepositoryTest {
         repo.add("v1", 5f, "early", null)
         repo.add("v1", 15f, "mid", null)
         repo.annotationsFor("v1").map { it.timestampSeconds } shouldBe listOf(5f, 15f, 30f)
+    }
+
+    @Test
+    fun concurrent_adds_do_not_lose_writes() {
+        val repo = LocalAnnotationsRepository(MapSettings())
+        val n = 100
+
+        runBlocking {
+            withContext(Dispatchers.Default) {
+                (0 until n).map { i ->
+                    launch { repo.add("v$i", i.toFloat(), "note $i", null) }
+                }.joinAll()
+            }
+        }
+
+        (0 until n).count { repo.hasAnnotations("v$it") } shouldBe n
     }
 
     @Test

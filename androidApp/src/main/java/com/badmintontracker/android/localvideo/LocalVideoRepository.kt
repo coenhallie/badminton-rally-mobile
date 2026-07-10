@@ -16,6 +16,10 @@ class LocalVideoRepository(private val settings: Settings) {
     private val state = MutableStateFlow(load())
     val entries: StateFlow<List<LocalVideoEntry>> = state.asStateFlow()
 
+    // Serializes read-modify-write cycles: concurrent analyze pipelines mutate
+    // this repo from Dispatchers.Default and would otherwise clobber each other.
+    private val lock = Any()
+
     fun add(entry: LocalVideoEntry) = mutate { it + entry }
 
     fun update(id: String, transform: (LocalVideoEntry) -> LocalVideoEntry) =
@@ -25,7 +29,7 @@ class LocalVideoRepository(private val settings: Settings) {
 
     fun get(id: String): LocalVideoEntry? = state.value.firstOrNull { it.id == id }
 
-    private fun mutate(transform: (List<LocalVideoEntry>) -> List<LocalVideoEntry>) {
+    private fun mutate(transform: (List<LocalVideoEntry>) -> List<LocalVideoEntry>) = synchronized(lock) {
         val next = transform(state.value).sortedByDescending { it.addedAtEpochMs }
         settings.putString(KEY, json.encodeToString(serializer, next))
         state.value = next

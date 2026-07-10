@@ -11,6 +11,7 @@ import com.badmintontracker.android.data.ThemePreferenceRepository
 import com.badmintontracker.android.localvideo.AnalyzeCoordinator
 import com.badmintontracker.android.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.android.localvideo.LocalVideoRepository
+import com.badmintontracker.android.localvideo.skipExactly
 import com.badmintontracker.shared.RallyApp
 import com.badmintontracker.shared.SupabaseConfig
 import com.russhwolf.settings.SharedPreferencesSettings
@@ -52,7 +53,7 @@ class RallyAndroidApp : Application(), SingletonImageLoader.Factory {
                 // "file missing / permission revoked" state.
                 val stream = runCatching { contentResolver.openInputStream(Uri.parse(uri)) }.getOrNull()
                     ?: error("Video file is missing or access was revoked")
-                stream.skip(offset)
+                stream.skipExactly(offset)
                 stream.toByteReadChannel()
             },
             log = { Log.i("AnalyzeCoordinator", it) },

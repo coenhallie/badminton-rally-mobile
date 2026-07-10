@@ -3,6 +3,11 @@ package com.badmintontracker.android.localvideo
 import com.russhwolf.settings.MapSettings
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlin.test.Test
 
 private fun entry(id: String, addedAt: Long = 0L) = LocalVideoEntry(
@@ -47,6 +52,25 @@ class LocalVideoRepositoryTest {
         val settings = MapSettings()
         LocalVideoRepository(settings).add(entry("a"))
         LocalVideoRepository(settings).get("a")?.id shouldBe "a"
+    }
+
+    @Test
+    fun concurrent_updates_do_not_lose_writes() {
+        // Multiple analyze pipelines mutate the repo from Dispatchers.Default at
+        // once (e.g. two videos processing at relaunch); no write may be lost.
+        val repo = LocalVideoRepository(MapSettings())
+        val n = 100
+        repeat(n) { i -> repo.add(entry("e$i")) }
+
+        runBlocking {
+            withContext(Dispatchers.Default) {
+                (0 until n).map { i ->
+                    launch { repo.update("e$i") { it.copy(stage = AnalyzeStage.PROCESSING) } }
+                }.joinAll()
+            }
+        }
+
+        repo.entries.value.count { it.stage == AnalyzeStage.PROCESSING } shouldBe n
     }
 
     @Test

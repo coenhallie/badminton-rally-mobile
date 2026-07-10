@@ -61,6 +61,24 @@ class ShareSheetViewModelTest {
     }
 
     @Test
+    fun unshare_failure_surfaces_error_and_keeps_recipient() = runTest {
+        val shares = FakeSharesRepository().apply {
+            sharesByVideo = mapOf("v1" to listOf(
+                MatchShare("u1", "a@x", Instant.parse("2026-05-06T12:00:00Z")),
+            ))
+            nextUnshareResult = Result.failure(RuntimeException("network"))
+        }
+        val vm = ShareSheetViewModel("v1", shares)
+        advanceUntilIdle()
+
+        vm.onUnshare("u1")
+        advanceUntilIdle()
+
+        vm.state.value.error shouldBe "Couldn't remove access — please try again."
+        vm.state.value.recipients.map { it.sharedWithUserId } shouldBe listOf("u1")
+    }
+
+    @Test
     fun unshare_calls_repo_and_refreshes() = runTest {
         val shares = FakeSharesRepository().apply {
             sharesByVideo = mapOf("v1" to listOf(

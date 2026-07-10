@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class ClipDetailState(
+    val isLoading: Boolean = true,
     val clip: RallyClip? = null,
     val annotations: List<RallyAnnotation> = emptyList(),
     val signedClipUrl: String? = null,
@@ -41,17 +42,31 @@ class ClipDetailViewModel(
 
     private fun load() {
         viewModelScope.launch {
+            state.update { it.copy(isLoading = true, error = null) }
             val cached = clips.observeClips().first()
+            var refreshFailure: Throwable? = null
             val clip = cached.firstOrNull { it.id == clipId } ?: run {
-                runCatching { clips.refresh() }
+                refreshFailure = runCatching { clips.refresh() }.exceptionOrNull()
                 clips.observeClips().first().firstOrNull { it.id == clipId }
             } ?: run {
-                state.update { it.copy(error = "Clip not found") }
+                val cause = refreshFailure
+                state.update {
+                    it.copy(
+                        isLoading = false,
+                        error = if (cause != null) {
+                            "Couldn't load clip: ${cause.message ?: "connection failed"}"
+                        } else {
+                            "Clip not found"
+                        },
+                    )
+                }
                 return@launch
             }
 
+            // Annotations aren't required for playback; a failure here is a
+            // snackbar, not the full-screen player error.
             val ann = runCatching { annotations.list(clipId) }.getOrElse { e ->
-                state.update { it.copy(error = e.message ?: "Couldn't load annotations") }
+                state.update { it.copy(actionError = e.message ?: "Couldn't load annotations") }
                 emptyList()
             }
             val url = runCatching { media.signedClipUrl(clip) }.getOrElse { e ->
@@ -61,6 +76,7 @@ class ClipDetailViewModel(
             val isOwner = clip.ownerId == auth.currentUserId()
             state.update {
                 it.copy(
+                    isLoading = false,
                     clip = clip,
                     annotations = ann,
                     signedClipUrl = url,
@@ -134,7 +150,10 @@ class ClipDetailViewModel(
     fun onManualRetry() {
         resignAttempts = 0
         viewModelScope.launch {
-            val clip = state.value.clip ?: return@launch
+            val clip = state.value.clip ?: run {
+                load()   // the clip itself never loaded — retry the whole load
+                return@launch
+            }
             runCatching { media.signedClipUrl(clip) }
                 .onSuccess { url -> state.update { it.copy(signedClipUrl = url, error = null) } }
                 .onFailure { e -> state.update { it.copy(error = e.message ?: "Couldn't load video") } }
