@@ -8,9 +8,14 @@
 
 /* Begin PBXBuildFile section */
 		18DFDCCFF6258C4B0568B3CA /* SmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18B28237BDD6785E014E9F62 /* SmokeTests.swift */; };
+		34F5A055888BA449FB4B9C51 /* KindBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2035CA20A665E3BA885CFDC /* KindBadge.swift */; };
+		60AC11B9815BD71920288100 /* ShuttlCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7000786E94D92922A2812A6E /* ShuttlCard.swift */; };
 		6B213FD25EAA52256950E095 /* SplashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D7CDC92F8FAE6AD8DC9F0E5 /* SplashView.swift */; };
+		7424550AE59BF1354C4DD5F4 /* PrimaryButtonStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82FC0470AAADE04383A85BE1 /* PrimaryButtonStyle.swift */; };
 		77F381D4EA05BBFC12F5FFD2 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76A23487DD59B49157A3135C /* RootView.swift */; };
 		CFC74B86E0256055E87B5EAC /* RallyIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = E169E538F23D04ED878E1EFF /* RallyIOSApp.swift */; };
+		EB93197882D94A5AF008CD13 /* ShuttlTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C55FBA93C98A27AC7EE21BE /* ShuttlTheme.swift */; };
+		EE7A9B1A1CC005EC4BCF015B /* ErrorBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = F445C67CB4C46F120008DAD3 /* ErrorBanner.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -24,17 +29,33 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		0C55FBA93C98A27AC7EE21BE /* ShuttlTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShuttlTheme.swift; sourceTree = "<group>"; };
 		18B28237BDD6785E014E9F62 /* SmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmokeTests.swift; sourceTree = "<group>"; };
 		56583BC252B5F01ED9DEA19D /* iosAppTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = iosAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		7000786E94D92922A2812A6E /* ShuttlCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShuttlCard.swift; sourceTree = "<group>"; };
 		76A23487DD59B49157A3135C /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		82FC0470AAADE04383A85BE1 /* PrimaryButtonStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrimaryButtonStyle.swift; sourceTree = "<group>"; };
 		86038AE1032E284E79B32AD6 /* iosApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = iosApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8D7CDC92F8FAE6AD8DC9F0E5 /* SplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashView.swift; sourceTree = "<group>"; };
+		C2035CA20A665E3BA885CFDC /* KindBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KindBadge.swift; sourceTree = "<group>"; };
 		C59114F647E69202552CE362 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		D030A719D36D3641BD15D7B2 /* AppConfig.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = AppConfig.xcconfig; sourceTree = "<group>"; };
 		E169E538F23D04ED878E1EFF /* RallyIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RallyIOSApp.swift; sourceTree = "<group>"; };
+		F445C67CB4C46F120008DAD3 /* ErrorBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorBanner.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
+		2DCC9661F24164FE480C72F7 /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				F445C67CB4C46F120008DAD3 /* ErrorBanner.swift */,
+				C2035CA20A665E3BA885CFDC /* KindBadge.swift */,
+				82FC0470AAADE04383A85BE1 /* PrimaryButtonStyle.swift */,
+				7000786E94D92922A2812A6E /* ShuttlCard.swift */,
+			);
+			path = Components;
+			sourceTree = "<group>";
+		};
 		38B69C3F79CD97858CF7B609 = {
 			isa = PBXGroup;
 			children = (
@@ -69,8 +90,18 @@
 				E169E538F23D04ED878E1EFF /* RallyIOSApp.swift */,
 				76A23487DD59B49157A3135C /* RootView.swift */,
 				8D7CDC92F8FAE6AD8DC9F0E5 /* SplashView.swift */,
+				2DCC9661F24164FE480C72F7 /* Components */,
+				F382516A24A5D01B051FF4D9 /* Theme */,
 			);
 			path = Sources;
+			sourceTree = "<group>";
+		};
+		F382516A24A5D01B051FF4D9 /* Theme */ = {
+			isa = PBXGroup;
+			children = (
+				0C55FBA93C98A27AC7EE21BE /* ShuttlTheme.swift */,
+			);
+			path = Theme;
 			sourceTree = "<group>";
 		};
 		FFC9BEF0F7452C90A6A82EFC /* Config */ = {
@@ -176,8 +207,13 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				EE7A9B1A1CC005EC4BCF015B /* ErrorBanner.swift in Sources */,
+				34F5A055888BA449FB4B9C51 /* KindBadge.swift in Sources */,
+				7424550AE59BF1354C4DD5F4 /* PrimaryButtonStyle.swift in Sources */,
 				CFC74B86E0256055E87B5EAC /* RallyIOSApp.swift in Sources */,
 				77F381D4EA05BBFC12F5FFD2 /* RootView.swift in Sources */,
+				60AC11B9815BD71920288100 /* ShuttlCard.swift in Sources */,
+				EB93197882D94A5AF008CD13 /* ShuttlTheme.swift in Sources */,
 				6B213FD25EAA52256950E095 /* SplashView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
