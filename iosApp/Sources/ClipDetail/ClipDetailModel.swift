@@ -13,6 +13,8 @@ final class ClipDetailModel {
     private(set) var isOwner = false
     var error: String? = nil
     var actionError: String? = nil
+    private var resignAttempts = 0
+    private var statusObservation: NSKeyValueObservation?
 
     init(rally: RallyApp, clipId: String) {
         self.rally = rally
@@ -51,10 +53,14 @@ final class ClipDetailModel {
 
     /// Re-sign the URL (used by load and by the manual Retry on player failure).
     func sign(clip: RallyClip) async {
+        statusObservation?.invalidate()
+        player?.pause()
         do {
             let signed = try await rally.media.signedClipUrl(clip: clip)
             if let url = URL(string: signed) {
-                player = AVPlayer(url: url)
+                let newPlayer = AVPlayer(url: url)
+                player = newPlayer
+                observeFailure(of: newPlayer)
             } else {
                 error = "Couldn't load video"
             }
@@ -63,8 +69,28 @@ final class ClipDetailModel {
         }
     }
 
+    private func observeFailure(of player: AVPlayer) {
+        statusObservation = player.currentItem?.observe(\.status, options: [.new]) { [weak self] item, _ in
+            guard item.status == .failed else { return }
+            Task { @MainActor [weak self] in
+                await self?.handlePlayerFailure()
+            }
+        }
+    }
+
+    private func handlePlayerFailure() async {
+        guard let clip else { return }
+        if resignAttempts >= 1 {
+            error = "Couldn't load video"
+            return
+        }
+        resignAttempts += 1
+        await sign(clip: clip)
+    }
+
     func retry() async {
         error = nil
+        resignAttempts = 0
         if let clip { await sign(clip: clip) } else { await load() }
     }
 
@@ -85,6 +111,7 @@ final class ClipDetailModel {
         }
         if let row = outcome.annotation {
             annotations = (annotations + [row]).sorted { $0.timestampSeconds < $1.timestampSeconds }
+            actionError = nil
         } else {
             actionError = outcome.errorMessage
         }
@@ -100,6 +127,7 @@ final class ClipDetailModel {
             actionError = message
         } else {
             annotations = annotations.filter { $0.id != id }
+            actionError = nil
         }
     }
 

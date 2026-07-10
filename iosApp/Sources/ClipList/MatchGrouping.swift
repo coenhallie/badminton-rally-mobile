@@ -61,6 +61,7 @@ enum MatchGrouping {
 
 private let matchDateFormatter: DateFormatter = {
     let f = DateFormatter()
+    f.locale = Locale(identifier: "en_US_POSIX")
     f.dateFormat = "MMM d, yyyy"   // "Jan 5, 2026" — matches Android formatDate
     return f
 }()

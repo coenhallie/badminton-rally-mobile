@@ -30,7 +30,6 @@ targets:
       - name: Compile Kotlin Framework
         basedOnDependencyAnalysis: false
         script: |
-          export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
           if [ -z "${JAVA_HOME:-}" ]; then export JAVA_HOME=$(/usr/libexec/java_home); fi
           cd "$SRCROOT/.."
           ./gradlew :shared:embedAndSignAppleFrameworkForXcode

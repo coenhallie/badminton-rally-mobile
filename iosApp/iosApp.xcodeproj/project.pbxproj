@@ -260,7 +260,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer\nif [ -z \"${JAVA_HOME:-}\" ]; then export JAVA_HOME=$(/usr/libexec/java_home); fi\ncd \"$SRCROOT/..\"\n./gradlew :shared:embedAndSignAppleFrameworkForXcode\n";
+			shellScript = "if [ -z \"${JAVA_HOME:-}\" ]; then export JAVA_HOME=$(/usr/libexec/java_home); fi\ncd \"$SRCROOT/..\"\n./gradlew :shared:embedAndSignAppleFrameworkForXcode\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

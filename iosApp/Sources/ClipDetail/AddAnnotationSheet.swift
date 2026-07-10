@@ -28,7 +28,7 @@ struct AddAnnotationSheet: View {
                     onAdd(kind, body_)
                     dismiss()
                 }
-                .disabled(kind == nil && body_.trimmingCharacters(in: .whitespaces).isEmpty)
+                .disabled(kind == nil && body_.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .padding(.horizontal, 24)
