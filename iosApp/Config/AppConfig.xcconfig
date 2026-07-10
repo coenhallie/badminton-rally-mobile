@@ -1,0 +1,2 @@
+#include "../../Config/Version.xcconfig"
+#include? "Supabase.xcconfig"

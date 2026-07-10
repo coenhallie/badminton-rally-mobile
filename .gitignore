@@ -21,6 +21,7 @@ kotlin-js-store/
 
 # Secrets
 **/Config.xcconfig
+iosApp/Config/Supabase.xcconfig
 
 # OS / tooling
 .DS_Store

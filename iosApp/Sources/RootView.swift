@@ -1,0 +1,37 @@
+import SwiftUI
+import Shared
+
+struct RootView: View {
+    let rally: RallyApp
+    @State private var authState: AuthState? = nil
+
+    var body: some View {
+        Group {
+            switch authState {
+            case nil, .loading:
+                SplashView()
+            case .authenticated:
+                NavigationStack { ClipListView(rally: rally) }
+            case .unauthenticated:
+                SignInView(rally: rally)
+            case .some:
+                SplashView()
+            }
+        }
+        .task {
+            for await state in rally.authState {
+                authState = state
+            }
+        }
+    }
+}
+
+struct SignInView: View {
+    let rally: RallyApp
+    var body: some View { Text("Sign in — TODO Task 6") }
+}
+
+struct ClipListView: View {
+    let rally: RallyApp
+    var body: some View { Text("Clips — TODO Task 7") }
+}
