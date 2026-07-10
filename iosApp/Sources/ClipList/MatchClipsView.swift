@@ -47,10 +47,3 @@ struct MatchClipsView: View {
         }
     }
 }
-
-// Temporary placeholder — Task 8 replaces this with the real clip detail screen.
-struct ClipDetailView: View {
-    let rally: RallyApp
-    let clipId: String
-    var body: some View { Text("Detail — TODO Task 8") }
-}
