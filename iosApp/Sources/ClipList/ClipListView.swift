@@ -174,9 +174,3 @@ struct ClipListView: View {
 extension MatchSummary: Identifiable {
     var id: String { videoId }
 }
-
-struct LocalPlayerView: View {
-    let rally: RallyApp
-    let entryId: String
-    var body: some View { Text("Local player — TODO Task 5") }
-}
