@@ -20,6 +20,12 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Shuttl uses the camera to record match videos.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Shuttl records audio with your match videos.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Shuttl saves your recordings to the Photos library.</string>
 	<key>SUPABASE_ANON_KEY</key>
 	<string>$(SUPABASE_ANON_KEY)</string>
 	<key>SUPABASE_URL</key>

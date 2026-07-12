@@ -5,6 +5,11 @@ struct ClipListView: View {
     let rally: RallyApp
     @State private var model: ClipListModel?
     @State private var shareTarget: MatchSummary? = nil
+    @State private var intake: LocalVideoIntake?
+    @State private var thumbnails = LocalThumbnails()
+    @State private var localEntries: [LocalVideoEntry] = []
+    @State private var showImporter = false
+    @State private var showRecorder = false
 
     var body: some View {
         Group {
@@ -17,6 +22,21 @@ struct ClipListView: View {
         .navigationTitle("MATCHES")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button("Record video") {
+                        if CameraRecorder.isAvailable {
+                            showRecorder = true
+                        } else {
+                            intake?.error = "Camera is not available on this device."
+                        }
+                    }
+                    Button("Import video") { showImporter = true }
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .accessibilityLabel("Add video")
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 if let model {
                     Menu {
@@ -33,14 +53,44 @@ struct ClipListView: View {
             if model == nil { model = ClipListModel(rally: rally) }
             await model?.start()
         }
+        .task {
+            if intake == nil { intake = LocalVideoIntake(rally: rally) }
+            for await entries in rally.localVideos.entries {
+                localEntries = entries
+            }
+        }
         .sheet(item: $shareTarget) { match in
             ShareSheetView(rally: rally, videoId: match.videoId)
+        }
+        .sheet(isPresented: $showImporter) {
+            VideoPicker { tempURL, suggestedName in
+                Task { await intake?.add(tempURL: tempURL, suggestedName: suggestedName, isRecording: false) }
+            }
+        }
+        .fullScreenCover(isPresented: $showRecorder) {
+            CameraRecorder { tempURL in
+                Task { await intake?.add(tempURL: tempURL, suggestedName: nil, isRecording: true) }
+            }
+            .ignoresSafeArea()
         }
     }
 
     @ViewBuilder
     private func content(_ model: ClipListModel) -> some View {
         List {
+            if let intakeError = intake?.error {
+                ErrorBanner(message: intakeError)
+                    .listRowInsets(EdgeInsets())
+            }
+            if !localEntries.isEmpty {
+                Section {
+                    ForEach(localEntries) { entry in
+                        LocalVideoRowView(entry: entry, thumbnails: thumbnails) {
+                            intake?.remove(entry: entry)
+                        }
+                    }
+                } header: { Shuttl.sectionLabel("On this phone") }
+            }
             if let error = model.error {
                 ErrorBanner(message: error)
                     .listRowInsets(EdgeInsets())
@@ -59,8 +109,8 @@ struct ClipListView: View {
                     }
                 } header: { Shuttl.sectionLabel("Shared with me") }
             }
-            if model.owned.isEmpty && model.shared.isEmpty && !model.isRefreshing {
-                Text("No matches yet.")
+            if localEntries.isEmpty && model.owned.isEmpty && model.shared.isEmpty && !model.isRefreshing {
+                Text("No matches yet. Record one with the + button above.")
                     .foregroundStyle(Shuttl.textSecondary)
             }
         }
@@ -68,6 +118,9 @@ struct ClipListView: View {
         .refreshable { await model.refresh() }
         .navigationDestination(for: String.self) { videoId in
             MatchClipsView(rally: rally, videoId: videoId)
+        }
+        .navigationDestination(for: LocalPlayerRoute.self) { route in
+            LocalPlayerView(rally: rally, entryId: route.entryId)
         }
     }
 
@@ -120,4 +173,10 @@ struct ClipListView: View {
 
 extension MatchSummary: Identifiable {
     var id: String { videoId }
+}
+
+struct LocalPlayerView: View {
+    let rally: RallyApp
+    let entryId: String
+    var body: some View { Text("Local player — TODO Task 5") }
 }

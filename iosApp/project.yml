@@ -26,6 +26,9 @@ targets:
         SUPABASE_ANON_KEY: "$(SUPABASE_ANON_KEY)"
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSCameraUsageDescription: Shuttl uses the camera to record match videos.
+        NSMicrophoneUsageDescription: Shuttl records audio with your match videos.
+        NSPhotoLibraryAddUsageDescription: Shuttl saves your recordings to the Photos library.
     preBuildScripts:
       - name: Compile Kotlin Framework
         basedOnDependencyAnalysis: false
