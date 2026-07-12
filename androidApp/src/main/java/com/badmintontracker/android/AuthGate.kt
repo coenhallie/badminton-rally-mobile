@@ -30,12 +30,9 @@ import com.badmintontracker.android.cliplist.ClipListViewModel
 import com.badmintontracker.android.cliplist.MatchClipsScreen
 import com.badmintontracker.android.data.ThemePreferenceRepository
 import com.badmintontracker.android.localvideo.AnalyzeCoordinator
-import com.badmintontracker.android.localvideo.AnalyzeStage
-import com.badmintontracker.android.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.android.localvideo.LocalPlayerScreen
 import com.badmintontracker.android.localvideo.LocalPlayerViewModel
 import com.badmintontracker.android.localvideo.LocalVideoListViewModel
-import com.badmintontracker.android.localvideo.LocalVideoRepository
 import com.badmintontracker.android.localvideo.court.CourtMarkingScreen
 import com.badmintontracker.android.localvideo.court.CourtMarkingViewModel
 import com.badmintontracker.android.localvideo.court.loadFirstFrame
@@ -43,6 +40,10 @@ import com.badmintontracker.android.localvideo.rememberVideoIntake
 import com.badmintontracker.android.nav.Route
 import com.badmintontracker.android.signin.SignInScreen
 import com.badmintontracker.android.signin.SignInViewModel
+import com.badmintontracker.shared.localvideo.AnalyzeStage
+import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
+import com.badmintontracker.shared.localvideo.LocalVideoEntry
+import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.RallyApp
 import io.github.jan.supabase.auth.status.SessionStatus
 

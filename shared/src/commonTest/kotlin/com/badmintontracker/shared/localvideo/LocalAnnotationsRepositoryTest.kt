@@ -1,4 +1,4 @@
-package com.badmintontracker.android.localvideo
+package com.badmintontracker.shared.localvideo
 
 import com.badmintontracker.shared.model.AnnotationKind
 import com.russhwolf.settings.MapSettings
@@ -8,7 +8,7 @@ import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlin.test.Test
 
@@ -40,7 +40,7 @@ class LocalAnnotationsRepositoryTest {
         val repo = LocalAnnotationsRepository(MapSettings())
         val n = 100
 
-        runBlocking {
+        runTest {
             withContext(Dispatchers.Default) {
                 (0 until n).map { i ->
                     launch { repo.add("v$i", i.toFloat(), "note $i", null) }

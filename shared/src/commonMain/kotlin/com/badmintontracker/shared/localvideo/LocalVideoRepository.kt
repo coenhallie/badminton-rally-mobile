@@ -1,5 +1,7 @@
-package com.badmintontracker.android.localvideo
+package com.badmintontracker.shared.localvideo
 
+import com.badmintontracker.shared.util.SyncLock
+import com.badmintontracker.shared.util.withLock
 import com.russhwolf.settings.Settings
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,7 +20,7 @@ class LocalVideoRepository(private val settings: Settings) {
 
     // Serializes read-modify-write cycles: concurrent analyze pipelines mutate
     // this repo from Dispatchers.Default and would otherwise clobber each other.
-    private val lock = Any()
+    private val lock = SyncLock()
 
     fun add(entry: LocalVideoEntry) = mutate { it + entry }
 
@@ -29,7 +31,7 @@ class LocalVideoRepository(private val settings: Settings) {
 
     fun get(id: String): LocalVideoEntry? = state.value.firstOrNull { it.id == id }
 
-    private fun mutate(transform: (List<LocalVideoEntry>) -> List<LocalVideoEntry>) = synchronized(lock) {
+    private fun mutate(transform: (List<LocalVideoEntry>) -> List<LocalVideoEntry>) = lock.withLock {
         val next = transform(state.value).sortedByDescending { it.addedAtEpochMs }
         settings.putString(KEY, json.encodeToString(serializer, next))
         state.value = next

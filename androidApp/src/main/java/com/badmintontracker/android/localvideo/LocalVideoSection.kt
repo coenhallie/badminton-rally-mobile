@@ -35,6 +35,7 @@ import coil3.compose.AsyncImage
 import com.badmintontracker.android.cliplist.formatDate
 import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlButtonVariant
+import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import kotlinx.datetime.Instant
 import java.util.Locale
 

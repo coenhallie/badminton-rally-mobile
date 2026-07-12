@@ -1,6 +1,8 @@
 package com.badmintontracker.android.localvideo
 
 import app.cash.turbine.test
+import com.badmintontracker.shared.localvideo.LocalAnnotation
+import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.model.AnnotationKind
 import com.russhwolf.settings.MapSettings
 import io.kotest.matchers.shouldBe

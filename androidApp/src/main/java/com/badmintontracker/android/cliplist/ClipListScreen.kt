@@ -46,12 +46,12 @@ import coil3.compose.AsyncImage
 import com.badmintontracker.android.BuildConfig
 import com.badmintontracker.android.data.ThemePreferenceRepository
 import com.badmintontracker.android.localvideo.AnalyzeResultDialog
-import com.badmintontracker.android.localvideo.AnalyzeStage
-import com.badmintontracker.android.localvideo.LocalVideoEntry
 import com.badmintontracker.android.localvideo.LocalVideoRow
 import com.badmintontracker.android.localvideo.localVideoSection
 import com.badmintontracker.android.share.ShareSheet
 import com.badmintontracker.android.ui.components.ThemeToggleButton
+import com.badmintontracker.shared.localvideo.AnalyzeStage
+import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.model.RallyClip
 import com.badmintontracker.shared.repo.MediaRepository
 import com.badmintontracker.shared.repo.SharesRepository

@@ -1,5 +1,7 @@
 package com.badmintontracker.shared
 
+import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
+import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.repo.AnnotationsRepository
 import com.badmintontracker.shared.repo.AnnotationsRepositoryImpl
 import com.badmintontracker.shared.repo.AuthRepository
@@ -22,7 +24,7 @@ import kotlinx.coroutines.flow.map
 
 class RallyApp(
     config: SupabaseConfig,
-    settings: Settings,
+    private val settings: Settings,
     httpEngine: HttpClientEngine? = null,
 ) {
     val client: SupabaseClient = buildSupabaseClient(config, settings, httpEngine)
@@ -34,4 +36,8 @@ class RallyApp(
     val videos:      VideosRepository      = VideosRepositoryImpl(client)
 
     val authState: Flow<AuthState> = auth.sessionFlow.map { it.toAuthState() }
+
+    // On-device local video registry + annotations (shared persistence, native UI).
+    val localVideos:      LocalVideoRepository       = LocalVideoRepository(settings)
+    val localAnnotations: LocalAnnotationsRepository = LocalAnnotationsRepository(settings)
 }

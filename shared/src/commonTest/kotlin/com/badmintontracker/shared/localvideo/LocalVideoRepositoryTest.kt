@@ -1,4 +1,4 @@
-package com.badmintontracker.android.localvideo
+package com.badmintontracker.shared.localvideo
 
 import com.russhwolf.settings.MapSettings
 import io.kotest.matchers.nulls.shouldBeNull
@@ -6,7 +6,7 @@ import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlin.test.Test
 
@@ -62,7 +62,7 @@ class LocalVideoRepositoryTest {
         val n = 100
         repeat(n) { i -> repo.add(entry("e$i")) }
 
-        runBlocking {
+        runTest {
             withContext(Dispatchers.Default) {
                 (0 until n).map { i ->
                     launch { repo.update("e$i") { it.copy(stage = AnalyzeStage.PROCESSING) } }

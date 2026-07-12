@@ -2,6 +2,11 @@ package com.badmintontracker.android.localvideo
 
 import com.badmintontracker.android.testing.FakeClipsRepository
 import com.badmintontracker.android.testing.FakeVideosRepository
+import com.badmintontracker.shared.localvideo.AnalyzeStage
+import com.badmintontracker.shared.localvideo.AnalyzeStep
+import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
+import com.badmintontracker.shared.localvideo.LocalVideoEntry
+import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.model.CourtKeypoints
 import com.badmintontracker.shared.model.RallyClip
 import com.badmintontracker.shared.repo.ProcessingUpdate

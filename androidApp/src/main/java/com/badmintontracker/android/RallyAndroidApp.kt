@@ -9,11 +9,11 @@ import coil3.SingletonImageLoader
 import coil3.video.VideoFrameDecoder
 import com.badmintontracker.android.data.ThemePreferenceRepository
 import com.badmintontracker.android.localvideo.AnalyzeCoordinator
-import com.badmintontracker.android.localvideo.LocalAnnotationsRepository
-import com.badmintontracker.android.localvideo.LocalVideoRepository
 import com.badmintontracker.android.localvideo.skipExactly
 import com.badmintontracker.shared.RallyApp
 import com.badmintontracker.shared.SupabaseConfig
+import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
+import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.russhwolf.settings.SharedPreferencesSettings
 import io.ktor.utils.io.jvm.javaio.toByteReadChannel
 import kotlinx.coroutines.CoroutineScope
@@ -41,8 +41,8 @@ class RallyAndroidApp : Application(), SingletonImageLoader.Factory {
         val settings = SharedPreferencesSettings(getSharedPreferences("rally", MODE_PRIVATE))
         rally       = RallyApp(SupabaseConfig(BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_ANON_KEY), settings)
         themePrefs  = ThemePreferenceRepository(settings)
-        localVideos = LocalVideoRepository(settings)
-        localAnnotations = LocalAnnotationsRepository(settings)
+        localVideos = rally.localVideos
+        localAnnotations = rally.localAnnotations
         analyzeCoordinator = AnalyzeCoordinator(
             localVideos = localVideos,
             videos = rally.videos,

@@ -1,4 +1,4 @@
-package com.badmintontracker.android.localvideo
+package com.badmintontracker.shared.localvideo
 
 import com.badmintontracker.shared.model.CourtKeypoints
 import kotlinx.serialization.Serializable

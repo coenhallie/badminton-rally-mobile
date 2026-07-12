@@ -1,5 +1,9 @@
 package com.badmintontracker.android.localvideo
 
+import com.badmintontracker.shared.localvideo.AnalyzeStage
+import com.badmintontracker.shared.localvideo.AnalyzeStep
+import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
+import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.model.CourtKeypoints
 import com.badmintontracker.shared.repo.ClipsRepository
 import com.badmintontracker.shared.repo.UploadState

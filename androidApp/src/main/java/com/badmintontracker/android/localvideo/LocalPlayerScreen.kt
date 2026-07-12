@@ -60,6 +60,8 @@ import com.badmintontracker.android.clipdetail.FrameStepBar
 import com.badmintontracker.android.ui.components.FullscreenEffect
 import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlButtonVariant
+import com.badmintontracker.shared.localvideo.LocalAnnotation
+import com.badmintontracker.shared.localvideo.LocalVideoEntry
 
 private const val ANNOTATION_STORAGE_NOTE =
     "Annotations are saved on this phone and are removed if you remove the video from the app."
