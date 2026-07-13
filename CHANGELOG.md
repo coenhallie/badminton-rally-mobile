@@ -10,6 +10,8 @@ The mobile app is versioned independently from the web app.
 ## [Unreleased]
 
 ### Added
+- iOS: frame stepping on remote clips, pull-to-refresh on match rallies, light/dark
+  theme toggle (shared preference), app icon.
 - iOS: record/import local videos with an "On this phone" library section
   (1 GB cap, recordings also saved to Photos), local playback with
   frame-accurate stepping, and on-device annotations.
@@ -35,6 +37,8 @@ The mobile app is versioned independently from the web app.
   supported method.
 
 ### Fixed
+- iOS: import failures now surface an error; stale thumbnails evicted on remove;
+  assorted intake polish. Android: friendlier refresh-error message.
 - Signing out (or a revoked session) now returns to the sign-in screen from
   any screen, not just the home list.
 - A video no longer gets stuck on an endless spinner if the app is killed
