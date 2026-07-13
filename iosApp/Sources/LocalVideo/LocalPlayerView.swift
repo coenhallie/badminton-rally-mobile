@@ -7,7 +7,7 @@ struct LocalPlayerView: View {
     let entryId: String
     @Environment(\.dismiss) private var dismiss
     @State private var model: LocalPlayerModel?
-    @State private var addSheetTimestamp: Float? = nil
+    @State private var addSheet: AddSheetItem? = nil
     @State private var deleteTarget: LocalAnnotation? = nil
 
     var body: some View {
@@ -66,16 +66,16 @@ struct LocalPlayerView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
-                    addSheetTimestamp = model.currentTimestampSeconds()
+                    addSheet = AddSheetItem(timestamp: model.currentTimestampSeconds())
                 } label: {
                     Image(systemName: "plus")
                 }
                 .accessibilityLabel("Add annotation")
             }
         }
-        .sheet(item: $addSheetTimestamp) { timestamp in
+        .sheet(item: $addSheet) { item in
             AddAnnotationSheet { kind, body in
-                model.add(kind: kind, body: body, atSeconds: timestamp)
+                model.add(kind: kind, body: body, atSeconds: item.timestamp)
             }
             .presentationDetents([.medium])
         }
@@ -122,7 +122,7 @@ struct LocalPlayerView: View {
     }
 }
 
-/// Float timestamp as a sheet item (needs Identifiable).
-extension Float: @retroactive Identifiable {
-    public var id: Float { self }
+private struct AddSheetItem: Identifiable {
+    let timestamp: Float
+    let id = UUID()
 }

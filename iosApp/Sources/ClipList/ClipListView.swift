@@ -5,18 +5,28 @@ struct ClipListView: View {
     let rally: RallyApp
     @State private var model: ClipListModel?
     @State private var shareTarget: MatchSummary? = nil
-    @State private var intake: LocalVideoIntake?
+    @State private var intake: LocalVideoIntake
     @State private var thumbnails = LocalThumbnails()
     @State private var localEntries: [LocalVideoEntry] = []
     @State private var showImporter = false
     @State private var showRecorder = false
 
+    init(rally: RallyApp) {
+        self.rally = rally
+        _intake = State(initialValue: LocalVideoIntake(rally: rally))
+    }
+
     var body: some View {
-        Group {
-            if let model {
-                content(model)
-            } else {
-                SplashView()
+        VStack(spacing: 0) {
+            if let intakeError = intake.error {
+                ErrorBanner(message: intakeError)
+            }
+            Group {
+                if let model {
+                    content(model)
+                } else {
+                    SplashView()
+                }
             }
         }
         .navigationTitle("MATCHES")
@@ -28,7 +38,7 @@ struct ClipListView: View {
                         if CameraRecorder.isAvailable {
                             showRecorder = true
                         } else {
-                            intake?.error = "Camera is not available on this device."
+                            intake.error = "Camera is not available on this device."
                         }
                     }
                     Button("Import video") { showImporter = true }
@@ -54,7 +64,6 @@ struct ClipListView: View {
             await model?.start()
         }
         .task {
-            if intake == nil { intake = LocalVideoIntake(rally: rally) }
             for await entries in rally.localVideos.entries {
                 localEntries = entries
             }
@@ -63,13 +72,16 @@ struct ClipListView: View {
             ShareSheetView(rally: rally, videoId: match.videoId)
         }
         .sheet(isPresented: $showImporter) {
-            VideoPicker { tempURL, suggestedName in
-                Task { await intake?.add(tempURL: tempURL, suggestedName: suggestedName, isRecording: false) }
-            }
+            VideoPicker(
+                onPicked: { tempURL, suggestedName in
+                    Task { await intake.add(tempURL: tempURL, suggestedName: suggestedName, isRecording: false) }
+                },
+                onFailed: { intake.error = "Couldn't import the video. Please try again." }
+            )
         }
         .fullScreenCover(isPresented: $showRecorder) {
             CameraRecorder { tempURL in
-                Task { await intake?.add(tempURL: tempURL, suggestedName: nil, isRecording: true) }
+                Task { await intake.add(tempURL: tempURL, suggestedName: nil, isRecording: true) }
             }
             .ignoresSafeArea()
         }
@@ -78,15 +90,12 @@ struct ClipListView: View {
     @ViewBuilder
     private func content(_ model: ClipListModel) -> some View {
         List {
-            if let intakeError = intake?.error {
-                ErrorBanner(message: intakeError)
-                    .listRowInsets(EdgeInsets())
-            }
             if !localEntries.isEmpty {
                 Section {
                     ForEach(localEntries) { entry in
                         LocalVideoRowView(entry: entry, thumbnails: thumbnails) {
-                            intake?.remove(entry: entry)
+                            intake.remove(entry: entry)
+                            thumbnails.evict(id: entry.id)
                         }
                     }
                 } header: { Shuttl.sectionLabel("On this phone") }

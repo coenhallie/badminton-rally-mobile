@@ -18,4 +18,8 @@ final class LocalThumbnails {
             images[entry.id] = UIImage(cgImage: cgImage)
         }
     }
+
+    func evict(id: String) {
+        images[id] = nil
+    }
 }

@@ -36,6 +36,7 @@ final class LocalVideoIntake {
         do {
             relativePath = try LocalVideoFiles.store(tempURL: tempURL)
         } catch {
+            try? FileManager.default.removeItem(at: tempURL)
             self.error = "Couldn't save the video. Please try again."
             return
         }

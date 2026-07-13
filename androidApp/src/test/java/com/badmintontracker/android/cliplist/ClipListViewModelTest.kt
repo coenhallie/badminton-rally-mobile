@@ -87,7 +87,7 @@ class ClipListViewModelTest {
         vm.state.test {
             var s = awaitItem()
             while (s.error == null) s = awaitItem()
-            s.error shouldBe "net down"
+            s.error shouldBe "Couldn't refresh matches. Pull to try again."
             cancelAndIgnoreRemainingEvents()
         }
     }

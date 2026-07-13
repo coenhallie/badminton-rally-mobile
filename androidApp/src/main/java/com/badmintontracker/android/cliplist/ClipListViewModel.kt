@@ -84,7 +84,8 @@ class ClipListViewModel(
             refreshing.value = true
             coroutineScope {
                 val clipsJob = async {
-                    runCatching { clips.refresh() }.onFailure { errors.value = it.message }
+                    runCatching { clips.refresh() }
+                        .onFailure { errors.value = "Couldn't refresh matches. Pull to try again." }
                 }
                 val sharesJob = async {
                     runCatching { shares.listReceived() }

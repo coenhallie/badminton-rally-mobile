@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 /// PHPicker (videos only) — no permission prompt; hands over a temp file copy.
 struct VideoPicker: UIViewControllerRepresentable {
     let onPicked: (URL, String?) -> Void
+    let onFailed: () -> Void
     @Environment(\.dismiss) private var dismiss
 
     func makeUIViewController(context: Context) -> PHPickerViewController {
@@ -28,13 +29,17 @@ struct VideoPicker: UIViewControllerRepresentable {
             parent.dismiss()
             guard let provider = results.first?.itemProvider,
                   provider.hasItemConformingToTypeIdentifier(UTType.movie.identifier) else { return }
-            let suggestedName = provider.suggestedName.map { "\($0).mp4" }
+            let suggestedName = provider.suggestedName.map { name in
+                ["mp4", "mov", "m4v"].contains((name as NSString).pathExtension.lowercased())
+                    ? name : "\(name).mp4"
+            }
             provider.loadFileRepresentation(forTypeIdentifier: UTType.movie.identifier) { url, _ in
-                guard let url else { return }
-                // The provider deletes its file when this closure returns — move it out now.
                 let temp = FileManager.default.temporaryDirectory
                     .appendingPathComponent("import-\(UUID().uuidString).mp4")
-                guard (try? FileManager.default.copyItem(at: url, to: temp)) != nil else { return }
+                guard let url, (try? FileManager.default.copyItem(at: url, to: temp)) != nil else {
+                    DispatchQueue.main.async { self.parent.onFailed() }
+                    return
+                }
                 DispatchQueue.main.async {
                     self.parent.onPicked(temp, suggestedName ?? "video.mp4")
                 }
