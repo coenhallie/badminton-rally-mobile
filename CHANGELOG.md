@@ -10,6 +10,11 @@ The mobile app is versioned independently from the web app.
 ## [Unreleased]
 
 ### Added
+- iOS: record/import local videos with an "On this phone" library section
+  (1 GB cap, recordings also saved to Photos), local playback with
+  frame-accurate stepping, and on-device annotations.
+- Shared: local video registry and local annotations persistence promoted to
+  the shared module (identical storage format; Android data is preserved).
 - iOS app (initial release, remote-clips parity): email sign-in, match list with
   thumbnails, rally clips, clip detail with AVPlayer and annotations, match sharing.
 - Single shared version source `Config/Version.xcconfig` read by both Android and iOS;
