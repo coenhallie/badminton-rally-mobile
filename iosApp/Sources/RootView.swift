@@ -1,8 +1,10 @@
 import SwiftUI
+import UIKit
 import Shared
 
 struct RootView: View {
     let rally: RallyApp
+    let analyze: AnalyzeCoordinator
     @State private var authState: AuthState? = nil
     @State private var themeMode: ThemeMode = .light
 
@@ -28,6 +30,11 @@ struct RootView: View {
         .task {
             for await mode in rally.themePrefs.mode {
                 themeMode = mode
+            }
+        }
+        .task {
+            for await active in analyze.hasActiveUpload {
+                UIApplication.shared.isIdleTimerDisabled = (active as? Bool) ?? false
             }
         }
     }
