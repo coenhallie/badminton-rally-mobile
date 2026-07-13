@@ -5,12 +5,18 @@ import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.close
 import io.ktor.utils.io.writeFully
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.ObjCObjectVar
 import kotlinx.cinterop.addressOf
+import kotlinx.cinterop.alloc
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.ptr
 import kotlinx.cinterop.usePinned
+import kotlinx.cinterop.value
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import platform.Foundation.NSData
+import platform.Foundation.NSError
 import platform.Foundation.NSFileHandle
 import platform.Foundation.create
 import platform.Foundation.fileHandleForReadingAtPath
@@ -27,12 +33,12 @@ private const val CHUNK_BYTES = 65_536uL
 fun openLocalVideoChannel(absolutePath: String, offset: Long): ByteReadChannel {
     val handle = NSFileHandle.fileHandleForReadingAtPath(absolutePath)
         ?: error("Video file is missing or access was revoked")
-    handle.seekToOffset(offset.toULong(), error = null)
+    handle.seekOrThrow(offset.toULong())
     val channel = ByteChannel(autoFlush = true)
     CoroutineScope(Dispatchers.Default).launch {
         try {
             while (true) {
-                val data = handle.readDataUpToLength(CHUNK_BYTES, error = null)
+                val data = handle.readChunkOrThrow(CHUNK_BYTES)
                 val bytes = data?.toByteArray() ?: ByteArray(0)
                 if (bytes.isEmpty()) break
                 channel.writeFully(bytes, 0, bytes.size)
@@ -45,6 +51,25 @@ fun openLocalVideoChannel(absolutePath: String, offset: Long): ByteReadChannel {
         }
     }
     return channel
+}
+
+@OptIn(ExperimentalForeignApi::class)
+private fun NSFileHandle.seekOrThrow(offset: ULong) = memScoped {
+    val err = alloc<ObjCObjectVar<NSError?>>()
+    seekToOffset(offset, err.ptr)
+    if (err.value != null) {
+        error("Couldn't seek video file to resume offset: ${err.value?.localizedDescription}")
+    }
+}
+
+@OptIn(ExperimentalForeignApi::class)
+private fun NSFileHandle.readChunkOrThrow(length: ULong): NSData? = memScoped {
+    val err = alloc<ObjCObjectVar<NSError?>>()
+    val data = readDataUpToLength(length, err.ptr)
+    if (data == null && err.value != null) {
+        error("Couldn't read video file: ${err.value?.localizedDescription}")
+    }
+    data
 }
 
 @OptIn(ExperimentalForeignApi::class, kotlinx.cinterop.BetaInteropApi::class)
