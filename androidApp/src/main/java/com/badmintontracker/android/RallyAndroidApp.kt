@@ -7,10 +7,10 @@ import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import coil3.video.VideoFrameDecoder
-import com.badmintontracker.android.localvideo.AnalyzeCoordinator
 import com.badmintontracker.android.localvideo.skipExactly
 import com.badmintontracker.shared.RallyApp
 import com.badmintontracker.shared.SupabaseConfig
+import com.badmintontracker.shared.localvideo.AnalyzeCoordinator
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.prefs.ThemePreferenceRepository

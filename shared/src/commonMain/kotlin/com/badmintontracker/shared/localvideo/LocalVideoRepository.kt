@@ -45,3 +45,7 @@ class LocalVideoRepository(private val settings: Settings) {
 
     private companion object { const val KEY = "local_videos" }
 }
+
+/** Marks a FAILED entry's result dialog as seen (Swift-friendly single-purpose mutation). */
+fun LocalVideoRepository.acknowledgeResult(id: String) =
+    update(id) { it.copy(resultSeen = true) }

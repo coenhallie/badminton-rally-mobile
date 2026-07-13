@@ -78,4 +78,12 @@ class LocalVideoRepositoryTest {
         val settings = MapSettings().apply { putString("local_videos", "not-json") }
         LocalVideoRepository(settings).entries.value shouldBe emptyList()
     }
+
+    @Test
+    fun acknowledgeResult_sets_resultSeen() {
+        val repo = LocalVideoRepository(MapSettings())
+        repo.add(entry("a"))
+        repo.acknowledgeResult("a")
+        repo.get("a")?.resultSeen shouldBe true
+    }
 }

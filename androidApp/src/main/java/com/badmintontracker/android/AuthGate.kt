@@ -29,7 +29,6 @@ import com.badmintontracker.android.cliplist.ClipListScreen
 import com.badmintontracker.android.cliplist.ClipListViewModel
 import com.badmintontracker.android.cliplist.MatchClipsScreen
 import com.badmintontracker.shared.prefs.ThemePreferenceRepository
-import com.badmintontracker.android.localvideo.AnalyzeCoordinator
 import com.badmintontracker.android.localvideo.LocalPlayerScreen
 import com.badmintontracker.android.localvideo.LocalPlayerViewModel
 import com.badmintontracker.android.localvideo.LocalVideoListViewModel
@@ -40,6 +39,7 @@ import com.badmintontracker.android.localvideo.rememberVideoIntake
 import com.badmintontracker.android.nav.Route
 import com.badmintontracker.android.signin.SignInScreen
 import com.badmintontracker.android.signin.SignInViewModel
+import com.badmintontracker.shared.localvideo.AnalyzeCoordinator
 import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.localvideo.LocalVideoEntry

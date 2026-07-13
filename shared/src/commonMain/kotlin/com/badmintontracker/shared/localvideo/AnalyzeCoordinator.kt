@@ -1,13 +1,11 @@
-package com.badmintontracker.android.localvideo
+package com.badmintontracker.shared.localvideo
 
-import com.badmintontracker.shared.localvideo.AnalyzeStage
-import com.badmintontracker.shared.localvideo.AnalyzeStep
-import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
-import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.model.CourtKeypoints
 import com.badmintontracker.shared.repo.ClipsRepository
 import com.badmintontracker.shared.repo.UploadState
 import com.badmintontracker.shared.repo.VideosRepository
+import com.badmintontracker.shared.util.SyncLock
+import com.badmintontracker.shared.util.withLock
 import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -46,7 +44,8 @@ class AnalyzeCoordinator(
     val hasActiveUpload: StateFlow<Boolean> = _hasActiveUpload.asStateFlow()
 
     // Guarded by itself: mutated from concurrent pipeline coroutines on scope.
-    private val active = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+    private val activeLock = SyncLock()
+    private val active = mutableSetOf<String>()
 
     fun startAnalysis(entryId: String, keypoints: CourtKeypoints) {
         localVideos.update(entryId) { it.copy(keypoints = keypoints) }
@@ -73,12 +72,12 @@ class AnalyzeCoordinator(
     }
 
     private fun launchPipeline(entryId: String, startFrom: AnalyzeStep) {
-        if (!active.add(entryId)) return
+        if (!activeLock.withLock { active.add(entryId) }) return
         scope.launch {
             try {
                 runPipeline(entryId, startFrom)
             } finally {
-                active.remove(entryId)
+                activeLock.withLock { active.remove(entryId) }
                 _progress.update { it - entryId }
             }
         }
