@@ -34,7 +34,7 @@ struct RootView: View {
         }
         .task {
             for await active in analyze.hasActiveUpload {
-                UIApplication.shared.isIdleTimerDisabled = (active as? Bool) ?? false
+                UIApplication.shared.isIdleTimerDisabled = active.boolValue
             }
         }
     }
