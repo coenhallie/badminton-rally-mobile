@@ -36,6 +36,7 @@
 		D90B20576A674D829140588B /* ShareSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CEBABF3818F4829339E77D7 /* ShareSheetView.swift */; };
 		DD0D54A07A7D5CA7A932D166 /* LocalPlayerModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A920F861E39D805A8C6A8D1 /* LocalPlayerModel.swift */; };
 		EB93197882D94A5AF008CD13 /* ShuttlTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C55FBA93C98A27AC7EE21BE /* ShuttlTheme.swift */; };
+		EC9D51B8D24EEF7328ACD3FE /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B1720870E51445F47D3045A0 /* Assets.xcassets */; };
 		EE7A9B1A1CC005EC4BCF015B /* ErrorBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = F445C67CB4C46F120008DAD3 /* ErrorBanner.swift */; };
 		F34C70DAE58109539EEA2D7B /* AddAnnotationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B46560A5190E75D7D9644D0 /* AddAnnotationSheet.swift */; };
 		F53905B8F98558E61A796654 /* FrameStepBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F78CD93D0A3744404B34A42 /* FrameStepBar.swift */; };
@@ -76,6 +77,7 @@
 		9460204E541BF370BAFFB9BE /* CameraRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraRecorder.swift; sourceTree = "<group>"; };
 		A02D8B89ABF94AD30304E3A5 /* FrameStepMathTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameStepMathTests.swift; sourceTree = "<group>"; };
 		B0808EB7D7A1AF8A36818AEE /* MatchGroupingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchGroupingTests.swift; sourceTree = "<group>"; };
+		B1720870E51445F47D3045A0 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		BE370B3A23B49D0DED479199 /* LocalVideoIntake.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalVideoIntake.swift; sourceTree = "<group>"; };
 		C2035CA20A665E3BA885CFDC /* KindBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KindBadge.swift; sourceTree = "<group>"; };
 		C59114F647E69202552CE362 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -115,6 +117,7 @@
 		38B69C3F79CD97858CF7B609 = {
 			isa = PBXGroup;
 			children = (
+				B1720870E51445F47D3045A0 /* Assets.xcassets */,
 				FFC9BEF0F7452C90A6A82EFC /* Config */,
 				B53BB82DD7780F3657A03A11 /* Sources */,
 				55ED44A9BCF2278E3F626B69 /* Tests */,
@@ -230,6 +233,7 @@
 			buildPhases = (
 				4B44A75E2FD10EFE3C97FCF5 /* Compile Kotlin Framework */,
 				297B59D9CE634556D6007C40 /* Sources */,
+				1623B02D10928C8101C1F806 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -288,6 +292,17 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		1623B02D10928C8101C1F806 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				EC9D51B8D24EEF7328ACD3FE /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
 		4B44A75E2FD10EFE3C97FCF5 /* Compile Kotlin Framework */ = {

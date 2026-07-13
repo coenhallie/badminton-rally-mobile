@@ -9,7 +9,7 @@ targets:
   iosApp:
     type: application
     platform: iOS
-    sources: [Sources]
+    sources: [Sources, Assets.xcassets]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.badmintontracker.ios
