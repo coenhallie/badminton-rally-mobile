@@ -19,12 +19,12 @@ struct SchematicCourtGuide: View {
         CGPoint(x: 0, y: courtL),                 // BL
         CGPoint(x: 0, y: courtL / 2),             // NL
         CGPoint(x: courtW, y: courtL / 2),        // NR
-        CGPoint(x: 0, y: courtL / 2 + serviceLine),        // SNL
-        CGPoint(x: courtW, y: courtL / 2 + serviceLine),   // SNR
-        CGPoint(x: 0, y: courtL / 2 - serviceLine),        // SFL
-        CGPoint(x: courtW, y: courtL / 2 - serviceLine),   // SFR
-        CGPoint(x: courtW / 2, y: courtL / 2 + serviceLine), // CTN
-        CGPoint(x: courtW / 2, y: courtL / 2 - serviceLine), // CTF
+        CGPoint(x: 0, y: courtL / 2 - serviceLine),        // SNL
+        CGPoint(x: courtW, y: courtL / 2 - serviceLine),   // SNR
+        CGPoint(x: 0, y: courtL / 2 + serviceLine),        // SFL
+        CGPoint(x: courtW, y: courtL / 2 + serviceLine),   // SFR
+        CGPoint(x: courtW / 2, y: courtL / 2 - serviceLine), // CTN
+        CGPoint(x: courtW / 2, y: courtL / 2 + serviceLine), // CTF
     ]
 
     var body: some View {

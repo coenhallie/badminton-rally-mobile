@@ -208,7 +208,7 @@ struct CourtMarkingView: View {
             if i == 0 { path.move(to: dp) } else { path.addLine(to: dp) }
         }
         path.closeSubpath()
-        context.stroke(path, with: .color(.white.opacity(0.8)), style: StrokeStyle(lineWidth: 1, dash: [8, 4]))
+        context.stroke(path, with: .color(Color(rgb: 0x22C55E).opacity(0.6)), style: StrokeStyle(lineWidth: 2, dash: [8, 4]))
     }
 
     private func drawPlacedPoints(context: inout GraphicsContext, size: CGSize, marking: CourtMarkingState) {
