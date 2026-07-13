@@ -62,7 +62,9 @@ final class ClipDetailModel {
                 let newPlayer = AVPlayer(url: url)
                 player = newPlayer
                 observeFailure(of: newPlayer)
-                await loadFps(url: url)
+                Task { [weak self] in
+                    await self?.loadFps(from: newPlayer)
+                }
             } else {
                 error = "Couldn't load video"
             }
@@ -100,8 +102,8 @@ final class ClipDetailModel {
         player?.seek(to: CMTime(seconds: Double(seconds), preferredTimescale: 600))
     }
 
-    private func loadFps(url: URL) async {
-        let asset = AVURLAsset(url: url)
+    private func loadFps(from player: AVPlayer) async {
+        guard let asset = player.currentItem?.asset else { return }
         if let track = try? await asset.loadTracks(withMediaType: .video).first,
            let rate = try? await track.load(.nominalFrameRate) {
             fps = rate
