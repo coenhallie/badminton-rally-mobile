@@ -1,4 +1,4 @@
-package com.badmintontracker.android.localvideo.court
+package com.badmintontracker.shared.localvideo.court
 
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.floats.plusOrMinus

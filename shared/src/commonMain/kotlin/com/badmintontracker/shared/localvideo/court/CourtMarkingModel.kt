@@ -1,4 +1,4 @@
-package com.badmintontracker.android.localvideo.court
+package com.badmintontracker.shared.localvideo.court
 
 import com.badmintontracker.shared.model.CourtKeypoints
 
