@@ -119,6 +119,9 @@ struct ClipListView: View {
         } message: { entry in
             Text(entry.failureMessage ?? "Unknown error")
         }
+        .navigationDestination(item: $navigationTarget) { route in
+            CourtMarkingView(rally: rally, analyze: analyze, entryId: route.entryId)
+        }
     }
 
     private func analyzeAction(_ entry: LocalVideoEntry) {
@@ -178,9 +181,6 @@ struct ClipListView: View {
         }
         .navigationDestination(for: LocalPlayerRoute.self) { route in
             LocalPlayerView(rally: rally, analyze: analyze, entryId: route.entryId)
-        }
-        .navigationDestination(item: $navigationTarget) { route in
-            CourtMarkingView(rally: rally, analyze: analyze, entryId: route.entryId)
         }
     }
 
