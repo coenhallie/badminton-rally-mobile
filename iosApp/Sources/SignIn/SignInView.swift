@@ -7,47 +7,68 @@ struct SignInView: View {
     @State private var password = ""
     @State private var isSubmitting = false
     @State private var error: String? = nil
+    @State private var themeMode: ThemeMode = .light
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                brand
-                Spacer().frame(height: 8)
-                Text("Sign in to continue")
-                    .font(.footnote)
-                    .foregroundStyle(Shuttl.textSecondary)
-                Spacer().frame(height: 24)
-                ShuttlCard {
-                    VStack(spacing: 16) {
-                        field("Email", text: $email)
-                            .keyboardType(.emailAddress)
-                            .textContentType(.username)
-                        secureField("Password", text: $password)
-                        Button(isSubmitting ? "Signing in…" : "Sign in") { submit() }
-                            .buttonStyle(PrimaryButtonStyle())
-                            .disabled(isSubmitting)
-                        if let error {
-                            ErrorBanner(message: error)
+        ZStack(alignment: .topTrailing) {
+            ScrollView {
+                VStack(spacing: 0) {
+                    brand
+                    Spacer().frame(height: 8)
+                    Text("Sign in to continue")
+                        .font(.footnote)
+                        .foregroundStyle(Shuttl.textSecondary)
+                    Spacer().frame(height: 24)
+                    ShuttlCard {
+                        VStack(spacing: 16) {
+                            field("Email", text: $email)
+                                .keyboardType(.emailAddress)
+                                .textContentType(.username)
+                            secureField("Password", text: $password)
+                            Button(isSubmitting ? "Signing in…" : "Sign in") { submit() }
+                                .buttonStyle(PrimaryButtonStyle())
+                                .disabled(isSubmitting)
+                            if let error {
+                                ErrorBanner(message: error)
+                            }
                         }
                     }
+                    Spacer().frame(height: 24)
+                    Text("Registration is closed. Contact the admin if you need an account.")
+                        .font(.footnote)
+                        .foregroundStyle(Shuttl.textTertiary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 320)
+                    Spacer().frame(height: 8)
+                    Text(versionLabel)
+                        .font(.footnote)
+                        .foregroundStyle(Shuttl.textTertiary)
                 }
-                Spacer().frame(height: 24)
-                Text("Registration is closed. Contact the admin if you need an account.")
-                    .font(.footnote)
-                    .foregroundStyle(Shuttl.textTertiary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 320)
-                Spacer().frame(height: 8)
-                Text(versionLabel)
-                    .font(.footnote)
-                    .foregroundStyle(Shuttl.textTertiary)
+                .frame(maxWidth: 400)
+                .padding(.horizontal, 16)
+                .padding(.top, 56)
+                .frame(maxWidth: .infinity)
             }
-            .frame(maxWidth: 400)
-            .padding(.horizontal, 16)
-            .padding(.top, 56)
-            .frame(maxWidth: .infinity)
+            Button {
+                rally.themePrefs.toggle()
+            } label: {
+                Image(systemName: themeMode == .dark ? "sun.max" : "moon")
+                    .font(.system(size: 15))
+                    .foregroundStyle(Shuttl.text)
+                    .frame(width: 36, height: 36)
+                    .background(Shuttl.bgSecondary)
+                    .overlay(Rectangle().stroke(Shuttl.border, lineWidth: 1))
+            }
+            .accessibilityLabel(themeMode == .dark ? "Switch to light mode" : "Switch to dark mode")
+            .padding(.trailing, 16)
+            .padding(.top, 8)
         }
         .background(Shuttl.bg)
+        .task {
+            for await mode in rally.themePrefs.mode {
+                themeMode = mode
+            }
+        }
     }
 
     private var brand: some View {
