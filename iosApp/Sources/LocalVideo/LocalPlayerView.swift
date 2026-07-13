@@ -4,11 +4,13 @@ import SwiftUI
 
 struct LocalPlayerView: View {
     let rally: RallyApp
+    let analyze: AnalyzeCoordinator
     let entryId: String
     @Environment(\.dismiss) private var dismiss
     @State private var model: LocalPlayerModel?
     @State private var addSheet: AddSheetItem? = nil
     @State private var deleteTarget: LocalAnnotation? = nil
+    @State private var courtTarget: CourtMarkingRoute? = nil
 
     var body: some View {
         Group {
@@ -65,6 +67,12 @@ struct LocalPlayerView: View {
         .navigationTitle(model.entry.displayName)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
+                if LocalVideoStatus.canAnalyze(stage: model.entry.stage) {
+                    Button("Analyze") { courtTarget = CourtMarkingRoute(entryId: model.entry.id) }
+                        .font(.footnote.weight(.semibold))
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     addSheet = AddSheetItem(timestamp: model.currentTimestampSeconds())
                 } label: {
@@ -72,6 +80,9 @@ struct LocalPlayerView: View {
                 }
                 .accessibilityLabel("Add annotation")
             }
+        }
+        .navigationDestination(item: $courtTarget) { route in
+            CourtMarkingView(rally: rally, analyze: analyze, entryId: route.entryId)
         }
         .sheet(item: $addSheet) { item in
             AddAnnotationSheet { kind, body in

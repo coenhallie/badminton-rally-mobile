@@ -3,6 +3,7 @@ import Shared
 
 struct ClipListView: View {
     let rally: RallyApp
+    let analyze: AnalyzeCoordinator
     @State private var model: ClipListModel?
     @State private var shareTarget: MatchSummary? = nil
     @State private var intake: LocalVideoIntake
@@ -10,9 +11,13 @@ struct ClipListView: View {
     @State private var localEntries: [LocalVideoEntry] = []
     @State private var showImporter = false
     @State private var showRecorder = false
+    @State private var progressById: [String: AnalyzeProgress] = [:]
+    @State private var resultEntry: LocalVideoEntry? = nil
+    @State private var navigationTarget: CourtMarkingRoute? = nil
 
-    init(rally: RallyApp) {
+    init(rally: RallyApp, analyze: AnalyzeCoordinator) {
         self.rally = rally
+        self.analyze = analyze
         _intake = State(initialValue: LocalVideoIntake(rally: rally))
     }
 
@@ -66,6 +71,14 @@ struct ClipListView: View {
         .task {
             for await entries in rally.localVideos.entries {
                 localEntries = entries
+                if resultEntry == nil {
+                    resultEntry = entries.first { $0.stage == .failed && !$0.resultSeen }
+                }
+            }
+        }
+        .task {
+            for await map in analyze.progress {
+                progressById = (map as? [String: AnalyzeProgress]) ?? [:]
             }
         }
         .sheet(item: $shareTarget) { match in
@@ -85,6 +98,35 @@ struct ClipListView: View {
             }
             .ignoresSafeArea()
         }
+        .alert(
+            (resultEntry?.failureMessage ?? "").localizedCaseInsensitiveContains("no rallies")
+                ? "No rallies found" : "Analysis failed",
+            isPresented: Binding(
+                get: { resultEntry != nil },
+                set: { if !$0 { resultEntry = nil } }
+            ),
+            presenting: resultEntry
+        ) { entry in
+            Button("Retry") {
+                rally.localVideos.acknowledgeResult(id: entry.id)
+                resultEntry = nil
+                analyzeAction(entry)
+            }
+            Button("Close", role: .cancel) {
+                rally.localVideos.acknowledgeResult(id: entry.id)
+                resultEntry = nil
+            }
+        } message: { entry in
+            Text(entry.failureMessage ?? "Unknown error")
+        }
+    }
+
+    private func analyzeAction(_ entry: LocalVideoEntry) {
+        if entry.stage == .failed && entry.keypoints != nil {
+            analyze.retry(entryId: entry.id)
+        } else {
+            navigationTarget = CourtMarkingRoute(entryId: entry.id)
+        }
     }
 
     @ViewBuilder
@@ -93,10 +135,16 @@ struct ClipListView: View {
             if !localEntries.isEmpty {
                 Section {
                     ForEach(localEntries) { entry in
-                        LocalVideoRowView(entry: entry, thumbnails: thumbnails) {
-                            intake.remove(entry: entry)
-                            thumbnails.evict(id: entry.id)
-                        }
+                        LocalVideoRowView(
+                            entry: entry,
+                            thumbnails: thumbnails,
+                            progress: progressById[entry.id],
+                            onAnalyze: { analyzeAction(entry) },
+                            onRemove: {
+                                intake.remove(entry: entry)
+                                thumbnails.evict(id: entry.id)
+                            }
+                        )
                     }
                 } header: { Shuttl.sectionLabel("On this phone") }
             }
@@ -129,7 +177,10 @@ struct ClipListView: View {
             MatchClipsView(rally: rally, videoId: videoId)
         }
         .navigationDestination(for: LocalPlayerRoute.self) { route in
-            LocalPlayerView(rally: rally, entryId: route.entryId)
+            LocalPlayerView(rally: rally, analyze: analyze, entryId: route.entryId)
+        }
+        .navigationDestination(item: $navigationTarget) { route in
+            CourtMarkingView(rally: rally, analyze: analyze, entryId: route.entryId)
         }
     }
 

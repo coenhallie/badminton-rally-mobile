@@ -14,7 +14,7 @@ struct RootView: View {
             case nil, .loading:
                 SplashView()
             case .authenticated:
-                NavigationStack { ClipListView(rally: rally) }
+                NavigationStack { ClipListView(rally: rally, analyze: analyze) }
             case .unauthenticated:
                 SignInView(rally: rally)
             case .some:

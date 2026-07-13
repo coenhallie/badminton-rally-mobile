@@ -10,6 +10,8 @@ struct LocalPlayerRoute: Hashable {
 struct LocalVideoRowView: View {
     let entry: LocalVideoEntry
     let thumbnails: LocalThumbnails
+    let progress: AnalyzeProgress?
+    let onAnalyze: () -> Void
     let onRemove: () -> Void
 
     private var subtitle: String {
@@ -41,8 +43,29 @@ struct LocalVideoRowView: View {
                         .font(.system(size: 11, weight: .medium))
                         .kerning(0.55)
                         .foregroundStyle(Shuttl.textSecondary)
+                    if let status = LocalVideoStatus.text(
+                        stage: entry.stage,
+                        uploadProgress: progress?.uploadProgress?.floatValue,
+                        pipelineProgress: progress?.pipelineProgress?.floatValue
+                    ) {
+                        Text(status)
+                            .font(.footnote)
+                            .foregroundStyle(Shuttl.textSecondary)
+                    }
                 }
                 Spacer()
+                if LocalVideoStatus.canAnalyze(stage: entry.stage) {
+                    Button("Analyze") { onAnalyze() }
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Shuttl.accent)
+                        .buttonStyle(.borderless)
+                } else {
+                    ProgressView()
+                        .controlSize(.small)
+                }
                 Menu {
                     Button("Remove from app", role: .destructive) { onRemove() }
                 } label: {
