@@ -50,7 +50,7 @@ struct LocalPlayerView: View {
                 }
             }
 
-            FrameStepBar(model: model)
+            FrameStepBar(player: model.player, step: { model.stepFrames($0) })
 
             List {
                 ForEach(model.annotations, id: \.id) { annotation in

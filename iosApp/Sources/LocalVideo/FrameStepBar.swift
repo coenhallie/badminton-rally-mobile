@@ -1,23 +1,25 @@
+import AVFoundation
 import SwiftUI
 
 /// Port of Android's FrameStepBar: tap = single frame step; hold-left = -3
 /// frames every 100ms; hold-right = real playback until release. 400ms hold
 /// activation, like Android's HoldButton.
 struct FrameStepBar: View {
-    let model: LocalPlayerModel
+    let player: AVPlayer
+    let step: (Int64) -> Void
 
     var body: some View {
         HStack(spacing: 0) {
             HoldButton(
                 text: "Previous frame",
-                onTap: { model.stepFrames(-1) },
-                onHoldTick: { model.stepFrames(-3) }
+                onTap: { step(-1) },
+                onHoldTick: { step(-3) }
             )
             HoldButton(
                 text: "Next frame",
-                onTap: { model.stepFrames(1) },
-                onHoldActivate: { model.player.play() },
-                onRelease: { if model.player.rate != 0 { model.player.pause() } }
+                onTap: { step(1) },
+                onHoldActivate: { player.play() },
+                onRelease: { if player.rate != 0 { player.pause() } }
             )
         }
     }

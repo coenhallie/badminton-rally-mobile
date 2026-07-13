@@ -44,6 +44,10 @@ struct ClipDetailView: View {
                 .padding(16)
             }
 
+            if let player = model.player {
+                FrameStepBar(player: player, step: { model.stepFrames($0) })
+            }
+
             HStack {
                 Text(model.clip.map { $0.title ?? "Rally #\($0.rallyIndex)" } ?? "")
                     .font(.title3.weight(.semibold))

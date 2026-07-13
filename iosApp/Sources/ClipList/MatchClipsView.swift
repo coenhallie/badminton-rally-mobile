@@ -36,6 +36,7 @@ struct MatchClipsView: View {
             }
         }
         .listStyle(.plain)
+        .refreshable { try? await rally.clips.refresh() }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .task {

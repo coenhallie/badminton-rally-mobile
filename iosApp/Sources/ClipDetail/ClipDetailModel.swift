@@ -15,6 +15,7 @@ final class ClipDetailModel {
     var actionError: String? = nil
     private var resignAttempts = 0
     private var statusObservation: NSKeyValueObservation?
+    private var fps: Float = 0
 
     init(rally: RallyApp, clipId: String) {
         self.rally = rally
@@ -61,6 +62,7 @@ final class ClipDetailModel {
                 let newPlayer = AVPlayer(url: url)
                 player = newPlayer
                 observeFailure(of: newPlayer)
+                await loadFps(url: url)
             } else {
                 error = "Couldn't load video"
             }
@@ -96,6 +98,33 @@ final class ClipDetailModel {
 
     func seek(to seconds: Float) {
         player?.seek(to: CMTime(seconds: Double(seconds), preferredTimescale: 600))
+    }
+
+    private func loadFps(url: URL) async {
+        let asset = AVURLAsset(url: url)
+        if let track = try? await asset.loadTracks(withMediaType: .video).first,
+           let rate = try? await track.load(.nominalFrameRate) {
+            fps = rate
+        }
+    }
+
+    func stepFrames(_ delta: Int64) {
+        guard let player else { return }
+        if player.rate != 0 { player.pause() }
+        let current = CMTimeGetSeconds(player.currentTime())
+        let durationTime = player.currentItem?.duration
+        let duration = (durationTime?.isNumeric == true) ? CMTimeGetSeconds(durationTime!) : 0
+        let target = FrameStepMath.targetSeconds(
+            currentSeconds: current.isFinite ? current : 0,
+            fps: fps,
+            delta: delta,
+            durationSeconds: duration.isFinite ? duration : 0
+        )
+        player.seek(
+            to: CMTime(seconds: target, preferredTimescale: 600),
+            toleranceBefore: .zero,
+            toleranceAfter: .zero
+        )
     }
 
     func add(kind: AnnotationKind?, body: String) async {
