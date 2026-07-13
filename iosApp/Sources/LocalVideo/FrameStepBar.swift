@@ -63,5 +63,11 @@ private struct HoldButton: View {
                         onRelease()
                     }
             )
+            .onDisappear {
+                holdTask?.cancel()
+                holdTask = nil
+                pressed = false
+                onRelease()
+            }
     }
 }
