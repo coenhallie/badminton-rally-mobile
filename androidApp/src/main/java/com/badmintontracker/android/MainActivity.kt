@@ -11,7 +11,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.badmintontracker.android.data.ThemeMode
+import com.badmintontracker.shared.prefs.ThemeMode
 import com.badmintontracker.android.ui.theme.RallyTheme
 
 class MainActivity : ComponentActivity() {

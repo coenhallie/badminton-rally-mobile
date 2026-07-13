@@ -15,7 +15,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import com.badmintontracker.android.data.ThemeMode
+import com.badmintontracker.shared.prefs.ThemeMode
 import com.badmintontracker.android.ui.icons.ShuttlIcons
 
 @Composable

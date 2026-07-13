@@ -1,4 +1,4 @@
-package com.badmintontracker.android.data
+package com.badmintontracker.shared.prefs
 
 import com.russhwolf.settings.Settings
 import kotlinx.coroutines.flow.MutableStateFlow

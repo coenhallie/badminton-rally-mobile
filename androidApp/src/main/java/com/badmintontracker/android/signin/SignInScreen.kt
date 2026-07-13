@@ -29,7 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.badmintontracker.android.BuildConfig
-import com.badmintontracker.android.data.ThemePreferenceRepository
+import com.badmintontracker.shared.prefs.ThemePreferenceRepository
 import com.badmintontracker.android.ui.components.ErrorBanner
 import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlCard
