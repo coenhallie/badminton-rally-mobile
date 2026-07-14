@@ -10,6 +10,11 @@ The mobile app is versioned independently from the web app.
 ## [Unreleased]
 
 ### Added
+- iOS: full analyze pipeline — 12-point court mapping, resumable upload with
+  progress, live processing status, and failure/retry dialogs. iOS and Android
+  are now at full feature parity.
+- Shared: analyze orchestration (AnalyzeCoordinator) and court-marking geometry
+  promoted to the shared module.
 - iOS: frame stepping on remote clips, pull-to-refresh on match rallies, light/dark
   theme toggle (shared preference), app icon.
 - iOS: record/import local videos with an "On this phone" library section
