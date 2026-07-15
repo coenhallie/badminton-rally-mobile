@@ -18,6 +18,7 @@ data class LocalVideoRow(
     val statusText: String?,     // null when plain LOCAL
     val durationText: String,    // m:ss
     val canAnalyze: Boolean,     // LOCAL or FAILED
+    val analyzeLabel: String,    // "Analyze", or "Re-analyze" after a failed attempt
 )
 
 class LocalVideoListViewModel(
@@ -61,8 +62,16 @@ internal fun LocalVideoEntry.toRow(progress: AnalyzeProgress?): LocalVideoRow {
         statusText = statusText,
         durationText = formatDuration(durationMs),
         canAnalyze = stage == AnalyzeStage.LOCAL || stage == AnalyzeStage.FAILED,
+        analyzeLabel = analyzeButtonLabel(stage),
     )
 }
+
+/**
+ * "Re-analyze" once an attempt has failed (the video keeps its saved court points
+ * and resumes from the failed step); "Analyze" for a fresh video.
+ */
+internal fun analyzeButtonLabel(stage: AnalyzeStage): String =
+    if (stage == AnalyzeStage.FAILED) "Re-analyze" else "Analyze"
 
 internal fun formatDuration(ms: Long): String {
     val totalSec = ms / 1000

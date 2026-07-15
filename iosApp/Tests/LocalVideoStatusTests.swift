@@ -37,6 +37,11 @@ final class LocalVideoStatusTests: XCTestCase {
         )
     }
 
+    func testAnalyzeButtonLabel() {
+        XCTAssertEqual(LocalVideoStatus.analyzeButtonLabel(stage: .local), "Analyze")
+        XCTAssertEqual(LocalVideoStatus.analyzeButtonLabel(stage: .failed), "Re-analyze")
+    }
+
     func testCanAnalyze() {
         XCTAssertTrue(LocalVideoStatus.canAnalyze(stage: .local))
         XCTAssertTrue(LocalVideoStatus.canAnalyze(stage: .failed))

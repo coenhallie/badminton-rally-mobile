@@ -110,7 +110,7 @@ private fun LocalVideoRowItem(
         Spacer(Modifier.width(8.dp))
         if (row.canAnalyze) {
             ShuttlButton(
-                text = "Analyze",
+                text = row.analyzeLabel,
                 onClick = onAnalyze,
                 variant = ShuttlButtonVariant.Primary,
             )

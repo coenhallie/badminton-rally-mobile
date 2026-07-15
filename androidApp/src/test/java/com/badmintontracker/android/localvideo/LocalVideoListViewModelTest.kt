@@ -61,6 +61,8 @@ class LocalVideoListViewModelTest {
         rows[1].durationText shouldBe "1:05"
         rows[1].canAnalyze shouldBe true
         rows[0].canAnalyze shouldBe true
+        rows[1].analyzeLabel shouldBe "Analyze"     // fresh LOCAL entry
+        rows[0].analyzeLabel shouldBe "Re-analyze"  // FAILED after an attempt
     }
 
     @Test

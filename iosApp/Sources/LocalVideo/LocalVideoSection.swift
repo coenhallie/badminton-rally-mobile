@@ -55,7 +55,7 @@ struct LocalVideoRowView: View {
                 }
                 Spacer()
                 if LocalVideoStatus.canAnalyze(stage: entry.stage) {
-                    Button("Analyze") { onAnalyze() }
+                    Button(LocalVideoStatus.analyzeButtonLabel(stage: entry.stage)) { onAnalyze() }
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(.black)
                         .padding(.horizontal, 12)

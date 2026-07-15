@@ -22,4 +22,10 @@ enum LocalVideoStatus {
     static func canAnalyze(stage: AnalyzeStage) -> Bool {
         stage == .local || stage == .failed
     }
+
+    /// "Re-analyze" once an attempt has failed (the video keeps its saved court
+    /// points and resumes from the failed step); "Analyze" for a fresh video.
+    static func analyzeButtonLabel(stage: AnalyzeStage) -> String {
+        stage == .failed ? "Re-analyze" : "Analyze"
+    }
 }

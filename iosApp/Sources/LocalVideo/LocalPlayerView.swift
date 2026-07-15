@@ -68,7 +68,9 @@ struct LocalPlayerView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 if LocalVideoStatus.canAnalyze(stage: model.entry.stage) {
-                    Button("Analyze") { courtTarget = CourtMarkingRoute(entryId: model.entry.id) }
+                    Button(LocalVideoStatus.analyzeButtonLabel(stage: model.entry.stage)) {
+                        courtTarget = CourtMarkingRoute(entryId: model.entry.id)
+                    }
                         .font(.footnote.weight(.semibold))
                 }
             }

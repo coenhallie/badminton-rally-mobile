@@ -184,7 +184,7 @@ fun LocalPlayerScreen(
                     actions = {
                         if (canAnalyze) {
                             ShuttlButton(
-                                text = "Analyze",
+                                text = analyzeButtonLabel(entry.stage),
                                 onClick = onAnalyze,
                                 variant = ShuttlButtonVariant.Primary,
                                 modifier = Modifier.padding(end = 8.dp),
