@@ -11,7 +11,7 @@ enum class AnalyzeStep { UPLOAD, CREATE_ROW, KEYPOINTS, TRIGGER, PROCESSING }
 @Serializable
 data class LocalVideoEntry(
     val id: String,              // client UUID; becomes videos.id on Analyze
-    val uri: String,             // content:// URI (persistable permission taken)
+    val uri: String,             // Android: content:// URI (persistable permission); iOS: Documents-relative path
     val displayName: String,
     val durationMs: Long,
     val sizeBytes: Long,

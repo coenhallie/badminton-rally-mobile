@@ -15,6 +15,7 @@ struct CourtMarkingView: View {
     @State private var error: String? = nil
     @State private var scale: CGFloat = 1
     @State private var offset: CGSize = .zero
+    @State private var lastPanTranslation: CGSize = .zero
     @GestureState private var magnifyFrom: CGFloat = 1
 
     var body: some View {
@@ -70,7 +71,7 @@ struct CourtMarkingView: View {
             .contentShape(Rectangle())
             .position(x: geo.size.width / 2, y: geo.size.height / 2)
             .gesture(tapGesture(displaySize: CGSize(width: displayW, height: displayH)))
-            .simultaneousGesture(magnifyGesture(displaySize: CGSize(width: displayW, height: displayH)))
+            .simultaneousGesture(magnifyGesture())
             .simultaneousGesture(panGesture)
         }
 
@@ -111,7 +112,7 @@ struct CourtMarkingView: View {
         }
     }
 
-    private func magnifyGesture(displaySize: CGSize) -> some Gesture {
+    private func magnifyGesture() -> some Gesture {
         MagnifyGesture()
             .onChanged { value in
                 let zoom = value.magnification / magnifyFrom
@@ -132,10 +133,15 @@ struct CourtMarkingView: View {
         DragGesture(minimumDistance: 8)
             .onChanged { value in
                 guard scale > 1 else { return }
-                offset = CGSize(
-                    width: offset.width + value.translation.width * 0.15,
-                    height: offset.height + value.translation.height * 0.15
+                let delta = CGSize(
+                    width: value.translation.width - lastPanTranslation.width,
+                    height: value.translation.height - lastPanTranslation.height
                 )
+                lastPanTranslation = value.translation
+                offset = CGSize(width: offset.width + delta.width, height: offset.height + delta.height)
+            }
+            .onEnded { _ in
+                lastPanTranslation = .zero
             }
     }
 
