@@ -68,11 +68,25 @@ struct LocalPlayerView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 if LocalVideoStatus.canAnalyze(stage: model.entry.stage) {
-                    Button(LocalVideoStatus.analyzeButtonLabel(stage: model.entry.stage)) {
+                    // Green primary pill like Android's player button; visually
+                    // distinct from the system-grouped toolbar capsule.
+                    Button {
                         courtTarget = CourtMarkingRoute(entryId: model.entry.id)
+                    } label: {
+                        Text(LocalVideoStatus.analyzeButtonLabel(stage: model.entry.stage))
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.black)
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Shuttl.accent)
                     }
-                        .font(.footnote.weight(.semibold))
+                    .buttonStyle(.plain)
                 }
+            }
+            if #available(iOS 26.0, *) {
+                ToolbarSpacer(.fixed, placement: .topBarTrailing)
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
