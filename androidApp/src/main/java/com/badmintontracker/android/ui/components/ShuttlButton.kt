@@ -61,6 +61,8 @@ fun ShuttlButton(
             color      = fg,
             fontWeight = FontWeight.SemiBold,
             style      = MaterialTheme.typography.bodyLarge,
+            maxLines   = 1,
+            softWrap   = false,
         )
     }
 }

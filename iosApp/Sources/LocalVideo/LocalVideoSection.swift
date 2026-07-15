@@ -43,6 +43,7 @@ struct LocalVideoRowView: View {
                         .font(.system(size: 11, weight: .medium))
                         .kerning(0.55)
                         .foregroundStyle(Shuttl.textSecondary)
+                        .lineLimit(2)
                     if let status = LocalVideoStatus.text(
                         stage: entry.stage,
                         uploadProgress: progress?.uploadProgress?.floatValue,
@@ -58,6 +59,9 @@ struct LocalVideoRowView: View {
                     Button(LocalVideoStatus.analyzeButtonLabel(stage: entry.stage)) { onAnalyze() }
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(.black)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .layoutPriority(1)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
                         .background(Shuttl.accent)
