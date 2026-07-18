@@ -30,8 +30,11 @@ struct ClipDetailView: View {
     @ViewBuilder
     private func content(_ model: ClipDetailModel) -> some View {
         VStack(spacing: 0) {
+            // 60% of the screen for the video so rallies can be evaluated closely;
+            // the annotation list scrolls in whatever space remains.
             VideoPlayer(player: model.player)
-                .aspectRatio(16 / 9, contentMode: .fit)
+                .frame(maxWidth: .infinity)
+                .containerRelativeFrame(.vertical) { height, _ in height * 0.6 }
                 .background(Color.black)
 
             if let error = model.error {

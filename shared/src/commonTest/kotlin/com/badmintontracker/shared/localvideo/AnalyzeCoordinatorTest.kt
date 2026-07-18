@@ -16,6 +16,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -145,11 +146,54 @@ class AnalyzeCoordinatorTest {
         clips.clips.value = emptyList()
         val c = coordinator()
         c.startAnalysis("e1", keypoints())
+        advanceTimeBy(10_000)   // cover the clip-count retry delays
         runCurrent()
         val failed = localVideos.get("e1").shouldNotBeNull()
         failed.stage shouldBe AnalyzeStage.FAILED
         failed.failedStep shouldBe AnalyzeStep.PROCESSING
         failed.failureMessage shouldBe "Analysis finished but found no rallies in this video."
+        clips.countCalls.size shouldBe 3       // zero is only trusted after retries
+    }
+
+    @Test
+    fun transient_count_failure_retries_and_succeeds_instead_of_reporting_no_rallies() = runTest {
+        localVideos.add(entry())
+        clips.clips.value = listOf(clipFor("e1"))                        // clips exist on the server
+        clips.countResults += Result.failure(IllegalStateException("HTTP 503"))  // first count query fails
+        val c = coordinator()
+        c.startAnalysis("e1", keypoints())
+        advanceTimeBy(10_000)   // cover the clip-count retry delays
+        runCurrent()
+        clips.countCalls.size shouldBe 2       // retried after the failed query
+        localVideos.get("e1").shouldBeNull()   // success, not a false "no rallies"
+    }
+
+    @Test
+    fun clip_rows_lagging_behind_status_flip_are_retried_before_declaring_no_rallies() = runTest {
+        localVideos.add(entry())
+        // Server says done, but the rally_clips rows only become visible on the second query.
+        clips.countResults += Result.success(0)
+        clips.countResults += Result.success(74)
+        val c = coordinator()
+        c.startAnalysis("e1", keypoints())
+        advanceTimeBy(10_000)   // cover the clip-count retry delays
+        runCurrent()
+        clips.countCalls.size shouldBe 2
+        localVideos.get("e1").shouldBeNull()   // success, not a false "no rallies"
+    }
+
+    @Test
+    fun count_query_never_succeeding_does_not_report_false_no_rallies() = runTest {
+        localVideos.add(entry())
+        clips.clips.value = emptyList()
+        repeat(3) { clips.countResults += Result.failure(IllegalStateException("HTTP 503")) }
+        val c = coordinator()
+        c.startAnalysis("e1", keypoints())
+        advanceTimeBy(10_000)   // cover the clip-count retry delays
+        runCurrent()
+        // The pipeline reported success and the count was never confirmed to be
+        // zero — treat as success rather than contradicting the matches list.
+        localVideos.get("e1").shouldBeNull()
     }
 
     @Test

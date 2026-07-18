@@ -3,16 +3,20 @@ package com.badmintontracker.shared.repo
 import com.badmintontracker.shared.model.RallyClip
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.postgrest.query.Columns
 import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.serialization.Serializable
 
 interface ClipsRepository {
     suspend fun listClips(): List<RallyClip>
     fun observeClips(): Flow<List<RallyClip>>
     suspend fun refresh()
     suspend fun updateTitle(clipId: String, title: String?): Result<Unit>
+    /** Count this video's rally clips directly on the server, bypassing the cache. */
+    suspend fun countClipsForVideo(videoId: String): Result<Int>
 }
 
 class ClipsRepositoryImpl(private val client: SupabaseClient) : ClipsRepository {
@@ -36,5 +40,17 @@ class ClipsRepositoryImpl(private val client: SupabaseClient) : ClipsRepository 
                 filter { eq("id", clipId) }
             }
         Unit
+    }
+
+    @Serializable
+    private data class ClipIdRow(val id: String)
+
+    override suspend fun countClipsForVideo(videoId: String): Result<Int> = runCatching {
+        client.postgrest.from("rally_clips")
+            .select(Columns.list("id")) {
+                filter { eq("video_id", videoId) }
+            }
+            .decodeList<ClipIdRow>()
+            .size
     }
 }

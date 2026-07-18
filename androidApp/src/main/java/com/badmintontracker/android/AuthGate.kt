@@ -73,8 +73,8 @@ fun AuthGate(
                             popUpTo(nav.graph.id) { inclusive = true }
                         }
                     }
-                    // Session arrived while on SignIn (Google OAuth returns via deep
-                    // link, so SignInViewModel never sees the completed sign-in).
+                    // Session arrived while on SignIn (e.g. a session restored via
+                    // deep link, so SignInViewModel never sees the completed sign-in).
                     s is SessionStatus.Authenticated && onSignIn -> {
                         nav.navigate(Route.ClipList) {
                             popUpTo(Route.SignIn) { inclusive = true }

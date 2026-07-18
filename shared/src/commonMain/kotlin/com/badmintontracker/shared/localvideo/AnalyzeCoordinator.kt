@@ -8,10 +8,10 @@ import com.badmintontracker.shared.util.SyncLock
 import com.badmintontracker.shared.util.withLock
 import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -144,10 +144,18 @@ class AnalyzeCoordinator(
             return fail(entryId, AnalyzeStep.PROCESSING, it)
         }
 
+        // Count the clips directly on the server: the local cache can miss them when
+        // its refresh fails, and the clip rows can lag the terminal status flip. A
+        // zero is only trusted after retries, and a count that never succeeded proves
+        // nothing — then the pipeline's own success verdict wins over a false failure.
+        var clipCount: Int? = null
+        for (attempt in 1..CLIP_COUNT_ATTEMPTS) {
+            clipCount = clips.countClipsForVideo(entry.id).getOrNull() ?: clipCount
+            if ((clipCount ?: 0) > 0) break
+            if (attempt < CLIP_COUNT_ATTEMPTS) delay(CLIP_COUNT_RETRY_MS)
+        }
         runCatching { clips.refresh() }
-        val clipCount = runCatching { clips.observeClips().first().count { it.videoId == entry.id } }
-            .getOrDefault(0)
-        log("video ${entry.id} terminal=$terminalStatus clips=$clipCount")
+        log("video ${entry.id} terminal=$terminalStatus clips=${clipCount ?: "unknown"}")
         if (clipCount == 0) {
             // Pipeline succeeded but detected no rallies — don't vanish silently.
             return fail(
@@ -180,3 +188,6 @@ class AnalyzeCoordinator(
 
 private fun Throwable.isDuplicateKey(): Boolean =
     message?.contains("duplicate key") == true || message?.contains("23505") == true
+
+private const val CLIP_COUNT_ATTEMPTS = 3
+private const val CLIP_COUNT_RETRY_MS = 2_000L

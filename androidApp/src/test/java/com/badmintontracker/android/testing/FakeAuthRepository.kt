@@ -9,9 +9,7 @@ class FakeAuthRepository : AuthRepository {
     override val sessionFlow = session
     var currentUserIdValue: String? = "user-self"
     var nextEmailResult: Result<Unit> = Result.success(Unit)
-    var nextGoogleResult: Result<Unit> = Result.success(Unit)
     val emailCalls = mutableListOf<Pair<String, String>>()
-    val googleCalls = mutableListOf<Unit>()
     val signOutCalls = mutableListOf<Unit>()
 
     override fun currentUserId(): String? = currentUserIdValue
@@ -19,10 +17,6 @@ class FakeAuthRepository : AuthRepository {
     override suspend fun signInEmail(email: String, password: String): Result<Unit> {
         emailCalls += email to password
         return nextEmailResult
-    }
-    override suspend fun signInWithGoogle(): Result<Unit> {
-        googleCalls += Unit
-        return nextGoogleResult
     }
     override suspend fun signOut(): Result<Unit> {
         signOutCalls += Unit

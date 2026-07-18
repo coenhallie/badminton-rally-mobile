@@ -16,4 +16,6 @@ class FakeClipsRepository : ClipsRepository {
         refreshError?.let { throw it }
     }
     override suspend fun updateTitle(clipId: String, title: String?) = Result.success(Unit)
+    override suspend fun countClipsForVideo(videoId: String): Result<Int> =
+        Result.success(clips.value.count { it.videoId == videoId })
 }

@@ -72,22 +72,10 @@ struct SignInView: View {
     }
 
     private var brand: some View {
-        HStack(spacing: 8) {
-            Text("SHUTTL.")
-                .font(.system(size: 24, weight: .bold))
-                .kerning(-0.24)
-                .foregroundStyle(Shuttl.textHeading)
-            Text("BETA 2.0")
-                .font(.system(size: 9, weight: .semibold))
-                .kerning(0.5)
-                .foregroundStyle(.black)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(LinearGradient(
-                    colors: [Shuttl.accent, Shuttl.accentDark],
-                    startPoint: .leading, endPoint: .trailing
-                ))
-        }
+        Text("SHUTTL.")
+            .font(.system(size: 24, weight: .heavy))
+            .kerning(-0.24)
+            .foregroundStyle(Shuttl.textHeading)
     }
 
     private func field(_ label: String, text: Binding<String>) -> some View {

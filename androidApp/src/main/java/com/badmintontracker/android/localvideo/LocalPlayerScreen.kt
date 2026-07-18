@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -206,7 +206,9 @@ fun LocalPlayerScreen(
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
             if (!isFullscreen) {
-                playerSurface(Modifier.fillMaxWidth().aspectRatio(16f / 9f))
+                // 60% of the screen for the video so rallies can be evaluated closely;
+                // the annotation list scrolls in whatever space remains.
+                playerSurface(Modifier.fillMaxWidth().fillMaxHeight(0.6f).background(Color.Black))
                 FrameStepBar(player = player, modifier = Modifier.padding(vertical = 8.dp))
 
                 if (annotations.isEmpty()) {

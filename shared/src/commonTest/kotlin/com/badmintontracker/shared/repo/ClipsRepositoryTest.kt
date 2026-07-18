@@ -58,6 +58,21 @@ class ClipsRepositoryTest {
     }
 
     @Test
+    fun countClipsForVideo_queries_server_filtered_by_video_id() = runTest {
+        var capturedQuery: String? = null
+        val client = TestSupabase.client { request ->
+            capturedQuery = request.url.toString()
+            jsonResponse("""[{"id":"c1"},{"id":"c2"}]""")
+        }
+        val repo = ClipsRepositoryImpl(client)
+
+        repo.countClipsForVideo("v1").getOrNull() shouldBe 2
+
+        capturedQuery!!.shouldContain("rally_clips")
+        capturedQuery!!.shouldContain("video_id=eq.v1")
+    }
+
+    @Test
     fun observeClips_emits_initial_empty_then_refreshed_list() = runTest {
         val client = TestSupabase.client { _ -> jsonResponse(twoClips) }
         val repo = ClipsRepositoryImpl(client)

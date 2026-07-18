@@ -3,7 +3,6 @@ package com.badmintontracker.android.signin
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -21,8 +20,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -138,38 +135,11 @@ fun SignInScreen(
 
 @Composable
 private fun Brand() {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            "SHUTTL.",
-            color         = MaterialTheme.colorScheme.onBackground,
-            fontWeight    = FontWeight.Bold,
-            fontSize      = 24.sp,
-            letterSpacing = (-0.24).sp,
-        )
-        Spacer(Modifier.padding(start = 8.dp))
-        AlphaBadge()
-    }
-}
-
-@Composable
-private fun AlphaBadge() {
-    val gradient = Brush.linearGradient(
-        colors = listOf(
-            MaterialTheme.colorScheme.primary,
-            ShuttlTheme.extended.accentDark,
-        ),
+    Text(
+        "SHUTTL.",
+        color         = MaterialTheme.colorScheme.onBackground,
+        fontWeight    = FontWeight.ExtraBold,
+        fontSize      = 24.sp,
+        letterSpacing = (-0.24).sp,
     )
-    Box(
-        modifier = Modifier
-            .background(gradient)
-            .padding(horizontal = 8.dp, vertical = 3.dp),
-    ) {
-        Text(
-            text          = "BETA 2.0",
-            color         = Color.Black,
-            fontWeight    = FontWeight.SemiBold,
-            fontSize      = 9.sp,
-            letterSpacing = 0.5.sp,
-        )
-    }
 }
