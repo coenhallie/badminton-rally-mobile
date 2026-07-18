@@ -46,6 +46,24 @@ final class ClipListModel {
         _ = try? await SwiftInteropKt.signOutOrMessage(rally.auth)
     }
 
+    func deleteMatch(videoId: String) async {
+        if let message = try? await SwiftInteropKt.deleteMatchOrMessage(rally.videos, videoId: videoId) {
+            error = message
+            return
+        }
+        rally.clips.pruneVideo(videoId: videoId)
+        await refresh()
+    }
+
+    func leaveShare(videoId: String) async {
+        if let message = try? await SwiftInteropKt.leaveShareOrMessage(rally.shares, videoId: videoId) {
+            error = message
+            return
+        }
+        rally.clips.pruneVideo(videoId: videoId)
+        await refresh()
+    }
+
     func thumbnail(forCoverOf match: MatchSummary) async {
         guard thumbnailUrls[match.coverClipId] == nil,
               let cover = clips.first(where: { $0.id == match.coverClipId }) else { return }

@@ -6,6 +6,7 @@ struct ClipListView: View {
     let analyze: AnalyzeCoordinator
     @State private var model: ClipListModel?
     @State private var shareTarget: MatchSummary? = nil
+    @State private var deleteTarget: MatchSummary? = nil
     @State private var intake: LocalVideoIntake
     @State private var thumbnails = LocalThumbnails()
     @State private var localEntries: [LocalVideoEntry] = []
@@ -148,6 +149,14 @@ struct ClipListView: View {
                                 thumbnails.evict(id: entry.id)
                             }
                         )
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button(role: .destructive) {
+                                intake.remove(entry: entry)
+                                thumbnails.evict(id: entry.id)
+                            } label: {
+                                Label("Remove", systemImage: "trash")
+                            }
+                        }
                     }
                 } header: { Shuttl.sectionLabel("On this phone") }
             }
@@ -159,6 +168,13 @@ struct ClipListView: View {
                 Section {
                     ForEach(model.owned, id: \.videoId) { match in
                         row(match, model: model)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                Button(role: .destructive) {
+                                    deleteTarget = match
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
                     }
                 } header: { Shuttl.sectionLabel("My matches") }
             }
@@ -166,6 +182,13 @@ struct ClipListView: View {
                 Section {
                     ForEach(model.shared, id: \.videoId) { match in
                         row(match, model: model)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                Button(role: .destructive) {
+                                    Task { await model.leaveShare(videoId: match.videoId) }
+                                } label: {
+                                    Label("Remove", systemImage: "trash")
+                                }
+                            }
                     }
                 } header: { Shuttl.sectionLabel("Shared with me") }
             }
@@ -175,6 +198,22 @@ struct ClipListView: View {
             }
         }
         .listStyle(.plain)
+        .confirmationDialog(
+            "Delete this match and all its rally clips? This can't be undone.",
+            isPresented: Binding(
+                get: { deleteTarget != nil },
+                set: { if !$0 { deleteTarget = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: deleteTarget
+        ) { match in
+            Button("Delete", role: .destructive) {
+                let videoId = match.videoId
+                deleteTarget = nil
+                Task { await model.deleteMatch(videoId: videoId) }
+            }
+            Button("Cancel", role: .cancel) { deleteTarget = nil }
+        }
         .refreshable { await model.refresh() }
         .navigationDestination(for: String.self) { videoId in
             MatchClipsView(rally: rally, videoId: videoId)
