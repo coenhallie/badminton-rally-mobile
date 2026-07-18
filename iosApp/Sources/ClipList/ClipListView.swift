@@ -169,11 +169,12 @@ struct ClipListView: View {
                     ForEach(model.owned, id: \.videoId) { match in
                         row(match, model: model)
                             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                Button(role: .destructive) {
+                                Button {
                                     deleteTarget = match
                                 } label: {
                                     Label("Delete", systemImage: "trash")
                                 }
+                                .tint(.red)
                             }
                     }
                 } header: { Shuttl.sectionLabel("My matches") }
@@ -183,11 +184,12 @@ struct ClipListView: View {
                     ForEach(model.shared, id: \.videoId) { match in
                         row(match, model: model)
                             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                Button(role: .destructive) {
+                                Button {
                                     Task { await model.leaveShare(videoId: match.videoId) }
                                 } label: {
                                     Label("Remove", systemImage: "trash")
                                 }
+                                .tint(.red)
                             }
                     }
                 } header: { Shuttl.sectionLabel("Shared with me") }

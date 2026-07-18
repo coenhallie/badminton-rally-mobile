@@ -69,11 +69,13 @@ create policy "storage videos: owner delete"
         and (storage.foldername(name))[1] = auth.uid()::text
     );
 
+-- uid-prefix check: defense-in-depth so a fabricated rally_clips row cannot delete another user's object.
 drop policy if exists "storage clips: owner delete" on storage.objects;
 create policy "storage clips: owner delete"
     on storage.objects for delete to authenticated
     using (
         bucket_id = 'clips'
+        and (storage.foldername(name))[1] = auth.uid()::text
         and exists (
             select 1 from public.rally_clips rc
             where rc.clip_storage_path = storage.objects.name
@@ -81,11 +83,13 @@ create policy "storage clips: owner delete"
         )
     );
 
+-- uid-prefix check: defense-in-depth so a fabricated rally_clips row cannot delete another user's object.
 drop policy if exists "storage thumbnails: owner delete" on storage.objects;
 create policy "storage thumbnails: owner delete"
     on storage.objects for delete to authenticated
     using (
         bucket_id = 'thumbnails'
+        and (storage.foldername(name))[1] = auth.uid()::text
         and exists (
             select 1 from public.rally_clips rc
             where rc.thumbnail_storage_path = storage.objects.name
