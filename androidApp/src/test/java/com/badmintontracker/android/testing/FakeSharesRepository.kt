@@ -7,8 +7,10 @@ import com.badmintontracker.shared.repo.SharesRepository
 class FakeSharesRepository : SharesRepository {
     val shareCalls   = mutableListOf<Pair<String, String>>()
     val unshareCalls = mutableListOf<Pair<String, String>>()
+    val leaveShareCalls = mutableListOf<String>()
     var nextShareResult:   Result<Unit> = Result.success(Unit)
     var nextUnshareResult: Result<Unit> = Result.success(Unit)
+    var nextLeaveShareResult: Result<Unit> = Result.success(Unit)
     var sharesByVideo: Map<String, List<MatchShare>> = emptyMap()
 
     var receivedShares: List<ReceivedShare> = emptyList()
@@ -32,5 +34,10 @@ class FakeSharesRepository : SharesRepository {
         listReceivedCalls += 1
         listReceivedError?.let { throw it }
         return receivedShares
+    }
+
+    override suspend fun leaveShare(videoId: String): Result<Unit> {
+        leaveShareCalls += videoId
+        return nextLeaveShareResult
     }
 }

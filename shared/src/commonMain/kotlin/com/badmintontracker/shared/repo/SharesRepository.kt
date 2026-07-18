@@ -20,6 +20,8 @@ interface SharesRepository {
     suspend fun unshare(videoId: String, userId: String): Result<Unit>
     suspend fun listShares(videoId: String): Result<List<MatchShare>>
     suspend fun listReceived(): List<ReceivedShare>
+    /** Recipient removes a received share so the match leaves their list. */
+    suspend fun leaveShare(videoId: String): Result<Unit>
 }
 
 class SharesRepositoryImpl(private val client: SupabaseClient) : SharesRepository {
@@ -54,4 +56,9 @@ class SharesRepositoryImpl(private val client: SupabaseClient) : SharesRepositor
     override suspend fun listReceived(): List<ReceivedShare> =
         client.postgrest.rpc("list_received_match_shares")
             .decodeList<ReceivedShare>()
+
+    override suspend fun leaveShare(videoId: String): Result<Unit> = runCatching {
+        client.postgrest.rpc("leave_shared_match", ListArgs(videoId))
+        Unit
+    }
 }
