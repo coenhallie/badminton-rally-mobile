@@ -25,4 +25,7 @@ class FakeClipsRepository : ClipsRepository {
         return countResults.removeFirstOrNull()
             ?: Result.success(clips.value.count { it.videoId == videoId })
     }
+    override fun pruneVideo(videoId: String) {
+        clips.value = clips.value.filterNot { it.videoId == videoId }
+    }
 }

@@ -18,4 +18,7 @@ class FakeClipsRepository : ClipsRepository {
     override suspend fun updateTitle(clipId: String, title: String?) = Result.success(Unit)
     override suspend fun countClipsForVideo(videoId: String): Result<Int> =
         Result.success(clips.value.count { it.videoId == videoId })
+    override fun pruneVideo(videoId: String) {
+        clips.value = clips.value.filterNot { it.videoId == videoId }
+    }
 }

@@ -85,4 +85,20 @@ class ClipsRepositoryTest {
             flow.cancelAndIgnoreRemainingEvents()
         }
     }
+
+    @Test
+    fun pruneVideo_drops_cached_clips_for_that_video() = runTest {
+        val client = TestSupabase.client { _ -> jsonResponse(twoClips) }
+        val repo = ClipsRepositoryImpl(client)
+
+        turbineScope {
+            val flow = repo.observeClips().testIn(backgroundScope)
+            flow.awaitItem() shouldBe emptyList()
+            repo.refresh()
+            flow.awaitItem() shouldHaveSize 2
+            repo.pruneVideo("v1")
+            flow.awaitItem() shouldBe emptyList()
+            flow.cancelAndIgnoreRemainingEvents()
+        }
+    }
 }

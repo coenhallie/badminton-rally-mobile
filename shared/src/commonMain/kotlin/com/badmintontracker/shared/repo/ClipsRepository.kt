@@ -17,6 +17,8 @@ interface ClipsRepository {
     suspend fun updateTitle(clipId: String, title: String?): Result<Unit>
     /** Count this video's rally clips directly on the server, bypassing the cache. */
     suspend fun countClipsForVideo(videoId: String): Result<Int>
+    /** Drop a video's clips from the in-memory cache (instant UI update after a server delete). */
+    fun pruneVideo(videoId: String)
 }
 
 class ClipsRepositoryImpl(private val client: SupabaseClient) : ClipsRepository {
@@ -52,5 +54,9 @@ class ClipsRepositoryImpl(private val client: SupabaseClient) : ClipsRepository 
             }
             .decodeList<ClipIdRow>()
             .size
+    }
+
+    override fun pruneVideo(videoId: String) {
+        _clips.value = _clips.value.filterNot { it.videoId == videoId }
     }
 }
