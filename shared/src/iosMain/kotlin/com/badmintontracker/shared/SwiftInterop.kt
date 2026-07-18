@@ -8,6 +8,7 @@ import com.badmintontracker.shared.repo.AnnotationsRepository
 import com.badmintontracker.shared.repo.AuthRepository
 import com.badmintontracker.shared.repo.ShareError
 import com.badmintontracker.shared.repo.SharesRepository
+import com.badmintontracker.shared.repo.VideosRepository
 import com.badmintontracker.shared.repo.userMessage
 
 // kotlin.Result does not cross the ObjC bridge usefully; these wrappers return
@@ -27,6 +28,12 @@ suspend fun SharesRepository.unshareOrMessage(videoId: String, userId: String): 
 
 suspend fun SharesRepository.listSharesOrNull(videoId: String): List<MatchShare>? =
     listShares(videoId).getOrNull()
+
+suspend fun VideosRepository.deleteMatchOrMessage(videoId: String): String? =
+    deleteMatch(videoId).exceptionOrNull()?.let { "Couldn't delete the match. Please try again." }
+
+suspend fun SharesRepository.leaveShareOrMessage(videoId: String): String? =
+    leaveShare(videoId).exceptionOrNull()?.let { "Couldn't remove the shared match. Please try again." }
 
 class AddAnnotationOutcome(val annotation: RallyAnnotation?, val errorMessage: String?)
 
