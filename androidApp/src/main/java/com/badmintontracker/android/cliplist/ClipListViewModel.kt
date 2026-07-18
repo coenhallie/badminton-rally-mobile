@@ -6,6 +6,7 @@ import com.badmintontracker.shared.model.RallyClip
 import com.badmintontracker.shared.repo.AuthRepository
 import com.badmintontracker.shared.repo.ClipsRepository
 import com.badmintontracker.shared.repo.SharesRepository
+import com.badmintontracker.shared.repo.VideosRepository
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -55,6 +56,7 @@ class ClipListViewModel(
     private val clips: ClipsRepository,
     private val auth: AuthRepository,
     private val shares: SharesRepository,
+    private val videos: VideosRepository,
 ) : ViewModel() {
     private val refreshing      = MutableStateFlow(true)
     private val errors          = MutableStateFlow<String?>(null)
@@ -104,4 +106,20 @@ class ClipListViewModel(
 
     fun signOut() = viewModelScope.launch { auth.signOut() }
     fun dismissError() { errors.value = null }
+
+    fun deleteMatch(videoId: String) {
+        viewModelScope.launch {
+            videos.deleteMatch(videoId)
+                .onSuccess { clips.pruneVideo(videoId); refresh() }
+                .onFailure { errors.value = "Couldn't delete the match. Please try again." }
+        }
+    }
+
+    fun leaveShare(videoId: String) {
+        viewModelScope.launch {
+            shares.leaveShare(videoId)
+                .onSuccess { clips.pruneVideo(videoId); refresh() }
+                .onFailure { errors.value = "Couldn't remove the shared match. Please try again." }
+        }
+    }
 }

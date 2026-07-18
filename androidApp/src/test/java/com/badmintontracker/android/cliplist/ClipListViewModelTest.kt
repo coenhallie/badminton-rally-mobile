@@ -4,6 +4,7 @@ import app.cash.turbine.test
 import com.badmintontracker.android.testing.FakeAuthRepository
 import com.badmintontracker.android.testing.FakeClipsRepository
 import com.badmintontracker.android.testing.FakeSharesRepository
+import com.badmintontracker.android.testing.FakeVideosRepository
 import com.badmintontracker.shared.model.RallyClip
 import com.badmintontracker.shared.repo.ReceivedShare
 import io.kotest.matchers.collections.shouldHaveSize
@@ -41,7 +42,7 @@ class ClipListViewModelTest {
     @Test
     fun init_triggers_refresh() = runTest {
         val clips = FakeClipsRepository()
-        ClipListViewModel(clips, FakeAuthRepository(), FakeSharesRepository())
+        ClipListViewModel(clips, FakeAuthRepository(), FakeSharesRepository(), FakeVideosRepository())
         advanceUntilIdle()
         clips.refreshCalls shouldHaveSize 1
     }
@@ -49,7 +50,7 @@ class ClipListViewModelTest {
     @Test
     fun state_reflects_observed_clips() = runTest {
         val clips = FakeClipsRepository().apply { this.clips.value = listOf(clip("a"), clip("b")) }
-        val vm = ClipListViewModel(clips, FakeAuthRepository(), FakeSharesRepository())
+        val vm = ClipListViewModel(clips, FakeAuthRepository(), FakeSharesRepository(), FakeVideosRepository())
         vm.state.test {
             var s = awaitItem()
             while (s.clips.isEmpty()) s = awaitItem()
@@ -68,7 +69,7 @@ class ClipListViewModelTest {
             )
         }
         val auth = FakeAuthRepository().apply { currentUserIdValue = "user-self" }
-        val vm = ClipListViewModel(clips, auth, FakeSharesRepository())
+        val vm = ClipListViewModel(clips, auth, FakeSharesRepository(), FakeVideosRepository())
         vm.state.test {
             var s = awaitItem()
             while (s.ownedMatches.isEmpty() && s.sharedMatches.isEmpty()) s = awaitItem()
@@ -83,7 +84,7 @@ class ClipListViewModelTest {
     @Test
     fun refresh_failure_surfaces_in_error() = runTest {
         val clips = FakeClipsRepository().apply { refreshError = IllegalStateException("net down") }
-        val vm = ClipListViewModel(clips, FakeAuthRepository(), FakeSharesRepository())
+        val vm = ClipListViewModel(clips, FakeAuthRepository(), FakeSharesRepository(), FakeVideosRepository())
         vm.state.test {
             var s = awaitItem()
             while (s.error == null) s = awaitItem()
@@ -110,7 +111,7 @@ class ClipListViewModelTest {
                 ),
             )
         }
-        val vm = ClipListViewModel(clips, auth, shares)
+        val vm = ClipListViewModel(clips, auth, shares, FakeVideosRepository())
         vm.state.test {
             var s = awaitItem()
             while (s.sharedMatches.isEmpty() || s.ownedMatches.isEmpty() || s.sharedMatches.first().sharerEmail == null) {
@@ -131,12 +132,83 @@ class ClipListViewModelTest {
         val shares = FakeSharesRepository().apply {
             listReceivedError = IllegalStateException("shares fetch failed")
         }
-        val vm = ClipListViewModel(clips, auth, shares)
+        val vm = ClipListViewModel(clips, auth, shares, FakeVideosRepository())
         vm.state.test {
             var s = awaitItem()
             while (s.sharedMatches.isEmpty()) s = awaitItem()
             s.sharedMatches.first().sharerEmail shouldBe null
             s.error shouldBe null
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun deleteMatch_success_prunes_row_and_refreshes() = runTest {
+        val clips = FakeClipsRepository().apply { this.clips.value = listOf(ownedClip("a", "v-own")) }
+        val auth = FakeAuthRepository().apply { currentUserIdValue = "user-self" }
+        val videos = FakeVideosRepository()
+        val vm = ClipListViewModel(clips, auth, FakeSharesRepository(), videos)
+        vm.state.test {
+            var s = awaitItem()
+            while (s.ownedMatches.isEmpty()) s = awaitItem()
+            vm.deleteMatch("v-own")
+            while (s.ownedMatches.isNotEmpty()) s = awaitItem()
+            videos.deleteMatchCalls shouldBe listOf("v-own")
+            s.error shouldBe null
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun deleteMatch_failure_surfaces_error_and_keeps_row() = runTest {
+        val clips = FakeClipsRepository().apply { this.clips.value = listOf(ownedClip("a", "v-own")) }
+        val auth = FakeAuthRepository().apply { currentUserIdValue = "user-self" }
+        val videos = FakeVideosRepository().apply {
+            nextDeleteMatchResult = Result.failure(IllegalStateException("boom"))
+        }
+        val vm = ClipListViewModel(clips, auth, FakeSharesRepository(), videos)
+        vm.state.test {
+            var s = awaitItem()
+            while (s.ownedMatches.isEmpty()) s = awaitItem()
+            vm.deleteMatch("v-own")
+            while (s.error == null) s = awaitItem()
+            s.error shouldBe "Couldn't delete the match. Please try again."
+            s.ownedMatches shouldHaveSize 1
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun leaveShare_success_prunes_row() = runTest {
+        val clips = FakeClipsRepository().apply { this.clips.value = listOf(sharedClip("b", "v-shared")) }
+        val auth = FakeAuthRepository().apply { currentUserIdValue = "user-self" }
+        val shares = FakeSharesRepository()
+        val vm = ClipListViewModel(clips, auth, shares, FakeVideosRepository())
+        vm.state.test {
+            var s = awaitItem()
+            while (s.sharedMatches.isEmpty()) s = awaitItem()
+            vm.leaveShare("v-shared")
+            while (s.sharedMatches.isNotEmpty()) s = awaitItem()
+            shares.leaveShareCalls shouldBe listOf("v-shared")
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun leaveShare_failure_surfaces_error_and_keeps_row() = runTest {
+        val clips = FakeClipsRepository().apply { this.clips.value = listOf(sharedClip("b", "v-shared")) }
+        val auth = FakeAuthRepository().apply { currentUserIdValue = "user-self" }
+        val shares = FakeSharesRepository().apply {
+            nextLeaveShareResult = Result.failure(IllegalStateException("boom"))
+        }
+        val vm = ClipListViewModel(clips, auth, shares, FakeVideosRepository())
+        vm.state.test {
+            var s = awaitItem()
+            while (s.sharedMatches.isEmpty()) s = awaitItem()
+            vm.leaveShare("v-shared")
+            while (s.error == null) s = awaitItem()
+            s.error shouldBe "Couldn't remove the shared match. Please try again."
+            s.sharedMatches shouldHaveSize 1
             cancelAndIgnoreRemainingEvents()
         }
     }

@@ -103,7 +103,7 @@ fun AuthGate(
                 composable<Route.ClipList> {
                     val clipListVm: ClipListViewModel = viewModel(
                         factory = viewModelFactory {
-                            initializer { ClipListViewModel(rally.clips, rally.auth, rally.shares) }
+                            initializer { ClipListViewModel(rally.clips, rally.auth, rally.shares, rally.videos) }
                         }
                     )
                     val localVm: LocalVideoListViewModel = viewModel(
@@ -144,7 +144,7 @@ fun AuthGate(
                     val args = entry.toRoute<Route.MatchClips>()
                     val clipListVm: ClipListViewModel = viewModel(
                         factory = viewModelFactory {
-                            initializer { ClipListViewModel(rally.clips, rally.auth, rally.shares) }
+                            initializer { ClipListViewModel(rally.clips, rally.auth, rally.shares, rally.videos) }
                         }
                     )
                     MatchClipsScreen(
