@@ -35,6 +35,7 @@ import coil3.compose.AsyncImage
 import com.badmintontracker.android.cliplist.formatDate
 import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlButtonVariant
+import com.badmintontracker.android.ui.components.SwipeToRemoveRow
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import kotlinx.datetime.Instant
 import java.util.Locale
@@ -50,12 +51,18 @@ fun LazyListScope.localVideoSection(
     if (rows.isEmpty()) return
     item(key = "header-local") { header("On this phone") }
     items(rows, key = { "local-${it.entry.id}" }) { row ->
-        LocalVideoRowItem(
-            row = row,
-            onClick = { onRowClick(row.entry) },
-            onAnalyze = { onAnalyzeClick(row) },
-            onRemove = { onRemove(row.entry) },
-        )
+        SwipeToRemoveRow(
+            label = "Remove",
+            // Local removal is synchronous and can't fail, so dismissing is safe.
+            onSwiped = { onRemove(row.entry); true },
+        ) {
+            LocalVideoRowItem(
+                row = row,
+                onClick = { onRowClick(row.entry) },
+                onAnalyze = { onAnalyzeClick(row) },
+                onRemove = { onRemove(row.entry) },
+            )
+        }
         HorizontalDivider()
     }
 }
