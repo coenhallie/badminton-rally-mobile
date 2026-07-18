@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -27,6 +28,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -49,6 +51,7 @@ import com.badmintontracker.android.localvideo.AnalyzeResultDialog
 import com.badmintontracker.android.localvideo.LocalVideoRow
 import com.badmintontracker.android.localvideo.localVideoSection
 import com.badmintontracker.android.share.ShareSheet
+import com.badmintontracker.android.ui.components.SwipeToRemoveRow
 import com.badmintontracker.android.ui.components.ThemeToggleButton
 import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
@@ -82,6 +85,7 @@ fun ClipListScreen(
     val themeMode by themePrefs.mode.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     var sheetVideoId by remember { mutableStateOf<String?>(null) }
+    var deleteTarget by remember { mutableStateOf<MatchSummary?>(null) }
 
     LaunchedEffect(state.error) {
         val err = state.error ?: return@LaunchedEffect
@@ -185,24 +189,34 @@ fun ClipListScreen(
                     if (state.ownedMatches.isNotEmpty()) {
                         item(key = "header-owned") { SectionHeader("My matches") }
                         items(state.ownedMatches, key = { "owned-${it.videoId}" }) { match ->
-                            MatchRow(
-                                match = match,
-                                media = media,
-                                onClick = { onMatchClick(match) },
-                                onShareClick = { sheetVideoId = match.videoId },
-                            )
+                            SwipeToRemoveRow(
+                                label = "Delete",
+                                onSwiped = { deleteTarget = match; false },
+                            ) {
+                                MatchRow(
+                                    match = match,
+                                    media = media,
+                                    onClick = { onMatchClick(match) },
+                                    onShareClick = { sheetVideoId = match.videoId },
+                                )
+                            }
                             HorizontalDivider()
                         }
                     }
                     if (state.sharedMatches.isNotEmpty()) {
                         item(key = "header-shared") { SectionHeader("Shared with me") }
                         items(state.sharedMatches, key = { "shared-${it.videoId}" }) { match ->
-                            MatchRow(
-                                match = match,
-                                media = media,
-                                onClick = { onMatchClick(match) },
-                                onShareClick = null,
-                            )
+                            SwipeToRemoveRow(
+                                label = "Remove",
+                                onSwiped = { vm.leaveShare(match.videoId); false },
+                            ) {
+                                MatchRow(
+                                    match = match,
+                                    media = media,
+                                    onClick = { onMatchClick(match) },
+                                    onShareClick = null,
+                                )
+                            }
                             HorizontalDivider()
                         }
                     }
@@ -224,6 +238,22 @@ fun ClipListScreen(
             entry = row.entry,
             onRetry = { resultDialog = null; onLocalResultSeen(row.entry); onLocalAnalyze(row) },
             onDismiss = { resultDialog = null; onLocalResultSeen(row.entry) },
+        )
+    }
+
+    deleteTarget?.let { match ->
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text("Delete match?") },
+            text = { Text("Delete this match and all its rally clips? This can't be undone.") },
+            confirmButton = {
+                TextButton(onClick = { vm.deleteMatch(match.videoId); deleteTarget = null }) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTarget = null }) { Text("Cancel") }
+            },
         )
     }
 }
