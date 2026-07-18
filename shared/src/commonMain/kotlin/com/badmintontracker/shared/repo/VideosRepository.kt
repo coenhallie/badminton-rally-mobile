@@ -7,6 +7,7 @@ import io.github.jan.supabase.exceptions.RestException
 import io.github.jan.supabase.functions.functions
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
+import io.github.jan.supabase.postgrest.rpc
 import io.github.jan.supabase.storage.storage
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
@@ -93,6 +94,15 @@ interface VideosRepository {
         sizeBytes: Long,
         channelProvider: suspend (offset: Long) -> ByteReadChannel,
     ): Flow<UploadState>
+
+    /**
+     * Permanently delete an owned match: best-effort storage cleanup (clips,
+     * thumbnails, original video) FIRST — the storage delete policies check the
+     * DB rows — then the delete_match RPC removes all rows transactionally.
+     * A storage failure never blocks the delete; orphaned files beat a match
+     * the user can't remove.
+     */
+    suspend fun deleteMatch(videoId: String): Result<Unit>
 }
 
 class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepository {
@@ -121,6 +131,18 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
         val progress: Float? = null,
         val error: String? = null,
     )
+
+    @Serializable
+    private data class ClipPathsRow(
+        @SerialName("clip_storage_path")      val clipPath: String,
+        @SerialName("thumbnail_storage_path") val thumbnailPath: String? = null,
+    )
+
+    @Serializable
+    private data class VideoPathRow(@SerialName("storage_path") val storagePath: String)
+
+    @Serializable
+    private data class DeleteMatchArgs(@SerialName("p_video_id") val videoId: String)
 
     override suspend fun createVideo(videoId: String, filename: String, sizeBytes: Long): Result<Unit> =
         runCatching {
@@ -218,6 +240,33 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
             val message = if (e is RestException) "HTTP ${e.statusCode} — ${e.message}" else e.message
             emit(UploadState.Failed(message ?: "Upload failed"))
         }
+
+    override suspend fun deleteMatch(videoId: String): Result<Unit> = runCatching {
+        val clipRows = runCatching {
+            client.postgrest.from("rally_clips")
+                .select(Columns.list("clip_storage_path", "thumbnail_storage_path")) {
+                    filter { eq("video_id", videoId) }
+                }
+                .decodeList<ClipPathsRow>()
+        }.getOrElse { emptyList() }
+        val videoPath = runCatching {
+            client.postgrest.from("videos")
+                .select(Columns.list("storage_path")) {
+                    filter { eq("id", videoId) }
+                }
+                .decodeList<VideoPathRow>()
+                .firstOrNull()?.storagePath
+        }.getOrNull()
+
+        val clipPaths = clipRows.map { it.clipPath }
+        if (clipPaths.isNotEmpty()) runCatching { client.storage.from("clips").delete(clipPaths) }
+        val thumbnailPaths = clipRows.mapNotNull { it.thumbnailPath }
+        if (thumbnailPaths.isNotEmpty()) runCatching { client.storage.from("thumbnails").delete(thumbnailPaths) }
+        if (videoPath != null) runCatching { client.storage.from("videos").delete(listOf(videoPath)) }
+
+        client.postgrest.rpc("delete_match", DeleteMatchArgs(videoId))
+        Unit
+    }.annotateHttpStatus()
 
     companion object {
         fun storagePath(uid: String, videoId: String) = "$uid/$videoId.mp4"

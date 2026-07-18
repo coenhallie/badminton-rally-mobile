@@ -17,11 +17,13 @@ class FakeVideosRepository : VideosRepository {
         ProcessingUpdate("processing_phase1", 0.5f, null),
         ProcessingUpdate("phase1_complete", 1f, null),
     )
+    var nextDeleteMatchResult: Result<Unit> = Result.success(Unit)
 
     val createCalls = mutableListOf<Triple<String, String, Long>>()
     val keypointsCalls = mutableListOf<Pair<String, CourtKeypoints>>()
     val startCalls = mutableListOf<String>()
     val uploadCalls = mutableListOf<String>()
+    val deleteMatchCalls = mutableListOf<String>()
 
     override suspend fun createVideo(videoId: String, filename: String, sizeBytes: Long): Result<Unit> {
         createCalls += Triple(videoId, filename, sizeBytes)
@@ -48,5 +50,10 @@ class FakeVideosRepository : VideosRepository {
     ): Flow<UploadState> {
         uploadCalls += videoId
         return flow { uploadStates.forEach { emit(it) } }
+    }
+
+    override suspend fun deleteMatch(videoId: String): Result<Unit> {
+        deleteMatchCalls += videoId
+        return nextDeleteMatchResult
     }
 }
