@@ -46,4 +46,13 @@ class MediaRepositoryTest {
         val repo = MediaRepositoryImpl(client)
         repo.signedThumbnailUrl(fakeClip(thumbPath = null)) shouldBe null
     }
+
+    @Test
+    fun signedThumbnailUrl_returns_null_when_object_missing() = runTest {
+        val client = TestSupabase.client { _ ->
+            jsonResponse("""{"error":"not_found","message":"Object not found"}""", HttpStatusCode.NotFound)
+        }
+        val repo = MediaRepositoryImpl(client)
+        repo.signedThumbnailUrl(fakeClip()) shouldBe null
+    }
 }
