@@ -8,12 +8,15 @@ import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.functions.Functions
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.storage.Storage
+import io.github.jan.supabase.storage.resumable.ResumableCache
 import io.ktor.client.engine.HttpClientEngine
 
 fun buildSupabaseClient(
     config: SupabaseConfig,
     settings: Settings,
     httpEngine: HttpClientEngine? = null,
+    /** Override the TUS upload-url cache (tests inject an in-memory one). */
+    resumableCache: ResumableCache? = null,
 ): SupabaseClient = createSupabaseClient(
     supabaseUrl = config.url,
     supabaseKey = config.anonKey,
@@ -25,6 +28,8 @@ fun buildSupabaseClient(
         sessionManager = SettingsSessionManager(settings)
     }
     install(Postgrest)
-    install(Storage)
+    install(Storage) {
+        resumableCache?.let { resumable { cache = it } }
+    }
     install(Functions)
 }

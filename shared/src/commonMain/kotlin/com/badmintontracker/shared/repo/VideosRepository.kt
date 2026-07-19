@@ -10,6 +10,7 @@ import io.github.jan.supabase.postgrest.query.Columns
 import io.github.jan.supabase.postgrest.rpc
 import io.github.jan.supabase.storage.storage
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.BadContentTypeFormatException
 import io.ktor.http.ContentType
 import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
@@ -224,12 +225,28 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
         channelProvider: suspend (offset: Long) -> ByteReadChannel,
     ): Flow<UploadState> = channelFlow {
         val uid = client.auth.currentUserOrNull()?.id ?: error("Not signed in")
-        val upload = client.storage.from("videos").resumable.createOrContinueUpload(
+        suspend fun createOrContinue() = client.storage.from("videos").resumable.createOrContinueUpload(
             channel = channelProvider,
             source = videoId,          // stable key so retries resume the TUS session
             size = sizeBytes,
             path = storagePath(uid, videoId),
-        )
+        ) {
+            // Re-analyze re-uploads to the same path; without upsert the TUS
+            // create call 409s once a previous upload completed.
+            upsert = true
+            // Must be set explicitly: supabase-kt caches contentType.toString()
+            // in the TUS cache entry and feeds it back through ContentType.parse()
+            // when resuming an expired entry — unset it stores the literal "null"
+            // and the resume throws "Bad Content-Type format: null".
+            contentType = ContentType.Video.MP4
+        }
+        val upload = try {
+            createOrContinue()
+        } catch (e: BadContentTypeFormatException) {
+            // Entry poisoned by an older build (contentType "null"). The library
+            // drops the expired entry before throwing, so one retry starts clean.
+            createOrContinue()
+        }
         // startOrResumeUploading() is fire-and-forget (launches in its own scope and
         // returns at once); real completion is awaited via the state flow below.
         upload.startOrResumeUploading()

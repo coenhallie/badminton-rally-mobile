@@ -50,6 +50,13 @@ The mobile app is versioned independently from the web app.
   supported method.
 
 ### Fixed
+- Re-analyzing a video whose earlier attempt failed more than a day ago
+  errored instantly with "Bad Content-Type format: null" (a supabase-kt bug:
+  the resumable-upload cache stored the literal string "null" as the content
+  type and choked parsing it back when the expired entry was resumed). Uploads
+  now set an explicit video/mp4 content type, retry once past a poisoned cache
+  entry from an older build, and upload with upsert so re-analyzing a fully
+  uploaded video no longer fails with "path already exists".
 - iOS crashed at launch when a match's thumbnail file was missing from storage;
   a failed thumbnail signing now falls back to the placeholder on both platforms.
 - iOS: import failures now surface an error; stale thumbnails evicted on remove;

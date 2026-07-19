@@ -5,6 +5,7 @@ import com.badmintontracker.shared.buildSupabaseClient
 import com.russhwolf.settings.MapSettings
 import com.russhwolf.settings.Settings
 import io.github.jan.supabase.SupabaseClient
+import io.github.jan.supabase.storage.resumable.ResumableCache
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.MockRequestHandleScope
 import io.ktor.client.engine.mock.MockRequestHandler
@@ -23,11 +24,13 @@ object TestSupabase {
 
     fun client(
         settings: Settings = MapSettings(),
+        resumableCache: ResumableCache? = null,
         handler: MockRequestHandler,
     ): SupabaseClient = buildSupabaseClient(
         config = config,
         settings = settings,
         httpEngine = MockEngine { request -> handler(request) },
+        resumableCache = resumableCache,
     )
 }
 
