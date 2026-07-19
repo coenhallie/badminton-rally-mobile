@@ -37,6 +37,7 @@ import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlButtonVariant
 import com.badmintontracker.android.ui.components.SwipeToRemoveRow
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
+import com.badmintontracker.shared.localvideo.isAnalysisRunning
 import kotlinx.datetime.Instant
 import java.util.Locale
 
@@ -130,7 +131,9 @@ private fun LocalVideoRowItem(
                 onClick = onAnalyze,
                 variant = ShuttlButtonVariant.Primary,
             )
-        } else {
+        } else if (isAnalysisRunning(entry.stage)) {
+            // Settled stages (e.g. ANALYZED) show neither button nor spinner —
+            // the status text already says what happened.
             CircularProgressIndicator(
                 modifier = Modifier.size(16.dp),
                 strokeWidth = 2.dp,

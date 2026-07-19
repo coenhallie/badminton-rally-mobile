@@ -50,6 +50,14 @@ final class LocalVideoStatusTests: XCTestCase {
         XCTAssertFalse(LocalVideoStatus.canAnalyze(stage: .analyzed))
     }
 
+    func testSpinnerOnlyWhileRunning() {
+        XCTAssertTrue(LocalVideoStatus.isRunning(stage: .uploading))
+        XCTAssertTrue(LocalVideoStatus.isRunning(stage: .processing))
+        XCTAssertFalse(LocalVideoStatus.isRunning(stage: .local))
+        XCTAssertFalse(LocalVideoStatus.isRunning(stage: .failed))
+        XCTAssertFalse(LocalVideoStatus.isRunning(stage: .analyzed))
+    }
+
     func testCanRemoveBlockedOnlyMidPipeline() {
         XCTAssertTrue(LocalVideoStatus.canRemove(stage: .local))
         XCTAssertTrue(LocalVideoStatus.canRemove(stage: .failed))

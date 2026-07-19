@@ -50,6 +50,9 @@ The mobile app is versioned independently from the web app.
   supported method.
 
 ### Fixed
+- An analyzed video kept for its annotations ("Analyzed" state) no longer
+  shows a perpetual loading spinner in the matches list on both platforms;
+  the spinner now only appears while uploading or analyzing.
 - "Retry" after an analysis failed during processing (including "no rallies
   found") silently failed again without doing anything: it re-read the stale
   failed status instead of re-running the analysis. Retry now re-triggers the

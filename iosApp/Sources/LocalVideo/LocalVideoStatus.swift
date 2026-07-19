@@ -29,6 +29,12 @@ enum LocalVideoStatus {
         LocalVideoEntryKt.canRemoveLocalVideo(stage: stage)
     }
 
+    /// Row spinner: only while the pipeline is actively working. Settled
+    /// stages (ANALYZED in particular) must not spin forever.
+    static func isRunning(stage: AnalyzeStage) -> Bool {
+        LocalVideoEntryKt.isAnalysisRunning(stage: stage)
+    }
+
     /// "Re-analyze" once an attempt has failed (the video keeps its saved court
     /// points and resumes from the failed step); "Analyze" for a fresh video.
     static func analyzeButtonLabel(stage: AnalyzeStage) -> String {

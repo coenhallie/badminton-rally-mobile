@@ -66,7 +66,9 @@ struct LocalVideoRowView: View {
                         .padding(.vertical, 6)
                         .background(Shuttl.accent)
                         .buttonStyle(.borderless)
-                } else {
+                } else if LocalVideoStatus.isRunning(stage: entry.stage) {
+                    // Settled stages (e.g. ANALYZED) show neither button nor
+                    // spinner — the status text already says what happened.
                     ProgressView()
                         .controlSize(.small)
                 }

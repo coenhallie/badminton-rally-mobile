@@ -9,14 +9,20 @@ enum class AnalyzeStage { LOCAL, UPLOADING, PROCESSING, FAILED, ANALYZED }
 enum class AnalyzeStep { UPLOAD, CREATE_ROW, KEYPOINTS, TRIGGER, PROCESSING }
 
 /**
+ * The pipeline is actively working on this entry. Drives the row spinner on
+ * both platforms — settled stages (LOCAL, FAILED, ANALYZED) must not spin.
+ */
+fun isAnalysisRunning(stage: AnalyzeStage): Boolean =
+    stage == AnalyzeStage.UPLOADING || stage == AnalyzeStage.PROCESSING
+
+/**
  * Whether the row's remove affordances (swipe, menu) may be shown. Removing
  * deletes the entry — and on iOS the backing file — so while the pipeline is
  * uploading from that file or awaiting results, removal would corrupt the run
  * and swallow its outcome (the failure update targets an entry that no longer
  * exists). Both platforms must use this same rule.
  */
-fun canRemoveLocalVideo(stage: AnalyzeStage): Boolean =
-    stage != AnalyzeStage.UPLOADING && stage != AnalyzeStage.PROCESSING
+fun canRemoveLocalVideo(stage: AnalyzeStage): Boolean = !isAnalysisRunning(stage)
 
 @Serializable
 data class LocalVideoEntry(
