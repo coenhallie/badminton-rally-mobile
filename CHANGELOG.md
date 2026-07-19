@@ -10,6 +10,14 @@ The mobile app is versioned independently from the web app.
 ## [Unreleased]
 
 ### Added
+- Swipe-to-remove on every row of the matches list, on both platforms: local
+  videos (full swipe removes immediately; the row menu item remains), owned
+  matches (confirmation dialog, then permanently deletes the match, its rally
+  clips, annotations, shares, and storage files), and shared-with-me matches
+  (leaves the share; the owner's data is untouched).
+- Backend: `delete_match` and `leave_shared_match` RPCs plus owner delete
+  policies on the `videos`/`clips`/`thumbnails` storage buckets
+  (`supabase/migrations/20260718000000_delete_match.sql`).
 - iOS: full analyze pipeline — 12-point court mapping, resumable upload with
   progress, live processing status, and failure/retry dialogs. iOS and Android
   are now at full feature parity.
@@ -42,6 +50,8 @@ The mobile app is versioned independently from the web app.
   supported method.
 
 ### Fixed
+- iOS crashed at launch when a match's thumbnail file was missing from storage;
+  a failed thumbnail signing now falls back to the placeholder on both platforms.
 - iOS: import failures now surface an error; stale thumbnails evicted on remove;
   assorted intake polish. Android: friendlier refresh-error message.
 - Signing out (or a revoked session) now returns to the sign-in screen from
