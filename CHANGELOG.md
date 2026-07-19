@@ -50,6 +50,23 @@ The mobile app is versioned independently from the web app.
   supported method.
 
 ### Fixed
+- "Retry" after an analysis failed during processing (including "no rallies
+  found") silently failed again without doing anything: it re-read the stale
+  failed status instead of re-running the analysis. Retry now re-triggers the
+  pipeline, and the video's status row is reset before every trigger.
+- The iOS video player screen now reflects analysis state live: the Analyze
+  button disappears while an analysis is running, and the screen closes when
+  the video completes analysis and moves to the matches list (matching
+  Android). Previously the screen froze on its initial state and starting an
+  analysis from it gave no feedback at all.
+- Removing a local video is now blocked while it is uploading or analyzing,
+  on both platforms. Removing mid-upload deleted the video file out from
+  under the running upload and swallowed the failure entirely.
+- The device no longer goes to sleep mid-upload when two videos upload at
+  the same time and the first one finishes.
+- An upload interrupted at the very last moment (app killed after the final
+  chunk but before bookkeeping) now reports success on retry instead of
+  failing with "File already uploaded" for a day.
 - Re-analyzing a video whose earlier attempt failed more than a day ago
   errored instantly with "Bad Content-Type format: null" (a supabase-kt bug:
   the resumable-upload cache stored the literal string "null" as the content

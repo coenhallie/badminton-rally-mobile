@@ -8,6 +8,7 @@ import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
+import com.badmintontracker.shared.localvideo.canRemoveLocalVideo
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
@@ -19,6 +20,7 @@ data class LocalVideoRow(
     val durationText: String,    // m:ss
     val canAnalyze: Boolean,     // LOCAL or FAILED
     val analyzeLabel: String,    // "Analyze", or "Re-analyze" after a failed attempt
+    val canRemove: Boolean,      // hidden while UPLOADING/PROCESSING (shared rule)
 )
 
 class LocalVideoListViewModel(
@@ -63,6 +65,7 @@ internal fun LocalVideoEntry.toRow(progress: AnalyzeProgress?): LocalVideoRow {
         durationText = formatDuration(durationMs),
         canAnalyze = stage == AnalyzeStage.LOCAL || stage == AnalyzeStage.FAILED,
         analyzeLabel = analyzeButtonLabel(stage),
+        canRemove = canRemoveLocalVideo(stage),
     )
 }
 

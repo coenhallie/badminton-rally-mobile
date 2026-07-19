@@ -150,11 +150,15 @@ struct ClipListView: View {
                             }
                         )
                         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                            Button(role: .destructive) {
-                                intake.remove(entry: entry)
-                                thumbnails.evict(id: entry.id)
-                            } label: {
-                                Label("Remove", systemImage: "trash")
+                            // Hidden mid-pipeline: removing would delete the file
+                            // under the active upload and swallow the run's outcome.
+                            if LocalVideoStatus.canRemove(stage: entry.stage) {
+                                Button(role: .destructive) {
+                                    intake.remove(entry: entry)
+                                    thumbnails.evict(id: entry.id)
+                                } label: {
+                                    Label("Remove", systemImage: "trash")
+                                }
                             }
                         }
                     }

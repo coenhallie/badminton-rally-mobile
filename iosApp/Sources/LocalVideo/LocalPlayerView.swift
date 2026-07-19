@@ -8,6 +8,7 @@ struct LocalPlayerView: View {
     let entryId: String
     @Environment(\.dismiss) private var dismiss
     @State private var model: LocalPlayerModel?
+    @State private var liveEntry: LocalVideoEntry?
     @State private var addSheet: AddSheetItem? = nil
     @State private var deleteTarget: LocalAnnotation? = nil
     @State private var courtTarget: CourtMarkingRoute? = nil
@@ -31,6 +32,18 @@ struct LocalPlayerView: View {
             model = m
             await m.loadMetadata()
             await m.observeAnnotations()
+        }
+        .task {
+            // Keep the entry live (Android observes it the same way): the stage
+            // drives the Analyze button, and analysis started from this screen
+            // must be reflected here, not just on the home list.
+            for await entries in rally.localVideos.entries {
+                guard let entry = entries.first(where: { $0.id == entryId }) else {
+                    dismiss()   // removed (e.g. analysis succeeded) — pop back
+                    return
+                }
+                liveEntry = entry
+            }
         }
     }
 
@@ -67,12 +80,15 @@ struct LocalPlayerView: View {
             }
             .listStyle(.plain)
         }
-        .navigationTitle(model.entry.displayName)
+        .navigationTitle((liveEntry ?? model.entry).displayName)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                if LocalVideoStatus.canAnalyze(stage: model.entry.stage) {
-                    Button(LocalVideoStatus.analyzeButtonLabel(stage: model.entry.stage)) {
-                        courtTarget = CourtMarkingRoute(entryId: model.entry.id)
+                // Live stage, not the model's load-time snapshot: after "Start
+                // Analysis" the button must disappear while the pipeline runs.
+                let stage = (liveEntry ?? model.entry).stage
+                if LocalVideoStatus.canAnalyze(stage: stage) {
+                    Button(LocalVideoStatus.analyzeButtonLabel(stage: stage)) {
+                        courtTarget = CourtMarkingRoute(entryId: entryId)
                     }
                     .font(.footnote.weight(.semibold))
                     .lineLimit(1)

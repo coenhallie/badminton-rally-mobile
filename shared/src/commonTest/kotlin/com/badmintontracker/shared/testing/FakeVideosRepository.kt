@@ -5,6 +5,7 @@ import com.badmintontracker.shared.repo.ProcessingUpdate
 import com.badmintontracker.shared.repo.UploadState
 import com.badmintontracker.shared.repo.VideosRepository
 import io.ktor.utils.io.ByteReadChannel
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 
@@ -43,13 +44,19 @@ class FakeVideosRepository : VideosRepository {
     override fun observeProcessing(videoId: String, pollIntervalMs: Long): Flow<ProcessingUpdate> =
         flow { processingUpdates.forEach { emit(it) } }
 
+    /** Optional per-video gate: the upload flow suspends until it completes. */
+    val uploadGates = mutableMapOf<String, CompletableDeferred<Unit>>()
+
     override fun uploadVideo(
         videoId: String,
         sizeBytes: Long,
         channelProvider: suspend (offset: Long) -> ByteReadChannel,
     ): Flow<UploadState> {
         uploadCalls += videoId
-        return flow { uploadStates.forEach { emit(it) } }
+        return flow {
+            uploadGates[videoId]?.await()
+            uploadStates.forEach { emit(it) }
+        }
     }
 
     override suspend fun deleteMatch(videoId: String): Result<Unit> {

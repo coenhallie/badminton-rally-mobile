@@ -51,17 +51,26 @@ fun LazyListScope.localVideoSection(
     if (rows.isEmpty()) return
     item(key = "header-local") { header("On this phone") }
     items(rows, key = { "local-${it.entry.id}" }) { row ->
-        SwipeToRemoveRow(
-            label = "Remove",
-            // Local removal is synchronous and can't fail, so dismissing is safe.
-            onSwiped = { onRemove(row.entry); true },
-        ) {
+        val rowItem = @Composable {
             LocalVideoRowItem(
                 row = row,
                 onClick = { onRowClick(row.entry) },
                 onAnalyze = { onAnalyzeClick(row) },
                 onRemove = { onRemove(row.entry) },
             )
+        }
+        if (row.canRemove) {
+            SwipeToRemoveRow(
+                label = "Remove",
+                // Local removal is synchronous and can't fail, so dismissing is safe.
+                onSwiped = { onRemove(row.entry); true },
+            ) {
+                rowItem()
+            }
+        } else {
+            // Mid-pipeline: removing would delete the file under the active
+            // upload and swallow the run's outcome.
+            rowItem()
         }
         HorizontalDivider()
     }
@@ -127,14 +136,16 @@ private fun LocalVideoRowItem(
                 strokeWidth = 2.dp,
             )
         }
-        IconButton(onClick = { menuOpen = true }) {
-            Icon(Icons.Default.MoreVert, contentDescription = "Local video menu")
-        }
-        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-            DropdownMenuItem(
-                text = { Text("Remove from app") },
-                onClick = { menuOpen = false; onRemove() },
-            )
+        if (row.canRemove) {
+            IconButton(onClick = { menuOpen = true }) {
+                Icon(Icons.Default.MoreVert, contentDescription = "Local video menu")
+            }
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                DropdownMenuItem(
+                    text = { Text("Remove from app") },
+                    onClick = { menuOpen = false; onRemove() },
+                )
+            }
         }
     }
 }

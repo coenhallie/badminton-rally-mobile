@@ -70,13 +70,15 @@ struct LocalVideoRowView: View {
                     ProgressView()
                         .controlSize(.small)
                 }
-                Menu {
-                    Button("Remove from app", role: .destructive) { onRemove() }
-                } label: {
-                    Image(systemName: "ellipsis")
+                if LocalVideoStatus.canRemove(stage: entry.stage) {
+                    Menu {
+                        Button("Remove from app", role: .destructive) { onRemove() }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("Local video menu")
                 }
-                .buttonStyle(.borderless)
-                .accessibilityLabel("Local video menu")
             }
         }
     }

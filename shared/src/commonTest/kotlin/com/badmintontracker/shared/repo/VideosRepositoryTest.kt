@@ -68,6 +68,30 @@ class VideosRepositoryTest {
     }
 
     @Test
+    fun startProcessing_resets_row_status_before_invoking_edge_function() = runTest {
+        // A re-trigger after a failed run must clear the terminal failed_* status
+        // first — otherwise the client's poll loop instantly re-reads the stale
+        // failure before the pipeline overwrites it.
+        val requests = mutableListOf<Pair<HttpMethod, String>>()
+        var patchBody = ""
+        val client = TestSupabase.client { request ->
+            requests += request.method to request.url.encodedPath
+            if (request.method == HttpMethod.Patch) {
+                patchBody = (request.body as TextContent).text
+            }
+            jsonResponse("""{"ok":true}""")
+        }
+        val repo = VideosRepositoryImpl(client)
+        repo.startProcessing("vid-1").isSuccess.shouldBeTrue()
+        val patchIndex = requests.indexOfFirst { it.first == HttpMethod.Patch && it.second.contains("/videos") }
+        val invokeIndex = requests.indexOfFirst { it.second.contains("/functions/v1/process-video") }
+        (patchIndex >= 0).shouldBeTrue()
+        (patchIndex < invokeIndex).shouldBeTrue()
+        patchBody shouldContain "\"status\":\"uploaded\""
+        patchBody shouldContain "\"error\":null"
+    }
+
+    @Test
     fun startProcessing_maps_non_2xx_to_failure() = runTest {
         val client = TestSupabase.client {
             respondError(HttpStatusCode.Conflict, "already processing")

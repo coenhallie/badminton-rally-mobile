@@ -8,6 +8,16 @@ enum class AnalyzeStage { LOCAL, UPLOADING, PROCESSING, FAILED, ANALYZED }
 /** Pipeline steps in execution order; retry resumes from the failed one. */
 enum class AnalyzeStep { UPLOAD, CREATE_ROW, KEYPOINTS, TRIGGER, PROCESSING }
 
+/**
+ * Whether the row's remove affordances (swipe, menu) may be shown. Removing
+ * deletes the entry — and on iOS the backing file — so while the pipeline is
+ * uploading from that file or awaiting results, removal would corrupt the run
+ * and swallow its outcome (the failure update targets an entry that no longer
+ * exists). Both platforms must use this same rule.
+ */
+fun canRemoveLocalVideo(stage: AnalyzeStage): Boolean =
+    stage != AnalyzeStage.UPLOADING && stage != AnalyzeStage.PROCESSING
+
 @Serializable
 data class LocalVideoEntry(
     val id: String,              // client UUID; becomes videos.id on Analyze

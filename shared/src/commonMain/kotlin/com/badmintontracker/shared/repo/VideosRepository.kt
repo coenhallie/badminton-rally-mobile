@@ -27,6 +27,9 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /**
  * Snapshot of the cloud pipeline's state for one video (from the videos row).
@@ -171,6 +174,19 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
         }.annotateHttpStatus()
 
     override suspend fun startProcessing(videoId: String): Result<Unit> = runCatching {
+        // Clear any previous run's terminal failed_* status BEFORE re-triggering;
+        // the processing poll loop would otherwise instantly re-read the stale
+        // failure. A no-op for fresh videos (inserted as "uploaded").
+        client.postgrest.from("videos")
+            .update(
+                buildJsonObject {
+                    put("status", "uploaded")
+                    put("error", JsonNull)
+                    put("progress", JsonNull)
+                }
+            ) {
+                filter { eq("id", videoId) }
+            }
         val response = client.functions(
             function = "process-video",
             body = ProcessVideoBody(videoId),
@@ -241,11 +257,22 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
             contentType = ContentType.Video.MP4
         }
         val upload = try {
-            createOrContinue()
-        } catch (e: BadContentTypeFormatException) {
-            // Entry poisoned by an older build (contentType "null"). The library
-            // drops the expired entry before throwing, so one retry starts clean.
-            createOrContinue()
+            try {
+                createOrContinue()
+            } catch (e: BadContentTypeFormatException) {
+                // Entry poisoned by an older build (contentType "null"). The library
+                // drops the expired entry before throwing, so one retry starts clean.
+                createOrContinue()
+            }
+        } catch (e: IllegalStateException) {
+            // Crash window: the app died after the last chunk uploaded but before
+            // the TUS cache entry was removed. The file IS in storage, so report
+            // success instead of failing every retry until the entry expires.
+            if (e.message?.contains("File already uploaded") == true) {
+                send(UploadState.Done)
+                return@channelFlow
+            }
+            throw e
         }
         // startOrResumeUploading() is fire-and-forget (launches in its own scope and
         // returns at once); real completion is awaited via the state flow below.

@@ -49,4 +49,12 @@ final class LocalVideoStatusTests: XCTestCase {
         XCTAssertFalse(LocalVideoStatus.canAnalyze(stage: .processing))
         XCTAssertFalse(LocalVideoStatus.canAnalyze(stage: .analyzed))
     }
+
+    func testCanRemoveBlockedOnlyMidPipeline() {
+        XCTAssertTrue(LocalVideoStatus.canRemove(stage: .local))
+        XCTAssertTrue(LocalVideoStatus.canRemove(stage: .failed))
+        XCTAssertTrue(LocalVideoStatus.canRemove(stage: .analyzed))
+        XCTAssertFalse(LocalVideoStatus.canRemove(stage: .uploading))
+        XCTAssertFalse(LocalVideoStatus.canRemove(stage: .processing))
+    }
 }

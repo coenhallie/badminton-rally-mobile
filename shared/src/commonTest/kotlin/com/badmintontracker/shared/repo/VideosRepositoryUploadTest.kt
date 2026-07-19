@@ -115,6 +115,42 @@ class VideosRepositoryUploadTest {
     }
 
     @Test
+    fun resume_of_an_already_complete_upload_reports_done() = runTest {
+        // Crash window: the app died after the last chunk uploaded but before the
+        // TUS cache entry was removed. Resuming within the entry's 1-day lifetime
+        // makes supabase-kt throw IllegalStateException("File already uploaded")
+        // — but the file IS in storage, so the upload must report Done, not fail
+        // every retry until the entry expires.
+        val cache = MemoryResumableCache()
+        val client = TestSupabase.client(resumableCache = cache) { request ->
+            when {
+                // TUS HEAD: server already holds every byte.
+                request.method == HttpMethod.Head -> respond(
+                    content = ByteReadChannel(""),
+                    status = HttpStatusCode.OK,
+                    headers = headersOf("Upload-Offset", BYTES.size.toString()),
+                )
+                else -> error("Unexpected request: ${request.method} ${request.url}")
+            }
+        }
+        client.signInAs(UID)
+        cache.set(
+            Fingerprint(VIDEO_ID, BYTES.size.toLong()),
+            ResumableCacheEntry(
+                url = TUS_SESSION_URL,
+                path = "$UID/$VIDEO_ID.mp4",
+                bucketId = "videos",
+                expiresAt = Clock.System.now() + 1.days,
+                upsert = true,
+                contentType = "video/mp4",
+            ),
+        )
+        val repo = VideosRepositoryImpl(client)
+        val states = repo.uploadVideo(VIDEO_ID, BYTES.size.toLong()) { ByteReadChannel(BYTES) }.toList()
+        states.last() shouldBe UploadState.Done
+    }
+
+    @Test
     fun upload_caches_real_content_type_for_future_resumes() = runTest {
         // The cache entry must hold a parseable content type, not "null" — it is
         // fed back through ContentType.parse() when an expired entry is resumed.

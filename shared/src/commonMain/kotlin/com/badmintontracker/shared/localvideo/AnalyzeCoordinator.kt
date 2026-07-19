@@ -47,13 +47,32 @@ class AnalyzeCoordinator(
     private val activeLock = SyncLock()
     private val active = mutableSetOf<String>()
 
+    // Uploads can overlap across entries; the keep-awake flag must only drop
+    // when the LAST one finishes, so track the set and derive the boolean.
+    private val uploadingLock = SyncLock()
+    private val uploading = mutableSetOf<String>()
+
+    private fun setUploading(entryId: String, isUploading: Boolean) {
+        uploadingLock.withLock {
+            if (isUploading) uploading.add(entryId) else uploading.remove(entryId)
+            _hasActiveUpload.value = uploading.isNotEmpty()
+        }
+    }
+
     fun startAnalysis(entryId: String, keypoints: CourtKeypoints) {
         localVideos.update(entryId) { it.copy(keypoints = keypoints) }
         launchPipeline(entryId, AnalyzeStep.UPLOAD)
     }
 
     fun retry(entryId: String) {
-        val step = localVideos.get(entryId)?.failedStep ?: AnalyzeStep.UPLOAD
+        val step = when (val failed = localVideos.get(entryId)?.failedStep) {
+            // A PROCESSING failure leaves the videos row in a terminal failed_*
+            // status; resuming at PROCESSING would only re-read that row and fail
+            // again instantly. Re-trigger the edge function instead.
+            AnalyzeStep.PROCESSING -> AnalyzeStep.TRIGGER
+            null -> AnalyzeStep.UPLOAD
+            else -> failed
+        }
         launchPipeline(entryId, step)
     }
 
@@ -92,7 +111,7 @@ class AnalyzeCoordinator(
             localVideos.update(entryId) {
                 it.copy(stage = AnalyzeStage.UPLOADING, failedStep = null, failureMessage = null)
             }
-            _hasActiveUpload.value = true
+            setUploading(entryId, true)
             var failure: String? = null
             try {
                 videos.uploadVideo(entry.id, entry.sizeBytes) { offset -> openChannel(entry.uri, offset) }
@@ -105,7 +124,7 @@ class AnalyzeCoordinator(
                         }
                     }
             } finally {
-                _hasActiveUpload.value = false
+                setUploading(entryId, false)
             }
             failure?.let { return fail(entryId, AnalyzeStep.UPLOAD, it) }
         }

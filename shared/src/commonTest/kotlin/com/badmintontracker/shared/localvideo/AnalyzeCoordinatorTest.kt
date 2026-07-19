@@ -12,6 +12,7 @@ import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.ktor.utils.io.ByteReadChannel
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
@@ -229,6 +230,48 @@ class AnalyzeCoordinatorTest {
         runCurrent()
         val kept = localVideos.get("e1").shouldNotBeNull()
         kept.stage shouldBe AnalyzeStage.ANALYZED
+    }
+
+    @Test
+    fun retry_after_processing_failure_retriggers_the_edge_function() = runTest {
+        localVideos.add(entry())
+        videos.processingUpdates = listOf(ProcessingUpdate("failed_phase1", null, "no court detected"))
+        val c = coordinator()
+        c.startAnalysis("e1", keypoints())
+        runCurrent()
+        localVideos.get("e1")?.failedStep shouldBe AnalyzeStep.PROCESSING
+
+        // The videos row still holds the terminal failed_* status; polling it
+        // again without a new trigger would just re-read the old failure.
+        videos.processingUpdates = listOf(ProcessingUpdate("phase1_complete", 1f, null))
+        clips.clips.value = listOf(clipFor("e1"))
+        c.retry("e1")
+        runCurrent()
+        videos.startCalls.size shouldBe 2      // edge function re-invoked
+        videos.uploadCalls.size shouldBe 1     // upload not repeated
+        localVideos.get("e1").shouldBeNull()   // retry completed end-to-end
+    }
+
+    @Test
+    fun hasActiveUpload_stays_true_until_the_last_concurrent_upload_finishes() = runTest {
+        localVideos.add(entry("e1"))
+        localVideos.add(entry("e2"))
+        clips.clips.value = listOf(clipFor("e1"), clipFor("e2"))
+        // Gate both uploads so they genuinely overlap, then finish e1 first.
+        videos.uploadGates["e1"] = CompletableDeferred()
+        videos.uploadGates["e2"] = CompletableDeferred()
+        val c = coordinator()
+        c.startAnalysis("e1", keypoints())
+        c.startAnalysis("e2", keypoints())
+        runCurrent()
+        c.hasActiveUpload.value shouldBe true
+        videos.uploadGates.getValue("e1").complete(Unit)
+        runCurrent()
+        // e1 finished, e2 is still mid-upload: the keep-awake flag must hold.
+        c.hasActiveUpload.value shouldBe true
+        videos.uploadGates.getValue("e2").complete(Unit)
+        runCurrent()
+        c.hasActiveUpload.value shouldBe false
     }
 
     @Test
