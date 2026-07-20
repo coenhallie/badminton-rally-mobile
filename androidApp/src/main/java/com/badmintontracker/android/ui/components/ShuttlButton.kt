@@ -31,6 +31,7 @@ fun ShuttlButton(
     variant:  ShuttlButtonVariant = ShuttlButtonVariant.Primary,
     enabled:  Boolean = true,
     loading:  Boolean = false,
+    compact:  Boolean = false,
 ) {
     val isPrimary    = variant == ShuttlButtonVariant.Primary
     val bg           = if (isPrimary) MaterialTheme.colorScheme.primary else ShuttlTheme.extended.bgTertiary
@@ -44,7 +45,10 @@ fun ShuttlButton(
             .background(bg)
             .border(width = if (isPrimary) 0.dp else 1.dp, color = borderColor)
             .clickable(enabled = effective, onClick = onClick)
-            .padding(horizontal = 24.dp, vertical = 12.dp),
+            .padding(
+                horizontal = if (compact) 12.dp else 24.dp,
+                vertical   = if (compact) 6.dp else 12.dp,
+            ),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment     = Alignment.CenterVertically,
     ) {
@@ -60,7 +64,8 @@ fun ShuttlButton(
             text       = text,
             color      = fg,
             fontWeight = FontWeight.SemiBold,
-            style      = MaterialTheme.typography.bodyLarge,
+            style      = if (compact) MaterialTheme.typography.labelMedium
+                         else MaterialTheme.typography.bodyLarge,
             maxLines   = 1,
             softWrap   = false,
         )

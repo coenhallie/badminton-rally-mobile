@@ -86,6 +86,7 @@ fun ClipListScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     var sheetVideoId by remember { mutableStateOf<String?>(null) }
     var deleteTarget by remember { mutableStateOf<MatchSummary?>(null) }
+    var localRemoveTarget by remember { mutableStateOf<LocalVideoEntry?>(null) }
 
     LaunchedEffect(state.error) {
         val err = state.error ?: return@LaunchedEffect
@@ -184,7 +185,7 @@ fun ClipListScreen(
                         header = { SectionHeader(it) },
                         onRowClick = onLocalClick,
                         onAnalyzeClick = onLocalAnalyze,
-                        onRemove = onLocalRemove,
+                        onRemoveRequest = { localRemoveTarget = it },
                     )
                     if (state.ownedMatches.isNotEmpty()) {
                         item(key = "header-owned") { SectionHeader("My matches") }
@@ -238,6 +239,22 @@ fun ClipListScreen(
             entry = row.entry,
             onRetry = { resultDialog = null; onLocalResultSeen(row.entry); onLocalAnalyze(row) },
             onDismiss = { resultDialog = null; onLocalResultSeen(row.entry) },
+        )
+    }
+
+    localRemoveTarget?.let { entry ->
+        AlertDialog(
+            onDismissRequest = { localRemoveTarget = null },
+            title = { Text("Remove video?") },
+            text = { Text("Remove this video and its notes from the app? The video itself stays on your phone.") },
+            confirmButton = {
+                TextButton(onClick = { onLocalRemove(entry); localRemoveTarget = null }) {
+                    Text("Remove")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { localRemoveTarget = null }) { Text("Cancel") }
+            },
         )
     }
 

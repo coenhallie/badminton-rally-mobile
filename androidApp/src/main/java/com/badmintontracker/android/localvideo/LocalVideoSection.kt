@@ -1,6 +1,7 @@
 package com.badmintontracker.android.localvideo
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -41,13 +42,18 @@ import com.badmintontracker.shared.localvideo.isAnalysisRunning
 import kotlinx.datetime.Instant
 import java.util.Locale
 
-/** "On this phone" section rendered inside the matches LazyColumn. */
+/**
+ * "On this phone" section rendered inside the matches LazyColumn.
+ *
+ * [onRemoveRequest] asks the host screen to confirm; actual removal happens
+ * there, so swipes must not dismiss the row.
+ */
 fun LazyListScope.localVideoSection(
     rows: List<LocalVideoRow>,
     header: @Composable (String) -> Unit,
     onRowClick: (LocalVideoEntry) -> Unit,
     onAnalyzeClick: (LocalVideoRow) -> Unit,
-    onRemove: (LocalVideoEntry) -> Unit,
+    onRemoveRequest: (LocalVideoEntry) -> Unit,
 ) {
     if (rows.isEmpty()) return
     item(key = "header-local") { header("On this phone") }
@@ -57,14 +63,13 @@ fun LazyListScope.localVideoSection(
                 row = row,
                 onClick = { onRowClick(row.entry) },
                 onAnalyze = { onAnalyzeClick(row) },
-                onRemove = { onRemove(row.entry) },
+                onRemove = { onRemoveRequest(row.entry) },
             )
         }
         if (row.canRemove) {
             SwipeToRemoveRow(
                 label = "Remove",
-                // Local removal is synchronous and can't fail, so dismissing is safe.
-                onSwiped = { onRemove(row.entry); true },
+                onSwiped = { onRemoveRequest(row.entry); false },
             ) {
                 rowItem()
             }
@@ -130,6 +135,7 @@ private fun LocalVideoRowItem(
                 text = row.analyzeLabel,
                 onClick = onAnalyze,
                 variant = ShuttlButtonVariant.Primary,
+                compact = true,
             )
         } else if (isAnalysisRunning(entry.stage)) {
             // Settled stages (e.g. ANALYZED) show neither button nor spinner —
@@ -140,14 +146,18 @@ private fun LocalVideoRowItem(
             )
         }
         if (row.canRemove) {
-            IconButton(onClick = { menuOpen = true }) {
-                Icon(Icons.Default.MoreVert, contentDescription = "Local video menu")
-            }
-            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                DropdownMenuItem(
-                    text = { Text("Remove from app") },
-                    onClick = { menuOpen = false; onRemove() },
-                )
+            // The menu must share a Box with its anchor: DropdownMenu positions
+            // itself relative to its parent, not the IconButton.
+            Box {
+                IconButton(onClick = { menuOpen = true }) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "Local video menu")
+                }
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Remove from app") },
+                        onClick = { menuOpen = false; onRemove() },
+                    )
+                }
             }
         }
     }
