@@ -10,6 +10,8 @@ The mobile app is versioned independently from the web app.
 ## [Unreleased]
 
 ### Added
+- Sort menu on the match rallies page, on both platforms: sort clips by rally
+  order (default) or by number of notes (most first, rally order as tie-break).
 - Swipe-to-remove on every row of the matches list, on both platforms: local
   videos (full swipe removes immediately; the row menu item remains), owned
   matches (confirmation dialog, then permanently deletes the match, its rally

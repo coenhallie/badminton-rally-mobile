@@ -2,5 +2,5 @@
 // Android: parsed by androidApp/build.gradle.kts -> versionName/versionCode.
 // iOS: included via iosApp/Config/AppConfig.xcconfig -> MARKETING_VERSION/CURRENT_PROJECT_VERSION.
 // Release commits are tagged v<MARKETING_VERSION>; CI verifies the tag matches.
-MARKETING_VERSION = 0.5.0
-CURRENT_PROJECT_VERSION = 13
+MARKETING_VERSION = 0.6.0
+CURRENT_PROJECT_VERSION = 14
