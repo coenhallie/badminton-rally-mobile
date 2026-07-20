@@ -5,6 +5,9 @@ struct MatchClipsView: View {
     let rally: RallyApp
     let videoId: String
     @State private var clips: [RallyClip] = []
+    @State private var sort: ClipSort = .rallyOrder
+
+    private var sortedClips: [RallyClip] { sort.sorted(clips) }
 
     private var title: String {
         guard let latest = clips.map({ $0.createdAt.toEpochMilliseconds() }).max() else {
@@ -19,7 +22,7 @@ struct MatchClipsView: View {
                 Text("No rallies in this match.")
                     .foregroundStyle(Shuttl.textSecondary)
             }
-            ForEach(clips, id: \.id) { clip in
+            ForEach(sortedClips, id: \.id) { clip in
                 NavigationLink {
                     ClipDetailView(rally: rally, clipId: clip.id)
                 } label: {
@@ -39,11 +42,21 @@ struct MatchClipsView: View {
         .refreshable { try? await rally.clips.refresh() }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Picker("Sort", selection: $sort) {
+                        Text("Rally order").tag(ClipSort.rallyOrder)
+                        Text("Most notes").tag(ClipSort.mostNotes)
+                    }
+                } label: {
+                    Image(systemName: "arrow.up.arrow.down")
+                }
+            }
+        }
         .task {
             for await latest in rally.clips.observeClips() {
-                clips = latest
-                    .filter { $0.videoId == videoId }
-                    .sorted { $0.rallyIndex < $1.rallyIndex }
+                clips = latest.filter { $0.videoId == videoId }
             }
         }
     }
