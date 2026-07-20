@@ -7,7 +7,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -52,6 +56,8 @@ fun MatchClipsScreen(
     val themeMode by themePrefs.mode.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     var sheetOpen by remember { mutableStateOf(false) }
+    var sortMenuOpen by remember { mutableStateOf(false) }
+    var sort by remember { mutableStateOf(ClipSort.RallyOrder) }
 
     LaunchedEffect(state.error) {
         val err = state.error ?: return@LaunchedEffect
@@ -60,9 +66,7 @@ fun MatchClipsScreen(
     }
 
     val match = (state.ownedMatches + state.sharedMatches).firstOrNull { it.videoId == videoId }
-    val clipsForMatch = state.clips
-        .filter { it.videoId == videoId }
-        .sortedBy { it.rallyIndex }
+    val clipsForMatch = sortClips(state.clips.filter { it.videoId == videoId }, sort)
 
     Scaffold(
         topBar = {
@@ -82,6 +86,29 @@ fun MatchClipsScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { sortMenuOpen = true }) {
+                        Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Sort")
+                    }
+                    DropdownMenu(expanded = sortMenuOpen, onDismissRequest = { sortMenuOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Rally order") },
+                            leadingIcon = {
+                                if (sort == ClipSort.RallyOrder) {
+                                    Icon(Icons.Default.Check, contentDescription = null)
+                                }
+                            },
+                            onClick = { sort = ClipSort.RallyOrder; sortMenuOpen = false },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Most notes") },
+                            leadingIcon = {
+                                if (sort == ClipSort.MostNotes) {
+                                    Icon(Icons.Default.Check, contentDescription = null)
+                                }
+                            },
+                            onClick = { sort = ClipSort.MostNotes; sortMenuOpen = false },
+                        )
+                    }
                     if (match?.isOwned == true) {
                         IconButton(onClick = { sheetOpen = true }) {
                             Icon(Icons.Default.Share, contentDescription = "Share match")
