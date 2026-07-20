@@ -44,8 +44,8 @@ suspend fun AnnotationsRepository.addAnnotationForSwift(
     kind: AnnotationKind?,
 ): AddAnnotationOutcome = add(clipId, timestampSeconds, body, kind).fold(
     onSuccess = { AddAnnotationOutcome(it, null) },
-    onFailure = { AddAnnotationOutcome(null, it.message ?: "Couldn't add annotation") },
+    onFailure = { AddAnnotationOutcome(null, it.message ?: "Couldn't add note") },
 )
 
 suspend fun AnnotationsRepository.deleteAnnotationOrMessage(id: String): String? =
-    delete(id).exceptionOrNull()?.let { it.message ?: "Couldn't delete annotation" }
+    delete(id).exceptionOrNull()?.let { it.message ?: "Couldn't delete note" }
