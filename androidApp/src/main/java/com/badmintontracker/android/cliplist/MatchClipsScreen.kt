@@ -124,3 +124,12 @@ fun MatchClipsScreen(
         )
     }
 }
+
+enum class ClipSort { RallyOrder, MostNotes }
+
+fun sortClips(clips: List<RallyClip>, sort: ClipSort): List<RallyClip> = when (sort) {
+    ClipSort.RallyOrder -> clips.sortedBy { it.rallyIndex }
+    ClipSort.MostNotes -> clips.sortedWith(
+        compareByDescending<RallyClip> { it.annotationCount }.thenBy { it.rallyIndex },
+    )
+}
