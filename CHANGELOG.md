@@ -46,6 +46,10 @@ The mobile app is versioned independently from the web app.
   Annotations are stored on the phone; a video keeps its annotations after analysis
   (marked "Analyzed") and loses them only when removed from the app.
 
+### Changed
+- All user-facing copy now says "note(s)" instead of "annotation(s)" —
+  one consistent term for the text coaches attach to rally moments.
+
 ### Removed
 - The "Continue with Google" sign-in button. The OAuth callback was never
   wired up, so the button could not complete a sign-in; email sign-in is the

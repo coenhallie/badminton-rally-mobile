@@ -46,7 +46,7 @@ final class ClipDetailModel {
         if let rows = try? await rally.annotations.list(clipId: clipId) {
             annotations = rows   // server-sorted by timestamp ascending
         } else {
-            actionError = "Couldn't load annotations"
+            actionError = "Couldn't load notes"
         }
         await sign(clip: clip)
         isLoading = false
@@ -137,7 +137,7 @@ final class ClipDetailModel {
         guard let outcome = try? await SwiftInteropKt.addAnnotationForSwift(
             rally.annotations, clipId: clipId, timestampSeconds: ts, body: trimmed, kind: kind
         ) else {
-            actionError = "Couldn't add annotation"
+            actionError = "Couldn't add note"
             return
         }
         if let row = outcome.annotation {

@@ -83,7 +83,7 @@ struct ClipDetailView: View {
             }
             .presentationDetents([.medium])
         }
-        .alert("Delete annotation?", isPresented: Binding(
+        .alert("Delete note?", isPresented: Binding(
             get: { deleteTarget != nil },
             set: { if !$0 { deleteTarget = nil } }
         )) {
@@ -118,7 +118,7 @@ struct ClipDetailView: View {
                     Image(systemName: "trash")
                 }
                 .buttonStyle(.borderless)
-                .accessibilityLabel("Delete annotation")
+                .accessibilityLabel("Delete note")
             }
         }
         .contentShape(Rectangle())

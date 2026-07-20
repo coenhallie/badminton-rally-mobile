@@ -11,7 +11,7 @@ struct AddAnnotationSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Add annotation")
+            Text("Add note")
                 .font(.title2.weight(.semibold))
             HStack(spacing: 8) {
                 ForEach(kinds, id: \.self) { k in

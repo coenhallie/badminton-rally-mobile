@@ -74,7 +74,7 @@ struct LocalPlayerView: View {
                 ForEach(model.annotations, id: \.id) { annotation in
                     annotationRow(annotation, model: model)
                 }
-                Text("Annotations are saved on this phone and are removed if you remove the video from the app.")
+                Text("Notes are saved on this phone and are removed if you remove the video from the app.")
                     .font(.footnote)
                     .foregroundStyle(Shuttl.textTertiary)
             }
@@ -104,7 +104,7 @@ struct LocalPlayerView: View {
                 } label: {
                     Image(systemName: "plus")
                 }
-                .accessibilityLabel("Add annotation")
+                .accessibilityLabel("Add note")
             }
         }
         .navigationDestination(item: $courtTarget) { route in
@@ -116,7 +116,7 @@ struct LocalPlayerView: View {
             }
             .presentationDetents([.medium])
         }
-        .alert("Delete annotation?", isPresented: Binding(
+        .alert("Delete note?", isPresented: Binding(
             get: { deleteTarget != nil },
             set: { if !$0 { deleteTarget = nil } }
         )) {
@@ -127,7 +127,7 @@ struct LocalPlayerView: View {
             }
         } message: {
             if let target = deleteTarget {
-                Text(target.body.isEmpty ? "This annotation" : "\"\(target.body)\"")
+                Text(target.body.isEmpty ? "This note" : "\"\(target.body)\"")
             }
         }
     }
@@ -152,7 +152,7 @@ struct LocalPlayerView: View {
                 Image(systemName: "trash")
             }
             .buttonStyle(.borderless)
-            .accessibilityLabel("Delete annotation")
+            .accessibilityLabel("Delete note")
         }
         .contentShape(Rectangle())
         .onTapGesture { model.seek(toSeconds: annotation.timestampSeconds) }
