@@ -64,7 +64,7 @@ import com.badmintontracker.shared.localvideo.LocalAnnotation
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 
 private const val ANNOTATION_STORAGE_NOTE =
-    "Annotations are saved on this phone and are removed if you remove the video from the app."
+    "Notes are saved on this phone and are removed if you remove the video from the app."
 
 /**
  * Plays a local recording from its content:// URI with the same frame-step and
@@ -199,7 +199,7 @@ fun LocalPlayerScreen(
                 FloatingActionButton(onClick = {
                     addDialog = (player.currentPosition.coerceAtLeast(0L)) / 1000f
                 }) {
-                    Icon(Icons.Default.Add, contentDescription = "Add annotation")
+                    Icon(Icons.Default.Add, contentDescription = "Add note")
                 }
             }
         },
@@ -269,8 +269,8 @@ fun LocalPlayerScreen(
     pendingDelete?.let { a ->
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
-            title = { Text("Delete annotation?") },
-            text = { Text(if (a.body.isNotBlank()) "\"${a.body}\"" else "This annotation") },
+            title = { Text("Delete note?") },
+            text = { Text(if (a.body.isNotBlank()) "\"${a.body}\"" else "This note") },
             confirmButton = {
                 TextButton(onClick = {
                     vm.deleteAnnotation(a.id)

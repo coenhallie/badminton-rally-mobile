@@ -66,7 +66,7 @@ class ClipDetailViewModel(
             // Annotations aren't required for playback; a failure here is a
             // snackbar, not the full-screen player error.
             val ann = runCatching { annotations.list(clipId) }.getOrElse { e ->
-                state.update { it.copy(actionError = e.message ?: "Couldn't load annotations") }
+                state.update { it.copy(actionError = e.message ?: "Couldn't load notes") }
                 emptyList()
             }
             val url = runCatching { media.signedClipUrl(clip) }.getOrElse { e ->
@@ -120,7 +120,7 @@ class ClipDetailViewModel(
                     }
                 }
                 .onFailure { e ->
-                    state.update { it.copy(actionError = e.message ?: "Couldn't add annotation") }
+                    state.update { it.copy(actionError = e.message ?: "Couldn't add note") }
                 }
         }
     }
@@ -138,7 +138,7 @@ class ClipDetailViewModel(
                     }
                 }
                 .onFailure { e ->
-                    state.update { it.copy(actionError = e.message ?: "Couldn't delete annotation") }
+                    state.update { it.copy(actionError = e.message ?: "Couldn't delete note") }
                 }
         }
     }

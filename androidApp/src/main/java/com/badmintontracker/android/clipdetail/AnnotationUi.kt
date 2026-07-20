@@ -84,7 +84,7 @@ internal fun AnnotationRow(
         }
         if (onDelete != null) {
             IconButton(onClick = onDelete) {
-                Icon(Icons.Default.Delete, contentDescription = "Delete annotation")
+                Icon(Icons.Default.Delete, contentDescription = "Delete note")
             }
         }
     }
@@ -117,7 +117,7 @@ internal fun AddAnnotationSheet(
                 .imePadding(),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text("Add annotation", style = MaterialTheme.typography.titleLarge)
+            Text("Add note", style = MaterialTheme.typography.titleLarge)
 
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),

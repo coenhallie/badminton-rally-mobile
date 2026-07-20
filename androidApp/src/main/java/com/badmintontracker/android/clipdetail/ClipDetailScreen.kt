@@ -174,7 +174,7 @@ fun ClipDetailScreen(
                     val ms = player.currentPosition.coerceAtLeast(0L)
                     addDialog = ms / 1000f
                 }) {
-                    Icon(Icons.Default.Add, contentDescription = "Add annotation")
+                    Icon(Icons.Default.Add, contentDescription = "Add note")
                 }
             }
         },
@@ -197,7 +197,7 @@ fun ClipDetailScreen(
                 }
             } else if (state.annotations.isEmpty()) {
                 Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-                    Text("No annotations on this clip.")
+                    Text("No notes on this clip.")
                 }
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
@@ -245,7 +245,7 @@ fun ClipDetailScreen(
     pendingDelete?.let { a ->
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
-            title = { Text("Delete annotation?") },
+            title = { Text("Delete note?") },
             text = { Text(if (a.body.isNotBlank()) "\"${a.body}\"" else a.kind?.style()?.label.orEmpty()) },
             confirmButton = {
                 TextButton(onClick = {
