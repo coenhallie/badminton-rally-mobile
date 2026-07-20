@@ -49,6 +49,10 @@ The mobile app is versioned independently from the web app.
 ### Changed
 - All user-facing copy now says "note(s)" instead of "annotation(s)" —
   one consistent term for the text coaches attach to rally moments.
+- Android: removing a video from "On this phone" (swipe or row menu) now asks
+  for confirmation first, explaining that the video itself stays on the phone.
+- Android: the Analyze button in local video rows is more compact so it no
+  longer crowds the row.
 
 ### Removed
 - The "Continue with Google" sign-in button. The OAuth callback was never
@@ -56,6 +60,8 @@ The mobile app is versioned independently from the web app.
   supported method.
 
 ### Fixed
+- Android: the local video row's overflow menu now opens anchored to its
+  button instead of at the row's far edge.
 - An analyzed video kept for its annotations ("Analyzed" state) no longer
   shows a perpetual loading spinner in the matches list on both platforms;
   the spinner now only appears while uploading or analyzing.
