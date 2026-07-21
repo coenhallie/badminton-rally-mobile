@@ -12,6 +12,7 @@ import io.ktor.content.TextContent
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.test.runTest
+import kotlinx.io.IOException
 import kotlin.test.Test
 
 private fun testKeypoints() = CourtKeypoints(
@@ -150,6 +151,41 @@ class VideosRepositoryTest {
         repo.observeProcessing("vid-1", pollIntervalMs = 1).test {
             val last = awaitItem()
             last shouldBe ProcessingUpdate("phase1_complete", 1.0f, null)
+            awaitComplete()
+        }
+    }
+
+    @Test
+    fun observeProcessing_survives_a_minutes_long_network_gap() = runTest {
+        // Processing spans minutes and phones drop the network for a while
+        // (WiFi<->cellular handoff, screen-off). A dozen consecutive failed
+        // polls must not kill the analysis UI while the server keeps working.
+        var call = 0
+        val client = TestSupabase.client {
+            call++
+            when {
+                call <= 12 -> respondError(HttpStatusCode.ServiceUnavailable, "blip")
+                else       -> jsonResponse("""[{"status":"phase1_complete","progress":100.0,"error":null}]""")
+            }
+        }
+        val repo = VideosRepositoryImpl(client)
+        repo.observeProcessing("vid-1", pollIntervalMs = 1).test {
+            val last = awaitItem()
+            last shouldBe ProcessingUpdate("phase1_complete", 1.0f, null)
+            awaitComplete()
+        }
+    }
+
+    @Test
+    fun observeProcessing_network_errors_surface_friendly_text_not_raw_exception() = runTest {
+        // Transport-level failures carry messages like "HTTP request to
+        // https://... (GET) failed with message: null" — useless in a dialog.
+        val client = TestSupabase.client { throw IOException() }
+        val repo = VideosRepositoryImpl(client)
+        repo.observeProcessing("vid-1", pollIntervalMs = 1).test {
+            val last = awaitItem()
+            last.status shouldBe "failed_connection"
+            last.error shouldBe "Lost connection while checking progress"
             awaitComplete()
         }
     }

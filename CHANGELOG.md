@@ -60,6 +60,11 @@ The mobile app is versioned independently from the web app.
   supported method.
 
 ### Fixed
+- A short network drop while an analysis was running (e.g. a WiFi-to-cellular
+  handoff) no longer fails the whole analysis after ~15 seconds: progress
+  checking now rides out up to ~3 minutes of connection loss, and when the
+  connection truly can't be re-established it says "Lost connection while
+  checking progress" instead of a raw technical error with the request URL.
 - Android: the local video row's overflow menu now opens anchored to its
   button instead of at the row's far edge.
 - An analyzed video kept for its annotations ("Analyzed" state) no longer

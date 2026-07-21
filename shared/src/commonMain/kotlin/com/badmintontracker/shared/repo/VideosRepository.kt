@@ -213,12 +213,15 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
                 throw e
             } catch (e: Exception) {
                 if (++consecutiveErrors >= MAX_POLL_ERRORS) {
-                    val message = if (e is RestException) "HTTP ${e.statusCode} — ${e.message}" else e.message
+                    // Transport exceptions carry the full request URL as their
+                    // message — meaningless in a user-facing dialog.
+                    val message = if (e is RestException) "HTTP ${e.statusCode} — ${e.message}"
+                                  else "Lost connection while checking progress"
                     emit(
                         ProcessingUpdate(
                             status = "failed_connection",
                             progress = null,
-                            error = message ?: "Lost connection while checking progress",
+                            error = message,
                         )
                     )
                     break
@@ -314,6 +317,9 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
 
     companion object {
         fun storagePath(uid: String, videoId: String) = "$uid/$videoId.mp4"
-        private const val MAX_POLL_ERRORS = 3
+        // Tolerate ~3 minutes of consecutive failures (at the 5s default poll
+        // interval): processing runs server-side for minutes, and phones drop
+        // the network far longer than 15s during WiFi<->cellular handoffs.
+        private const val MAX_POLL_ERRORS = 36
     }
 }
