@@ -95,9 +95,13 @@ struct LocalPlayerView: View {
                     .fixedSize(horizontal: true, vertical: false)
                 }
             }
-            if #available(iOS 26.0, *) {
-                ToolbarSpacer(.fixed, placement: .topBarTrailing)
-            }
+            // #if too: ToolbarSpacer must exist in the SDK at compile time,
+            // and CI's Xcode 16 / iOS 18 SDK doesn't have it.
+            #if compiler(>=6.2)
+                if #available(iOS 26.0, *) {
+                    ToolbarSpacer(.fixed, placement: .topBarTrailing)
+                }
+            #endif
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     addSheet = AddSheetItem(timestamp: model.currentTimestampSeconds())
