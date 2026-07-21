@@ -1,5 +1,6 @@
 package com.badmintontracker.android.clipdetail
 
+import com.badmintontracker.shared.repo.userFacingMessage
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.badmintontracker.shared.model.AnnotationKind
@@ -54,7 +55,7 @@ class ClipDetailViewModel(
                     it.copy(
                         isLoading = false,
                         error = if (cause != null) {
-                            "Couldn't load clip: ${cause.message ?: "connection failed"}"
+                            "Couldn't load clip: ${cause.userFacingMessage("connection failed")}"
                         } else {
                             "Clip not found"
                         },
@@ -66,11 +67,11 @@ class ClipDetailViewModel(
             // Annotations aren't required for playback; a failure here is a
             // snackbar, not the full-screen player error.
             val ann = runCatching { annotations.list(clipId) }.getOrElse { e ->
-                state.update { it.copy(actionError = e.message ?: "Couldn't load notes") }
+                state.update { it.copy(actionError = e.userFacingMessage("Couldn't load notes")) }
                 emptyList()
             }
             val url = runCatching { media.signedClipUrl(clip) }.getOrElse { e ->
-                state.update { it.copy(error = e.message ?: "Couldn't sign clip URL") }
+                state.update { it.copy(error = e.userFacingMessage("Couldn't sign clip URL")) }
                 null
             }
             val isOwner = clip.ownerId == auth.currentUserId()
@@ -100,7 +101,7 @@ class ClipDetailViewModel(
             val clip = state.value.clip ?: return@launch
             runCatching { media.signedClipUrl(clip) }
                 .onSuccess { url -> state.update { it.copy(signedClipUrl = url, error = null) } }
-                .onFailure { e -> state.update { it.copy(error = e.message ?: "Couldn't load video") } }
+                .onFailure { e -> state.update { it.copy(error = e.userFacingMessage("Couldn't load video")) } }
         }
     }
 
@@ -120,7 +121,7 @@ class ClipDetailViewModel(
                     }
                 }
                 .onFailure { e ->
-                    state.update { it.copy(actionError = e.message ?: "Couldn't add note") }
+                    state.update { it.copy(actionError = e.userFacingMessage("Couldn't add note")) }
                 }
         }
     }
@@ -138,7 +139,7 @@ class ClipDetailViewModel(
                     }
                 }
                 .onFailure { e ->
-                    state.update { it.copy(actionError = e.message ?: "Couldn't delete note") }
+                    state.update { it.copy(actionError = e.userFacingMessage("Couldn't delete note")) }
                 }
         }
     }
@@ -156,7 +157,7 @@ class ClipDetailViewModel(
             }
             runCatching { media.signedClipUrl(clip) }
                 .onSuccess { url -> state.update { it.copy(signedClipUrl = url, error = null) } }
-                .onFailure { e -> state.update { it.copy(error = e.message ?: "Couldn't load video") } }
+                .onFailure { e -> state.update { it.copy(error = e.userFacingMessage("Couldn't load video")) } }
         }
     }
 }

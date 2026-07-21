@@ -7,6 +7,7 @@ import com.badmintontracker.shared.testing.jsonResponse
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import io.ktor.client.engine.mock.respondError
 import io.ktor.content.TextContent
 import io.ktor.http.HttpMethod
@@ -113,6 +114,9 @@ class VideosRepositoryTest {
         val repo = VideosRepositoryImpl(client)
         val error = repo.setCourtKeypoints("vid-1", testKeypoints()).exceptionOrNull()
         (error?.message ?: "") shouldContain "HTTP 400"
+        // RestException.message is a multi-line Code/Hint/URL/Headers dump —
+        // these strings reach dialogs, so they must stay a single short line.
+        (error?.message ?: "\n") shouldNotContain "\n"
     }
 
     @Test
@@ -200,6 +204,8 @@ class VideosRepositoryTest {
             val last = awaitItem()
             last.isFailure.shouldBeTrue()
             last.status shouldBe "failed_connection"
+            (last.error ?: "") shouldContain "HTTP 503"
+            (last.error ?: "\n") shouldNotContain "\n"
             awaitComplete()
         }
     }

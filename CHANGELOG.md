@@ -60,6 +60,11 @@ The mobile app is versioned independently from the web app.
   supported method.
 
 ### Fixed
+- Error dialogs and snackbars no longer show raw technical dumps (request
+  URLs, response headers, multi-line server details). Server errors now read
+  as a short "HTTP <code> — <reason>" and connection problems as plain
+  language, across analysis, upload, clip loading, sign-out, and notes on
+  both platforms.
 - A short network drop while an analysis was running (e.g. a WiFi-to-cellular
   handoff) no longer fails the whole analysis after ~15 seconds: progress
   checking now rides out up to ~3 minutes of connection loss, and when the

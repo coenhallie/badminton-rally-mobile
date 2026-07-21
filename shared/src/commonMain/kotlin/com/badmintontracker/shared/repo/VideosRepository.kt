@@ -74,7 +74,9 @@ internal fun <T> Result<T>.annotateHttpStatus(): Result<T> = fold(
     onSuccess = { this },
     onFailure = { e ->
         Result.failure(
-            if (e is RestException) IllegalStateException("HTTP ${e.statusCode} — ${e.message}", e) else e,
+            // e.error, not e.message: the message is a multi-line
+            // Code/Hint/URL/Headers dump that ends up in user-facing dialogs.
+            if (e is RestException) IllegalStateException("HTTP ${e.statusCode} — ${e.error}", e) else e,
         )
     },
 )
@@ -213,10 +215,7 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
                 throw e
             } catch (e: Exception) {
                 if (++consecutiveErrors >= MAX_POLL_ERRORS) {
-                    // Transport exceptions carry the full request URL as their
-                    // message — meaningless in a user-facing dialog.
-                    val message = if (e is RestException) "HTTP ${e.statusCode} — ${e.message}"
-                                  else "Lost connection while checking progress"
+                    val message = e.userFacingMessage("Lost connection while checking progress")
                     emit(
                         ProcessingUpdate(
                             status = "failed_connection",
@@ -284,8 +283,7 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
             .collect { send(it) }
     }.distinctUntilChanged()
         .catch { e ->
-            val message = if (e is RestException) "HTTP ${e.statusCode} — ${e.message}" else e.message
-            emit(UploadState.Failed(message ?: "Upload failed"))
+            emit(UploadState.Failed(e.userFacingMessage("Upload failed — check your connection")))
         }
 
     override suspend fun deleteMatch(videoId: String): Result<Unit> = runCatching {

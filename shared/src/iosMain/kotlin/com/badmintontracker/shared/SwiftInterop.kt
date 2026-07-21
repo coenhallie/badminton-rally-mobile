@@ -1,5 +1,6 @@
 package com.badmintontracker.shared
 
+import com.badmintontracker.shared.repo.userFacingMessage
 import com.badmintontracker.shared.auth.friendlyAuthError
 import com.badmintontracker.shared.model.AnnotationKind
 import com.badmintontracker.shared.model.MatchShare
@@ -18,7 +19,7 @@ suspend fun AuthRepository.signInEmailOrMessage(email: String, password: String)
     signInEmail(email, password).exceptionOrNull()?.let(::friendlyAuthError)
 
 suspend fun AuthRepository.signOutOrMessage(): String? =
-    signOut().exceptionOrNull()?.let { it.message ?: "Sign-out failed." }
+    signOut().exceptionOrNull()?.let { it.userFacingMessage("Sign-out failed.") }
 
 suspend fun SharesRepository.shareOrMessage(videoId: String, email: String): String? =
     share(videoId, email).exceptionOrNull()?.let { (it as? ShareError).userMessage() }
@@ -44,8 +45,8 @@ suspend fun AnnotationsRepository.addAnnotationForSwift(
     kind: AnnotationKind?,
 ): AddAnnotationOutcome = add(clipId, timestampSeconds, body, kind).fold(
     onSuccess = { AddAnnotationOutcome(it, null) },
-    onFailure = { AddAnnotationOutcome(null, it.message ?: "Couldn't add note") },
+    onFailure = { AddAnnotationOutcome(null, it.userFacingMessage("Couldn't add note")) },
 )
 
 suspend fun AnnotationsRepository.deleteAnnotationOrMessage(id: String): String? =
-    delete(id).exceptionOrNull()?.let { it.message ?: "Couldn't delete note" }
+    delete(id).exceptionOrNull()?.let { it.userFacingMessage("Couldn't delete note") }
