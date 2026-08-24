@@ -80,19 +80,34 @@ alter table public.rally_annotations
 -- Backfill before the column goes. add constraint validates existing rows on
 -- the spot, and 20260505000000 dropped body's not-null precisely so a
 -- badge-only annotation could exist; such a row would have a null body and a
--- null label_name, violate the new CHECK, and abort this migration.
-update public.rally_annotations set
-    label_name  = case kind when 'good_shot'      then 'Good shot'
-                            when 'forced_error'   then 'Forced error'
-                            when 'unforced_error' then 'Unforced error' end,
-    label_color = case kind when 'good_shot'      then 'green'
-                            when 'forced_error'   then 'amber'
-                            when 'unforced_error' then 'red' end
-where kind is not null;
+-- null label_name, violate the new CHECK, and abort this migration. Guarded
+-- on kind still existing so a re-run after a prior run already dropped it
+-- does not fail with "column kind does not exist".
+do $$
+begin
+    if exists (
+        select 1 from information_schema.columns
+        where table_schema = 'public'
+          and table_name = 'rally_annotations'
+          and column_name = 'kind'
+    ) then
+        execute $backfill$
+            update public.rally_annotations set
+                label_name  = case kind when 'good_shot'      then 'Good shot'
+                                        when 'forced_error'   then 'Forced error'
+                                        when 'unforced_error' then 'Unforced error' end,
+                label_color = case kind when 'good_shot'      then 'green'
+                                        when 'forced_error'   then 'amber'
+                                        when 'unforced_error' then 'red' end
+            where kind is not null
+        $backfill$;
+    end if;
+end $$;
 
 alter table public.rally_annotations
     drop constraint if exists rally_annotations_body_or_kind_check,
     drop constraint if exists rally_annotations_kind_check,
+    drop constraint if exists rally_annotations_body_or_label_check,
     drop column if exists kind;
 
 alter table public.rally_annotations
