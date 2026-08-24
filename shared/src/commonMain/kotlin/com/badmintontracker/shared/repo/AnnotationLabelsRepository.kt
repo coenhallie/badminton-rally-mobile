@@ -30,10 +30,22 @@ interface AnnotationLabelsRepository {
     suspend fun delete(id: String): Result<Unit>
 }
 
-class AnnotationLabelsRepositoryImpl(
+class AnnotationLabelsRepositoryImpl internal constructor(
     private val client: SupabaseClient,
     private val settings: Settings,
+    private val awaitAuthReady: suspend () -> Unit,
 ) : AnnotationLabelsRepository {
+
+    /**
+     * The only constructor visible outside this module - and the only one the
+     * exported Swift/ObjC surface sees, unchanged from before this seam existed.
+     * It always resolves [awaitAuthReady] to the real, unmockable
+     * client.auth.awaitInitialization(). The class header's internal
+     * constructor is the test seam: it lets a test control that wait directly
+     * instead of racing supabase-kt's real asynchronous session restore.
+     */
+    constructor(client: SupabaseClient, settings: Settings) :
+        this(client, settings, { client.auth.awaitInitialization() })
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -69,7 +81,7 @@ class AnnotationLabelsRepositoryImpl(
      */
     internal val cacheReconciliation: Job = scope.launch {
         runCatching {
-            client.auth.awaitInitialization()
+            awaitAuthReady()
             val reconciled = loadCache()
             if (reconciled.isNotEmpty()) state.compareAndSet(emptyList(), reconciled)
         }

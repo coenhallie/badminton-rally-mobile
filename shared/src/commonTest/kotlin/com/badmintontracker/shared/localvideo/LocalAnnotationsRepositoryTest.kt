@@ -95,7 +95,8 @@ class LocalAnnotationsRepositoryTest {
 
     @Test
     fun add_stores_the_label_snapshot() {
-        val repo = LocalAnnotationsRepository(MapSettings())
+        val settings = MapSettings()
+        val repo = LocalAnnotationsRepository(settings)
         val label = AnnotationLabel(
             id = "l4",
             name = "Net kill",
@@ -108,6 +109,12 @@ class LocalAnnotationsRepositoryTest {
         val stored = repo.annotationsFor("v1").single()
         stored.labelName shouldBe "Net kill"
         stored.color shouldBe LabelColor.TEAL
+
+        // The snapshot must survive the persist-to-Settings/read-back round
+        // trip, not just live in this instance's in-memory state.
+        val reloaded = LocalAnnotationsRepository(settings).annotationsFor("v1").single()
+        reloaded.labelName shouldBe "Net kill"
+        reloaded.color shouldBe LabelColor.TEAL
     }
 
     @Test

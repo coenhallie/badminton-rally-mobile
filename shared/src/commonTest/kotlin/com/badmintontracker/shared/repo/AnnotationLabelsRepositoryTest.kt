@@ -16,10 +16,15 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.TextContent
 import io.ktor.http.headersOf
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 
 class AnnotationLabelsRepositoryTest {
+
+    // Mirrors AnnotationLabelsRepositoryImpl's private KEY_CACHE. Duplicated
+    // here rather than exposed from the impl, since only one test needs it.
+    private val cacheKey = "annotation_labels_cache"
 
     private val seeded = """
       [
@@ -299,7 +304,7 @@ class AnnotationLabelsRepositoryTest {
     }
 
     @Test
-    fun cache_is_republished_once_a_genuine_cold_start_finishes_restoring_the_session() = runTest {
+    fun cache_is_republished_once_the_owner_becomes_known_after_construction() = runTest {
         val settings = MapSettings()
         val warm = TestSupabase.client(settings) { request ->
             if (request.url.encodedPath.contains("/token")) jsonResponse(tokenResponseFor("u1"))
@@ -308,19 +313,34 @@ class AnnotationLabelsRepositoryTest {
         warm.signInAs("u1")
         AnnotationLabelsRepositoryImpl(warm, settings).refresh() // persists the cache under "u1"
 
-        // A genuine cold start: a brand-new client over the same settings, with no
-        // signInAs() call. supabase-kt restores the persisted session on its own,
-        // asynchronously, so currentUserOrNull() is still null the instant the
-        // client - and therefore the repository - is constructed.
-        val cold = TestSupabase.client(settings) { request ->
+        // A cold client built over settings holding ONLY the cache envelope, not
+        // a persisted session. With no session on disk, there is nothing for
+        // supabase-kt to restore - so currentUserOrNull() being null and
+        // labels.value starting empty are facts about this settings instance,
+        // not a race against supabase-kt's real (and unmockable) asynchronous
+        // session restore that a shared-settings cold start would be.
+        val coldSettings = MapSettings().apply {
+            putString(cacheKey, settings.getString(cacheKey, ""))
+        }
+        val cold = TestSupabase.client(coldSettings) { request ->
             if (request.url.encodedPath.contains("/token")) jsonResponse(tokenResponseFor("u1"))
             else error("the cold-start reconciliation must read the local cache, not the network")
         }
         cold.auth.currentUserOrNull() shouldBe null
 
-        val repo = AnnotationLabelsRepositoryImpl(cold, settings)
-        repo.labels.value.shouldBeEmpty() // fails safe: owner not known yet
+        // A manually-controlled gate stands in for the real awaitInitialization():
+        // the reconciliation job parks on it until this test explicitly releases
+        // it, after signing in - so "sign-in observed" strictly happens-before
+        // "reconciliation re-reads the cache," deterministically, with no
+        // dependency on real scheduling. The tradeoff: this no longer exercises
+        // awaitInitialization() itself - that call is covered by the default
+        // argument on the public constructor, not by a test.
+        val gate = CompletableDeferred<Unit>()
+        val repo = AnnotationLabelsRepositoryImpl(cold, coldSettings) { gate.await() }
+        repo.labels.value.shouldBeEmpty() // fails safe: no session, owner not known yet
 
+        cold.signInAs("u1")
+        gate.complete(Unit)
         repo.cacheReconciliation.join()
 
         repo.labels.value shouldHaveSize 3
