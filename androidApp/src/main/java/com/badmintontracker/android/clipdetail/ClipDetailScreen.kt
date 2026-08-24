@@ -213,7 +213,8 @@ fun ClipDetailScreen(
                         AnnotationRow(
                             timestampSeconds = a.timestampSeconds,
                             body = a.body,
-                            kind = a.kind,
+                            labelName = a.labelName,
+                            labelColor = a.labelColor,
                             onClick = { vm.onAnnotationTap(a) },
                             onDelete = if (state.isOwner) ({ pendingDelete = a }) else null,
                         )
@@ -244,9 +245,10 @@ fun ClipDetailScreen(
 
     addDialog?.let { ts ->
         AddAnnotationSheet(
+            labels = state.labels,
             onDismiss = { addDialog = null },
-            onConfirm = { body, kind ->
-                vm.addAnnotation(ts, body, kind)
+            onConfirm = { body, label ->
+                vm.addAnnotation(ts, body, label)
                 addDialog = null
             },
         )
@@ -256,7 +258,7 @@ fun ClipDetailScreen(
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
             title = { Text("Delete note?") },
-            text = { Text(if (a.body.isNotBlank()) "\"${a.body}\"" else a.kind?.style()?.label.orEmpty()) },
+            text = { Text(if (a.body.isNotBlank()) "\"${a.body}\"" else a.labelName.orEmpty()) },
             confirmButton = {
                 TextButton(onClick = {
                     vm.deleteAnnotation(a.id)

@@ -162,7 +162,9 @@ fun AuthGate(
                     val vm: ClipDetailViewModel = viewModel(
                         factory = viewModelFactory {
                             initializer {
-                                ClipDetailViewModel(args.clipId, rally.clips, rally.annotations, rally.media, rally.auth)
+                                ClipDetailViewModel(
+                                    args.clipId, rally.clips, rally.annotations, rally.media, rally.auth, rally.labels,
+                                )
                             }
                         }
                     )
@@ -181,7 +183,7 @@ fun AuthGate(
                     } else {
                         val playerVm: LocalPlayerViewModel = viewModel(
                             factory = viewModelFactory {
-                                initializer { LocalPlayerViewModel(args.entryId, localAnnotations) }
+                                initializer { LocalPlayerViewModel(args.entryId, localAnnotations, rally.labels) }
                             }
                         )
                         LocalPlayerScreen(

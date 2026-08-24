@@ -1,6 +1,6 @@
 package com.badmintontracker.android.testing
 
-import com.badmintontracker.shared.model.AnnotationKind
+import com.badmintontracker.shared.model.AnnotationLabel
 import com.badmintontracker.shared.model.RallyAnnotation
 import com.badmintontracker.shared.repo.AnnotationsRepository
 import kotlinx.datetime.Instant
@@ -15,9 +15,10 @@ class FakeAnnotationsRepository : AnnotationsRepository {
         val clipId: String,
         val timestampSeconds: Float,
         val body: String,
-        val kind: AnnotationKind?,
+        val label: AnnotationLabel?,
     )
 
+    val added get() = addCalls
     val addCalls = mutableListOf<AddCall>()
     val deleteCalls = mutableListOf<String>()
     private var nextId = 0
@@ -31,16 +32,17 @@ class FakeAnnotationsRepository : AnnotationsRepository {
         clipId: String,
         timestampSeconds: Float,
         body: String,
-        kind: AnnotationKind?,
+        label: AnnotationLabel?,
     ): Result<RallyAnnotation> {
-        addCalls += AddCall(clipId, timestampSeconds, body, kind)
+        addCalls += AddCall(clipId, timestampSeconds, body, label)
         addError?.let { return Result.failure(it) }
         val row = RallyAnnotation(
             id = "new-${++nextId}",
             clipId = clipId,
             timestampSeconds = timestampSeconds,
             body = body,
-            kind = kind,
+            labelName = label?.name,
+            labelColor = label?.colorKey,
             createdAt = Instant.parse("2026-05-04T12:00:00Z"),
         )
         byClipId = byClipId + (clipId to ((byClipId[clipId] ?: emptyList()) + row))

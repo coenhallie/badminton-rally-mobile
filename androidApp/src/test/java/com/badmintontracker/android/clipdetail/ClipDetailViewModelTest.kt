@@ -1,14 +1,16 @@
 package com.badmintontracker.android.clipdetail
 
 import app.cash.turbine.test
+import com.badmintontracker.android.testing.FakeAnnotationLabelsRepository
 import com.badmintontracker.android.testing.FakeAnnotationsRepository
 import com.badmintontracker.android.testing.FakeAnnotationsRepository.AddCall
 import com.badmintontracker.android.testing.FakeAuthRepository
 import com.badmintontracker.android.testing.FakeClipsRepository
 import com.badmintontracker.android.testing.FakeMediaRepository
-import com.badmintontracker.shared.model.AnnotationKind
+import com.badmintontracker.shared.model.AnnotationLabel
 import com.badmintontracker.shared.model.RallyAnnotation
 import com.badmintontracker.shared.model.RallyClip
+import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import kotlinx.coroutines.Dispatchers
@@ -36,6 +38,11 @@ class ClipDetailViewModelTest {
         createdAt = Instant.parse("2026-05-04T12:00:00Z"),
     )
 
+    private val netKill = AnnotationLabel(
+        id = "l4", name = "Net kill", colorKey = "teal",
+        createdAt = Instant.parse("2026-08-24T12:00:00Z"),
+    )
+
     private data class Setup(
         val vm: ClipDetailViewModel,
         val media: FakeMediaRepository,
@@ -49,12 +56,13 @@ class ClipDetailViewModelTest {
         annotations: List<RallyAnnotation> = emptyList(),
         media: FakeMediaRepository = FakeMediaRepository(),
         auth: FakeAuthRepository = FakeAuthRepository().apply { currentUserIdValue = "user-self" },
+        labels: FakeAnnotationLabelsRepository = FakeAnnotationLabelsRepository(emptyList()),
     ): Setup {
         val clips = FakeClipsRepository().apply { this.clips.value = clipsList }
         val ann = FakeAnnotationsRepository().apply {
             byClipId = mapOf("c1" to annotations)
         }
-        val vm = ClipDetailViewModel("c1", clips, ann, media, auth)
+        val vm = ClipDetailViewModel("c1", clips, ann, media, auth, labels)
         return Setup(vm, media, clips, ann, auth)
     }
 
@@ -186,7 +194,7 @@ class ClipDetailViewModelTest {
         val (vm, _, _, ann) = setup(annotations = listOf(existing))
         advanceUntilIdle()
 
-        vm.addAnnotation(timestampSeconds = 2.0f, body = "earlier", kind = null)
+        vm.addAnnotation(timestampSeconds = 2.0f, body = "earlier", label = null)
         advanceUntilIdle()
 
         ann.addCalls shouldBe listOf(AddCall("c1", 2.0f, "earlier", null))
@@ -195,11 +203,11 @@ class ClipDetailViewModelTest {
     }
 
     @Test
-    fun addAnnotation_blank_body_and_no_kind_is_ignored() = runTest {
+    fun addAnnotation_blank_body_and_no_label_is_ignored() = runTest {
         val (vm, _, _, ann) = setup()
         advanceUntilIdle()
 
-        vm.addAnnotation(timestampSeconds = 1f, body = "   ", kind = null)
+        vm.addAnnotation(timestampSeconds = 1f, body = "   ", label = null)
         advanceUntilIdle()
 
         ann.addCalls.size shouldBe 0
@@ -207,15 +215,57 @@ class ClipDetailViewModelTest {
     }
 
     @Test
-    fun addAnnotation_blank_body_with_kind_is_persisted() = runTest {
+    fun addAnnotation_blank_body_with_label_is_persisted() = runTest {
         val (vm, _, _, ann) = setup()
         advanceUntilIdle()
 
-        vm.addAnnotation(timestampSeconds = 3f, body = "", kind = AnnotationKind.GOOD_SHOT)
+        vm.addAnnotation(timestampSeconds = 3f, body = "", label = netKill)
         advanceUntilIdle()
 
-        ann.addCalls shouldBe listOf(AddCall("c1", 3f, "", AnnotationKind.GOOD_SHOT))
-        vm.state.value.annotations.map { it.kind } shouldBe listOf(AnnotationKind.GOOD_SHOT)
+        ann.addCalls shouldBe listOf(AddCall("c1", 3f, "", netKill))
+        vm.state.value.annotations.map { it.labelName } shouldBe listOf(netKill.name)
+    }
+
+    // NOTE: the brief's own fixture for these two tests constructs
+    // FakeClipsRepository() with no clips, so ClipDetailViewModel.load() hits
+    // its "Clip not found" branch and state.isOwner never leaves its false
+    // default. addAnnotation's pre-existing `if (!state.value.isOwner) return`
+    // guard (unchanged by this task; addAnnotation_ignored_when_not_owner still
+    // depends on it) then blocks the add before the guard under test is ever
+    // reached, so repo.added.single() throws NoSuchElementException and the
+    // "ignored when empty" test is vacuously green. Fixed here by seeding the
+    // owned clip and letting load() settle before acting, while keeping the
+    // brief's assertions character-for-character.
+    @Test
+    fun addAnnotation_passes_the_label_through_to_the_repository() = runTest {
+        val repo = FakeAnnotationsRepository()
+        val labels = FakeAnnotationLabelsRepository(listOf(netKill))
+        val vm = ClipDetailViewModel(
+            clipId = "c1", clips = FakeClipsRepository().apply { clips.value = listOf(sampleClip) },
+            annotations = repo, media = FakeMediaRepository(), auth = FakeAuthRepository(), labels = labels,
+        )
+        advanceUntilIdle()
+
+        vm.addAnnotation(1.5f, "", netKill)
+        advanceUntilIdle()
+
+        repo.added.single().label shouldBe netKill
+    }
+
+    @Test
+    fun addAnnotation_is_ignored_when_both_body_and_label_are_empty() = runTest {
+        val repo = FakeAnnotationsRepository()
+        val vm = ClipDetailViewModel(
+            clipId = "c1", clips = FakeClipsRepository().apply { clips.value = listOf(sampleClip) },
+            annotations = repo, media = FakeMediaRepository(), auth = FakeAuthRepository(),
+            labels = FakeAnnotationLabelsRepository(emptyList()),
+        )
+        advanceUntilIdle()
+
+        vm.addAnnotation(1.5f, "   ", null)
+        advanceUntilIdle()
+
+        repo.added.shouldBeEmpty()
     }
 
     @Test
@@ -283,7 +333,7 @@ class ClipDetailViewModelTest {
             auth = FakeAuthRepository().apply { currentUserIdValue = "user-other" },
         )
         advanceUntilIdle()
-        vm.addAnnotation(timestampSeconds = 1f, body = "x", kind = null)
+        vm.addAnnotation(timestampSeconds = 1f, body = "x", label = null)
         advanceUntilIdle()
         ann.addCalls.size shouldBe 0
     }
@@ -332,5 +382,13 @@ class ClipDetailViewModelTest {
             st.displayTitle shouldBe "Great smash"
             cancelAndIgnoreRemainingEvents()
         }
+    }
+
+    @Test
+    fun state_labels_reflects_the_label_repository() = runTest {
+        val (vm, _, _, _) = setup(labels = FakeAnnotationLabelsRepository(listOf(netKill)))
+        advanceUntilIdle()
+
+        vm.state.value.labels shouldBe listOf(netKill)
     }
 }

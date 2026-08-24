@@ -5,9 +5,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.badmintontracker.android.cliplist.clipRowTitle
 import com.badmintontracker.android.cliplist.matchTitle
-import com.badmintontracker.shared.model.AnnotationKind
+import com.badmintontracker.shared.model.AnnotationLabel
 import com.badmintontracker.shared.model.RallyAnnotation
 import com.badmintontracker.shared.model.RallyClip
+import com.badmintontracker.shared.repo.AnnotationLabelsRepository
 import com.badmintontracker.shared.repo.AnnotationsRepository
 import com.badmintontracker.shared.repo.AuthRepository
 import com.badmintontracker.shared.repo.ClipsRepository
@@ -32,6 +33,7 @@ data class ClipDetailState(
     val error: String? = null,
     val actionError: String? = null,
     val isOwner: Boolean = false,
+    val labels: List<AnnotationLabel> = emptyList(),
 )
 
 class ClipDetailViewModel(
@@ -40,6 +42,7 @@ class ClipDetailViewModel(
     private val annotations: AnnotationsRepository,
     private val media: MediaRepository,
     private val auth: AuthRepository,
+    private val labels: AnnotationLabelsRepository,
 ) : ViewModel() {
 
     val state  = MutableStateFlow(ClipDetailState())
@@ -47,7 +50,13 @@ class ClipDetailViewModel(
 
     private var resignAttempts = 0
 
-    init { load() }
+    init {
+        viewModelScope.launch {
+            labels.labels.collect { list -> state.update { it.copy(labels = list) } }
+        }
+        viewModelScope.launch { labels.refresh() }
+        load()
+    }
 
     private fun load() {
         viewModelScope.launch {
@@ -117,13 +126,13 @@ class ClipDetailViewModel(
         }
     }
 
-    fun addAnnotation(timestampSeconds: Float, body: String, kind: AnnotationKind?) {
+    fun addAnnotation(timestampSeconds: Float, body: String, label: AnnotationLabel?) {
         if (!state.value.isOwner) return
         val trimmed = body.trim()
-        if (trimmed.isEmpty() && kind == null) return
+        if (trimmed.isEmpty() && label == null) return
         val ts = timestampSeconds.coerceAtLeast(0f)
         viewModelScope.launch {
-            annotations.add(clipId, ts, trimmed, kind)
+            annotations.add(clipId, ts, trimmed, label)
                 .onSuccess { row ->
                     state.update {
                         it.copy(

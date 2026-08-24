@@ -26,6 +26,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -86,6 +88,8 @@ fun LocalPlayerScreen(
     val ctx = LocalContext.current
     val orientation = LocalConfiguration.current.orientation
     val annotations by vm.state.collectAsStateWithLifecycle()
+    val labelOptions by vm.labelOptions.collectAsStateWithLifecycle()
+    val labelErrorMessage by vm.errorMessage.collectAsStateWithLifecycle()
     val player = remember {
         ExoPlayer.Builder(ctx).build().apply { setSeekParameters(SeekParameters.EXACT) }
     }
@@ -94,6 +98,13 @@ fun LocalPlayerScreen(
     var addDialog by remember { mutableStateOf<Float?>(null) }
     var pendingDelete by remember { mutableStateOf<LocalAnnotation?>(null) }
     var playbackError by remember { mutableStateOf<String?>(null) }
+    val snackbar = remember { SnackbarHostState() }
+
+    LaunchedEffect(labelErrorMessage) {
+        val msg = labelErrorMessage ?: return@LaunchedEffect
+        snackbar.showSnackbar(msg)
+        vm.errorShown()
+    }
 
     BackHandler(enabled = isFullscreen) { isFullscreen = false }
 
@@ -213,6 +224,7 @@ fun LocalPlayerScreen(
                 }
             }
         },
+        snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
             if (!isFullscreen) {
@@ -247,7 +259,8 @@ fun LocalPlayerScreen(
                             AnnotationRow(
                                 timestampSeconds = a.timestampSeconds,
                                 body = a.body,
-                                kind = a.kind,
+                                labelName = a.labelName,
+                                labelColor = a.labelColor,
                                 onClick = { vm.onAnnotationTap(a) },
                                 onDelete = { pendingDelete = a },
                             )
@@ -273,9 +286,10 @@ fun LocalPlayerScreen(
 
     addDialog?.let { ts ->
         AddAnnotationSheet(
+            labels = labelOptions,
             onDismiss = { addDialog = null },
-            onConfirm = { body, kind ->
-                vm.addAnnotation(ts, body, kind)
+            onConfirm = { body, label ->
+                vm.addAnnotation(ts, body, label)
                 addDialog = null
             },
         )

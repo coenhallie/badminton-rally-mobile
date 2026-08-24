@@ -23,7 +23,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -35,9 +34,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
-import com.badmintontracker.shared.model.AnnotationKind
+import com.badmintontracker.shared.model.AnnotationLabel
+import com.badmintontracker.shared.model.LabelColor
 import kotlinx.coroutines.launch
 
 internal fun formatTimestamp(seconds: Float): String {
@@ -51,7 +52,8 @@ internal fun formatTimestamp(seconds: Float): String {
 internal fun AnnotationRow(
     timestampSeconds: Float,
     body: String,
-    kind: AnnotationKind?,
+    labelName: String?,
+    labelColor: String?,
     onClick: () -> Unit,
     onDelete: (() -> Unit)?,
 ) {
@@ -65,16 +67,8 @@ internal fun AnnotationRow(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.width(12.dp))
-        kind?.let { k ->
-            val s = k.style()
-            Surface(shape = RoundedCornerShape(50), color = s.container) {
-                Text(
-                    s.label,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = s.onContainer,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                )
-            }
+        labelName?.takeIf { it.isNotBlank() }?.let { name ->
+            LabelBadge(name = name, colorKey = labelColor)
             Spacer(Modifier.width(8.dp))
         }
         if (body.isNotBlank()) {
@@ -93,14 +87,15 @@ internal fun AnnotationRow(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun AddAnnotationSheet(
+    labels: List<AnnotationLabel>,
     onDismiss: () -> Unit,
-    onConfirm: (body: String, kind: AnnotationKind?) -> Unit,
+    onConfirm: (body: String, label: AnnotationLabel?) -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     var body by remember { mutableStateOf("") }
-    var kind by remember { mutableStateOf<AnnotationKind?>(null) }
-    val canAdd = kind != null || body.isNotBlank()
+    var label by remember { mutableStateOf<AnnotationLabel?>(null) }
+    val canAdd = label != null || body.isNotBlank()
 
     fun hideThen(action: () -> Unit) {
         scope.launch { sheetState.hide() }.invokeOnCompletion {
@@ -123,9 +118,13 @@ internal fun AddAnnotationSheet(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                KindChip("Good shot",      AnnotationKind.GOOD_SHOT,      kind) { kind = if (kind == it) null else it }
-                KindChip("Forced error",   AnnotationKind.FORCED_ERROR,   kind) { kind = if (kind == it) null else it }
-                KindChip("Unforced error", AnnotationKind.UNFORCED_ERROR, kind) { kind = if (kind == it) null else it }
+                labels.forEach { candidate ->
+                    LabelChip(
+                        label = candidate,
+                        selected = label?.id == candidate.id,
+                        onClick = { label = if (label?.id == candidate.id) null else candidate },
+                    )
+                }
             }
 
             OutlinedTextField(
@@ -139,28 +138,25 @@ internal fun AddAnnotationSheet(
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = { hideThen { onDismiss() } }) { Text("Cancel") }
                 Spacer(Modifier.width(8.dp))
-                Button(enabled = canAdd, onClick = { hideThen { onConfirm(body, kind) } }) { Text("Add") }
+                Button(enabled = canAdd, onClick = { hideThen { onConfirm(body, label) } }) { Text("Add") }
             }
         }
     }
 }
 
 @Composable
-private fun KindChip(
-    label: String,
-    target: AnnotationKind,
-    selected: AnnotationKind?,
-    onClick: (AnnotationKind) -> Unit,
-) {
-    val s = target.style()
+private fun LabelChip(label: AnnotationLabel, selected: Boolean, onClick: () -> Unit) {
+    val swatch = LabelColor.from(label.colorKey)
     FilterChip(
-        selected = selected == target,
-        onClick = { onClick(target) },
-        label = { Text(label) },
+        selected = selected,
+        onClick = onClick,
+        label = { Text(label.name) },
         shape = RoundedCornerShape(50),
         colors = FilterChipDefaults.filterChipColors(
-            selectedContainerColor = s.container,
-            selectedLabelColor = s.onContainer,
+            selectedContainerColor = swatch?.let { Color(it.background.toInt()) }
+                ?: MaterialTheme.colorScheme.surfaceVariant,
+            selectedLabelColor = swatch?.let { Color(it.foreground.toInt()) }
+                ?: MaterialTheme.colorScheme.onSurfaceVariant,
         ),
     )
 }
