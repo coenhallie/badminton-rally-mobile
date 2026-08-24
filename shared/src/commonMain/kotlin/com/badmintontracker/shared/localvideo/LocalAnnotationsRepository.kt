@@ -1,6 +1,6 @@
 package com.badmintontracker.shared.localvideo
 
-import com.badmintontracker.shared.model.AnnotationKind
+import com.badmintontracker.shared.model.AnnotationLabel
 import com.badmintontracker.shared.util.SyncLock
 import com.badmintontracker.shared.util.nowEpochMs
 import com.badmintontracker.shared.util.randomUuid
@@ -34,12 +34,18 @@ class LocalAnnotationsRepository(private val settings: Settings) {
     fun hasAnnotations(videoId: String): Boolean =
         state.value[videoId]?.isNotEmpty() == true
 
-    fun add(videoId: String, timestampSeconds: Float, body: String, kind: AnnotationKind?): LocalAnnotation {
+    fun add(
+        videoId: String,
+        timestampSeconds: Float,
+        body: String,
+        label: AnnotationLabel?,
+    ): LocalAnnotation {
         val annotation = LocalAnnotation(
             id = randomUuid(),
             timestampSeconds = timestampSeconds,
             body = body,
-            kind = kind,
+            labelName = label?.name,
+            labelColor = label?.colorKey,
             createdAtEpochMs = nowEpochMs(),
         )
         mutate(videoId) { it + annotation }

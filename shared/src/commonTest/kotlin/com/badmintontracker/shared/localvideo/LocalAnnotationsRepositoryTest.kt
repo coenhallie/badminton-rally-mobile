@@ -1,15 +1,18 @@
 package com.badmintontracker.shared.localvideo
 
-import com.badmintontracker.shared.model.AnnotationKind
+import com.badmintontracker.shared.model.AnnotationLabel
+import com.badmintontracker.shared.model.LabelColor
 import com.russhwolf.settings.MapSettings
 import io.kotest.matchers.booleans.shouldBeFalse
 import io.kotest.matchers.booleans.shouldBeTrue
+import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
+import kotlinx.datetime.Instant
 import kotlin.test.Test
 
 class LocalAnnotationsRepositoryTest {
@@ -18,12 +21,11 @@ class LocalAnnotationsRepositoryTest {
     fun add_stores_and_hasAnnotations_reflects_it() {
         val repo = LocalAnnotationsRepository(MapSettings())
         repo.hasAnnotations("v1").shouldBeFalse()
-        repo.add("v1", 12f, "nice", AnnotationKind.GOOD_SHOT)
+        repo.add("v1", 12f, "nice", null)
         repo.hasAnnotations("v1").shouldBeTrue()
         val a = repo.annotationsFor("v1").single()
         a.timestampSeconds shouldBe 12f
         a.body shouldBe "nice"
-        a.kind shouldBe AnnotationKind.GOOD_SHOT
     }
 
     @Test
@@ -89,5 +91,37 @@ class LocalAnnotationsRepositoryTest {
     fun corrupt_json_yields_empty() {
         val settings = MapSettings().apply { putString("local_annotations", "not-json") }
         LocalAnnotationsRepository(settings).annotationsFor("v1") shouldBe emptyList()
+    }
+
+    @Test
+    fun add_stores_the_label_snapshot() {
+        val repo = LocalAnnotationsRepository(MapSettings())
+        val label = AnnotationLabel(
+            id = "l4",
+            name = "Net kill",
+            colorKey = "teal",
+            createdAt = Instant.parse("2026-08-24T12:00:00Z"),
+        )
+
+        repo.add("v1", 1.5f, "", label)
+
+        val stored = repo.annotationsFor("v1").single()
+        stored.labelName shouldBe "Net kill"
+        stored.color shouldBe LabelColor.TEAL
+    }
+
+    @Test
+    fun a_file_written_before_labels_existed_still_decodes() {
+        val settings = MapSettings()
+        settings.putString(
+            "local_annotations",
+            """{"v1":[{"id":"a1","timestampSeconds":1.5,"body":"good length",
+                 "kind":"good_shot","createdAtEpochMs":1000}]}""",
+        )
+
+        val stored = LocalAnnotationsRepository(settings).annotationsFor("v1").single()
+
+        stored.body shouldBe "good length"
+        stored.labelName.shouldBeNull()
     }
 }
