@@ -4,6 +4,7 @@ import com.badmintontracker.shared.model.AnnotationLabel
 import com.badmintontracker.shared.model.LabelColor
 import com.russhwolf.settings.Settings
 import io.github.jan.supabase.SupabaseClient
+import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -11,7 +12,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 
 interface AnnotationLabelsRepository {
@@ -31,7 +31,6 @@ class AnnotationLabelsRepositoryImpl(
 ) : AnnotationLabelsRepository {
 
     private val json = Json { ignoreUnknownKeys = true }
-    private val serializer = ListSerializer(AnnotationLabel.serializer())
 
     private val state = MutableStateFlow(loadCache())
     override val labels: StateFlow<List<AnnotationLabel>> = state.asStateFlow()
@@ -42,6 +41,18 @@ class AnnotationLabelsRepositoryImpl(
     )
     @Serializable private data class NamePatch(val name: String)
     @Serializable private data class ColorPatch(@SerialName("color_key") val colorKey: String)
+
+    /**
+     * The cache envelope, scoped to whoever was signed in when it was written.
+     * Settings has no per-user namespacing of its own, and nothing guarantees a
+     * sign-out hook runs before the next launch (a session can simply expire, or
+     * the app can be killed) - so the owner id travels inside the payload and
+     * [loadCache] refuses to hand back a list stamped with someone else's id.
+     */
+    @Serializable private data class CachedLabels(
+        @SerialName("owner_id") val ownerId: String?,
+        val labels: List<AnnotationLabel>,
+    )
 
     override suspend fun refresh(): Result<Unit> = runCatching {
         val rows = client.postgrest.from(TABLE)
@@ -94,7 +105,7 @@ class AnnotationLabelsRepositoryImpl(
         val duplicate = "23505" in text ||
             "duplicate key" in text ||
             "annotation_labels_owner_name_key" in text
-        return if (duplicate) IllegalArgumentException("You already have a label called \"$name\".") else this
+        return if (duplicate) duplicateNameError(name) else this
     }
 
     /**
@@ -103,21 +114,42 @@ class AnnotationLabelsRepositoryImpl(
      */
     private fun validate(trimmed: String, ignoringId: String? = null): Throwable? = when {
         trimmed.isEmpty() -> IllegalArgumentException("Give the label a name.")
-        trimmed.length > MAX_NAME -> IllegalArgumentException("Keep the name under $MAX_NAME characters.")
+        trimmed.length > MAX_NAME -> IllegalArgumentException("The name can be up to $MAX_NAME characters.")
         state.value.any { it.id != ignoringId && it.name.equals(trimmed, ignoreCase = true) } ->
-            IllegalArgumentException("You already have a label called \"$trimmed\".")
+            duplicateNameError(trimmed)
         else -> null
     }
 
+    /**
+     * The one place the duplicate-name sentence is spelled out, so the in-memory
+     * check ([validate]) and the server-rejection mapping ([asDuplicateName]) can
+     * never quietly drift apart into two different messages for the same failure.
+     */
+    private fun duplicateNameError(name: String): Throwable =
+        IllegalArgumentException("You already have a label called \"$name\".")
+
     private fun publish(next: List<AnnotationLabel>) {
         state.value = next
-        settings.putString(KEY_CACHE, json.encodeToString(serializer, next))
+        val envelope = CachedLabels(currentOwnerId(), next)
+        settings.putString(KEY_CACHE, json.encodeToString(CachedLabels.serializer(), envelope))
     }
 
-    private fun loadCache(): List<AnnotationLabel> =
-        settings.getStringOrNull(KEY_CACHE)
-            ?.let { runCatching { json.decodeFromString(serializer, it) }.getOrNull() }
-            ?: emptyList()
+    /**
+     * Only hands back a cached list when it was written by whoever is signed in
+     * right now. A missing owner on either side - a legacy cache written before
+     * this scoping existed, or nobody currently signed in - is treated the same
+     * as a mismatch: better an empty picker than one user's label names leaking
+     * into another user's app.
+     */
+    private fun loadCache(): List<AnnotationLabel> {
+        val cached = settings.getStringOrNull(KEY_CACHE)
+            ?.let { runCatching { json.decodeFromString(CachedLabels.serializer(), it) }.getOrNull() }
+            ?: return emptyList()
+        val owner = currentOwnerId()
+        return if (owner != null && owner == cached.ownerId) cached.labels else emptyList()
+    }
+
+    private fun currentOwnerId(): String? = client.auth.currentUserOrNull()?.id
 
     companion object {
         private const val TABLE = "annotation_labels"
