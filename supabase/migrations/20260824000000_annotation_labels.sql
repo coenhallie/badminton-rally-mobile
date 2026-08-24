@@ -1,7 +1,7 @@
 -- Replaces the fixed three-case rally_annotations.kind with user-owned labels.
 -- See docs/plans/2026-08-24-custom-annotation-labels-design.md
 
-create table public.annotation_labels (
+create table if not exists public.annotation_labels (
     id         uuid primary key default gen_random_uuid(),
     owner_id   uuid not null default auth.uid()
                references auth.users(id) on delete cascade,
@@ -12,22 +12,29 @@ create table public.annotation_labels (
     created_at timestamptz not null default now()
 );
 
-create unique index annotation_labels_owner_name_key
+create unique index if not exists annotation_labels_owner_name_key
     on public.annotation_labels (owner_id, lower(name));
 
-create index annotation_labels_owner_created_idx
+create index if not exists annotation_labels_owner_created_idx
     on public.annotation_labels (owner_id, created_at);
 
 alter table public.annotation_labels enable row level security;
 
+drop policy if exists annotation_labels_select_own on public.annotation_labels;
 create policy annotation_labels_select_own on public.annotation_labels
-    for select using (owner_id = auth.uid());
+    for select to authenticated using (owner_id = auth.uid());
+
+drop policy if exists annotation_labels_insert_own on public.annotation_labels;
 create policy annotation_labels_insert_own on public.annotation_labels
-    for insert with check (owner_id = auth.uid());
+    for insert to authenticated with check (owner_id = auth.uid());
+
+drop policy if exists annotation_labels_update_own on public.annotation_labels;
 create policy annotation_labels_update_own on public.annotation_labels
-    for update using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+    for update to authenticated using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+
+drop policy if exists annotation_labels_delete_own on public.annotation_labels;
 create policy annotation_labels_delete_own on public.annotation_labels
-    for delete using (owner_id = auth.uid());
+    for delete to authenticated using (owner_id = auth.uid());
 
 -- Seeding. owner_id is set from new.id explicitly: inside an auth.users insert
 -- there is no authenticated session, so the column default auth.uid() would
@@ -49,6 +56,7 @@ begin
 end;
 $$;
 
+drop trigger if exists seed_annotation_labels_on_signup on auth.users;
 create trigger seed_annotation_labels_on_signup
     after insert on auth.users
     for each row execute function public.seed_annotation_labels();
@@ -66,8 +74,8 @@ on conflict do nothing;
 
 -- rally_annotations: snapshot the label instead of referencing a kind.
 alter table public.rally_annotations
-    add column label_name  text,
-    add column label_color text;
+    add column if not exists label_name  text,
+    add column if not exists label_color text;
 
 -- Backfill before the column goes. add constraint validates existing rows on
 -- the spot, and 20260505000000 dropped body's not-null precisely so a
