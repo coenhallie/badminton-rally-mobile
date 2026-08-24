@@ -7,8 +7,11 @@ import com.russhwolf.settings.MapSettings
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.ktor.client.engine.mock.respondError
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.TextContent
+import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 
@@ -89,6 +92,53 @@ class AnnotationLabelsRepositoryTest {
         repo.refresh()
 
         repo.create("good SHOT", null).isFailure shouldBe true
+    }
+
+    // The shape Postgrest actually returns for a unique-violation: HTTP 409 with a
+    // JSON body of {code, message}. supabase-kt decodes this into a
+    // PostgrestRestException whose message is "<message>\n    Code:\n    <code>\n...",
+    // so it carries both the postgres code 23505 and the constraint name.
+    private val uniqueViolation = """
+        {"code":"23505","message":"duplicate key value violates unique constraint \"annotation_labels_owner_name_key\""}
+    """.trimIndent()
+
+    @Test
+    fun create_maps_a_server_side_duplicate_name_rejection_to_the_same_sentence() = runTest {
+        // No refresh(): the in-memory list validate() checks is empty, so the
+        // in-memory duplicate check genuinely passes and the request reaches the
+        // server. This is the path a cold-start-offline or not-yet-refreshed user
+        // hits, and it is asDuplicateName, not validate(), that must turn the
+        // server's rejection into a readable sentence.
+        val client = TestSupabase.client { _ ->
+            respondError(
+                status = HttpStatusCode.Conflict,
+                content = uniqueViolation,
+                headers = headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }
+        val repo = AnnotationLabelsRepositoryImpl(client, MapSettings())
+
+        val result = repo.create("Net kill", null)
+
+        result.isFailure shouldBe true
+        result.exceptionOrNull()?.message shouldBe "You already have a label called \"Net kill\"."
+    }
+
+    @Test
+    fun rename_maps_a_server_side_duplicate_name_rejection_to_the_same_sentence() = runTest {
+        val client = TestSupabase.client { _ ->
+            respondError(
+                status = HttpStatusCode.Conflict,
+                content = uniqueViolation,
+                headers = headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }
+        val repo = AnnotationLabelsRepositoryImpl(client, MapSettings())
+
+        val result = repo.rename("l1", "Good shot")
+
+        result.isFailure shouldBe true
+        result.exceptionOrNull()?.message shouldBe "You already have a label called \"Good shot\"."
     }
 
     @Test
