@@ -36,6 +36,8 @@ import com.badmintontracker.android.localvideo.court.CourtMarkingScreen
 import com.badmintontracker.android.localvideo.court.CourtMarkingViewModel
 import com.badmintontracker.android.localvideo.court.loadFirstFrame
 import com.badmintontracker.android.localvideo.rememberVideoIntake
+import com.badmintontracker.android.labels.LabelsScreen
+import com.badmintontracker.android.labels.LabelsViewModel
 import com.badmintontracker.android.nav.Route
 import com.badmintontracker.android.signin.SignInScreen
 import com.badmintontracker.android.signin.SignInViewModel
@@ -138,7 +140,14 @@ fun AuthGate(
                         onLocalResultSeen = { localVm.acknowledgeResult(it.id) },
                         onRecord = intake.record,
                         onImport = intake.import,
+                        onLabels = { nav.navigate(Route.Labels) },
                     )
+                }
+                composable<Route.Labels> {
+                    val vm: LabelsViewModel = viewModel(
+                        factory = viewModelFactory { initializer { LabelsViewModel(rally.labels) } }
+                    )
+                    LabelsScreen(vm = vm, onBack = { nav.popBackStack() })
                 }
                 composable<Route.MatchClips> { entry ->
                     val args = entry.toRoute<Route.MatchClips>()

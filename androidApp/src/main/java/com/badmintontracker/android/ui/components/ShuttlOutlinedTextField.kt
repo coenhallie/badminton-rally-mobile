@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
@@ -19,6 +20,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -35,6 +37,8 @@ fun ShuttlOutlinedTextField(
     modifier:      Modifier = Modifier,
     type:          ShuttlFieldType = ShuttlFieldType.Text,
     enabled:       Boolean = true,
+    /** Non-null switches the IME action to Done and commits through this callback. */
+    onDone:        (() -> Unit)? = null,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val isFocused   by interaction.collectIsFocusedAsState()
@@ -46,7 +50,9 @@ fun ShuttlOutlinedTextField(
         ShuttlFieldType.Email    -> KeyboardOptions(keyboardType = KeyboardType.Email)
         ShuttlFieldType.Password -> KeyboardOptions(keyboardType = KeyboardType.Password)
         ShuttlFieldType.Text     -> KeyboardOptions.Default
-    }
+    }.let { if (onDone != null) it.copy(imeAction = ImeAction.Done) else it }
+    val keyboardActions =
+        if (onDone != null) KeyboardActions(onDone = { onDone() }) else KeyboardActions.Default
     val visual: VisualTransformation =
         if (type == ShuttlFieldType.Password) PasswordVisualTransformation()
         else                                   VisualTransformation.None
@@ -68,6 +74,7 @@ fun ShuttlOutlinedTextField(
                 singleLine             = true,
                 interactionSource      = interaction,
                 keyboardOptions        = keyboard,
+                keyboardActions        = keyboardActions,
                 visualTransformation   = visual,
                 textStyle              = LocalTextStyle.current.copy(color = MaterialTheme.colorScheme.onSurface),
                 cursorBrush            = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),

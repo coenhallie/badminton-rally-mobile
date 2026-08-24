@@ -79,6 +79,7 @@ fun ClipListScreen(
     onLocalResultSeen: (LocalVideoEntry) -> Unit = {},
     onRecord: () -> Unit = {},
     onImport: () -> Unit = {},
+    onLabels: () -> Unit = {},
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val themeMode by themePrefs.mode.collectAsStateWithLifecycle()
@@ -146,6 +147,10 @@ fun ClipListScreen(
                         Icon(Icons.Default.MoreVert, contentDescription = "Menu")
                     }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Labels") },
+                            onClick = { menuOpen = false; onLabels() },
+                        )
                         DropdownMenuItem(
                             text = { Text("Sign out") },
                             onClick = { menuOpen = false; vm.signOut() },
