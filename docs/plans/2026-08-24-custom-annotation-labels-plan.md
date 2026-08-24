@@ -37,7 +37,7 @@
 **Android**
 - Create `androidApp/src/main/java/com/badmintontracker/android/labels/LabelsScreen.kt`, `LabelsViewModel.kt`.
 - Modify `nav/Route.kt`, `RallyAndroidApp.kt`, `cliplist/ClipListScreen.kt`, `clipdetail/AnnotationUi.kt`, `clipdetail/ClipDetailViewModel.kt`, `localvideo/LocalPlayerViewModel.kt`.
-- Delete `clipdetail/AnnotationKindStyle.kt`, replaced by `clipdetail/LabelStyle.kt`.
+- Delete `clipdetail/AnnotationKindStyle.kt`, replaced by `clipdetail/LabelBadge.kt`.
 
 **iOS**
 - Create `iosApp/Sources/Labels/LabelsView.swift`, `LabelsModel.swift`.
@@ -1116,7 +1116,8 @@ git commit -m "feat(shared): expose the labels repository to both platforms"
 ### Task 8: Android badge and picker driven by the label list
 
 **Files:**
-- Create: `androidApp/src/main/java/com/badmintontracker/android/clipdetail/LabelStyle.kt`
+- Create: `androidApp/src/main/java/com/badmintontracker/android/clipdetail/LabelBadge.kt`
+- Create: `androidApp/src/test/java/com/badmintontracker/android/testing/FakeAnnotationLabelsRepository.kt`
 - Delete: `androidApp/src/main/java/com/badmintontracker/android/clipdetail/AnnotationKindStyle.kt`
 - Modify: `androidApp/src/main/java/com/badmintontracker/android/clipdetail/AnnotationUi.kt`
 - Modify: `androidApp/src/main/java/com/badmintontracker/android/clipdetail/ClipDetailViewModel.kt`
@@ -1183,7 +1184,7 @@ Update `FakeAnnotationsRepository` so `add` takes `label: AnnotationLabel?` and 
 Run: `./gradlew :androidApp:testDebugUnitTest --tests "*ClipDetailViewModelTest*"`
 Expected: FAIL to compile, `AnnotationKind` unresolved and `ClipDetailViewModel` has no `labels` parameter.
 
-- [ ] **Step 3: Write LabelStyle and delete AnnotationKindStyle**
+- [ ] **Step 3: Write LabelBadge.kt and delete AnnotationKindStyle**
 
 ```kotlin
 package com.badmintontracker.android.clipdetail
