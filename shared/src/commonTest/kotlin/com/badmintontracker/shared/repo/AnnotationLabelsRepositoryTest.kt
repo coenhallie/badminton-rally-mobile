@@ -299,6 +299,67 @@ class AnnotationLabelsRepositoryTest {
     }
 
     @Test
+    fun cache_is_republished_once_a_genuine_cold_start_finishes_restoring_the_session() = runTest {
+        val settings = MapSettings()
+        val warm = TestSupabase.client(settings) { request ->
+            if (request.url.encodedPath.contains("/token")) jsonResponse(tokenResponseFor("u1"))
+            else jsonResponse(seeded)
+        }
+        warm.signInAs("u1")
+        AnnotationLabelsRepositoryImpl(warm, settings).refresh() // persists the cache under "u1"
+
+        // A genuine cold start: a brand-new client over the same settings, with no
+        // signInAs() call. supabase-kt restores the persisted session on its own,
+        // asynchronously, so currentUserOrNull() is still null the instant the
+        // client - and therefore the repository - is constructed.
+        val cold = TestSupabase.client(settings) { request ->
+            if (request.url.encodedPath.contains("/token")) jsonResponse(tokenResponseFor("u1"))
+            else error("the cold-start reconciliation must read the local cache, not the network")
+        }
+        cold.auth.currentUserOrNull() shouldBe null
+
+        val repo = AnnotationLabelsRepositoryImpl(cold, settings)
+        repo.labels.value.shouldBeEmpty() // fails safe: owner not known yet
+
+        repo.cacheReconciliation.join()
+
+        repo.labels.value shouldHaveSize 3
+        repo.labels.value[0].name shouldBe "Good shot"
+    }
+
+    @Test
+    fun the_cold_start_reconciliation_never_serves_one_users_cache_to_another() = runTest {
+        val settings = MapSettings()
+        val client = TestSupabase.client(settings) { request ->
+            when {
+                request.url.encodedPath.contains("/token") &&
+                    (request.body as? TextContent)?.text?.contains("user-a") == true ->
+                    jsonResponse(tokenResponseFor("user-a"))
+                request.url.encodedPath.contains("/token") -> jsonResponse(tokenResponseFor("user-b"))
+                else -> jsonResponse(seeded)
+            }
+        }
+        client.signInAs("user-a")
+        AnnotationLabelsRepositoryImpl(client, settings).refresh() // cache stamped "user-a"
+        client.signInAs("user-b") // same client, different signed-in owner now
+
+        // A cold client over settings holding user-a's cache, but which restores
+        // (or is already signed in as) user-b - the reconciliation path must
+        // never hand user-a's label names to user-b, exactly like the
+        // constructor-time check above.
+        val cold = TestSupabase.client(settings) { request ->
+            if (request.url.encodedPath.contains("/token")) jsonResponse(tokenResponseFor("user-b"))
+            else error("must not need the network")
+        }
+        cold.signInAs("user-b")
+
+        val repo = AnnotationLabelsRepositoryImpl(cold, settings)
+        repo.cacheReconciliation.join()
+
+        repo.labels.value.shouldBeEmpty()
+    }
+
+    @Test
     fun nextUnusedColor_wraps_once_every_swatch_is_taken() {
         val taken = LabelColor.PALETTE.map { it.key }
         AnnotationLabelsRepositoryImpl.nextUnusedColor(taken) shouldBe LabelColor.GREEN

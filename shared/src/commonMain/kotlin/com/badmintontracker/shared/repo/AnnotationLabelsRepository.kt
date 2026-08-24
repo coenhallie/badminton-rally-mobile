@@ -7,9 +7,14 @@ import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Order
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -34,6 +39,41 @@ class AnnotationLabelsRepositoryImpl(
 
     private val state = MutableStateFlow(loadCache())
     override val labels: StateFlow<List<AnnotationLabel>> = state.asStateFlow()
+
+    /**
+     * A background scope this repository owns for exactly one job: see
+     * [cacheReconciliation] below. It is not threaded in from RallyApp because
+     * nothing in this codebase's app graph yet owns an app-lifetime scope with a
+     * teardown hook, and this repository is a singleton that lives as long as the
+     * process - a coroutine that runs once, completes, and never needs cancelling
+     * is not a leak on an object with that lifetime. Introducing a shared
+     * app-scope contract (who cancels it, when) for this one caller would be
+     * speculative infrastructure the rest of the graph does not need yet.
+     */
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /**
+     * supabase-kt restores a persisted session asynchronously: right after a
+     * fresh client is constructed, client.auth.currentUserOrNull() is null even
+     * when a session is on disk, and only settles once initialization finishes.
+     * [loadCache] runs synchronously in the constructor above, so on a real cold
+     * start it sees no owner and (correctly, fail-safe) publishes an empty list.
+     * That is fine for correctness but defeats the cache's purpose: the offline
+     * local-video label picker would be empty even though the data is sitting
+     * right there in Settings. This waits for the owner to actually be known,
+     * then re-reads the cache under that owner and publishes it - through the
+     * exact same [loadCache] owner check, so a still-unmatched or still-unknown
+     * owner still yields nothing. compareAndSet only overwrites an untouched
+     * (still-empty) state, so a refresh() that already landed real data while
+     * this was waiting is never clobbered by a stale cache read.
+     */
+    internal val cacheReconciliation: Job = scope.launch {
+        runCatching {
+            client.auth.awaitInitialization()
+            val reconciled = loadCache()
+            if (reconciled.isNotEmpty()) state.compareAndSet(emptyList(), reconciled)
+        }
+    }
 
     @Serializable private data class NewLabelRow(
         val name: String,

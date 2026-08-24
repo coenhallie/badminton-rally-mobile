@@ -2,9 +2,11 @@ package com.badmintontracker.shared
 
 import com.badmintontracker.shared.repo.userFacingMessage
 import com.badmintontracker.shared.auth.friendlyAuthError
-import com.badmintontracker.shared.model.AnnotationKind
+import com.badmintontracker.shared.model.AnnotationLabel
+import com.badmintontracker.shared.model.LabelColor
 import com.badmintontracker.shared.model.MatchShare
 import com.badmintontracker.shared.model.RallyAnnotation
+import com.badmintontracker.shared.repo.AnnotationLabelsRepository
 import com.badmintontracker.shared.repo.AnnotationsRepository
 import com.badmintontracker.shared.repo.AuthRepository
 import com.badmintontracker.shared.repo.ShareError
@@ -42,11 +44,31 @@ suspend fun AnnotationsRepository.addAnnotationForSwift(
     clipId: String,
     timestampSeconds: Float,
     body: String,
-    kind: AnnotationKind?,
-): AddAnnotationOutcome = add(clipId, timestampSeconds, body, kind).fold(
+    label: AnnotationLabel?,
+): AddAnnotationOutcome = add(clipId, timestampSeconds, body, label).fold(
     onSuccess = { AddAnnotationOutcome(it, null) },
     onFailure = { AddAnnotationOutcome(null, it.userFacingMessage("Couldn't add note")) },
 )
 
 suspend fun AnnotationsRepository.deleteAnnotationOrMessage(id: String): String? =
     delete(id).exceptionOrNull()?.let { it.userFacingMessage("Couldn't delete note") }
+
+class CreateLabelOutcome(val label: AnnotationLabel?, val errorMessage: String?)
+
+suspend fun AnnotationLabelsRepository.createLabelForSwift(name: String): CreateLabelOutcome =
+    create(name, null).fold(
+        onSuccess = { CreateLabelOutcome(it, null) },
+        onFailure = { CreateLabelOutcome(null, it.userFacingMessage("Couldn't add label")) },
+    )
+
+suspend fun AnnotationLabelsRepository.renameLabelOrMessage(id: String, name: String): String? =
+    rename(id, name).exceptionOrNull()?.let { it.userFacingMessage("Couldn't rename label") }
+
+suspend fun AnnotationLabelsRepository.recolorLabelOrMessage(id: String, color: LabelColor): String? =
+    recolor(id, color).exceptionOrNull()?.let { it.userFacingMessage("Couldn't change colour") }
+
+suspend fun AnnotationLabelsRepository.deleteLabelOrMessage(id: String): String? =
+    delete(id).exceptionOrNull()?.let { it.userFacingMessage("Couldn't delete label") }
+
+suspend fun AnnotationLabelsRepository.refreshLabelsOrMessage(): String? =
+    refresh().exceptionOrNull()?.let { it.userFacingMessage("Couldn't load labels") }

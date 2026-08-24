@@ -5,6 +5,8 @@ import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.prefs.PlaybackPreferenceRepository
 import com.badmintontracker.shared.prefs.ThemePreferenceRepository
+import com.badmintontracker.shared.repo.AnnotationLabelsRepository
+import com.badmintontracker.shared.repo.AnnotationLabelsRepositoryImpl
 import com.badmintontracker.shared.repo.AnnotationsRepository
 import com.badmintontracker.shared.repo.AnnotationsRepositoryImpl
 import com.badmintontracker.shared.repo.AuthRepository
@@ -45,6 +47,7 @@ class RallyApp(
     val auth:        AuthRepository        = AuthRepositoryImpl(client)
     val clips:       ClipsRepository       = ClipsRepositoryImpl(client)
     val annotations: AnnotationsRepository = AnnotationsRepositoryImpl(client)
+    val labels:      AnnotationLabelsRepository = AnnotationLabelsRepositoryImpl(client, settings)
     val media:       MediaRepository       = MediaRepositoryImpl(client)
     val shares:      SharesRepository      = SharesRepositoryImpl(client)
     val videos:      VideosRepository      = VideosRepositoryImpl(client)
