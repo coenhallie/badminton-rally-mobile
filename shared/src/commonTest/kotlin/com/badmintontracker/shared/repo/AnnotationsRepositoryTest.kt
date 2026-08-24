@@ -1,6 +1,6 @@
 package com.badmintontracker.shared.repo
 
-import com.badmintontracker.shared.model.AnnotationKind
+import com.badmintontracker.shared.model.AnnotationLabel
 import com.badmintontracker.shared.testing.TestSupabase
 import com.badmintontracker.shared.testing.jsonResponse
 import io.kotest.matchers.collections.shouldHaveSize
@@ -9,6 +9,7 @@ import io.kotest.matchers.string.shouldContain
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.TextContent
 import kotlinx.coroutines.test.runTest
+import kotlinx.datetime.Instant
 import kotlin.test.Test
 
 class AnnotationsRepositoryTest {
@@ -62,23 +63,31 @@ class AnnotationsRepositoryTest {
     }
 
     @Test
-    fun add_includes_kind_in_post_body_when_provided() = runTest {
+    fun add_snapshots_the_label_name_and_colour_into_the_post_body() = runTest {
         var captured: String? = null
         val client = TestSupabase.client { request ->
             captured = (request.body as? TextContent)?.text ?: ""
             jsonResponse(
                 """[{"id":"a1","clip_id":"c1","timestamp_seconds":1.5,"body":"",
-                    "kind":"unforced_error","created_at":"2026-05-04T12:00:00Z"}]""",
+                     "label_name":"Net kill","label_color":"teal",
+                     "created_at":"2026-08-24T12:00:00Z"}]""",
                 HttpStatusCode.Created,
             )
         }
         val repo = AnnotationsRepositoryImpl(client)
+        val label = AnnotationLabel(
+            id = "l4",
+            name = "Net kill",
+            colorKey = "teal",
+            createdAt = Instant.parse("2026-08-24T12:00:00Z"),
+        )
 
-        val result = repo.add("c1", 1.5f, "", AnnotationKind.UNFORCED_ERROR)
+        val result = repo.add("c1", 1.5f, "", label)
 
         result.isSuccess shouldBe true
-        result.getOrThrow().kind shouldBe AnnotationKind.UNFORCED_ERROR
-        captured!!.shouldContain(""""kind":"unforced_error"""")
+        result.getOrThrow().labelName shouldBe "Net kill"
+        captured!!.shouldContain(""""label_name":"Net kill"""")
+        captured!!.shouldContain(""""label_color":"teal"""")
     }
 
     @Test
