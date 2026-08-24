@@ -54,6 +54,13 @@ class ClipDetailViewModel(
         viewModelScope.launch {
             labels.labels.collect { list -> state.update { it.copy(labels = list) } }
         }
+        // Result deliberately discarded: AnnotationLabelsRepository already
+        // seeds `labels` from its own on-disk cache, so a failed refresh here
+        // still leaves a usable (if possibly stale) picker. Unlike a clip or
+        // annotation load failure, this has no snackbar of its own - a label
+        // refresh failing is not worth interrupting clip playback over. Contrast
+        // LocalPlayerViewModel, which has no other error-reporting path for
+        // labels and so surfaces this same failure through errorMessage.
         viewModelScope.launch { labels.refresh() }
         load()
     }

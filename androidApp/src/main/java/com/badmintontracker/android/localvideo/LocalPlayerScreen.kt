@@ -100,7 +100,12 @@ fun LocalPlayerScreen(
     var playbackError by remember { mutableStateOf<String?>(null) }
     val snackbar = remember { SnackbarHostState() }
 
-    LaunchedEffect(labelErrorMessage) {
+    // The snackbar host lives on the Scaffold, which fullscreen playback
+    // overlays with an opaque Box - showing it while isFullscreen is true
+    // would burn the message invisibly. Hold it and re-check when fullscreen
+    // exits instead of firing once and losing it.
+    LaunchedEffect(labelErrorMessage, isFullscreen) {
+        if (isFullscreen) return@LaunchedEffect
         val msg = labelErrorMessage ?: return@LaunchedEffect
         snackbar.showSnackbar(msg)
         vm.errorShown()

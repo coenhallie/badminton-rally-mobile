@@ -15,9 +15,14 @@ import com.badmintontracker.shared.model.LabelColor
  * A label's pill. [colorKey] null, or naming a swatch this build does not know,
  * renders the neutral chip rather than nothing: the name is the information, the
  * colour is decoration.
+ *
+ * A blank [name] renders nothing at all rather than an empty pill: the
+ * invariant lives here, not at each call site, so a future caller cannot
+ * forget it.
  */
 @Composable
 fun LabelBadge(name: String, colorKey: String?, modifier: Modifier = Modifier) {
+    if (name.isBlank()) return
     val swatch = LabelColor.from(colorKey)
     val container = swatch?.let { Color(it.background.toInt()) }
         ?: MaterialTheme.colorScheme.surfaceVariant

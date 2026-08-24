@@ -3,6 +3,7 @@ package com.badmintontracker.android.testing
 import com.badmintontracker.shared.model.AnnotationLabel
 import com.badmintontracker.shared.model.LabelColor
 import com.badmintontracker.shared.repo.AnnotationLabelsRepository
+import com.badmintontracker.shared.repo.AnnotationLabelsRepositoryImpl
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -29,8 +30,7 @@ class FakeAnnotationLabelsRepository(initial: List<AnnotationLabel> = emptyList(
     override suspend fun create(name: String, color: LabelColor?): Result<AnnotationLabel> {
         val trimmed = name.trim()
         validate(trimmed)?.let { return Result.failure(it) }
-        val takenKeys = state.value.map { it.colorKey }
-        val swatch = color ?: (LabelColor.PALETTE.firstOrNull { it.key !in takenKeys } ?: LabelColor.PALETTE.first())
+        val swatch = color ?: AnnotationLabelsRepositoryImpl.nextUnusedColor(state.value.map { it.colorKey })
         val row = AnnotationLabel(
             id = "label-${++nextId}",
             name = trimmed,
