@@ -3,6 +3,7 @@ package com.badmintontracker.shared
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
+import com.badmintontracker.shared.prefs.PlaybackPreferenceRepository
 import com.badmintontracker.shared.prefs.ThemePreferenceRepository
 import com.badmintontracker.shared.repo.AnnotationsRepository
 import com.badmintontracker.shared.repo.AnnotationsRepositoryImpl
@@ -51,7 +52,8 @@ class RallyApp(
     val authState: Flow<AuthState> = auth.sessionFlow.map { it.toAuthState() }
 
     // On-device local video registry + annotations (shared persistence, native UI).
-    val localVideos:      LocalVideoRepository       = LocalVideoRepository(settings, onLocalVideoRemoved)
-    val localAnnotations: LocalAnnotationsRepository = LocalAnnotationsRepository(settings)
-    val themePrefs:       ThemePreferenceRepository  = ThemePreferenceRepository(settings)
+    val localVideos:      LocalVideoRepository         = LocalVideoRepository(settings, onLocalVideoRemoved)
+    val localAnnotations: LocalAnnotationsRepository   = LocalAnnotationsRepository(settings)
+    val themePrefs:       ThemePreferenceRepository    = ThemePreferenceRepository(settings)
+    val playbackPrefs:    PlaybackPreferenceRepository = PlaybackPreferenceRepository(settings)
 }
