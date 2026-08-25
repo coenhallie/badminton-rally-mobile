@@ -1,4 +1,5 @@
 import XCTest
+import Shared
 @testable import iosApp
 
 final class MatchGroupingTests: XCTestCase {
@@ -19,7 +20,7 @@ final class MatchGroupingTests: XCTestCase {
             clip(id: "b", videoId: "v1", rallyIndex: 1, createdAt: 200),
             clip(id: "c", videoId: "v2", rallyIndex: 1, createdAt: 300),
         ]
-        let result = MatchGrouping.matches(from: clips, currentUserId: "me", sharerByVideoId: [:])
+        let result = MatchGrouping.matches(from: clips, currentUserId: "me", sharerByVideoId: [:], metadataByVideoId: [:])
         XCTAssertEqual(result.owned.map(\.videoId), ["v2", "v1"])   // latestCreatedAt desc
         XCTAssertEqual(result.owned[1].coverClipId, "b")            // min rallyIndex
         XCTAssertEqual(result.owned[1].rallyCount, 2)
@@ -30,7 +31,8 @@ final class MatchGroupingTests: XCTestCase {
     func testPartitionsSharedMatchesWithSharerEmail() {
         let clips = [clip(id: "a", videoId: "v9", owner: "someone-else", rallyIndex: 1, createdAt: 50)]
         let result = MatchGrouping.matches(
-            from: clips, currentUserId: "me", sharerByVideoId: ["v9": "coach@x.com"]
+            from: clips, currentUserId: "me", sharerByVideoId: ["v9": "coach@x.com"],
+            metadataByVideoId: [:]
         )
         XCTAssertTrue(result.owned.isEmpty)
         XCTAssertEqual(result.shared.first?.sharerEmail, "coach@x.com")
@@ -54,13 +56,13 @@ final class MatchGroupingTests: XCTestCase {
             titledClip(id: "a", videoId: "v1", rallyIndex: 0, title: "Thu League vs Marco"),
             titledClip(id: "b", videoId: "v1", rallyIndex: 1, title: "Thu League vs Marco"),
         ]
-        let result = MatchGrouping.matches(from: clips, currentUserId: "me", sharerByVideoId: [:])
+        let result = MatchGrouping.matches(from: clips, currentUserId: "me", sharerByVideoId: [:], metadataByVideoId: [:])
         XCTAssertEqual(result.owned.first?.title, "Thu League vs Marco")
     }
 
     func testMatchTitleIsNilWhenNoClipCarriesOne() {
         let clips = [titledClip(id: "a", videoId: "v1", rallyIndex: 0, title: nil)]
-        let result = MatchGrouping.matches(from: clips, currentUserId: "me", sharerByVideoId: [:])
+        let result = MatchGrouping.matches(from: clips, currentUserId: "me", sharerByVideoId: [:], metadataByVideoId: [:])
         XCTAssertNil(result.owned.first?.title)
     }
 
@@ -70,7 +72,7 @@ final class MatchGroupingTests: XCTestCase {
             titledClip(id: "b", videoId: "v1", rallyIndex: 1, title: "Thu League vs Marco"),
             titledClip(id: "c", videoId: "v1", rallyIndex: 2, title: "Thu League vs Marco"),
         ]
-        let result = MatchGrouping.matches(from: clips, currentUserId: "me", sharerByVideoId: [:])
+        let result = MatchGrouping.matches(from: clips, currentUserId: "me", sharerByVideoId: [:], metadataByVideoId: [:])
         XCTAssertEqual(result.owned.first?.title, "Thu League vs Marco")
     }
 
@@ -78,7 +80,8 @@ final class MatchGroupingTests: XCTestCase {
         MatchSummary(
             videoId: "v", rallyCount: rallyCount,
             latestCreatedAtMillis: 1_784_980_800_000,
-            coverClipId: "c", isOwned: true, sharerEmail: nil, title: title
+            coverClipId: "c", isOwned: true, sharerEmail: nil, title: title,
+            description: nil
         )
     }
 
@@ -125,5 +128,45 @@ final class MatchGroupingTests: XCTestCase {
     func testUntitledClipInAnUnnamedMatchShowsItsRallyNumber() {
         let c = titledClip(id: "a", videoId: "v1", rallyIndex: 3, title: nil)
         XCTAssertEqual(clipRowTitle(c, matchTitle: nil), "Rally #3")
+    }
+
+    // MARK: - Match metadata merge (mirrors Android MatchMetadataMergeTest)
+
+    func testMatchTakesItsTitleAndDescriptionFromTheMetadataMap() {
+        let clips = [titledClip(id: "a", videoId: "v1", rallyIndex: 0, title: nil)]
+
+        let result = MatchGrouping.matches(
+            from: clips, currentUserId: "me", sharerByVideoId: [:],
+            metadataByVideoId: [
+                "v1": MatchMetadata(videoId: "v1", title: "Thu League vs Marco", description: "Indoor court 2.")
+            ]
+        )
+
+        XCTAssertEqual(result.owned.first?.title, "Thu League vs Marco")
+        XCTAssertEqual(result.owned.first?.description, "Indoor court 2.")
+    }
+
+    func testVideoAbsentFromTheMapFallsBackToTheClipStampedName() {
+        // The RPC is soft-failing, so an empty map is the transient-error case as
+        // well as the never-named case; neither may blank out a visible name.
+        let clips = [titledClip(id: "a", videoId: "v1", rallyIndex: 0, title: "Thu League vs Marco")]
+
+        let result = MatchGrouping.matches(
+            from: clips, currentUserId: "me", sharerByVideoId: [:], metadataByVideoId: [:]
+        )
+
+        XCTAssertEqual(result.owned.first?.title, "Thu League vs Marco")
+        XCTAssertNil(result.owned.first?.description)
+    }
+
+    func testMatchWithNeitherSourceKeepsItsDateHeadline() {
+        let clips = [titledClip(id: "a", videoId: "v1", rallyIndex: 0, title: nil)]
+
+        let result = MatchGrouping.matches(
+            from: clips, currentUserId: "me", sharerByVideoId: [:], metadataByVideoId: [:]
+        )
+
+        XCTAssertNil(result.owned.first?.title)
+        XCTAssertEqual(matchRowPrimary(result.owned[0]), "Match \u{00B7} Jul 25, 2026")
     }
 }

@@ -31,8 +31,10 @@ struct MatchSummary: Equatable {
     let coverClipId: String
     let isOwned: Bool
     let sharerEmail: String?
-    /// Match name typed in the web app at upload; nil for older/unnamed matches.
+    /// Match name, from videos.title (typed on the phone or in the web app).
     let title: String?
+    /// Match description, from videos.description. Phone-only; the web app has no field.
+    let description: String?
 }
 
 /// The match name the web app stamps onto every clip of a video at cut time.
@@ -55,7 +57,8 @@ enum MatchGrouping {
     static func matches(
         from clips: [ClipInfo],
         currentUserId: String?,
-        sharerByVideoId: [String: String]
+        sharerByVideoId: [String: String],
+        metadataByVideoId: [String: MatchMetadata]
     ) -> (owned: [MatchSummary], shared: [MatchSummary]) {
         let all = Dictionary(grouping: clips, by: \.videoId)
             .map { videoId, list -> MatchSummary in
@@ -68,7 +71,10 @@ enum MatchGrouping {
                     coverClipId: cover.id,
                     isOwned: owned,
                     sharerEmail: owned ? nil : sharerByVideoId[videoId],
-                    title: matchTitle(of: list)
+                    // videos.title is authoritative; the clip-stamped copy is the
+                    // fallback that keeps names on screen when the RPC is unreachable.
+                    title: metadataByVideoId[videoId]?.title ?? matchTitle(of: list),
+                    description: metadataByVideoId[videoId]?.description_
                 )
             }
             .sorted { $0.latestCreatedAtMillis > $1.latestCreatedAtMillis }

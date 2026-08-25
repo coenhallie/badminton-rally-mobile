@@ -4,6 +4,7 @@ import com.badmintontracker.shared.repo.userFacingMessage
 import com.badmintontracker.shared.auth.friendlyAuthError
 import com.badmintontracker.shared.model.AnnotationLabel
 import com.badmintontracker.shared.model.LabelColor
+import com.badmintontracker.shared.model.MatchMetadata
 import com.badmintontracker.shared.model.MatchShare
 import com.badmintontracker.shared.model.RallyAnnotation
 import com.badmintontracker.shared.repo.AnnotationLabelsRepository
@@ -31,6 +32,10 @@ suspend fun SharesRepository.unshareOrMessage(videoId: String, userId: String): 
 
 suspend fun SharesRepository.listSharesOrNull(videoId: String): List<MatchShare>? =
     listShares(videoId).getOrNull()
+
+/** Soft-failing read: nil means "leave whatever titles are already on screen". */
+suspend fun VideosRepository.listMatchMetadataOrNull(): List<MatchMetadata>? =
+    listMatchMetadata().getOrNull()
 
 suspend fun VideosRepository.deleteMatchOrMessage(videoId: String): String? =
     deleteMatch(videoId).exceptionOrNull()?.let { "Couldn't delete the match. Please try again." }

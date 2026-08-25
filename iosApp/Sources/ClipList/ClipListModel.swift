@@ -11,6 +11,7 @@ final class ClipListModel {
     var isRefreshing = false
     var error: String? = nil
     private var sharerByVideoId: [String: String] = [:]
+    private var metadataByVideoId: [String: MatchMetadata] = [:]
 
     init(rally: RallyApp) { self.rally = rally }
 
@@ -37,6 +38,11 @@ final class ClipListModel {
                     r.sharerEmail.map { (r.videoId, $0) }
                 }
             )
+        }
+        // Same soft-failure contract as the shares lookup: a nil result leaves the
+        // previous map alone rather than blanking every name the user can see.
+        if let rows = try? await SwiftInteropKt.listMatchMetadataOrNull(rally.videos) {
+            metadataByVideoId = Dictionary(uniqueKeysWithValues: rows.map { ($0.videoId, $0) })
         }
         regroup()
         isRefreshing = false
@@ -78,7 +84,8 @@ final class ClipListModel {
         let result = MatchGrouping.matches(
             from: infos,
             currentUserId: rally.auth.currentUserId(),
-            sharerByVideoId: sharerByVideoId
+            sharerByVideoId: sharerByVideoId,
+            metadataByVideoId: metadataByVideoId
         )
         owned = result.owned
         shared = result.shared

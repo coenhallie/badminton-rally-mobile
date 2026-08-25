@@ -29,6 +29,13 @@ enum LocalVideoStatus {
         LocalVideoEntryKt.canRemoveLocalVideo(stage: stage)
     }
 
+    /// Title and description ride along on the videos INSERT and the database
+    /// grants no UPDATE on either column, so editing stops the moment the entry
+    /// leaves LOCAL. Forwards the shared rule so both platforms match.
+    static func canEditDetails(stage: AnalyzeStage) -> Bool {
+        LocalVideoEntryKt.canEditLocalVideoDetails(stage: stage)
+    }
+
     /// Row spinner: only while the pipeline is actively working. Settled
     /// stages (ANALYZED in particular) must not spin forever.
     static func isRunning(stage: AnalyzeStage) -> Bool {

@@ -15,6 +15,8 @@ final class LocalVideoCleanupWiringTests: XCTestCase {
             durationMs: 1000,
             sizeBytes: 2,
             addedAtEpochMs: 1,
+            title: nil,
+            description: nil,
             keypoints: nil,
             stage: .local,
             failedStep: nil,
@@ -58,7 +60,8 @@ final class LocalVideoCleanupWiringTests: XCTestCase {
         let id = "wiring-\(UUID().uuidString)"
         rally.localVideos.add(entry: LocalVideoEntry(
             id: id, uri: relativePath, displayName: "m.mp4", durationMs: 1000,
-            sizeBytes: 2, addedAtEpochMs: 1, keypoints: nil, stage: .local,
+            sizeBytes: 2, addedAtEpochMs: 1, title: nil, description: nil,
+            keypoints: nil, stage: .local,
             failedStep: nil, failureMessage: nil, resultSeen: false
         ))
         XCTAssertTrue(FileManager.default.fileExists(atPath: stored.path))

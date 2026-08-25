@@ -65,4 +65,17 @@ final class LocalVideoStatusTests: XCTestCase {
         XCTAssertFalse(LocalVideoStatus.canRemove(stage: .uploading))
         XCTAssertFalse(LocalVideoStatus.canRemove(stage: .processing))
     }
+
+    func testDetailsEditableOnlyBeforeThePipelineStarts() {
+        // Metadata rides on the videos INSERT and the DB grants no UPDATE on
+        // either column, so any stage past LOCAL means the row is already
+        // written (or about to be) with what the user last saw. FAILED is
+        // included deliberately: the stage alone cannot tell a run that failed
+        // at UPLOAD, with no row yet, from one that failed after CREATE_ROW.
+        XCTAssertTrue(LocalVideoStatus.canEditDetails(stage: .local))
+        XCTAssertFalse(LocalVideoStatus.canEditDetails(stage: .uploading))
+        XCTAssertFalse(LocalVideoStatus.canEditDetails(stage: .processing))
+        XCTAssertFalse(LocalVideoStatus.canEditDetails(stage: .analyzed))
+        XCTAssertFalse(LocalVideoStatus.canEditDetails(stage: .failed))
+    }
 }

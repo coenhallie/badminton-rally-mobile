@@ -16,6 +16,7 @@ struct ClipListView: View {
     @State private var resultEntry: LocalVideoEntry? = nil
     @State private var navigationTarget: CourtMarkingRoute? = nil
     @State private var showLabels = false
+    @State private var detailsTarget: MatchDetailsTarget? = nil
 
     init(rally: RallyApp, analyze: AnalyzeCoordinator) {
         self.rally = rally
@@ -91,6 +92,26 @@ struct ClipListView: View {
         .sheet(item: $shareTarget) { match in
             ShareSheetView(rally: rally, videoId: match.videoId)
         }
+        .sheet(item: $detailsTarget) { target in
+            MatchDetailsSheet(
+                entry: target.entry,
+                autoOpened: target.autoOpened,
+                onSave: { title, description in
+                    rally.localVideos.setDetails(
+                        id: target.entry.id,
+                        title: LocalVideoDetailsKt.normalizeTitle(raw: title),
+                        description: LocalVideoDetailsKt.normalizeDescription(raw: description)
+                    )
+                }
+            )
+        }
+        .onChange(of: intake.lastAddedId) { _, id in
+            // The entry is already persisted by the time this fires, so a skipped
+            // sheet never costs the video that was just imported or recorded.
+            guard let id, let entry = localEntries.first(where: { $0.id == id }) else { return }
+            detailsTarget = MatchDetailsTarget(entry: entry, autoOpened: true)
+            intake.lastAddedId = nil
+        }
         .sheet(isPresented: $showImporter) {
             VideoPicker(
                 onPicked: { tempURL, suggestedName in
@@ -156,6 +177,9 @@ struct ClipListView: View {
                             onRemove: {
                                 intake.remove(entry: entry)
                                 thumbnails.evict(id: entry.id)
+                            },
+                            onEditDetails: {
+                                detailsTarget = MatchDetailsTarget(entry: entry, autoOpened: false)
                             }
                         )
                         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
@@ -266,6 +290,12 @@ struct ClipListView: View {
                         .font(.system(size: 11, weight: .medium))
                         .kerning(0.55)
                         .foregroundStyle(Shuttl.textSecondary)
+                    if let description = match.description {
+                        Text(description)
+                            .font(.footnote)
+                            .foregroundStyle(Shuttl.textSecondary)
+                            .lineLimit(2)
+                    }
                     if let sharer = match.sharerEmail {
                         Text("Shared by \(sharer)")
                             .font(.footnote)
@@ -291,6 +321,13 @@ struct ClipListView: View {
         let b = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
         return "Version \(v) (\(b))"
     }
+}
+
+/// `autoOpened` switches the sheet's dismiss label between "Skip" and "Cancel".
+struct MatchDetailsTarget: Identifiable {
+    let entry: LocalVideoEntry
+    let autoOpened: Bool
+    var id: String { entry.id }
 }
 
 extension MatchSummary: Identifiable {

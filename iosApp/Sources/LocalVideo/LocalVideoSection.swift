@@ -13,6 +13,7 @@ struct LocalVideoRowView: View {
     let progress: AnalyzeProgress?
     let onAnalyze: () -> Void
     let onRemove: () -> Void
+    let onEditDetails: () -> Void
 
     private var subtitle: String {
         let duration = LocalVideoLogic.formatDuration(ms: entry.durationMs)
@@ -35,7 +36,7 @@ struct LocalVideoRowView: View {
                 .task { await thumbnails.load(for: entry) }
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(entry.displayName)
+                    Text(entry.title ?? entry.displayName)
                         .font(.body.weight(.medium))
                         .foregroundStyle(Shuttl.text)
                         .lineLimit(1)
@@ -72,9 +73,17 @@ struct LocalVideoRowView: View {
                     ProgressView()
                         .controlSize(.small)
                 }
-                if LocalVideoStatus.canRemove(stage: entry.stage) {
+                // The menu renders when either action applies; each item is gated
+                // on its own rule, so a mid-pipeline row shows no menu at all.
+                if LocalVideoStatus.canRemove(stage: entry.stage)
+                    || LocalVideoStatus.canEditDetails(stage: entry.stage) {
                     Menu {
-                        Button("Remove from app", role: .destructive) { onRemove() }
+                        if LocalVideoStatus.canEditDetails(stage: entry.stage) {
+                            Button("Edit details") { onEditDetails() }
+                        }
+                        if LocalVideoStatus.canRemove(stage: entry.stage) {
+                            Button("Remove from app", role: .destructive) { onRemove() }
+                        }
                     } label: {
                         Image(systemName: "ellipsis")
                     }

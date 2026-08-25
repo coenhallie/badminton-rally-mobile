@@ -9,6 +9,9 @@ import Shared
 final class LocalVideoIntake {
     let rally: RallyApp
     var error: String? = nil
+    /// Id of the entry this intake just persisted, for the host view to open the
+    /// details sheet over. Cleared by the host once it has acted on it.
+    var lastAddedId: String? = nil
 
     init(rally: RallyApp) { self.rally = rally }
 
@@ -42,19 +45,25 @@ final class LocalVideoIntake {
         }
 
         let durationMs = await loadDurationMs(LocalVideoFiles.resolve(relativePath: relativePath))
+        // Persist first, then surface the id: a dismissed details sheet, a
+        // backgrounded app or a crash must never cost the video just taken.
+        let id = UUID().uuidString
         rally.localVideos.add(entry: LocalVideoEntry(
-            id: UUID().uuidString,
+            id: id,
             uri: relativePath,
             displayName: displayName,
             durationMs: durationMs,
             sizeBytes: sizeBytes,
             addedAtEpochMs: epochMs,
+            title: nil,
+            description: nil,
             keypoints: nil,
             stage: .local,
             failedStep: nil,
             failureMessage: nil,
             resultSeen: false
         ))
+        lastAddedId = id
     }
 
     func remove(entry: LocalVideoEntry) {

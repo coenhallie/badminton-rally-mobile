@@ -81,6 +81,15 @@ struct LocalPlayerView: View {
                     .onTapGesture { model.actionError = nil }
             }
 
+            if let description = (liveEntry ?? model.entry).description_ {
+                Text(description)
+                    .font(.subheadline)
+                    .foregroundStyle(Shuttl.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+            }
+
             List {
                 ForEach(model.annotations, id: \.id) { annotation in
                     annotationRow(annotation, model: model)
@@ -91,7 +100,10 @@ struct LocalPlayerView: View {
             }
             .listStyle(.plain)
         }
-        .navigationTitle((liveEntry ?? model.entry).displayName)
+        .navigationTitle({
+            let e = liveEntry ?? model.entry
+            return e.title ?? e.displayName
+        }())
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 // Live stage, not the model's load-time snapshot: after "Start

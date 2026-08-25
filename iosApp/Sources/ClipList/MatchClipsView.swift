@@ -6,10 +6,17 @@ struct MatchClipsView: View {
     let videoId: String
     @State private var clips: [RallyClip] = []
     @State private var sort: ClipSort = .rallyOrder
+    // Fetched here rather than handed down: the list navigates by video id alone,
+    // and a soft-failing read is cheaper than threading a summary through the route.
+    @State private var metadata: MatchMetadata? = nil
 
     private var sortedClips: [RallyClip] { sort.sorted(clips) }
 
-    private var matchName: String? { matchTitle(of: clips.map(ClipInfo.init)) }
+    private var matchName: String? {
+        // videos.title is authoritative; the clip-stamped copy keeps the name on
+        // screen when the RPC is unreachable.
+        metadata?.title ?? matchTitle(of: clips.map(ClipInfo.init))
+    }
 
     private var title: String {
         if let name = matchName {
@@ -23,6 +30,11 @@ struct MatchClipsView: View {
 
     var body: some View {
         List {
+            if let description = metadata?.description_ {
+                Text(description)
+                    .font(.subheadline)
+                    .foregroundStyle(Shuttl.textSecondary)
+            }
             if clips.isEmpty {
                 Text("No rallies in this match.")
                     .foregroundStyle(Shuttl.textSecondary)
@@ -45,6 +57,11 @@ struct MatchClipsView: View {
         }
         .listStyle(.plain)
         .refreshable { try? await rally.clips.refresh() }
+        .task {
+            // Soft failure: no metadata just means the date headline, as before.
+            let rows = try? await SwiftInteropKt.listMatchMetadataOrNull(rally.videos)
+            metadata = rows?.first { $0.videoId == videoId }
+        }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
