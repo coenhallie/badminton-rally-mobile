@@ -5,7 +5,7 @@ import Shared
 final class LabelsModel: ObservableObject {
     private let rally: RallyApp
     @Published var labels: [AnnotationLabel] = []
-    @Published var expandedId: String? = nil
+    @Published var expanded: LabelEditTarget? = nil
     @Published var errorMessage: String? = nil
 
     init(rally: RallyApp) {
@@ -27,15 +27,34 @@ final class LabelsModel: ObservableObject {
 
     /// Passing the id already expanded collapses it, so a row is its own toggle.
     func expand(_ id: String) {
-        expandedId = LabelsLogic.nextExpanded(current: expandedId, tapped: id)
+        expanded = LabelsLogic.nextExpanded(current: expanded, tapped: .existing(id))
     }
 
+    /// Opens (or, tapped again, closes) the draft row the toolbar "+" and the
+    /// empty state's action button both call. Nothing is created yet -
+    /// [create] below does that once the draft's name is committed - so
+    /// backing out of the draft without typing anything never touches the
+    /// server.
+    func startCreating() {
+        expanded = LabelsLogic.nextExpanded(current: expanded, tapped: .new)
+    }
+
+    /// Unlike [rename]/[recolor]/[delete], a failed create leaves the draft
+    /// row open (its typed name and chosen colour survive in the view's own
+    /// local state) rather than collapsing it - a rejected duplicate name is
+    /// recoverable in place instead of forcing the user to reopen the row
+    /// and retype. A successful create hands the new row's own id to
+    /// `.existing`, so the same in-place editor keeps showing, now bound to
+    /// the real, persisted label.
     func create(_ name: String, color: LabelColor) async {
         guard let outcome = try? await SwiftInteropKt.createLabelForSwift(rally.labels, name: name, color: color) else {
             errorMessage = "Couldn't add label"
             return
         }
         errorMessage = outcome.errorMessage
+        if let created = outcome.label {
+            expanded = .existing(created.id)
+        }
     }
 
     /// Returns whether the rename succeeded, so the editor can roll its local
