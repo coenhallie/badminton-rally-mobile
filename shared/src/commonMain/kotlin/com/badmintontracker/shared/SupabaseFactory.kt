@@ -14,6 +14,12 @@ import io.ktor.client.engine.HttpClientEngine
 fun buildSupabaseClient(
     config: SupabaseConfig,
     settings: Settings,
+    /**
+     * Where the auth session (access + refresh token) is persisted. Kept separate
+     * from [settings] so platforms can back it with secure storage - iOS passes a
+     * Keychain-backed store. Defaults to [settings] for callers that don't care.
+     */
+    sessionSettings: Settings = settings,
     httpEngine: HttpClientEngine? = null,
     /** Override the TUS upload-url cache (tests inject an in-memory one). */
     resumableCache: ResumableCache? = null,
@@ -25,7 +31,7 @@ fun buildSupabaseClient(
     install(Auth) {
         scheme = config.deeplinkScheme
         host   = config.deeplinkHost
-        sessionManager = SettingsSessionManager(settings)
+        sessionManager = SettingsSessionManager(sessionSettings)
     }
     install(Postgrest)
     install(Storage) {

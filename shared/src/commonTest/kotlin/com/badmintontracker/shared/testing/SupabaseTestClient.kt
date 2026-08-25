@@ -24,11 +24,13 @@ object TestSupabase {
 
     fun client(
         settings: Settings = MapSettings(),
+        sessionSettings: Settings = settings,
         resumableCache: ResumableCache? = null,
         handler: MockRequestHandler,
     ): SupabaseClient = buildSupabaseClient(
         config = config,
         settings = settings,
+        sessionSettings = sessionSettings,
         httpEngine = MockEngine { request -> handler(request) },
         resumableCache = resumableCache,
     )

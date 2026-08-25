@@ -26,9 +26,14 @@ import kotlinx.coroutines.flow.map
 class RallyApp(
     config: SupabaseConfig,
     private val settings: Settings,
+    /**
+     * Secure store for the auth session. Defaults to [settings]; iOS passes a
+     * Keychain-backed store so the refresh token never sits in a plaintext plist.
+     */
+    sessionSettings: Settings = settings,
     httpEngine: HttpClientEngine? = null,
 ) {
-    val client: SupabaseClient = buildSupabaseClient(config, settings, httpEngine)
+    val client: SupabaseClient = buildSupabaseClient(config, settings, sessionSettings, httpEngine)
     val auth:        AuthRepository        = AuthRepositoryImpl(client)
     val clips:       ClipsRepository       = ClipsRepositoryImpl(client)
     val annotations: AnnotationsRepository = AnnotationsRepositoryImpl(client)
