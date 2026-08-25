@@ -45,10 +45,19 @@ targets:
           cd "$SRCROOT/.."
           ./gradlew :shared:embedAndSignAppleFrameworkForXcode
     scheme:
-      testTargets: [iosAppTests]
+      testTargets: [iosAppTests, iosAppUITests]
   iosAppTests:
     type: bundle.unit-test
     platform: iOS
     sources: [Tests]
+    dependencies:
+      - target: iosApp
+  # Hit testing is not reachable from a unit test: the swatch-grid bug that
+  # motivated this target was a SwiftUI List routing one tap to every button in
+  # the cell, which only a real touch through the accessibility API reproduces.
+  iosAppUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UITests]
     dependencies:
       - target: iosApp

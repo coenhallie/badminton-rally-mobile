@@ -67,6 +67,7 @@ struct ClipListView: View {
                     } label: {
                         Image(systemName: "ellipsis")
                     }
+                    .accessibilityLabel("Menu")
                 }
             }
         }

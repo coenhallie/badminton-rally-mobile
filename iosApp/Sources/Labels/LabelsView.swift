@@ -231,7 +231,16 @@ private struct SwatchGrid: View {
                             )
                         )
                 }
+                // Not cosmetic, and not optional. Inside a List row SwiftUI gives
+                // an .automatic-style button cell-wide activation, so one tap ran
+                // all ten actions in palette order and the last write (slate) won
+                // - whichever swatch was actually touched. .plain restores a hit
+                // region per button. See LabelSwatchGridUITests.
+                .buttonStyle(.plain)
                 .accessibilityLabel(swatch.key.capitalized)
+                // Without this the ring is the only signal, so VoiceOver cannot
+                // tell which swatch is current - and neither can a UI test.
+                .accessibilityAddTraits(swatch.key == selectedKey ? [.isSelected] : [])
             }
         }
     }
