@@ -16,7 +16,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -28,7 +27,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -51,6 +49,7 @@ import com.badmintontracker.android.localvideo.AnalyzeResultDialog
 import com.badmintontracker.android.localvideo.LocalVideoRow
 import com.badmintontracker.android.localvideo.localVideoSection
 import com.badmintontracker.android.share.ShareSheet
+import com.badmintontracker.android.ui.components.ConfirmDialog
 import com.badmintontracker.android.ui.components.SwipeToRemoveRow
 import com.badmintontracker.android.ui.components.ThemeToggleButton
 import com.badmintontracker.shared.localvideo.AnalyzeStage
@@ -86,6 +85,7 @@ fun ClipListScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     var sheetVideoId by remember { mutableStateOf<String?>(null) }
     var deleteTarget by remember { mutableStateOf<MatchSummary?>(null) }
+    var leaveShareTarget by remember { mutableStateOf<MatchSummary?>(null) }
     var localRemoveTarget by remember { mutableStateOf<LocalVideoEntry?>(null) }
 
     LaunchedEffect(state.error) {
@@ -209,7 +209,7 @@ fun ClipListScreen(
                         items(state.sharedMatches, key = { "shared-${it.videoId}" }) { match ->
                             SwipeToRemoveRow(
                                 label = "Remove",
-                                onSwiped = { vm.leaveShare(match.videoId); false },
+                                onSwiped = { leaveShareTarget = match; false },
                             ) {
                                 MatchRow(
                                     match = match,
@@ -243,34 +243,32 @@ fun ClipListScreen(
     }
 
     localRemoveTarget?.let { entry ->
-        AlertDialog(
-            onDismissRequest = { localRemoveTarget = null },
-            title = { Text("Remove video?") },
-            text = { Text("Remove this video and its notes from the app? The video itself stays on your phone.") },
-            confirmButton = {
-                TextButton(onClick = { onLocalRemove(entry); localRemoveTarget = null }) {
-                    Text("Remove")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { localRemoveTarget = null }) { Text("Cancel") }
-            },
+        ConfirmDialog(
+            title = "Remove video?",
+            message = "Remove this video and its notes from the app? The video itself stays on your phone.",
+            confirmLabel = "Remove",
+            onConfirm = { onLocalRemove(entry); localRemoveTarget = null },
+            onDismiss = { localRemoveTarget = null },
         )
     }
 
     deleteTarget?.let { match ->
-        AlertDialog(
-            onDismissRequest = { deleteTarget = null },
-            title = { Text("Delete match?") },
-            text = { Text("Delete this match and all its rally clips? This can't be undone.") },
-            confirmButton = {
-                TextButton(onClick = { vm.deleteMatch(match.videoId); deleteTarget = null }) {
-                    Text("Delete")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { deleteTarget = null }) { Text("Cancel") }
-            },
+        ConfirmDialog(
+            title = "Delete match?",
+            message = "Delete this match and all its rally clips? This can't be undone.",
+            confirmLabel = "Delete",
+            onConfirm = { vm.deleteMatch(match.videoId); deleteTarget = null },
+            onDismiss = { deleteTarget = null },
+        )
+    }
+
+    leaveShareTarget?.let { match ->
+        ConfirmDialog(
+            title = "Remove shared match?",
+            message = "Remove this shared match from your list? You'll need the owner to share it again.",
+            confirmLabel = "Remove",
+            onConfirm = { vm.leaveShare(match.videoId); leaveShareTarget = null },
+            onDismiss = { leaveShareTarget = null },
         )
     }
 }
