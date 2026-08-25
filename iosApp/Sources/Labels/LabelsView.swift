@@ -38,7 +38,7 @@ struct LabelsView: View {
                     if model.expanded == .new {
                         DraftLabelEditor(
                             existingColorKeys: model.labels.map(\.colorKey),
-                            onCreate: { name, color in Task { await model.create(name, color: color) } }
+                            onCreate: { name, color in await model.create(name, color: color) }
                         )
                     }
                     ForEach(model.labels, id: \.id) { label in
@@ -171,7 +171,7 @@ private struct EditorFields: View {
 /// Renames an existing, already-persisted label. A fresh instance is created
 /// each time a row expands (the `if expanded` branch in `LabelRow` mounts it
 /// new), so `name` seeds from `label.name` at construction with no blank
-/// first frame to fill in afterward. `lastCommitted` guards against sending
+/// first frame to fill in afterward. `commitGuard` guards against sending
 /// the same rename twice; a rejected rename (a duplicate name is a normal,
 /// user-visible outcome here) rolls it back so retyping the same text after
 /// resolving the collision is not silently treated as a no-op.
@@ -181,14 +181,14 @@ private struct LabelEditor: View {
     let onRecolor: (LabelColor) -> Void
 
     @State private var name: String
-    @State private var lastCommitted: String
+    @State private var commitGuard: CommitGuard
 
     init(label: AnnotationLabel, onRename: @escaping (String) async -> Bool, onRecolor: @escaping (LabelColor) -> Void) {
         self.label = label
         self.onRename = onRename
         self.onRecolor = onRecolor
         _name = State(initialValue: label.name)
-        _lastCommitted = State(initialValue: label.name)
+        _commitGuard = State(initialValue: CommitGuard(lastCommitted: label.name))
     }
 
     var body: some View {
@@ -197,12 +197,11 @@ private struct LabelEditor: View {
 
     private func commit() {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, trimmed != lastCommitted else { return }
-        let previous = lastCommitted
-        lastCommitted = trimmed
+        let previous = commitGuard.lastCommitted
+        guard commitGuard.begin(trimmed) else { return }
         Task {
             let succeeded = await onRename(trimmed)
-            if !succeeded { lastCommitted = previous }
+            if !succeeded { commitGuard.failed(previous: previous) }
         }
     }
 }
@@ -253,12 +252,23 @@ private struct SwatchGrid: View {
 /// to the new label's own id, and this view stops being shown - the *same*
 /// [EditorFields] then keeps rendering, bound to the real row, inside
 /// [LabelEditor].
+///
+/// `commitGuard` mirrors [LabelEditor]'s: `EditorFields` fires `onCommit` on
+/// both Done and the focus loss that follows the keyboard dismissing, so a
+/// single Done press reaches `commit()` twice. Without the guard the second
+/// call resubmits the same name as a second, phantom create, which the
+/// repository's duplicate-name check correctly rejects - so the label is
+/// created and an error is shown anyway. A rejected create (a genuine
+/// duplicate name is a normal, user-visible outcome here) rolls the guard
+/// back so retyping the same text after resolving the collision still
+/// dispatches instead of being silently treated as a no-op.
 private struct DraftLabelEditor: View {
     let existingColorKeys: [String]
-    let onCreate: (String, LabelColor) -> Void
+    let onCreate: (String, LabelColor) async -> Bool
 
     @State private var name = ""
     @State private var selected: LabelColor = LabelColor.green
+    @State private var commitGuard = CommitGuard()
 
     var body: some View {
         EditorFields(name: $name, selectedKey: selected.key, onSelectColor: { selected = $0 }, onCommit: commit)
@@ -269,7 +279,11 @@ private struct DraftLabelEditor: View {
 
     private func commit() {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        onCreate(trimmed, selected)
+        let previous = commitGuard.lastCommitted
+        guard commitGuard.begin(trimmed) else { return }
+        Task {
+            let succeeded = await onCreate(trimmed, selected)
+            if !succeeded { commitGuard.failed(previous: previous) }
+        }
     }
 }

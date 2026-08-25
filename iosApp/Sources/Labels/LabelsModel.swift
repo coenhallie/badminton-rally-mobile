@@ -46,15 +46,22 @@ final class LabelsModel: ObservableObject {
     /// and retype. A successful create hands the new row's own id to
     /// `.existing`, so the same in-place editor keeps showing, now bound to
     /// the real, persisted label.
-    func create(_ name: String, color: LabelColor) async {
+    ///
+    /// Returns whether the create succeeded, the same way [rename] does, so
+    /// `DraftLabelEditor` can roll its commit guard back on failure instead
+    /// of treating a rejected create as if it had gone through.
+    @discardableResult
+    func create(_ name: String, color: LabelColor) async -> Bool {
         guard let outcome = try? await SwiftInteropKt.createLabelForSwift(rally.labels, name: name, color: color) else {
             errorMessage = "Couldn't add label"
-            return
+            return false
         }
         errorMessage = outcome.errorMessage
         if let created = outcome.label {
             expanded = .existing(created.id)
+            return true
         }
+        return false
     }
 
     /// Returns whether the rename succeeded, so the editor can roll its local
