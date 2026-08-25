@@ -3,6 +3,7 @@ package com.badmintontracker.shared.repo
 import com.badmintontracker.shared.model.AnnotationLabel
 import com.badmintontracker.shared.testing.TestSupabase
 import com.badmintontracker.shared.testing.jsonResponse
+import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -22,6 +23,63 @@ class AnnotationsRepositoryTest {
          "created_at":"2026-05-04T12:00:01Z"}
       ]
     """.trimIndent()
+
+    private val oneAnnotation = """
+      [
+        {"id":"a3","clip_id":"c9","timestamp_seconds":2.0,"body":"third",
+         "created_at":"2026-05-04T12:00:02Z"}
+      ]
+    """.trimIndent()
+
+    @Test
+    fun listForClips_filters_by_an_in_list() = runTest {
+        var capturedUrl: String? = null
+        val client = TestSupabase.client { request ->
+            capturedUrl = request.url.toString()
+            jsonResponse(twoAnnotations)
+        }
+        val repo = AnnotationsRepositoryImpl(client)
+
+        val items = repo.listForClips(listOf("c1", "c2")).getOrThrow()
+
+        items shouldHaveSize 2
+        capturedUrl!!.shouldContain("rally_annotations")
+        // The operator and the ids, not the exact encoding: postgrest
+        // percent-encodes the parentheses and comma, and that is not this
+        // test's contract.
+        capturedUrl!!.shouldContain("clip_id=in.")
+        capturedUrl!!.shouldContain("c1")
+        capturedUrl!!.shouldContain("c2")
+    }
+
+    @Test
+    fun listForClips_issues_no_request_for_an_empty_list() = runTest {
+        var requests = 0
+        val client = TestSupabase.client {
+            requests++
+            jsonResponse("[]")
+        }
+        val repo = AnnotationsRepositoryImpl(client)
+
+        repo.listForClips(emptyList()).getOrThrow().shouldBeEmpty()
+
+        requests shouldBe 0
+    }
+
+    @Test
+    fun listForClips_chunks_past_a_hundred_ids_and_merges_the_results() = runTest {
+        var requests = 0
+        val client = TestSupabase.client {
+            requests++
+            jsonResponse(if (requests == 1) twoAnnotations else oneAnnotation)
+        }
+        val repo = AnnotationsRepositoryImpl(client)
+
+        val items = repo.listForClips((1..150).map { "c$it" }).getOrThrow()
+
+        requests shouldBe 2
+        items shouldHaveSize 3
+    }
 
     @Test
     fun list_filters_by_clipId_and_orders_by_timestamp() = runTest {

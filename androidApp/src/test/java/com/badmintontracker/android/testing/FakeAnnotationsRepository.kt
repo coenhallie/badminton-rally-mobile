@@ -8,8 +8,10 @@ import kotlinx.datetime.Instant
 class FakeAnnotationsRepository : AnnotationsRepository {
     var byClipId: Map<String, List<RallyAnnotation>> = emptyMap()
     var listError: Throwable? = null
+    var listForClipsError: Throwable? = null
     var addError: Throwable? = null
     var deleteError: Throwable? = null
+    val listForClipsCalls = mutableListOf<List<String>>()
 
     data class AddCall(
         val clipId: String,
@@ -26,6 +28,12 @@ class FakeAnnotationsRepository : AnnotationsRepository {
     override suspend fun list(clipId: String): List<RallyAnnotation> {
         listError?.let { throw it }
         return byClipId[clipId] ?: emptyList()
+    }
+
+    override suspend fun listForClips(clipIds: List<String>): Result<List<RallyAnnotation>> {
+        listForClipsCalls += clipIds
+        listForClipsError?.let { return Result.failure(it) }
+        return Result.success(clipIds.flatMap { byClipId[it] ?: emptyList() })
     }
 
     override suspend fun add(

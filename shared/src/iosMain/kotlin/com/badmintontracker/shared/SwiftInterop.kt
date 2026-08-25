@@ -37,6 +37,10 @@ suspend fun SharesRepository.listSharesOrNull(videoId: String): List<MatchShare>
 suspend fun VideosRepository.listMatchMetadataOrNull(): List<MatchMetadata>? =
     listMatchMetadata().getOrNull()
 
+/** Soft-failing read: nil means "show no summary", never an error banner. */
+suspend fun AnnotationsRepository.listForClipsOrNull(clipIds: List<String>): List<RallyAnnotation>? =
+    listForClips(clipIds).getOrNull()
+
 suspend fun VideosRepository.deleteMatchOrMessage(videoId: String): String? =
     deleteMatch(videoId).exceptionOrNull()?.let { "Couldn't delete the match. Please try again." }
 

@@ -10,6 +10,14 @@ import kotlinx.serialization.Serializable
 
 interface AnnotationsRepository {
     suspend fun list(clipId: String): List<RallyAnnotation>
+
+    /**
+     * Every annotation on a set of clips, for match-level rollups. Filters on
+     * clip ids rather than a video id because rally_annotations has no video
+     * column, and every caller already holds the ids.
+     */
+    suspend fun listForClips(clipIds: List<String>): Result<List<RallyAnnotation>>
+
     suspend fun add(
         clipId: String,
         timestampSeconds: Float,
@@ -38,6 +46,18 @@ class AnnotationsRepositoryImpl(private val client: SupabaseClient) : Annotation
             }
             .decodeList()
 
+    override suspend fun listForClips(clipIds: List<String>): Result<List<RallyAnnotation>> =
+        runCatching {
+            // An empty in.() is both pointless and malformed, so short-circuit
+            // rather than issue it.
+            if (clipIds.isEmpty()) return@runCatching emptyList()
+            clipIds.distinct().chunked(CLIP_ID_CHUNK).flatMap { chunk ->
+                client.postgrest.from("rally_annotations")
+                    .select { filter { isIn("clip_id", chunk) } }
+                    .decodeList<RallyAnnotation>()
+            }
+        }
+
     override suspend fun add(
         clipId: String,
         timestampSeconds: Float,
@@ -57,3 +77,6 @@ class AnnotationsRepositoryImpl(private val client: SupabaseClient) : Annotation
         Unit
     }
 }
+
+/** Guard against URL length on a long match, not a normal path. */
+private const val CLIP_ID_CHUNK = 100
