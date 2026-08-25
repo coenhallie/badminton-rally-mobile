@@ -77,28 +77,34 @@ class LabelsViewModelTest {
     }
 
     @Test
-    fun a_successful_create_opens_the_new_labels_own_editor() = runTest {
+    fun a_successful_create_opens_the_new_labels_own_editor_and_reports_success() = runTest {
         val vm = LabelsViewModel(FakeAnnotationLabelsRepository(emptyList()))
         advanceUntilIdle()
 
         vm.startCreating()
-        vm.create("Smash winner", LabelColor.PURPLE)
+        val succeeded = vm.create("Smash winner", LabelColor.PURPLE)
         advanceUntilIdle()
 
+        succeeded shouldBe true
         val created = vm.state.value.labels.single()
         vm.state.value.expanded shouldBe LabelEditTarget.Existing(created.id)
     }
 
     @Test
-    fun a_rejected_create_leaves_the_draft_open() = runTest {
+    fun a_rejected_create_leaves_the_draft_open_and_reports_failure() = runTest {
         val repo = FakeAnnotationLabelsRepository(listOf(label("l1", "Good shot", "green")))
         val vm = LabelsViewModel(repo)
         advanceUntilIdle()
 
         vm.startCreating()
-        vm.create("good shot", LabelColor.PURPLE)
+        val succeeded = vm.create("good shot", LabelColor.PURPLE)
         advanceUntilIdle()
 
+        // This return value is what lets DraftLabelRow's CommitGuard roll
+        // itself back on failure - without it, a corrected retry of the same
+        // name would be indistinguishable from the commit that just failed
+        // and would be silently dropped.
+        succeeded shouldBe false
         vm.state.value.expanded shouldBe LabelEditTarget.New
         vm.state.value.errorMessage shouldBe "You already have a label called \"good shot\"."
     }

@@ -6,6 +6,7 @@ import com.badmintontracker.shared.model.AnnotationLabel
 import com.badmintontracker.shared.model.LabelColor
 import com.badmintontracker.shared.repo.AnnotationLabelsRepository
 import com.badmintontracker.shared.repo.userFacingMessage
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -95,9 +96,29 @@ class LabelsViewModel(private val labels: AnnotationLabelsRepository) : ViewMode
      * forcing the user to reopen the row and retype. A successful create
      * hands the new row's own id to [LabelEditTarget.Existing], so the same
      * expanded editor keeps showing, now bound to the real, persisted label.
+     *
+     * Suspends and reports whether the create succeeded, the same way
+     * [rename] reports through its own `Result`, so [DraftLabelRow]'s commit
+     * guard can tell a rejected create from a successful one and roll itself
+     * back on failure - otherwise a corrected retry of the same name would
+     * look, to a guard keyed only on "did the text change", identical to the
+     * commit that already failed, and be silently dropped.
+     *
+     * The network call itself still runs under [viewModelScope], not the
+     * caller's - launched with [kotlinx.coroutines.async] and only awaited
+     * here. [DraftLabelRow] launches this from a `rememberCoroutineScope()`
+     * tied to its own composition, which is cancelled the instant the row
+     * unmounts (tapping "+" again, expanding another row, backing out). If
+     * that awaiting call were the one actually running the insert, tapping
+     * away right after Done would cancel a request that may already have
+     * reached the server - creating the label there while the app's local
+     * state and cache never learn about it until the next refresh. Running it
+     * on [viewModelScope] means it survives that unmount; only the await -
+     * and with it, the commit guard's rollback - is abandoned, which is
+     * harmless since the row that would have shown the rollback is gone.
      */
-    fun create(name: String, color: LabelColor) {
-        viewModelScope.launch {
+    suspend fun create(name: String, color: LabelColor): Boolean =
+        viewModelScope.async {
             labels.create(name, color)
                 .onSuccess { created ->
                     _state.value = _state.value.copy(expanded = LabelEditTarget.Existing(created.id))
@@ -107,8 +128,8 @@ class LabelsViewModel(private val labels: AnnotationLabelsRepository) : ViewMode
                         errorMessage = e.userFacingMessage("Couldn't save the label"),
                     )
                 }
-        }
-    }
+                .isSuccess
+        }.await()
 
     fun rename(id: String, name: String) = run { labels.rename(id, name) }
     fun recolor(id: String, color: LabelColor) = run { labels.recolor(id, color) }

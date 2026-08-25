@@ -37,6 +37,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -57,6 +58,7 @@ import com.badmintontracker.android.ui.components.SwipeToRemoveRow
 import com.badmintontracker.shared.model.AnnotationLabel
 import com.badmintontracker.shared.model.LabelColor
 import com.badmintontracker.shared.repo.AnnotationLabelsRepositoryImpl
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -351,6 +353,46 @@ private fun ColorSwatch(color: LabelColor, selected: Boolean, onClick: () -> Uni
 }
 
 /**
+ * Guards [DraftLabelRow]'s commit against dispatching the same not-yet-created
+ * label twice, and - the case that matters more - against silently swallowing
+ * a legitimate retry.
+ *
+ * `ShuttlOutlinedTextField`'s `onDone` never calls `defaultKeyboardAction`, so
+ * pressing Done does not clear focus: the field's own commit fires from Done,
+ * and then fires again from whatever focus loss eventually follows (a swatch
+ * tap, the keyboard dismissing, tapping away). A guard keyed only on focus -
+ * this row's earlier `hadFocus` flag - cannot tell those two calls apart from
+ * "the user retyped after a rejected create", because focus is false in both
+ * cases. Keying on the committed text instead does: the second call from the
+ * same Done press repeats the text that was just armed and is rejected here;
+ * a genuine retry after [failed] rolls the guard back is not.
+ */
+internal class CommitGuard {
+    var lastCommitted: String = ""
+        private set
+
+    /** True when this commit should actually dispatch, arming the guard if so. */
+    fun begin(trimmed: String): Boolean {
+        if (trimmed.isEmpty() || trimmed == lastCommitted) return false
+        lastCommitted = trimmed
+        return true
+    }
+
+    /**
+     * Restores the guard to what it was before the [begin] call that armed it,
+     * so that the same text is eligible to commit again. A rejected create
+     * (a duplicate name, most commonly) leaves the draft row open with its
+     * typed name unchanged so the user can fix it in place - without this
+     * rollback, retyping that exact name after resolving the conflict would
+     * read as an indistinguishable repeat of the commit that already failed,
+     * and be dropped with no error and nothing created.
+     */
+    fun failed(previous: String) {
+        lastCommitted = previous
+    }
+}
+
+/**
  * The not-yet-created label row, opened by the toolbar "+" (or the empty
  * state's action button) and shown at the top of the list while
  * [LabelsUiState.expanded] is [LabelEditTarget.New]. The colour picker lives
@@ -371,7 +413,7 @@ private fun ColorSwatch(color: LabelColor, selected: Boolean, onClick: () -> Uni
 private fun DraftLabelRow(
     palette: List<LabelColor>,
     existingColorKeys: List<String>,
-    onCreate: (String, LabelColor) -> Unit,
+    onCreate: suspend (String, LabelColor) -> Boolean,
 ) {
     var name by remember { mutableStateOf("") }
     // Keyed on existingColorKeys: the row can open before the label list has
@@ -382,37 +424,39 @@ private fun DraftLabelRow(
     var selectedColor by remember(existingColorKeys) {
         mutableStateOf(AnnotationLabelsRepositoryImpl.nextUnusedColor(existingColorKeys))
     }
-    // See the matching guard in LabelRow: the first onFocusChanged event fires
-    // with isFocused == false before the user has touched anything, which would
-    // otherwise commit this row the instant it opens.
-    var hadFocus by remember { mutableStateOf(false) }
+    val commitGuard = remember { CommitGuard() }
     val focusRequester = remember { FocusRequester() }
+    val scope = rememberCoroutineScope()
 
     fun commit() {
-        // Reset before dispatching, not after: the Done action's own focus-loss
-        // event can still reach this closure once, and without this guard that
-        // second call would re-submit the same name - which the server
-        // correctly rejects as a duplicate of the row just created. A failed
-        // create leaves this row mounted (LabelsViewModel.create only changes
-        // the expansion target on success), so the typed name and chosen
-        // colour are still here for the user to fix and resubmit.
-        if (!hadFocus) return
-        hadFocus = false
         val trimmed = name.trim()
-        if (trimmed.isNotEmpty()) onCreate(trimmed, selectedColor)
+        val previous = commitGuard.lastCommitted
+        // The first onFocusChanged event fires with isFocused == false before
+        // the user has touched anything - see the matching comment in
+        // LabelRow. Here that spurious call carries an empty trimmed name, so
+        // CommitGuard.begin's own emptiness check rejects it without needing
+        // a separate flag for "has this row ever been focused".
+        if (!commitGuard.begin(trimmed)) return
+        scope.launch {
+            val succeeded = onCreate(trimmed, selectedColor)
+            // A failed create leaves this row mounted (LabelsViewModel.create
+            // only changes the expansion target on success) with its typed
+            // name and chosen colour untouched, so rolling the guard back
+            // here is what lets the user's corrected retry actually fire
+            // instead of looking like a repeat of the commit that failed.
+            if (!succeeded) commitGuard.failed(previous)
+        }
     }
 
-    // Auto-focuses the field the moment the row opens. Without this, the row opens
-    // with nothing focused: tapping a swatch without ever touching the text field
-    // leaves hadFocus false forever, and commit() early-returns on every subsequent
-    // tap-away, trapping the row open with no way to close or commit it.
+    // Auto-focuses the field the moment the row opens, so the keyboard is up
+    // without the user having to tap the field first.
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
 
     LabelEditorFields(
         name = name,
         onNameChange = { name = it },
         onDone = ::commit,
-        onFocusChanged = { state -> if (state.isFocused) hadFocus = true else if (hadFocus) commit() },
+        onFocusChanged = { state -> if (!state.isFocused) commit() },
         focusRequester = focusRequester,
         palette = palette,
         selectedColorKey = selectedColor.key,
