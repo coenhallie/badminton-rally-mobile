@@ -108,9 +108,16 @@ struct ClipListView: View {
         .onChange(of: intake.lastAddedId) { _, id in
             // The entry is already persisted by the time this fires, so a skipped
             // sheet never costs the video that was just imported or recorded.
-            guard let id, let entry = localEntries.first(where: { $0.id == id }) else { return }
-            detailsTarget = MatchDetailsTarget(entry: entry, autoOpened: true)
+            guard let id else { return }
+            // Consumed unconditionally, before the lookup can fail: this fires only
+            // on a change of id, so a signal left standing is never re-delivered —
+            // it would wedge the auto-open for this import AND every one after it.
             intake.lastAddedId = nil
+            // Read the registry, not `localEntries`: that mirror is filled by a
+            // separate `for await` over the entries flow and still lags the add
+            // that set this id, whereas get(id:) sees the value add() just wrote.
+            guard let entry = rally.localVideos.get(id: id) else { return }
+            detailsTarget = MatchDetailsTarget(entry: entry, autoOpened: true)
         }
         .sheet(isPresented: $showImporter) {
             VideoPicker(
