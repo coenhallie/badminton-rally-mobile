@@ -28,7 +28,12 @@ class LabelsViewModel(private val labels: AnnotationLabelsRepository) : ViewMode
         viewModelScope.launch {
             labels.labels.collect { rows -> _state.value = _state.value.copy(labels = rows) }
         }
-        viewModelScope.launch { labels.refresh() }
+        // Previously a bare viewModelScope.launch { labels.refresh() } that discarded its
+        // Result: a failed initial load (expired session, no network, missing table) then
+        // rendered identically to "you have no labels" - an empty list either way, with no
+        // way to tell the two apart. Routing it through run() surfaces the failure through
+        // the same snackbar every other failure uses.
+        run(fallback = "Couldn't load your labels") { labels.refresh() }
     }
 
     /** Passing the id already expanded collapses it, so a row is its own toggle. */
@@ -36,7 +41,7 @@ class LabelsViewModel(private val labels: AnnotationLabelsRepository) : ViewMode
         _state.value = _state.value.copy(expandedId = if (_state.value.expandedId == id) null else id)
     }
 
-    fun create(name: String) = run { labels.create(name, null) }
+    fun create(name: String, color: LabelColor) = run { labels.create(name, color) }
     fun rename(id: String, name: String) = run { labels.rename(id, name) }
     fun recolor(id: String, color: LabelColor) = run { labels.recolor(id, color) }
     fun delete(id: String) = run { labels.delete(id) }
@@ -49,11 +54,11 @@ class LabelsViewModel(private val labels: AnnotationLabelsRepository) : ViewMode
      * reaches the snackbar. Our own validation messages are single-line and pass
      * through unchanged.
      */
-    private fun run(op: suspend () -> Result<*>) {
+    private fun run(fallback: String = "Couldn't save the label", op: suspend () -> Result<*>) {
         viewModelScope.launch {
             op().onFailure { e ->
                 _state.value = _state.value.copy(
-                    errorMessage = e.userFacingMessage("Couldn't save the label"),
+                    errorMessage = e.userFacingMessage(fallback),
                 )
             }
         }

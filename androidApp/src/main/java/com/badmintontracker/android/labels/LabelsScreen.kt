@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -42,11 +43,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.compose.foundation.layout.FlowRow
 import com.badmintontracker.android.ui.components.ShuttlOutlinedTextField
 import com.badmintontracker.android.ui.components.SwipeToRemoveRow
 import com.badmintontracker.shared.model.AnnotationLabel
 import com.badmintontracker.shared.model.LabelColor
+import com.badmintontracker.shared.repo.AnnotationLabelsRepositoryImpl
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -80,24 +81,44 @@ fun LabelsScreen(vm: LabelsViewModel, onBack: () -> Unit) {
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize().imePadding()) {
-            LazyColumn(modifier = Modifier.weight(1f)) {
-                items(state.labels, key = { it.id }) { label ->
-                    SwipeToRemoveRow(
-                        label = "Delete",
-                        onSwiped = { deleteTarget = label; false },
-                    ) {
-                        LabelRow(
-                            label = label,
-                            expanded = state.expandedId == label.id,
-                            palette = vm.palette,
-                            onToggle = { vm.expand(label.id) },
-                            onRename = { vm.rename(label.id, it) },
-                            onRecolor = { vm.recolor(label.id, it) },
-                        )
+            if (state.labels.isEmpty()) {
+                // Distinct from a load failure, which surfaces through the snackbar above
+                // instead: a blank screen here would otherwise read identically whether the
+                // account genuinely has no labels, the session expired, or the load failed.
+                Box(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        "No labels yet",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            } else {
+                LazyColumn(modifier = Modifier.weight(1f)) {
+                    items(state.labels, key = { it.id }) { label ->
+                        SwipeToRemoveRow(
+                            label = "Delete",
+                            onSwiped = { deleteTarget = label; false },
+                        ) {
+                            LabelRow(
+                                label = label,
+                                expanded = state.expandedId == label.id,
+                                palette = vm.palette,
+                                onToggle = { vm.expand(label.id) },
+                                onRename = { vm.rename(label.id, it) },
+                                onRecolor = { vm.recolor(label.id, it) },
+                            )
+                        }
                     }
                 }
             }
-            NewLabelRow(onCreate = vm::create)
+            NewLabelRow(
+                palette = vm.palette,
+                existingColorKeys = state.labels.map { it.colorKey },
+                onCreate = vm::create,
+            )
         }
     }
 
@@ -188,17 +209,28 @@ private fun LabelRow(
                             if (state.isFocused) hadFocus = true else if (hadFocus) commit()
                         },
                 )
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    palette.forEach { swatch ->
-                        ColorSwatch(
-                            color = swatch,
-                            selected = label.colorKey == swatch.key,
-                            onClick = { onRecolor(swatch) },
-                        )
-                    }
+                SwatchGrid(palette = palette, selectedKey = label.colorKey, onSelect = onRecolor)
+            }
+        }
+    }
+}
+
+/**
+ * A deliberate 5x2 grid rather than a wrapping FlowRow: with exactly ten swatches, a
+ * flow layout stripes 9 + 1 at common phone widths, stranding one circle alone on its
+ * own row. Fixed columns keep both rows full regardless of screen width.
+ */
+@Composable
+private fun SwatchGrid(palette: List<LabelColor>, selectedKey: String?, onSelect: (LabelColor) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        palette.chunked(5).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                row.forEach { swatch ->
+                    ColorSwatch(
+                        color = swatch,
+                        selected = swatch.key == selectedKey,
+                        onClick = { onSelect(swatch) },
+                    )
                 }
             }
         }
@@ -222,36 +254,67 @@ private fun ColorSwatch(color: LabelColor, selected: Boolean, onClick: () -> Uni
     )
 }
 
+/**
+ * The colour picker lives here, at creation time, not only in the edit row reached
+ * afterward - so choosing a colour for a new label is one step, not "create, tap,
+ * recolour". [existingColorKeys] feeds the same next-unused-swatch logic the
+ * repository already uses for name-only creation elsewhere (the Add-note sheet's
+ * inline picker, Task 10), so an unchanged default still behaves exactly as before.
+ */
 @Composable
-private fun NewLabelRow(onCreate: (String) -> Unit) {
+private fun NewLabelRow(
+    palette: List<LabelColor>,
+    existingColorKeys: List<String>,
+    onCreate: (String, LabelColor) -> Unit,
+) {
     var creating by remember { mutableStateOf(false) }
-    var name by remember { mutableStateOf("") }
-    // See the matching guard in LabelRow: the first onFocusChanged event fires
-    // with isFocused == false before the user has touched anything, which would
-    // otherwise collapse this row back to the button the instant it opens.
-    var hadFocus by remember { mutableStateOf(false) }
-
-    fun commit() {
-        val trimmed = name.trim()
-        if (trimmed.isNotEmpty()) onCreate(trimmed)
-        creating = false
-        name = ""
-        hadFocus = false
-    }
 
     if (creating) {
-        ShuttlOutlinedTextField(
-            value = name,
-            onValueChange = { name = it },
-            label = "Name",
-            onDone = { commit() },
+        var name by remember { mutableStateOf("") }
+        var selectedColor by remember {
+            mutableStateOf(AnnotationLabelsRepositoryImpl.nextUnusedColor(existingColorKeys))
+        }
+        // See the matching guard in LabelRow: the first onFocusChanged event fires
+        // with isFocused == false before the user has touched anything, which would
+        // otherwise collapse this row back to the button the instant it opens.
+        var hadFocus by remember { mutableStateOf(false) }
+
+        fun commit() {
+            // Reset before dispatching, not after: the Done action's own focus-loss
+            // event can still reach this closure once (the row hasn't finished
+            // unmounting yet even though `creating` just flipped false), and without
+            // this guard that second call re-submits the same name - which the
+            // server correctly rejects as a duplicate of the row just created.
+            if (!hadFocus) return
+            hadFocus = false
+            val trimmed = name.trim()
+            if (trimmed.isNotEmpty()) onCreate(trimmed, selectedColor)
+            creating = false
+        }
+
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 8.dp)
-                .onFocusChanged { state ->
-                    if (state.isFocused) hadFocus = true else if (hadFocus) commit()
-                },
-        )
+                .padding(horizontal = 24.dp)
+                .padding(vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            ShuttlOutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = "Name",
+                onDone = { commit() },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onFocusChanged { state ->
+                        if (state.isFocused) hadFocus = true else if (hadFocus) commit()
+                    },
+            )
+            SwatchGrid(
+                palette = palette,
+                selectedKey = selectedColor.key,
+                onSelect = { selectedColor = it },
+            )
+        }
     } else {
         TextButton(
             onClick = { creating = true },
