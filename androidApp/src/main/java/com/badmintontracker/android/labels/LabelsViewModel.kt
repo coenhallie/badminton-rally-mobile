@@ -15,6 +15,12 @@ data class LabelsUiState(
     val labels: List<AnnotationLabel> = emptyList(),
     val expandedId: String? = null,
     val errorMessage: String? = null,
+    /**
+     * True when the most recent [refresh] failed. Lets an empty list distinguish
+     * "the account genuinely has no labels" from "the load failed" once the
+     * snackbar that reported the failure has already timed out.
+     */
+    val loadFailed: Boolean = false,
 )
 
 class LabelsViewModel(private val labels: AnnotationLabelsRepository) : ViewModel() {
@@ -28,12 +34,29 @@ class LabelsViewModel(private val labels: AnnotationLabelsRepository) : ViewMode
         viewModelScope.launch {
             labels.labels.collect { rows -> _state.value = _state.value.copy(labels = rows) }
         }
-        // Previously a bare viewModelScope.launch { labels.refresh() } that discarded its
-        // Result: a failed initial load (expired session, no network, missing table) then
-        // rendered identically to "you have no labels" - an empty list either way, with no
-        // way to tell the two apart. Routing it through run() surfaces the failure through
-        // the same snackbar every other failure uses.
-        run(fallback = "Couldn't load your labels") { labels.refresh() }
+        refresh()
+    }
+
+    /**
+     * Previously a bare viewModelScope.launch { labels.refresh() } that discarded its
+     * Result: a failed load (expired session, no network, missing table) then rendered
+     * identically to "you have no labels" - an empty list either way, with no way to
+     * tell the two apart. This surfaces the failure through the snackbar every other
+     * failure uses, and also records it in state so the empty-state copy can tell the
+     * two situations apart once the snackbar has timed out. Public so the empty state's
+     * retry action can call it again.
+     */
+    fun refresh() {
+        viewModelScope.launch {
+            labels.refresh()
+                .onSuccess { _state.value = _state.value.copy(loadFailed = false) }
+                .onFailure { e ->
+                    _state.value = _state.value.copy(
+                        loadFailed = true,
+                        errorMessage = e.userFacingMessage("Couldn't load your labels"),
+                    )
+                }
+        }
     }
 
     /** Passing the id already expanded collapses it, so a row is its own toggle. */
@@ -54,11 +77,11 @@ class LabelsViewModel(private val labels: AnnotationLabelsRepository) : ViewMode
      * reaches the snackbar. Our own validation messages are single-line and pass
      * through unchanged.
      */
-    private fun run(fallback: String = "Couldn't save the label", op: suspend () -> Result<*>) {
+    private fun run(op: suspend () -> Result<*>) {
         viewModelScope.launch {
             op().onFailure { e ->
                 _state.value = _state.value.copy(
-                    errorMessage = e.userFacingMessage(fallback),
+                    errorMessage = e.userFacingMessage("Couldn't save the label"),
                 )
             }
         }

@@ -77,4 +77,58 @@ class LabelsViewModelTest {
 
         vm.state.value.labels.shouldHaveSize(0)
     }
+
+    @Test
+    fun create_adds_a_label_with_the_chosen_color() = runTest {
+        val repo = FakeAnnotationLabelsRepository(emptyList())
+        val vm = LabelsViewModel(repo)
+        advanceUntilIdle()
+
+        vm.create("Smash winner", LabelColor.PURPLE)
+        advanceUntilIdle()
+
+        val created = vm.state.value.labels.single()
+        created.name shouldBe "Smash winner"
+        created.colorKey shouldBe LabelColor.PURPLE.key
+    }
+
+    @Test
+    fun a_failed_refresh_surfaces_the_fallback_message_and_marks_the_load_failed() = runTest {
+        val repo = FakeAnnotationLabelsRepository(emptyList())
+        repo.refreshError = RuntimeException()
+        val vm = LabelsViewModel(repo)
+        advanceUntilIdle()
+
+        vm.state.value.errorMessage shouldBe "Couldn't load your labels"
+        vm.state.value.loadFailed shouldBe true
+    }
+
+    @Test
+    fun recolor_updates_the_labels_color() = runTest {
+        val repo = FakeAnnotationLabelsRepository(listOf(label("l1", "Good shot", "green")))
+        val vm = LabelsViewModel(repo)
+        advanceUntilIdle()
+
+        vm.recolor("l1", LabelColor.TEAL)
+        advanceUntilIdle()
+
+        vm.state.value.labels.first { it.id == "l1" }.colorKey shouldBe LabelColor.TEAL.key
+    }
+
+    @Test
+    fun errorShown_clears_the_error_message() = runTest {
+        val repo = FakeAnnotationLabelsRepository(
+            listOf(label("l1", "Good shot", "green"), label("l2", "Forced error", "amber"))
+        )
+        val vm = LabelsViewModel(repo)
+        advanceUntilIdle()
+
+        vm.rename("l2", "good shot")
+        advanceUntilIdle()
+        vm.state.value.errorMessage shouldBe "You already have a label called \"good shot\"."
+
+        vm.errorShown()
+
+        vm.state.value.errorMessage.shouldBeNull()
+    }
 }
