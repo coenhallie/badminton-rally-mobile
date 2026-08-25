@@ -236,11 +236,14 @@ private fun LabelRow(
             // here, since trimmed == label.name) before the user ever touches the field.
             var hadFocus by remember(label.id) { mutableStateOf(false) }
 
-            // No reset here, unlike DraftLabelRow's commit(): this row does not unmount
-            // on commit, so it never had that row's double-commit-on-Done problem to
-            // solve. Resetting hadFocus after Done would leave the cursor sitting in the
-            // field with hadFocus == false - the next blur would then early-return and
-            // silently discard whatever the user kept typing after Done.
+            // commit() deliberately does NOT clear hadFocus. onDone here does not clear
+            // focus (ShuttlOutlinedTextField never calls defaultKeyboardAction), so after
+            // Done the cursor is still in the field; clearing the flag would make the next
+            // blur early-return and silently discard whatever was typed after Done.
+            // Re-committing the same text is harmless: the guard below is the name itself,
+            // and renaming a label to its current name is a no-op. DraftLabelRow has the
+            // same requirement and solves it with CommitGuard, which keys on the committed
+            // text rather than on focus, for exactly this reason.
             fun commit() {
                 val trimmed = name.trim()
                 if (trimmed != label.name) onRename(trimmed)
