@@ -9,8 +9,25 @@ struct MatchClipsView: View {
     // Fetched here rather than handed down: the list navigates by video id alone,
     // and a soft-failing read is cheaper than threading a summary through the route.
     @State private var metadata: MatchMetadata? = nil
+    @State private var summary: MatchLabelSummary? = nil
+    @State private var summarySheetOpen = false
+    @State private var isLoadingSummary = false
+    @State private var route: ClipRoute? = nil
 
     private var sortedClips: [RallyClip] { sort.sorted(clips) }
+
+    private var clipIds: [String] { clips.map(\.id) }
+
+    private func refreshSummary() async {
+        // .task and .onAppear both fire on the first appearance; one fetch is enough.
+        guard !isLoadingSummary, !clips.isEmpty else { return }
+        isLoadingSummary = true
+        defer { isLoadingSummary = false }
+        let fetched = try? await SwiftInteropKt.listForClipsOrNull(rally.annotations, clipIds: clipIds)
+        // Soft failure: keep whatever is on screen and say nothing.
+        guard let rows = fetched.flatMap({ $0 }) else { return }
+        summary = MatchLabelSummaryKt.buildMatchLabelSummary(clips: clips, annotations: rows)
+    }
 
     private var matchName: String? {
         // videos.title is authoritative; the clip-stamped copy keeps the name on
@@ -30,6 +47,12 @@ struct MatchClipsView: View {
 
     var body: some View {
         List {
+            if let summary, !summary.isEmpty {
+                Button { summarySheetOpen = true } label: {
+                    MatchLabelStripView(summary: summary)
+                }
+                .buttonStyle(.plain)
+            }
             if let description = metadata?.description_ {
                 Text(description)
                     .font(.subheadline)
@@ -56,7 +79,35 @@ struct MatchClipsView: View {
             }
         }
         .listStyle(.plain)
-        .refreshable { try? await rally.clips.refresh() }
+        .refreshable {
+            try? await rally.clips.refresh()
+            await refreshSummary()
+        }
+        .task(id: clipIds) { await refreshSummary() }
+        // Pushing ClipDetailView does not remove this view, so its .task is not
+        // restarted on the way back, and adding a note does not change clipIds.
+        // Without this the strip would go stale exactly where it matters most.
+        .onAppear { Task { await refreshSummary() } }
+        .sheet(isPresented: $summarySheetOpen) {
+            if let summary {
+                MatchSummarySheet(
+                    summary: summary,
+                    topRallyName: summary.topRally.map {
+                        topRallyName(
+                            clipId: $0.clipId, rallyIndex: $0.rallyIndex,
+                            clips: clips.map(ClipInfo.init), matchTitle: matchName
+                        )
+                    },
+                    onTopRally: {
+                        if let top = summary.topRally { route = ClipRoute(id: top.clipId) }
+                    }
+                )
+                .presentationDetents([.medium, .large])
+            }
+        }
+        .navigationDestination(item: $route) { route in
+            ClipDetailView(rally: rally, clipId: route.id)
+        }
         .task {
             // Soft failure: no metadata just means the date headline, as before.
             let rows = try? await SwiftInteropKt.listMatchMetadataOrNull(rally.videos)
@@ -82,4 +133,11 @@ struct MatchClipsView: View {
             }
         }
     }
+}
+
+/// `navigationDestination(item:)` needs an Identifiable, and the sheet's
+/// "most labelled" row pushes a clip programmatically rather than through a
+/// NavigationLink.
+private struct ClipRoute: Identifiable, Hashable {
+    let id: String
 }

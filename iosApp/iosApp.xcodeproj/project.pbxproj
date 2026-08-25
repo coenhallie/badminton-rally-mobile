@@ -12,6 +12,7 @@
 		0DB77DA80E5770BA30449FA3 /* LocalPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D08E6FF694DA1AD73D7A1B09 /* LocalPlayerView.swift */; };
 		12570C75DE15E22C06666094 /* LocalVideoIntake.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE370B3A23B49D0DED479199 /* LocalVideoIntake.swift */; };
 		16A3213CCC5EA141B7E189E6 /* LocalVideoLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B9EC6CE7B68DC43C4F92C7 /* LocalVideoLogic.swift */; };
+		180BE08FA55055D020A3D2EF /* MatchSummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAD86CD770119F9EFBB7003E /* MatchSummaryView.swift */; };
 		18DFDCCFF6258C4B0568B3CA /* SmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18B28237BDD6785E014E9F62 /* SmokeTests.swift */; };
 		240133B2EF631DC8B1C2979F /* FrameStepMathTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A02D8B89ABF94AD30304E3A5 /* FrameStepMathTests.swift */; };
 		27D47564638D6299811A5A5B /* MatchGrouping.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94F21AB0AEE5F66047B679 /* MatchGrouping.swift */; };
@@ -137,6 +138,7 @@
 		E7D356BF06A24361EB632F18 /* SchematicCourtGuide.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchematicCourtGuide.swift; sourceTree = "<group>"; };
 		F08C072BC144799AD2F86506 /* ClipDetailModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipDetailModel.swift; sourceTree = "<group>"; };
 		F445C67CB4C46F120008DAD3 /* ErrorBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorBanner.swift; sourceTree = "<group>"; };
+		FAD86CD770119F9EFBB7003E /* MatchSummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchSummaryView.swift; sourceTree = "<group>"; };
 		FEFBC0DB886D05C0A25F6E05 /* LocalVideoSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalVideoSection.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -230,6 +232,7 @@
 				9DBB4CC1CACCD0256476D9DE /* ClipSort.swift */,
 				42CBF6009AF78F80778FDBA5 /* MatchClipsView.swift */,
 				4A94F21AB0AEE5F66047B679 /* MatchGrouping.swift */,
+				FAD86CD770119F9EFBB7003E /* MatchSummaryView.swift */,
 			);
 			path = ClipList;
 			sourceTree = "<group>";
@@ -484,6 +487,7 @@
 				6021497F1DAEA61DA330FEA1 /* MatchClipsView.swift in Sources */,
 				D4DB26D23908BCDA25AE3C1B /* MatchDetailsSheet.swift in Sources */,
 				27D47564638D6299811A5A5B /* MatchGrouping.swift in Sources */,
+				180BE08FA55055D020A3D2EF /* MatchSummaryView.swift in Sources */,
 				C4FFDFDB70F43396DBC64F41 /* PlaybackControlBar.swift in Sources */,
 				5DBF6F864ECBB35639A57D0A /* PlayerSurface.swift in Sources */,
 				7424550AE59BF1354C4DD5F4 /* PrimaryButtonStyle.swift in Sources */,
