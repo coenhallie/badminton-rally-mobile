@@ -13,6 +13,10 @@ struct MatchClipsView: View {
     @State private var summarySheetOpen = false
     @State private var isLoadingSummary = false
     @State private var route: ClipRoute? = nil
+    // Set while the summary sheet is closing; the push happens in the sheet's
+    // onDismiss rather than inline with dismiss(), because a navigationDestination
+    // on the view that is presenting a sheet can drop a push made mid-dismissal.
+    @State private var pendingTopRallyClipId: String? = nil
 
     private var sortedClips: [RallyClip] { sort.sorted(clips) }
 
@@ -23,9 +27,8 @@ struct MatchClipsView: View {
         guard !isLoadingSummary, !clips.isEmpty else { return }
         isLoadingSummary = true
         defer { isLoadingSummary = false }
-        let fetched = try? await SwiftInteropKt.listForClipsOrNull(rally.annotations, clipIds: clipIds)
         // Soft failure: keep whatever is on screen and say nothing.
-        guard let rows = fetched.flatMap({ $0 }) else { return }
+        guard let rows = try? await SwiftInteropKt.listForClipsOrNull(rally.annotations, clipIds: clipIds) else { return }
         summary = MatchLabelSummaryKt.buildMatchLabelSummary(clips: clips, annotations: rows)
     }
 
@@ -88,7 +91,11 @@ struct MatchClipsView: View {
         // restarted on the way back, and adding a note does not change clipIds.
         // Without this the strip would go stale exactly where it matters most.
         .onAppear { Task { await refreshSummary() } }
-        .sheet(isPresented: $summarySheetOpen) {
+        .sheet(isPresented: $summarySheetOpen, onDismiss: {
+            guard let clipId = pendingTopRallyClipId else { return }
+            pendingTopRallyClipId = nil
+            route = ClipRoute(id: clipId)
+        }) {
             if let summary {
                 MatchSummarySheet(
                     summary: summary,
@@ -99,7 +106,7 @@ struct MatchClipsView: View {
                         )
                     },
                     onTopRally: {
-                        if let top = summary.topRally { route = ClipRoute(id: top.clipId) }
+                        if let top = summary.topRally { pendingTopRallyClipId = top.clipId }
                     }
                 )
                 .presentationDetents([.medium, .large])

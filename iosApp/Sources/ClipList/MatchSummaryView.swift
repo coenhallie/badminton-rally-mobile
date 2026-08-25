@@ -66,8 +66,8 @@ struct MatchSummarySheet: View {
                 }
                 if let name = topRallyName, let top = summary.topRally {
                     Button {
-                        dismiss()
                         onTopRally()
+                        dismiss()
                     } label: {
                         HStack {
                             Text("Most labelled · \(name) · \(labelCount(top.labelCount))")
