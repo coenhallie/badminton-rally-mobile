@@ -32,7 +32,7 @@ struct ClipDetailView: View {
         VStack(spacing: 0) {
             // 60% of the screen for the video so rallies can be evaluated closely;
             // the annotation list scrolls in whatever space remains.
-            VideoPlayer(player: model.player)
+            PlayerSurface(player: model.player)
                 .frame(maxWidth: .infinity)
                 .containerRelativeFrame(.vertical) { height, _ in height * 0.6 }
                 .background(Color.black)
@@ -48,6 +48,7 @@ struct ClipDetailView: View {
             }
 
             if let player = model.player {
+                PlaybackControlBar(player: player, prefs: rally.playbackPrefs)
                 FrameStepBar(player: player, step: { model.stepFrames($0) })
             }
 

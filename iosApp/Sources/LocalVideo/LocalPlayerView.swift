@@ -53,7 +53,7 @@ struct LocalPlayerView: View {
             // 60% of the screen for the video so rallies can be evaluated closely;
             // the annotation list scrolls in whatever space remains.
             ZStack {
-                VideoPlayer(player: model.player)
+                PlayerSurface(player: model.player)
                     .frame(maxWidth: .infinity)
                     .containerRelativeFrame(.vertical) { height, _ in height * 0.6 }
                     .background(Color.black)
@@ -68,6 +68,7 @@ struct LocalPlayerView: View {
                 }
             }
 
+            PlaybackControlBar(player: model.player, prefs: rally.playbackPrefs)
             FrameStepBar(player: model.player, step: { model.stepFrames($0) })
 
             List {
