@@ -28,6 +28,7 @@ import com.badmintontracker.android.clipdetail.ClipDetailViewModel
 import com.badmintontracker.android.cliplist.ClipListScreen
 import com.badmintontracker.android.cliplist.ClipListViewModel
 import com.badmintontracker.android.cliplist.MatchClipsScreen
+import com.badmintontracker.android.cliplist.MatchSummaryViewModel
 import com.badmintontracker.shared.prefs.ThemePreferenceRepository
 import com.badmintontracker.android.localvideo.LocalPlayerScreen
 import com.badmintontracker.android.localvideo.LocalPlayerViewModel
@@ -162,8 +163,16 @@ fun AuthGate(
                             initializer { ClipListViewModel(rally.clips, rally.auth, rally.shares, rally.videos) }
                         }
                     )
+                    val summaryVm: MatchSummaryViewModel = viewModel(
+                        factory = viewModelFactory {
+                            initializer {
+                                MatchSummaryViewModel(rally.clips, rally.annotations, args.videoId)
+                            }
+                        }
+                    )
                     MatchClipsScreen(
                         vm = clipListVm,
+                        summaryVm = summaryVm,
                         media = rally.media,
                         shares = rally.shares,
                         videoId = args.videoId,

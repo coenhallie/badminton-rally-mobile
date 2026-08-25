@@ -33,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.badmintontracker.shared.prefs.ThemePreferenceRepository
 import com.badmintontracker.android.share.ShareSheet
@@ -46,6 +47,7 @@ import java.util.Locale
 @Composable
 fun MatchClipsScreen(
     vm: ClipListViewModel,
+    summaryVm: MatchSummaryViewModel,
     media: MediaRepository,
     shares: SharesRepository,
     videoId: String,
@@ -59,6 +61,15 @@ fun MatchClipsScreen(
     var sheetOpen by remember { mutableStateOf(false) }
     var sortMenuOpen by remember { mutableStateOf(false) }
     var sort by remember { mutableStateOf(ClipSort.RallyOrder) }
+    val summary by summaryVm.summary.collectAsStateWithLifecycle()
+    var summarySheetOpen by remember { mutableStateOf(false) }
+
+    // Covers the case the clip-set trigger cannot see: a note added inside
+    // ClipDetail and then a back press.
+    LifecycleResumeEffect(Unit) {
+        summaryVm.refresh()
+        onPauseOrDispose { }
+    }
 
     LaunchedEffect(state.error) {
         val err = state.error ?: return@LaunchedEffect
@@ -129,7 +140,7 @@ fun MatchClipsScreen(
     ) { padding ->
         PullToRefreshBox(
             isRefreshing = state.isRefreshing,
-            onRefresh = vm::refresh,
+            onRefresh = { vm.refresh(); summaryVm.refresh() },
             modifier = Modifier.padding(padding).fillMaxSize(),
         ) {
             if (clipsForMatch.isEmpty() && !state.isRefreshing) {
@@ -138,6 +149,16 @@ fun MatchClipsScreen(
                 }
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    val currentSummary = summary
+                    if (currentSummary != null && !currentSummary.isEmpty) {
+                        item(key = "match-label-summary") {
+                            MatchLabelStrip(
+                                summary = currentSummary,
+                                onClick = { summarySheetOpen = true },
+                            )
+                            HorizontalDivider()
+                        }
+                    }
                     match?.description?.let { description ->
                         item(key = "match-description") {
                             Text(
@@ -163,6 +184,23 @@ fun MatchClipsScreen(
             videoId = videoId,
             sharesRepository = shares,
             onDismiss = { sheetOpen = false },
+        )
+    }
+
+    val sheetSummary = summary
+    if (summarySheetOpen && sheetSummary != null && !sheetSummary.isEmpty) {
+        MatchSummarySheet(
+            summary = sheetSummary,
+            topRallyName = sheetSummary.topRally?.let {
+                topRallyName(it, clipsForMatch, match?.title)
+            },
+            onTopRallyClick = {
+                summarySheetOpen = false
+                sheetSummary.topRally
+                    ?.let { top -> clipsForMatch.firstOrNull { it.id == top.clipId } }
+                    ?.let(onClipClick)
+            },
+            onDismiss = { summarySheetOpen = false },
         )
     }
 }
