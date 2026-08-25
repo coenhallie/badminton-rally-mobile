@@ -23,6 +23,8 @@ data class MatchSummary(
     val coverClip: RallyClip,
     val isOwned: Boolean,
     val sharerEmail: String? = null,
+    /** Match name typed in the web app at upload; null for older/unnamed matches. */
+    val title: String? = null,
 )
 
 data class ClipListState(
@@ -32,6 +34,26 @@ data class ClipListState(
     val isRefreshing: Boolean = false,
     val error: String? = null,
 )
+
+/**
+ * The match name the web app stamps onto every clip of a video at cut time.
+ * Takes the most common non-null title rather than the cover clip's, so
+ * retitling a single clip in this app doesn't relabel the whole match.
+ */
+internal fun List<RallyClip>.matchTitle(): String? =
+    mapNotNull { it.title }
+        .groupingBy { it }
+        .eachCount()
+        .maxByOrNull { it.value }
+        ?.key
+
+/**
+ * Label for a single rally row. Every clip of a match carries the match name,
+ * so showing it again per row would make the rallies indistinguishable — fall
+ * back to the rally number unless the user gave this clip its own title.
+ */
+internal fun clipRowTitle(clip: RallyClip, matchTitle: String?): String =
+    clip.title?.takeIf { it != matchTitle } ?: "Rally #${clip.rallyIndex}"
 
 private fun List<RallyClip>.toMatches(
     currentUserId: String?,
@@ -48,6 +70,7 @@ private fun List<RallyClip>.toMatches(
                 coverClip = cover,
                 isOwned = owned,
                 sharerEmail = if (owned) null else sharerByVideoId[videoId],
+                title = list.matchTitle(),
             )
         }
         .sortedByDescending { it.latestCreatedAt }

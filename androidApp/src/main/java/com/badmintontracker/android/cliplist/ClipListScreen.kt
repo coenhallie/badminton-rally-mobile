@@ -309,12 +309,14 @@ private fun MatchRow(
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                "Match · ${formatDate(match.latestCreatedAt)}",
+                matchRowPrimary(match),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onBackground,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
             Text(
-                "${match.rallyCount} ${if (match.rallyCount == 1) "rally" else "rallies"}".uppercase(Locale.ROOT),
+                matchRowSecondary(match),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -341,6 +343,27 @@ private val MONTHS = listOf(
     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 )
 
+/**
+ * Headline for a match row. A named match leads with its name; an unnamed one
+ * keeps the original date headline.
+ */
+internal fun matchRowPrimary(match: MatchSummary): String =
+    match.title ?: "Match · ${formatDate(match.latestCreatedAt)}"
+
+/**
+ * Sub-line for a match row. When the name takes the headline the date moves
+ * down here, so it is never lost from the list.
+ */
+internal fun matchRowSecondary(match: MatchSummary): String {
+    val rallies = "${match.rallyCount} ${if (match.rallyCount == 1) "rally" else "rallies"}"
+        .uppercase(Locale.ROOT)
+    return if (match.title != null) {
+        "$rallies · ${formatDate(match.latestCreatedAt).uppercase(Locale.ROOT)}"
+    } else {
+        rallies
+    }
+}
+
 internal fun formatDate(instant: Instant): String {
     val ldt = instant.toLocalDateTime(TimeZone.currentSystemDefault())
     return "${MONTHS[ldt.monthNumber - 1]} ${ldt.dayOfMonth}, ${ldt.year}"
@@ -351,6 +374,7 @@ internal fun ClipRow(
     clip: RallyClip,
     media: MediaRepository,
     onClick: () -> Unit,
+    matchTitle: String? = null,
 ) {
     val thumbUrl by produceState<String?>(initialValue = null, clip.id) {
         value = runCatching { media.signedThumbnailUrl(clip) }.getOrNull()
@@ -371,7 +395,7 @@ internal fun ClipRow(
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                clip.title ?: "Rally #${clip.rallyIndex}",
+                clipRowTitle(clip, matchTitle),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onBackground,
             )

@@ -159,7 +159,7 @@ fun ClipDetailScreen(
         topBar = {
             if (!isFullscreen) {
                 TopAppBar(
-                    title = { Text(state.clip?.title ?: state.clip?.let { "Rally #${it.rallyIndex}" } ?: "") },
+                    title = { Text(state.displayTitle ?: "") },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")

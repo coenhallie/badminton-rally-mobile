@@ -301,4 +301,36 @@ class ClipDetailViewModelTest {
         ann.deleteCalls.size shouldBe 0
         vm.state.value.annotations.map { it.id } shouldBe listOf("a1")
     }
+
+    @Test
+    fun display_title_falls_back_to_rally_number_when_clip_only_carries_the_match_name() = runTest {
+        // Every clip of a match is stamped with the match name at cut time.
+        val siblings = listOf(
+            sampleClip.copy(id = "c1", rallyIndex = 3, title = "Thu League vs Marco"),
+            sampleClip.copy(id = "c2", rallyIndex = 4, title = "Thu League vs Marco"),
+        )
+        val s = setup(clipsList = siblings)
+        s.vm.state.test {
+            var st = awaitItem()
+            while (st.clip == null) st = awaitItem()
+            st.displayTitle shouldBe "Rally #3"
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun display_title_keeps_a_clip_the_user_renamed() = runTest {
+        val siblings = listOf(
+            sampleClip.copy(id = "c1", rallyIndex = 3, title = "Great smash"),
+            sampleClip.copy(id = "c2", rallyIndex = 4, title = "Thu League vs Marco"),
+            sampleClip.copy(id = "c3", rallyIndex = 5, title = "Thu League vs Marco"),
+        )
+        val s = setup(clipsList = siblings)
+        s.vm.state.test {
+            var st = awaitItem()
+            while (st.clip == null) st = awaitItem()
+            st.displayTitle shouldBe "Great smash"
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
 }

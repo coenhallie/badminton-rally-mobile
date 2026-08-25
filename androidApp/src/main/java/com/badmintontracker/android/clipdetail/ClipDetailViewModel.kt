@@ -3,6 +3,8 @@ package com.badmintontracker.android.clipdetail
 import com.badmintontracker.shared.repo.userFacingMessage
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.badmintontracker.android.cliplist.clipRowTitle
+import com.badmintontracker.android.cliplist.matchTitle
 import com.badmintontracker.shared.model.AnnotationKind
 import com.badmintontracker.shared.model.RallyAnnotation
 import com.badmintontracker.shared.model.RallyClip
@@ -19,6 +21,12 @@ import kotlinx.coroutines.launch
 data class ClipDetailState(
     val isLoading: Boolean = true,
     val clip: RallyClip? = null,
+    /**
+     * Header label: the clip's own title if the user renamed it, otherwise its
+     * rally number. Resolved here rather than in the composable because it needs
+     * the sibling clips to tell a per-clip rename from the shared match name.
+     */
+    val displayTitle: String? = null,
     val annotations: List<RallyAnnotation> = emptyList(),
     val signedClipUrl: String? = null,
     val error: String? = null,
@@ -75,10 +83,14 @@ class ClipDetailViewModel(
                 null
             }
             val isOwner = clip.ownerId == auth.currentUserId()
+            // Siblings tell a per-clip rename apart from the match name that the
+            // web app stamps onto every clip of the video.
+            val siblings = clips.observeClips().first().filter { it.videoId == clip.videoId }
             state.update {
                 it.copy(
                     isLoading = false,
                     clip = clip,
+                    displayTitle = clipRowTitle(clip, siblings.matchTitle()),
                     annotations = ann,
                     signedClipUrl = url,
                     isOwner = isOwner,

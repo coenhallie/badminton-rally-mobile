@@ -212,4 +212,57 @@ class ClipListViewModelTest {
             cancelAndIgnoreRemainingEvents()
         }
     }
+
+    @Test
+    fun match_title_comes_from_the_clips_match_name() = runTest {
+        val clips = FakeClipsRepository().apply {
+            this.clips.value = listOf(
+                ownedClip("a", "v-own").copy(title = "Thu League vs Marco"),
+                ownedClip("b", "v-own").copy(title = "Thu League vs Marco"),
+            )
+        }
+        val auth = FakeAuthRepository().apply { currentUserIdValue = "user-self" }
+        val vm = ClipListViewModel(clips, auth, FakeSharesRepository(), FakeVideosRepository())
+        vm.state.test {
+            var s = awaitItem()
+            while (s.ownedMatches.isEmpty()) s = awaitItem()
+            s.ownedMatches.first().title shouldBe "Thu League vs Marco"
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun match_title_is_null_when_no_clip_carries_one() = runTest {
+        val clips = FakeClipsRepository().apply {
+            this.clips.value = listOf(ownedClip("a", "v-own"), ownedClip("b", "v-own"))
+        }
+        val auth = FakeAuthRepository().apply { currentUserIdValue = "user-self" }
+        val vm = ClipListViewModel(clips, auth, FakeSharesRepository(), FakeVideosRepository())
+        vm.state.test {
+            var s = awaitItem()
+            while (s.ownedMatches.isEmpty()) s = awaitItem()
+            s.ownedMatches.first().title shouldBe null
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun match_title_survives_a_single_clip_being_renamed() = runTest {
+        // The app lets a user retitle one clip; that must not relabel the match.
+        val clips = FakeClipsRepository().apply {
+            this.clips.value = listOf(
+                ownedClip("a", "v-own").copy(rallyIndex = 0, title = "Great smash"),
+                ownedClip("b", "v-own").copy(rallyIndex = 1, title = "Thu League vs Marco"),
+                ownedClip("c", "v-own").copy(rallyIndex = 2, title = "Thu League vs Marco"),
+            )
+        }
+        val auth = FakeAuthRepository().apply { currentUserIdValue = "user-self" }
+        val vm = ClipListViewModel(clips, auth, FakeSharesRepository(), FakeVideosRepository())
+        vm.state.test {
+            var s = awaitItem()
+            while (s.ownedMatches.isEmpty()) s = awaitItem()
+            s.ownedMatches.first().title shouldBe "Thu League vs Marco"
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
 }

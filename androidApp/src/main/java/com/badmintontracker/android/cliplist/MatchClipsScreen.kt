@@ -73,7 +73,10 @@ fun MatchClipsScreen(
             TopAppBar(
                 title = {
                     val titleText = match
-                        ?.let { "MATCH · ${formatDate(it.latestCreatedAt).uppercase(Locale.ROOT)}" }
+                        ?.let {
+                            it.title?.uppercase(Locale.ROOT)
+                                ?: "MATCH · ${formatDate(it.latestCreatedAt).uppercase(Locale.ROOT)}"
+                        }
                         ?: "RALLIES"
                     Text(
                         titleText,
@@ -135,7 +138,7 @@ fun MatchClipsScreen(
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(clipsForMatch, key = { it.id }) { clip ->
-                        ClipRow(clip, media, onClick = { onClipClick(clip) })
+                        ClipRow(clip, media, onClick = { onClipClick(clip) }, matchTitle = match?.title)
                         HorizontalDivider()
                     }
                 }
