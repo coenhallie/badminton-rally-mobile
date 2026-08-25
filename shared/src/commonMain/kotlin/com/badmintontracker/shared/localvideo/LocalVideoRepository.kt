@@ -79,6 +79,16 @@ class LocalVideoRepository(
 fun LocalVideoRepository.acknowledgeResult(id: String) =
     update(id) { it.copy(resultSeen = true) }
 
-/** Stores the match name and description (Swift-friendly single-purpose mutation). */
+/**
+ * Stores the match name and description (Swift-friendly single-purpose mutation).
+ *
+ * A no-op once the entry has left LOCAL. Both platforms hide the edit affordance
+ * by then, but the window is a data integrity rule rather than a UI convention:
+ * the values ride on the videos INSERT and no UPDATE grant exists on either
+ * column, so a late write would leave the app showing a name the database does
+ * not have, with no way to reconcile it. See [canEditLocalVideoDetails].
+ */
 fun LocalVideoRepository.setDetails(id: String, title: String?, description: String?) =
-    update(id) { it.copy(title = title, description = description) }
+    update(id) {
+        if (canEditLocalVideoDetails(it.stage)) it.copy(title = title, description = description) else it
+    }

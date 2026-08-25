@@ -158,4 +158,19 @@ class LocalVideoRepositoryTest {
         repo.get("a")?.title.shouldBeNull()
         repo.get("a")?.description.shouldBeNull()
     }
+
+    @Test
+    fun setDetails_is_a_no_op_once_the_entry_has_left_local() {
+        // The insert is the only write path for these columns, so a write after
+        // CREATE_ROW would show a name the database does not have.
+        val repo = LocalVideoRepository(MapSettings())
+        repo.add(entry("a"))
+        repo.setDetails("a", "Thu League", "notes")
+        repo.update("a") { it.copy(stage = AnalyzeStage.UPLOADING) }
+
+        repo.setDetails("a", "Renamed after upload", "new notes")
+
+        repo.get("a")?.title shouldBe "Thu League"
+        repo.get("a")?.description shouldBe "notes"
+    }
 }
