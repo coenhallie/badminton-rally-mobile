@@ -23,6 +23,11 @@ struct ClipDetailView: View {
                 let m = ClipDetailModel(rally: rally, clipId: clipId)
                 model = m
                 await m.load()
+                await m.refreshLabels()
+                // Structured child task: torn down automatically if this .task
+                // is cancelled (the view disappearing) before it is awaited.
+                async let labelsLoop: Void = m.observeLabels()
+                _ = await labelsLoop
             }
         }
     }
@@ -79,9 +84,16 @@ struct ClipDetailView: View {
             .listStyle(.plain)
         }
         .sheet(isPresented: $showAddSheet) {
-            AddAnnotationSheet { kind, body in
-                Task { await model.add(kind: kind, body: body) }
-            }
+            AddAnnotationSheet(
+                labels: model.labels,
+                canCreateLabel: true,
+                onCreateLabel: { name in
+                    Task { await model.createLabel(name) }
+                },
+                onAdd: { label, body in
+                    Task { await model.add(label: label, body: body) }
+                }
+            )
             .presentationDetents([.medium])
         }
         .alert("Delete note?", isPresented: Binding(
@@ -103,8 +115,8 @@ struct ClipDetailView: View {
             Text(formatTimestamp(annotation.timestampSeconds))
                 .font(.footnote.monospacedDigit())
                 .foregroundStyle(Shuttl.textSecondary)
-            if let kind = annotation.kind {
-                KindBadge(kind: kind)
+            if let name = annotation.labelName {
+                LabelBadge(name: name, colorKey: annotation.labelColor)
             }
             if !annotation.body.isEmpty {
                 Text(annotation.body)

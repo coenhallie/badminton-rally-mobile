@@ -8,7 +8,9 @@ final class LocalPlayerModel {
     let entry: LocalVideoEntry
     private(set) var player: AVPlayer
     private(set) var annotations: [LocalAnnotation] = []
+    var labels: [AnnotationLabel] = []
     var playbackError: String? = nil
+    var actionError: String? = nil
     private var fps: Float = 0
     private var statusObservation: NSKeyValueObservation?
 
@@ -33,25 +35,53 @@ final class LocalPlayerModel {
         }
     }
 
+    /// Streams the signed-in user's labels for the picker and the badge lookup.
+    /// Runs for the lifetime of the screen; `rally.labels` is a singleton, so
+    /// this just mirrors its current value.
+    func observeLabels() async {
+        for await ls in rally.labels.labels {
+            labels = ls
+        }
+    }
+
+    /// Kicks a real load off the network so a stale or empty cache catches up.
+    /// Errors are swallowed here: the cached/streamed value above still renders,
+    /// and a `createLabel` failure surfaces its own message.
+    func refreshLabels() async {
+        _ = try? await rally.labels.refreshLabelsOrMessage()
+    }
+
+    func createLabel(_ name: String) async {
+        guard let outcome = try? await SwiftInteropKt.createLabelForSwift(rally.labels, name: name) else {
+            actionError = "Couldn't add label"
+            return
+        }
+        // Assigning unconditionally (rather than only on non-nil) clears a
+        // stale banner from an earlier failure once this one succeeds.
+        actionError = outcome.errorMessage
+    }
+
     func currentTimestampSeconds() -> Float {
         let time = player.currentTime()
         guard time.isNumeric else { return 0 }
         return max(0, Float(CMTimeGetSeconds(time)))
     }
 
-    func add(kind: AnnotationKind?, body: String, atSeconds: Float) {
+    func add(label: AnnotationLabel?, body: String, atSeconds: Float) {
         let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty && kind == nil { return }
+        if trimmed.isEmpty && label == nil { return }
         _ = rally.localAnnotations.add(
             videoId: entry.id,
             timestampSeconds: max(0, atSeconds),
             body: trimmed,
-            kind: kind
+            label: label
         )
+        actionError = nil
     }
 
     func delete(annotationId: String) {
         rally.localAnnotations.delete(videoId: entry.id, annotationId: annotationId)
+        actionError = nil
     }
 
     func seek(toSeconds seconds: Float) {

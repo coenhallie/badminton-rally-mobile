@@ -15,6 +15,7 @@ final class ClipDetailModel {
     private(set) var annotations: [RallyAnnotation] = []
     private(set) var player: AVPlayer? = nil
     private(set) var isOwner = false
+    var labels: [AnnotationLabel] = []
     var error: String? = nil
     var actionError: String? = nil
     private var resignAttempts = 0
@@ -62,6 +63,32 @@ final class ClipDetailModel {
         }
         await sign(clip: clip)
         isLoading = false
+    }
+
+    /// Streams the signed-in user's labels for the picker and the badge lookup.
+    /// Runs for the lifetime of the screen (call once from a detached `.task`);
+    /// `rally.labels` is a singleton, so this just mirrors its current value.
+    func observeLabels() async {
+        for await ls in rally.labels.labels {
+            labels = ls
+        }
+    }
+
+    /// Kicks a real load off the network so a stale or empty cache catches up.
+    /// Errors are swallowed here: the cached/streamed value above still renders,
+    /// and a `createLabel` failure surfaces its own message.
+    func refreshLabels() async {
+        _ = try? await rally.labels.refreshLabelsOrMessage()
+    }
+
+    func createLabel(_ name: String) async {
+        guard let outcome = try? await SwiftInteropKt.createLabelForSwift(rally.labels, name: name) else {
+            actionError = "Couldn't add label"
+            return
+        }
+        // Assigning unconditionally (rather than only on non-nil) clears a
+        // stale banner from an earlier failure once this one succeeds.
+        actionError = outcome.errorMessage
     }
 
     /// Re-sign the URL (used by load and by the manual Retry on player failure).
@@ -141,13 +168,13 @@ final class ClipDetailModel {
         )
     }
 
-    func add(kind: AnnotationKind?, body: String) async {
+    func add(label: AnnotationLabel?, body: String) async {
         guard isOwner else { return }
         let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty && kind == nil { return }
+        if trimmed.isEmpty && label == nil { return }
         let ts = max(0, currentTimeSeconds())
         guard let outcome = try? await SwiftInteropKt.addAnnotationForSwift(
-            rally.annotations, clipId: clipId, timestampSeconds: ts, body: trimmed, kind: kind
+            rally.annotations, clipId: clipId, timestampSeconds: ts, body: trimmed, label: label
         ) else {
             actionError = "Couldn't add note"
             return

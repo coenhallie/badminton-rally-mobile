@@ -31,7 +31,12 @@ struct LocalPlayerView: View {
             let m = LocalPlayerModel(rally: rally, entry: entry)
             model = m
             await m.loadMetadata()
+            await m.refreshLabels()
+            // Structured child task: torn down automatically if this .task is
+            // cancelled (the view disappearing) before it is awaited.
+            async let labelsLoop: Void = m.observeLabels()
             await m.observeAnnotations()
+            _ = await labelsLoop
         }
         .task {
             // Keep the entry live (Android observes it the same way): the stage
@@ -70,6 +75,11 @@ struct LocalPlayerView: View {
 
             PlaybackControlBar(player: model.player, prefs: rally.playbackPrefs)
             FrameStepBar(player: model.player, step: { model.stepFrames($0) })
+
+            if let actionError = model.actionError {
+                ErrorBanner(message: actionError)
+                    .onTapGesture { model.actionError = nil }
+            }
 
             List {
                 ForEach(model.annotations, id: \.id) { annotation in
@@ -116,9 +126,16 @@ struct LocalPlayerView: View {
             CourtMarkingView(rally: rally, analyze: analyze, entryId: route.entryId)
         }
         .sheet(item: $addSheet) { item in
-            AddAnnotationSheet { kind, body in
-                model.add(kind: kind, body: body, atSeconds: item.timestamp)
-            }
+            AddAnnotationSheet(
+                labels: model.labels,
+                canCreateLabel: true,
+                onCreateLabel: { name in
+                    Task { await model.createLabel(name) }
+                },
+                onAdd: { label, body in
+                    model.add(label: label, body: body, atSeconds: item.timestamp)
+                }
+            )
             .presentationDetents([.medium])
         }
         .alert("Delete note?", isPresented: Binding(
@@ -142,8 +159,8 @@ struct LocalPlayerView: View {
             Text(formatTimestamp(annotation.timestampSeconds))
                 .font(.footnote.monospacedDigit())
                 .foregroundStyle(Shuttl.textSecondary)
-            if let kind = annotation.kind {
-                KindBadge(kind: kind)
+            if let name = annotation.labelName {
+                LabelBadge(name: name, colorKey: annotation.labelColor)
             }
             if !annotation.body.isEmpty {
                 Text(annotation.body)
