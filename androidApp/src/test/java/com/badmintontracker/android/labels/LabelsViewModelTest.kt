@@ -42,13 +42,65 @@ class LabelsViewModelTest {
         val vm = LabelsViewModel(FakeAnnotationLabelsRepository(emptyList()))
 
         vm.expand("l1")
-        vm.state.value.expandedId shouldBe "l1"
+        vm.state.value.expanded shouldBe LabelEditTarget.Existing("l1")
 
         vm.expand("l2")
-        vm.state.value.expandedId shouldBe "l2"
+        vm.state.value.expanded shouldBe LabelEditTarget.Existing("l2")
 
         vm.expand("l2")
-        vm.state.value.expandedId.shouldBeNull()
+        vm.state.value.expanded.shouldBeNull()
+    }
+
+    @Test
+    fun starting_creation_closes_an_open_row_and_is_its_own_toggle() {
+        val vm = LabelsViewModel(FakeAnnotationLabelsRepository(emptyList()))
+
+        vm.expand("l1")
+        vm.state.value.expanded shouldBe LabelEditTarget.Existing("l1")
+
+        vm.startCreating()
+        vm.state.value.expanded shouldBe LabelEditTarget.New
+
+        vm.startCreating()
+        vm.state.value.expanded.shouldBeNull()
+    }
+
+    @Test
+    fun expanding_a_row_closes_an_open_draft() {
+        val vm = LabelsViewModel(FakeAnnotationLabelsRepository(emptyList()))
+
+        vm.startCreating()
+        vm.state.value.expanded shouldBe LabelEditTarget.New
+
+        vm.expand("l1")
+        vm.state.value.expanded shouldBe LabelEditTarget.Existing("l1")
+    }
+
+    @Test
+    fun a_successful_create_opens_the_new_labels_own_editor() = runTest {
+        val vm = LabelsViewModel(FakeAnnotationLabelsRepository(emptyList()))
+        advanceUntilIdle()
+
+        vm.startCreating()
+        vm.create("Smash winner", LabelColor.PURPLE)
+        advanceUntilIdle()
+
+        val created = vm.state.value.labels.single()
+        vm.state.value.expanded shouldBe LabelEditTarget.Existing(created.id)
+    }
+
+    @Test
+    fun a_rejected_create_leaves_the_draft_open() = runTest {
+        val repo = FakeAnnotationLabelsRepository(listOf(label("l1", "Good shot", "green")))
+        val vm = LabelsViewModel(repo)
+        advanceUntilIdle()
+
+        vm.startCreating()
+        vm.create("good shot", LabelColor.PURPLE)
+        advanceUntilIdle()
+
+        vm.state.value.expanded shouldBe LabelEditTarget.New
+        vm.state.value.errorMessage shouldBe "You already have a label called \"good shot\"."
     }
 
     @Test

@@ -11,9 +11,21 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+/**
+ * The one piece of expansion state for the whole screen: which row currently
+ * shows its in-place editor. [New] is the not-yet-created draft row opened by
+ * the toolbar "+"; [Existing] is a real label being renamed or recoloured.
+ * Both live in the same field, so it is structurally impossible for two
+ * editors to be open at once.
+ */
+sealed interface LabelEditTarget {
+    data class Existing(val id: String) : LabelEditTarget
+    data object New : LabelEditTarget
+}
+
 data class LabelsUiState(
     val labels: List<AnnotationLabel> = emptyList(),
-    val expandedId: String? = null,
+    val expanded: LabelEditTarget? = null,
     val errorMessage: String? = null,
     /**
      * True when the most recent [refresh] failed. Lets an empty list distinguish
@@ -59,12 +71,45 @@ class LabelsViewModel(private val labels: AnnotationLabelsRepository) : ViewMode
         }
     }
 
-    /** Passing the id already expanded collapses it, so a row is its own toggle. */
-    fun expand(id: String?) {
-        _state.value = _state.value.copy(expandedId = if (_state.value.expandedId == id) null else id)
+    /** Tapping the already-expanded row collapses it, so a row is its own toggle. */
+    fun expand(id: String) {
+        val target = LabelEditTarget.Existing(id)
+        _state.value = _state.value.copy(expanded = if (_state.value.expanded == target) null else target)
     }
 
-    fun create(name: String, color: LabelColor) = run { labels.create(name, color) }
+    /**
+     * Opens (or, tapped again, closes) the draft row the toolbar "+" and the
+     * empty-state action button both call. Nothing is created yet - [create]
+     * below does that once the draft's name is committed - so backing out of
+     * the draft without typing anything never touches the server.
+     */
+    fun startCreating() {
+        val target = LabelEditTarget.New
+        _state.value = _state.value.copy(expanded = if (_state.value.expanded == target) null else target)
+    }
+
+    /**
+     * Unlike [rename]/[recolor]/[delete], a failed create leaves the draft row
+     * open (its typed name and chosen colour survive) rather than collapsing
+     * it - a rejected duplicate name is recoverable in place instead of
+     * forcing the user to reopen the row and retype. A successful create
+     * hands the new row's own id to [LabelEditTarget.Existing], so the same
+     * expanded editor keeps showing, now bound to the real, persisted label.
+     */
+    fun create(name: String, color: LabelColor) {
+        viewModelScope.launch {
+            labels.create(name, color)
+                .onSuccess { created ->
+                    _state.value = _state.value.copy(expanded = LabelEditTarget.Existing(created.id))
+                }
+                .onFailure { e ->
+                    _state.value = _state.value.copy(
+                        errorMessage = e.userFacingMessage("Couldn't save the label"),
+                    )
+                }
+        }
+    }
+
     fun rename(id: String, name: String) = run { labels.rename(id, name) }
     fun recolor(id: String, color: LabelColor) = run { labels.recolor(id, color) }
     fun delete(id: String) = run { labels.delete(id) }

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -19,6 +20,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -39,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.FocusState
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
@@ -48,6 +51,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlOutlinedTextField
 import com.badmintontracker.android.ui.components.SwipeToRemoveRow
 import com.badmintontracker.shared.model.AnnotationLabel
@@ -81,12 +85,18 @@ fun LabelsScreen(vm: LabelsViewModel, onBack: () -> Unit) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
+                actions = {
+                    IconButton(onClick = vm::startCreating) {
+                        Icon(Icons.Default.Add, contentDescription = "New label")
+                    }
+                },
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize().imePadding()) {
-            if (state.labels.isEmpty()) {
+            val creatingNew = state.expanded == LabelEditTarget.New
+            if (state.labels.isEmpty() && !creatingNew) {
                 // A failed load and a genuinely empty account both leave the list empty,
                 // and the snackbar above that reports a failure times out after a few
                 // seconds - so the empty state itself must keep telling them apart, or a
@@ -108,15 +118,37 @@ fun LabelsScreen(vm: LabelsViewModel, onBack: () -> Unit) {
                             TextButton(onClick = vm::refresh) { Text("Retry") }
                         }
                     } else {
-                        Text(
-                            "No labels yet",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        // With the in-list "add" row gone, an empty screen must teach
+                        // the action itself rather than leave a first-time user staring
+                        // at nothing but a small "+" in the corner.
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                        ) {
+                            Text(
+                                "No labels yet",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            ShuttlButton(
+                                text = "Add label",
+                                onClick = vm::startCreating,
+                                compact = true,
+                            )
+                        }
                     }
                 }
             } else {
                 LazyColumn(modifier = Modifier.weight(1f)) {
+                    if (creatingNew) {
+                        item(key = "new-label-draft") {
+                            DraftLabelRow(
+                                palette = vm.palette,
+                                existingColorKeys = state.labels.map { it.colorKey },
+                                onCreate = vm::create,
+                            )
+                        }
+                    }
                     items(state.labels, key = { it.id }) { label ->
                         SwipeToRemoveRow(
                             label = "Delete",
@@ -124,7 +156,7 @@ fun LabelsScreen(vm: LabelsViewModel, onBack: () -> Unit) {
                         ) {
                             LabelRow(
                                 label = label,
-                                expanded = state.expandedId == label.id,
+                                expanded = state.expanded == LabelEditTarget.Existing(label.id),
                                 palette = vm.palette,
                                 onToggle = { vm.expand(label.id) },
                                 onRename = { vm.rename(label.id, it) },
@@ -134,11 +166,6 @@ fun LabelsScreen(vm: LabelsViewModel, onBack: () -> Unit) {
                     }
                 }
             }
-            NewLabelRow(
-                palette = vm.palette,
-                existingColorKeys = state.labels.map { it.colorKey },
-                onCreate = vm::create,
-            )
         }
     }
 
@@ -180,6 +207,7 @@ private fun LabelRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(min = 48.dp)
                 .clickable(onClick = onToggle)
                 .padding(horizontal = 24.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -206,36 +234,66 @@ private fun LabelRow(
             // here, since trimmed == label.name) before the user ever touches the field.
             var hadFocus by remember(label.id) { mutableStateOf(false) }
 
-            // No reset here, unlike NewLabelRow's commit(): this row does not unmount on
-            // commit, so it never had NewLabelRow's double-commit-on-Done problem to solve.
-            // Resetting hadFocus after Done would leave the cursor sitting in the field
-            // with hadFocus == false - the next blur would then early-return and silently
-            // discard whatever the user kept typing after Done.
+            // No reset here, unlike DraftLabelRow's commit(): this row does not unmount
+            // on commit, so it never had that row's double-commit-on-Done problem to
+            // solve. Resetting hadFocus after Done would leave the cursor sitting in the
+            // field with hadFocus == false - the next blur would then early-return and
+            // silently discard whatever the user kept typing after Done.
             fun commit() {
                 val trimmed = name.trim()
                 if (trimmed != label.name) onRename(trimmed)
             }
 
-            Column(
-                modifier = Modifier
-                    .padding(horizontal = 24.dp)
-                    .padding(bottom = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                ShuttlOutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = "Name",
-                    onDone = { commit() },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .onFocusChanged { state ->
-                            if (state.isFocused) hadFocus = true else if (hadFocus) commit()
-                        },
-                )
-                SwatchGrid(palette = palette, selectedKey = label.colorKey, onSelect = onRecolor)
-            }
+            LabelEditorFields(
+                name = name,
+                onNameChange = { name = it },
+                onDone = ::commit,
+                onFocusChanged = { state -> if (state.isFocused) hadFocus = true else if (hadFocus) commit() },
+                palette = palette,
+                selectedColorKey = label.colorKey,
+                onSelectColor = onRecolor,
+            )
         }
+    }
+}
+
+/**
+ * The name field and swatch grid shared by an expanded [LabelRow] and by
+ * [DraftLabelRow] - the same in-place editor either way. What differs between
+ * the two callers is only the wiring around it: an existing row persists a
+ * rename or a recolour immediately, since the label already exists; the
+ * not-yet-created draft can only hold its typed name and chosen colour
+ * locally until both are submitted together as one [LabelsViewModel.create]
+ * call.
+ */
+@Composable
+private fun LabelEditorFields(
+    name: String,
+    onNameChange: (String) -> Unit,
+    onDone: () -> Unit,
+    onFocusChanged: (FocusState) -> Unit,
+    palette: List<LabelColor>,
+    selectedColorKey: String?,
+    onSelectColor: (LabelColor) -> Unit,
+    focusRequester: FocusRequester? = null,
+) {
+    Column(
+        modifier = Modifier
+            .padding(horizontal = 24.dp)
+            .padding(bottom = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        ShuttlOutlinedTextField(
+            value = name,
+            onValueChange = onNameChange,
+            label = "Name",
+            onDone = onDone,
+            modifier = Modifier
+                .fillMaxWidth()
+                .let { if (focusRequester != null) it.focusRequester(focusRequester) else it }
+                .onFocusChanged(onFocusChanged),
+        )
+        SwatchGrid(palette = palette, selectedKey = selectedColorKey, onSelect = onSelectColor)
     }
 }
 
@@ -293,85 +351,71 @@ private fun ColorSwatch(color: LabelColor, selected: Boolean, onClick: () -> Uni
 }
 
 /**
- * The colour picker lives here, at creation time, not only in the edit row reached
- * afterward - so choosing a colour for a new label is one step, not "create, tap,
- * recolour". [existingColorKeys] feeds the same next-unused-swatch logic the
- * repository already uses for name-only creation elsewhere (the Add-note sheet's
- * inline picker, Task 10), so an unchanged default still behaves exactly as before.
+ * The not-yet-created label row, opened by the toolbar "+" (or the empty
+ * state's action button) and shown at the top of the list while
+ * [LabelsUiState.expanded] is [LabelEditTarget.New]. The colour picker lives
+ * here, at creation time, not only in the edit row reached afterward - so
+ * choosing a colour for a new label is one step, not "create, tap, recolour".
+ * [existingColorKeys] feeds the same next-unused-swatch logic the repository
+ * already uses for name-only creation elsewhere (the Add-note sheet's inline
+ * picker, Task 10), so an unchanged default still behaves exactly as before.
+ *
+ * Name and colour are held locally, not persisted, until the name field
+ * commits: there is no id yet to rename or recolour against, so unlike an
+ * expanded [LabelRow] this row cannot write through on every swatch tap.
+ * Once [onCreate] succeeds, [LabelsViewModel.create] moves the expansion
+ * target to the new label's own id, and this composable stops being shown -
+ * the *same* [LabelEditorFields] then keeps rendering, bound to the real row.
  */
 @Composable
-private fun NewLabelRow(
+private fun DraftLabelRow(
     palette: List<LabelColor>,
     existingColorKeys: List<String>,
     onCreate: (String, LabelColor) -> Unit,
 ) {
-    var creating by remember { mutableStateOf(false) }
-
-    if (creating) {
-        var name by remember { mutableStateOf("") }
-        // Keyed on existingColorKeys: the row can open before the label list has
-        // finished its first load, in which case an unkeyed remember would compute
-        // the default swatch from a stale (often empty) list and never reconsider
-        // it. Keying recomputes the default whenever the list's colour keys change,
-        // which is what we want while the list is still arriving.
-        var selectedColor by remember(existingColorKeys) {
-            mutableStateOf(AnnotationLabelsRepositoryImpl.nextUnusedColor(existingColorKeys))
-        }
-        // See the matching guard in LabelRow: the first onFocusChanged event fires
-        // with isFocused == false before the user has touched anything, which would
-        // otherwise collapse this row back to the button the instant it opens.
-        var hadFocus by remember { mutableStateOf(false) }
-        val focusRequester = remember { FocusRequester() }
-
-        fun commit() {
-            // Reset before dispatching, not after: the Done action's own focus-loss
-            // event can still reach this closure once (the row hasn't finished
-            // unmounting yet even though `creating` just flipped false), and without
-            // this guard that second call re-submits the same name - which the
-            // server correctly rejects as a duplicate of the row just created.
-            if (!hadFocus) return
-            hadFocus = false
-            val trimmed = name.trim()
-            if (trimmed.isNotEmpty()) onCreate(trimmed, selectedColor)
-            creating = false
-        }
-
-        // Auto-focuses the field the moment the row opens. Without this, the row opens
-        // with nothing focused: tapping a swatch without ever touching the text field
-        // leaves hadFocus false forever, and commit() early-returns on every subsequent
-        // tap-away, trapping the row open with no way to close or commit it.
-        LaunchedEffect(Unit) { focusRequester.requestFocus() }
-
-        Column(
-            modifier = Modifier
-                .padding(horizontal = 24.dp)
-                .padding(vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            ShuttlOutlinedTextField(
-                value = name,
-                onValueChange = { name = it },
-                label = "Name",
-                onDone = { commit() },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .focusRequester(focusRequester)
-                    .onFocusChanged { state ->
-                        if (state.isFocused) hadFocus = true else if (hadFocus) commit()
-                    },
-            )
-            SwatchGrid(
-                palette = palette,
-                selectedKey = selectedColor.key,
-                onSelect = { selectedColor = it },
-            )
-        }
-    } else {
-        TextButton(
-            onClick = { creating = true },
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-        ) {
-            Text("New label")
-        }
+    var name by remember { mutableStateOf("") }
+    // Keyed on existingColorKeys: the row can open before the label list has
+    // finished its first load, in which case an unkeyed remember would compute
+    // the default swatch from a stale (often empty) list and never reconsider
+    // it. Keying recomputes the default whenever the list's colour keys change,
+    // which is what we want while the list is still arriving.
+    var selectedColor by remember(existingColorKeys) {
+        mutableStateOf(AnnotationLabelsRepositoryImpl.nextUnusedColor(existingColorKeys))
     }
+    // See the matching guard in LabelRow: the first onFocusChanged event fires
+    // with isFocused == false before the user has touched anything, which would
+    // otherwise commit this row the instant it opens.
+    var hadFocus by remember { mutableStateOf(false) }
+    val focusRequester = remember { FocusRequester() }
+
+    fun commit() {
+        // Reset before dispatching, not after: the Done action's own focus-loss
+        // event can still reach this closure once, and without this guard that
+        // second call would re-submit the same name - which the server
+        // correctly rejects as a duplicate of the row just created. A failed
+        // create leaves this row mounted (LabelsViewModel.create only changes
+        // the expansion target on success), so the typed name and chosen
+        // colour are still here for the user to fix and resubmit.
+        if (!hadFocus) return
+        hadFocus = false
+        val trimmed = name.trim()
+        if (trimmed.isNotEmpty()) onCreate(trimmed, selectedColor)
+    }
+
+    // Auto-focuses the field the moment the row opens. Without this, the row opens
+    // with nothing focused: tapping a swatch without ever touching the text field
+    // leaves hadFocus false forever, and commit() early-returns on every subsequent
+    // tap-away, trapping the row open with no way to close or commit it.
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+
+    LabelEditorFields(
+        name = name,
+        onNameChange = { name = it },
+        onDone = ::commit,
+        onFocusChanged = { state -> if (state.isFocused) hadFocus = true else if (hadFocus) commit() },
+        focusRequester = focusRequester,
+        palette = palette,
+        selectedColorKey = selectedColor.key,
+        onSelectColor = { selectedColor = it },
+    )
 }
