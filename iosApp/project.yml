@@ -10,6 +10,14 @@ targets:
     type: application
     platform: iOS
     sources: [Sources, Assets.xcassets]
+    # Declared, not inherited: the session lives in the Keychain (see
+    # resolveSessionStore). Without this entitlement every Keychain call returns
+    # -34018 and the app silently falls back to plaintext NSUserDefaults.
+    entitlements:
+      path: iosApp.entitlements
+      properties:
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)com.badmintontracker.ios
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.badmintontracker.ios
