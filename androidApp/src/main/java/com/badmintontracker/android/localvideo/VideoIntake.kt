@@ -14,9 +14,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
+import com.badmintontracker.shared.localvideo.LocalVideoLimits
 import java.util.UUID
-
-private const val MAX_SIZE_BYTES = 1_073_741_824L // 1 GB, same cap as the web app
 
 /** Entry points for getting a video into the app. */
 class VideoIntake(val record: () -> Unit, val import: () -> Unit)
@@ -109,8 +108,8 @@ private fun addEntryFromUri(
             }
     }
 
-    if (sizeBytes > MAX_SIZE_BYTES) {
-        onError("Video is larger than 1GB. Please use a shorter recording.")
+    LocalVideoLimits.oversizeMessage(sizeBytes)?.let {
+        onError(it)
         return
     }
 
