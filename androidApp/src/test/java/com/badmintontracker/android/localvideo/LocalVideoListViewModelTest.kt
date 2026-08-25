@@ -101,4 +101,66 @@ class LocalVideoListViewModelTest {
         row.statusText shouldBe "Analyzed"
         row.canAnalyze shouldBe false
     }
+
+    @Test
+    fun details_are_editable_only_while_the_entry_is_still_local() = runTest {
+        val localVideos = LocalVideoRepository(MapSettings())
+        val localAnnotations = LocalAnnotationsRepository(MapSettings())
+        AnalyzeStage.entries.forEachIndexed { i, stage ->
+            localVideos.add(
+                LocalVideoEntry(
+                    id = stage.name, uri = "content://$stage", displayName = "m.mp4",
+                    durationMs = 1000, sizeBytes = 1, addedAtEpochMs = i.toLong(), stage = stage,
+                ),
+            )
+        }
+        val vm = LocalVideoListViewModel(localVideos, coordinator(localVideos, localAnnotations), localAnnotations)
+
+        val editableStages = vm.rows.value.filter { it.canEditDetails }.map { it.entry.stage }
+
+        editableStages shouldBe listOf(AnalyzeStage.LOCAL)
+    }
+
+    @Test
+    fun a_named_entry_leads_with_its_name_and_an_unnamed_one_with_its_file_name() = runTest {
+        val localVideos = LocalVideoRepository(MapSettings())
+        val localAnnotations = LocalAnnotationsRepository(MapSettings())
+        localVideos.add(
+            LocalVideoEntry(
+                id = "named", uri = "content://a", displayName = "VID_0042.mp4",
+                durationMs = 1000, sizeBytes = 1, addedAtEpochMs = 1,
+                title = "Thu League vs Marco",
+            ),
+        )
+        localVideos.add(
+            LocalVideoEntry(
+                id = "unnamed", uri = "content://b", displayName = "VID_0043.mp4",
+                durationMs = 1000, sizeBytes = 1, addedAtEpochMs = 0,
+            ),
+        )
+        val vm = LocalVideoListViewModel(localVideos, coordinator(localVideos, localAnnotations), localAnnotations)
+
+        val byId = vm.rows.value.associateBy { it.entry.id }
+        byId.getValue("named").primaryText shouldBe "Thu League vs Marco"
+        byId.getValue("unnamed").primaryText shouldBe "VID_0043.mp4"
+    }
+
+    @Test
+    fun setDetails_normalizes_before_storing() = runTest {
+        val localVideos = LocalVideoRepository(MapSettings())
+        val localAnnotations = LocalAnnotationsRepository(MapSettings())
+        localVideos.add(
+            LocalVideoEntry(
+                id = "a", uri = "content://a", displayName = "m.mp4",
+                durationMs = 1000, sizeBytes = 1, addedAtEpochMs = 0,
+            ),
+        )
+        val vm = LocalVideoListViewModel(localVideos, coordinator(localVideos, localAnnotations), localAnnotations)
+
+        vm.setDetails("a", "  Thu League vs Marco  ", "   ")
+
+        localVideos.get("a")?.title shouldBe "Thu League vs Marco"
+        // Blank stays null: "" would be rejected by videos_title_length_check on insert.
+        localVideos.get("a")?.description shouldBe null
+    }
 }

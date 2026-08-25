@@ -31,6 +31,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.badmintontracker.shared.prefs.ThemePreferenceRepository
@@ -137,6 +138,17 @@ fun MatchClipsScreen(
                 }
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    match?.description?.let { description ->
+                        item(key = "match-description") {
+                            Text(
+                                text = description,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                            )
+                            HorizontalDivider()
+                        }
+                    }
                     items(clipsForMatch, key = { it.id }) { clip ->
                         ClipRow(clip, media, onClick = { onClipClick(clip) }, matchTitle = match?.title)
                         HorizontalDivider()

@@ -47,6 +47,7 @@ import com.badmintontracker.android.BuildConfig
 import com.badmintontracker.shared.prefs.ThemePreferenceRepository
 import com.badmintontracker.android.localvideo.AnalyzeResultDialog
 import com.badmintontracker.android.localvideo.LocalVideoRow
+import com.badmintontracker.android.localvideo.MatchDetailsSheet
 import com.badmintontracker.android.localvideo.localVideoSection
 import com.badmintontracker.android.share.ShareSheet
 import com.badmintontracker.android.ui.components.ConfirmDialog
@@ -77,6 +78,10 @@ fun ClipListScreen(
     onLocalAnalyze: (LocalVideoRow) -> Unit = {},
     onLocalRemove: (LocalVideoEntry) -> Unit = {},
     onLocalResultSeen: (LocalVideoEntry) -> Unit = {},
+    onLocalDetailsSaved: (id: String, title: String, description: String) -> Unit = { _, _, _ -> },
+    /** Entry just imported or recorded: its details sheet opens once, unprompted. */
+    autoDetailsEntryId: String? = null,
+    onAutoDetailsShown: () -> Unit = {},
     onRecord: () -> Unit = {},
     onImport: () -> Unit = {},
     onLabels: () -> Unit = {},
@@ -88,6 +93,16 @@ fun ClipListScreen(
     var deleteTarget by remember { mutableStateOf<MatchSummary?>(null) }
     var leaveShareTarget by remember { mutableStateOf<MatchSummary?>(null) }
     var localRemoveTarget by remember { mutableStateOf<LocalVideoEntry?>(null) }
+    var detailsTarget by remember { mutableStateOf<DetailsTarget?>(null) }
+
+    // The entry is persisted before this runs, so a dismissed sheet, a
+    // backgrounded app or a crash never costs the user the video they just took.
+    LaunchedEffect(autoDetailsEntryId, localRows) {
+        val id = autoDetailsEntryId ?: return@LaunchedEffect
+        val entry = localRows.firstOrNull { it.entry.id == id }?.entry ?: return@LaunchedEffect
+        detailsTarget = DetailsTarget(entry, autoOpened = true)
+        onAutoDetailsShown()
+    }
 
     LaunchedEffect(state.error) {
         val err = state.error ?: return@LaunchedEffect
@@ -191,6 +206,7 @@ fun ClipListScreen(
                         onRowClick = onLocalClick,
                         onAnalyzeClick = onLocalAnalyze,
                         onRemoveRequest = { localRemoveTarget = it },
+                        onEditDetails = { detailsTarget = DetailsTarget(it, autoOpened = false) },
                     )
                     if (state.ownedMatches.isNotEmpty()) {
                         item(key = "header-owned") { SectionHeader("My matches") }
@@ -247,6 +263,19 @@ fun ClipListScreen(
         )
     }
 
+    detailsTarget?.let { target ->
+        MatchDetailsSheet(
+            initialTitle = target.entry.title,
+            initialDescription = target.entry.description,
+            autoOpened = target.autoOpened,
+            onDismiss = { detailsTarget = null },
+            onSave = { title, description ->
+                onLocalDetailsSaved(target.entry.id, title, description)
+                detailsTarget = null
+            },
+        )
+    }
+
     localRemoveTarget?.let { entry ->
         ConfirmDialog(
             title = "Remove video?",
@@ -277,6 +306,9 @@ fun ClipListScreen(
         )
     }
 }
+
+/** [autoOpened] switches the sheet's dismiss label between "Skip" and "Cancel". */
+private data class DetailsTarget(val entry: LocalVideoEntry, val autoOpened: Boolean)
 
 @Composable
 private fun SectionHeader(text: String) {
@@ -325,6 +357,15 @@ private fun MatchRow(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            match.description?.let { description ->
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             if (match.sharerEmail != null) {
                 Text(
                     text = "Shared by ${match.sharerEmail}",

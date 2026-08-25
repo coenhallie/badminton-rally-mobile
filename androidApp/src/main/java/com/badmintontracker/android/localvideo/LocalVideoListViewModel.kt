@@ -8,7 +8,11 @@ import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
+import com.badmintontracker.shared.localvideo.canEditLocalVideoDetails
 import com.badmintontracker.shared.localvideo.canRemoveLocalVideo
+import com.badmintontracker.shared.localvideo.normalizeDescription
+import com.badmintontracker.shared.localvideo.normalizeTitle
+import com.badmintontracker.shared.localvideo.setDetails
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
@@ -16,11 +20,13 @@ import kotlinx.coroutines.flow.stateIn
 /** Render model: durable entry merged with the coordinator's transient progress. */
 data class LocalVideoRow(
     val entry: LocalVideoEntry,
+    val primaryText: String,     // the user's match name, else the file name
     val statusText: String?,     // null when plain LOCAL
     val durationText: String,    // m:ss
     val canAnalyze: Boolean,     // LOCAL or FAILED
     val analyzeLabel: String,    // "Analyze", or "Re-analyze" after a failed attempt
     val canRemove: Boolean,      // hidden while UPLOADING/PROCESSING (shared rule)
+    val canEditDetails: Boolean, // LOCAL only: metadata rides on the videos INSERT (shared rule)
 )
 
 class LocalVideoListViewModel(
@@ -46,6 +52,10 @@ class LocalVideoListViewModel(
 
     /** Marks a failure's result dialog as shown so it isn't re-displayed. */
     fun acknowledgeResult(id: String) = localVideos.update(id) { it.copy(resultSeen = true) }
+
+    /** Stores the match name and description typed into the details sheet. */
+    fun setDetails(id: String, title: String, description: String) =
+        localVideos.setDetails(id, normalizeTitle(title), normalizeDescription(description))
 }
 
 internal fun LocalVideoEntry.toRow(progress: AnalyzeProgress?): LocalVideoRow {
@@ -61,11 +71,13 @@ internal fun LocalVideoEntry.toRow(progress: AnalyzeProgress?): LocalVideoRow {
     }
     return LocalVideoRow(
         entry = this,
+        primaryText = title ?: displayName,
         statusText = statusText,
         durationText = formatDuration(durationMs),
         canAnalyze = stage == AnalyzeStage.LOCAL || stage == AnalyzeStage.FAILED,
         analyzeLabel = analyzeButtonLabel(stage),
         canRemove = canRemoveLocalVideo(stage),
+        canEditDetails = canEditLocalVideoDetails(stage),
     )
 }
 

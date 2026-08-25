@@ -54,6 +54,7 @@ fun LazyListScope.localVideoSection(
     onRowClick: (LocalVideoEntry) -> Unit,
     onAnalyzeClick: (LocalVideoRow) -> Unit,
     onRemoveRequest: (LocalVideoEntry) -> Unit,
+    onEditDetails: (LocalVideoEntry) -> Unit,
 ) {
     if (rows.isEmpty()) return
     item(key = "header-local") { header("On this phone") }
@@ -64,6 +65,7 @@ fun LazyListScope.localVideoSection(
                 onClick = { onRowClick(row.entry) },
                 onAnalyze = { onAnalyzeClick(row) },
                 onRemove = { onRemoveRequest(row.entry) },
+                onEditDetails = { onEditDetails(row.entry) },
             )
         }
         if (row.canRemove) {
@@ -88,6 +90,7 @@ private fun LocalVideoRowItem(
     onClick: () -> Unit,
     onAnalyze: () -> Unit,
     onRemove: () -> Unit,
+    onEditDetails: () -> Unit,
 ) {
     val entry = row.entry
     var menuOpen by remember { mutableStateOf(false) }
@@ -107,7 +110,7 @@ private fun LocalVideoRowItem(
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                entry.displayName,
+                row.primaryText,
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onBackground,
                 maxLines = 1,
@@ -145,7 +148,9 @@ private fun LocalVideoRowItem(
                 strokeWidth = 2.dp,
             )
         }
-        if (row.canRemove) {
+        // The menu renders when either action applies; each item is gated on its
+        // own rule, so a mid-pipeline row that can do neither shows no menu at all.
+        if (row.canRemove || row.canEditDetails) {
             // The menu must share a Box with its anchor: DropdownMenu positions
             // itself relative to its parent, not the IconButton.
             Box {
@@ -153,10 +158,18 @@ private fun LocalVideoRowItem(
                     Icon(Icons.Default.MoreVert, contentDescription = "Local video menu")
                 }
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                    DropdownMenuItem(
-                        text = { Text("Remove from app") },
-                        onClick = { menuOpen = false; onRemove() },
-                    )
+                    if (row.canEditDetails) {
+                        DropdownMenuItem(
+                            text = { Text("Edit details") },
+                            onClick = { menuOpen = false; onEditDetails() },
+                        )
+                    }
+                    if (row.canRemove) {
+                        DropdownMenuItem(
+                            text = { Text("Remove from app") },
+                            onClick = { menuOpen = false; onRemove() },
+                        )
+                    }
                 }
             }
         }

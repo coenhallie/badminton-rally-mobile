@@ -201,7 +201,13 @@ fun LocalPlayerScreen(
         topBar = {
             if (!isFullscreen) {
                 TopAppBar(
-                    title = { Text(entry.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    title = {
+                        Text(
+                            entry.title ?: entry.displayName,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -239,6 +245,16 @@ fun LocalPlayerScreen(
                 Column(modifier = Modifier.padding(vertical = 8.dp)) {
                     PlaybackControlBar(player = player, prefs = playbackPrefs)
                     FrameStepBar(player = player)
+                }
+
+                entry.description?.let { description ->
+                    Text(
+                        text = description,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                    HorizontalDivider()
                 }
 
                 if (annotations.isEmpty()) {

@@ -6,6 +6,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -15,9 +16,11 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.input.ImeAction
@@ -39,6 +42,16 @@ fun ShuttlOutlinedTextField(
     enabled:       Boolean = true,
     /** Non-null switches the IME action to Done and commits through this callback. */
     onDone:        (() -> Unit)? = null,
+    /** Multi-line fields grow to [maxLines]; single-line ones scroll horizontally. */
+    singleLine:    Boolean = true,
+    minLines:      Int = 1,
+    maxLines:      Int = if (singleLine) 1 else 4,
+    /**
+     * Non-null caps typing at this many characters and shows an n/max counter
+     * beside the label. Enforced here rather than at the call site so no field
+     * can drift out of step with the counter it displays.
+     */
+    maxLength:     Int? = null,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val isFocused   by interaction.collectIsFocusedAsState()
@@ -58,7 +71,18 @@ fun ShuttlOutlinedTextField(
         else                                   VisualTransformation.None
 
     Column(modifier = modifier.alpha(if (enabled) 1f else 0.6f)) {
-        FieldLabel(label)
+        if (maxLength == null) {
+            FieldLabel(label)
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                FieldLabel(label, modifier = Modifier.weight(1f))
+                Text(
+                    text  = "${value.length}/$maxLength",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
         Spacer(Modifier.height(6.dp))
         Box(
             modifier = Modifier
@@ -69,9 +93,13 @@ fun ShuttlOutlinedTextField(
         ) {
             BasicTextField(
                 value                  = value,
-                onValueChange          = onValueChange,
+                onValueChange          = { next ->
+                    onValueChange(if (maxLength != null) next.take(maxLength) else next)
+                },
                 enabled                = enabled,
-                singleLine             = true,
+                singleLine             = singleLine,
+                minLines               = minLines,
+                maxLines               = maxLines,
                 interactionSource      = interaction,
                 keyboardOptions        = keyboard,
                 keyboardActions        = keyboardActions,

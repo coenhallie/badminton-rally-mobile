@@ -2,6 +2,7 @@ package com.badmintontracker.android.cliplist
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.badmintontracker.shared.model.MatchMetadata
 import com.badmintontracker.shared.model.RallyClip
 import com.badmintontracker.shared.repo.AuthRepository
 import com.badmintontracker.shared.repo.ClipsRepository
@@ -23,8 +24,10 @@ data class MatchSummary(
     val coverClip: RallyClip,
     val isOwned: Boolean,
     val sharerEmail: String? = null,
-    /** Match name typed in the web app at upload; null for older/unnamed matches. */
+    /** Match name, from videos.title (typed on the phone or in the web app). */
     val title: String? = null,
+    /** Match description, from videos.description. Phone-only; the web app has no field. */
+    val description: String? = null,
 )
 
 data class ClipListState(
@@ -55,9 +58,10 @@ internal fun List<RallyClip>.matchTitle(): String? =
 internal fun clipRowTitle(clip: RallyClip, matchTitle: String?): String =
     clip.title?.takeIf { it != matchTitle } ?: "Rally #${clip.rallyIndex}"
 
-private fun List<RallyClip>.toMatches(
+internal fun List<RallyClip>.toMatches(
     currentUserId: String?,
     sharerByVideoId: Map<String, String>,
+    metadataByVideoId: Map<String, MatchMetadata>,
 ): List<MatchSummary> =
     groupBy { it.videoId }
         .map { (videoId, list) ->
@@ -70,7 +74,10 @@ private fun List<RallyClip>.toMatches(
                 coverClip = cover,
                 isOwned = owned,
                 sharerEmail = if (owned) null else sharerByVideoId[videoId],
-                title = list.matchTitle(),
+                // videos.title is authoritative; the clip-stamped copy is the
+                // fallback that keeps names on screen when the RPC is unreachable.
+                title = metadataByVideoId[videoId]?.title ?: list.matchTitle(),
+                description = metadataByVideoId[videoId]?.description,
             )
         }
         .sortedByDescending { it.latestCreatedAt }
@@ -84,14 +91,16 @@ class ClipListViewModel(
     private val refreshing      = MutableStateFlow(true)
     private val errors          = MutableStateFlow<String?>(null)
     private val sharerByVideoId = MutableStateFlow<Map<String, String>>(emptyMap())
+    private val metadataByVideoId = MutableStateFlow<Map<String, MatchMetadata>>(emptyMap())
 
     val state = combine(
         clips.observeClips(),
         sharerByVideoId,
+        metadataByVideoId,
         refreshing,
         errors,
-    ) { list, sharerMap, r, e ->
-        val matches = list.toMatches(auth.currentUserId(), sharerMap)
+    ) { list, sharerMap, metadataMap, r, e ->
+        val matches = list.toMatches(auth.currentUserId(), sharerMap, metadataMap)
         val (owned, shared) = matches.partition { it.isOwned }
         ClipListState(
             clips = list,
@@ -120,8 +129,17 @@ class ClipListViewModel(
                         }
                         // Soft failure: leave sharerByVideoId untouched, no user-facing error.
                 }
+                val metadataJob = async {
+                    videos.listMatchMetadata()
+                        .onSuccess { rows -> metadataByVideoId.value = rows.associateBy { it.videoId } }
+                    // Soft failure, same contract as the shares lookup: leave the
+                    // previous map alone and say nothing. A missing title degrades
+                    // to "Match · <date>", which is not worth interrupting for —
+                    // and emptying the map would visibly wipe every name on a blip.
+                }
                 clipsJob.await()
                 sharesJob.await()
+                metadataJob.await()
             }
             refreshing.value = false
         }

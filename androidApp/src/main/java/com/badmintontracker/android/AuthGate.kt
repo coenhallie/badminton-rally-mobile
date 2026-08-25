@@ -115,8 +115,11 @@ fun AuthGate(
                     )
                     val localRows by localVm.rows.collectAsStateWithLifecycle()
                     var intakeError by remember { mutableStateOf<String?>(null) }
+                    // Persist first, then hand the id on so the details sheet can
+                    // open over an entry that already exists.
+                    var autoDetailsEntryId by remember { mutableStateOf<String?>(null) }
                     val intake = rememberVideoIntake(
-                        onAdded = localVideos::add,
+                        onAdded = { entry -> localVideos.add(entry); autoDetailsEntryId = entry.id },
                         onError = { intakeError = it },
                     )
                     ClipListScreen(
@@ -138,6 +141,9 @@ fun AuthGate(
                         },
                         onLocalRemove = { localVm.remove(it.id) },
                         onLocalResultSeen = { localVm.acknowledgeResult(it.id) },
+                        onLocalDetailsSaved = localVm::setDetails,
+                        autoDetailsEntryId = autoDetailsEntryId,
+                        onAutoDetailsShown = { autoDetailsEntryId = null },
                         onRecord = intake.record,
                         onImport = intake.import,
                         onLabels = { nav.navigate(Route.Labels) },
