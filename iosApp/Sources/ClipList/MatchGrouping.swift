@@ -116,3 +116,13 @@ func matchRowSecondary(_ match: MatchSummary) -> String {
     guard match.title != nil else { return rallies }
     return "\(rallies) · \(formatMatchDate(millis: match.latestCreatedAtMillis).uppercased())"
 }
+
+/// Name for the most-labelled rally in the summary sheet. Goes through the same
+/// `clipRowTitle` the list row uses, so the sheet and the row can never name one
+/// clip two ways. Falls back to the rally number when the clip has left the
+/// list, which a prune racing an in-flight fetch can produce.
+/// Port of Android's `topRallyName`.
+func topRallyName(clipId: String, rallyIndex: Int32, clips: [ClipInfo], matchTitle: String?) -> String {
+    guard let clip = clips.first(where: { $0.id == clipId }) else { return "Rally #\(rallyIndex)" }
+    return clipRowTitle(clip, matchTitle: matchTitle)
+}

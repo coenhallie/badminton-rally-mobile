@@ -169,4 +169,33 @@ final class MatchGroupingTests: XCTestCase {
         XCTAssertNil(result.owned.first?.title)
         XCTAssertEqual(matchRowPrimary(result.owned[0]), "Match \u{00B7} Jul 25, 2026")
     }
+
+    // MARK: - Top rally name (mirrors Android MatchSummaryViewModelTest)
+
+    func testTopRallyNameMatchesTheRowTheRallyShowsInTheList() {
+        let clips = [
+            clip(id: "c1", videoId: "v1", rallyIndex: 1, createdAt: 0),
+            ClipInfo(
+                id: "c2", videoId: "v1", ownerId: "me", rallyIndex: 2,
+                createdAtMillis: 0, title: "The long rally", durationSeconds: 10,
+                annotationCount: 0
+            ),
+        ]
+
+        XCTAssertEqual(
+            topRallyName(clipId: "c2", rallyIndex: 2, clips: clips, matchTitle: nil),
+            "The long rally"
+        )
+        XCTAssertEqual(
+            topRallyName(clipId: "c1", rallyIndex: 1, clips: clips, matchTitle: nil),
+            "Rally #1"
+        )
+    }
+
+    func testTopRallyNameFallsBackToTheRallyNumberWhenTheClipIsGone() {
+        XCTAssertEqual(
+            topRallyName(clipId: "pruned", rallyIndex: 7, clips: [], matchTitle: nil),
+            "Rally #7"
+        )
+    }
 }
