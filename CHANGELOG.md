@@ -10,6 +10,14 @@ The mobile app is versioned independently from the web app.
 ## [Unreleased]
 
 ### Added
+- Matches show the name given to them in the web app at upload time, on both
+  platforms. A named match leads with its name and moves the date down beside
+  the rally count (`Thu League vs Marco` / `12 RALLIES · JUL 25, 2026`);
+  matches without a name keep the previous `Match · <date>` headline. The name
+  is read from the clips themselves — the web app stamps it onto every clip of
+  a video — and the most common title wins, so retitling a single clip in this
+  app cannot relabel the whole match. Rally rows and the clip detail header
+  keep showing `Rally #N`, since every clip of a match carries the same name.
 - Sort menu on the match rallies page, on both platforms: sort clips by rally
   order (default) or by number of notes (most first, rally order as tie-break).
 - Swipe-to-remove on every row of the matches list, on both platforms: local
