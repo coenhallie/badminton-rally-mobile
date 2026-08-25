@@ -4,6 +4,9 @@ import app.cash.turbine.test
 import com.badmintontracker.shared.model.CourtKeypoints
 import com.badmintontracker.shared.testing.TestSupabase
 import com.badmintontracker.shared.testing.jsonResponse
+import io.github.jan.supabase.SupabaseClient
+import io.github.jan.supabase.auth.auth
+import io.github.jan.supabase.auth.providers.builtin.Email
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -25,14 +28,106 @@ private fun testKeypoints() = CourtKeypoints(
     centerNear = listOf(21f, 22f), centerFar = listOf(23f, 24f),
 )
 
+// Signing in for real is the only deterministic way to make a TestSupabase client
+// report a user: currentUserOrNull() reads a StateFlow that a fresh client's own
+// storage-restore populates asynchronously. Same helper shape as
+// AnnotationLabelsRepositoryTest.
+private val tokenResponse = """
+    {
+      "access_token":"jwt-user-1","token_type":"bearer","expires_in":3600,
+      "refresh_token":"refresh-user-1",
+      "user":{"id":"user-1","aud":"authenticated","role":"authenticated",
+              "email":"user-1@example.com","created_at":"2026-08-25T12:00:00Z",
+              "updated_at":"2026-08-25T12:00:00Z"}
+    }
+""".trimIndent()
+
+private suspend fun SupabaseClient.signIn() {
+    auth.signInWith(Email) {
+        email = "user-1@example.com"
+        password = "password"
+    }
+}
+
 class VideosRepositoryTest {
+
+    @Test
+    fun createVideo_writes_title_and_description_on_the_insert() = runTest {
+        // The DB grants no UPDATE on either column, so this insert is the only
+        // chance to set them — a dropped field here is unrecoverable for that match.
+        var body = ""
+        val client = TestSupabase.client { request ->
+            if (request.url.encodedPath.contains("/auth/v1/token")) jsonResponse(tokenResponse)
+            else {
+                body = (request.body as TextContent).text
+                jsonResponse("[]", HttpStatusCode.Created)
+            }
+        }
+        client.signIn()
+        val repo = VideosRepositoryImpl(client)
+
+        repo.createVideo("vid-1", "match.mp4", 123L, "Thu League vs Marco", "Indoor court 2.")
+            .isSuccess.shouldBeTrue()
+
+        body shouldContain "\"title\":\"Thu League vs Marco\""
+        body shouldContain "\"description\":\"Indoor court 2.\""
+    }
+
+    @Test
+    fun createVideo_omits_both_fields_rather_than_sending_empty_strings_when_unset() = runTest {
+        // An unset field is left out of the insert entirely, so the column takes its
+        // NULL default. What must never appear is "", which videos_title_length_check
+        // rejects — surfacing as an opaque CREATE_ROW failure on a video the user
+        // never chose to name. LocalVideoDetails.normalize is what maps blank to null.
+        var body = ""
+        val client = TestSupabase.client { request ->
+            if (request.url.encodedPath.contains("/auth/v1/token")) jsonResponse(tokenResponse)
+            else {
+                body = (request.body as TextContent).text
+                jsonResponse("[]", HttpStatusCode.Created)
+            }
+        }
+        client.signIn()
+        val repo = VideosRepositoryImpl(client)
+
+        repo.createVideo("vid-1", "match.mp4", 123L, null, null).isSuccess.shouldBeTrue()
+
+        body shouldNotContain "\"title\""
+        body shouldNotContain "\"description\""
+    }
+
+    @Test
+    fun listMatchMetadata_calls_the_rpc_and_decodes_its_rows() = runTest {
+        var path = ""
+        val client = TestSupabase.client { request ->
+            path = request.url.encodedPath
+            jsonResponse("""[{"video_id":"vid-1","title":"Thu League","description":null}]""")
+        }
+        val repo = VideosRepositoryImpl(client)
+
+        val rows = repo.listMatchMetadata().getOrThrow()
+
+        path shouldContain "/rest/v1/rpc/list_match_metadata"
+        rows.single().videoId shouldBe "vid-1"
+        rows.single().title shouldBe "Thu League"
+    }
+
+    @Test
+    fun listMatchMetadata_reports_failure_rather_than_an_empty_list() = runTest {
+        // The caller's contract is "on failure leave the previous titles alone".
+        // A success-with-empty-list here would wipe every title on a blip.
+        val client = TestSupabase.client { respondError(HttpStatusCode.ServiceUnavailable, "down") }
+        val repo = VideosRepositoryImpl(client)
+
+        repo.listMatchMetadata().isFailure.shouldBeTrue()
+    }
 
     @Test
     fun createVideo_fails_cleanly_when_signed_out() = runTest {
         // No session in the test client: owner_id comes from auth.currentUserOrNull().
         val client = TestSupabase.client { jsonResponse("[]", HttpStatusCode.Created) }
         val repo = VideosRepositoryImpl(client)
-        repo.createVideo("vid-1", "match.mp4", 123L).isFailure.shouldBeTrue()
+        repo.createVideo("vid-1", "match.mp4", 123L, null, null).isFailure.shouldBeTrue()
     }
 
     @Test

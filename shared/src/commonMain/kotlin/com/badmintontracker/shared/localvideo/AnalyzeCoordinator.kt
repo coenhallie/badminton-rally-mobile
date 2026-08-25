@@ -130,7 +130,9 @@ class AnalyzeCoordinator(
         }
 
         if (startFrom <= AnalyzeStep.CREATE_ROW) {
-            val error = videos.createVideo(entry.id, entry.displayName, entry.sizeBytes).exceptionOrNull()
+            val error = videos.createVideo(
+                entry.id, entry.displayName, entry.sizeBytes, entry.title, entry.description,
+            ).exceptionOrNull()
             if (error != null && !error.isDuplicateKey()) {
                 return fail(entryId, AnalyzeStep.CREATE_ROW, error.message ?: "Couldn't register video")
             }

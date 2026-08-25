@@ -24,6 +24,17 @@ fun isAnalysisRunning(stage: AnalyzeStage): Boolean =
  */
 fun canRemoveLocalVideo(stage: AnalyzeStage): Boolean = !isAnalysisRunning(stage)
 
+/**
+ * Whether the row's "Edit details" affordance may be shown. Title and description
+ * ride along on the videos INSERT and the database grants no UPDATE on either
+ * column, so once CREATE_ROW has run the app could only show a name the database
+ * does not have. Editing therefore stops the moment the entry leaves LOCAL — the
+ * concrete divergence otherwise: CREATE_ROW inserts "A", TRIGGER fails, the user
+ * renames to "B" and retries, and AnalyzeCoordinator.retry resumes at TRIGGER
+ * without ever calling createVideo again. Both platforms must use this same rule.
+ */
+fun canEditLocalVideoDetails(stage: AnalyzeStage): Boolean = stage == AnalyzeStage.LOCAL
+
 @Serializable
 data class LocalVideoEntry(
     val id: String,              // client UUID; becomes videos.id on Analyze
@@ -32,6 +43,11 @@ data class LocalVideoEntry(
     val durationMs: Long,
     val sizeBytes: Long,
     val addedAtEpochMs: Long,
+    // User-supplied match metadata, written on the videos INSERT. The defaults are
+    // load-bearing: a registry persisted before these fields existed must still
+    // decode, or load() swallows the failure and returns an empty library.
+    val title: String? = null,
+    val description: String? = null,
     val keypoints: CourtKeypoints? = null,   // saved before upload; survives retry
     val stage: AnalyzeStage = AnalyzeStage.LOCAL,
     val failedStep: AnalyzeStep? = null,

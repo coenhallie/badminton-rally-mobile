@@ -68,7 +68,7 @@ class AnalyzeCoordinatorTest {
         c.startAnalysis("e1", keypoints())
         runCurrent()
         videos.uploadCalls shouldBe listOf("e1")
-        videos.createCalls.single().first shouldBe "e1"
+        videos.createCalls.single().videoId shouldBe "e1"
         videos.keypointsCalls.single().first shouldBe "e1"
         videos.startCalls shouldBe listOf("e1")
         clips.refreshCalls.size shouldBe 1
@@ -323,5 +323,23 @@ class AnalyzeCoordinatorTest {
         c.startAnalysis("e1", keypoints())
         runCurrent()
         c.hasActiveUpload.value shouldBe false // finished already
+    }
+
+    @Test
+    fun create_row_carries_the_entry_s_title_and_description() = runTest {
+        // The only write path for match metadata: the DB grants no UPDATE on
+        // either column, so a drop here cannot be repaired from the app.
+        localVideos.add(
+            entry().copy(title = "Thu League vs Marco", description = "Indoor court 2."),
+        )
+        clips.clips.value = listOf(clipFor("e1"))
+        val c = coordinator()
+
+        c.startAnalysis("e1", keypoints())
+        runCurrent()
+
+        val call = videos.createCalls.single()
+        call.title shouldBe "Thu League vs Marco"
+        call.description shouldBe "Indoor court 2."
     }
 }

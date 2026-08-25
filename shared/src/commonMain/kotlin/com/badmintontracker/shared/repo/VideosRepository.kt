@@ -1,6 +1,7 @@
 package com.badmintontracker.shared.repo
 
 import com.badmintontracker.shared.model.CourtKeypoints
+import com.badmintontracker.shared.model.MatchMetadata
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.exceptions.RestException
@@ -82,8 +83,18 @@ internal fun <T> Result<T>.annotateHttpStatus(): Result<T> = fold(
 )
 
 interface VideosRepository {
-    /** Insert the videos row. Call AFTER the upload succeeds (same order as web). */
-    suspend fun createVideo(videoId: String, filename: String, sizeBytes: Long): Result<Unit>
+    /**
+     * Insert the videos row. Call AFTER the upload succeeds (same order as web).
+     * [title] and [description] ride along here because the database grants no
+     * UPDATE on either column — this insert is the only chance to set them.
+     */
+    suspend fun createVideo(
+        videoId: String,
+        filename: String,
+        sizeBytes: Long,
+        title: String?,
+        description: String?,
+    ): Result<Unit>
     suspend fun setCourtKeypoints(videoId: String, keypoints: CourtKeypoints): Result<Unit>
     /** Invoke the process-video Edge Function (requires row + keypoints in place). */
     suspend fun startProcessing(videoId: String): Result<Unit>
@@ -100,6 +111,14 @@ interface VideosRepository {
         sizeBytes: Long,
         channelProvider: suspend (offset: Long) -> ByteReadChannel,
     ): Flow<UploadState>
+
+    /**
+     * Title and description for every match the user can see, owned or shared,
+     * from the list_match_metadata RPC. An RPC rather than a select on videos:
+     * that table's SELECT policy is owner-only, and widening it would also hand
+     * share recipients storage_path, results_meta and player_labels.
+     */
+    suspend fun listMatchMetadata(): Result<List<MatchMetadata>>
 
     /**
      * Permanently delete an owned match: best-effort storage cleanup (clips,
@@ -121,6 +140,8 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
         val size: Long,
         @SerialName("storage_path") val storagePath: String,
         val status: String,
+        val title: String? = null,
+        val description: String? = null,
     )
 
     @Serializable
@@ -150,7 +171,13 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
     @Serializable
     private data class DeleteMatchArgs(@SerialName("p_video_id") val videoId: String)
 
-    override suspend fun createVideo(videoId: String, filename: String, sizeBytes: Long): Result<Unit> =
+    override suspend fun createVideo(
+        videoId: String,
+        filename: String,
+        sizeBytes: Long,
+        title: String?,
+        description: String?,
+    ): Result<Unit> =
         runCatching {
             val uid = client.auth.currentUserOrNull()?.id ?: error("Not signed in")
             client.postgrest.from("videos").insert(
@@ -161,10 +188,16 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
                     size = sizeBytes,
                     storagePath = storagePath(uid, videoId),
                     status = "uploaded",
+                    title = title,
+                    description = description,
                 )
             )
             Unit
         }.annotateHttpStatus()
+
+    override suspend fun listMatchMetadata(): Result<List<MatchMetadata>> = runCatching {
+        client.postgrest.rpc("list_match_metadata").decodeList<MatchMetadata>()
+    }.annotateHttpStatus()
 
     override suspend fun setCourtKeypoints(videoId: String, keypoints: CourtKeypoints): Result<Unit> =
         runCatching {

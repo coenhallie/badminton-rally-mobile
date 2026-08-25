@@ -25,4 +25,19 @@ class LocalVideoRulesTest {
         canRemoveLocalVideo(AnalyzeStage.UPLOADING) shouldBe false
         canRemoveLocalVideo(AnalyzeStage.PROCESSING) shouldBe false
     }
+
+    @Test
+    fun details_are_editable_only_before_the_pipeline_starts() {
+        // Metadata rides on the videos INSERT and the DB grants no UPDATE on
+        // either column, so any stage past LOCAL means the row is already
+        // written (or about to be) with what the user last saw.
+        canEditLocalVideoDetails(AnalyzeStage.LOCAL) shouldBe true
+        canEditLocalVideoDetails(AnalyzeStage.UPLOADING) shouldBe false
+        canEditLocalVideoDetails(AnalyzeStage.PROCESSING) shouldBe false
+        canEditLocalVideoDetails(AnalyzeStage.ANALYZED) shouldBe false
+        // FAILED included, deliberately: a run that failed at UPLOAD has no row
+        // yet, but one that failed later does, and the rule cannot tell them
+        // apart from the stage alone.
+        canEditLocalVideoDetails(AnalyzeStage.FAILED) shouldBe false
+    }
 }

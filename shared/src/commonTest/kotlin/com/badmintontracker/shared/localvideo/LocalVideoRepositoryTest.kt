@@ -135,4 +135,27 @@ class LocalVideoRepositoryTest {
 
         stillPresent.shouldBeNull()
     }
+
+    @Test
+    fun setDetails_round_trips_title_and_description() {
+        val repo = LocalVideoRepository(MapSettings())
+        repo.add(entry("a"))
+
+        repo.setDetails("a", "Thu League vs Marco", "Best of three, indoor court 2.")
+
+        repo.get("a")?.title shouldBe "Thu League vs Marco"
+        repo.get("a")?.description shouldBe "Best of three, indoor court 2."
+    }
+
+    @Test
+    fun setDetails_clears_both_when_given_nulls() {
+        val repo = LocalVideoRepository(MapSettings())
+        repo.add(entry("a"))
+        repo.setDetails("a", "Thu League", "notes")
+
+        repo.setDetails("a", null, null)
+
+        repo.get("a")?.title.shouldBeNull()
+        repo.get("a")?.description.shouldBeNull()
+    }
 }

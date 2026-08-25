@@ -3,11 +3,20 @@ package com.badmintontracker.shared.testing
 import com.badmintontracker.shared.model.CourtKeypoints
 import com.badmintontracker.shared.repo.ProcessingUpdate
 import com.badmintontracker.shared.repo.UploadState
+import com.badmintontracker.shared.model.MatchMetadata
 import com.badmintontracker.shared.repo.VideosRepository
 import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+
+data class CreateVideoCall(
+    val videoId: String,
+    val filename: String,
+    val sizeBytes: Long,
+    val title: String?,
+    val description: String?,
+)
 
 class FakeVideosRepository : VideosRepository {
     var nextCreateResult: Result<Unit> = Result.success(Unit)
@@ -19,15 +28,23 @@ class FakeVideosRepository : VideosRepository {
         ProcessingUpdate("phase1_complete", 1f, null),
     )
     var nextDeleteMatchResult: Result<Unit> = Result.success(Unit)
+    var nextMetadataResult: Result<List<MatchMetadata>> = Result.success(emptyList())
 
-    val createCalls = mutableListOf<Triple<String, String, Long>>()
+    val createCalls = mutableListOf<CreateVideoCall>()
     val keypointsCalls = mutableListOf<Pair<String, CourtKeypoints>>()
     val startCalls = mutableListOf<String>()
     val uploadCalls = mutableListOf<String>()
     val deleteMatchCalls = mutableListOf<String>()
+    var metadataCalls = 0
 
-    override suspend fun createVideo(videoId: String, filename: String, sizeBytes: Long): Result<Unit> {
-        createCalls += Triple(videoId, filename, sizeBytes)
+    override suspend fun createVideo(
+        videoId: String,
+        filename: String,
+        sizeBytes: Long,
+        title: String?,
+        description: String?,
+    ): Result<Unit> {
+        createCalls += CreateVideoCall(videoId, filename, sizeBytes, title, description)
         return nextCreateResult
     }
 
@@ -57,6 +74,11 @@ class FakeVideosRepository : VideosRepository {
             uploadGates[videoId]?.await()
             uploadStates.forEach { emit(it) }
         }
+    }
+
+    override suspend fun listMatchMetadata(): Result<List<MatchMetadata>> {
+        metadataCalls++
+        return nextMetadataResult
     }
 
     override suspend fun deleteMatch(videoId: String): Result<Unit> {

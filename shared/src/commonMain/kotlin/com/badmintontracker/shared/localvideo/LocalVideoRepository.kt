@@ -78,3 +78,7 @@ class LocalVideoRepository(
 /** Marks a FAILED entry's result dialog as seen (Swift-friendly single-purpose mutation). */
 fun LocalVideoRepository.acknowledgeResult(id: String) =
     update(id) { it.copy(resultSeen = true) }
+
+/** Stores the match name and description (Swift-friendly single-purpose mutation). */
+fun LocalVideoRepository.setDetails(id: String, title: String?, description: String?) =
+    update(id) { it.copy(title = title, description = description) }
