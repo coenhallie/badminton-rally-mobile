@@ -100,7 +100,7 @@ class MatchSummaryViewModelTest {
     }
 
     @Test
-    fun refresh_is_a_no_op_while_a_load_is_already_in_flight() = runTest(dispatcher) {
+    fun rapid_refreshes_do_not_stack_up_extra_fetches() = runTest(dispatcher) {
         val clips = FakeClipsRepository().apply { clips.value = listOf(clip("c1", 1)) }
         val annotations = FakeAnnotationsRepository().apply {
             byClipId = mapOf("c1" to listOf(note("a1", "c1", "Good shot")))
@@ -109,9 +109,11 @@ class MatchSummaryViewModelTest {
         advanceUntilIdle()
         annotations.listForClipsCalls.size shouldBe 1
 
-        // Two refreshes with no dispatch in between: the first launches a job that
-        // is active but has not run yet, so the second must find it in flight and
-        // return without starting a second fetch.
+        // Two refreshes with no dispatch in between. What suppresses the second
+        // fetch here is load()'s unconditional cancel of a job that has not run
+        // yet, not the in-flight guard: this test passes either way. The guard
+        // itself is covered by refresh_does_not_restart_a_fetch_that_is_already_running,
+        // which parks a fetch mid-flight and fails without it.
         vm.refresh()
         vm.refresh()
         advanceUntilIdle()
