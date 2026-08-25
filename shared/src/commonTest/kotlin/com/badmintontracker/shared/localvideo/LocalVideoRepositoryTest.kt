@@ -86,4 +86,53 @@ class LocalVideoRepositoryTest {
         repo.acknowledgeResult("a")
         repo.get("a")?.resultSeen shouldBe true
     }
+
+    @Test
+    fun remove_hands_the_dropped_entry_to_the_file_cleanup_hook() {
+        // iOS copies the video into its app container, so the registry entry is the
+        // only reference to that file. A removal that skips this strands it forever.
+        val removed = mutableListOf<LocalVideoEntry>()
+        val repo = LocalVideoRepository(MapSettings(), onRemoved = { removed += it })
+        repo.add(entry("a"))
+        repo.add(entry("b"))
+
+        repo.remove("a")
+
+        removed.map { it.id } shouldBe listOf("a")
+    }
+
+    @Test
+    fun removing_an_unknown_id_does_not_fire_the_cleanup_hook() {
+        val removed = mutableListOf<LocalVideoEntry>()
+        val repo = LocalVideoRepository(MapSettings(), onRemoved = { removed += it })
+        repo.add(entry("a"))
+
+        repo.remove("nope")
+
+        removed shouldBe emptyList()
+    }
+
+    @Test
+    fun add_and_update_never_fire_the_cleanup_hook() {
+        val removed = mutableListOf<LocalVideoEntry>()
+        val repo = LocalVideoRepository(MapSettings(), onRemoved = { removed += it })
+        repo.add(entry("a"))
+        repo.update("a") { it.copy(stage = AnalyzeStage.UPLOADING) }
+
+        removed shouldBe emptyList()
+    }
+
+    @Test
+    fun the_cleanup_hook_runs_after_the_entry_is_gone_from_the_registry() {
+        // Deleting the file first would leave a registry entry pointing at nothing
+        // if the process died in between; that reads as a corrupt library.
+        var stillPresent: LocalVideoEntry? = null
+        lateinit var repo: LocalVideoRepository
+        repo = LocalVideoRepository(MapSettings(), onRemoved = { stillPresent = repo.get(it.id) })
+        repo.add(entry("a"))
+
+        repo.remove("a")
+
+        stillPresent.shouldBeNull()
+    }
 }

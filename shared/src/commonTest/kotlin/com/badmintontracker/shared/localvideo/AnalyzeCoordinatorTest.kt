@@ -51,8 +51,8 @@ class AnalyzeCoordinatorTest {
         createdAt = Instant.fromEpochMilliseconds(0),
     )
 
-    private fun TestScope.coordinator() = AnalyzeCoordinator(
-        localVideos = localVideos,
+    private fun TestScope.coordinator(registry: LocalVideoRepository = localVideos) = AnalyzeCoordinator(
+        localVideos = registry,
         videos = videos,
         clips = clips,
         scope = CoroutineScope(backgroundScope.coroutineContext + UnconfinedTestDispatcher(testScheduler)),
@@ -230,6 +230,47 @@ class AnalyzeCoordinatorTest {
         runCurrent()
         val kept = localVideos.get("e1").shouldNotBeNull()
         kept.stage shouldBe AnalyzeStage.ANALYZED
+    }
+
+    @Test
+    fun a_successful_analysis_releases_the_local_file() = runTest {
+        // The clips live in the cloud now; on iOS the on-device copy is the only
+        // thing holding that storage and nothing else will ever reference it.
+        val released = mutableListOf<String>()
+        val registry = LocalVideoRepository(MapSettings(), onRemoved = { released += it.uri })
+        registry.add(entry())
+        clips.clips.value = listOf(clipFor("e1"))
+        val c = coordinator(registry)
+        c.startAnalysis("e1", keypoints())
+        runCurrent()
+        released shouldBe listOf("content://x/e1")
+    }
+
+    @Test
+    fun an_analysis_that_keeps_an_annotated_entry_keeps_its_file() = runTest {
+        // The entry survives as ANALYZED so the notes stay playable; deleting the
+        // file underneath it would leave the user tapping a dead video.
+        val released = mutableListOf<String>()
+        val registry = LocalVideoRepository(MapSettings(), onRemoved = { released += it.uri })
+        registry.add(entry())
+        clips.clips.value = listOf(clipFor("e1"))
+        localAnnotations.add("e1", 1f, "note", null)
+        val c = coordinator(registry)
+        c.startAnalysis("e1", keypoints())
+        runCurrent()
+        released shouldBe emptyList()
+    }
+
+    @Test
+    fun a_failed_analysis_keeps_the_local_file_for_the_retry() = runTest {
+        val released = mutableListOf<String>()
+        val registry = LocalVideoRepository(MapSettings(), onRemoved = { released += it.uri })
+        registry.add(entry())
+        videos.processingUpdates = listOf(ProcessingUpdate("failed_phase1", null, "no court detected"))
+        val c = coordinator(registry)
+        c.startAnalysis("e1", keypoints())
+        runCurrent()
+        released shouldBe emptyList()
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.badmintontracker.shared
 
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
+import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.prefs.ThemePreferenceRepository
 import com.badmintontracker.shared.repo.AnnotationsRepository
@@ -32,6 +33,12 @@ class RallyApp(
      */
     sessionSettings: Settings = settings,
     httpEngine: HttpClientEngine? = null,
+    /**
+     * Releases the file behind a local-video entry when that entry is removed.
+     * iOS passes its file store's delete; Android's entries are content:// handles
+     * into the gallery, which the app must not delete. See [LocalVideoRepository].
+     */
+    onLocalVideoRemoved: (LocalVideoEntry) -> Unit = {},
 ) {
     val client: SupabaseClient = buildSupabaseClient(config, settings, sessionSettings, httpEngine)
     val auth:        AuthRepository        = AuthRepositoryImpl(client)
@@ -44,7 +51,7 @@ class RallyApp(
     val authState: Flow<AuthState> = auth.sessionFlow.map { it.toAuthState() }
 
     // On-device local video registry + annotations (shared persistence, native UI).
-    val localVideos:      LocalVideoRepository       = LocalVideoRepository(settings)
+    val localVideos:      LocalVideoRepository       = LocalVideoRepository(settings, onLocalVideoRemoved)
     val localAnnotations: LocalAnnotationsRepository = LocalAnnotationsRepository(settings)
     val themePrefs:       ThemePreferenceRepository  = ThemePreferenceRepository(settings)
 }

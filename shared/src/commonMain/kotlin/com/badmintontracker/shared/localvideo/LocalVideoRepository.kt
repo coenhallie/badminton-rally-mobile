@@ -10,7 +10,20 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 
 /** Registry of on-device recordings, persisted as JSON in Settings. */
-class LocalVideoRepository(private val settings: Settings) {
+class LocalVideoRepository(
+    private val settings: Settings,
+    /**
+     * Releases whatever backs a removed entry. iOS keeps its own copy of the video
+     * inside the app container and this entry is the only reference to it, so a
+     * removal that skips the file strands it with no way for the user to reclaim
+     * the space. Android stores a content:// reference into the user's gallery and
+     * leaves it alone, which is why the default does nothing.
+     *
+     * Belongs here rather than at each call site so "the entry owns the file" is a
+     * property of the store, not something three unrelated callers must remember.
+     */
+    private val onRemoved: (LocalVideoEntry) -> Unit = {},
+) {
 
     private val json = Json { ignoreUnknownKeys = true }
     private val serializer = ListSerializer(LocalVideoEntry.serializer())
@@ -27,12 +40,28 @@ class LocalVideoRepository(private val settings: Settings) {
     fun update(id: String, transform: (LocalVideoEntry) -> LocalVideoEntry) =
         mutate { list -> list.map { if (it.id == id) transform(it) else it } }
 
-    fun remove(id: String) = mutate { list -> list.filterNot { it.id == id } }
+    fun remove(id: String) {
+        val removed = lock.withLock {
+            val entry = state.value.firstOrNull { it.id == id } ?: return@withLock null
+            persist(state.value.filterNot { it.id == id })
+            entry
+        }
+        // Outside the lock, and only once the registry no longer lists the entry:
+        // the callback reaches into platform file IO, and a crash between the two
+        // should leave an orphaned file (reclaimable) rather than an entry pointing
+        // at nothing (a dead row in the user's library).
+        removed?.let(onRemoved)
+    }
 
     fun get(id: String): LocalVideoEntry? = state.value.firstOrNull { it.id == id }
 
     private fun mutate(transform: (List<LocalVideoEntry>) -> List<LocalVideoEntry>) = lock.withLock {
-        val next = transform(state.value).sortedByDescending { it.addedAtEpochMs }
+        persist(transform(state.value))
+    }
+
+    /** Caller must hold [lock]. */
+    private fun persist(entries: List<LocalVideoEntry>) {
+        val next = entries.sortedByDescending { it.addedAtEpochMs }
         settings.putString(KEY, json.encodeToString(serializer, next))
         state.value = next
     }
