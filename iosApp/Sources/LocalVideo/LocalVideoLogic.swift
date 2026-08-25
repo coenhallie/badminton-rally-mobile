@@ -1,14 +1,12 @@
 import Foundation
+import Shared
 
 enum LocalVideoLogic {
-    /// Same cap as Android's VideoIntake (and the web app): 1 GB.
-    static let maxSizeBytes: Int64 = 1_073_741_824
-
     /// Returns the user-facing rejection message, or nil when the size is acceptable.
+    /// The cap and its copy live in Shared (LocalVideoLimits) so Android and iOS
+    /// cannot drift apart on either.
     static func oversizeMessage(bytes: Int64) -> String? {
-        bytes > maxSizeBytes
-            ? "Video is larger than 1GB. Please use a shorter recording."
-            : nil
+        LocalVideoLimits.shared.oversizeMessage(sizeBytes: bytes)
     }
 
     /// m:ss — matches Android's LocalVideoListViewModel.formatDuration.

@@ -1,16 +1,22 @@
 import XCTest
+import Shared
 @testable import iosApp
 
 final class LocalVideoLogicTests: XCTestCase {
     func testOversizeMessageExactlyAtCapIsAllowed() {
-        XCTAssertNil(LocalVideoLogic.oversizeMessage(bytes: 1_073_741_824))
+        XCTAssertNil(LocalVideoLogic.oversizeMessage(bytes: 10_737_418_240))
     }
 
     func testOversizeMessageAboveCap() {
         XCTAssertEqual(
-            LocalVideoLogic.oversizeMessage(bytes: 1_073_741_825),
-            "Video is larger than 1GB. Please use a shorter recording."
+            LocalVideoLogic.oversizeMessage(bytes: 10_737_418_241),
+            "Video is larger than 10GB. Please use a shorter recording."
         )
+    }
+
+    /// Pins the shared constant as Swift actually sees it across the interop.
+    func testSharedCapIsTenGibibytes() {
+        XCTAssertEqual(LocalVideoLimits.shared.MAX_SIZE_BYTES, 10_737_418_240)
     }
 
     func testFormatDuration() {
