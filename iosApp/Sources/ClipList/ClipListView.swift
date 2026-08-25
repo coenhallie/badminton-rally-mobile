@@ -15,6 +15,7 @@ struct ClipListView: View {
     @State private var progressById: [String: AnalyzeProgress] = [:]
     @State private var resultEntry: LocalVideoEntry? = nil
     @State private var navigationTarget: CourtMarkingRoute? = nil
+    @State private var showLabels = false
 
     init(rally: RallyApp, analyze: AnalyzeCoordinator) {
         self.rally = rally
@@ -56,6 +57,10 @@ struct ClipListView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 if let model {
                     Menu {
+                        // A NavigationLink here would not reliably push inside a
+                        // Menu, so this is a Button paired with the
+                        // .navigationDestination(isPresented:) below.
+                        Button("Labels") { showLabels = true }
                         Button("Sign out") { Task { await model.signOut() } }
                         Divider()
                         Text(versionLabel)
@@ -122,6 +127,9 @@ struct ClipListView: View {
         }
         .navigationDestination(item: $navigationTarget) { route in
             CourtMarkingView(rally: rally, analyze: analyze, entryId: route.entryId)
+        }
+        .navigationDestination(isPresented: $showLabels) {
+            LabelsView(rally: rally)
         }
     }
 
