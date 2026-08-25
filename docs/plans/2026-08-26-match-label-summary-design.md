@@ -352,6 +352,12 @@ The sheet's "most labelled" row pushes a clip programmatically, which this view
 has no mechanism for today: its rows are `NavigationLink`s. It gets one, a
 `navigationDestination(item:)` over a small `Identifiable` id wrapper.
 
+The push cannot happen in the row's own action. A `navigationDestination` on the
+view that is currently presenting a sheet drops pushes made inside the dismissal
+transaction, and this is the one interactive path in the feature that no test
+exercises. So the row records the clip id, the sheet dismisses, and the parent's
+`onDismiss` performs the navigation once the sheet is fully closed.
+
 The chip reuses `Components/LabelBadge.swift` unchanged, for the same reason
 Android's is left alone.
 
@@ -416,6 +422,18 @@ Shared path. The same match viewed by a recipient account, confirming the tally
 is combined across authors. This is the run that exercises the RLS assumption
 the design rests on. If no second account is available, record it here as a
 known unverified edge rather than dropping it quietly.
+
+**Not performed as of 2026-08-26, and recorded here as that known unverified
+edge.** No second account was available during implementation. What rests on it:
+the design changed no policy, on the reading that `annotations: select own or
+shared` (`20260506000000_match_shares.sql:56`) already lets a recipient read every
+annotation on a shared match's clips. If that reading is wrong, a recipient sees
+an empty or partial strip; nothing crashes and no owner sees anything different.
+
+Also not performed: the on-device and simulator visual checks. Both platforms
+build and their suites pass, but no one has yet looked at the strip or the sheet
+on a screen, and the sheet-to-push handoff in particular has no automated
+coverage.
 
 Empty path. A match with notes but no labels, confirming no strip renders and
 the description still sits at the top of the list.
