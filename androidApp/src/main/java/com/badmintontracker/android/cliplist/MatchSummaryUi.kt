@@ -134,7 +134,7 @@ fun MatchSummarySheet(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        "Most labelled · $topRallyName · ${labelCount(top.labelCount)}",
+                        "Most labelled · $topRallyName · ${labelledNotes(top.labelCount)}",
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.weight(1f),
                     )
@@ -187,7 +187,3 @@ private fun LabelShareRow(label: LabelCount) {
 /** "1 labelled note" / "12 labelled notes". Never "notes": see MatchLabelSummary. */
 internal fun labelledNotes(count: Int): String =
     "$count labelled ${if (count == 1) "note" else "notes"}"
-
-/** "1 label" / "6 labels". Named to match iOS's `labelCount`. */
-internal fun labelCount(count: Int): String =
-    "$count ${if (count == 1) "label" else "labels"}"

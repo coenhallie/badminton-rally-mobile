@@ -70,7 +70,7 @@ struct MatchSummarySheet: View {
                         dismiss()
                     } label: {
                         HStack {
-                            Text("Most labelled · \(name) · \(labelCount(top.labelCount))")
+                            Text("Most labelled · \(name) · \(labelledNotes(top.labelCount))")
                                 .font(.subheadline)
                                 .foregroundStyle(Shuttl.text)
                             Spacer()
@@ -124,8 +124,4 @@ private struct LabelShareRow: View {
 /// note count includes notes with no label. Mirrors Android's `labelledNotes`.
 func labelledNotes(_ count: Int32) -> String {
     "\(count) labelled \(count == 1 ? "note" : "notes")"
-}
-
-func labelCount(_ count: Int32) -> String {
-    "\(count) \(count == 1 ? "label" : "labels")"
 }

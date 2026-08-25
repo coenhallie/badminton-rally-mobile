@@ -64,6 +64,12 @@ fun MatchClipsScreen(
     val summary by summaryVm.summary.collectAsStateWithLifecycle()
     var summarySheetOpen by remember { mutableStateOf(false) }
 
+    // A summary that goes away while its sheet is open must close the sheet, not
+    // leave the flag standing to reopen it when the next summary arrives.
+    LaunchedEffect(summary) {
+        if (summary?.isEmpty != false) summarySheetOpen = false
+    }
+
     // Covers the case the clip-set trigger cannot see: a note added inside
     // ClipDetail and then a back press.
     LifecycleResumeEffect(Unit) {

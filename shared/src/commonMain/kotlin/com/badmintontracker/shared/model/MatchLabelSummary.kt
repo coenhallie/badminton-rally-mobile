@@ -54,9 +54,8 @@ data class MatchLabelSummary(
  * (annotation_labels_owner_name_key, on lower(name)). Within a group the newest
  * annotation supplies the display name and colour.
  *
- * Every ordering is fully determined, down to a final tiebreak on the grouping
- * key: a strip that reorders two equal-count labels between refreshes reads as
- * a glitch.
+ * Every ordering is fully determined: a strip that reorders two equal-count
+ * labels between refreshes reads as a glitch.
  */
 fun buildMatchLabelSummary(
     clips: List<RallyClip>,
@@ -86,7 +85,6 @@ fun buildMatchLabelSummary(
         .sortedWith(
             compareByDescending<Pair<String, LabelCount>> { it.second.count }
                 .thenBy { it.second.name.lowercase() }
-                .thenBy { it.first }
         )
         .map { it.second }
 
