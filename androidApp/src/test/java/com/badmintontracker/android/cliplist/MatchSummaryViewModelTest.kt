@@ -2,10 +2,13 @@ package com.badmintontracker.android.cliplist
 
 import com.badmintontracker.android.testing.FakeAnnotationsRepository
 import com.badmintontracker.android.testing.FakeClipsRepository
+import com.badmintontracker.shared.model.AnnotationLabel
 import com.badmintontracker.shared.model.RallyAnnotation
 import com.badmintontracker.shared.model.RallyClip
 import com.badmintontracker.shared.model.TopRally
+import com.badmintontracker.shared.repo.AnnotationsRepository
 import io.kotest.matchers.shouldBe
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -97,6 +100,51 @@ class MatchSummaryViewModelTest {
     }
 
     @Test
+    fun refresh_is_a_no_op_while_a_load_is_already_in_flight() = runTest(dispatcher) {
+        val clips = FakeClipsRepository().apply { clips.value = listOf(clip("c1", 1)) }
+        val annotations = FakeAnnotationsRepository().apply {
+            byClipId = mapOf("c1" to listOf(note("a1", "c1", "Good shot")))
+        }
+        val vm = MatchSummaryViewModel(clips, annotations, videoId = "v1")
+        advanceUntilIdle()
+        annotations.listForClipsCalls.size shouldBe 1
+
+        // Two refreshes with no dispatch in between: the first launches a job that
+        // is active but has not run yet, so the second must find it in flight and
+        // return without starting a second fetch.
+        vm.refresh()
+        vm.refresh()
+        advanceUntilIdle()
+
+        annotations.listForClipsCalls.size shouldBe 2
+    }
+
+    @Test
+    fun refresh_does_not_restart_a_fetch_that_is_already_running() = runTest(dispatcher) {
+        // GatedAnnotationsRepository suspends inside listForClips until the test
+        // completes the gate, so the init collector's fetch can be parked
+        // mid-flight (call recorded, coroutine genuinely suspended) before
+        // refresh() is called. FakeAnnotationsRepository cannot do this: it runs
+        // to completion in one dispatch with no suspension point, so a second
+        // refresh() there always finds a job that either already finished or was
+        // never dispatched, and load()'s own "cancel the previous job" step
+        // produces the same call count whether or not the isActive guard exists.
+        val clips = FakeClipsRepository().apply { clips.value = listOf(clip("c1", 1)) }
+        val annotations = GatedAnnotationsRepository(response = listOf(note("a1", "c1", "Good shot")))
+
+        val vm = MatchSummaryViewModel(clips, annotations, videoId = "v1")
+        advanceUntilIdle()
+        annotations.listForClipsCalls.size shouldBe 1
+
+        vm.refresh()
+        advanceUntilIdle()
+        annotations.listForClipsCalls.size shouldBe 1
+
+        annotations.gate.complete(Unit)
+        advanceUntilIdle()
+    }
+
+    @Test
     fun pruning_the_matchs_clips_drops_the_summary() = runTest(dispatcher) {
         val clips = FakeClipsRepository().apply { clips.value = listOf(clip("c1", 1)) }
         val annotations = FakeAnnotationsRepository().apply {
@@ -123,4 +171,33 @@ class MatchSummaryViewModelTest {
     fun top_rally_name_falls_back_to_the_rally_number_when_the_clip_is_gone() {
         topRallyName(TopRally("pruned", 7, 4), clips = emptyList(), matchTitle = null) shouldBe "Rally #7"
     }
+}
+
+/**
+ * An [AnnotationsRepository] whose [listForClips] records the call and then
+ * suspends on [gate] until the test completes it. Used only to put a fetch
+ * genuinely in flight (started, not finished) so a guard against a concurrent
+ * refresh can actually be observed; [FakeAnnotationsRepository] has no
+ * suspension point and cannot produce that state.
+ */
+private class GatedAnnotationsRepository(private val response: List<RallyAnnotation>) : AnnotationsRepository {
+    val listForClipsCalls = mutableListOf<List<String>>()
+    val gate = CompletableDeferred<Unit>()
+
+    override suspend fun list(clipId: String): List<RallyAnnotation> = emptyList()
+
+    override suspend fun listForClips(clipIds: List<String>): Result<List<RallyAnnotation>> {
+        listForClipsCalls += clipIds
+        gate.await()
+        return Result.success(response)
+    }
+
+    override suspend fun add(
+        clipId: String,
+        timestampSeconds: Float,
+        body: String,
+        label: AnnotationLabel?,
+    ): Result<RallyAnnotation> = error("not used in this test")
+
+    override suspend fun delete(id: String): Result<Unit> = error("not used in this test")
 }
