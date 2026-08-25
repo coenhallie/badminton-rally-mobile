@@ -8,6 +8,10 @@ final class ClipDetailModel {
     let clipId: String
     private(set) var isLoading = true
     private(set) var clip: RallyClip? = nil
+    /// Header label: the clip's own title if the user renamed it, otherwise its
+    /// rally number. Resolved here rather than in the view because it needs the
+    /// sibling clips to tell a per-clip rename from the shared match name.
+    private(set) var displayTitle: String? = nil
     private(set) var annotations: [RallyAnnotation] = []
     private(set) var player: AVPlayer? = nil
     private(set) var isOwner = false
@@ -42,6 +46,14 @@ final class ClipDetailModel {
         }
         self.clip = clip
         isOwner = clip.ownerId == rally.auth.currentUserId()
+        // Siblings tell a per-clip rename apart from the match name that the
+        // web app stamps onto every clip of the video.
+        let siblings = ((try? await firstCachedClips()) ?? [])
+            .filter { $0.videoId == clip.videoId }
+        displayTitle = clipRowTitle(
+            ClipInfo(clip),
+            matchTitle: matchTitle(of: siblings.map(ClipInfo.init))
+        )
 
         if let rows = try? await rally.annotations.list(clipId: clipId) {
             annotations = rows   // server-sorted by timestamp ascending
@@ -168,9 +180,13 @@ final class ClipDetailModel {
     }
 
     private func firstCachedClip() async throws -> RallyClip? {
+        try await firstCachedClips().first { $0.id == clipId }
+    }
+
+    private func firstCachedClips() async throws -> [RallyClip] {
         for await clips in rally.clips.observeClips() {
-            return clips.first { $0.id == clipId }   // take first emission only
+            return clips   // take first emission only
         }
-        return nil
+        return []
     }
 }

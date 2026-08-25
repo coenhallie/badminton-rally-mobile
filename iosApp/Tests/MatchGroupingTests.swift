@@ -36,4 +36,94 @@ final class MatchGroupingTests: XCTestCase {
         XCTAssertEqual(result.shared.first?.sharerEmail, "coach@x.com")
         XCTAssertEqual(result.shared.first?.isOwned, false)
     }
+
+    // MARK: - Match name (mirrors Android ClipListViewModelTest / MatchRowLabelsTest)
+
+    private func titledClip(
+        id: String, videoId: String, rallyIndex: Int32, title: String?
+    ) -> ClipInfo {
+        ClipInfo(
+            id: id, videoId: videoId, ownerId: "me", rallyIndex: rallyIndex,
+            createdAtMillis: 1_784_980_800_000, title: title,
+            durationSeconds: 10, annotationCount: 0
+        )
+    }
+
+    func testMatchTitleComesFromTheClipsMatchName() {
+        let clips = [
+            titledClip(id: "a", videoId: "v1", rallyIndex: 0, title: "Thu League vs Marco"),
+            titledClip(id: "b", videoId: "v1", rallyIndex: 1, title: "Thu League vs Marco"),
+        ]
+        let result = MatchGrouping.matches(from: clips, currentUserId: "me", sharerByVideoId: [:])
+        XCTAssertEqual(result.owned.first?.title, "Thu League vs Marco")
+    }
+
+    func testMatchTitleIsNilWhenNoClipCarriesOne() {
+        let clips = [titledClip(id: "a", videoId: "v1", rallyIndex: 0, title: nil)]
+        let result = MatchGrouping.matches(from: clips, currentUserId: "me", sharerByVideoId: [:])
+        XCTAssertNil(result.owned.first?.title)
+    }
+
+    func testMatchTitleSurvivesASingleClipBeingRenamed() {
+        let clips = [
+            titledClip(id: "a", videoId: "v1", rallyIndex: 0, title: "Great smash"),
+            titledClip(id: "b", videoId: "v1", rallyIndex: 1, title: "Thu League vs Marco"),
+            titledClip(id: "c", videoId: "v1", rallyIndex: 2, title: "Thu League vs Marco"),
+        ]
+        let result = MatchGrouping.matches(from: clips, currentUserId: "me", sharerByVideoId: [:])
+        XCTAssertEqual(result.owned.first?.title, "Thu League vs Marco")
+    }
+
+    private func summary(title: String?, rallyCount: Int = 12) -> MatchSummary {
+        MatchSummary(
+            videoId: "v", rallyCount: rallyCount,
+            latestCreatedAtMillis: 1_784_980_800_000,
+            coverClipId: "c", isOwned: true, sharerEmail: nil, title: title
+        )
+    }
+
+    func testNamedMatchLeadsWithTheMatchName() {
+        XCTAssertEqual(matchRowPrimary(summary(title: "Thu League vs Marco")), "Thu League vs Marco")
+    }
+
+    func testNamedMatchKeepsTheDateBesideTheRallyCount() {
+        XCTAssertEqual(
+            matchRowSecondary(summary(title: "Thu League vs Marco")),
+            "12 RALLIES \u{00B7} JUL 25, 2026"
+        )
+    }
+
+    func testUnnamedMatchKeepsTheOriginalDateHeadline() {
+        XCTAssertEqual(matchRowPrimary(summary(title: nil)), "Match \u{00B7} Jul 25, 2026")
+    }
+
+    func testUnnamedMatchSecondaryStaysRallyCountOnly() {
+        XCTAssertEqual(matchRowSecondary(summary(title: nil)), "12 RALLIES")
+    }
+
+    func testSingleRallyIsNotPluralised() {
+        XCTAssertEqual(matchRowSecondary(summary(title: nil, rallyCount: 1)), "1 RALLY")
+    }
+
+    // MARK: - Rally row labels (mirrors Android MatchRowLabelsTest)
+
+    func testClipCarryingOnlyTheMatchNameShowsItsRallyNumber() {
+        let c = titledClip(id: "a", videoId: "v1", rallyIndex: 3, title: "Thu League vs Marco")
+        XCTAssertEqual(clipRowTitle(c, matchTitle: "Thu League vs Marco"), "Rally #3")
+    }
+
+    func testClipRenamedByTheUserKeepsItsOwnTitle() {
+        let c = titledClip(id: "a", videoId: "v1", rallyIndex: 3, title: "Great smash")
+        XCTAssertEqual(clipRowTitle(c, matchTitle: "Thu League vs Marco"), "Great smash")
+    }
+
+    func testUntitledClipShowsItsRallyNumber() {
+        let c = titledClip(id: "a", videoId: "v1", rallyIndex: 3, title: nil)
+        XCTAssertEqual(clipRowTitle(c, matchTitle: "Thu League vs Marco"), "Rally #3")
+    }
+
+    func testUntitledClipInAnUnnamedMatchShowsItsRallyNumber() {
+        let c = titledClip(id: "a", videoId: "v1", rallyIndex: 3, title: nil)
+        XCTAssertEqual(clipRowTitle(c, matchTitle: nil), "Rally #3")
+    }
 }

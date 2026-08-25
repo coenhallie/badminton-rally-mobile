@@ -52,7 +52,7 @@ struct ClipDetailView: View {
             }
 
             HStack {
-                Text(model.clip.map { $0.title ?? "Rally #\($0.rallyIndex)" } ?? "")
+                Text(model.displayTitle ?? "")
                     .font(.title3.weight(.semibold))
                     .foregroundStyle(Shuttl.textHeading)
                 Spacer()

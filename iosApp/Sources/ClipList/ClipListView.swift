@@ -6,7 +6,7 @@ struct ClipListView: View {
     let analyze: AnalyzeCoordinator
     @State private var model: ClipListModel?
     @State private var shareTarget: MatchSummary? = nil
-    @State private var deleteTarget: MatchSummary? = nil
+    @State private var confirmTarget: PendingMatchAction? = nil
     @State private var intake: LocalVideoIntake
     @State private var thumbnails = LocalThumbnails()
     @State private var localEntries: [LocalVideoEntry] = []
@@ -174,7 +174,7 @@ struct ClipListView: View {
                         row(match, model: model)
                             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                 Button {
-                                    deleteTarget = match
+                                    confirmTarget = PendingMatchAction(match: match, kind: .deleteMatch)
                                 } label: {
                                     Label("Delete", systemImage: "trash")
                                 }
@@ -189,7 +189,7 @@ struct ClipListView: View {
                         row(match, model: model)
                             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                 Button {
-                                    Task { await model.leaveShare(videoId: match.videoId) }
+                                    confirmTarget = PendingMatchAction(match: match, kind: .leaveShare)
                                 } label: {
                                     Label("Remove", systemImage: "trash")
                                 }
@@ -205,20 +205,27 @@ struct ClipListView: View {
         }
         .listStyle(.plain)
         .confirmationDialog(
-            "Delete this match and all its rally clips? This can't be undone.",
+            confirmTarget?.prompt ?? "",
             isPresented: Binding(
-                get: { deleteTarget != nil },
-                set: { if !$0 { deleteTarget = nil } }
+                get: { confirmTarget != nil },
+                set: { if !$0 { confirmTarget = nil } }
             ),
             titleVisibility: .visible,
-            presenting: deleteTarget
-        ) { match in
-            Button("Delete", role: .destructive) {
-                let videoId = match.videoId
-                deleteTarget = nil
-                Task { await model.deleteMatch(videoId: videoId) }
+            presenting: confirmTarget
+        ) { pending in
+            Button(pending.confirmLabel, role: .destructive) {
+                // Read the target before clearing it: the Task outlives the binding.
+                let videoId = pending.match.videoId
+                let kind = pending.kind
+                confirmTarget = nil
+                Task {
+                    switch kind {
+                    case .deleteMatch: await model.deleteMatch(videoId: videoId)
+                    case .leaveShare: await model.leaveShare(videoId: videoId)
+                    }
+                }
             }
-            Button("Cancel", role: .cancel) { deleteTarget = nil }
+            Button("Cancel", role: .cancel) { confirmTarget = nil }
         }
         .refreshable { await model.refresh() }
         .navigationDestination(for: String.self) { videoId in
@@ -242,10 +249,11 @@ struct ClipListView: View {
                 .task { await model.thumbnail(forCoverOf: match) }
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Match · \(formatMatchDate(millis: match.latestCreatedAtMillis))")
+                    Text(matchRowPrimary(match))
                         .font(.body.weight(.medium))
                         .foregroundStyle(Shuttl.text)
-                    Text("\(match.rallyCount) \(match.rallyCount == 1 ? "RALLY" : "RALLIES")")
+                        .lineLimit(1)
+                    Text(matchRowSecondary(match))
                         .font(.system(size: 11, weight: .medium))
                         .kerning(0.55)
                         .foregroundStyle(Shuttl.textSecondary)
@@ -278,4 +286,32 @@ struct ClipListView: View {
 
 extension MatchSummary: Identifiable {
     var id: String { videoId }
+}
+
+/// A destructive match action awaiting confirmation. Both kinds share one
+/// dialog; the swipe only records the target, it never acts on its own.
+private struct PendingMatchAction {
+    enum Kind {
+        case deleteMatch
+        case leaveShare
+    }
+
+    let match: MatchSummary
+    let kind: Kind
+
+    var prompt: String {
+        switch kind {
+        case .deleteMatch:
+            return "Delete this match and all its rally clips? This can't be undone."
+        case .leaveShare:
+            return "Remove this shared match from your list? You'll need the owner to share it again."
+        }
+    }
+
+    var confirmLabel: String {
+        switch kind {
+        case .deleteMatch: return "Delete"
+        case .leaveShare: return "Remove"
+        }
+    }
 }

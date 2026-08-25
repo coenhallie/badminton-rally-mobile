@@ -9,7 +9,12 @@ struct MatchClipsView: View {
 
     private var sortedClips: [RallyClip] { sort.sorted(clips) }
 
+    private var matchName: String? { matchTitle(of: clips.map(ClipInfo.init)) }
+
     private var title: String {
+        if let name = matchName {
+            return name.uppercased()
+        }
         guard let latest = clips.map({ $0.createdAt.toEpochMilliseconds() }).max() else {
             return "RALLIES"
         }
@@ -27,7 +32,7 @@ struct MatchClipsView: View {
                     ClipDetailView(rally: rally, clipId: clip.id)
                 } label: {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(clip.title ?? "Rally #\(clip.rallyIndex)")
+                        Text(clipRowTitle(ClipInfo(clip), matchTitle: matchName))
                             .font(.body.weight(.medium))
                             .foregroundStyle(Shuttl.text)
                         Text("\(clip.durationSeconds)S · \(clip.annotationCount) NOTES")

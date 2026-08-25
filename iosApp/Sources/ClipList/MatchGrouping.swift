@@ -31,6 +31,22 @@ struct MatchSummary: Equatable {
     let coverClipId: String
     let isOwned: Bool
     let sharerEmail: String?
+    /// Match name typed in the web app at upload; nil for older/unnamed matches.
+    let title: String?
+}
+
+/// The match name the web app stamps onto every clip of a video at cut time.
+/// Takes the most common non-nil title rather than the cover clip's, so
+/// retitling a single clip in this app doesn't relabel the whole match.
+/// Port of Android's `List<RallyClip>.matchTitle()`.
+func matchTitle(of clips: [ClipInfo]) -> String? {
+    var counts: [String: Int] = [:]
+    var order: [String] = []
+    for case let title? in clips.map(\.title) {
+        if counts[title] == nil { order.append(title) }
+        counts[title, default: 0] += 1
+    }
+    return order.max { (counts[$0] ?? 0) < (counts[$1] ?? 0) }
 }
 
 enum MatchGrouping {
@@ -51,7 +67,8 @@ enum MatchGrouping {
                     latestCreatedAtMillis: list.map(\.createdAtMillis).max() ?? 0,
                     coverClipId: cover.id,
                     isOwned: owned,
-                    sharerEmail: owned ? nil : sharerByVideoId[videoId]
+                    sharerEmail: owned ? nil : sharerByVideoId[videoId],
+                    title: matchTitle(of: list)
                 )
             }
             .sorted { $0.latestCreatedAtMillis > $1.latestCreatedAtMillis }
@@ -68,4 +85,28 @@ private let matchDateFormatter: DateFormatter = {
 
 func formatMatchDate(millis: Int64) -> String {
     matchDateFormatter.string(from: Date(timeIntervalSince1970: Double(millis) / 1000))
+}
+
+/// Label for a single rally row. Every clip of a match carries the match name,
+/// so showing it again per row would make the rallies indistinguishable — fall
+/// back to the rally number unless the user gave this clip its own title.
+/// Port of Android's `clipRowTitle`.
+func clipRowTitle(_ clip: ClipInfo, matchTitle: String?) -> String {
+    if let title = clip.title, title != matchTitle { return title }
+    return "Rally #\(clip.rallyIndex)"
+}
+
+/// Headline for a match row. A named match leads with its name; an unnamed one
+/// keeps the original date headline. Port of Android's `matchRowPrimary`.
+func matchRowPrimary(_ match: MatchSummary) -> String {
+    match.title ?? "Match · \(formatMatchDate(millis: match.latestCreatedAtMillis))"
+}
+
+/// Sub-line for a match row. When the name takes the headline the date moves
+/// down here, so it is never lost from the list. Port of Android's
+/// `matchRowSecondary`.
+func matchRowSecondary(_ match: MatchSummary) -> String {
+    let rallies = "\(match.rallyCount) \(match.rallyCount == 1 ? "RALLY" : "RALLIES")"
+    guard match.title != nil else { return rallies }
+    return "\(rallies) · \(formatMatchDate(millis: match.latestCreatedAtMillis).uppercased())"
 }
