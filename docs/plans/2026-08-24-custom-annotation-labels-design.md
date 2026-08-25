@@ -43,7 +43,8 @@ Out:
 | Fate of the three built-ins | Seeded as ordinary editable rows. No `is_builtin` flag. |
 | Colour choice | Curated palette of ten swatches, each a fill with a foreground verified against it. |
 | Colour stored on the annotation | The palette key, not a hex value. |
-| Inline creation | Name only, colour auto-assigned. Recolour on the Labels screen. |
+| Creation on the Labels screen | Name and colour together, same shape as the expanded edit row. |
+| Inline creation in the Add-note sheet | Name only, colour auto-assigned. Recolour on the Labels screen. |
 | Delete semantics | Label leaves the picker; tagged annotations keep their badge. |
 | Legacy `kind` column | Dropped. No users to migrate. |
 
@@ -71,8 +72,13 @@ No modal carries substantial content. Concretely:
 - The Labels screen is a pushed route, not a sheet.
 - Editing happens in place. Tapping a row expands it to reveal a name field and
   the swatch grid. No nested editor screen, no nested modal.
-- Inline creation adds exactly one text field to the existing "Add note" sheet.
-  The colour is auto-assigned, so the swatch grid never appears inside a sheet.
+- Inline creation in the "Add note" sheet adds exactly one text field. The colour
+  is auto-assigned there, so the swatch grid never appears inside a modal.
+- Creation on the Labels screen is different, and the earlier draft of this
+  document wrongly conflated the two. That screen is a full pushed route with
+  room to spare, so its New label row carries the name field and the swatch grid
+  together, matching the expanded edit row. Withholding the palette there forced
+  create, then tap, then recolour: three steps for one decision.
 - Delete follows the existing convention: `SwipeToRemoveRow` on Android,
   `.swipeActions(edge: .trailing)` on iOS, with a confirm dialog.
 
