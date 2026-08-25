@@ -230,6 +230,11 @@ private struct SwatchGrid: View {
                                 lineWidth: swatch.key == selectedKey ? 2 : 0
                             )
                         )
+                        // The touch target reaches the 44pt minimum without the
+                        // circle growing: 28pt of colour centred in 44pt of
+                        // hit area, mirroring Android's 28dp-in-48dp box.
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 // Not cosmetic, and not optional. Inside a List row SwiftUI gives
                 // an .automatic-style button cell-wide activation, so one tap ran
