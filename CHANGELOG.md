@@ -10,6 +10,13 @@ The mobile app is versioned independently from the web app.
 ## [Unreleased]
 
 ### Added
+- Label summary on the match rallies page, on both platforms. A strip above the
+  rally list shows the match's most-used labels with their counts; tapping it
+  opens the full breakdown, with every label's share of the match and a link
+  into the rally carrying the most labels. Counts labelled notes only, so it
+  can differ from the per-rally note counts, which include notes with no label.
+  Labels tally case-insensitively by name, so renaming one does not split it in
+  two. Matches with no labelled notes show no strip.
 - Matches show the name given to them in the web app at upload time, on both
   platforms. A named match leads with its name and moves the date down beside
   the rally count (`Thu League vs Marco` / `12 RALLIES · JUL 25, 2026`);
