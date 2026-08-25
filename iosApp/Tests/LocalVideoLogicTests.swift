@@ -32,6 +32,56 @@ final class LocalVideoLogicTests: XCTestCase {
         XCTAssertFalse(rel.hasPrefix("/"))
     }
 
+    func testOrphanedFileNamesFindsFilesNoEntryReferences() {
+        let orphans = LocalVideoLogic.orphanedFileNames(
+            inStore: ["a.mp4", "b.mp4", "c.mp4"],
+            referenced: ["LocalVideos/b.mp4"]
+        )
+        XCTAssertEqual(orphans.sorted(), ["a.mp4", "c.mp4"])
+    }
+
+    func testOrphanedFileNamesKeepsEveryReferencedFile() {
+        let orphans = LocalVideoLogic.orphanedFileNames(
+            inStore: ["a.mp4", "b.mp4"],
+            referenced: ["LocalVideos/a.mp4", "LocalVideos/b.mp4"]
+        )
+        XCTAssertTrue(orphans.isEmpty)
+    }
+
+    func testOrphanedFileNamesOnAnEmptyStoreIsEmpty() {
+        XCTAssertTrue(LocalVideoLogic.orphanedFileNames(inStore: [], referenced: []).isEmpty)
+    }
+
+    func testOrphanedFileNamesIgnoresEntriesWhoseFileIsAlreadyGone() {
+        // A registry entry can outlive its file (manual container edit, restore
+        // from a partial backup). That must not make the sweep delete anything.
+        let orphans = LocalVideoLogic.orphanedFileNames(
+            inStore: ["a.mp4"],
+            referenced: ["LocalVideos/a.mp4", "LocalVideos/vanished.mp4"]
+        )
+        XCTAssertTrue(orphans.isEmpty)
+    }
+
+    func testSweepOrphansDeletesOnlyUnreferencedFiles() throws {
+        let keep = try LocalVideoFiles.store(tempURL: tempVideo())
+        let orphan = try LocalVideoFiles.store(tempURL: tempVideo())
+
+        LocalVideoFiles.sweepOrphans(referenced: [keep])
+
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: LocalVideoFiles.resolve(relativePath: keep).path))
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: LocalVideoFiles.resolve(relativePath: orphan).path))
+        LocalVideoFiles.delete(relativePath: keep)
+    }
+
+    private func tempVideo() -> URL {
+        let temp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sweep-\(UUID().uuidString).mp4")
+        try? Data([0x00, 0x01]).write(to: temp)
+        return temp
+    }
+
     func testStoreCopiesIntoLocalVideosAndDeleteRemoves() throws {
         let temp = FileManager.default.temporaryDirectory
             .appendingPathComponent("store-test-\(UUID().uuidString).mp4")

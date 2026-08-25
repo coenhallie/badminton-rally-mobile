@@ -34,4 +34,20 @@ enum LocalVideoFiles {
     static func delete(relativePath: String) {
         try? FileManager.default.removeItem(at: resolve(relativePath: relativePath))
     }
+
+    /// Deletes every stored file that no registry entry references, and returns how
+    /// many went. Reclaims videos stranded before removal took the file with it, and
+    /// any left by a process death between dropping the entry and deleting the file.
+    ///
+    /// Call only at startup: an import stores its file before adding its entry, so a
+    /// sweep racing one would delete the video the user just picked.
+    @discardableResult
+    static func sweepOrphans(referenced: [String]) -> Int {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        let orphans = LocalVideoLogic.orphanedFileNames(inStore: names, referenced: referenced)
+        for name in orphans {
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent(name))
+        }
+        return orphans.count
+    }
 }

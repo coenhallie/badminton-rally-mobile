@@ -15,7 +15,16 @@ private const val SESSION_KEYCHAIN_SERVICE = "com.badmintontracker.ios.session"
  * out of unencrypted backups. A plaintext plist in the app container is none of those.
  */
 @OptIn(ExperimentalSettingsImplementation::class)
-fun createRallyApp(url: String, anonKey: String): RallyApp {
+fun createRallyApp(
+    url: String,
+    anonKey: String,
+    /**
+     * Deletes the file behind a removed local video, given its Documents-relative
+     * path. Supplied by Swift because the file store lives there; passing it in
+     * keeps every removal path cleaning up, not just the ones that remember to.
+     */
+    deleteLocalVideoFile: (String) -> Unit,
+): RallyApp {
     val prefs = NSUserDefaultsSettings(NSUserDefaults.standardUserDefaults)
     // Probes the Keychain and migrates any pre-existing NSUserDefaults session into
     // it. Returns prefs unchanged if the Keychain is unusable - a throw here would
@@ -31,5 +40,6 @@ fun createRallyApp(url: String, anonKey: String): RallyApp {
         config = SupabaseConfig(url = url, anonKey = anonKey),
         settings = prefs,
         sessionSettings = session,
+        onLocalVideoRemoved = { entry -> deleteLocalVideoFile(entry.uri) },
     )
 }

@@ -58,9 +58,10 @@ final class LocalVideoIntake {
     }
 
     func remove(entry: LocalVideoEntry) {
+        // The file goes with the entry: the registry's onRemoved hook is wired to
+        // LocalVideoFiles.delete in createRallyApp, so every removal path cleans up.
         rally.localVideos.remove(id: entry.id)
         rally.localAnnotations.removeAllFor(videoId: entry.id)
-        LocalVideoFiles.delete(relativePath: entry.uri)
     }
 
     /// Best-effort, mirrors Android's runCatching retriever (0 on failure).

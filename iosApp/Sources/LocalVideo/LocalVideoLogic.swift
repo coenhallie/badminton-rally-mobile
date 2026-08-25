@@ -9,6 +9,16 @@ enum LocalVideoLogic {
         LocalVideoLimits.shared.oversizeMessage(sizeBytes: bytes)
     }
 
+    /// Names of files in the store that no registry entry points at, given the
+    /// store's file names and the entries' Documents-relative paths.
+    ///
+    /// Compares by file name so a referenced path whose file is already gone
+    /// simply matches nothing, rather than shifting the result.
+    static func orphanedFileNames(inStore names: [String], referenced: [String]) -> [String] {
+        let keep = Set(referenced.map { ($0 as NSString).lastPathComponent })
+        return names.filter { !keep.contains($0) }
+    }
+
     /// m:ss — matches Android's LocalVideoListViewModel.formatDuration.
     static func formatDuration(ms: Int64) -> String {
         let totalSec = ms / 1000
