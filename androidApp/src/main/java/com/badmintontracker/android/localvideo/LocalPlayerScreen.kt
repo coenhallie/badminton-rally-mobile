@@ -57,11 +57,14 @@ import com.badmintontracker.android.R
 import com.badmintontracker.android.clipdetail.AddAnnotationSheet
 import com.badmintontracker.android.clipdetail.AnnotationRow
 import com.badmintontracker.android.clipdetail.FrameStepBar
+import com.badmintontracker.android.clipdetail.PlaybackControlBar
+import com.badmintontracker.android.clipdetail.withoutMedia3SpeedMenu
 import com.badmintontracker.android.ui.components.FullscreenEffect
 import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlButtonVariant
 import com.badmintontracker.shared.localvideo.LocalAnnotation
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
+import com.badmintontracker.shared.prefs.PlaybackPreferenceRepository
 
 private const val ANNOTATION_STORAGE_NOTE =
     "Notes are saved on this phone and are removed if you remove the video from the app."
@@ -76,6 +79,7 @@ fun LocalPlayerScreen(
     vm: LocalPlayerViewModel,
     entry: LocalVideoEntry,
     canAnalyze: Boolean,
+    playbackPrefs: PlaybackPreferenceRepository,
     onAnalyze: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -85,6 +89,7 @@ fun LocalPlayerScreen(
     val player = remember {
         ExoPlayer.Builder(ctx).build().apply { setSeekParameters(SeekParameters.EXACT) }
     }
+    val viewPlayer = remember(player) { player.withoutMedia3SpeedMenu() }
     var isFullscreen by remember { mutableStateOf(false) }
     var addDialog by remember { mutableStateOf<Float?>(null) }
     var pendingDelete by remember { mutableStateOf<LocalAnnotation?>(null) }
@@ -130,10 +135,15 @@ fun LocalPlayerScreen(
                     val view = LayoutInflater.from(c)
                         .inflate(R.layout.clip_player_view, null) as PlayerView
                     view.apply {
-                        this.player = player
+                        this.player = viewPlayer
                         setFullscreenButtonClickListener { isFullscreen = !isFullscreen }
                         controllerShowTimeoutMs = 1500
                         controllerAutoShow = false
+                        // The transport bar below owns skipping and speed. Media3's
+                        // own rewind/fast-forward are frozen at the Builder's 5s/15s,
+                        // so they could never follow the preference.
+                        setShowRewindButton(false)
+                        setShowFastForwardButton(false)
                         hideController()
                     }
                 },
@@ -209,7 +219,10 @@ fun LocalPlayerScreen(
                 // 60% of the screen for the video so rallies can be evaluated closely;
                 // the annotation list scrolls in whatever space remains.
                 playerSurface(Modifier.fillMaxWidth().fillMaxHeight(0.6f).background(Color.Black))
-                FrameStepBar(player = player, modifier = Modifier.padding(vertical = 8.dp))
+                Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                    PlaybackControlBar(player = player, prefs = playbackPrefs)
+                    FrameStepBar(player = player)
+                }
 
                 if (annotations.isEmpty()) {
                     Box(
@@ -249,10 +262,12 @@ fun LocalPlayerScreen(
     if (isFullscreen) {
         Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
             playerSurface(Modifier.fillMaxSize())
-            FrameStepBar(
-                player = player,
+            Column(
                 modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 24.dp),
-            )
+            ) {
+                PlaybackControlBar(player = player, prefs = playbackPrefs)
+                FrameStepBar(player = player)
+            }
         }
     }
 

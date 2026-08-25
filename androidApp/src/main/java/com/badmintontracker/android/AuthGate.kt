@@ -166,7 +166,11 @@ fun AuthGate(
                             }
                         }
                     )
-                    ClipDetailScreen(vm = vm, onBack = { nav.popBackStack() })
+                    ClipDetailScreen(
+                        vm = vm,
+                        playbackPrefs = rally.playbackPrefs,
+                        onBack = { nav.popBackStack() },
+                    )
                 }
                 composable<Route.LocalPlayer> { entry ->
                     val args = entry.toRoute<Route.LocalPlayer>()
@@ -184,6 +188,7 @@ fun AuthGate(
                             vm = playerVm,
                             entry = e,
                             canAnalyze = e.stage == AnalyzeStage.LOCAL || e.stage == AnalyzeStage.FAILED,
+                            playbackPrefs = rally.playbackPrefs,
                             onAnalyze = { nav.navigate(Route.CourtMarking(e.id)) },
                             onBack = { nav.popBackStack() },
                         )

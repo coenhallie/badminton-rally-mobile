@@ -59,11 +59,13 @@ import com.badmintontracker.android.ui.components.FullscreenEffect
 import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlButtonVariant
 import com.badmintontracker.shared.model.RallyAnnotation
+import com.badmintontracker.shared.prefs.PlaybackPreferenceRepository
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ClipDetailScreen(
     vm: ClipDetailViewModel,
+    playbackPrefs: PlaybackPreferenceRepository,
     onBack: () -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -74,6 +76,7 @@ fun ClipDetailScreen(
             setSeekParameters(SeekParameters.EXACT)
         }
     }
+    val viewPlayer = remember(player) { player.withoutMedia3SpeedMenu() }
     val snackbar = remember { SnackbarHostState() }
     var addDialog by remember { mutableStateOf<Float?>(null) }
     var pendingDelete by remember { mutableStateOf<RallyAnnotation?>(null) }
@@ -122,10 +125,15 @@ fun ClipDetailScreen(
                     val view = LayoutInflater.from(c)
                         .inflate(R.layout.clip_player_view, null) as PlayerView
                     view.apply {
-                        this.player = player
+                        this.player = viewPlayer
                         setFullscreenButtonClickListener { isFullscreen = !isFullscreen }
                         controllerShowTimeoutMs = 1500
                         controllerAutoShow = false
+                        // The transport bar below owns skipping and speed. Media3's
+                        // own rewind/fast-forward are frozen at the Builder's 5s/15s,
+                        // so they could never follow the preference.
+                        setShowRewindButton(false)
+                        setShowFastForwardButton(false)
                         hideController()
                     }
                 },
@@ -185,10 +193,10 @@ fun ClipDetailScreen(
                 // 60% of the screen for the video so rallies can be evaluated closely;
                 // the annotation list scrolls in whatever space remains.
                 playerSurface(Modifier.fillMaxWidth().fillMaxHeight(0.6f).background(Color.Black))
-                FrameStepBar(
-                    player = player,
-                    modifier = Modifier.padding(vertical = 8.dp),
-                )
+                Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                    PlaybackControlBar(player = player, prefs = playbackPrefs)
+                    FrameStepBar(player = player)
+                }
             }
 
             if (state.isLoading) {
@@ -223,12 +231,14 @@ fun ClipDetailScreen(
                 .background(Color.Black),
         ) {
             playerSurface(Modifier.fillMaxSize())
-            FrameStepBar(
-                player = player,
+            Column(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 24.dp),
-            )
+            ) {
+                PlaybackControlBar(player = player, prefs = playbackPrefs)
+                FrameStepBar(player = player)
+            }
         }
     }
 
