@@ -1,6 +1,22 @@
 package com.badmintontracker.shared.scoring
 
 /**
+ * Which service court a serve is delivered from. Right when the server's own side
+ * score is even, left when it is odd.
+ */
+enum class ServiceCourt { RIGHT, LEFT }
+
+/**
+ * Which member of a pair. An enum rather than an index because a nullable Kotlin
+ * Int reaches Swift as KotlinInt?, and "which of the two" is not arithmetic.
+ */
+enum class PairPlayer {
+    FIRST, SECOND;
+
+    val other: PairPlayer get() = if (this == FIRST) SECOND else FIRST
+}
+
+/**
  * A pair of per-side integers: points within a game, or games won within a match.
  * One type for both because they are the same shape and the same accessor, and two
  * near-identical pair types is two places to get [of] backwards.
@@ -23,6 +39,18 @@ data class MatchSetup(
     val doubles: Boolean,
     /** The side serving the first point of the first game. The coin toss sets this. */
     val firstServer: Side,
+    /**
+     * Doubles only: which player of each side starts a game in the right service
+     * court. Reset at every game start, because a pair may rearrange between games
+     * and the app has no way to know that it did - a stale arrangement is a wrong
+     * name on screen, and resetting keeps it from also being a wrong name in the
+     * game after that.
+     *
+     * These are the one place this package allows a default argument: they are
+     * meaningless in singles. Swift has no defaults and passes all four.
+     */
+    val homeStartsRight: PairPlayer = PairPlayer.FIRST,
+    val awayStartsRight: PairPlayer = PairPlayer.FIRST,
 )
 
 /**
@@ -64,6 +92,11 @@ data class MatchState(
     val points: List<ScoredPoint>,
     /** Null once the match is over. */
     val server: Side?,
+    /** Null once the match is over. */
+    val serviceCourt: ServiceCourt?,
+    /** Doubles only. Null in singles, and null once the match is over. */
+    val servingPlayer: PairPlayer?,
+    val receivingPlayer: PairPlayer?,
     val winner: Side?,
 ) {
     val isOver: Boolean get() = winner != null
@@ -90,6 +123,14 @@ fun gameWinner(score: SideScore, rules: ScoringRules): Side? {
     if (rules.cap != null && top >= rules.cap) return leader
     return if (top - chase >= rules.winBy) leader else null
 }
+
+/**
+ * Which member of a pair stands in [court], given which member is currently in
+ * that pair's right service court. The pair occupies both courts, so the other
+ * player is in the other one - that is the whole rule.
+ */
+private fun playerIn(court: ServiceCourt, rightCourtPlayer: PairPlayer): PairPlayer =
+    if (court == ServiceCourt.RIGHT) rightCourtPlayer else rightCourtPlayer.other
 
 /**
  * Folds a log into the score. The only way a [MatchState] is ever produced: there
@@ -119,6 +160,8 @@ fun foldMatchState(
     val completedGames = ArrayList<SideScore>()
     var gamesWon = SideScore.ZERO
     var server = setup.firstServer
+    var homeRight = setup.homeStartsRight
+    var awayRight = setup.awayStartsRight
     var winner: Side? = null
     val points = ArrayList<ScoredPoint>()
 
@@ -142,6 +185,15 @@ fun foldMatchState(
                     comment = tag?.comment,
                 )
 
+                // The serving pair swaps service courts only when it wins the rally,
+                // which is exactly why the same player then serves again from the
+                // other court. The receiving pair never swaps on winning: the new
+                // server is simply whoever is standing in the court their new score
+                // calls for.
+                if (setup.doubles && event.side == server) {
+                    if (server == Side.HOME) homeRight = homeRight.other else awayRight = awayRight.other
+                }
+
                 // Rally point scoring: the side that wins the rally serves the next one.
                 server = event.side
                 currentGame = scoreAfter
@@ -158,10 +210,25 @@ fun foldMatchState(
                         gameIndex += 1
                         currentGame = SideScore.ZERO
                         server = wonGame
+                        homeRight = setup.homeStartsRight
+                        awayRight = setup.awayStartsRight
                     }
                 }
             }
         }
+    }
+
+    val servingSide = if (winner != null) null else server
+    val court = servingSide?.let {
+        if (currentGame.of(it) % 2 == 0) ServiceCourt.RIGHT else ServiceCourt.LEFT
+    }
+    // A serve crosses diagonally, so the receiver stands in the same-named court on
+    // the other side of the net.
+    val servingPlayer = if (!setup.doubles || servingSide == null || court == null) null else {
+        playerIn(court, if (servingSide == Side.HOME) homeRight else awayRight)
+    }
+    val receivingPlayer = if (!setup.doubles || servingSide == null || court == null) null else {
+        playerIn(court, if (servingSide.other == Side.HOME) homeRight else awayRight)
     }
 
     return MatchState(
@@ -172,7 +239,10 @@ fun foldMatchState(
         completedGames = completedGames,
         gamesWon = gamesWon,
         points = points,
-        server = if (winner != null) null else server,
+        server = servingSide,
+        serviceCourt = court,
+        servingPlayer = servingPlayer,
+        receivingPlayer = receivingPlayer,
         winner = winner,
     )
 }
