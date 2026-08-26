@@ -265,7 +265,12 @@ import kotlin.test.Test
 
 class ScoreLogTest {
 
-    private val json = Json { ignoreUnknownKeys = true }
+    // encodeDefaults matches the Json that ScoreLogsRepository writes its cache
+    // with, and it has to: this test pins the stored shape, and a config that
+    // differs from the writer's would pin a shape nothing ever produces. It is
+    // load bearing below, where awayStartsRight is left at its default and would
+    // otherwise simply be absent from the encoded string.
+    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
     private fun log(
         events: List<ScoreEvent> = emptyList(),
@@ -1908,7 +1913,7 @@ git commit -m "feat(android): create a match before there is any video"
 - Modify: `androidApp/src/main/java/com/badmintontracker/android/cliplist/ClipListViewModel.kt`
 - Modify: `androidApp/src/main/java/com/badmintontracker/android/cliplist/ClipListScreen.kt`
 - Modify: `androidApp/src/main/java/com/badmintontracker/android/nav/Route.kt`
-- Modify: `androidApp/src/main/java/com/badmintontracker/android/AuthGate.kt`
+- Modify: `androidApp/src/main/java/com/badmintontracker/android/AuthGate.kt` - **two** `ClipListViewModel` construction sites, one under `Route.ClipList` and one under `Route.MatchClips`; both take the new argument
 - Create: `androidApp/src/main/java/com/badmintontracker/android/scoring/ScoreMatchViewModel.kt`
 - Create: `androidApp/src/main/java/com/badmintontracker/android/scoring/ScoreMatchScreen.kt`
 
