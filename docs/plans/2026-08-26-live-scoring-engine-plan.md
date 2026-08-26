@@ -105,7 +105,6 @@ Create `shared/src/commonTest/kotlin/com/badmintontracker/shared/scoring/Scoring
 ```kotlin
 package com.badmintontracker.shared.scoring
 
-import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
@@ -182,10 +181,15 @@ class ScoringRulesTest {
 
     @Test
     fun decoding_an_unplayable_stored_rule_set_throws_rather_than_scoring_wrong() {
+        // kotlinx-serialization 1.10.0 calls the constructor from the generated
+        // deserializer and does not wrap what it throws, so the init check's own
+        // sentence arrives intact. Verified against this version rather than
+        // assumed: a version that wrapped it would surface a SerializationException
+        // here instead, and this test is where that would be caught.
         val stored = """{"points_to_win":21,"win_by":2,"cap":5,"games_to_win":2}"""
         assertFailsWith<IllegalArgumentException> {
             Json.decodeFromString(ScoringRules.serializer(), stored)
-        }.message.shouldNotBeNull()
+        }.message shouldBe "The cap cannot be below the target score."
     }
 }
 ```
