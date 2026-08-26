@@ -31,6 +31,19 @@ data class SideScore(val home: Int, val away: Int) {
 }
 
 /**
+ * A pair of per-side flags, for the states both sides can be in at once. At 29-29
+ * under a cap of 30 both sides are at game point, so a single boolean would have
+ * to choose one of them to be wrong about.
+ */
+data class SideFlags(val home: Boolean, val away: Boolean) {
+    fun of(side: Side): Boolean = if (side == Side.HOME) home else away
+
+    val any: Boolean get() = home || away
+
+    companion object { val NONE = SideFlags(home = false, away = false) }
+}
+
+/**
  * What a match needs beyond its rules before a point can be scored. Deliberately
  * not the match's name, its players or its date: those belong to the match record
  * that L1 creates, and the fold must not need any of them to produce a score.
@@ -97,6 +110,25 @@ data class MatchState(
     /** Doubles only. Null in singles, and null once the match is over. */
     val servingPlayer: PairPlayer?,
     val receivingPlayer: PairPlayer?,
+    /**
+     * The point just played took a side to the interval score without ending the
+     * game. An edge rather than durable state: it is re-derived from the log on
+     * every fold, so an undo un-announces the interval exactly as it un-scores the
+     * point, and no "interval dismissed" flag has to be persisted anywhere.
+     */
+    val isIntervalPoint: Boolean,
+    /**
+     * How many times the sides have changed ends. Durable, unlike the edge above:
+     * an even count means both sides are on the ends they started on, which is what
+     * the board draws from.
+     */
+    val endsSwapCount: Int,
+    /** The point just played triggered a change of ends. */
+    val isChangeEndsPoint: Boolean,
+    /** Sides one point from taking the current game. */
+    val gamePoint: SideFlags,
+    /** Sides one point from taking the match, which is game point on the last game they need. */
+    val matchPoint: SideFlags,
     val winner: Side?,
 ) {
     val isOver: Boolean get() = winner != null
@@ -162,6 +194,11 @@ fun foldMatchState(
     var server = setup.firstServer
     var homeRight = setup.homeStartsRight
     var awayRight = setup.awayStartsRight
+    var endsSwapCount = 0
+    var isIntervalPoint = false
+    var isChangeEndsPoint = false
+    var intervalTakenThisGame = false
+    var endsChangedThisGame = false
     var winner: Side? = null
     val points = ArrayList<ScoredPoint>()
 
@@ -198,6 +235,11 @@ fun foldMatchState(
                 server = event.side
                 currentGame = scoreAfter
 
+                // Both announcements belong to the point that triggered them and to
+                // no other, so every point clears them before deciding its own.
+                isIntervalPoint = false
+                isChangeEndsPoint = false
+
                 val wonGame = gameWinner(scoreAfter, rules)
                 if (wonGame != null) {
                     completedGames += scoreAfter
@@ -212,6 +254,27 @@ fun foldMatchState(
                         server = wonGame
                         homeRight = setup.homeStartsRight
                         awayRight = setup.awayStartsRight
+                        endsSwapCount += 1
+                        isChangeEndsPoint = true
+                        intervalTakenThisGame = false
+                        endsChangedThisGame = false
+                    }
+                } else {
+                    val reached = scoreAfter.of(event.side)
+                    if (!intervalTakenThisGame && rules.intervalAt != null && reached == rules.intervalAt) {
+                        intervalTakenThisGame = true
+                        isIntervalPoint = true
+                    }
+                    // Only in the deciding game: the change of ends between games
+                    // covers every other one.
+                    if (!endsChangedThisGame &&
+                        rules.changeEndsAt != null &&
+                        gameIndex == 2 * rules.gamesToWin - 2 &&
+                        reached == rules.changeEndsAt
+                    ) {
+                        endsChangedThisGame = true
+                        endsSwapCount += 1
+                        isChangeEndsPoint = true
                     }
                 }
             }
@@ -231,6 +294,17 @@ fun foldMatchState(
         playerIn(court, if (servingSide.other == Side.HOME) homeRight else awayRight)
     }
 
+    // "One point from the game" asked of the rule that decides games, rather than
+    // spelled out a second time here where it could drift from gameWinner.
+    val gamePoint = if (winner != null) SideFlags.NONE else SideFlags(
+        home = gameWinner(currentGame.plusOne(Side.HOME), rules) == Side.HOME,
+        away = gameWinner(currentGame.plusOne(Side.AWAY), rules) == Side.AWAY,
+    )
+    val matchPoint = if (winner != null) SideFlags.NONE else SideFlags(
+        home = gamePoint.home && gamesWon.home + 1 >= rules.gamesToWin,
+        away = gamePoint.away && gamesWon.away + 1 >= rules.gamesToWin,
+    )
+
     return MatchState(
         rules = rules,
         setup = setup,
@@ -243,6 +317,11 @@ fun foldMatchState(
         serviceCourt = court,
         servingPlayer = servingPlayer,
         receivingPlayer = receivingPlayer,
+        isIntervalPoint = winner == null && isIntervalPoint,
+        endsSwapCount = endsSwapCount,
+        isChangeEndsPoint = winner == null && isChangeEndsPoint,
+        gamePoint = gamePoint,
+        matchPoint = matchPoint,
         winner = winner,
     )
 }
