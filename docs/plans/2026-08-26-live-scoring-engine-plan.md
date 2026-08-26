@@ -1650,7 +1650,18 @@ git commit -m "feat(scoring): derive interval, change of ends, game point and ma
 
 This task exists because L1's iOS scoring surface is the first thing in this app to read a Kotlin `sealed interface`, a `List` of one, and a companion-object constant from Swift, and none of those has a caller in `iosApp/Sources` today. A bridge problem found here costs a rename; found in L1 it costs a redesign of the surface that was built on top of it.
 
-Expected generated Swift names, from SKIE's conventions: a nested class flattens to `ScoreEventPointTo`, a companion constant reads as `ScoringRules.companion.BWF_21`, top-level functions in `MatchState.kt` land on `MatchStateKt`, and Kotlin enum cases arrive lowerCamelCased (`Side.home`). If the build rejects one of these, read the generated interface under `shared/build/skie/` and use the name it declares rather than inventing one - and if a name is materially worse than the Kotlin one, fix it in Kotlin now, while this package has no other callers.
+**What SKIE 0.10.13 actually generates**, confirmed by reading
+`shared/build/skie/binaries/debugFramework/DEBUG/iosSimulatorArm64/swift/generated/`
+rather than assumed:
+
+- Nested classes flatten as predicted: `ScoreEventPointTo`, `ScoreEventTagPoint`, `ScoreEventRetire`.
+- Kotlin enums become real Swift enums with lowerCamelCase cases: `Side.home`, `PairPlayer.first`, `ServiceCourt.left`. `onEnum(of:)` gives exhaustive switching over `ScoreEvent`.
+- Companion constants read as `ScoringRules.companion.BWF_21` and `.PRESETS`.
+- Top-level functions are emitted **twice**: as `MatchStateKt.foldMatchState(...)` and as a plain Swift free function `foldMatchState(rules:setup:events:)`. Prefer the free function; it is the idiomatic generated surface.
+- Extensions on `List<ScoreEvent>` land on `ScoreEventKt` with the receiver first: `ScoreEventKt.undoLast(_:)`, `ScoreEventKt.dropPointsFrom(_:fromOrdinal:)`.
+- **`ScoringRules.cap` and `intervalAt` arrive as `KotlinInt?`**, so Swift cannot pass an integer literal: `scoringRulesProblem(cap: KotlinInt(int: 5), ...)`. This is the cost of the two nullable Ints the Global Constraints already flag, and it is confined to rule-set construction.
+
+If a future SKIE version rejects one of these, read that directory and use the name it declares rather than inventing one - and if a name is materially worse than the Kotlin one, fix it in Kotlin while this package still has few callers.
 
 - [ ] **Step 1: Write the failing test**
 
