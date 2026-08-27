@@ -215,7 +215,7 @@ fun ClipListScreen(
                                 label = "Delete",
                                 onSwiped = { deleteTarget = match; false },
                             ) {
-                                MatchRow(
+                                VideoMatchRow(
                                     match = match,
                                     media = media,
                                     onClick = { onMatchClick(match) },
@@ -232,7 +232,7 @@ fun ClipListScreen(
                                 label = "Remove",
                                 onSwiped = { leaveShareTarget = match; false },
                             ) {
-                                MatchRow(
+                                VideoMatchRow(
                                     match = match,
                                     media = media,
                                     onClick = { onMatchClick(match) },
@@ -321,7 +321,7 @@ private fun SectionHeader(text: String) {
 }
 
 @Composable
-private fun MatchRow(
+private fun VideoMatchRow(
     match: MatchSummary,
     media: MediaRepository,
     onClick: () -> Unit,
