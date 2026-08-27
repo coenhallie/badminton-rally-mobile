@@ -198,4 +198,56 @@ final class MatchGroupingTests: XCTestCase {
             "Rally #7"
         )
     }
+
+    private func scoreCard(_ id: String, at millis: Int64) -> ScoreMatchCard {
+        ScoreMatchCard(
+            scoreLogId: id,
+            title: "Thu League",
+            createdAtEpochMs: millis,
+            playersLine: "Coen vs Marco",
+            scoreLine: "11-9",
+            statusLine: "Scoring",
+            isLive: true,
+            hasVideo: false
+        )
+    }
+
+    private func videoSummary(_ videoId: String, at millis: Int64) -> MatchSummary {
+        MatchSummary(
+            videoId: videoId, rallyCount: 3, latestCreatedAtMillis: millis,
+            coverClipId: "c-\(videoId)", isOwned: true, sharerEmail: nil,
+            title: nil, description: nil
+        )
+    }
+
+    func testScoredAndVideoMatchesInterleaveByDate() {
+        let rows = mergeMatchRows(
+            videoMatches: [videoSummary("v1", at: 300), videoSummary("v2", at: 100)],
+            scoreMatches: [scoreCard("s1", at: 200)]
+        )
+        XCTAssertEqual(rows.map(\.id), ["video-v1", "score-s1", "video-v2"])
+    }
+
+    func testTiesKeepAFixedOrderMatchingAndroid() {
+        let rows = mergeMatchRows(
+            videoMatches: [videoSummary("v1", at: 100)],
+            scoreMatches: [scoreCard("s1", at: 100)]
+        )
+        XCTAssertEqual(rows.map(\.id), ["score-s1", "video-v1"])
+    }
+
+    func testKeysFromTheTwoKindsCannotCollide() {
+        let rows = mergeMatchRows(
+            videoMatches: [videoSummary("same", at: 100)],
+            scoreMatches: [scoreCard("same", at: 200)]
+        )
+        XCTAssertEqual(rows.map(\.id), ["score-same", "video-same"])
+    }
+
+    func testAnAccountWithOnlyScoredMatchesStillGetsAList() {
+        XCTAssertEqual(
+            mergeMatchRows(videoMatches: [], scoreMatches: [scoreCard("s1", at: 100)]).map(\.id),
+            ["score-s1"]
+        )
+    }
 }

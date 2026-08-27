@@ -82,6 +82,44 @@ enum MatchGrouping {
     }
 }
 
+/// One row of the match list, which since live scoring holds two kinds of thing: a
+/// match cut from a video, and a match scored courtside that may never have one.
+/// Port of Android's `MatchRow`.
+enum MatchRow: Identifiable {
+    case video(MatchSummary)
+    case score(ScoreMatchCard)
+
+    /// Prefixed: both ids are UUIDs from the same generator and would otherwise collide.
+    var id: String {
+        switch self {
+        case .video(let match): return "video-\(match.videoId)"
+        case .score(let card):  return "score-\(card.scoreLogId)"
+        }
+    }
+
+    var sortAtEpochMs: Int64 {
+        switch self {
+        case .video(let match): return match.latestCreatedAtMillis
+        case .score(let card):  return card.createdAtEpochMs
+        }
+    }
+}
+
+/// Interleaves the two kinds into one newest-first list. Score logs are owner-only
+/// by RLS, so this only ever builds the owned section.
+///
+/// The tie-break on `id` is not decoration, and it must match Android's exactly:
+/// the same account on two phones has to produce the same order.
+/// Port of Android's `mergeMatchRows`.
+func mergeMatchRows(videoMatches: [MatchSummary], scoreMatches: [ScoreMatchCard]) -> [MatchRow] {
+    let rows = videoMatches.map(MatchRow.video) + scoreMatches.map(MatchRow.score)
+    return rows.sorted {
+        $0.sortAtEpochMs != $1.sortAtEpochMs
+            ? $0.sortAtEpochMs > $1.sortAtEpochMs
+            : $0.id < $1.id
+    }
+}
+
 private let matchDateFormatter: DateFormatter = {
     let f = DateFormatter()
     f.locale = Locale(identifier: "en_US_POSIX")
