@@ -405,6 +405,7 @@ private struct NoteField: View {
     let onCommit: (String) -> Void
 
     @State private var draft: String
+    @FocusState private var focused: Bool
 
     init(ordinal: Int, original: String, onCommit: @escaping (String) -> Void) {
         self.ordinal = ordinal
@@ -416,7 +417,12 @@ private struct NoteField: View {
     var body: some View {
         TextField("Note on this rally", text: $draft)
             .textFieldStyle(.roundedBorder)
+            .focused($focused)
             .id(ordinal)
+            // Focused as it opens. Opening the note is already a deliberate detour
+            // from scoring; making the coach tap twice to start typing is the kind
+            // of thing that gets the feature abandoned.
+            .onAppear { focused = true }
             .onDisappear { if draft != original { onCommit(draft) } }
     }
 }

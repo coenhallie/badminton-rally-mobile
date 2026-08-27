@@ -120,10 +120,6 @@ final class ScoringModel {
         readStore()
     }
 
-    func dismissTagRow() {
-        pendingTagOrdinal = nil
-    }
-
     /// The rally the tag row is on, or nil when there is not one.
     var pendingPoint: ScoredPoint? {
         pendingTagOrdinal.flatMap { point(at: $0) }

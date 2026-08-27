@@ -35,12 +35,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -470,10 +473,15 @@ private fun ControlBar(
                 DisposableEffect(ordinal) {
                     onDispose { if (draft != original) onSetComment(ordinal, draft) }
                 }
+                // Focused as it opens. Opening the note is already a deliberate
+                // detour from scoring; making the coach tap twice to start typing
+                // is the kind of thing that gets the feature abandoned.
+                val focus = remember(ordinal) { FocusRequester() }
+                LaunchedEffect(ordinal) { focus.requestFocus() }
                 OutlinedTextField(
                     value = draft,
                     onValueChange = { draft = it },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().focusRequester(focus),
                     singleLine = true,
                     placeholder = { Text("Note on this rally") },
                 )

@@ -127,10 +127,6 @@ class ScoringViewModel(
         pending.value = null
     }
 
-    fun dismissTagRow() {
-        pending.value = null
-    }
-
     /**
      * Read straight through the scorer rather than off [state], because a tap and
      * the tag that follows it can both land before the state flow has emitted once.
