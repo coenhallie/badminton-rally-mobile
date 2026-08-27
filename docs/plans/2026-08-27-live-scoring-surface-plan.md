@@ -1029,7 +1029,7 @@ The view mirrors Task 5 element for element: same two stacked zones, same always
 
 `ScoringModelTests` covers the same nine behaviours as Task 4's Android tests. They are the parity check: if the two lists of test names diverge, the two surfaces have diverged.
 
-- [ ] **Verify by hand**, including the check this codebase has been bitten by: tap a label chip in the tag row and confirm the tap does not also register on the scoring zone underneath it. `iosAppUITests` exists because a swatch grid routed one tap to every button in a cell.
+- [x] **Verify by hand**, including the check this codebase has been bitten by: tap a label chip in the tag row and confirm the tap does not also register on the scoring zone underneath it. `iosAppUITests` exists because a swatch grid routed one tap to every button in a cell.
 
 ```bash
 cd iosApp && xcodegen generate && cd ..
@@ -1082,7 +1082,7 @@ git commit -m "feat: lay the scoring surface out for landscape"
 
 ### Task 10: Close it out
 
-- [ ] **Step 1: Run everything**
+- [x] **Step 1: Run everything**
 
 ```bash
 ./gradlew :shared:jvmTest :androidApp:testDebugUnitTest :androidApp:assembleDebug
@@ -1099,7 +1099,7 @@ Report the actual output. Do not summarise a run you did not do.
 
 Not a smoke test. Score a full three-game doubles match on each platform, tagging as you go, and check afterwards that the point log, the serve rotation and the tally all agree with what happened. This feature's failure mode is being subtly wrong in a way only a real game exposes.
 
-- [ ] **Step 3: Changelog and commit**
+- [x] **Step 3: Changelog and commit**
 
 ```markdown
 - Score a match courtside. Create it, tap the side that won each rally, and tag

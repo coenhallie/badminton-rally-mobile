@@ -17,8 +17,19 @@ The mobile app is versioned independently from the web app.
   no video is a normal match: it can be opened, renamed and deleted, and it
   keeps working with no signal - everything is stored on the phone first and
   synced when the network comes back. Sharing stays unavailable until a video
-  is attached, and says so rather than hiding the button. Scoring itself lands
-  next.
+  is attached, and says so rather than hiding the button.
+- Score a match courtside, on both platforms. Tap the side that won the rally
+  and the board keeps a point-by-point record; tap one of your own labels and
+  that rally is tagged, with no dialog in the way and nothing to confirm. The
+  board reads at arm's length: two full-bleed halves, the score at the largest
+  size the screen allows, and the serve, the service court and which player of
+  a doubles pair is standing where all shown from the score itself. The halves
+  swap when the rules say the players change ends. Undo is one tap and takes
+  back the last thing you did; resetting a game leaves finished games alone;
+  finishing sits behind a confirm. The screen stays awake while you score, and
+  everything is stored on the phone as it happens, so closing the app mid-game
+  loses nothing. Afterwards the match page shows a tally of how you tagged it
+  and exports the whole thing as text you can paste into a message.
 - Label summary on the match rallies page, on both platforms. A strip above the
   rally list shows the match's most-used labels with their counts; tapping it
   opens the full breakdown, with every label's share of the match and a link
@@ -84,6 +95,11 @@ The mobile app is versioned independently from the web app.
   supported method.
 
 ### Fixed
+- Matches scored on the phone no longer disappear from the match list after
+  restarting the app. They were never lost - they were on the phone the whole
+  time - but the list read the stored matches before the app had finished
+  working out who was signed in, and so showed none of them until the next
+  time one was changed.
 - Error dialogs and snackbars no longer show raw technical dumps (request
   URLs, response headers, multi-line server details). Server errors now read
   as a short "HTTP <code> — <reason>" and connection problems as plain
