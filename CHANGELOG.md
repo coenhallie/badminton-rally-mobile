@@ -10,6 +10,15 @@ The mobile app is versioned independently from the web app.
 ## [Unreleased]
 
 ### Added
+- Matches can now be created on the phone before any video exists, on both
+  platforms. Name a match, name its players, pick its scoring rules and who
+  serves first, and it appears in your match list alongside the matches cut
+  from video, in date order rather than in a section of its own. A match with
+  no video is a normal match: it can be opened, renamed and deleted, and it
+  keeps working with no signal - everything is stored on the phone first and
+  synced when the network comes back. Sharing stays unavailable until a video
+  is attached, and says so rather than hiding the button. Scoring itself lands
+  next.
 - Label summary on the match rallies page, on both platforms. A strip above the
   rally list shows the match's most-used labels with their counts; tapping it
   opens the full breakdown, with every label's share of the match and a link
