@@ -40,6 +40,10 @@ import com.badmintontracker.android.localvideo.rememberVideoIntake
 import com.badmintontracker.android.labels.LabelsScreen
 import com.badmintontracker.android.labels.LabelsViewModel
 import com.badmintontracker.android.nav.Route
+import com.badmintontracker.android.scoring.NewMatchScreen
+import com.badmintontracker.android.scoring.NewMatchViewModel
+import com.badmintontracker.android.scoring.ScoreMatchScreen
+import com.badmintontracker.android.scoring.ScoreMatchViewModel
 import com.badmintontracker.android.signin.SignInScreen
 import com.badmintontracker.android.signin.SignInViewModel
 import com.badmintontracker.shared.localvideo.AnalyzeCoordinator
@@ -106,7 +110,7 @@ fun AuthGate(
                 composable<Route.ClipList> {
                     val clipListVm: ClipListViewModel = viewModel(
                         factory = viewModelFactory {
-                            initializer { ClipListViewModel(rally.clips, rally.auth, rally.shares, rally.videos) }
+                            initializer { ClipListViewModel(rally.clips, rally.auth, rally.shares, rally.videos, rally.scoreLogs) }
                         }
                     )
                     val localVm: LocalVideoListViewModel = viewModel(
@@ -129,6 +133,8 @@ fun AuthGate(
                         shares = rally.shares,
                         themePrefs = themePrefs,
                         onMatchClick = { nav.navigate(Route.MatchClips(it.videoId)) },
+                        onScoreMatchClick = { nav.navigate(Route.ScoreMatch(it.scoreLogId)) },
+                        onNewMatch = { nav.navigate(Route.NewMatch) },
                         localRows = localRows,
                         intakeError = intakeError,
                         onIntakeErrorShown = { intakeError = null },
@@ -150,6 +156,31 @@ fun AuthGate(
                         onLabels = { nav.navigate(Route.Labels) },
                     )
                 }
+                composable<Route.NewMatch> {
+                    val vm: NewMatchViewModel = viewModel(
+                        factory = viewModelFactory { initializer { NewMatchViewModel(rally.scoreLogs) } }
+                    )
+                    NewMatchScreen(
+                        vm = vm,
+                        // Straight to the match, not back to the list: creating a
+                        // match courtside means being about to score it.
+                        onCreated = { id ->
+                            nav.navigate(Route.ScoreMatch(id)) {
+                                popUpTo(Route.NewMatch) { inclusive = true }
+                            }
+                        },
+                        onBack = { nav.popBackStack() },
+                    )
+                }
+                composable<Route.ScoreMatch> { entry ->
+                    val args = entry.toRoute<Route.ScoreMatch>()
+                    val vm: ScoreMatchViewModel = viewModel(
+                        factory = viewModelFactory {
+                            initializer { ScoreMatchViewModel(rally.scoreLogs, args.scoreLogId) }
+                        }
+                    )
+                    ScoreMatchScreen(vm = vm, onBack = { nav.popBackStack() })
+                }
                 composable<Route.Labels> {
                     val vm: LabelsViewModel = viewModel(
                         factory = viewModelFactory { initializer { LabelsViewModel(rally.labels) } }
@@ -160,7 +191,7 @@ fun AuthGate(
                     val args = entry.toRoute<Route.MatchClips>()
                     val clipListVm: ClipListViewModel = viewModel(
                         factory = viewModelFactory {
-                            initializer { ClipListViewModel(rally.clips, rally.auth, rally.shares, rally.videos) }
+                            initializer { ClipListViewModel(rally.clips, rally.auth, rally.shares, rally.videos, rally.scoreLogs) }
                         }
                     )
                     val summaryVm: MatchSummaryViewModel = viewModel(

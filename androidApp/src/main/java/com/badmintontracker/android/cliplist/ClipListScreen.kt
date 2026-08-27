@@ -1,5 +1,6 @@
 package com.badmintontracker.android.cliplist
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +15,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.DropdownMenu
@@ -38,13 +40,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.badmintontracker.android.BuildConfig
-import com.badmintontracker.shared.prefs.ThemePreferenceRepository
 import com.badmintontracker.android.localvideo.AnalyzeResultDialog
 import com.badmintontracker.android.localvideo.LocalVideoRow
 import com.badmintontracker.android.localvideo.MatchDetailsSheet
@@ -53,15 +55,18 @@ import com.badmintontracker.android.share.ShareSheet
 import com.badmintontracker.android.ui.components.ConfirmDialog
 import com.badmintontracker.android.ui.components.SwipeToRemoveRow
 import com.badmintontracker.android.ui.components.ThemeToggleButton
+import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.model.RallyClip
+import com.badmintontracker.shared.prefs.ThemePreferenceRepository
 import com.badmintontracker.shared.repo.MediaRepository
 import com.badmintontracker.shared.repo.SharesRepository
+import com.badmintontracker.shared.scoring.ScoreMatchCard
+import java.util.Locale
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
-import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -71,6 +76,8 @@ fun ClipListScreen(
     shares: SharesRepository,
     themePrefs: ThemePreferenceRepository,
     onMatchClick: (MatchSummary) -> Unit,
+    onScoreMatchClick: (ScoreMatchCard) -> Unit,
+    onNewMatch: () -> Unit,
     localRows: List<LocalVideoRow> = emptyList(),
     intakeError: String? = null,
     onIntakeErrorShown: () -> Unit = {},
@@ -91,6 +98,7 @@ fun ClipListScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     var sheetVideoId by remember { mutableStateOf<String?>(null) }
     var deleteTarget by remember { mutableStateOf<MatchSummary?>(null) }
+    var deleteScoreTarget by remember { mutableStateOf<ScoreMatchCard?>(null) }
     var leaveShareTarget by remember { mutableStateOf<MatchSummary?>(null) }
     var localRemoveTarget by remember { mutableStateOf<LocalVideoEntry?>(null) }
     var detailsTarget by remember { mutableStateOf<DetailsTarget?>(null) }
@@ -142,9 +150,13 @@ fun ClipListScreen(
                 },
                 actions = {
                     IconButton(onClick = { addMenuOpen = true }) {
-                        Icon(Icons.Default.Add, contentDescription = "Add video")
+                        Icon(Icons.Default.Add, contentDescription = "Add")
                     }
                     DropdownMenu(expanded = addMenuOpen, onDismissRequest = { addMenuOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text("New match") },
+                            onClick = { addMenuOpen = false; onNewMatch() },
+                        )
                         DropdownMenuItem(
                             text = { Text("Record video") },
                             onClick = { addMenuOpen = false; onRecord() },
@@ -192,11 +204,11 @@ fun ClipListScreen(
             onRefresh = vm::refresh,
             modifier = Modifier.padding(padding).fillMaxSize(),
         ) {
-            if (state.ownedMatches.isEmpty() && state.sharedMatches.isEmpty() &&
+            if (state.ownedRows.isEmpty() && state.sharedMatches.isEmpty() &&
                 localRows.isEmpty() && !state.isRefreshing
             ) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No matches yet. Record one with the + button above.")
+                    Text("No matches yet. Score one or record a video with the + button above.")
                 }
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
@@ -208,19 +220,31 @@ fun ClipListScreen(
                         onRemoveRequest = { localRemoveTarget = it },
                         onEditDetails = { detailsTarget = DetailsTarget(it, autoOpened = false) },
                     )
-                    if (state.ownedMatches.isNotEmpty()) {
+                    if (state.ownedRows.isNotEmpty()) {
                         item(key = "header-owned") { SectionHeader("My matches") }
-                        items(state.ownedMatches, key = { "owned-${it.videoId}" }) { match ->
+                        items(state.ownedRows, key = { it.key }) { row ->
                             SwipeToRemoveRow(
                                 label = "Delete",
-                                onSwiped = { deleteTarget = match; false },
+                                onSwiped = {
+                                    when (row) {
+                                        is MatchRow.Video -> deleteTarget = row.match
+                                        is MatchRow.Score -> deleteScoreTarget = row.card
+                                    }
+                                    false
+                                },
                             ) {
-                                VideoMatchRow(
-                                    match = match,
-                                    media = media,
-                                    onClick = { onMatchClick(match) },
-                                    onShareClick = { sheetVideoId = match.videoId },
-                                )
+                                when (row) {
+                                    is MatchRow.Video -> VideoMatchRow(
+                                        match = row.match,
+                                        media = media,
+                                        onClick = { onMatchClick(row.match) },
+                                        onShareClick = { sheetVideoId = row.match.videoId },
+                                    )
+                                    is MatchRow.Score -> ScoreMatchRow(
+                                        card = row.card,
+                                        onClick = { onScoreMatchClick(row.card) },
+                                    )
+                                }
                             }
                             HorizontalDivider()
                         }
@@ -293,6 +317,18 @@ fun ClipListScreen(
             confirmLabel = "Delete",
             onConfirm = { vm.deleteMatch(match.videoId); deleteTarget = null },
             onDismiss = { deleteTarget = null },
+        )
+    }
+
+    deleteScoreTarget?.let { card ->
+        ConfirmDialog(
+            title = "Delete match?",
+            // Different wording from the video match on purpose: there are no clips
+            // to lose here, and the thing the coach would actually miss is the tags.
+            message = "Delete this match and every point you scored? This can't be undone.",
+            confirmLabel = "Delete",
+            onConfirm = { vm.deleteScoreMatch(card.scoreLogId); deleteScoreTarget = null },
+            onDismiss = { deleteScoreTarget = null },
         )
     }
 
@@ -449,6 +485,68 @@ internal fun ClipRow(
                 "${clip.durationSeconds}s · ${clip.annotationCount} notes".uppercase(Locale.ROOT),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/**
+ * A match scored courtside, in the same shape as [VideoMatchRow] so the two kinds
+ * line up down the list. The cover slot is the same 96x54 box with a placeholder
+ * instead of a thumbnail: a row 4dp shorter than its neighbour reads as a bug.
+ */
+@Composable
+private fun ScoreMatchRow(card: ScoreMatchCard, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(width = 96.dp, height = 54.dp)
+                .background(ShuttlTheme.extended.bgTertiary),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Default.List,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = card.title,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "${card.scoreLine.uppercase()} · ${formatDate(Instant.fromEpochMilliseconds(card.createdAtEpochMs)).uppercase()}",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                letterSpacing = 0.55.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = card.playersLine,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        // Present but disabled, with the reason: a score-only match cannot be
+        // shared because match_shares is keyed on video_id. An explicit disabled
+        // state teaches the rule; a missing button just puzzles.
+        IconButton(onClick = {}, enabled = false) {
+            Icon(
+                imageVector = Icons.Default.Share,
+                contentDescription = "Add a video to share this match",
             )
         }
     }

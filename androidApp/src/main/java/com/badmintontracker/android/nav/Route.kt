@@ -10,4 +10,6 @@ sealed interface Route {
     @Serializable data class  ClipDetail(val clipId: String)  : Route
     @Serializable data class  LocalPlayer(val entryId: String)  : Route
     @Serializable data class  CourtMarking(val entryId: String) : Route
+    @Serializable data object NewMatch : Route
+    @Serializable data class  ScoreMatch(val scoreLogId: String) : Route
 }

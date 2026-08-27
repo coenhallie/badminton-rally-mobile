@@ -8,11 +8,14 @@ import com.badmintontracker.shared.repo.AuthRepository
 import com.badmintontracker.shared.repo.ClipsRepository
 import com.badmintontracker.shared.repo.SharesRepository
 import com.badmintontracker.shared.repo.VideosRepository
+import com.badmintontracker.shared.scoring.ScoreLogsRepository
+import com.badmintontracker.shared.scoring.buildScoreMatchCard
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Instant
@@ -33,6 +36,12 @@ data class MatchSummary(
 data class ClipListState(
     val clips: List<RallyClip> = emptyList(),
     val ownedMatches: List<MatchSummary> = emptyList(),
+    /**
+     * What the owned section actually renders: video-backed matches and
+     * courtside-scored ones interleaved by date. [ownedMatches] stays as it is so
+     * nothing that already reads it has to change.
+     */
+    val ownedRows: List<MatchRow> = emptyList(),
     val sharedMatches: List<MatchSummary> = emptyList(),
     val isRefreshing: Boolean = false,
     val error: String? = null,
@@ -87,11 +96,14 @@ class ClipListViewModel(
     private val auth: AuthRepository,
     private val shares: SharesRepository,
     private val videos: VideosRepository,
+    private val scoreLogs: ScoreLogsRepository,
 ) : ViewModel() {
     private val refreshing      = MutableStateFlow(true)
     private val errors          = MutableStateFlow<String?>(null)
     private val sharerByVideoId = MutableStateFlow<Map<String, String>>(emptyMap())
     private val metadataByVideoId = MutableStateFlow<Map<String, MatchMetadata>>(emptyMap())
+
+    private val scoreCards = scoreLogs.logs.map { logs -> logs.map(::buildScoreMatchCard) }
 
     val state = combine(
         clips.observeClips(),
@@ -109,6 +121,8 @@ class ClipListViewModel(
             isRefreshing = r,
             error = e,
         )
+    }.combine(scoreCards) { base, cards ->
+        base.copy(ownedRows = mergeMatchRows(base.ownedMatches, cards))
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ClipListState())
 
     init { refresh() }
@@ -137,9 +151,16 @@ class ClipListViewModel(
                     // to "Match · <date>", which is not worth interrupting for —
                     // and emptying the map would visibly wipe every name on a blip.
                 }
+                val scoreLogsJob = async {
+                    // Soft failure, same contract as the shares and metadata reads:
+                    // the matches are all still on this phone, so there is nothing
+                    // for the user to do about a failed sync and nothing to say.
+                    scoreLogs.sync()
+                }
                 clipsJob.await()
                 sharesJob.await()
                 metadataJob.await()
+                scoreLogsJob.await()
             }
             refreshing.value = false
         }
@@ -153,6 +174,19 @@ class ClipListViewModel(
             videos.deleteMatch(videoId)
                 .onSuccess { clips.pruneVideo(videoId); refresh() }
                 .onFailure { errors.value = "Couldn't delete the match. Please try again." }
+        }
+    }
+
+    /**
+     * There is no leaveShare counterpart: match_shares is keyed on video_id, so a
+     * score-only match cannot be shared and therefore cannot be left.
+     */
+    fun deleteScoreMatch(scoreLogId: String) {
+        viewModelScope.launch {
+            scoreLogs.delete(scoreLogId)
+                .onFailure {
+                    errors.value = "Couldn't delete the match everywhere. It's gone from this phone."
+                }
         }
     }
 
