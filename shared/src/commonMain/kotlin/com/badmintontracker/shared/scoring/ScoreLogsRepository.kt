@@ -55,6 +55,19 @@ class ScoreLogsRepository internal constructor(
     constructor(client: SupabaseClient, settings: Settings, now: () -> Instant) :
         this(client, settings, now, { client.auth.currentUserOrNull()?.id })
 
+    /**
+     * A store that never syncs. [sync] and [delete] return a failed Result; every
+     * local operation works normally.
+     *
+     * The shape [com.badmintontracker.shared.localvideo.LocalVideoRepository] has,
+     * and for the same reason: a local-first store is useful without a session, and
+     * the Android view model tests live in a different Gradle module that cannot see
+     * this class's internal test seam. [ownerId] is explicit because the cache is
+     * owner scoped and there is no client here to ask.
+     */
+    constructor(settings: Settings, now: () -> Instant, ownerId: () -> String?) :
+        this(null, settings, now, ownerId)
+
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
     /**

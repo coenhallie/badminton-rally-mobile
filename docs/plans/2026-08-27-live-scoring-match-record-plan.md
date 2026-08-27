@@ -799,7 +799,7 @@ git commit -m "feat(scoring): build every string a score-only match row shows, o
 **Interfaces:**
 - Consumes: `ScoreLog`, `ScoreLogStatus`, `ScoreEvent`, `ScoringRules`, `MatchSetup`, `Settings`, `SupabaseClient`, `Ids.newId()`, `SyncLock`.
 - Produces:
-  - `class ScoreLogsRepository(client: SupabaseClient, settings: Settings, now: () -> Instant)`
+  - `class ScoreLogsRepository(client: SupabaseClient, settings: Settings, now: () -> Instant)`, plus a no-client `(settings, now, ownerId)` constructor for callers with no session - Android view model tests live in a different Gradle module and cannot see the internal test seam
   - `val logs: StateFlow<List<ScoreLog>>`
   - `fun create(title, homePlayers, awayPlayers, rules, setup): ScoreLog`
   - `fun replaceEvents(id: String, events: List<ScoreEvent>)`
@@ -1712,7 +1712,7 @@ import org.junit.Test
 class NewMatchViewModelTest {
 
     private fun vm() = NewMatchViewModel(
-        ScoreLogsRepository(null, MapSettings(), now = { Instant.parse("2026-08-27T18:00:00Z") })
+        ScoreLogsRepository(MapSettings(), now = { Instant.parse("2026-08-27T18:00:00Z") }, ownerId = { "owner-1" })
     )
 
     @Test
@@ -1767,7 +1767,7 @@ class NewMatchViewModelTest {
 
     @Test
     fun creating_stores_a_live_match_and_hands_back_its_id() {
-        val repo = ScoreLogsRepository(null, MapSettings(), now = { Instant.parse("2026-08-27T18:00:00Z") })
+        val repo = ScoreLogsRepository(MapSettings(), now = { Instant.parse("2026-08-27T18:00:00Z") }, ownerId = { "owner-1" })
         val vm = NewMatchViewModel(repo)
         vm.setTitle("Thu League")
         vm.setPlayer(Side.HOME, 0, "Coen")
@@ -1789,7 +1789,7 @@ class NewMatchViewModelTest {
 
     @Test
     fun a_doubles_match_stores_the_starting_arrangement() {
-        val repo = ScoreLogsRepository(null, MapSettings(), now = { Instant.parse("2026-08-27T18:00:00Z") })
+        val repo = ScoreLogsRepository(MapSettings(), now = { Instant.parse("2026-08-27T18:00:00Z") }, ownerId = { "owner-1" })
         val vm = NewMatchViewModel(repo)
         vm.setTitle("Club night")
         vm.setDoubles(true)
@@ -1805,7 +1805,7 @@ class NewMatchViewModelTest {
 
     @Test
     fun an_incomplete_form_creates_nothing() {
-        val repo = ScoreLogsRepository(null, MapSettings(), now = { Instant.parse("2026-08-27T18:00:00Z") })
+        val repo = ScoreLogsRepository(MapSettings(), now = { Instant.parse("2026-08-27T18:00:00Z") }, ownerId = { "owner-1" })
         val vm = NewMatchViewModel(repo)
         vm.setTitle("Thu League")
         vm.create() shouldBe null
