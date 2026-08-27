@@ -7,16 +7,28 @@ final class ClipListModel {
     private(set) var clips: [RallyClip] = []
     private(set) var owned: [MatchSummary] = []
     private(set) var shared: [MatchSummary] = []
+    /// What the owned section renders: video-backed and courtside-scored matches
+    /// interleaved by date. `owned` stays as it is so nothing that reads it changes.
+    private(set) var ownedRows: [MatchRow] = []
     private(set) var thumbnailUrls: [String: URL] = [:]   // clipId -> signed URL
     var isRefreshing = false
     var error: String? = nil
     private var sharerByVideoId: [String: String] = [:]
     private var metadataByVideoId: [String: MatchMetadata] = [:]
+    private var scoreCards: [ScoreMatchCard] = []
 
     init(rally: RallyApp) { self.rally = rally }
 
     func start() async {
         Task { await refresh() }
+        // Its own task: the clips loop below never returns, so anything after it
+        // would never run.
+        Task {
+            for await logs in rally.scoreLogs.logs {
+                scoreCards = logs.map { ScoreMatchCardKt.buildScoreMatchCard(log: $0) }
+                regroup()
+            }
+        }
         for await latest in rally.clips.observeClips() {
             clips = latest
             regroup()
@@ -44,6 +56,10 @@ final class ClipListModel {
         if let rows = try? await SwiftInteropKt.listMatchMetadataOrNull(rally.videos) {
             metadataByVideoId = Dictionary(uniqueKeysWithValues: rows.map { ($0.videoId, $0) })
         }
+        // Soft failure, same contract as the shares and metadata reads: the matches
+        // are all still on this phone, so there is nothing to say and nothing for
+        // the user to do about it.
+        _ = try? await rally.scoreLogs.syncScoreLogsOrMessage()
         regroup()
         isRefreshing = false
     }
@@ -70,6 +86,14 @@ final class ClipListModel {
         await refresh()
     }
 
+    /// No refresh afterwards: the repository has already dropped it locally and its
+    /// flow has pushed the shorter list through `regroup()`.
+    func deleteScoreMatch(scoreLogId: String) async {
+        if let message = try? await rally.scoreLogs.deleteScoreMatchOrMessage(id: scoreLogId) {
+            error = message
+        }
+    }
+
     func thumbnail(forCoverOf match: MatchSummary) async {
         guard thumbnailUrls[match.coverClipId] == nil,
               let cover = clips.first(where: { $0.id == match.coverClipId }) else { return }
@@ -89,5 +113,6 @@ final class ClipListModel {
         )
         owned = result.owned
         shared = result.shared
+        ownedRows = mergeMatchRows(videoMatches: owned, scoreMatches: scoreCards)
     }
 }

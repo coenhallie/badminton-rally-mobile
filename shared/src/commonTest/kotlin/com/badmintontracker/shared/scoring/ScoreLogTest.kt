@@ -96,25 +96,25 @@ class ScoreLogTest {
 
     @Test
     fun a_playable_new_match_reports_no_problem() {
-        newMatchProblem("Thu League", listOf("Coen"), listOf("Marco"), doubles = false) shouldBe null
-        newMatchProblem("Club night", listOf("A", "B"), listOf("C", "D"), doubles = true) shouldBe null
+        createMatchProblem("Thu League", listOf("Coen"), listOf("Marco"), doubles = false) shouldBe null
+        createMatchProblem("Club night", listOf("A", "B"), listOf("C", "D"), doubles = true) shouldBe null
     }
 
     @Test
     fun a_new_match_missing_something_reports_a_sentence_a_user_can_read() {
-        newMatchProblem("  ", listOf("Coen"), listOf("Marco"), doubles = false) shouldBe
+        createMatchProblem("  ", listOf("Coen"), listOf("Marco"), doubles = false) shouldBe
             "Give the match a name."
-        newMatchProblem("x".repeat(81), listOf("Coen"), listOf("Marco"), doubles = false) shouldBe
+        createMatchProblem("x".repeat(81), listOf("Coen"), listOf("Marco"), doubles = false) shouldBe
             "The match name can be up to 80 characters."
-        newMatchProblem("Thu", listOf(" "), listOf("Marco"), doubles = false) shouldBe
+        createMatchProblem("Thu", listOf(" "), listOf("Marco"), doubles = false) shouldBe
             "Name both players."
-        newMatchProblem("Thu", listOf("A"), listOf("C", "D"), doubles = true) shouldBe
+        createMatchProblem("Thu", listOf("A"), listOf("C", "D"), doubles = true) shouldBe
             "Doubles needs two players on each side."
-        newMatchProblem("Thu", listOf("A", "B"), listOf("C"), doubles = true) shouldBe
+        createMatchProblem("Thu", listOf("A", "B"), listOf("C"), doubles = true) shouldBe
             "Doubles needs two players on each side."
-        newMatchProblem("Thu", listOf("A", "B"), listOf("C"), doubles = false) shouldBe
+        createMatchProblem("Thu", listOf("A", "B"), listOf("C"), doubles = false) shouldBe
             "Singles has one player on each side."
-        newMatchProblem("Thu", listOf("x".repeat(41)), listOf("Marco"), doubles = false) shouldBe
+        createMatchProblem("Thu", listOf("x".repeat(41)), listOf("Marco"), doubles = false) shouldBe
             "A player name can be up to 40 characters."
     }
 }

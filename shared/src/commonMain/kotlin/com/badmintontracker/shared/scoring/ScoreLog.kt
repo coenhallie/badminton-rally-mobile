@@ -55,7 +55,7 @@ const val MAX_PLAYER_NAME = 40
  * what is complete. Returns a ready to display sentence, or null when the match can
  * be created.
  */
-fun newMatchProblem(
+fun createMatchProblem(
     title: String,
     homePlayers: List<String>,
     awayPlayers: List<String>,

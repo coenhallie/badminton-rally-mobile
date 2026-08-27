@@ -5,7 +5,7 @@ import com.badmintontracker.shared.scoring.MatchSetup
 import com.badmintontracker.shared.scoring.ScoreLogsRepository
 import com.badmintontracker.shared.scoring.ScoringRules
 import com.badmintontracker.shared.scoring.Side
-import com.badmintontracker.shared.scoring.newMatchProblem
+import com.badmintontracker.shared.scoring.createMatchProblem
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -60,7 +60,7 @@ class NewMatchViewModel(private val scoreLogs: ScoreLogsRepository) : ViewModel(
     private fun edit(transform: (NewMatchState) -> NewMatchState) {
         touched = true
         val next = transform(internal.value)
-        val problem = newMatchProblem(
+        val problem = createMatchProblem(
             title = next.title,
             homePlayers = submitted(next.homePlayers, next.doubles),
             awayPlayers = submitted(next.awayPlayers, next.doubles),

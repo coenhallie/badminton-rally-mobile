@@ -17,6 +17,8 @@ struct ClipListView: View {
     @State private var navigationTarget: CourtMarkingRoute? = nil
     @State private var showLabels = false
     @State private var detailsTarget: MatchDetailsTarget? = nil
+    @State private var showNewMatch = false
+    @State private var deleteScoreTarget: ScoreMatchCard? = nil
 
     init(rally: RallyApp, analyze: AnalyzeCoordinator) {
         self.rally = rally
@@ -42,6 +44,7 @@ struct ClipListView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
+                    Button("New match") { showNewMatch = true }
                     Button("Record video") {
                         if CameraRecorder.isAvailable {
                             showRecorder = true
@@ -53,7 +56,7 @@ struct ClipListView: View {
                 } label: {
                     Image(systemName: "plus")
                 }
-                .accessibilityLabel("Add video")
+                .accessibilityLabel("Add")
             }
             ToolbarItem(placement: .topBarTrailing) {
                 if let model {
@@ -208,18 +211,29 @@ struct ClipListView: View {
                 ErrorBanner(message: error)
                     .listRowInsets(EdgeInsets())
             }
-            if !model.owned.isEmpty {
+            if !model.ownedRows.isEmpty {
                 Section {
-                    ForEach(model.owned, id: \.videoId) { match in
-                        row(match, model: model)
-                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                Button {
-                                    confirmTarget = PendingMatchAction(match: match, kind: .deleteMatch)
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
+                    ForEach(model.ownedRows) { listRow in
+                        switch listRow {
+                        case .video(let match):
+                            row(match, model: model)
+                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                    Button {
+                                        confirmTarget = PendingMatchAction(match: match, kind: .deleteMatch)
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
+                                    .tint(.red)
                                 }
-                                .tint(.red)
-                            }
+                        case .score(let card):
+                            scoreRow(card)
+                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                    Button { deleteScoreTarget = card } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
+                                    .tint(.red)
+                                }
+                        }
                     }
                 } header: { Shuttl.sectionLabel("My matches") }
             }
@@ -238,12 +252,28 @@ struct ClipListView: View {
                     }
                 } header: { Shuttl.sectionLabel("Shared with me") }
             }
-            if localEntries.isEmpty && model.owned.isEmpty && model.shared.isEmpty && !model.isRefreshing {
-                Text("No matches yet. Record one with the + button above.")
+            if localEntries.isEmpty && model.ownedRows.isEmpty && model.shared.isEmpty && !model.isRefreshing {
+                Text("No matches yet. Score one or record a video with the + button above.")
                     .foregroundStyle(Shuttl.textSecondary)
             }
         }
         .listStyle(.plain)
+        .confirmationDialog(
+            "Delete this match and every point you scored? This can't be undone.",
+            isPresented: Binding(
+                get: { deleteScoreTarget != nil },
+                set: { if !$0 { deleteScoreTarget = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let card = deleteScoreTarget {
+                    deleteScoreTarget = nil
+                    Task { await model.deleteScoreMatch(scoreLogId: card.scoreLogId) }
+                }
+            }
+            Button("Cancel", role: .cancel) { deleteScoreTarget = nil }
+        }
         .confirmationDialog(
             confirmTarget?.prompt ?? "",
             isPresented: Binding(
@@ -270,6 +300,12 @@ struct ClipListView: View {
         .refreshable { await model.refresh() }
         .navigationDestination(for: String.self) { videoId in
             MatchClipsView(rally: rally, videoId: videoId)
+        }
+        .navigationDestination(for: ScoreMatchRoute.self) { route in
+            ScoreMatchView(rally: rally, scoreLogId: route.scoreLogId)
+        }
+        .navigationDestination(isPresented: $showNewMatch) {
+            NewMatchView(rally: rally) { _ in showNewMatch = false }
         }
         .navigationDestination(for: LocalPlayerRoute.self) { route in
             LocalPlayerView(rally: rally, analyze: analyze, entryId: route.entryId)
@@ -319,6 +355,49 @@ struct ClipListView: View {
                     }
                     .buttonStyle(.borderless)
                 }
+            }
+        }
+    }
+
+    /// A match scored courtside. Same 96x54 leading slot, same 12pt spacing and the
+    /// same three text lines as `row(_:model:)`: a row a few points shorter than its
+    /// neighbour reads as a bug.
+    @ViewBuilder
+    private func scoreRow(_ card: ScoreMatchCard) -> some View {
+        NavigationLink(value: ScoreMatchRoute(scoreLogId: card.scoreLogId)) {
+            HStack(spacing: 12) {
+                ZStack {
+                    Shuttl.bgTertiary
+                    Image(systemName: "list.number")
+                        .foregroundStyle(Shuttl.textSecondary)
+                }
+                .frame(width: 96, height: 54)
+                .clipped()
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(card.title)
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(Shuttl.text)
+                        .lineLimit(1)
+                    Text("\(card.scoreLine.uppercased()) · \(formatMatchDate(millis: card.createdAtEpochMs).uppercased())")
+                        .font(.system(size: 11, weight: .medium))
+                        .kerning(0.55)
+                        .foregroundStyle(Shuttl.textSecondary)
+                    Text(card.playersLine)
+                        .font(.footnote)
+                        .foregroundStyle(Shuttl.textSecondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                // Present but disabled, with the reason in its accessibility label:
+                // match_shares is keyed on video_id, so a score-only match cannot be
+                // shared. An explicit disabled state teaches the rule.
+                Button {} label: {
+                    Image(systemName: "square.and.arrow.up")
+                }
+                .buttonStyle(.borderless)
+                .disabled(true)
+                .accessibilityLabel("Add a video to share this match")
             }
         }
     }

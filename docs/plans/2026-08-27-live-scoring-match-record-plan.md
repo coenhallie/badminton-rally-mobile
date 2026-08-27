@@ -61,7 +61,7 @@ xcodebuild test -project iosApp/iosApp.xcodeproj -scheme iosApp \
 
 **Shared (KMP)**
 - Modify `shared/src/commonMain/kotlin/com/badmintontracker/shared/scoring/MatchState.kt` - `@Serializable` on `MatchSetup` and `PairPlayer`.
-- Create `shared/src/commonMain/kotlin/com/badmintontracker/shared/scoring/ScoreLog.kt` - `ScoreLog`, `ScoreLogStatus`, `newMatchProblem`.
+- Create `shared/src/commonMain/kotlin/com/badmintontracker/shared/scoring/ScoreLog.kt` - `ScoreLog`, `ScoreLogStatus`, `createMatchProblem`.
 - Create `shared/src/commonMain/kotlin/com/badmintontracker/shared/scoring/ScoreMatchCard.kt` - `ScoreMatchCard`, `buildScoreMatchCard`, `scoreLine`, `sideLabel`. Every string both platforms show for a score-only match is built here, so they cannot render the same match two ways.
 - Create `shared/src/commonMain/kotlin/com/badmintontracker/shared/scoring/ScoreLogsRepository.kt` - the local-first store and its sync.
 - Modify `shared/src/commonMain/kotlin/com/badmintontracker/shared/RallyApp.kt` - expose `scoreLogs`.
@@ -273,7 +273,7 @@ git commit -m "feat(db): add score_logs, a match that can exist without a video"
   - `@Serializable` on `MatchSetup` and on `PairPlayer` (with `@SerialName("first")` / `@SerialName("second")`)
   - `enum class ScoreLogStatus { LIVE, UNBOUND, BOUND, RECONCILED }`, `@Serializable`, serial names `live` / `unbound` / `bound` / `reconciled`
   - `data class ScoreLog(id, videoId, title, homePlayers, awayPlayers, rules, setup, events, status, createdAt, updatedAt)`, `@Serializable`, with `fun state(): MatchState`
-  - `fun newMatchProblem(title: String, homePlayers: List<String>, awayPlayers: List<String>, doubles: Boolean): String?`
+  - `fun createMatchProblem(title: String, homePlayers: List<String>, awayPlayers: List<String>, doubles: Boolean): String?`
   - `const val MAX_MATCH_TITLE = 80`, `const val MAX_PLAYER_NAME = 40`
 
 `ScoreLog.state()` folds on demand rather than caching a `MatchState`, so a stored match and a live one cannot disagree: there is still exactly one score, derived from the log.
@@ -381,25 +381,25 @@ class ScoreLogTest {
 
     @Test
     fun a_playable_new_match_reports_no_problem() {
-        newMatchProblem("Thu League", listOf("Coen"), listOf("Marco"), doubles = false) shouldBe null
-        newMatchProblem("Club night", listOf("A", "B"), listOf("C", "D"), doubles = true) shouldBe null
+        createMatchProblem("Thu League", listOf("Coen"), listOf("Marco"), doubles = false) shouldBe null
+        createMatchProblem("Club night", listOf("A", "B"), listOf("C", "D"), doubles = true) shouldBe null
     }
 
     @Test
     fun a_new_match_missing_something_reports_a_sentence_a_user_can_read() {
-        newMatchProblem("  ", listOf("Coen"), listOf("Marco"), doubles = false) shouldBe
+        createMatchProblem("  ", listOf("Coen"), listOf("Marco"), doubles = false) shouldBe
             "Give the match a name."
-        newMatchProblem("x".repeat(81), listOf("Coen"), listOf("Marco"), doubles = false) shouldBe
+        createMatchProblem("x".repeat(81), listOf("Coen"), listOf("Marco"), doubles = false) shouldBe
             "The match name can be up to 80 characters."
-        newMatchProblem("Thu", listOf(" "), listOf("Marco"), doubles = false) shouldBe
+        createMatchProblem("Thu", listOf(" "), listOf("Marco"), doubles = false) shouldBe
             "Name both players."
-        newMatchProblem("Thu", listOf("A"), listOf("C", "D"), doubles = true) shouldBe
+        createMatchProblem("Thu", listOf("A"), listOf("C", "D"), doubles = true) shouldBe
             "Doubles needs two players on each side."
-        newMatchProblem("Thu", listOf("A", "B"), listOf("C"), doubles = true) shouldBe
+        createMatchProblem("Thu", listOf("A", "B"), listOf("C"), doubles = true) shouldBe
             "Doubles needs two players on each side."
-        newMatchProblem("Thu", listOf("A", "B"), listOf("C"), doubles = false) shouldBe
+        createMatchProblem("Thu", listOf("A", "B"), listOf("C"), doubles = false) shouldBe
             "Singles has one player on each side."
-        newMatchProblem("Thu", listOf("x".repeat(41)), listOf("Marco"), doubles = false) shouldBe
+        createMatchProblem("Thu", listOf("x".repeat(41)), listOf("Marco"), doubles = false) shouldBe
             "A player name can be up to 40 characters."
     }
 }
@@ -507,7 +507,7 @@ const val MAX_PLAYER_NAME = 40
  * what is complete. Returns a ready to display sentence, or null when the match can
  * be created.
  */
-fun newMatchProblem(
+fun createMatchProblem(
     title: String,
     homePlayers: List<String>,
     awayPlayers: List<String>,
@@ -1684,7 +1684,7 @@ git commit -m "feat(android): merge scored matches into the match list beside vi
 - Test: `androidApp/src/test/java/com/badmintontracker/android/scoring/NewMatchViewModelTest.kt`
 
 **Interfaces:**
-- Consumes: `ScoreLogsRepository`, `newMatchProblem`, `ScoringRules.PRESETS`, `MatchSetup`, `Side`.
+- Consumes: `ScoreLogsRepository`, `createMatchProblem`, `ScoringRules.PRESETS`, `MatchSetup`, `Side`.
 - Produces:
   - `data class NewMatchState(title, doubles, homePlayers: List<String>, awayPlayers: List<String>, rules: ScoringRules, firstServer: Side, problem: String?, canCreate: Boolean)`
   - `class NewMatchViewModel(scoreLogs: ScoreLogsRepository)` with `setTitle`, `setDoubles`, `setPlayer(side, index, name)`, `setRules`, `setFirstServer`, `create(): String?` returning the new match's id or null
@@ -1831,7 +1831,7 @@ import com.badmintontracker.shared.scoring.MatchSetup
 import com.badmintontracker.shared.scoring.ScoreLogsRepository
 import com.badmintontracker.shared.scoring.ScoringRules
 import com.badmintontracker.shared.scoring.Side
-import com.badmintontracker.shared.scoring.newMatchProblem
+import com.badmintontracker.shared.scoring.createMatchProblem
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -1886,7 +1886,7 @@ class NewMatchViewModel(private val scoreLogs: ScoreLogsRepository) : ViewModel(
     private fun edit(transform: (NewMatchState) -> NewMatchState) {
         touched = true
         val next = transform(internal.value)
-        val problem = newMatchProblem(
+        val problem = createMatchProblem(
             title = next.title,
             homePlayers = submitted(next.homePlayers, next.doubles),
             awayPlayers = submitted(next.awayPlayers, next.doubles),
@@ -2204,7 +2204,7 @@ git commit -m "feat(ios): merge scored matches into the match list beside video 
 - Modify: `iosApp/iosApp.xcodeproj/project.pbxproj` (xcodegen output)
 
 **Interfaces:**
-- Consumes: `MatchRow`, `mergeMatchRows`, `RallyApp.scoreLogs`, `buildScoreMatchCard`, `newMatchProblem`, `SwiftInteropKt.syncScoreLogsOrMessage`, `SwiftInteropKt.deleteScoreMatchOrMessage`.
+- Consumes: `MatchRow`, `mergeMatchRows`, `RallyApp.scoreLogs`, `buildScoreMatchCard`, `createMatchProblem`, `SwiftInteropKt.syncScoreLogsOrMessage`, `SwiftInteropKt.deleteScoreMatchOrMessage`.
 - Produces:
   - `ClipListModel.ownedRows: [MatchRow]`, `ClipListModel.deleteScoreMatch(scoreLogId:)`
   - `struct ScoreMatchRoute: Hashable { let scoreLogId: String }`
@@ -2265,7 +2265,7 @@ Navigation follows the file's established pattern: `NavigationLink(value: ScoreM
 
 - [ ] **Step 3: Write the two screens**
 
-`NewMatchView` is the SwiftUI counterpart of Task 8's form, and it must agree with it on every rule, because both call `newMatchProblem`. A `Form` with four sections - name, format, players, rules and coin toss - a "Create" toolbar button disabled while the problem is non-nil, and the same "nothing red until the first keystroke" behaviour. On create it calls `rally.scoreLogs.create(...)` and pushes the new match onto the navigation path.
+`NewMatchView` is the SwiftUI counterpart of Task 8's form, and it must agree with it on every rule, because both call `createMatchProblem`. A `Form` with four sections - name, format, players, rules and coin toss - a "Create" toolbar button disabled while the problem is non-nil, and the same "nothing red until the first keystroke" behaviour. On create it calls `rally.scoreLogs.create(...)` and pushes the new match onto the navigation path.
 
 `ScoreMatchModel` observes `rally.scoreLogs.logs`, finds this id, and publishes the log, its `state()` and its card. `ScoreMatchView` renders the same header and point list as Android's, with the same "No points scored yet." empty state.
 
