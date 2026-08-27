@@ -138,6 +138,58 @@ class ScoreLogsRepositoryTest {
     }
 
     @Test
+    fun the_cache_is_read_again_once_the_session_arrives() {
+        // The bug this closes, reproduced on a real phone: supabase-kt restores the
+        // session asynchronously, so a cold start builds this store before there is
+        // anyone to read the cache for. Loading once at construction left every
+        // match on the device invisible until the next write.
+        val settings = MapSettings()
+        repo(settings, owner = "owner-1").newMatch()
+
+        var owner: String? = null
+        val cold = ScoreLogsRepository(client = null, settings = settings, now = { t0 }, ownerId = { owner })
+        cold.logs.value.shouldBeEmpty()
+
+        owner = "owner-1"
+        cold.reloadForCurrentOwner()
+        cold.logs.value.map { it.title } shouldBe listOf("Thu League")
+    }
+
+    @Test
+    fun signing_out_clears_what_is_on_screen() {
+        // The other half of the same re-read: an owner that goes away is a mismatch
+        // like any other, so the list empties rather than keeping one coach's match
+        // names up while the next one signs in.
+        val settings = MapSettings()
+        var owner: String? = "owner-1"
+        val repo = ScoreLogsRepository(client = null, settings = settings, now = { t0 }, ownerId = { owner })
+        repo.newMatch()
+        repo.logs.value.shouldHaveSize(1)
+
+        owner = null
+        repo.reloadForCurrentOwner()
+        repo.logs.value.shouldBeEmpty()
+    }
+
+    @Test
+    fun a_write_while_the_session_is_still_restoring_does_not_orphan_the_cache() {
+        // persist stamps the owner onto the payload. Stamping an unknown one would
+        // make every match on the phone permanently unreadable, which is worse than
+        // anything the write itself was trying to record.
+        val settings = MapSettings()
+        var owner: String? = "owner-1"
+        val first = ScoreLogsRepository(client = null, settings = settings, now = { t0 }, ownerId = { owner })
+        val log = first.newMatch()
+
+        owner = null
+        first.replaceEvents(log.id, listOf(ScoreEvent.PointTo(Side.HOME)))
+
+        owner = "owner-1"
+        val reopened = ScoreLogsRepository(client = null, settings = settings, now = { t0 }, ownerId = { owner })
+        reopened.logs.value.map { it.title } shouldBe listOf("Thu League")
+    }
+
+    @Test
     fun an_unreadable_cache_yields_an_empty_list_rather_than_a_crash() {
         // Same contract as LocalVideoRepository.load: a payload this build cannot
         // decode must not take the whole match list down with it.

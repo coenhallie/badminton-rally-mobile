@@ -43,12 +43,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.shared.model.AnnotationLabel
@@ -260,7 +261,14 @@ private fun SideZone(
         // the one hard requirement on this layout and a fixed sp cannot meet it on
         // both a tall portrait half and a wide landscape one. The width factor
         // budgets for two digits at every score, so 9 and 30 are drawn the same size.
-        val numeral = minOf(maxHeight.value * 0.40f, maxWidth.value * 0.75f)
+        // Converted through the density rather than used as a raw sp value: the
+        // container is measured in dp and does not grow with the reader's font
+        // setting, so an sp numeral would overflow the half it was sized to fit.
+        // minSdk is 26, and scaling only stopped being linear for large text in
+        // API 34. Every other string on this screen still scales normally.
+        val numeral = with(LocalDensity.current) {
+            minOf(maxHeight.value * 0.40f, maxWidth.value * 0.75f).dp.toSp()
+        }
 
         Column(
             modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 10.dp),
@@ -297,8 +305,8 @@ private fun SideZone(
                 Text(
                     text = "${match.currentGame.of(side)}",
                     color = Color.White,
-                    fontSize = numeral.sp,
-                    lineHeight = (numeral * 1.05f).sp,
+                    fontSize = numeral,
+                    lineHeight = numeral * 1.05f,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                 )
@@ -352,6 +360,7 @@ private fun PlayerChip(name: String, court: ServiceCourt?, isServing: Boolean) {
                 text = name,
                 style = MaterialTheme.typography.labelLarge,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 color = if (isServing) Color.Black else Color.White,
             )
         }
@@ -442,14 +451,21 @@ private fun ControlBar(
                 Spacer(Modifier.width(4.dp))
             }
 
-            if (noteOpen && point != null && pendingTagOrdinal != null) {
-                var draft by remember(pendingTagOrdinal) { mutableStateOf(point.comment.orEmpty()) }
+            if (noteOpen && point != null) {
+                val ordinal = point.ordinal
+                val original = remember(ordinal) { point.comment.orEmpty() }
+                var draft by remember(ordinal) { mutableStateOf(original) }
+                // Committed once, when the field goes away - the note moves to
+                // another rally, the row closes, or the screen leaves. Committing
+                // per keystroke would append one log entry per character, and undo
+                // is defined as dropping the last entry, so it would then take a
+                // note back a letter at a time instead of taking back the rally.
+                DisposableEffect(ordinal) {
+                    onDispose { if (draft != original) onSetComment(ordinal, draft) }
+                }
                 OutlinedTextField(
                     value = draft,
-                    onValueChange = {
-                        draft = it
-                        onSetComment(pendingTagOrdinal, it)
-                    },
+                    onValueChange = { draft = it },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     placeholder = { Text("Note on this rally") },

@@ -203,6 +203,23 @@ class ScoringViewModelTest {
     }
 
     @Test
+    fun a_note_is_one_entry_so_undo_takes_back_a_rally_and_not_a_letter() = runTest(dispatcher) {
+        // Undo drops the last log entry. A note written a character at a time would
+        // be a character at a time to take back, which would cost the coach the one
+        // control he reaches for mid-rally. The surface commits the note once.
+        val (_, _, vm) = fixture()
+        vm.score(Side.HOME)
+        vm.setComment(0, "net cord")
+        vm.score(Side.AWAY)
+        advanceUntilIdle()
+        vm.undo()
+        advanceUntilIdle()
+        val points = vm.state.value.match!!.points
+        points.map { it.ordinal } shouldBe listOf(0)
+        points[0].comment shouldBe "net cord"
+    }
+
+    @Test
     fun a_finished_match_stops_taking_taps_but_can_still_be_undone() = runTest(dispatcher) {
         // A match can end on a mis-tap, and that is exactly when undo matters most.
         val repo = repo()

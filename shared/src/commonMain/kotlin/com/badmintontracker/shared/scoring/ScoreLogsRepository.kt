@@ -84,7 +84,15 @@ class ScoreLogsRepository internal constructor(
         val logs: List<StoredLog>,
     )
 
-    private var stored: List<StoredLog> = loadStored()
+    /**
+     * Whose cache [stored] was read for. Held rather than re-asked, because the
+     * answer changes underneath this store: supabase-kt restores the session
+     * asynchronously, so on a cold start there is nobody signed in yet when this
+     * runs. See [reloadForCurrentOwner].
+     */
+    private var loadedOwner: String? = currentOwnerId()
+
+    private var stored: List<StoredLog> = loadStored(loadedOwner)
 
     private val state = MutableStateFlow(stored.map { it.log })
 
@@ -149,22 +157,46 @@ class ScoreLogsRepository internal constructor(
     private fun persist(next: List<StoredLog>) {
         val sorted = next.sortedByDescending { it.log.createdAt }
         stored = sorted
+        // Never stamp an unknown owner onto the payload. A write landing while the
+        // session is between states would otherwise make every match on the phone
+        // permanently unreadable, which is far worse than whatever the write was
+        // recording.
+        val owner = currentOwnerId() ?: loadedOwner
         settings.putString(KEY_CACHE, json.encodeToString(
-            CachedLogs.serializer(), CachedLogs(currentOwnerId(), sorted),
+            CachedLogs.serializer(), CachedLogs(owner, sorted),
         ))
         state.value = sorted.map { it.log }
     }
 
-    private fun loadStored(): List<StoredLog> {
+    private fun loadStored(owner: String?): List<StoredLog> {
         val cached = settings.getStringOrNull(KEY_CACHE)
             ?.let { runCatching { json.decodeFromString(CachedLogs.serializer(), it) }.getOrNull() }
             ?: return emptyList()
         // A cache written by another account, or by a build before this scoping
         // existed, is discarded rather than shown. Better an empty list than one
         // coach's match names in another coach's app.
-        val owner = currentOwnerId()
         val usable = owner != null && owner == cached.ownerId
         return if (usable) cached.logs.sortedByDescending { it.log.createdAt } else emptyList()
+    }
+
+    /**
+     * Reads the cache again if the signed-in account has changed since it was last
+     * read, in either direction: a session that has finished restoring makes the
+     * matches on this phone readable, and one that has gone away takes them off the
+     * screen rather than leaving one coach's match names up for the next.
+     *
+     * Called at the top of [sync], which both platforms' match lists run on entry,
+     * so recovery costs neither of them a new call site. Public because that is not
+     * a guarantee to rely on forever.
+     */
+    fun reloadForCurrentOwner() {
+        val owner = currentOwnerId()
+        if (owner == loadedOwner) return
+        lock.withLock {
+            loadedOwner = owner
+            stored = loadStored(owner)
+            state.value = stored.map { it.log }
+        }
     }
 
     /**
@@ -178,6 +210,9 @@ class ScoreLogsRepository internal constructor(
      * log being append-only is what will let it replay rather than reconcile.
      */
     suspend fun sync(): Result<Unit> {
+        // Before anything is read off `stored`, and before the early return below,
+        // so a cold start recovers its matches whether or not there is any signal.
+        reloadForCurrentOwner()
         val postgrest = client?.postgrest ?: return Result.failure(
             IllegalStateException("Not signed in.")
         )
