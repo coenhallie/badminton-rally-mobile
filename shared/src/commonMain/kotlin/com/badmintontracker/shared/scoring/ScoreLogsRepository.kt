@@ -6,6 +6,8 @@ import com.badmintontracker.shared.util.withLock
 import com.russhwolf.settings.Settings
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
+import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -150,6 +152,72 @@ class ScoreLogsRepository internal constructor(
         val owner = currentOwnerId()
         val usable = owner != null && owner == cached.ownerId
         return if (usable) cached.logs.sortedByDescending { it.log.createdAt } else emptyList()
+    }
+
+    /**
+     * Pushes what this device changed, then takes the server's list for everything
+     * it did not.
+     *
+     * Single writer per account: one phone scores a match, and a second device
+     * following along is L3, which is not proposed. So a locally dirty row always
+     * wins over its server copy - the only way both could have changed is a second
+     * writer this release does not have. L3 replaces this rule outright, and the
+     * log being append-only is what will let it replay rather than reconcile.
+     */
+    suspend fun sync(): Result<Unit> {
+        val postgrest = client?.postgrest ?: return Result.failure(
+            IllegalStateException("Not signed in.")
+        )
+        return runCatching {
+            val dirty = stored.filter { it.dirty }.map { it.log }
+            if (dirty.isNotEmpty()) {
+                postgrest.from(TABLE).upsert(dirty)
+            }
+            val remote = postgrest.from(TABLE)
+                .select { order("created_at", Order.DESCENDING) }
+                .decodeList<ScoreLog>()
+
+            lock.withLock {
+                // Compared by content, not by id. A row that is still byte for byte
+                // what we pushed is settled and takes the server's copy; a row that
+                // has changed since - the coach scored while the request was on the
+                // wire - is still ahead of the server and keeps its local version.
+                // Comparing ids instead would silently un-score that rally.
+                val pushedById = dirty.associateBy { it.id }
+                val localById = stored.associateBy { it.log.id }
+                val merged = remote.map { row ->
+                    val local = localById[row.id]
+                    when {
+                        local == null -> StoredLog(row, dirty = false)
+                        local.dirty && local.log != pushedById[row.id] -> local
+                        else -> StoredLog(row, dirty = false)
+                    }
+                }
+                val remoteIds = remote.map { it.id }.toSet()
+                // A dirty row the server has not acknowledged yet must not vanish
+                // because the pull did not contain it.
+                val unacknowledged = stored.filter { it.dirty && it.log.id !in remoteIds }
+                persist(merged + unacknowledged)
+            }
+        }
+    }
+
+    /**
+     * Removes a match everywhere. The local removal happens whether or not the
+     * server call succeeds: the row is the user's own, the gesture is explicit, and
+     * a match that reappears after a failed delete is a worse outcome than a server
+     * row the next sync will not resurrect, since [sync] only adds rows the server
+     * still returns.
+     */
+    suspend fun delete(id: String): Result<Unit> {
+        removeLocally(id)
+        val postgrest = client?.postgrest ?: return Result.failure(
+            IllegalStateException("Not signed in.")
+        )
+        return runCatching {
+            postgrest.from(TABLE).delete { filter { eq("id", id) } }
+            Unit
+        }
     }
 
     private fun currentOwnerId(): String? = ownerId()
