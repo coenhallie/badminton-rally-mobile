@@ -39,6 +39,15 @@ enum Shuttl {
     static let warning         = Color(rgb: 0xF59E0B)
     static let info            = Color(rgb: 0x3B82F6)
 
+    // The two sides of the scoreboard. Deliberately not the accent green and the
+    // info blue: those are interface colours sized for a chip, and these are
+    // full-bleed halves carrying white numerals, so they are picked for contrast
+    // against white first and family resemblance second. Deeper in dark, where a
+    // lit-up half at arm's length in a dim hall is the thing to avoid. Mirrors
+    // androidApp's ShuttlExtendedColors.sideHome / sideAway.
+    static let sideHome        = Color(light: 0x15803D, dark: 0x14532D)
+    static let sideAway        = Color(light: 0x1D4ED8, dark: 0x1E3A8A)
+
     /// Tiny uppercase tracked label — matches Android labelSmall (11sp, medium, 0.05em).
     static func sectionLabel(_ text: String) -> some View {
         Text(text.uppercased())

@@ -12,6 +12,7 @@ final class ScoreMatchModel {
     private(set) var log: ScoreLog? = nil
     private(set) var match: MatchState? = nil
     private(set) var card: ScoreMatchCard? = nil
+    private(set) var tally: ScoreTagSummary = ScoreTagSummary.companion.EMPTY
 
     init(rally: RallyApp, scoreLogId: String) {
         self.rally = rally
@@ -24,6 +25,8 @@ final class ScoreMatchModel {
             log = found
             match = found?.state()
             card = found.map { ScoreMatchCardKt.buildScoreMatchCard(log: $0) }
+            tally = match.map { ScoreTagSummaryKt.buildScoreTagSummary(state: $0) }
+                ?? ScoreTagSummary.companion.EMPTY
         }
     }
 }
@@ -47,6 +50,15 @@ struct ScoreMatchView: View {
         }
         .navigationTitle(model?.log?.title ?? "Match")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if let log = model?.log {
+                ToolbarItem(placement: .topBarTrailing) {
+                    ShareLink(item: ScoreTagSummaryKt.exportMatchText(log: log)) {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                }
+            }
+        }
         .task {
             let m = ScoreMatchModel(rally: rally, scoreLogId: scoreLogId)
             model = m
@@ -69,8 +81,48 @@ struct ScoreMatchView: View {
                     Text("\(model.card?.statusLine ?? "") · \(rulesSummary(log.rules))")
                         .font(.footnote)
                         .foregroundStyle(Shuttl.textSecondary)
+                    // Absent rather than disabled on a finished match: there is
+                    // nothing left to score, and undo lives on the board itself.
+                    if log.status == .live {
+                        NavigationLink(value: ScoringRoute(scoreLogId: log.id)) {
+                            Text(points.isEmpty ? "Score" : "Resume scoring")
+                                .font(.headline)
+                                .foregroundStyle(Color.black)
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 10)
+                                .background(Shuttl.accent)
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.top, 8)
+                    }
                 }
                 .padding(.vertical, 4)
+            }
+
+            // How the match was tagged courtside, in the rally page's visual
+            // language so the two summaries read as the same thing.
+            if !model.tally.isEmpty {
+                Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(model.tally.taggedPointCount == 1
+                             ? "1 rally tagged"
+                             : "\(model.tally.taggedPointCount) rallies tagged")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Shuttl.text)
+                        HStack(spacing: 12) {
+                            ForEach(model.tally.labels, id: \.name) { label in
+                                HStack(spacing: 4) {
+                                    LabelBadge(name: label.name, colorKey: label.colorKey)
+                                    Text("\(label.count)")
+                                        .font(.caption)
+                                        .foregroundStyle(Shuttl.textSecondary)
+                                }
+                            }
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
             }
 
             if points.isEmpty {

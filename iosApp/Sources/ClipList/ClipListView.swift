@@ -304,6 +304,9 @@ struct ClipListView: View {
         .navigationDestination(for: ScoreMatchRoute.self) { route in
             ScoreMatchView(rally: rally, scoreLogId: route.scoreLogId)
         }
+        .navigationDestination(for: ScoringRoute.self) { route in
+            ScoringView(rally: rally, scoreLogId: route.scoreLogId)
+        }
         .navigationDestination(isPresented: $showNewMatch) {
             NewMatchView(rally: rally) { _ in showNewMatch = false }
         }

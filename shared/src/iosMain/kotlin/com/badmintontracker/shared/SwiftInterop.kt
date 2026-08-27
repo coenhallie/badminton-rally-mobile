@@ -15,6 +15,9 @@ import com.badmintontracker.shared.repo.SharesRepository
 import com.badmintontracker.shared.repo.VideosRepository
 import com.badmintontracker.shared.repo.userMessage
 import com.badmintontracker.shared.scoring.ScoreLogsRepository
+import com.russhwolf.settings.NSUserDefaultsSettings
+import kotlinx.datetime.Instant
+import platform.Foundation.NSUserDefaults
 
 // kotlin.Result does not cross the ObjC bridge usefully; these wrappers return
 // null on success and a ready-to-display message on failure.
@@ -102,3 +105,20 @@ suspend fun ScoreLogsRepository.syncScoreLogsOrMessage(): String? =
 
 suspend fun ScoreLogsRepository.deleteScoreMatchOrMessage(id: String): String? =
     delete(id).exceptionOrNull()?.let { "Couldn't delete the match everywhere. It's gone from this phone." }
+
+/**
+ * A match store the iOS test bundle can build.
+ *
+ * `ScoreLogsRepository`'s local-only constructor needs a `Settings`, and Swift has
+ * no way to make one, so `ScoringModelTests` cannot mirror androidApp's tests
+ * without this. It is scoped to its own defaults suite and cleared on every call,
+ * so it never sees or touches what the app stores. Nothing in the app calls it:
+ * `RallyApp` builds the real store.
+ */
+fun testScoreLogsRepository(now: Instant, ownerId: String?): ScoreLogsRepository {
+    val settings = NSUserDefaultsSettings(NSUserDefaults(suiteName = TEST_SCORE_LOGS_SUITE))
+    settings.clear()
+    return ScoreLogsRepository(settings, { now }, { ownerId })
+}
+
+private const val TEST_SCORE_LOGS_SUITE = "com.badmintontracker.ios.tests.scorelogs"
