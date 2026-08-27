@@ -14,6 +14,7 @@ import com.badmintontracker.shared.repo.ShareError
 import com.badmintontracker.shared.repo.SharesRepository
 import com.badmintontracker.shared.repo.VideosRepository
 import com.badmintontracker.shared.repo.userMessage
+import com.badmintontracker.shared.scoring.ScoreLogsRepository
 
 // kotlin.Result does not cross the ObjC bridge usefully; these wrappers return
 // null on success and a ready-to-display message on failure.
@@ -90,3 +91,14 @@ suspend fun AnnotationLabelsRepository.deleteLabelOrMessage(id: String): String?
 
 suspend fun AnnotationLabelsRepository.refreshLabelsOrMessage(): String? =
     refresh().exceptionOrNull()?.let { it.userFacingMessage("Couldn't load labels") }
+
+/**
+ * Soft-failing: nil means the sync landed, a string is ready to display. The
+ * message says what actually happened rather than "please try again", because the
+ * matches are already safe on this phone and there is nothing to retry by hand.
+ */
+suspend fun ScoreLogsRepository.syncScoreLogsOrMessage(): String? =
+    sync().exceptionOrNull()?.let { "Couldn't sync your matches. They're saved on this phone." }
+
+suspend fun ScoreLogsRepository.deleteScoreMatchOrMessage(id: String): String? =
+    delete(id).exceptionOrNull()?.let { "Couldn't delete the match everywhere. It's gone from this phone." }

@@ -21,11 +21,13 @@ import com.badmintontracker.shared.repo.SharesRepositoryImpl
 import com.badmintontracker.shared.repo.VideosRepository
 import com.badmintontracker.shared.repo.VideosRepositoryImpl
 import com.badmintontracker.shared.repo.toAuthState
+import com.badmintontracker.shared.scoring.ScoreLogsRepository
 import com.russhwolf.settings.Settings
 import io.github.jan.supabase.SupabaseClient
 import io.ktor.client.engine.HttpClientEngine
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlin.time.Clock
 
 class RallyApp(
     config: SupabaseConfig,
@@ -59,4 +61,8 @@ class RallyApp(
     val localAnnotations: LocalAnnotationsRepository   = LocalAnnotationsRepository(settings)
     val themePrefs:       ThemePreferenceRepository    = ThemePreferenceRepository(settings)
     val playbackPrefs:    PlaybackPreferenceRepository = PlaybackPreferenceRepository(settings)
+
+    // Matches scored on this phone. Local first, like the video registry above it:
+    // a match is created and scored courtside, where there is usually no signal.
+    val scoreLogs: ScoreLogsRepository = ScoreLogsRepository(client, settings, Clock.System::now)
 }
