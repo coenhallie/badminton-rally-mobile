@@ -1,8 +1,9 @@
 import SwiftUI
 import Shared
 
-struct ScoringRoute: Hashable {
+struct ScoringRoute: Hashable, Identifiable {
     let scoreLogId: String
+    var id: String { scoreLogId }
 }
 
 /// The courtside board. One tap on a side scores the rally it just won; a second
@@ -65,7 +66,6 @@ struct ScoringView: View {
 
             controlBar(model, match)
         }
-        .ignoresSafeArea(edges: .bottom)
         .confirmationDialog(
             confirming?.title ?? "",
             isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } }),
@@ -97,6 +97,7 @@ struct ScoringView: View {
                 Image(systemName: "chevron.left").font(.body.weight(.semibold))
             }
             .foregroundStyle(Shuttl.text)
+            .accessibilityLabel("Back")
 
             Spacer()
             Text(announcement ?? Self.runningSummary(log, match))
@@ -114,6 +115,7 @@ struct ScoringView: View {
                 Image(systemName: "ellipsis").font(.body.weight(.semibold))
             }
             .foregroundStyle(Shuttl.text)
+            .accessibilityLabel("Match options")
         }
         .padding(.horizontal, 12)
         .frame(height: 48)
@@ -148,8 +150,11 @@ struct ScoringView: View {
 
                 if match.setup.doubles {
                     playerChips(side, players, match)
-                } else if serving {
-                    servePill(match.serviceCourt)
+                } else {
+                    // Held rather than hidden on the receiving side, so the games
+                    // and the score below line up across the two halves instead of
+                    // stepping down on whichever side happens to be serving.
+                    servePill(match.serviceCourt).opacity(serving ? 1 : 0)
                 }
 
                 if match.rules.gamesToWin > 1 {

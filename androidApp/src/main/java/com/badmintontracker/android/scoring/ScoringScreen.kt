@@ -40,6 +40,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -289,8 +290,14 @@ private fun SideZone(
 
                 if (match.setup.doubles) {
                     PlayerChips(side = side, players = players, match = match)
-                } else if (serving) {
-                    ServePill(match.serviceCourt)
+                } else {
+                    // Held rather than hidden on the receiving side, so the games
+                    // and the score below line up across the two halves instead of
+                    // stepping down on whichever side happens to be serving.
+                    ServePill(
+                        court = match.serviceCourt,
+                        modifier = Modifier.alpha(if (serving) 1f else 0f),
+                    )
                 }
 
                 if (match.rules.gamesToWin > 1) {
@@ -369,8 +376,8 @@ private fun PlayerChip(name: String, court: ServiceCourt?, isServing: Boolean) {
 
 /** Singles has no player to mark, so the side itself carries the serve and its court. */
 @Composable
-private fun ServePill(court: ServiceCourt?) {
-    Surface(shape = RoundedCornerShape(6.dp), color = Color.White) {
+private fun ServePill(court: ServiceCourt?, modifier: Modifier = Modifier) {
+    Surface(modifier = modifier, shape = RoundedCornerShape(6.dp), color = Color.White) {
         Text(
             text = "SERVE" + when (court) {
                 ServiceCourt.RIGHT -> " R"

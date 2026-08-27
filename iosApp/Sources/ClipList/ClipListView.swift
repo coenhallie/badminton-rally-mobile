@@ -18,6 +18,7 @@ struct ClipListView: View {
     @State private var showLabels = false
     @State private var detailsTarget: MatchDetailsTarget? = nil
     @State private var showNewMatch = false
+    @State private var scoringTarget: ScoringRoute? = nil
     @State private var deleteScoreTarget: ScoreMatchCard? = nil
 
     init(rally: RallyApp, analyze: AnalyzeCoordinator) {
@@ -308,7 +309,15 @@ struct ClipListView: View {
             ScoringView(rally: rally, scoreLogId: route.scoreLogId)
         }
         .navigationDestination(isPresented: $showNewMatch) {
-            NewMatchView(rally: rally) { _ in showNewMatch = false }
+            NewMatchView(rally: rally) { id in
+                // Straight to the board, not back to the list and not to the
+                // record: creating a match courtside means being about to score it.
+                showNewMatch = false
+                scoringTarget = ScoringRoute(scoreLogId: id)
+            }
+        }
+        .navigationDestination(item: $scoringTarget) { route in
+            ScoringView(rally: rally, scoreLogId: route.scoreLogId)
         }
         .navigationDestination(for: LocalPlayerRoute.self) { route in
             LocalPlayerView(rally: rally, analyze: analyze, entryId: route.entryId)
