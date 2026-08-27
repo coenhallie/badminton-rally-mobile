@@ -43,6 +43,53 @@ data class MatchLabelSummary(
 }
 
 /**
+ * One use of a label, reduced to what counting needs.
+ *
+ * [recency] decides which spelling and colour a group displays - annotations use
+ * their creation time, scored points use their ordinal, higher wins. [tieBreak]
+ * settles an exact tie so the answer never depends on row order: annotations pass
+ * their id, and points pass nothing because ordinals cannot tie.
+ */
+data class LabelRef(
+    val name: String,
+    val colorKey: String?,
+    val recency: Long,
+    val tieBreak: String,
+)
+
+/**
+ * Rolls label uses up into counts. The single home of every counting rule the app
+ * has: which names group together, which spelling a group shows, how a share is
+ * rounded, and how equal counts are ordered.
+ *
+ * It exists as its own function because two features roll labels up - the rally
+ * page's summary and the courtside tag tally - and a rule implemented twice is a
+ * rule that will eventually disagree with itself in front of the same user.
+ */
+fun rollUpLabels(refs: List<LabelRef>): List<LabelCount> {
+    if (refs.isEmpty()) return emptyList()
+    val total = refs.size
+    return refs
+        .groupBy { it.name.lowercase() }
+        .map { (key, group) ->
+            val newest = group.maxWith(compareBy({ it.recency }, { it.tieBreak }))
+            key to LabelCount(
+                name = newest.name,
+                colorKey = newest.colorKey,
+                count = group.size,
+                // Double division on purpose: integer division truncates, which
+                // would print 16 next to a bar drawn at 17.
+                sharePercent = ((group.size * 100.0) / total).roundToInt(),
+            )
+        }
+        .sortedWith(
+            compareByDescending<Pair<String, LabelCount>> { it.second.count }
+                .thenBy { it.second.name.lowercase() }
+        )
+        .map { it.second }
+}
+
+/**
  * Rolls one match's annotations up into a [MatchLabelSummary]. [clips] must
  * already be filtered to the match; annotations naming a clip outside it are
  * ignored, so [MatchLabelSummary.labelledNoteCount] always equals the sum of
@@ -69,24 +116,20 @@ fun buildMatchLabelSummary(
     if (tagged.isEmpty()) return MatchLabelSummary.EMPTY
 
     val total = tagged.size
-    val labels = tagged
-        .groupBy { (_, label) -> label.lowercase() }
-        .map { (key, group) ->
-            val newest = group.maxWith(compareBy({ it.first.createdAt }, { it.first.id }))
-            key to LabelCount(
-                name = newest.second,
-                colorKey = newest.first.labelColor,
-                count = group.size,
-                // Double division on purpose: integer division truncates, which
-                // would print 16 next to a bar drawn at 17.
-                sharePercent = ((group.size * 100.0) / total).roundToInt(),
+    val labels = rollUpLabels(
+        tagged.map { (annotation, label) ->
+            LabelRef(
+                name = label,
+                colorKey = annotation.labelColor,
+                // Microseconds, not milliseconds: timestamptz stores microseconds,
+                // and collapsing to millis would invent ties that then fall through
+                // to the id and could flip which colour a group shows.
+                recency = annotation.createdAt.epochSeconds * 1_000_000 +
+                    annotation.createdAt.nanosecondsOfSecond / 1_000,
+                tieBreak = annotation.id,
             )
         }
-        .sortedWith(
-            compareByDescending<Pair<String, LabelCount>> { it.second.count }
-                .thenBy { it.second.name.lowercase() }
-        )
-        .map { it.second }
+    )
 
     val topRally = tagged
         .groupingBy { (annotation, _) -> annotation.clipId }

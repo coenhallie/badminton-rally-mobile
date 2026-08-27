@@ -408,7 +408,7 @@ git commit -m "feat(scoring): put every change to a match behind one shared voca
 **Interfaces:**
 - Consumes: `LabelCount` (existing), `MatchState`, `ScoredPoint`.
 - Produces:
-  - `data class LabelRef(val name: String, val colorKey: String?, val recency: Long)` in `MatchLabelSummary.kt`
+  - `data class LabelRef(val name: String, val colorKey: String?, val recency: Long, val tieBreak: String)` in `MatchLabelSummary.kt`
   - `fun rollUpLabels(refs: List<LabelRef>): List<LabelCount>` in `MatchLabelSummary.kt`
   - `data class ScoreTagSummary(val taggedPointCount: Int, val labels: List<LabelCount>)` with `val isEmpty: Boolean`
   - `fun buildScoreTagSummary(state: MatchState): ScoreTagSummary`
@@ -585,7 +585,7 @@ Then rewrite the middle of `buildMatchLabelSummary` to call it, leaving its docu
     )
 ```
 
-**A caveat worth checking rather than assuming:** the original broke ties on `(createdAt, id)`; `LabelRef` breaks them on `(recency, name)`. Within one label group every entry has the same trimmed name only up to case, so the fallback differs. Run `MatchLabelSummaryTest` before writing anything else and confirm it is still green **unedited**. If a case-mixed-name test now picks a different spelling, add `id` to `LabelRef` as a third field rather than editing the test.
+**Resolved during execution.** The caveat here was real: `a_tie_on_created_at_breaks_on_id_so_the_colour_is_never_row_order_dependent` lists the winning note first, so a `(recency, name)` tie break would have passed by accident while defeating exactly what that test checks. `LabelRef` therefore carries an explicit `tieBreak` - the annotation id for annotations, an empty string for points, whose ordinals cannot tie. Recency is also microseconds rather than milliseconds, because `timestamptz` stores microseconds and collapsing to millis would invent ties. `MatchLabelSummaryTest` passes unedited.
 
 - [ ] **Step 4: Write the tally**
 
