@@ -178,6 +178,31 @@ drop policy if exists score_logs_delete_own on public.score_logs;
 create policy score_logs_delete_own on public.score_logs
     for delete to authenticated using (owner_id = auth.uid());
 
+-- Detaching a video must leave the match 'unbound', not stranded as 'bound' with
+-- no video. The foreign key above nulls the column on delete, which is what keeps
+-- the coach's courtside tags alive (see the comment on video_id), but a status
+-- left saying 'bound' would then describe a binding that no longer exists - and
+-- L2 reads that status to decide whether a match can be re-bound to a new upload.
+-- Normalising here rather than in the client because the client is not the one
+-- doing the update: the cascade is.
+create or replace function public.unbind_score_log_on_video_delete()
+returns trigger
+language plpgsql
+as $$
+begin
+    if new.video_id is null and old.video_id is not null
+       and new.status in ('bound', 'reconciled') then
+        new.status = 'unbound';
+    end if;
+    return new;
+end;
+$$;
+
+drop trigger if exists score_logs_unbind_on_video_delete on public.score_logs;
+create trigger score_logs_unbind_on_video_delete
+    before update on public.score_logs
+    for each row execute function public.unbind_score_log_on_video_delete();
+
 -- updated_at is a trigger rather than a client write. The client upserts whole
 -- rows from a local-first cache, and a client that forgets the field would leave
 -- a stale timestamp that a later sync rule might trust.
@@ -196,6 +221,8 @@ create trigger score_logs_touch_updated_at
     before update on public.score_logs
     for each row execute function public.touch_score_logs_updated_at();
 ```
+
+**Executed 2026-08-27 against a local stack** (`supabase start`, this repo's 7 migrations plus the web app's 9 from `../badminton-tracker`). Check 2 found a real gap in the first draft: the foreign key nulls `video_id`, but nothing moved `status`, so a match whose video was deleted sat as `'bound'` with no video - and L2 reads that status to decide whether a match can be re-bound. The `unbind_score_log_on_video_delete` trigger above is the fix, and it is in the migration text now. All five checks below pass.
 
 - [ ] **Step 2: Apply it and verify the constraints actually bite**
 
