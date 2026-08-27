@@ -11,7 +11,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -22,16 +25,25 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.badmintontracker.android.clipdetail.LabelBadge
+import com.badmintontracker.android.cliplist.LabelCountChip
+import com.badmintontracker.android.ui.shareText
 import com.badmintontracker.shared.scoring.ScoreLogStatus
+import com.badmintontracker.shared.scoring.ScoreTagSummary
+import com.badmintontracker.shared.scoring.buildScoreTagSummary
 import com.badmintontracker.shared.scoring.ScoredPoint
 import com.badmintontracker.shared.scoring.Side
+import com.badmintontracker.shared.scoring.exportMatchText
 
 /**
  * One scored match: who played, how it went, and every point in order.
@@ -53,6 +65,24 @@ fun ScoreMatchScreen(vm: ScoreMatchViewModel, onBack: () -> Unit, onScore: () ->
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    if (log != null) {
+                        var menuOpen by remember { mutableStateOf(false) }
+                        val context = LocalContext.current
+                        IconButton(onClick = { menuOpen = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "Match options")
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Export as text") },
+                                onClick = {
+                                    menuOpen = false
+                                    shareText(context, log.title, exportMatchText(log))
+                                },
+                            )
+                        }
                     }
                 },
             )
@@ -95,6 +125,16 @@ fun ScoreMatchScreen(vm: ScoreMatchViewModel, onBack: () -> Unit, onScore: () ->
                 HorizontalDivider()
             }
 
+            state.match?.let { match ->
+                val tally = buildScoreTagSummary(match)
+                if (!tally.isEmpty) {
+                    item {
+                        TagTally(tally)
+                        HorizontalDivider()
+                    }
+                }
+            }
+
             if (points.isEmpty()) {
                 item {
                     Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
@@ -112,6 +152,28 @@ fun ScoreMatchScreen(vm: ScoreMatchViewModel, onBack: () -> Unit, onScore: () ->
                     HorizontalDivider()
                 }
             }
+        }
+    }
+}
+
+/**
+ * How the match was tagged courtside, in the rally page's visual language so the
+ * two summaries read as the same thing. Absent rather than empty when nothing was
+ * tagged: the point list below already says the match has barely started.
+ */
+@Composable
+private fun TagTally(tally: ScoreTagSummary) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = if (tally.taggedPointCount == 1) "1 rally tagged"
+                   else "${tally.taggedPointCount} rallies tagged",
+            style = MaterialTheme.typography.titleSmall,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            tally.labels.forEach { LabelCountChip(it) }
         }
     }
 }

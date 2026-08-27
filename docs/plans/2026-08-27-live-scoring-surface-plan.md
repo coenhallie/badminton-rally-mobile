@@ -100,7 +100,7 @@ xcodebuild test -project iosApp/iosApp.xcodeproj -scheme iosApp \
 
 `tagPoint` takes an ordinal rather than meaning "the last point". The two-tap path passes `pointCount - 1`, but §7's L1 also wants a longer comment added between rallies or at the interval, and by then the last point is the wrong point. An ordinal covers both; "last point" covers only one and would have to be widened later.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `shared/src/commonTest/kotlin/com/badmintontracker/shared/scoring/MatchScorerTest.kt`:
 
@@ -297,12 +297,12 @@ class MatchScorerTest {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `./gradlew :shared:jvmTest --tests "com.badmintontracker.shared.scoring.MatchScorerTest"`
 Expected: FAIL to compile, "Unresolved reference: MatchScorer".
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Create `shared/src/commonMain/kotlin/com/badmintontracker/shared/scoring/MatchScorer.kt`:
 
@@ -383,12 +383,12 @@ class MatchScorer(
 }
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `./gradlew :shared:jvmTest --tests "com.badmintontracker.shared.scoring.MatchScorerTest"`
 Expected: PASS, 14 tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add shared/src/commonMain/kotlin/com/badmintontracker/shared/scoring/MatchScorer.kt \
@@ -417,7 +417,7 @@ git commit -m "feat(scoring): put every change to a match behind one shared voca
 
 **`MatchLabelSummaryTest` must pass completely unedited afterwards.** It is the regression check that the refactor changed no counting rule. If it needs a single edit, the refactor is wrong.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `shared/src/commonTest/kotlin/com/badmintontracker/shared/scoring/ScoreTagSummaryTest.kt`:
 
@@ -519,12 +519,12 @@ class ScoreTagSummaryTest {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `./gradlew :shared:jvmTest --tests "com.badmintontracker.shared.scoring.ScoreTagSummaryTest"`
 Expected: FAIL to compile, "Unresolved reference: buildScoreTagSummary".
 
-- [ ] **Step 3: Extract the roll-up**
+- [x] **Step 3: Extract the roll-up**
 
 In `MatchLabelSummary.kt`, add above `buildMatchLabelSummary`:
 
@@ -587,7 +587,7 @@ Then rewrite the middle of `buildMatchLabelSummary` to call it, leaving its docu
 
 **Resolved during execution.** The caveat here was real: `a_tie_on_created_at_breaks_on_id_so_the_colour_is_never_row_order_dependent` lists the winning note first, so a `(recency, name)` tie break would have passed by accident while defeating exactly what that test checks. `LabelRef` therefore carries an explicit `tieBreak` - the annotation id for annotations, an empty string for points, whose ordinals cannot tie. Recency is also microseconds rather than milliseconds, because `timestamptz` stores microseconds and collapsing to millis would invent ties. `MatchLabelSummaryTest` passes unedited.
 
-- [ ] **Step 4: Write the tally**
+- [x] **Step 4: Write the tally**
 
 Create `shared/src/commonMain/kotlin/com/badmintontracker/shared/scoring/ScoreTagSummary.kt`:
 
@@ -636,7 +636,7 @@ fun buildScoreTagSummary(state: MatchState): ScoreTagSummary {
 }
 ```
 
-- [ ] **Step 5: Run both suites to verify the refactor changed nothing**
+- [x] **Step 5: Run both suites to verify the refactor changed nothing**
 
 ```bash
 ./gradlew :shared:jvmTest --tests "com.badmintontracker.shared.model.MatchLabelSummaryTest"
@@ -645,7 +645,7 @@ fun buildScoreTagSummary(state: MatchState): ScoreTagSummary {
 
 Expected: PASS both. `MatchLabelSummaryTest` **unedited** - that is the point of running it.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add shared/src/commonMain/kotlin/com/badmintontracker/shared/model/MatchLabelSummary.kt \
@@ -668,7 +668,7 @@ git commit -m "feat(scoring): tally courtside tags with the rally page's countin
 
 §7's L1 lists a text export among the outputs a match has even if no video ever arrives. It is the thing a coach pastes into a message to a player that evening.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `ScoreTagSummaryTest.kt`:
 
@@ -718,7 +718,7 @@ Add to `ScoreTagSummaryTest.kt`:
     }
 ```
 
-- [ ] **Step 2: Run to verify it fails, then implement**
+- [x] **Step 2: Run to verify it fails, then implement**
 
 Add to `ScoreTagSummary.kt`:
 
@@ -752,7 +752,7 @@ fun exportMatchText(log: ScoreLog): String {
 }
 ```
 
-- [ ] **Step 3: Run the test, then commit**
+- [x] **Step 3: Run the test, then commit**
 
 ```bash
 ./gradlew :shared:jvmTest --tests "com.badmintontracker.shared.scoring.ScoreTagSummaryTest"
@@ -777,7 +777,7 @@ git commit -m "feat(scoring): export a match as text"
 
 The tag row's visibility is state, not a dialog: `pendingTagOrdinal` is set to the point just scored and cleared by the next point or an explicit dismiss. That is what makes "one tap scores, a second tags" work without a modal ever appearing.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `androidApp/src/test/java/com/badmintontracker/android/scoring/ScoringViewModelTest.kt`:
 
@@ -960,7 +960,7 @@ class ScoringViewModelTest {
 
 `FakeAnnotationLabelsRepository` already exists at `androidApp/src/test/java/com/badmintontracker/android/testing/`. It needs one addition for `the_palette_is_whatever_was_cached_offline`: a `refreshCount` counter incremented by `refresh()`. Add it there rather than writing a second fake.
 
-- [ ] **Step 2 to 5: Implement, run, commit**
+- [x] **Step 2 to 5: Implement, run, commit**
 
 The view model combines `scoreLogs.logs` and `labels.labels` into `ScoringUiState`, holds `pendingTagOrdinal` in a `MutableStateFlow`, and routes every mutation through `MatchScorer`. It calls no repository mutation directly.
 
@@ -989,7 +989,7 @@ The surface, portrait, in `ShuttlTheme` and never a copy of the competitor's red
 
 Route: `Route.Scoring(scoreLogId)`. Reached from the match page's primary action, and from creating a match - `NewMatchScreen`'s `onCreated` goes straight here rather than to the match page, because creating a match courtside means about to score it.
 
-- [ ] **Verify by hand** (none of this is reachable from a unit test): score a full game; check the serve indicator flips correctly through a doubles game against the rules in L0's Task 4; tag a point and confirm the row never steals a tap; undo across a game boundary; put the phone down for two minutes and confirm the screen stays on; kill the app mid-game from recents and confirm the score is exactly where it was.
+- [x] **Verify by hand** (none of this is reachable from a unit test): score a full game; check the serve indicator flips correctly through a doubles game against the rules in L0's Task 4; tag a point and confirm the row never steals a tap; undo across a game boundary; put the phone down for two minutes and confirm the screen stays on; kill the app mid-game from recents and confirm the score is exactly where it was.
 
 ```bash
 ./gradlew :androidApp:assembleDebug :androidApp:testDebugUnitTest
