@@ -41,3 +41,31 @@ fun buildScoreTagSummary(state: MatchState): ScoreTagSummary {
         labels = rollUpLabels(refs),
     )
 }
+
+/**
+ * The match as plain text, for pasting into a message the same evening. Point
+ * numbers are one-based here and only here: this is the one output a person reads
+ * as a list rather than an index, and "point 0" is not a thing anyone says.
+ */
+fun exportMatchText(log: ScoreLog): String {
+    val state = log.state()
+    val header = listOf(
+        log.title,
+        "${sideLabel(log.homePlayers)} vs ${sideLabel(log.awayPlayers)}",
+        scoreLine(state),
+    )
+    if (state.points.isEmpty()) return header.joinToString("\n")
+
+    val rows = state.points.map { point ->
+        val winner = if (point.wonBy == Side.HOME) sideLabel(log.homePlayers) else sideLabel(log.awayPlayers)
+        val score = "${point.scoreAfter.home}-${point.scoreAfter.away}"
+        val tags = point.tags.joinToString(", ") { it.labelName }.takeIf { it.isNotEmpty() }
+        val comment = point.comment?.trim()?.takeIf { it.isNotEmpty() }
+        buildString {
+            append("${point.ordinal + 1}. $score $winner")
+            if (tags != null) append(" - $tags")
+            if (comment != null) append(" ($comment)")
+        }
+    }
+    return (header + "" + rows).joinToString("\n")
+}

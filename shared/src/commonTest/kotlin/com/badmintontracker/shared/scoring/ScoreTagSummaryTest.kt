@@ -92,4 +92,48 @@ class ScoreTagSummaryTest {
         val summary = buildScoreTagSummary(tagsOf("A", "A", "B", "B", "B", "C"))
         summary.labels.map { it.sharePercent } shouldBe listOf(50, 33, 17)
     }
+
+    @Test
+    fun a_match_exports_as_something_a_coach_can_paste_into_a_message() {
+        val log = ScoreLog(
+            id = "log-1", videoId = null, title = "Thu League",
+            homePlayers = listOf("Coen"), awayPlayers = listOf("Marco"),
+            rules = ScoringRules.BWF_21,
+            setup = MatchSetup(doubles = false, firstServer = Side.HOME),
+            events = listOf(
+                ScoreEvent.PointTo(Side.HOME),
+                ScoreEvent.TagPoint(0, listOf(PointTag("Good shot", "green")), "cross court"),
+                ScoreEvent.PointTo(Side.AWAY),
+            ),
+            status = ScoreLogStatus.LIVE,
+            createdAt = kotlinx.datetime.Instant.parse("2026-08-27T18:00:00Z"),
+            updatedAt = kotlinx.datetime.Instant.parse("2026-08-27T18:00:00Z"),
+        )
+        exportMatchText(log) shouldBe """
+            Thu League
+            Coen vs Marco
+            1-1
+
+            1. 1-0 Coen - Good shot (cross court)
+            2. 1-1 Marco
+        """.trimIndent()
+    }
+
+    @Test
+    fun an_unstarted_match_exports_its_header_and_nothing_else() {
+        val log = ScoreLog(
+            id = "log-1", videoId = null, title = "Thu League",
+            homePlayers = listOf("Coen"), awayPlayers = listOf("Marco"),
+            rules = ScoringRules.BWF_21,
+            setup = MatchSetup(doubles = false, firstServer = Side.HOME),
+            events = emptyList(), status = ScoreLogStatus.LIVE,
+            createdAt = kotlinx.datetime.Instant.parse("2026-08-27T18:00:00Z"),
+            updatedAt = kotlinx.datetime.Instant.parse("2026-08-27T18:00:00Z"),
+        )
+        exportMatchText(log) shouldBe """
+            Thu League
+            Coen vs Marco
+            Not started
+        """.trimIndent()
+    }
 }
