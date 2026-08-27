@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -28,19 +29,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.badmintontracker.android.clipdetail.LabelBadge
+import com.badmintontracker.shared.scoring.ScoreLogStatus
 import com.badmintontracker.shared.scoring.ScoredPoint
 import com.badmintontracker.shared.scoring.Side
 
 /**
  * One scored match: who played, how it went, and every point in order.
  *
- * The point list is empty until the scoring surface lands (L1b), and "No points
- * scored yet" stays a real state after it - a match created and not yet started
- * looks exactly like this.
+ * The record rather than the board: this is where a match is read back afterwards.
+ * "No points scored yet" is a real state, not a loading one - a match created and
+ * not yet started looks exactly like this, and its primary action says "Score".
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ScoreMatchScreen(vm: ScoreMatchViewModel, onBack: () -> Unit) {
+fun ScoreMatchScreen(vm: ScoreMatchViewModel, onBack: () -> Unit, onScore: () -> Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
     val log = state.log
 
@@ -82,6 +84,13 @@ fun ScoreMatchScreen(vm: ScoreMatchViewModel, onBack: () -> Unit) {
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    // Absent rather than disabled on a finished match: there is
+                    // nothing left to score, and undo lives on the board itself.
+                    if (log.status == ScoreLogStatus.LIVE) {
+                        Button(onClick = onScore, modifier = Modifier.padding(top = 8.dp)) {
+                            Text(if (points.isEmpty()) "Score" else "Resume scoring")
+                        }
+                    }
                 }
                 HorizontalDivider()
             }

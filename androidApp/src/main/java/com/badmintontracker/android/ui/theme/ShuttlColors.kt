@@ -35,6 +35,16 @@ private val DarkTextTertiary     = Color(0xFF666666)
 private val DarkAccent           = Color(0xFF22C55E)
 private val DarkAccentDark       = Color(0xFF16A34A)
 
+// The two sides of the scoreboard. Deliberately not the accent green and the info
+// blue: those are interface colours sized for a chip, and these are full-bleed
+// halves carrying white numerals, so they are picked for contrast against white
+// first and family resemblance second. Deeper in dark, where a lit-up half at
+// arm's length in a dim hall is the thing to avoid.
+private val LightSideHome = Color(0xFF15803D)
+private val LightSideAway = Color(0xFF1D4ED8)
+private val DarkSideHome  = Color(0xFF14532D)
+private val DarkSideAway  = Color(0xFF1E3A8A)
+
 private val Error   = Color(0xFFEF4444)
 private val Warning = Color(0xFFF59E0B)
 private val Info    = Color(0xFF3B82F6)
@@ -78,6 +88,9 @@ data class ShuttlExtendedColors(
     val textTertiary:    Color,
     val warning:         Color,
     val info:            Color,
+    /** The home half of the scoreboard. Identifies the side, never the end. */
+    val sideHome:        Color,
+    val sideAway:        Color,
 )
 
 internal val ShuttlLightExtended = ShuttlExtendedColors(
@@ -87,6 +100,8 @@ internal val ShuttlLightExtended = ShuttlExtendedColors(
     textTertiary = LightTextTertiary,
     warning      = Warning,
     info         = Info,
+    sideHome     = LightSideHome,
+    sideAway     = LightSideAway,
 )
 
 internal val ShuttlDarkExtended = ShuttlExtendedColors(
@@ -96,6 +111,8 @@ internal val ShuttlDarkExtended = ShuttlExtendedColors(
     textTertiary = DarkTextTertiary,
     warning      = Warning,
     info         = Info,
+    sideHome     = DarkSideHome,
+    sideAway     = DarkSideAway,
 )
 
 val LocalShuttlColors = staticCompositionLocalOf { ShuttlLightExtended }

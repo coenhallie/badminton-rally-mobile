@@ -331,3 +331,21 @@ fun foldMatchState(
         winner = winner,
     )
 }
+
+/**
+ * Which member of [side]'s pair is standing in the right service court. Null in
+ * singles, and null once the match is over - there is no serve left to place
+ * anyone from.
+ *
+ * Derived rather than folded, because the fold already names the one player on each
+ * side whose court is known: the server and the receiver both stand in
+ * [MatchState.serviceCourt], and a pair occupies both courts, so the partner is in
+ * the other one. Shared rather than written on each surface, because two platforms
+ * deriving court geometry separately is two chances to draw a name on the wrong
+ * side of the court.
+ */
+fun MatchState.rightCourtPlayer(side: Side): PairPlayer? {
+    val court = serviceCourt ?: return null
+    val placed = (if (side == server) servingPlayer else receivingPlayer) ?: return null
+    return if (court == ServiceCourt.RIGHT) placed else placed.other
+}

@@ -52,11 +52,26 @@ class ScoringViewModel(
      * A tap has to be recorded whether or not the composition happens to be
      * collecting at that instant, and the store this folds is already in memory, so
      * there is nothing to defer.
+     *
+     * The initial value is built from the store rather than left blank for the same
+     * reason: a blank one would say the match is not on this phone, and the surface
+     * would flash that at the coach for a frame on the way in.
      */
-    val state = combine(scoreLogs.logs, labels.labels, pending) { logs, palette, pendingOrdinal ->
+    val state = combine(scoreLogs.logs, labels.labels, pending, ::build)
+        .stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            build(scoreLogs.logs.value, labels.labels.value, pending.value),
+        )
+
+    private fun build(
+        logs: List<ScoreLog>,
+        palette: List<AnnotationLabel>,
+        pendingOrdinal: Int?,
+    ): ScoringUiState {
         val log = logs.firstOrNull { it.id == scoreLogId }
         val match = log?.state()
-        ScoringUiState(
+        return ScoringUiState(
             log = log,
             match = match,
             labels = palette,
@@ -67,7 +82,7 @@ class ScoringViewModel(
             canScore = match?.isOver == false,
             canUndo = log?.events?.isNotEmpty() == true,
         )
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, ScoringUiState())
+    }
 
     /** One tap. The tag row follows to the rally just played. */
     fun score(side: Side) {

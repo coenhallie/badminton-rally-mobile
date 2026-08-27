@@ -44,6 +44,8 @@ import com.badmintontracker.android.scoring.NewMatchScreen
 import com.badmintontracker.android.scoring.NewMatchViewModel
 import com.badmintontracker.android.scoring.ScoreMatchScreen
 import com.badmintontracker.android.scoring.ScoreMatchViewModel
+import com.badmintontracker.android.scoring.ScoringScreen
+import com.badmintontracker.android.scoring.ScoringViewModel
 import com.badmintontracker.android.signin.SignInScreen
 import com.badmintontracker.android.signin.SignInViewModel
 import com.badmintontracker.shared.localvideo.AnalyzeCoordinator
@@ -162,10 +164,11 @@ fun AuthGate(
                     )
                     NewMatchScreen(
                         vm = vm,
-                        // Straight to the match, not back to the list: creating a
-                        // match courtside means being about to score it.
+                        // Straight to the board, not back to the list and not to
+                        // the record: creating a match courtside means being about
+                        // to score it.
                         onCreated = { id ->
-                            nav.navigate(Route.ScoreMatch(id)) {
+                            nav.navigate(Route.Scoring(id)) {
                                 popUpTo(Route.NewMatch) { inclusive = true }
                             }
                         },
@@ -179,7 +182,22 @@ fun AuthGate(
                             initializer { ScoreMatchViewModel(rally.scoreLogs, args.scoreLogId) }
                         }
                     )
-                    ScoreMatchScreen(vm = vm, onBack = { nav.popBackStack() })
+                    ScoreMatchScreen(
+                        vm = vm,
+                        onBack = { nav.popBackStack() },
+                        onScore = { nav.navigate(Route.Scoring(args.scoreLogId)) },
+                    )
+                }
+                composable<Route.Scoring> { entry ->
+                    val args = entry.toRoute<Route.Scoring>()
+                    val vm: ScoringViewModel = viewModel(
+                        factory = viewModelFactory {
+                            initializer {
+                                ScoringViewModel(rally.scoreLogs, rally.labels, args.scoreLogId)
+                            }
+                        }
+                    )
+                    ScoringScreen(vm = vm, onBack = { nav.popBackStack() })
                 }
                 composable<Route.Labels> {
                     val vm: LabelsViewModel = viewModel(

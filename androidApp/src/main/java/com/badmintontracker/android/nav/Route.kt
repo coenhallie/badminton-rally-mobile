@@ -12,4 +12,5 @@ sealed interface Route {
     @Serializable data class  CourtMarking(val entryId: String) : Route
     @Serializable data object NewMatch : Route
     @Serializable data class  ScoreMatch(val scoreLogId: String) : Route
+    @Serializable data class  Scoring(val scoreLogId: String)    : Route
 }
