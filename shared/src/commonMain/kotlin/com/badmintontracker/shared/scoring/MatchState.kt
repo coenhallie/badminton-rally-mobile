@@ -1,5 +1,8 @@
 package com.badmintontracker.shared.scoring
 
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+
 /**
  * Which service court a serve is delivered from. Right when the server's own side
  * score is even, left when it is odd.
@@ -10,8 +13,10 @@ enum class ServiceCourt { RIGHT, LEFT }
  * Which member of a pair. An enum rather than an index because a nullable Kotlin
  * Int reaches Swift as KotlinInt?, and "which of the two" is not arithmetic.
  */
+@Serializable
 enum class PairPlayer {
-    FIRST, SECOND;
+    @SerialName("first")  FIRST,
+    @SerialName("second") SECOND;
 
     val other: PairPlayer get() = if (this == FIRST) SECOND else FIRST
 }
@@ -48,10 +53,11 @@ data class SideFlags(val home: Boolean, val away: Boolean) {
  * not the match's name, its players or its date: those belong to the match record
  * that L1 creates, and the fold must not need any of them to produce a score.
  */
+@Serializable
 data class MatchSetup(
     val doubles: Boolean,
     /** The side serving the first point of the first game. The coin toss sets this. */
-    val firstServer: Side,
+    @SerialName("first_server") val firstServer: Side,
     /**
      * Doubles only: which player of each side starts a game in the right service
      * court. Reset at every game start, because a pair may rearrange between games
@@ -62,8 +68,8 @@ data class MatchSetup(
      * These are the one place this package allows a default argument: they are
      * meaningless in singles. Swift has no defaults and passes all four.
      */
-    val homeStartsRight: PairPlayer = PairPlayer.FIRST,
-    val awayStartsRight: PairPlayer = PairPlayer.FIRST,
+    @SerialName("home_starts_right") val homeStartsRight: PairPlayer = PairPlayer.FIRST,
+    @SerialName("away_starts_right") val awayStartsRight: PairPlayer = PairPlayer.FIRST,
 )
 
 /**
