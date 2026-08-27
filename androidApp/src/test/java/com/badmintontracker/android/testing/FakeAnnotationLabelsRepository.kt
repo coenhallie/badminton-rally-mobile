@@ -20,9 +20,14 @@ class FakeAnnotationLabelsRepository(initial: List<AnnotationLabel> = emptyList(
     override val labels: StateFlow<List<AnnotationLabel>> = state.asStateFlow()
 
     var refreshError: Throwable? = null
+
+    /** The courtside surface must read the cache and never refresh on entry. */
+    var refreshCount = 0
+        private set
     private var nextId = 0
 
     override suspend fun refresh(): Result<Unit> {
+        refreshCount += 1
         refreshError?.let { return Result.failure(it) }
         return Result.success(Unit)
     }
