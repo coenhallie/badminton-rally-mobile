@@ -34,6 +34,7 @@ import com.badmintontracker.shared.prefs.ThemePreferenceRepository
 import com.badmintontracker.android.localvideo.LocalPlayerScreen
 import com.badmintontracker.android.localvideo.LocalPlayerViewModel
 import com.badmintontracker.android.localvideo.LocalVideoListViewModel
+import com.badmintontracker.android.localvideo.MatchTarget
 import com.badmintontracker.android.localvideo.court.CourtMarkingScreen
 import com.badmintontracker.android.localvideo.court.CourtMarkingViewModel
 import com.badmintontracker.android.localvideo.court.loadFirstFrame
@@ -41,6 +42,7 @@ import com.badmintontracker.android.localvideo.rememberVideoIntake
 import com.badmintontracker.android.labels.LabelsScreen
 import com.badmintontracker.android.labels.LabelsViewModel
 import com.badmintontracker.android.nav.Route
+import com.badmintontracker.android.scoring.AttachIntent
 import com.badmintontracker.android.scoring.NewMatchScreen
 import com.badmintontracker.android.scoring.NewMatchViewModel
 import com.badmintontracker.android.scoring.ScoringScreen
@@ -53,6 +55,7 @@ import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.RallyApp
+import com.badmintontracker.shared.scoring.ScoreLogStatus
 import io.github.jan.supabase.auth.status.SessionStatus
 
 @Composable
@@ -91,6 +94,32 @@ fun AuthGate(
                 }
             }
 
+            var intakeError by remember { mutableStateOf<String?>(null) }
+            // Persist first, then hand the id on so the details sheet can open over
+            // an entry that already exists.
+            var autoDetailsEntryId by remember { mutableStateOf<String?>(null) }
+            // Hoisted above the NavHost: both the list destination (record/import
+            // with no match) and the match destination (record/import for this
+            // match) drive the same picker, so there can only be one implementation
+            // of "getting a video into the app".
+            val intake = rememberVideoIntake(
+                onAdded = { entry ->
+                    localVideos.add(entry)
+                    // A video picked for a match already carries that match's name,
+                    // and videos.title is insert-only, so there is nothing to ask
+                    // and nowhere to change it later.
+                    if (entry.scoreLogId == null) {
+                        autoDetailsEntryId = entry.id
+                    } else {
+                        // The coach already said he wants this video analysed;
+                        // making him find an Analyze button afterwards is a second
+                        // decision for a question he answered.
+                        nav.navigate(Route.CourtMarking(entry.id))
+                    }
+                },
+                onError = { intakeError = it },
+            )
+
             NavHost(navController = nav, startDestination = start) {
                 composable<Route.SignIn> {
                     val signInVm: SignInViewModel = viewModel(
@@ -120,14 +149,6 @@ fun AuthGate(
                         }
                     )
                     val localRows by localVm.rows.collectAsStateWithLifecycle()
-                    var intakeError by remember { mutableStateOf<String?>(null) }
-                    // Persist first, then hand the id on so the details sheet can
-                    // open over an entry that already exists.
-                    var autoDetailsEntryId by remember { mutableStateOf<String?>(null) }
-                    val intake = rememberVideoIntake(
-                        onAdded = { entry -> localVideos.add(entry); autoDetailsEntryId = entry.id },
-                        onError = { intakeError = it },
-                    )
                     ClipListScreen(
                         vm = clipListVm,
                         media = rally.media,
@@ -152,8 +173,8 @@ fun AuthGate(
                         onLocalDetailsSaved = localVm::setDetails,
                         autoDetailsEntryId = autoDetailsEntryId,
                         onAutoDetailsShown = { autoDetailsEntryId = null },
-                        onRecord = intake.record,
-                        onImport = intake.import,
+                        onRecord = { intake.record(null) },
+                        onImport = { intake.import(null) },
                         onLabels = { nav.navigate(Route.Labels) },
                         onAttachedMarkCourt = { scoreLogId ->
                             localVideos.entries.value
@@ -215,13 +236,16 @@ fun AuthGate(
                     ScoringScreen(
                         vm = vm,
                         onBack = { nav.popBackStack() },
-                        // "Done" lands on the match page rather than popping back,
-                        // because a match just created and scored in one sitting
-                        // (NewMatch -> Scoring, no Match page underneath yet) has
-                        // nothing to pop back to. Collapsing to ClipList first
-                        // keeps a single Match entry on the stack either way.
-                        onDone = {
-                            nav.navigate(Route.Match(scoreLogId = args.scoreLogId)) {
+                        // Lands on the match page rather than popping back, because
+                        // a match just created and scored in one sitting (NewMatch
+                        // -> Scoring, no Match page underneath yet) has nothing to
+                        // pop back to. Collapsing to ClipList first keeps a single
+                        // Match entry on the stack either way. The chosen intent (if
+                        // any) rides along so the match page can act on it once.
+                        onFinished = { intent ->
+                            nav.navigate(
+                                Route.Match(scoreLogId = args.scoreLogId, attach = intent?.name)
+                            ) {
                                 popUpTo(Route.ClipList) { inclusive = false }
                             }
                         },
@@ -268,10 +292,24 @@ fun AuthGate(
                         themePrefs = themePrefs,
                         scoreLogId = args.scoreLogId,
                         videoId = effectiveVideoId,
+                        attach = args.attach,
                         onBack = { nav.popBackStack() },
                         onClipClick = { nav.navigate(Route.ClipDetail(it.id)) },
                         onScore = {
                             args.scoreLogId?.let { nav.navigate(Route.Scoring(it)) }
+                        },
+                        onAddVideo = { intent ->
+                            val log = rally.scoreLogs.get(args.scoreLogId ?: return@MatchScreen)
+                                ?: return@MatchScreen
+                            // A match acquires a video only once it is closed:
+                            // attaching to a log still marked live would leave a
+                            // bound match advertising "Resume scoring".
+                            if (log.status == ScoreLogStatus.LIVE) rally.scoreLogs.finish(log.id)
+                            val target = MatchTarget(log.id, log.title)
+                            when (intent) {
+                                AttachIntent.Import -> intake.import(target)
+                                AttachIntent.Record -> intake.record(target)
+                            }
                         },
                     )
                 }
@@ -331,7 +369,19 @@ fun AuthGate(
                         vm = vm,
                         onStartAnalysis = { keypoints ->
                             coordinator.startAnalysis(args.entryId, keypoints)
-                            nav.popBackStack(Route.ClipList, inclusive = false)
+                            if (localVideos.get(args.entryId)?.scoreLogId != null) {
+                                // A single pop, not popBackStack(Route.Match(...)):
+                                // typed-route popping matches on the serialized
+                                // route, and the instance on the stack carries the
+                                // `attach` argument this one would not. The match
+                                // page is directly below court marking anyway.
+                                nav.popBackStack()
+                            } else {
+                                // Video-first can arrive here from LocalPlayer as
+                                // well as from the list, so this one still names its
+                                // destination.
+                                nav.popBackStack(Route.ClipList, inclusive = false)
+                            }
                         },
                         onBack = { nav.popBackStack() },
                     )

@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Share
@@ -45,6 +46,7 @@ import com.badmintontracker.android.cliplist.MatchSummaryViewModel
 import com.badmintontracker.android.cliplist.MatchSummarySheet
 import com.badmintontracker.android.cliplist.formatDate
 import com.badmintontracker.android.cliplist.topRallyName
+import com.badmintontracker.android.scoring.AttachIntent
 import com.badmintontracker.android.share.ShareSheet
 import com.badmintontracker.android.ui.components.ThemeToggleButton
 import com.badmintontracker.android.ui.shareText
@@ -77,9 +79,13 @@ fun MatchScreen(
     themePrefs: ThemePreferenceRepository,
     scoreLogId: String?,
     videoId: String?,
+    /** The intent carried by [com.badmintontracker.android.nav.Route.Match]'s `attach`
+     *  argument - "Import" or "Record" chosen on the board's finish prompt, or null. */
+    attach: String?,
     onBack: () -> Unit,
     onClipClick: (RallyClip) -> Unit,
     onScore: () -> Unit,
+    onAddVideo: (AttachIntent) -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val matchState by matchVm.state.collectAsStateWithLifecycle()
@@ -88,6 +94,7 @@ fun MatchScreen(
     var sheetOpen by remember { mutableStateOf(false) }
     var sortMenuOpen by remember { mutableStateOf(false) }
     var overflowOpen by remember { mutableStateOf(false) }
+    var addVideoMenuOpen by remember { mutableStateOf(false) }
     var sort by remember { mutableStateOf(ClipSort.RallyOrder) }
     val summary by summaryVm?.summary?.collectAsStateWithLifecycle()
         ?: remember { mutableStateOf<MatchLabelSummary?>(null) }
@@ -111,6 +118,17 @@ fun MatchScreen(
         val err = state.error ?: return@LaunchedEffect
         snackbarHostState.showSnackbar(err)
         vm.dismissError()
+    }
+
+    // The picker is plumbed to this screen and nowhere else, so "attach a video to
+    // this match" has one implementation and two entry points: this button, and the
+    // prompt the board raises when a match finishes.
+    LaunchedEffect(attach) {
+        when (attach) {
+            "Import" -> onAddVideo(AttachIntent.Import)
+            "Record" -> onAddVideo(AttachIntent.Record)
+            else -> Unit
+        }
     }
 
     val match = (state.ownedMatches + state.sharedMatches).firstOrNull { it.videoId == videoId }
@@ -194,6 +212,24 @@ fun MatchScreen(
                     if (match?.isOwned == true) {
                         IconButton(onClick = { sheetOpen = true }) {
                             Icon(Icons.Default.Share, contentDescription = "Share match")
+                        }
+                    }
+                    if (matchState.canAddVideo) {
+                        IconButton(onClick = { addVideoMenuOpen = true }) {
+                            Icon(Icons.Default.Add, contentDescription = "Add video")
+                        }
+                        DropdownMenu(
+                            expanded = addVideoMenuOpen,
+                            onDismissRequest = { addVideoMenuOpen = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Import video") },
+                                onClick = { addVideoMenuOpen = false; onAddVideo(AttachIntent.Import) },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Record video") },
+                                onClick = { addVideoMenuOpen = false; onAddVideo(AttachIntent.Record) },
+                            )
                         }
                     }
                     if (log != null) {

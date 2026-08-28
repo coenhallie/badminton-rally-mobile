@@ -63,6 +63,7 @@ import com.badmintontracker.shared.scoring.PairPlayer
 import com.badmintontracker.shared.scoring.ScoreLog
 import com.badmintontracker.shared.scoring.ServiceCourt
 import com.badmintontracker.shared.scoring.Side
+import com.badmintontracker.shared.scoring.isPlayable
 import com.badmintontracker.shared.scoring.rightCourtPlayer
 
 /**
@@ -74,7 +75,11 @@ import com.badmintontracker.shared.scoring.rightCourtPlayer
  * side is on. Nothing here computes a rule.
  */
 @Composable
-fun ScoringScreen(vm: ScoringViewModel, onBack: () -> Unit, onDone: () -> Unit) {
+fun ScoringScreen(
+    vm: ScoringViewModel,
+    onBack: () -> Unit,
+    onFinished: (AttachIntent?) -> Unit = { },
+) {
     val state by vm.state.collectAsStateWithLifecycle()
     KeepScreenOn()
 
@@ -96,6 +101,19 @@ fun ScoringScreen(vm: ScoringViewModel, onBack: () -> Unit, onDone: () -> Unit) 
 
     var confirming by remember { mutableStateOf<Confirmation?>(null) }
     var noteOpen by remember { mutableStateOf(false) }
+
+    // Fires on the transition to un-scoreable, from either exit: the Done button
+    // once the rules end it, and "Finish match" in the overflow. Asked once per
+    // visit to the board, so a coach who says "not now" and then undoes a rally to
+    // fix the last point is not asked again the moment he re-finishes.
+    var addVideoAsked by remember { mutableStateOf(false) }
+    var addVideoOpen by remember { mutableStateOf(false) }
+    LaunchedEffect(match.isOver, log.status) {
+        if (!addVideoAsked && !log.isPlayable()) {
+            addVideoAsked = true
+            addVideoOpen = true
+        }
+    }
 
     Column(Modifier.fillMaxSize().safeDrawingPadding()) {
         StatusStrip(
@@ -140,7 +158,7 @@ fun ScoringScreen(vm: ScoringViewModel, onBack: () -> Unit, onDone: () -> Unit) 
             onSetComment = { ordinal, text -> vm.setComment(ordinal, text) },
             onToggleNote = { noteOpen = !noteOpen },
             onUndo = { vm.undo() },
-            onDone = onDone,
+            onDone = { onFinished(null) },
         )
     }
 
@@ -162,7 +180,36 @@ fun ScoringScreen(vm: ScoringViewModel, onBack: () -> Unit, onDone: () -> Unit) 
             dismissButton = { TextButton(onClick = dismiss) { Text("Cancel") } },
         )
     }
+
+    if (addVideoOpen) {
+        AlertDialog(
+            onDismissRequest = { addVideoOpen = false; onFinished(null) },
+            title = { Text("Add the video?") },
+            text = {
+                Text(
+                    "Import or record the video of this match and Shuttl will cut it into " +
+                        "one clip per rally. You can also do this later from the match itself.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { addVideoOpen = false; onFinished(AttachIntent.Import) }) {
+                    Text("Import video")
+                }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { addVideoOpen = false; onFinished(AttachIntent.Record) }) {
+                        Text("Record")
+                    }
+                    TextButton(onClick = { addVideoOpen = false; onFinished(null) }) { Text("Not now") }
+                }
+            },
+        )
+    }
 }
+
+/** Where finishing a match can take the coach next, chosen on the "add the video?" prompt. */
+enum class AttachIntent { Import, Record }
 
 /** The two irreversible controls, both behind a confirm. Undo is not one of them. */
 private enum class Confirmation(val title: String, val body: String, val confirm: String) {
