@@ -239,8 +239,13 @@ either exit (`Done` after `isOver`, or `Finish match` in the overflow), so the
 coach who uses the overflow is not the one who never gets asked. Three choices:
 `Import video`, `Record video`, `Not now`.
 
-All three then land on the match page, replacing the board in the stack rather
-than stacking on it. That is a fix in its own right: today `Done` pops to the
+Asked once per visit to the board, held in memory: a coach who says "not now"
+and then undoes a rally to correct the last point must not be asked again the
+moment he re-finishes. The durable affordance on the match page is what he comes
+back to, not a prompt that keeps reappearing.
+
+All three choices then land on the match page, replacing the board in the stack
+rather than stacking on it. That is a fix in its own right: today `Done` pops to the
 list, so the record of the match just played is one tap further away than the
 list of matches not played.
 
@@ -286,7 +291,7 @@ The match page becomes one page with two facets, and shows whichever it has:
 | --- | --- |
 | Points only | Header, tag tally, point list. Today's `ScoreMatchScreen`. |
 | Clips only | Header, rally list, sort, label summary. Today's `MatchClipsScreen`. |
-| Both | The same header, plus a `Points | Rallies` selector over the two lists. |
+| Both | The same header, plus a Points / Rallies selector over the two lists. |
 
 The argument for unifying rather than bolting a rally list onto the score page:
 the match list already models a match as `videoId? + scoreLogId?`. Unification
