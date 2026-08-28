@@ -308,11 +308,8 @@ struct ClipListView: View {
             Button("Cancel", role: .cancel) { confirmTarget = nil }
         }
         .refreshable { await model.refresh() }
-        .navigationDestination(for: String.self) { videoId in
-            MatchClipsView(rally: rally, videoId: videoId)
-        }
-        .navigationDestination(for: ScoreMatchRoute.self) { route in
-            ScoreMatchView(rally: rally, scoreLogId: route.scoreLogId)
+        .navigationDestination(for: MatchRoute.self) { route in
+            MatchView(rally: rally, route: route)
         }
         .navigationDestination(for: ScoringRoute.self) { route in
             ScoringView(rally: rally, scoreLogId: route.scoreLogId)
@@ -334,7 +331,7 @@ struct ClipListView: View {
     }
 
     private func row(_ match: MatchSummary, model: ClipListModel) -> some View {
-        NavigationLink(value: match.videoId) {
+        NavigationLink(value: MatchRoute(scoreLogId: nil, videoId: match.videoId)) {
             HStack(spacing: 12) {
                 AsyncImage(url: model.thumbnailUrls[match.coverClipId]) { image in
                     image.resizable().aspectRatio(contentMode: .fill)
@@ -395,7 +392,7 @@ struct ClipListView: View {
         // UI-only need - the merge itself only cares about the attach status text.
         let entry = model.localEntries.first { $0.scoreLogId == card.scoreLogId }
 
-        NavigationLink(value: ScoreMatchRoute(scoreLogId: card.scoreLogId)) {
+        NavigationLink(value: MatchRoute(scoreLogId: card.scoreLogId, videoId: card.videoId)) {
             HStack(spacing: 12) {
                 Group {
                     if let video = content.video, let url = model.thumbnailUrls[video.coverClipId] {

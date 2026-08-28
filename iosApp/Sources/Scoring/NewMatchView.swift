@@ -1,12 +1,6 @@
 import SwiftUI
 import Shared
 
-/// A route value distinct from the plain `String` the list already uses for a
-/// video id, so the existing `navigationDestination(for: String.self)` is untouched.
-struct ScoreMatchRoute: Hashable {
-    let scoreLogId: String
-}
-
 /// The match a coach creates before there is any video. Every rule it enforces
 /// comes from `createMatchProblem`, which Android's form calls too - the two cannot
 /// disagree about what a complete match is.
