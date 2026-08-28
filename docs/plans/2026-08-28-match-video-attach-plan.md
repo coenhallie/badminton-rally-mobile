@@ -347,7 +347,7 @@ Append to `AnalyzeCoordinatorTest.kt`:
         runTest {
             val ready = mutableListOf<String>()
             localVideos.add(entry())
-            videos.startProcessingResult = Result.failure(IllegalStateException("boom"))
+            videos.nextStartResult = Result.failure(IllegalStateException("boom"))
             val c = AnalyzeCoordinator(
                 localVideos = localVideos, videos = videos, clips = clips,
                 scope = CoroutineScope(backgroundScope.coroutineContext + UnconfinedTestDispatcher(testScheduler)),
@@ -360,7 +360,7 @@ Append to `AnalyzeCoordinatorTest.kt`:
             localVideos.get("e1")?.failedStep shouldBe AnalyzeStep.TRIGGER
             ready.clear()
 
-            videos.startProcessingResult = Result.success(Unit)
+            videos.nextStartResult = Result.success(Unit)
             clips.clips.value = listOf(clipFor("e1"))
             c.retry("e1")
             runCurrent()
@@ -392,7 +392,7 @@ Append to `AnalyzeCoordinatorTest.kt`:
     }
 ```
 
-Check `FakeVideosRepository` for the name of its `startProcessing` result knob (`shared/src/commonTest/kotlin/com/badmintontracker/shared/testing/FakeVideosRepository.kt`) and use the real one; if there is no settable result, add one in the same style as the fake's existing knobs.
+`nextStartResult` is `FakeVideosRepository`'s existing knob for the TRIGGER step (`shared/src/commonTest/kotlin/com/badmintontracker/shared/testing/FakeVideosRepository.kt:24`); nothing needs adding to the fake.
 
 - [ ] **Step 2: Run them and watch them fail**
 
@@ -1595,7 +1595,7 @@ class MatchViewModelTest {
 }
 ```
 
-`ScoringRules.BWF_21` needs 42 points to end a game plus a second game, so the second test's event list must actually finish the match. Check `ScoringRulesTest` for the shortest event list that produces `isOver`, and use that instead of guessing at 42.
+`ScoringRules.BWF_21` is `pointsToWin = 21, gamesToWin = 2`, so 42 consecutive points to one side wins both games and ends the match. `List(42)` is correct as written.
 
 - [ ] **Step 2: Run it and watch it fail**
 
@@ -2177,4 +2177,4 @@ git commit -m "docs: changelog and design refinements for attaching a video to a
 
 **Not covered, and deliberately.** §6's reconcile is out of scope by the spec, and nothing in these tasks has to be undone to build it: `RECONCILED` stays unreachable, and no surface draws a correspondence between a point and a rally.
 
-**Known thin spots for the implementer.** Tasks 9 through 13 describe UI edits against files that must be read first rather than reproduced here in full - the four features that have to survive the match-page merge (sort menu, share sheet, label summary sheet, pull-to-refresh) are named in Task 9 Step 5 and Task 11 Step 6 as the by-hand check. Task 10 Step 1's "shortest event list that finishes a BWF_21 match" must be looked up in `ScoringRulesTest` rather than guessed.
+**Known thin spots for the implementer.** Tasks 9 through 13 describe UI edits against files that must be read first rather than reproduced here in full - the four features that have to survive the match-page merge (sort menu, share sheet, label summary sheet, pull-to-refresh) are named in Task 9 Step 5 and Task 11 Step 6 as the by-hand check. Task 6 Step 4 and Task 9 Step 4 both edit `AuthGate.kt`'s match destination; Task 9's implementer must carry forward the two constructor arguments Task 6 added to `ClipListViewModel`.
