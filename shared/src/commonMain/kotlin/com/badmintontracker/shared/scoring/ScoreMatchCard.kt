@@ -19,10 +19,10 @@ data class ScoreMatchCard(
     val playersLine: String,
     /** "Not started", "11-9", "21-18, 5-3". */
     val scoreLine: String,
-    /** "Scoring" while live, "<winner> won" once it has a winner. */
+    /** "Scoring" while playable, "<winner> won" once decided, "Ended early" if closed without one. */
     val statusLine: String,
     val isLive: Boolean,
-    /** True once L2 has attached a video. Nothing in this release sets it. */
+    /** True once a video is attached; false again if it is unbound. */
     val hasVideo: Boolean,
 )
 
