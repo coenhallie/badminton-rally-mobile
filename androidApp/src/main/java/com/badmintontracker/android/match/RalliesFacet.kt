@@ -41,6 +41,13 @@ fun LazyListScope.ralliesFacet(
     onSummaryClick: () -> Unit,
     onClipClick: (RallyClip) -> Unit,
 ) {
+    // summary and clips both derive from the same clip cache (MatchSummaryViewModel
+    // observes clips.observeClips() filtered to this video, same as clipsForMatch in
+    // MatchScreen), so they cannot disagree about whether the match has rallies: a
+    // non-empty summary never coincides with an empty clips list. That is why the
+    // branches below are not mutually exclusive the way the original screen's
+    // Box-vs-LazyColumn split was - the invariant holds, just incidentally rather
+    // than structurally.
     if (summary != null && !summary.isEmpty) {
         item(key = "match-label-summary") {
             MatchLabelStrip(
