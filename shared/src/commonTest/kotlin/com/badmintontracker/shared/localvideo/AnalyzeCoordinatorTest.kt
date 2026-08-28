@@ -342,4 +342,77 @@ class AnalyzeCoordinatorTest {
         call.title shouldBe "Thu League vs Marco"
         call.description shouldBe "Indoor court 2."
     }
+
+    @Test
+    fun the_video_row_hook_fires_once_the_row_exists() {
+        // Nothing may be told about the videos row before it exists: score_logs
+        // has a foreign key to it.
+        runTest {
+            val ready = mutableListOf<String>()
+            localVideos.add(entry())
+            clips.clips.value = listOf(clipFor("e1"))
+            val c = AnalyzeCoordinator(
+                localVideos = localVideos, videos = videos, clips = clips,
+                scope = CoroutineScope(backgroundScope.coroutineContext + UnconfinedTestDispatcher(testScheduler)),
+                openChannel = { _, _ -> ByteReadChannel(ByteArray(0)) },
+                localAnnotations = localAnnotations,
+                onVideoRowReady = { ready += it },
+            )
+            c.startAnalysis("e1", keypoints())
+            runCurrent()
+            ready shouldBe listOf("e1")
+        }
+    }
+
+    @Test
+    fun the_video_row_hook_fires_on_a_retry_that_resumes_after_create_row() {
+        // retry() resumes from the failed step, so a run that failed at TRIGGER
+        // never re-enters the CREATE_ROW branch. Hanging the hook off that branch
+        // body would silently skip it here, and the match would stay unbound.
+        runTest {
+            val ready = mutableListOf<String>()
+            localVideos.add(entry())
+            videos.nextStartResult = Result.failure(IllegalStateException("boom"))
+            val c = AnalyzeCoordinator(
+                localVideos = localVideos, videos = videos, clips = clips,
+                scope = CoroutineScope(backgroundScope.coroutineContext + UnconfinedTestDispatcher(testScheduler)),
+                openChannel = { _, _ -> ByteReadChannel(ByteArray(0)) },
+                localAnnotations = localAnnotations,
+                onVideoRowReady = { ready += it },
+            )
+            c.startAnalysis("e1", keypoints())
+            runCurrent()
+            localVideos.get("e1")?.failedStep shouldBe AnalyzeStep.TRIGGER
+            ready.clear()
+
+            videos.nextStartResult = Result.success(Unit)
+            clips.clips.value = listOf(clipFor("e1"))
+            c.retry("e1")
+            runCurrent()
+            ready shouldBe listOf("e1")
+        }
+    }
+
+    @Test
+    fun the_video_row_hook_fires_before_the_entry_is_removed() {
+        // runPipeline ends by deleting the entry. Anything the client needs to
+        // remember about the attachment has to be durable before that line, or a
+        // crash in between orphans the link with no entry left to recover it from.
+        runTest {
+            var entryAtHook: LocalVideoEntry? = null
+            localVideos.add(entry())
+            clips.clips.value = listOf(clipFor("e1"))
+            val c = AnalyzeCoordinator(
+                localVideos = localVideos, videos = videos, clips = clips,
+                scope = CoroutineScope(backgroundScope.coroutineContext + UnconfinedTestDispatcher(testScheduler)),
+                openChannel = { _, _ -> ByteReadChannel(ByteArray(0)) },
+                localAnnotations = localAnnotations,
+                onVideoRowReady = { entryAtHook = localVideos.get(it) },
+            )
+            c.startAnalysis("e1", keypoints())
+            runCurrent()
+            entryAtHook.shouldNotBeNull()
+            localVideos.get("e1").shouldBeNull()
+        }
+    }
 }

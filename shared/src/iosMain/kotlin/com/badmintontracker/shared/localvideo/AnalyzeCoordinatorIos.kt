@@ -10,14 +10,10 @@ import kotlinx.coroutines.SupervisorJob
  * file-streaming channel (entry.uri is a Documents-relative path on iOS).
  */
 fun createIosAnalyzeCoordinator(rally: RallyApp, documentsPath: String): AnalyzeCoordinator =
-    AnalyzeCoordinator(
-        localVideos = rally.localVideos,
-        videos = rally.videos,
-        clips = rally.clips,
+    rally.analyzeCoordinator(
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
         openChannel = { uri, offset ->
             openLocalVideoChannel("$documentsPath/$uri", offset)
         },
         log = { println("AnalyzeCoordinator: $it") },
-        localAnnotations = rally.localAnnotations,
     )

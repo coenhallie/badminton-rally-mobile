@@ -1,5 +1,6 @@
 package com.badmintontracker.shared
 
+import com.badmintontracker.shared.localvideo.AnalyzeCoordinator
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
@@ -25,6 +26,8 @@ import com.badmintontracker.shared.scoring.ScoreLogsRepository
 import com.russhwolf.settings.Settings
 import io.github.jan.supabase.SupabaseClient
 import io.ktor.client.engine.HttpClientEngine
+import io.ktor.utils.io.ByteReadChannel
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlin.time.Clock
@@ -65,4 +68,29 @@ class RallyApp(
     // Matches scored on this phone. Local first, like the video registry above it:
     // a match is created and scored courtside, where there is usually no signal.
     val scoreLogs: ScoreLogsRepository = ScoreLogsRepository(client, settings, Clock.System::now)
+
+    /**
+     * Builds the analyze pipeline with the scoring link already wired in. Both
+     * platforms call this rather than constructing a coordinator themselves, so
+     * "a finished upload binds its match" cannot be true on one phone and not the
+     * other.
+     */
+    fun analyzeCoordinator(
+        scope: CoroutineScope,
+        openChannel: suspend (uri: String, offset: Long) -> ByteReadChannel,
+        log: (String) -> Unit = {},
+    ): AnalyzeCoordinator = AnalyzeCoordinator(
+        localVideos = localVideos,
+        videos = videos,
+        clips = clips,
+        scope = scope,
+        openChannel = openChannel,
+        log = log,
+        localAnnotations = localAnnotations,
+        onVideoRowReady = { entryId ->
+            // The videos row now exists, so the foreign key can be satisfied. A
+            // video-first import has no match and this is a no-op.
+            localVideos.get(entryId)?.scoreLogId?.let { scoreLogs.attachVideo(it, entryId) }
+        },
+    )
 }

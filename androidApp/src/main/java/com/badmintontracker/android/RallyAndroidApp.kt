@@ -43,13 +43,10 @@ class RallyAndroidApp : Application(), SingletonImageLoader.Factory {
         themePrefs  = rally.themePrefs
         localVideos = rally.localVideos
         localAnnotations = rally.localAnnotations
-        analyzeCoordinator = AnalyzeCoordinator(
-            localVideos = localVideos,
-            videos = rally.videos,
-            clips = rally.clips,
+        analyzeCoordinator = rally.analyzeCoordinator(
             scope = appScope,
             openChannel = { uri, offset ->
-                // Throwing here surfaces as FAILED(UPLOAD) with this message — the
+                // Throwing here surfaces as FAILED(UPLOAD) with this message - the
                 // "file missing / permission revoked" state.
                 val stream = runCatching { contentResolver.openInputStream(Uri.parse(uri)) }.getOrNull()
                     ?: error("Video file is missing or access was revoked")
@@ -57,7 +54,6 @@ class RallyAndroidApp : Application(), SingletonImageLoader.Factory {
                 stream.toByteReadChannel()
             },
             log = { Log.i("AnalyzeCoordinator", it) },
-            localAnnotations = localAnnotations,
         )
         analyzeCoordinator.reattachToProcessing()
     }

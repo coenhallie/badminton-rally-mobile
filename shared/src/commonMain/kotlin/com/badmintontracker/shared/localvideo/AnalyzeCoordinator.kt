@@ -36,6 +36,13 @@ class AnalyzeCoordinator(
     private val openChannel: suspend (uri: String, offset: Long) -> ByteReadChannel,
     private val log: (String) -> Unit = {},
     private val localAnnotations: LocalAnnotationsRepository,
+    /**
+     * Called once the videos row for this entry is known to exist, and before the
+     * entry is removed. Deliberately an entry id and a moment rather than anything
+     * about matches: this class is a pipeline over one video and must not grow a
+     * dependency on scoring.
+     */
+    private val onVideoRowReady: (entryId: String) -> Unit = {},
 ) {
     private val _progress = MutableStateFlow<Map<String, AnalyzeProgress>>(emptyMap())
     val progress: StateFlow<Map<String, AnalyzeProgress>> = _progress.asStateFlow()
@@ -137,6 +144,11 @@ class AnalyzeCoordinator(
                 return fail(entryId, AnalyzeStep.CREATE_ROW, error.message ?: "Couldn't register video")
             }
         }
+
+        // Unconditional, not inside the branch above: retry() resumes from the
+        // failed step, so a run that failed at TRIGGER never re-enters CREATE_ROW,
+        // and the row exists on every path that reaches here.
+        onVideoRowReady(entry.id)
 
         if (startFrom <= AnalyzeStep.KEYPOINTS) {
             videos.setCourtKeypoints(entry.id, keypoints).onFailure {

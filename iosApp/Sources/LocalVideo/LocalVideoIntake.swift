@@ -61,7 +61,8 @@ final class LocalVideoIntake {
             stage: .local,
             failedStep: nil,
             failureMessage: nil,
-            resultSeen: false
+            resultSeen: false,
+            scoreLogId: nil
         ))
         lastAddedId = id
     }
