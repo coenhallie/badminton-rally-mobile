@@ -1,30 +1,30 @@
 import SwiftUI
 import Shared
 
-/// The board pushed straight from creating a new match, with no match page
-/// underneath it yet. Deliberately its own type rather than reusing
-/// `ScoringRoute`: `MatchView` also registers an `item:`-bound destination for
-/// `ScoringRoute` (its own Score/Resume push), and two `item:` registrations
-/// for the same type in one `NavigationStack` resolve unreliably - confirmed by
-/// removing one and watching the other start working. Giving each pusher its
-/// own type sidesteps that rather than depending on binding identity SwiftUI
-/// does not document as disambiguating.
-private struct NewMatchScoringRoute: Hashable, Identifiable {
-    let scoreLogId: String
-    var id: String { scoreLogId }
-}
+/// The create-and-finish flow, end to end: first the board pushed straight
+/// from creating a new match (no match page underneath it yet), then - once
+/// it finishes - the match page it lands on. One binding carries both stages
+/// rather than two separate ones (an earlier version of this fix used two,
+/// `NewMatchScoringRoute` and `FinishedMatchRoute`): SwiftUI reliably replaces
+/// what an `item:`-bound destination shows when that SAME binding's value
+/// changes to a new one, but does not reliably settle a pop on one binding
+/// racing a push on a DIFFERENT binding shortly after - confirmed on-device,
+/// the destination came up with its content area permanently blank for the
+/// full length of a 30-second wait. Folding both stages into one binding turns
+/// "pop this, then push that" into a single reassignment, which is the
+/// transition SwiftUI does handle correctly (the same way `.sheet(item:)`
+/// swaps to a new item without needing to be dismissed and re-presented).
+/// See task-13-report.md's create-and-finish investigation for the evidence.
+private enum CreateFlowDestination: Hashable, Identifiable {
+    case scoring(scoreLogId: String)
+    case finished(scoreLogId: String, attach: AttachIntent?)
 
-/// Where the board's "Add the video?" prompt (or Done) lands when it was
-/// pushed from `ClipListView` itself - i.e. the create-and-finish path, with no
-/// match page underneath yet to pop back to. Its own type for the same reason
-/// as `NewMatchScoringRoute`: `ClipListView` already registers
-/// `.navigationDestination(for: MatchRoute.self)` for row taps, and a second
-/// `item:` registration for that same `MatchRoute` type left the item-pushed
-/// instance rendering blank - confirmed on-device via the accessibility tree.
-private struct FinishedMatchRoute: Hashable, Identifiable {
-    let scoreLogId: String
-    let attach: AttachIntent?
-    var id: String { scoreLogId }
+    var id: String {
+        switch self {
+        case .scoring(let scoreLogId): return "scoring-\(scoreLogId)"
+        case .finished(let scoreLogId, _): return "finished-\(scoreLogId)"
+        }
+    }
 }
 
 struct ClipListView: View {
@@ -43,13 +43,11 @@ struct ClipListView: View {
     @State private var showLabels = false
     @State private var detailsTarget: MatchDetailsTarget? = nil
     @State private var showNewMatch = false
-    @State private var scoringTarget: NewMatchScoringRoute? = nil
     @State private var deleteScoreTarget: ScoreMatchCard? = nil
-    // Where the board's "Add the video?" prompt (or its Done button) lands
-    // after the create-and-finish path: a fresh push of the match page,
-    // carrying whatever the coach chose so it can act on it once. See
-    // `FinishedMatchRoute`'s own comment for why this is not a `MatchRoute`.
-    @State private var matchTarget: FinishedMatchRoute? = nil
+    // The create-and-finish flow's single destination: the board while it is
+    // being scored, then the match page once it finishes. See
+    // `CreateFlowDestination`'s own doc comment.
+    @State private var createFlowTarget: CreateFlowDestination? = nil
 
     init(rally: RallyApp, analyze: AnalyzeCoordinator) {
         self.rally = rally
@@ -210,11 +208,14 @@ struct ClipListView: View {
     /// Lands on the match page rather than the list once the board is done,
     /// because a match just created and scored in one sitting (New match ->
     /// Scoring, no match page underneath it yet) has nothing to pop back to. The
-    /// chosen intent (if any) rides along on the fresh `MatchRoute` so the match
-    /// page can act on it once. Mirrors `AuthGate.kt`'s `Route.Scoring.onFinished`.
+    /// chosen intent (if any) rides along so the match page can act on it once.
+    /// Reassigns the SAME `createFlowTarget` binding the board itself is
+    /// showing under, rather than popping it and pushing a separate one -
+    /// see `CreateFlowDestination`'s own doc comment. Mirrors `AuthGate.kt`'s
+    /// `Route.Scoring.onFinished`.
     private func onScoringFinished(_ scoreLogId: String) -> (AttachIntent?) -> Void {
         { intent in
-            matchTarget = FinishedMatchRoute(scoreLogId: scoreLogId, attach: intent)
+            createFlowTarget = .finished(scoreLogId: scoreLogId, attach: intent)
         }
     }
 
@@ -358,31 +359,35 @@ struct ClipListView: View {
         .navigationDestination(for: MatchRoute.self) { route in
             MatchView(rally: rally, analyze: analyze, route: route)
         }
-        .navigationDestination(item: $matchTarget) { route in
-            MatchView(
-                rally: rally, analyze: analyze,
-                route: MatchRoute(scoreLogId: route.scoreLogId, videoId: nil, attach: route.attach)
-            )
-        }
         .navigationDestination(isPresented: $showNewMatch) {
             NewMatchView(rally: rally) { id in
                 // Straight to the board, not back to the list and not to the
                 // record: creating a match courtside means being about to score it.
                 showNewMatch = false
-                scoringTarget = NewMatchScoringRoute(scoreLogId: id)
+                createFlowTarget = .scoring(scoreLogId: id)
             }
         }
-        .navigationDestination(item: $scoringTarget) { route in
+        .navigationDestination(item: $createFlowTarget) { target in
             // The only place this list itself pushes the board: straight from
             // creating a match, with no match page underneath yet. Once one
             // exists, `MatchView` owns pushing its own board - see its own
-            // `scoringTarget` and `ScoringView.matchPageAlreadyOpen`.
-            ScoringView(
-                rally: rally,
-                scoreLogId: route.scoreLogId,
-                matchPageAlreadyOpen: false,
-                onFinished: onScoringFinished(route.scoreLogId)
-            )
+            // `scoringTarget` and `ScoringView.matchPageAlreadyOpen`. Both
+            // stages of this flow share the one `item:` registration - see
+            // `CreateFlowDestination`'s own doc comment for why.
+            switch target {
+            case .scoring(let scoreLogId):
+                ScoringView(
+                    rally: rally,
+                    scoreLogId: scoreLogId,
+                    matchPageAlreadyOpen: false,
+                    onFinished: onScoringFinished(scoreLogId)
+                )
+            case .finished(let scoreLogId, let attach):
+                MatchView(
+                    rally: rally, analyze: analyze,
+                    route: MatchRoute(scoreLogId: scoreLogId, videoId: nil, attach: attach)
+                )
+            }
         }
         .navigationDestination(for: LocalPlayerRoute.self) { route in
             LocalPlayerView(rally: rally, analyze: analyze, entryId: route.entryId)

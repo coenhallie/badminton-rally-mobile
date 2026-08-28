@@ -142,24 +142,46 @@ struct ScoringView: View {
     }
 
     /// The single exit from the "Add the video?" prompt, whichever of its three
-    /// choices or its own dismissal reaches it. What `onFinished` actually does
-    /// with `intent` differs by `matchPageAlreadyOpen` - see the two call sites
-    /// - but this view does not need to know which: either way it is popping
-    /// itself and handing the intent to whatever is now on top of the stack.
-    ///
-    /// `dismiss()` runs first, and `onFinished` is deferred a runloop tick past
-    /// it rather than called inline: a pop and a state change that pushes a new
-    /// destination landing in the same SwiftUI transaction do not reliably
-    /// settle - confirmed on-device, where the destination came up with its
-    /// content area permanently blank until this was split apart. The deferral
-    /// is just as necessary for the "deliver locally" branch: it lets this
-    /// view's own pop finish committing before the match page underneath
-    /// mutates its state in response.
+    /// choices or its own dismissal reaches it - and the "Done" button below,
+    /// which reaches the same hand-off through `deliverFinish` directly.
     private func finishBoard(_ intent: AttachIntent?) {
         guard addVideoOpen else { return }
         addVideoOpen = false
-        dismiss()
-        DispatchQueue.main.async { onFinished(intent) }
+        deliverFinish(intent)
+    }
+
+    /// What happens with the chosen intent (or nil) differs by
+    /// `matchPageAlreadyOpen`, and the two branches are not interchangeable -
+    /// each is shaped around which SwiftUI transition its pusher actually
+    /// settles:
+    ///
+    /// - `true` (a match page is already on the stack below this board):
+    ///   `dismiss()` runs first and `onFinished` is deferred a runloop tick
+    ///   past it, because a pop and a state change landing in the same
+    ///   transaction do not reliably settle - confirmed on-device, where the
+    ///   match page came up with its content area permanently blank until
+    ///   this was split apart. The deferral lets this view's own pop finish
+    ///   committing before the match page underneath mutates its state in
+    ///   response.
+    /// - `false` (this board was pushed straight from creating a match,
+    ///   nothing underneath it yet): no `dismiss()`, and no defer. This board
+    ///   and the match page it hands off to are two cases of the SAME
+    ///   `item:`-bound destination on `ClipListView` (`CreateFlowDestination`)
+    ///   - `onFinished` reassigns that one binding to the "finished" case,
+    ///   which is the transition SwiftUI reliably replaces a destination with
+    ///   in a single step. Popping this view first and pushing a *different*
+    ///   binding a tick later - the same shape as the `true` branch - was
+    ///   tried here too and produced the identical permanently-blank freeze,
+    ///   which is what led to folding both stages into one binding instead of
+    ///   chasing a longer deferral. See `CreateFlowDestination`'s own doc
+    ///   comment and task-13-report.md's create-and-finish investigation.
+    private func deliverFinish(_ intent: AttachIntent?) {
+        if matchPageAlreadyOpen {
+            dismiss()
+            DispatchQueue.main.async { onFinished(intent) }
+        } else {
+            onFinished(intent)
+        }
     }
 
     /// The one line the coach glances up at. An announcement outranks the running
@@ -380,10 +402,7 @@ struct ScoringView: View {
                     // before Done is reachable - but it stays wired the same way
                     // Android's does, for the undo-then-refinish case the comment
                     // on `addVideoAsked` describes.
-                    Button("Done") {
-                        dismiss()
-                        DispatchQueue.main.async { onFinished(nil) }
-                    }.buttonStyle(.borderedProminent)
+                    Button("Done") { deliverFinish(nil) }.buttonStyle(.borderedProminent)
                 }
             }
             .padding(.horizontal, 12)
