@@ -1,12 +1,16 @@
 package com.badmintontracker.android.match
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -15,6 +19,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -26,7 +33,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -37,24 +47,30 @@ import com.badmintontracker.android.cliplist.formatDate
 import com.badmintontracker.android.cliplist.topRallyName
 import com.badmintontracker.android.share.ShareSheet
 import com.badmintontracker.android.ui.components.ThemeToggleButton
+import com.badmintontracker.android.ui.shareText
 import com.badmintontracker.shared.model.MatchLabelSummary
 import com.badmintontracker.shared.model.RallyClip
 import com.badmintontracker.shared.prefs.ThemePreferenceRepository
 import com.badmintontracker.shared.repo.MediaRepository
 import com.badmintontracker.shared.repo.SharesRepository
+import com.badmintontracker.shared.scoring.exportMatchText
 import java.util.Locale
 
+/** Which half of a match page is on screen. Only meaningful when the match has both. */
+private enum class Facet { Points, Rallies }
+
 /**
- * One match, however it was made: today this renders only the rallies facet,
- * the points facet (score events, set summary) lands in the same list in the
- * next task. [summaryVm] is nullable because a match with no video has no
- * clips to summarise - see the caller for how the effective video id is
- * resolved.
+ * One match, however it was made: a video-first or shared match shows only the
+ * rallies facet, a scored match with no video shows only the points facet, and a
+ * match with both gets a selector between them. [summaryVm] is nullable because a
+ * match with no video has no clips to summarise - see the caller for how the
+ * effective video id is resolved.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MatchScreen(
     vm: ClipListViewModel,
+    matchVm: MatchViewModel,
     summaryVm: MatchSummaryViewModel?,
     media: MediaRepository,
     shares: SharesRepository,
@@ -63,16 +79,20 @@ fun MatchScreen(
     videoId: String?,
     onBack: () -> Unit,
     onClipClick: (RallyClip) -> Unit,
+    onScore: () -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val matchState by matchVm.state.collectAsStateWithLifecycle()
     val themeMode by themePrefs.mode.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     var sheetOpen by remember { mutableStateOf(false) }
     var sortMenuOpen by remember { mutableStateOf(false) }
+    var overflowOpen by remember { mutableStateOf(false) }
     var sort by remember { mutableStateOf(ClipSort.RallyOrder) }
     val summary by summaryVm?.summary?.collectAsStateWithLifecycle()
         ?: remember { mutableStateOf<MatchLabelSummary?>(null) }
     var summarySheetOpen by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     // A summary that goes away while its sheet is open must close the sheet, not
     // leave the flag standing to reopen it when the next summary arrives.
@@ -95,21 +115,40 @@ fun MatchScreen(
 
     val match = (state.ownedMatches + state.sharedMatches).firstOrNull { it.videoId == videoId }
     val clipsForMatch = sortClips(state.clips.filter { it.videoId == videoId }, sort)
+    val log = matchState.log
+
+    // Shown only when the match has both. A selector over one facet is a control
+    // that does nothing, and a match that has only rallies must look exactly like
+    // it did before this page existed.
+    val hasPoints = log != null
+    val hasRallies = clipsForMatch.isNotEmpty()
+    var facet by remember(hasPoints, hasRallies) {
+        mutableStateOf(if (hasPoints) Facet.Points else Facet.Rallies)
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    val titleText = match
-                        ?.let {
-                            it.title?.uppercase(Locale.ROOT)
-                                ?: "MATCH · ${formatDate(it.latestCreatedAt).uppercase(Locale.ROOT)}"
+                    when {
+                        // A match with a video - own its title, whether or not it
+                        // also has a score log. Matches the rallies-only screen this
+                        // page replaced.
+                        match != null -> {
+                            val titleText = match.title?.uppercase(Locale.ROOT)
+                                ?: "MATCH · ${formatDate(match.latestCreatedAt).uppercase(Locale.ROOT)}"
+                            Text(
+                                titleText,
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 14.sp),
+                            )
                         }
-                        ?: "RALLIES"
-                    Text(
-                        titleText,
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 14.sp),
-                    )
+                        // Score-only: same title as the screen this page replaced.
+                        log != null -> Text(log.title, maxLines = 1)
+                        else -> Text(
+                            "RALLIES",
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 14.sp),
+                        )
+                    }
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -117,32 +156,49 @@ fun MatchScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { sortMenuOpen = true }) {
-                        Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Sort")
-                    }
-                    DropdownMenu(expanded = sortMenuOpen, onDismissRequest = { sortMenuOpen = false }) {
-                        DropdownMenuItem(
-                            text = { Text("Rally order") },
-                            leadingIcon = {
-                                if (sort == ClipSort.RallyOrder) {
-                                    Icon(Icons.Default.Check, contentDescription = null)
-                                }
-                            },
-                            onClick = { sort = ClipSort.RallyOrder; sortMenuOpen = false },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Most notes") },
-                            leadingIcon = {
-                                if (sort == ClipSort.MostNotes) {
-                                    Icon(Icons.Default.Check, contentDescription = null)
-                                }
-                            },
-                            onClick = { sort = ClipSort.MostNotes; sortMenuOpen = false },
-                        )
+                    // The sort order only means something while rallies are on screen.
+                    if (facet == Facet.Rallies) {
+                        IconButton(onClick = { sortMenuOpen = true }) {
+                            Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Sort")
+                        }
+                        DropdownMenu(expanded = sortMenuOpen, onDismissRequest = { sortMenuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Rally order") },
+                                leadingIcon = {
+                                    if (sort == ClipSort.RallyOrder) {
+                                        Icon(Icons.Default.Check, contentDescription = null)
+                                    }
+                                },
+                                onClick = { sort = ClipSort.RallyOrder; sortMenuOpen = false },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Most notes") },
+                                leadingIcon = {
+                                    if (sort == ClipSort.MostNotes) {
+                                        Icon(Icons.Default.Check, contentDescription = null)
+                                    }
+                                },
+                                onClick = { sort = ClipSort.MostNotes; sortMenuOpen = false },
+                            )
+                        }
                     }
                     if (match?.isOwned == true) {
                         IconButton(onClick = { sheetOpen = true }) {
                             Icon(Icons.Default.Share, contentDescription = "Share match")
+                        }
+                    }
+                    if (log != null) {
+                        IconButton(onClick = { overflowOpen = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "Match options")
+                        }
+                        DropdownMenu(expanded = overflowOpen, onDismissRequest = { overflowOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Export as text") },
+                                onClick = {
+                                    overflowOpen = false
+                                    shareText(context, log.title, exportMatchText(log))
+                                },
+                            )
                         }
                     }
                     ThemeToggleButton(
@@ -154,22 +210,61 @@ fun MatchScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
+        // The score log this page was opened for is gone - deleted elsewhere while
+        // it was open, or never synced to this device. A video-first match with no
+        // log at all is not this state: `hasPoints` is false for it and it falls
+        // straight through to the rallies facet below, same as before this page
+        // existed.
+        if (scoreLogId != null && log == null && match == null) {
+            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                Text("This match is no longer on this phone.")
+            }
+            return@Scaffold
+        }
+
         PullToRefreshBox(
             isRefreshing = state.isRefreshing,
             onRefresh = { vm.refresh(); summaryVm?.refresh() },
             modifier = Modifier.padding(padding).fillMaxSize(),
         ) {
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
-                ralliesFacet(
-                    clips = clipsForMatch,
-                    summary = summary,
-                    matchTitle = match?.title,
-                    description = match?.description,
-                    media = media,
-                    isRefreshing = state.isRefreshing,
-                    onSummaryClick = { summarySheetOpen = true },
-                    onClipClick = onClipClick,
-                )
+            Column(Modifier.fillMaxSize()) {
+                if (hasPoints && hasRallies) {
+                    SingleChoiceSegmentedButtonRow(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    ) {
+                        listOf(Facet.Points to "Points", Facet.Rallies to "Rallies")
+                            .forEachIndexed { index, (candidate, label) ->
+                                SegmentedButton(
+                                    selected = facet == candidate,
+                                    onClick = { facet = candidate },
+                                    shape = SegmentedButtonDefaults.itemShape(index, 2),
+                                ) { Text(label) }
+                            }
+                    }
+                }
+
+                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    if (facet == Facet.Points && log != null) {
+                        pointsFacet(
+                            log = log,
+                            card = matchState.card,
+                            tally = matchState.tally,
+                            points = matchState.match?.points.orEmpty(),
+                            onScore = onScore,
+                        )
+                    } else {
+                        ralliesFacet(
+                            clips = clipsForMatch,
+                            summary = summary,
+                            matchTitle = match?.title,
+                            description = match?.description,
+                            media = media,
+                            isRefreshing = state.isRefreshing,
+                            onSummaryClick = { summarySheetOpen = true },
+                            onClipClick = onClipClick,
+                        )
+                    }
+                }
             }
         }
     }

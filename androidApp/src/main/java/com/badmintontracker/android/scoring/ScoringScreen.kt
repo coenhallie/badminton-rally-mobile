@@ -74,7 +74,7 @@ import com.badmintontracker.shared.scoring.rightCourtPlayer
  * side is on. Nothing here computes a rule.
  */
 @Composable
-fun ScoringScreen(vm: ScoringViewModel, onBack: () -> Unit) {
+fun ScoringScreen(vm: ScoringViewModel, onBack: () -> Unit, onDone: () -> Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
     KeepScreenOn()
 
@@ -140,7 +140,7 @@ fun ScoringScreen(vm: ScoringViewModel, onBack: () -> Unit) {
             onSetComment = { ordinal, text -> vm.setComment(ordinal, text) },
             onToggleNote = { noteOpen = !noteOpen },
             onUndo = { vm.undo() },
-            onDone = onBack,
+            onDone = onDone,
         )
     }
 

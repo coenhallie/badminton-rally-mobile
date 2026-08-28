@@ -29,6 +29,7 @@ import com.badmintontracker.android.cliplist.ClipListScreen
 import com.badmintontracker.android.cliplist.ClipListViewModel
 import com.badmintontracker.android.cliplist.MatchSummaryViewModel
 import com.badmintontracker.android.match.MatchScreen
+import com.badmintontracker.android.match.MatchViewModel
 import com.badmintontracker.shared.prefs.ThemePreferenceRepository
 import com.badmintontracker.android.localvideo.LocalPlayerScreen
 import com.badmintontracker.android.localvideo.LocalPlayerViewModel
@@ -42,8 +43,6 @@ import com.badmintontracker.android.labels.LabelsViewModel
 import com.badmintontracker.android.nav.Route
 import com.badmintontracker.android.scoring.NewMatchScreen
 import com.badmintontracker.android.scoring.NewMatchViewModel
-import com.badmintontracker.android.scoring.ScoreMatchScreen
-import com.badmintontracker.android.scoring.ScoreMatchViewModel
 import com.badmintontracker.android.scoring.ScoringScreen
 import com.badmintontracker.android.scoring.ScoringViewModel
 import com.badmintontracker.android.signin.SignInScreen
@@ -135,7 +134,7 @@ fun AuthGate(
                         shares = rally.shares,
                         themePrefs = themePrefs,
                         onMatchClick = { nav.navigate(Route.Match(videoId = it.videoId)) },
-                        onScoreMatchClick = { nav.navigate(Route.ScoreMatch(it.scoreLogId)) },
+                        onScoreMatchClick = { nav.navigate(Route.Match(scoreLogId = it.scoreLogId)) },
                         onNewMatch = { nav.navigate(Route.NewMatch) },
                         localRows = localRows,
                         intakeError = intakeError,
@@ -204,19 +203,6 @@ fun AuthGate(
                         onBack = { nav.popBackStack() },
                     )
                 }
-                composable<Route.ScoreMatch> { entry ->
-                    val args = entry.toRoute<Route.ScoreMatch>()
-                    val vm: ScoreMatchViewModel = viewModel(
-                        factory = viewModelFactory {
-                            initializer { ScoreMatchViewModel(rally.scoreLogs, args.scoreLogId) }
-                        }
-                    )
-                    ScoreMatchScreen(
-                        vm = vm,
-                        onBack = { nav.popBackStack() },
-                        onScore = { nav.navigate(Route.Scoring(args.scoreLogId)) },
-                    )
-                }
                 composable<Route.Scoring> { entry ->
                     val args = entry.toRoute<Route.Scoring>()
                     val vm: ScoringViewModel = viewModel(
@@ -226,7 +212,20 @@ fun AuthGate(
                             }
                         }
                     )
-                    ScoringScreen(vm = vm, onBack = { nav.popBackStack() })
+                    ScoringScreen(
+                        vm = vm,
+                        onBack = { nav.popBackStack() },
+                        // "Done" lands on the match page rather than popping back,
+                        // because a match just created and scored in one sitting
+                        // (NewMatch -> Scoring, no Match page underneath yet) has
+                        // nothing to pop back to. Collapsing to ClipList first
+                        // keeps a single Match entry on the stack either way.
+                        onDone = {
+                            nav.navigate(Route.Match(scoreLogId = args.scoreLogId)) {
+                                popUpTo(Route.ClipList) { inclusive = false }
+                            }
+                        },
+                    )
                 }
                 composable<Route.Labels> {
                     val vm: LabelsViewModel = viewModel(
@@ -254,8 +253,15 @@ fun AuthGate(
                             }
                         )
                     }
+                    val matchVm: MatchViewModel = viewModel(
+                        key = args.scoreLogId,
+                        factory = viewModelFactory {
+                            initializer { MatchViewModel(rally.scoreLogs, args.scoreLogId) }
+                        }
+                    )
                     MatchScreen(
                         vm = clipListVm,
+                        matchVm = matchVm,
                         summaryVm = summaryVm,
                         media = rally.media,
                         shares = rally.shares,
@@ -264,6 +270,9 @@ fun AuthGate(
                         videoId = effectiveVideoId,
                         onBack = { nav.popBackStack() },
                         onClipClick = { nav.navigate(Route.ClipDetail(it.id)) },
+                        onScore = {
+                            args.scoreLogId?.let { nav.navigate(Route.Scoring(it)) }
+                        },
                     )
                 }
                 composable<Route.ClipDetail> { entry ->
