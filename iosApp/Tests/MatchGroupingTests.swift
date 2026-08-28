@@ -202,6 +202,7 @@ final class MatchGroupingTests: XCTestCase {
     private func scoreCard(_ id: String, at millis: Int64) -> ScoreMatchCard {
         ScoreMatchCard(
             scoreLogId: id,
+            videoId: nil,
             title: "Thu League",
             createdAtEpochMs: millis,
             playersLine: "Coen vs Marco",

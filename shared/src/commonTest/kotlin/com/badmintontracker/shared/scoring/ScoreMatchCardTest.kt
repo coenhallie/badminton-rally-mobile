@@ -127,4 +127,35 @@ class ScoreMatchCardTest {
         val card = buildScoreMatchCard(log(status = ScoreLogStatus.BOUND, videoId = "vid-1"))
         card.hasVideo shouldBe true
     }
+
+    @Test
+    fun a_match_ended_early_by_hand_does_not_claim_to_still_be_in_progress() {
+        // Reachable through "Finish match" in the board's overflow: status goes
+        // UNBOUND with nobody having won. isLive read the fold, not the status, so
+        // this match said "Scoring" on its record page and on its list row.
+        val card = buildScoreMatchCard(log(toScore(5, 3), status = ScoreLogStatus.UNBOUND))
+        card.isLive shouldBe false
+        card.statusLine shouldBe "Ended early"
+    }
+
+    @Test
+    fun a_match_the_rules_have_ended_is_not_playable_even_while_still_marked_live() {
+        // The board's Done button navigates without finishing, on purpose: undo has
+        // to stay reachable for a match that ended on a mis-tap. So a won match can
+        // still be LIVE, and "can another point be scored" is the real question.
+        val card = buildScoreMatchCard(log(toScore(21, 18) + toScore(21, 15), status = ScoreLogStatus.LIVE))
+        card.isLive shouldBe false
+    }
+
+    @Test
+    fun a_match_being_scored_right_now_is_live() {
+        buildScoreMatchCard(log(toScore(5, 3), status = ScoreLogStatus.LIVE)).isLive shouldBe true
+    }
+
+    @Test
+    fun the_card_carries_the_video_id_so_a_list_can_fold_the_two_rows_together() {
+        val card = buildScoreMatchCard(log(status = ScoreLogStatus.BOUND, videoId = "vid-1"))
+        card.videoId shouldBe "vid-1"
+        card.hasVideo shouldBe true
+    }
 }

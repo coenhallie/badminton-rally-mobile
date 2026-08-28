@@ -27,6 +27,7 @@ class MatchRowMergeTest {
 
     private fun scoreMatch(id: String, atMillis: Long) = ScoreMatchCard(
         scoreLogId = id,
+        videoId = null,
         title = "Thu League",
         createdAtEpochMs = atMillis,
         playersLine = "Coen vs Marco",

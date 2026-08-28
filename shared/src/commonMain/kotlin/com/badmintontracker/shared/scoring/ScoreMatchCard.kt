@@ -11,6 +11,8 @@ package com.badmintontracker.shared.scoring
  */
 data class ScoreMatchCard(
     val scoreLogId: String,
+    /** The video attached to this match, or null. The list folds rows on it. */
+    val videoId: String?,
     val title: String,
     val createdAtEpochMs: Long,
     /** "Coen vs Marco", or "Coen / Ana vs Marco / Li". */
@@ -42,21 +44,37 @@ fun scoreLine(state: MatchState): String {
     return if (parts.isEmpty()) "Not started" else parts.joinToString(", ")
 }
 
+/**
+ * Whether another point can still be scored on this match.
+ *
+ * Not the same as `status == LIVE`. The board's Done button navigates without
+ * finishing, deliberately, so that a match ended on a mis-tap can still be undone
+ * - which leaves a won match sitting at LIVE. And "Finish match" in the overflow
+ * leaves an UNBOUND match with no winner. This is the predicate every surface
+ * should ask, rather than either half of it.
+ */
+fun ScoreLog.isPlayable(): Boolean =
+    status == ScoreLogStatus.LIVE && !state().isOver
+
 fun buildScoreMatchCard(log: ScoreLog): ScoreMatchCard {
     val state = log.state()
     val winner = state.winner
     return ScoreMatchCard(
         scoreLogId = log.id,
+        videoId = log.videoId,
         title = log.title,
         createdAtEpochMs = log.createdAt.toEpochMilliseconds(),
         playersLine = "${sideLabel(log.homePlayers)} vs ${sideLabel(log.awayPlayers)}",
         scoreLine = scoreLine(state),
-        statusLine = when (winner) {
-            null -> "Scoring"
-            Side.HOME -> "${sideLabel(log.homePlayers)} won"
-            Side.AWAY -> "${sideLabel(log.awayPlayers)} won"
+        statusLine = when {
+            winner == Side.HOME -> "${sideLabel(log.homePlayers)} won"
+            winner == Side.AWAY -> "${sideLabel(log.awayPlayers)} won"
+            log.isPlayable() -> "Scoring"
+            // Closed by hand before anyone won. The score line above already says
+            // where it stopped, so this only has to say that it did.
+            else -> "Ended early"
         },
-        isLive = winner == null,
+        isLive = log.isPlayable(),
         hasVideo = log.videoId != null,
     )
 }
