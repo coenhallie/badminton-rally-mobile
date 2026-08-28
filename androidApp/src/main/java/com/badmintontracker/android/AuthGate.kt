@@ -27,8 +27,8 @@ import com.badmintontracker.android.clipdetail.ClipDetailScreen
 import com.badmintontracker.android.clipdetail.ClipDetailViewModel
 import com.badmintontracker.android.cliplist.ClipListScreen
 import com.badmintontracker.android.cliplist.ClipListViewModel
-import com.badmintontracker.android.cliplist.MatchClipsScreen
 import com.badmintontracker.android.cliplist.MatchSummaryViewModel
+import com.badmintontracker.android.match.MatchScreen
 import com.badmintontracker.shared.prefs.ThemePreferenceRepository
 import com.badmintontracker.android.localvideo.LocalPlayerScreen
 import com.badmintontracker.android.localvideo.LocalPlayerViewModel
@@ -134,7 +134,7 @@ fun AuthGate(
                         media = rally.media,
                         shares = rally.shares,
                         themePrefs = themePrefs,
-                        onMatchClick = { nav.navigate(Route.MatchClips(it.videoId)) },
+                        onMatchClick = { nav.navigate(Route.Match(videoId = it.videoId)) },
                         onScoreMatchClick = { nav.navigate(Route.ScoreMatch(it.scoreLogId)) },
                         onNewMatch = { nav.navigate(Route.NewMatch) },
                         localRows = localRows,
@@ -234,27 +234,34 @@ fun AuthGate(
                     )
                     LabelsScreen(vm = vm, onBack = { nav.popBackStack() })
                 }
-                composable<Route.MatchClips> { entry ->
-                    val args = entry.toRoute<Route.MatchClips>()
+                composable<Route.Match> { entry ->
+                    val args = entry.toRoute<Route.Match>()
                     val clipListVm: ClipListViewModel = viewModel(
                         factory = viewModelFactory {
                             initializer { ClipListViewModel(rally.clips, rally.auth, rally.shares, rally.videos, rally.scoreLogs, localVideos, coordinator) }
                         }
                     )
-                    val summaryVm: MatchSummaryViewModel = viewModel(
-                        factory = viewModelFactory {
-                            initializer {
-                                MatchSummaryViewModel(rally.clips, rally.annotations, args.videoId)
+                    val logs by rally.scoreLogs.logs.collectAsStateWithLifecycle()
+                    // The score log is authoritative: a match bound after this page
+                    // was opened must start showing its rallies without a re-entry.
+                    val effectiveVideoId = args.videoId
+                        ?: logs.firstOrNull { it.id == args.scoreLogId }?.videoId
+                    val summaryVm: MatchSummaryViewModel? = effectiveVideoId?.let { vid ->
+                        viewModel(
+                            key = vid,
+                            factory = viewModelFactory {
+                                initializer { MatchSummaryViewModel(rally.clips, rally.annotations, vid) }
                             }
-                        }
-                    )
-                    MatchClipsScreen(
+                        )
+                    }
+                    MatchScreen(
                         vm = clipListVm,
                         summaryVm = summaryVm,
                         media = rally.media,
                         shares = rally.shares,
-                        videoId = args.videoId,
                         themePrefs = themePrefs,
+                        scoreLogId = args.scoreLogId,
+                        videoId = effectiveVideoId,
                         onBack = { nav.popBackStack() },
                         onClipClick = { nav.navigate(Route.ClipDetail(it.id)) },
                     )

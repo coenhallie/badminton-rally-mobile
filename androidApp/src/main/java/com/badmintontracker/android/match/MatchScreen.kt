@@ -1,10 +1,8 @@
-package com.badmintontracker.android.cliplist
+package com.badmintontracker.android.match
 
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
@@ -13,7 +11,6 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -29,29 +26,41 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.badmintontracker.shared.prefs.ThemePreferenceRepository
+import com.badmintontracker.android.cliplist.ClipListViewModel
+import com.badmintontracker.android.cliplist.MatchSummaryViewModel
+import com.badmintontracker.android.cliplist.MatchSummarySheet
+import com.badmintontracker.android.cliplist.formatDate
+import com.badmintontracker.android.cliplist.topRallyName
 import com.badmintontracker.android.share.ShareSheet
 import com.badmintontracker.android.ui.components.ThemeToggleButton
+import com.badmintontracker.shared.model.MatchLabelSummary
 import com.badmintontracker.shared.model.RallyClip
+import com.badmintontracker.shared.prefs.ThemePreferenceRepository
 import com.badmintontracker.shared.repo.MediaRepository
 import com.badmintontracker.shared.repo.SharesRepository
 import java.util.Locale
 
+/**
+ * One match, however it was made: today this renders only the rallies facet,
+ * the points facet (score events, set summary) lands in the same list in the
+ * next task. [summaryVm] is nullable because a match with no video has no
+ * clips to summarise - see the caller for how the effective video id is
+ * resolved.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MatchClipsScreen(
+fun MatchScreen(
     vm: ClipListViewModel,
-    summaryVm: MatchSummaryViewModel,
+    summaryVm: MatchSummaryViewModel?,
     media: MediaRepository,
     shares: SharesRepository,
-    videoId: String,
     themePrefs: ThemePreferenceRepository,
+    scoreLogId: String?,
+    videoId: String?,
     onBack: () -> Unit,
     onClipClick: (RallyClip) -> Unit,
 ) {
@@ -61,7 +70,8 @@ fun MatchClipsScreen(
     var sheetOpen by remember { mutableStateOf(false) }
     var sortMenuOpen by remember { mutableStateOf(false) }
     var sort by remember { mutableStateOf(ClipSort.RallyOrder) }
-    val summary by summaryVm.summary.collectAsStateWithLifecycle()
+    val summary by summaryVm?.summary?.collectAsStateWithLifecycle()
+        ?: remember { mutableStateOf<MatchLabelSummary?>(null) }
     var summarySheetOpen by remember { mutableStateOf(false) }
 
     // A summary that goes away while its sheet is open must close the sheet, not
@@ -73,7 +83,7 @@ fun MatchClipsScreen(
     // Covers the case the clip-set trigger cannot see: a note added inside
     // ClipDetail and then a back press.
     LifecycleResumeEffect(Unit) {
-        summaryVm.refresh()
+        summaryVm?.refresh()
         onPauseOrDispose { }
     }
 
@@ -146,46 +156,25 @@ fun MatchClipsScreen(
     ) { padding ->
         PullToRefreshBox(
             isRefreshing = state.isRefreshing,
-            onRefresh = { vm.refresh(); summaryVm.refresh() },
+            onRefresh = { vm.refresh(); summaryVm?.refresh() },
             modifier = Modifier.padding(padding).fillMaxSize(),
         ) {
-            if (clipsForMatch.isEmpty() && !state.isRefreshing) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No rallies in this match.")
-                }
-            } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    val currentSummary = summary
-                    if (currentSummary != null && !currentSummary.isEmpty) {
-                        item(key = "match-label-summary") {
-                            MatchLabelStrip(
-                                summary = currentSummary,
-                                onClick = { summarySheetOpen = true },
-                            )
-                            HorizontalDivider()
-                        }
-                    }
-                    match?.description?.let { description ->
-                        item(key = "match-description") {
-                            Text(
-                                text = description,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                            )
-                            HorizontalDivider()
-                        }
-                    }
-                    items(clipsForMatch, key = { it.id }) { clip ->
-                        ClipRow(clip, media, onClick = { onClipClick(clip) }, matchTitle = match?.title)
-                        HorizontalDivider()
-                    }
-                }
+            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                ralliesFacet(
+                    clips = clipsForMatch,
+                    summary = summary,
+                    matchTitle = match?.title,
+                    description = match?.description,
+                    media = media,
+                    isRefreshing = state.isRefreshing,
+                    onSummaryClick = { summarySheetOpen = true },
+                    onClipClick = onClipClick,
+                )
             }
         }
     }
 
-    if (sheetOpen) {
+    if (sheetOpen && videoId != null) {
         ShareSheet(
             videoId = videoId,
             sharesRepository = shares,
@@ -209,13 +198,4 @@ fun MatchClipsScreen(
             onDismiss = { summarySheetOpen = false },
         )
     }
-}
-
-enum class ClipSort { RallyOrder, MostNotes }
-
-fun sortClips(clips: List<RallyClip>, sort: ClipSort): List<RallyClip> = when (sort) {
-    ClipSort.RallyOrder -> clips.sortedBy { it.rallyIndex }
-    ClipSort.MostNotes -> clips.sortedWith(
-        compareByDescending<RallyClip> { it.annotationCount }.thenBy { it.rallyIndex },
-    )
 }

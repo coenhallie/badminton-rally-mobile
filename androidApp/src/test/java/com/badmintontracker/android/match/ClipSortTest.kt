@@ -1,4 +1,4 @@
-package com.badmintontracker.android.cliplist
+package com.badmintontracker.android.match
 
 import com.badmintontracker.shared.model.RallyClip
 import io.kotest.matchers.shouldBe
