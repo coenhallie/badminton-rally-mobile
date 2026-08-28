@@ -206,6 +206,43 @@ class ScoreLogsRepositoryTest {
         repo.get(created.id).shouldBeNull()
     }
 
+    @Test
+    fun attaching_a_video_binds_the_match_and_survives_a_relaunch() {
+        val settings = MapSettings()
+        val created = repo(settings).newMatch()
+        repo(settings).attachVideo(created.id, "vid-1")
+
+        val reopened = repo(settings).get(created.id)
+        reopened?.videoId shouldBe "vid-1"
+        reopened?.status shouldBe ScoreLogStatus.BOUND
+    }
+
+    @Test
+    fun detaching_leaves_the_match_unbound_and_keeps_every_point() {
+        // The whole reason score_logs owns the foreign key: delete_match cascades
+        // rally_annotations away, so this row is where the coach's courtside work
+        // still exists once the video is gone.
+        val repo = repo()
+        val created = repo.newMatch()
+        repo.replaceEvents(created.id, listOf(ScoreEvent.PointTo(Side.HOME)))
+        repo.attachVideo(created.id, "vid-1")
+
+        repo.detachVideo(created.id)
+
+        val after = repo.get(created.id)
+        after?.videoId.shouldBeNull()
+        after?.status shouldBe ScoreLogStatus.UNBOUND
+        after?.state()?.currentGame shouldBe SideScore(home = 1, away = 0)
+    }
+
+    @Test
+    fun attaching_or_detaching_a_match_that_is_gone_is_a_no_op() {
+        val repo = repo()
+        repo.attachVideo("nope", "vid-1")
+        repo.detachVideo("nope")
+        repo.logs.value.shouldBeEmpty()
+    }
+
     /**
      * A fake server that keeps whatever was last upserted and hands it back on the
      * next read. Echoing rather than returning a canned list is what makes the
@@ -251,6 +288,23 @@ class ScoreLogsRepositoryTest {
         // this the app re-uploads every match it has ever scored on every refresh.
         repo.sync().isSuccess shouldBe true
         server.posts().shouldHaveSize(1)
+    }
+
+    @Test
+    fun a_binding_is_pushed_to_the_server_like_any_other_change() = runTest {
+        // It is only ever written after CREATE_ROW, so by the time this pushes, the
+        // videos row the foreign key points at exists.
+        val server = FakeScoreLogsServer()
+        val repo = syncingRepo(server)
+        val created = repo.newMatch()
+        repo.sync().isSuccess shouldBe true
+
+        repo.attachVideo(created.id, "vid-1")
+        repo.sync().isSuccess shouldBe true
+
+        server.posts().shouldHaveSize(2)
+        server.posts().last().second.shouldContain(""""video_id":"vid-1"""")
+        server.posts().last().second.shouldContain(""""status":"bound"""")
     }
 
     @Test

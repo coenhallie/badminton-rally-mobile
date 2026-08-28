@@ -139,6 +139,24 @@ class ScoreLogsRepository internal constructor(
     fun finish(id: String) =
         edit(id) { it.copy(status = ScoreLogStatus.UNBOUND) }
 
+    /**
+     * Binds this match to a video. Called only once the videos row is known to
+     * exist: score_logs.video_id has a foreign key to it, and sync() upserts every
+     * dirty row in a single call, so pushing a binding early would stop every match
+     * on the phone from syncing rather than just this one.
+     */
+    fun attachVideo(id: String, videoId: String) =
+        edit(id) { it.copy(videoId = videoId, status = ScoreLogStatus.BOUND) }
+
+    /**
+     * Takes the video away and leaves the points. Mirrors what the database does on
+     * its own when a video is deleted (the ON DELETE SET NULL plus the
+     * unbind_score_log_on_video_delete trigger), so that the phone does not go on
+     * advertising clips for a video that is gone until the next sync.
+     */
+    fun detachVideo(id: String) =
+        edit(id) { it.copy(videoId = null, status = ScoreLogStatus.UNBOUND) }
+
     /** Drops a match from this device without touching the server. Used by [delete] and by sign-out. */
     fun removeLocally(id: String) = mutate { list -> list.filterNot { it.log.id == id } }
 
