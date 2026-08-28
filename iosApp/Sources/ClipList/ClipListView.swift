@@ -9,7 +9,6 @@ struct ClipListView: View {
     @State private var confirmTarget: PendingMatchAction? = nil
     @State private var intake: LocalVideoIntake
     @State private var thumbnails = LocalThumbnails()
-    @State private var localEntries: [LocalVideoEntry] = []
     @State private var showImporter = false
     @State private var showRecorder = false
     @State private var progressById: [String: AnalyzeProgress] = [:]
@@ -77,14 +76,20 @@ struct ClipListView: View {
             }
         }
         .task {
-            if model == nil { model = ClipListModel(rally: rally) }
+            if model == nil { model = ClipListModel(rally: rally, analyze: analyze) }
             await model?.start()
         }
         .task {
+            // Drives only the auto-alert side effect. `model.localEntries` (fed by
+            // its own subscription to this same flow) is the list's source of
+            // truth for rendering, so this loop must not keep a second copy that
+            // could momentarily disagree with it.
             for await entries in rally.localVideos.entries {
-                localEntries = entries
                 if resultEntry == nil {
-                    resultEntry = entries.first { $0.stage == .failed && !$0.resultSeen }
+                    // A video claimed by a match is that match's row, not a
+                    // standalone one - see `standalone` in `content(_:)`.
+                    resultEntry = entries.filter { $0.scoreLogId == nil }
+                        .first { $0.stage == .failed && !$0.resultSeen }
                 }
             }
         }
@@ -176,10 +181,14 @@ struct ClipListView: View {
 
     @ViewBuilder
     private func content(_ model: ClipListModel) -> some View {
-        List {
-            if !localEntries.isEmpty {
+        // A video picked for a match is represented by that match's row
+        // (MatchRow.score's `video`). Listing it again here under "On this
+        // phone" would be the same match twice.
+        let standalone = model.localEntries.filter { $0.scoreLogId == nil }
+        return List {
+            if !standalone.isEmpty {
                 Section {
-                    ForEach(localEntries) { entry in
+                    ForEach(standalone) { entry in
                         LocalVideoRowView(
                             entry: entry,
                             thumbnails: thumbnails,
@@ -226,10 +235,10 @@ struct ClipListView: View {
                                     }
                                     .tint(.red)
                                 }
-                        case .score(let card):
-                            scoreRow(card)
+                        case .score(let content):
+                            scoreRow(content, model: model)
                                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                    Button { deleteScoreTarget = card } label: {
+                                    Button { deleteScoreTarget = content.card } label: {
                                         Label("Delete", systemImage: "trash")
                                     }
                                     .tint(.red)
@@ -253,7 +262,7 @@ struct ClipListView: View {
                     }
                 } header: { Shuttl.sectionLabel("Shared with me") }
             }
-            if localEntries.isEmpty && model.ownedRows.isEmpty && model.shared.isEmpty && !model.isRefreshing {
+            if standalone.isEmpty && model.ownedRows.isEmpty && model.shared.isEmpty && !model.isRefreshing {
                 Text("No matches yet. Score one or record a video with the + button above.")
                     .foregroundStyle(Shuttl.textSecondary)
             }
@@ -371,20 +380,42 @@ struct ClipListView: View {
         }
     }
 
-    /// A match scored courtside. Same 96x54 leading slot, same 12pt spacing and the
-    /// same three text lines as `row(_:model:)`: a row a few points shorter than its
-    /// neighbour reads as a bug.
+    /// A match scored courtside, with whatever video it has acquired. Same 96x54
+    /// leading slot, same 12pt spacing and the same three text lines as
+    /// `row(_:model:)`: a row a few points shorter than its neighbour reads as a bug.
     @ViewBuilder
-    private func scoreRow(_ card: ScoreMatchCard) -> some View {
+    private func scoreRow(_ content: ScoreRowContent, model: ClipListModel) -> some View {
+        let card = content.card
+        // The local entry behind a court-marking / retry action, while it still
+        // exists. Looked up rather than carried on ScoreRowContent because it is a
+        // UI-only need - the merge itself only cares about the attach status text.
+        let entry = model.localEntries.first { $0.scoreLogId == card.scoreLogId }
+
         NavigationLink(value: ScoreMatchRoute(scoreLogId: card.scoreLogId)) {
             HStack(spacing: 12) {
-                ZStack {
-                    Shuttl.bgTertiary
-                    Image(systemName: "list.number")
-                        .foregroundStyle(Shuttl.textSecondary)
+                Group {
+                    if let video = content.video, let url = model.thumbnailUrls[video.coverClipId] {
+                        AsyncImage(url: url) { image in
+                            image.resizable().aspectRatio(contentMode: .fill)
+                        } placeholder: {
+                            Shuttl.bgTertiary
+                        }
+                    } else {
+                        ZStack {
+                            Shuttl.bgTertiary
+                            Image(systemName: "list.number")
+                                .foregroundStyle(Shuttl.textSecondary)
+                        }
+                    }
                 }
                 .frame(width: 96, height: 54)
                 .clipped()
+                // Keyed on the video id, not a plain `.task`: a row visible while
+                // its clips are still arriving must re-fetch once `content.video`
+                // goes from nil to non-nil, not just once on first appearance.
+                .task(id: content.video?.videoId) {
+                    if let video = content.video { await model.thumbnail(forCoverOf: video) }
+                }
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(card.title)
@@ -399,17 +430,68 @@ struct ClipListView: View {
                         .font(.footnote)
                         .foregroundStyle(Shuttl.textSecondary)
                         .lineLimit(1)
+                    if let attach = content.attach {
+                        Text(attach.text)
+                            .font(.footnote)
+                            // Shuttl.error rather than a literal red: it is the
+                            // same token Android reaches for (colorScheme.error)
+                            // for this line.
+                            .foregroundStyle(attach.kind == .failed ? Shuttl.error : Shuttl.textSecondary)
+                            .lineLimit(2)
+                    }
                 }
                 Spacer()
-                // Present but disabled, with the reason in its accessibility label:
-                // match_shares is keyed on video_id, so a score-only match cannot be
-                // shared. An explicit disabled state teaches the rule.
-                Button {} label: {
-                    Image(systemName: "square.and.arrow.up")
+                switch content.attach?.kind {
+                case .courtNotMarked:
+                    Button("Mark court") {
+                        if let entry { navigationTarget = CourtMarkingRoute(entryId: entry.id) }
+                    }
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.black)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .layoutPriority(1)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Shuttl.accent)
+                    .buttonStyle(.borderless)
+                case .failed:
+                    Button("Retry") {
+                        if let entry { analyze.retry(entryId: entry.id) }
+                    }
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.black)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .layoutPriority(1)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Shuttl.accent)
+                    .buttonStyle(.borderless)
+                case .uploading, .clipping, .finishingUp:
+                    // Boxed to the same 44x44 footprint as the share button
+                    // below, so the trailing slot doesn't shift width the
+                    // moment the pipeline finishes and the row flips to nil.
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(width: 44, height: 44)
+                case nil:
+                    // Present but disabled, with the reason in its accessibility
+                    // label: match_shares is keyed on video_id, so a score-only
+                    // match cannot be shared. An explicit disabled state teaches
+                    // the rule.
+                    Button {
+                        if let video = content.video { shareTarget = video }
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                    .frame(width: 44, height: 44)
+                    .buttonStyle(.borderless)
+                    .disabled(content.video == nil)
+                    .accessibilityLabel(
+                        content.video != nil ? "Share match" : "Add a video to share this match"
+                    )
                 }
-                .buttonStyle(.borderless)
-                .disabled(true)
-                .accessibilityLabel("Add a video to share this match")
             }
         }
     }

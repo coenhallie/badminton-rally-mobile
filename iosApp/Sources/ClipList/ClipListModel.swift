@@ -4,28 +4,57 @@ import Shared
 @Observable @MainActor
 final class ClipListModel {
     let rally: RallyApp
+    let analyze: AnalyzeCoordinator
     private(set) var clips: [RallyClip] = []
     private(set) var owned: [MatchSummary] = []
     private(set) var shared: [MatchSummary] = []
     /// What the owned section renders: video-backed and courtside-scored matches
     /// interleaved by date. `owned` stays as it is so nothing that reads it changes.
     private(set) var ownedRows: [MatchRow] = []
+    /// The single source of truth for every video on this phone. `ClipListView`
+    /// reads this rather than keeping its own copy, so the "On this phone" list and
+    /// the attach status this model derives from the same entries can never disagree.
+    private(set) var localEntries: [LocalVideoEntry] = []
     private(set) var thumbnailUrls: [String: URL] = [:]   // clipId -> signed URL
     var isRefreshing = false
     var error: String? = nil
     private var sharerByVideoId: [String: String] = [:]
     private var metadataByVideoId: [String: MatchMetadata] = [:]
     private var scoreCards: [ScoreMatchCard] = []
+    /// Kept alongside `scoreCards` because `attachStatus` needs each log's `videoId`,
+    /// which the card does carry, but also needs to be matched back to its own log id.
+    private var scoreLogs: [ScoreLog] = []
+    private var uploadPercentByEntryId: [String: Int] = [:]
 
-    init(rally: RallyApp) { self.rally = rally }
+    init(rally: RallyApp, analyze: AnalyzeCoordinator) {
+        self.rally = rally
+        self.analyze = analyze
+    }
 
     func start() async {
         Task { await refresh() }
-        // Its own task: the clips loop below never returns, so anything after it
-        // would never run.
+        // Each its own task: the clips loop at the bottom never returns, so
+        // anything sequenced after it would never run.
         Task {
             for await logs in rally.scoreLogs.logs {
+                scoreLogs = logs
                 scoreCards = logs.map { ScoreMatchCardKt.buildScoreMatchCard(log: $0) }
+                regroup()
+            }
+        }
+        Task {
+            for await entries in rally.localVideos.entries {
+                localEntries = entries
+                regroup()
+            }
+        }
+        Task {
+            for await map in analyze.progress {
+                let progress = (map as? [String: AnalyzeProgress]) ?? [:]
+                // Truncates rather than rounds, matching Kotlin's `(it * 100).toInt()`.
+                uploadPercentByEntryId = progress.compactMapValues { entry in
+                    (entry.uploadProgress?.floatValue).map { Int($0 * 100) }
+                }
                 regroup()
             }
         }
@@ -103,6 +132,28 @@ final class ClipListModel {
         }
     }
 
+    /// What each scored match's video is doing, keyed by score log id. Mirrors
+    /// Android's `ClipListViewModel.attachStatuses`: needs the score logs
+    /// themselves (for `videoId`), each match's local entry, the coordinator's
+    /// transient upload progress, and how many clips the match already has.
+    private func attachMap() -> [String: AttachStatus] {
+        var result: [String: AttachStatus] = [:]
+        for log in scoreLogs {
+            let entry = localEntries.first { $0.scoreLogId == log.id }
+            let percent = entry.flatMap { uploadPercentByEntryId[$0.id] }
+            let clipCount = clips.filter { $0.videoId == log.videoId }.count
+            if let status = AttachStatusKt.attachStatus(
+                hasVideo: log.videoId != nil,
+                entry: entry,
+                uploadPercent: percent.map { KotlinInt(int: Int32($0)) },
+                clipCount: Int32(clipCount)
+            ) {
+                result[log.id] = status
+            }
+        }
+        return result
+    }
+
     private func regroup() {
         let infos = clips.map(ClipInfo.init)
         let result = MatchGrouping.matches(
@@ -113,6 +164,10 @@ final class ClipListModel {
         )
         owned = result.owned
         shared = result.shared
-        ownedRows = mergeMatchRows(videoMatches: owned, scoreMatches: scoreCards)
+        ownedRows = mergeMatchRows(
+            videoMatches: owned,
+            scoreMatches: scoreCards,
+            attachByScoreLogId: attachMap()
+        )
     }
 }

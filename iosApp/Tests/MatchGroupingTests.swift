@@ -199,23 +199,26 @@ final class MatchGroupingTests: XCTestCase {
         )
     }
 
-    private func scoreCard(_ id: String, at millis: Int64) -> ScoreMatchCard {
+    // Named (and parameter-ordered) to match Android's `scoreMatch`/`videoMatch`
+    // helpers in MatchRowMergeTest.kt exactly - the cross-platform check this
+    // project relies on extends to test fixtures, not only test names.
+    private func scoreMatch(_ id: String, _ atMillis: Int64, videoId: String? = nil) -> ScoreMatchCard {
         ScoreMatchCard(
             scoreLogId: id,
-            videoId: nil,
+            videoId: videoId,
             title: "Thu League",
-            createdAtEpochMs: millis,
+            createdAtEpochMs: atMillis,
             playersLine: "Coen vs Marco",
             scoreLine: "11-9",
             statusLine: "Scoring",
             isLive: true,
-            hasVideo: false
+            hasVideo: videoId != nil
         )
     }
 
-    private func videoSummary(_ videoId: String, at millis: Int64) -> MatchSummary {
+    private func videoMatch(_ videoId: String, _ atMillis: Int64) -> MatchSummary {
         MatchSummary(
-            videoId: videoId, rallyCount: 3, latestCreatedAtMillis: millis,
+            videoId: videoId, rallyCount: 3, latestCreatedAtMillis: atMillis,
             coverClipId: "c-\(videoId)", isOwned: true, sharerEmail: nil,
             title: nil, description: nil
         )
@@ -223,32 +226,77 @@ final class MatchGroupingTests: XCTestCase {
 
     func testScoredAndVideoMatchesInterleaveByDate() {
         let rows = mergeMatchRows(
-            videoMatches: [videoSummary("v1", at: 300), videoSummary("v2", at: 100)],
-            scoreMatches: [scoreCard("s1", at: 200)]
+            videoMatches: [videoMatch("v1", 300), videoMatch("v2", 100)],
+            scoreMatches: [scoreMatch("s1", 200)],
+            attachByScoreLogId: [:]
         )
         XCTAssertEqual(rows.map(\.id), ["video-v1", "score-s1", "video-v2"])
     }
 
     func testTiesKeepAFixedOrderMatchingAndroid() {
         let rows = mergeMatchRows(
-            videoMatches: [videoSummary("v1", at: 100)],
-            scoreMatches: [scoreCard("s1", at: 100)]
+            videoMatches: [videoMatch("v1", 100)],
+            scoreMatches: [scoreMatch("s1", 100)],
+            attachByScoreLogId: [:]
         )
         XCTAssertEqual(rows.map(\.id), ["score-s1", "video-v1"])
     }
 
     func testKeysFromTheTwoKindsCannotCollide() {
         let rows = mergeMatchRows(
-            videoMatches: [videoSummary("same", at: 100)],
-            scoreMatches: [scoreCard("same", at: 200)]
+            videoMatches: [videoMatch("same", 100)],
+            scoreMatches: [scoreMatch("same", 200)],
+            attachByScoreLogId: [:]
         )
         XCTAssertEqual(rows.map(\.id), ["score-same", "video-same"])
     }
 
     func testAnAccountWithOnlyScoredMatchesStillGetsAList() {
         XCTAssertEqual(
-            mergeMatchRows(videoMatches: [], scoreMatches: [scoreCard("s1", at: 100)]).map(\.id),
+            mergeMatchRows(videoMatches: [], scoreMatches: [scoreMatch("s1", 100)], attachByScoreLogId: [:]).map(\.id),
             ["score-s1"]
         )
+    }
+
+    // MARK: - Video attach (mirrors Android MatchRowMergeTest's four new cases)
+
+    func testABoundMatchIsOneRowAndNotTwo() {
+        let rows = mergeMatchRows(
+            videoMatches: [videoMatch("v1", 300)],
+            scoreMatches: [scoreMatch("s1", 200, videoId: "v1")],
+            attachByScoreLogId: [:]
+        )
+        XCTAssertEqual(rows.map(\.id), ["score-s1"])
+        guard case .score(let content) = rows[0] else { return XCTFail("expected a score row") }
+        XCTAssertEqual(content.video?.videoId, "v1")
+    }
+
+    func testABoundMatchKeepsThePlaceItsScoreLogEarned() {
+        let rows = mergeMatchRows(
+            videoMatches: [videoMatch("v1", 900), videoMatch("v2", 500)],
+            scoreMatches: [scoreMatch("s1", 100, videoId: "v1")],
+            attachByScoreLogId: [:]
+        )
+        XCTAssertEqual(rows.map(\.id), ["video-v2", "score-s1"])
+    }
+
+    func testAVideoImportedOnItsOwnIsStillItsOwnRow() {
+        let rows = mergeMatchRows(
+            videoMatches: [videoMatch("v1", 300)],
+            scoreMatches: [scoreMatch("s1", 200)],
+            attachByScoreLogId: [:]
+        )
+        XCTAssertEqual(rows.map(\.id), ["video-v1", "score-s1"])
+    }
+
+    func testAMatchWhoseVideoIsStillClippingCarriesTheStatusButNoVideo() {
+        let rows = mergeMatchRows(
+            videoMatches: [],
+            scoreMatches: [scoreMatch("s1", 200, videoId: "v1")],
+            attachByScoreLogId: ["s1": AttachStatus(text: "Clipping…", kind: .clipping)]
+        )
+        guard case .score(let content) = rows[0] else { return XCTFail("expected a score row") }
+        XCTAssertNil(content.video)
+        XCTAssertEqual(content.attach?.text, "Clipping…")
     }
 }
