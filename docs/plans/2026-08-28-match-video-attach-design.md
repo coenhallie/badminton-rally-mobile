@@ -111,10 +111,16 @@ branch's body would silently not happen on the retry path.
 detector drops service faults and can split a long rally. Point *N* is not
 reliably rally *N*.
 
-**3.6 No new grant pass is needed.** This change writes only to `score_logs`,
-which this app owns outright with all four owner policies. `videos` and
-`rally_clips` are untouched. That is the payoff of the `score_logs`-owns-the-FK
-decision made in §7 L1 and it holds here.
+**3.6 No new grant pass is needed, and `delete_match` still works once a match
+is bound.** Checked rather than assumed, because this is the first change that
+puts a value in `score_logs.video_id` and so the first that makes
+`delete_match`'s `delete from public.videos` fire the `on delete set null`
+cascade and the `unbind_score_log_on_video_delete` trigger. The RPC is
+`security definer` with `set search_path = public`
+(`20260718000000_delete_match.sql`), so both run as the function's owner, which
+also owns `score_logs` and is therefore not subject to its owner-only RLS. The
+RPC body needs no change and no new grant. Worth a smoke test on device anyway
+(§7), since this is the failure that would only appear on the first bound match.
 
 ---
 
@@ -224,9 +230,26 @@ sealed interface MatchRow {
 }
 ```
 
-`AttachStatus` is a small shared type derived from the entry's stage and the
-coordinator's progress, so both platforms print the same sentence: "Video added,
-court not marked", "Uploading 42%", "Clipping…", "Analysis failed".
+`AttachStatus` is a small shared type so both platforms print the same sentence.
+Its inputs are the local entry, the coordinator's progress and the clip count,
+and the **precedence has to be spelled out**, because after a successful run the
+entry is gone (§3.3) and the coordinator drops its progress in a `finally`, so
+two different situations both present as "no entry":
+
+| Signal | Renders |
+| --- | --- |
+| Entry present, stage `LOCAL` | "Video added, court not marked" plus `Mark court` |
+| Entry present, stage `UPLOADING` | "Uploading 42%" |
+| Entry present, stage `PROCESSING` | "Clipping…" |
+| Entry present, stage `FAILED` | the failure message plus `Retry` |
+| No entry, clips > 0 | nothing; the rally facet is the answer |
+| No entry, clips == 0 | "Finishing up…", and only that |
+
+The last row is the ambiguous one and it is deliberately soft. It covers the
+real gap between the pipeline finishing and the clips arriving through
+`clips.refresh()`, and it must not be confused with §4.8's "no rallies found",
+which is a *failed* entry carrying that message and is one row above. An entry
+that has genuinely gone with zero clips resolves on the next refresh.
 
 **Sort key stays the score log's `createdAt`.** A merged row must not jump down
 the list the moment its clips arrive: the coach created that match on Tuesday
@@ -276,7 +299,7 @@ already the shape of the finish prompt.
 
 **One video per match.** "Add video" disappears once the match has one, in
 either sense (a `videoId`, or an entry pointing at it). Replacing means removing
-the video first, which §4.7 already has to handle.
+the video first, which §4.8 already has to handle.
 
 ### 4.6 Where the clips live
 
@@ -313,7 +336,41 @@ no clip thumbnail on a point, no score on a rally. §6.3 of the review design
 says drift must be visible and never silent; the UI equivalent is not drawing a
 correspondence the data does not have yet.
 
-### 4.7 Removal, and what must survive it
+### 4.7 Making `BOUND` reachable, and one defect it exposes
+
+The migration says "nothing in this release can set 'bound' or 'reconciled', and
+that is deliberate." This change makes `BOUND` reachable, so every consumer of
+the enum was checked. There are exactly two in production code, and they are the
+same gate: `ScoreMatchScreen.kt:119` and `ScoreMatchView.swift:86`, both
+`status == LIVE` deciding whether Score/Resume appears. Neither is a `when` or
+`switch` needing a new branch, and both do the right thing for a bound match:
+it is not live, so there is nothing to resume. No other production code reads
+`status`.
+
+`ScoreMatchCard.isLive` and `.hasVideo` are read by **no production code at
+all** today, only by tests. `hasVideo` starts being true with this change, and
+the merged row in §4.4 is its first real consumer.
+
+`isLive` is a different matter, and it is a defect that predates this work:
+
+```kotlin
+isLive = winner == null
+```
+
+It is derived from the fold, not from `status`. A coach who ends a match early
+through `Finish match` in the overflow - at 5-3, say - leaves a log with
+`status = UNBOUND` and no winner, so `isLive` is true and `statusLine` says
+"Scoring". `statusLine` **is** rendered, on the match record and on the list
+row, so that match currently claims to still be in progress on two screens.
+
+Invisible until now; not invisible after this change, because "add a video" is
+offered only on a finished match and the row beside it would be saying the match
+is still being scored. Both should read `status`, and `statusLine` should say
+the match was ended rather than name a winner it does not have. Small, contained
+and covered by `ScoreMatchCardTest`, so it is folded into this work rather than
+listed separately.
+
+### 4.8 Removal, and what must survive it
 
 - **Deleting the video of a bound match.** The server trigger nulls `video_id`
   and forces `unbound`, but the local cache does not learn that until the next
@@ -331,7 +388,7 @@ correspondence the data does not have yet.
   clear the match's pending attachment, or the match page offers "Clipping…"
   forever for a file that is gone.
 
-### 4.8 Failure states, on the match page
+### 4.9 Failure states, on the match page
 
 - **Pipeline failed.** The message and a `Retry` inline on the match page, which
   resumes from the failed step. The existing auto-dialog on the list is
@@ -402,6 +459,10 @@ resumes at `TRIGGER` (§3.4), and fires before the entry is removed (§3.3).
 established. The finish transition raises the prompt from either exit; the match
 page offers "Add video" only when the match is finished and has none; a failed
 pipeline surfaces its message and Retry.
+
+**On device, smoke test:** deleting a **bound** match, which is the one path
+§3.6 reasons about rather than observes. It must take the video, its clips and
+the match with it, and it must not fail on the `score_logs` cascade.
 
 **On device, by hand:** the whole flow once per platform. Create a match, score
 it, finish, accept the prompt, pick a video, mark the court, watch the match row
