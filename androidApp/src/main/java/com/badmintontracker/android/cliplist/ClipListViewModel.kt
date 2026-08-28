@@ -112,8 +112,9 @@ class ClipListViewModel(
 
     /**
      * What each scored match's video is doing, keyed by score log id. Built here
-     * because it needs three sources at once: the entry, the coordinator's
-     * transient progress, and how many clips the match already has.
+     * because it needs four sources at once: the score logs themselves, each
+     * match's local entry, the coordinator's transient progress, and how many
+     * clips the match already has.
      */
     private val attachStatuses = combine(
         localVideos.entries,

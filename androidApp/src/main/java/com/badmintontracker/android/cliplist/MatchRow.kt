@@ -11,6 +11,13 @@ import com.badmintontracker.shared.scoring.ScoreMatchCard
  * dereference that id - the list key, the cover thumbnail, the rally count, the
  * navigation value and delete_match - and a null there is a different row, not a
  * missing field. This way the compiler asks at each of them.
+ *
+ * A bound match still carries a nullable video: [Score.video] is null until the
+ * pipeline has clips. What the sealed split now separates is not "has a video /
+ * does not" but *where the match was born* - scored on the phone ([Score], video
+ * optional) versus only ever cut from one ([Video], no score to speak of). That
+ * distinction, not the video's presence, is what stays fixed for a row's lifetime
+ * and is what the five call sites above still need the compiler to ask about.
  */
 sealed interface MatchRow {
     /** Prefixed: both ids are UUIDs from the same generator and would otherwise collide. */
