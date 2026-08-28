@@ -53,4 +53,17 @@ data class LocalVideoEntry(
     val failedStep: AnalyzeStep? = null,
     val failureMessage: String? = null,
     val resultSeen: Boolean = false,         // result dialog already shown for this failure
+    /**
+     * The match this video was picked for, or null for a video-first import.
+     *
+     * Held here rather than on the score log because score_logs.video_id has a
+     * foreign key to videos(id), and no videos row exists until the pipeline's
+     * CREATE_ROW step. Pushing the binding earlier would not fail one row: sync()
+     * upserts every dirty row in one call, so it would stop every match on the
+     * phone from syncing. See the 2026-08-28 design, section 3.1.
+     *
+     * Last in the parameter list on purpose: Swift constructs this type with every
+     * argument spelled out, so appending is a one-line change there.
+     */
+    val scoreLogId: String? = null,
 )

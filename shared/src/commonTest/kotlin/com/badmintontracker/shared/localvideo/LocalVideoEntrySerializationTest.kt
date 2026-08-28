@@ -63,4 +63,33 @@ class LocalVideoEntrySerializationTest {
         entries.map { it.id } shouldBe listOf("11111111-1111-1111-1111-111111111111")
         entries[0].title.shouldBeNull()
     }
+
+    @Test
+    fun a_registry_written_before_score_log_ids_existed_still_decodes() {
+        // LocalVideoRepository.load() swallows a decode failure and returns an empty
+        // library, so a non-defaulted field here would silently wipe every local
+        // video on the phone the first time this build runs.
+        val legacy = """
+            {"id":"e1","uri":"content://x/e1","displayName":"m.mp4","durationMs":1000,
+             "sizeBytes":10,"addedAtEpochMs":0}
+        """.trimIndent()
+        val entry = Json { ignoreUnknownKeys = true }
+            .decodeFromString(LocalVideoEntry.serializer(), legacy)
+        entry.scoreLogId.shouldBeNull()
+    }
+
+    @Test
+    fun a_video_picked_for_a_match_remembers_which_match() {
+        val entry = LocalVideoEntry(
+            id = "e1", uri = "content://x/e1", displayName = "m.mp4",
+            durationMs = 1000, sizeBytes = 10, addedAtEpochMs = 0,
+            scoreLogId = "log-1",
+        )
+        val json = Json { ignoreUnknownKeys = true }
+        val round = json.decodeFromString(
+            LocalVideoEntry.serializer(),
+            json.encodeToString(LocalVideoEntry.serializer(), entry),
+        )
+        round.scoreLogId shouldBe "log-1"
+    }
 }
