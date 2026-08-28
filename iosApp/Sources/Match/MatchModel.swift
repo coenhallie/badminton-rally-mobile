@@ -41,8 +41,9 @@ final class MatchModel {
         }
     }
 
-    /// Re-reads the store without waiting for its flow. Tests use it where the app
-    /// relies on the loop in `start`.
+    /// A synchronous re-read for a caller that mutates the store directly rather
+    /// than going through `start()`'s loop. Mirrors `ScoringModel.reload()`, kept
+    /// for the same reason: not every caller can afford to wait on the flow.
     func reload() { readStore() }
 
     private func readStore() {

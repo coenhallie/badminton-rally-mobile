@@ -5,10 +5,12 @@ import Shared
 /// The parity check. These are `MatchViewModelTest`'s cases, name for name: if
 /// the two lists diverge, the two surfaces have diverged.
 ///
-/// Unlike the Android suite, none of these need a dispatcher: `MatchModel` reads
-/// the store with `ScoreLogsRepository.get(id:)`, a direct cache lookup rather
-/// than a flow, so a mutation made after construction is visible the moment
-/// `reload()` (or `readStore()` inside it) runs - no coroutine to pump.
+/// The first four need no dispatcher: `MatchModel` reads the store with
+/// `ScoreLogsRepository.get(id:)`, a direct cache lookup rather than a flow, so a
+/// mutation made before construction is visible the moment `init` runs. The fifth
+/// drives its mutation through `start()`'s `for await` loop instead - the path
+/// `MatchView`'s `.task` actually runs - because that loop, not a direct read, is
+/// what the app relies on to notice a match removed elsewhere.
 @MainActor
 final class MatchModelTests: XCTestCase {
 
@@ -66,12 +68,31 @@ final class MatchModelTests: XCTestCase {
         XCTAssertFalse(model.canAddVideo)
     }
 
-    func testADeletedMatchLeavesThePageInertRatherThanCrashing() {
+    func testADeletedMatchLeavesThePageInertRatherThanCrashing() async throws {
         let store = store()
         let log = newMatch(store)
         let model = MatchModel(scoreLogs: store, scoreLogId: log.id)
+
+        // Drives the mutation through the same `for await` loop `MatchView`'s
+        // `.task` runs, not `reload()` - this is the path that must actually
+        // notice a match removed elsewhere.
+        let collecting = Task { await model.start() }
+        defer { collecting.cancel() }
+
         store.removeLocally(id: log.id)
-        model.reload()
+
+        // `logs` is a StateFlow: it always conflates to its latest value, so this
+        // is not racing the mutation against the loop's subscription - whichever
+        // happens first, the loop's next delivered value already reflects the
+        // removal. What it is waiting on is the Kotlin coroutine that bridges that
+        // StateFlow into this Swift `for await` actually getting scheduled, which
+        // this test does not control directly, hence the poll instead of a bare
+        // assertion right after `removeLocally`.
+        let deadline = Date().addingTimeInterval(5)
+        while model.log != nil && Date() < deadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+
         XCTAssertNil(model.log)
         XCTAssertFalse(model.canAddVideo)
     }

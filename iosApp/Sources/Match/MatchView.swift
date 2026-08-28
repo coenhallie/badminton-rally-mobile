@@ -23,6 +23,18 @@ private struct ClipRoute: Identifiable, Hashable {
     let id: String
 }
 
+/// The two sheets this page can show, as one `.sheet(item:)` rather than two
+/// stacked `.sheet(isPresented:)` modifiers - stacking two on the same view is a
+/// known SwiftUI footgun where presentation can silently fail for one of them.
+/// No associated data: the content closure reads `summary`/`effectiveVideoId`
+/// from the enclosing view's state directly, so a summary that updates while its
+/// sheet is open is still reflected live, the same as before this type existed.
+private enum MatchSheet: Identifiable, Hashable {
+    case share
+    case summary
+    var id: Self { self }
+}
+
 /// One match, however it was made: a video-first or shared match shows only the
 /// rallies facet, a scored match with no video shows only the points facet, and a
 /// match with both gets a selector between them. Replaces `MatchClipsView` and
@@ -38,7 +50,6 @@ struct MatchView: View {
     @State private var sort: ClipSort = .rallyOrder
     @State private var metadata: MatchMetadata? = nil
     @State private var summary: MatchLabelSummary? = nil
-    @State private var summarySheetOpen = false
     @State private var isLoadingSummary = false
     // A superseded fetch must not write its result: the awaited Kotlin bridge does
     // not observe Swift task cancellation, so a replaced .task keeps running to
@@ -49,7 +60,7 @@ struct MatchView: View {
     // onDismiss rather than inline with dismiss(), because a navigationDestination
     // on the view that is presenting a sheet can drop a push made mid-dismissal.
     @State private var pendingTopRallyClipId: String? = nil
-    @State private var shareSheetOpen = false
+    @State private var activeSheet: MatchSheet? = nil
     // Held for the life of this view, not re-keyed on hasPoints/hasRallies: the
     // clip list briefly empties during a refresh, and re-keying on that would
     // silently snap a reader on the rallies facet back to Points mid-read.
@@ -86,9 +97,19 @@ struct MatchView: View {
         return .rallies
     }
 
+    // Reuses `MatchGrouping.matches` rather than re-deriving ownership from a clip
+    // lookup here: that function is what `ClipListView`'s own share button already
+    // trusts, and two independent answers to "is this mine" that can disagree is a
+    // defect regardless of which one happens to be right at a given moment.
     private var isOwned: Bool {
-        guard let uid = rally.auth.currentUserId() else { return false }
-        return allClips.first(where: { $0.videoId == effectiveVideoId })?.ownerId == uid
+        guard let effectiveVideoId else { return false }
+        let (owned, _) = MatchGrouping.matches(
+            from: allClips.map(ClipInfo.init),
+            currentUserId: rally.auth.currentUserId(),
+            sharerByVideoId: [:],
+            metadataByVideoId: [:]
+        )
+        return owned.contains { $0.videoId == effectiveVideoId }
     }
 
     private var matchName: String? {
@@ -97,15 +118,18 @@ struct MatchView: View {
         metadata?.title ?? matchTitle(of: clipsForMatch.map(ClipInfo.init))
     }
 
+    // Precedence matches Android's `MatchScreen`: a resolved video match owns its
+    // title first, then a score log's title, then the bare "RALLIES" fallback -
+    // never the other order. A match the coach named on the phone and then
+    // attached a video to must keep showing that name while the video's clips and
+    // metadata are still loading, not flash "RALLIES" in between.
     private var title: String {
-        if effectiveVideoId != nil {
-            if let name = matchName { return name.uppercased() }
-            guard let latest = clipsForMatch.map({ $0.createdAt.toEpochMilliseconds() }).max() else {
-                return "RALLIES"
-            }
+        if let name = matchName { return name.uppercased() }
+        if let latest = clipsForMatch.map({ $0.createdAt.toEpochMilliseconds() }).max() {
             return "MATCH · \(formatMatchDate(millis: latest).uppercased())"
         }
-        // Score-only: same title as the screen this page replaced.
+        // Score-only, or a video match whose clips/metadata have not loaded yet:
+        // same title as the screen this page replaced.
         if let log = matchModel.log { return log.title }
         return "RALLIES"
     }
@@ -173,41 +197,43 @@ struct MatchView: View {
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbarContent }
-        .sheet(isPresented: $shareSheetOpen) {
-            if let videoId = effectiveVideoId {
-                ShareSheetView(rally: rally, videoId: videoId)
-            }
-        }
         // A summary that goes away while its sheet is open must close the sheet,
-        // not leave the flag standing to reopen it when the next summary arrives.
+        // not leave it standing over data that no longer exists.
         .onChange(of: summary?.isEmpty) { _, isEmpty in
-            if isEmpty != false { summarySheetOpen = false }
+            if isEmpty != false, activeSheet == .summary { activeSheet = nil }
         }
-        .sheet(isPresented: $summarySheetOpen, onDismiss: {
+        .sheet(item: $activeSheet, onDismiss: {
             guard let clipId = pendingTopRallyClipId else { return }
             pendingTopRallyClipId = nil
             clipRoute = ClipRoute(id: clipId)
-        }) {
-            if let summary {
-                MatchSummarySheet(
-                    summary: summary,
-                    topRallyName: summary.topRally.map {
-                        topRallyName(
-                            clipId: $0.clipId, rallyIndex: $0.rallyIndex,
-                            clips: clipsForMatch.map(ClipInfo.init), matchTitle: matchName
-                        )
-                    },
-                    onTopRally: {
-                        // Parity with Android, which looks the clip up and no-ops
-                        // when it is gone rather than pushing a detail view for a
-                        // clip that no longer exists.
-                        if let top = summary.topRally,
-                           clipsForMatch.contains(where: { $0.id == top.clipId }) {
-                            pendingTopRallyClipId = top.clipId
+        }) { sheet in
+            switch sheet {
+            case .share:
+                if let videoId = effectiveVideoId {
+                    ShareSheetView(rally: rally, videoId: videoId)
+                }
+            case .summary:
+                if let summary {
+                    MatchSummarySheet(
+                        summary: summary,
+                        topRallyName: summary.topRally.map {
+                            topRallyName(
+                                clipId: $0.clipId, rallyIndex: $0.rallyIndex,
+                                clips: clipsForMatch.map(ClipInfo.init), matchTitle: matchName
+                            )
+                        },
+                        onTopRally: {
+                            // Parity with Android, which looks the clip up and
+                            // no-ops when it is gone rather than pushing a detail
+                            // view for a clip that no longer exists.
+                            if let top = summary.topRally,
+                               clipsForMatch.contains(where: { $0.id == top.clipId }) {
+                                pendingTopRallyClipId = top.clipId
+                            }
                         }
-                    }
-                )
-                .presentationDetents([.medium, .large])
+                    )
+                    .presentationDetents([.medium, .large])
+                }
             }
         }
         .navigationDestination(item: $clipRoute) { route in
@@ -271,7 +297,7 @@ struct MatchView: View {
                     summary: summary,
                     matchTitle: matchName,
                     description: metadata?.description_,
-                    onSummaryClick: { summarySheetOpen = true }
+                    onSummaryClick: { activeSheet = .summary }
                 )
             }
         }
@@ -296,7 +322,7 @@ struct MatchView: View {
         if isOwned, effectiveVideoId != nil {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
-                    shareSheetOpen = true
+                    activeSheet = .share
                 } label: {
                     Image(systemName: "square.and.arrow.up")
                 }
