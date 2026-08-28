@@ -10,6 +10,14 @@ The mobile app is versioned independently from the web app.
 ## [Unreleased]
 
 ### Added
+- A match scored on the phone can now take its video afterwards, on both
+  platforms. Finish a match and you're asked whether to import or record its
+  video; say "not now" and the offer is waiting on the match itself whenever
+  you come back to it. Adding the video starts the clipping pipeline right
+  away, the match row says how far along it is, and when it finishes the
+  rallies land inside that same match rather than a second entry in the list.
+  A match and its video become one row and one page from then on, with Points
+  and Rallies side by side.
 - Matches can now be created on the phone before any video exists, on both
   platforms. Name a match, name its players, pick its scoring rules and who
   serves first, and it appears in your match list alongside the matches cut
@@ -95,6 +103,10 @@ The mobile app is versioned independently from the web app.
   supported method.
 
 ### Fixed
+- A match ended early through "Finish match" no longer describes itself as
+  still being scored, on its own page and in the match list.
+- Deleting the video of a match scored on the phone now keeps the match, its
+  points and its tags. Only the clips go.
 - Matches scored on the phone no longer disappear from the match list after
   restarting the app. They were never lost - they were on the phone the whole
   time - but the list read the stored matches before the app had finished

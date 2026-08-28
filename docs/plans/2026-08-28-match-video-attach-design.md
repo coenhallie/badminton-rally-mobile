@@ -297,6 +297,23 @@ video of a match that has been played) and it removes an interaction between two
 state machines: `LIVE -> UNBOUND -> BOUND` is a line, not a lattice. It is also
 already the shape of the finish prompt.
 
+Precisely, the predicate implemented on both platforms is
+`!log.isPlayable() && log.videoId == null`, not `status != LIVE`. The board's
+`Done` button leaves a won match at `LIVE` on purpose (§4.7), so gating on
+`status` would hide "Add video" on exactly the matches most likely to get one.
+`isPlayable()` is what actually distinguishes "still being scored" from
+"finished," regardless of which status a finished match carries.
+
+**Adding a video finishes a still-live match first.** A coach who says "not
+now" at the finish prompt and later taps "Add video" from a won match (status
+still `LIVE`, per the point above) has an unattached action reaching a live
+log. `onAddVideo`/`attachVideo` call `scoreLogs.finish(id)` before opening the
+picker whenever `log.status == LIVE`, so the log is never bound while still
+live. One consequence worth stating because it is easy to miss reading the
+state machine alone: **`BOUND` is therefore only ever reached from `UNBOUND`**,
+never directly from `LIVE`, and a bound match never advertises "Resume
+scoring."
+
 **One video per match.** "Add video" disappears once the match has one, in
 either sense (a `videoId`, or an entry pointing at it). Replacing means removing
 the video first, which §4.8 already has to handle.
