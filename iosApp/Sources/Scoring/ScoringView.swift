@@ -23,7 +23,15 @@ enum AttachIntent: Hashable {
 struct ScoringView: View {
     let rally: RallyApp
     let scoreLogId: String
-    var onFinished: (AttachIntent?) -> Void = { _ in }
+    /// Whether the match page this board is scoring for is already sitting on
+    /// the stack directly underneath it - true when pushed from that page's own
+    /// Score/Resume button, false when pushed straight from creating a new
+    /// match (nothing underneath but the list yet). Not inferred from the
+    /// navigation route, or from whether a match page for this id happens to
+    /// exist somewhere: the caller states it, because it is the one thing that
+    /// decides what `onFinished` is allowed to do - see the call sites.
+    let matchPageAlreadyOpen: Bool
+    let onFinished: (AttachIntent?) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var model: ScoringModel?
@@ -134,14 +142,19 @@ struct ScoringView: View {
     }
 
     /// The single exit from the "Add the video?" prompt, whichever of its three
-    /// choices or its own dismissal reaches it.
+    /// choices or its own dismissal reaches it. What `onFinished` actually does
+    /// with `intent` differs by `matchPageAlreadyOpen` - see the two call sites
+    /// - but this view does not need to know which: either way it is popping
+    /// itself and handing the intent to whatever is now on top of the stack.
     ///
     /// `dismiss()` runs first, and `onFinished` is deferred a runloop tick past
-    /// it rather than called inline: popping this view and pushing the match
-    /// page's `onFinished` sets up both land in the same SwiftUI transaction
-    /// otherwise, and NavigationStack does not reliably settle from a pop and a
-    /// push landing together - confirmed on-device, where the destination came
-    /// up with its content area permanently blank until this was split apart.
+    /// it rather than called inline: a pop and a state change that pushes a new
+    /// destination landing in the same SwiftUI transaction do not reliably
+    /// settle - confirmed on-device, where the destination came up with its
+    /// content area permanently blank until this was split apart. The deferral
+    /// is just as necessary for the "deliver locally" branch: it lets this
+    /// view's own pop finish committing before the match page underneath
+    /// mutates its state in response.
     private func finishBoard(_ intent: AttachIntent?) {
         guard addVideoOpen else { return }
         addVideoOpen = false

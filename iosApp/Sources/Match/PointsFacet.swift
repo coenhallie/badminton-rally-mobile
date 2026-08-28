@@ -11,6 +11,11 @@ struct PointsFacet: View {
     let card: ScoreMatchCard?
     let tally: ScoreTagSummary
     let points: [ScoredPoint]
+    /// `MatchView` pushes the board itself now, rather than this being a bare
+    /// `NavigationLink(value:)` resolved by an ambient destination - the match
+    /// page it lands back on after a finish must be this exact instance, not a
+    /// freshly pushed one, and only the pusher can guarantee that.
+    let onScore: () -> Void
 
     var body: some View {
         Section {
@@ -27,7 +32,7 @@ struct PointsFacet: View {
                 // Absent rather than disabled on a finished match: there is
                 // nothing left to score, and undo lives on the board itself.
                 if log.status == .live {
-                    NavigationLink(value: ScoringRoute(scoreLogId: log.id)) {
+                    Button(action: onScore) {
                         Text(points.isEmpty ? "Score" : "Resume scoring")
                             .font(.headline)
                             .foregroundStyle(Color.black)

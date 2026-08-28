@@ -63,6 +63,13 @@ struct MatchView: View {
     @State private var showRecorder = false
     @State private var pendingAttachTarget: MatchTarget? = nil
     @State private var navigationTarget: CourtMarkingRoute? = nil
+    // This page is the one and only pusher of its own board: Score/Resume
+    // pushes through this state, not a bare `NavigationLink(value:)` resolved
+    // by an ambient destination elsewhere. That is what lets the board finish
+    // by popping back to this exact instance and handing it the chosen intent
+    // directly, rather than a fresh match page being pushed on top of this one -
+    // see `matchPageAlreadyOpen` on `ScoringView`.
+    @State private var scoringTarget: ScoringRoute? = nil
     // `route.attach` is only ever meant to be acted on once per push of this
     // page - a fresh `MatchRoute` each time the prompt fires, per `MatchRoute`'s
     // own doc comment - so this flag (scoped to this view instance) is enough;
@@ -274,6 +281,21 @@ struct MatchView: View {
         .navigationDestination(item: $navigationTarget) { route in
             CourtMarkingView(rally: rally, analyze: analyze, entryId: route.entryId)
         }
+        .navigationDestination(item: $scoringTarget) { route in
+            ScoringView(
+                rally: rally,
+                scoreLogId: route.scoreLogId,
+                matchPageAlreadyOpen: true,
+                onFinished: { intent in
+                    // Nothing pushed: this page is already on the stack right
+                    // where the board's own pop leaves it. `intent` is nil for
+                    // Done or "Not now" - there is nothing further to do then,
+                    // `matchModel`'s own subscription already reflects whatever
+                    // the board changed.
+                    if let intent { attachVideo(intent) }
+                }
+            )
+        }
         .sheet(isPresented: $showImporter) {
             VideoPicker(
                 onPicked: { tempURL, suggestedName in
@@ -388,7 +410,8 @@ struct MatchView: View {
             if facet == .points, let log = matchModel.log {
                 PointsFacet(
                     log: log, card: matchModel.card, tally: matchModel.tally,
-                    points: matchModel.match?.points ?? []
+                    points: matchModel.match?.points ?? [],
+                    onScore: { scoringTarget = ScoringRoute(scoreLogId: log.id) }
                 )
             } else {
                 RalliesFacet(

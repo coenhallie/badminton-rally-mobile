@@ -1,6 +1,32 @@
 import SwiftUI
 import Shared
 
+/// The board pushed straight from creating a new match, with no match page
+/// underneath it yet. Deliberately its own type rather than reusing
+/// `ScoringRoute`: `MatchView` also registers an `item:`-bound destination for
+/// `ScoringRoute` (its own Score/Resume push), and two `item:` registrations
+/// for the same type in one `NavigationStack` resolve unreliably - confirmed by
+/// removing one and watching the other start working. Giving each pusher its
+/// own type sidesteps that rather than depending on binding identity SwiftUI
+/// does not document as disambiguating.
+private struct NewMatchScoringRoute: Hashable, Identifiable {
+    let scoreLogId: String
+    var id: String { scoreLogId }
+}
+
+/// Where the board's "Add the video?" prompt (or Done) lands when it was
+/// pushed from `ClipListView` itself - i.e. the create-and-finish path, with no
+/// match page underneath yet to pop back to. Its own type for the same reason
+/// as `NewMatchScoringRoute`: `ClipListView` already registers
+/// `.navigationDestination(for: MatchRoute.self)` for row taps, and a second
+/// `item:` registration for that same `MatchRoute` type left the item-pushed
+/// instance rendering blank - confirmed on-device via the accessibility tree.
+private struct FinishedMatchRoute: Hashable, Identifiable {
+    let scoreLogId: String
+    let attach: AttachIntent?
+    var id: String { scoreLogId }
+}
+
 struct ClipListView: View {
     let rally: RallyApp
     let analyze: AnalyzeCoordinator
@@ -17,14 +43,13 @@ struct ClipListView: View {
     @State private var showLabels = false
     @State private var detailsTarget: MatchDetailsTarget? = nil
     @State private var showNewMatch = false
-    @State private var scoringTarget: ScoringRoute? = nil
+    @State private var scoringTarget: NewMatchScoringRoute? = nil
     @State private var deleteScoreTarget: ScoreMatchCard? = nil
-    // Where the board's "Add the video?" prompt (or its Done button) lands: a
-    // fresh push of the match page, carrying whatever the coach chose so the
-    // match page can act on it once. Separate from the `MatchRoute` pushed by a
-    // row tap - same pattern as `scoringTarget` alongside the `for:` destination
-    // below, so the two navigation triggers cannot fight over one binding.
-    @State private var matchTarget: MatchRoute? = nil
+    // Where the board's "Add the video?" prompt (or its Done button) lands
+    // after the create-and-finish path: a fresh push of the match page,
+    // carrying whatever the coach chose so it can act on it once. See
+    // `FinishedMatchRoute`'s own comment for why this is not a `MatchRoute`.
+    @State private var matchTarget: FinishedMatchRoute? = nil
 
     init(rally: RallyApp, analyze: AnalyzeCoordinator) {
         self.rally = rally
@@ -189,7 +214,7 @@ struct ClipListView: View {
     /// page can act on it once. Mirrors `AuthGate.kt`'s `Route.Scoring.onFinished`.
     private func onScoringFinished(_ scoreLogId: String) -> (AttachIntent?) -> Void {
         { intent in
-            matchTarget = MatchRoute(scoreLogId: scoreLogId, videoId: nil, attach: intent)
+            matchTarget = FinishedMatchRoute(scoreLogId: scoreLogId, attach: intent)
         }
     }
 
@@ -334,21 +359,30 @@ struct ClipListView: View {
             MatchView(rally: rally, analyze: analyze, route: route)
         }
         .navigationDestination(item: $matchTarget) { route in
-            MatchView(rally: rally, analyze: analyze, route: route)
-        }
-        .navigationDestination(for: ScoringRoute.self) { route in
-            ScoringView(rally: rally, scoreLogId: route.scoreLogId, onFinished: onScoringFinished(route.scoreLogId))
+            MatchView(
+                rally: rally, analyze: analyze,
+                route: MatchRoute(scoreLogId: route.scoreLogId, videoId: nil, attach: route.attach)
+            )
         }
         .navigationDestination(isPresented: $showNewMatch) {
             NewMatchView(rally: rally) { id in
                 // Straight to the board, not back to the list and not to the
                 // record: creating a match courtside means being about to score it.
                 showNewMatch = false
-                scoringTarget = ScoringRoute(scoreLogId: id)
+                scoringTarget = NewMatchScoringRoute(scoreLogId: id)
             }
         }
         .navigationDestination(item: $scoringTarget) { route in
-            ScoringView(rally: rally, scoreLogId: route.scoreLogId, onFinished: onScoringFinished(route.scoreLogId))
+            // The only place this list itself pushes the board: straight from
+            // creating a match, with no match page underneath yet. Once one
+            // exists, `MatchView` owns pushing its own board - see its own
+            // `scoringTarget` and `ScoringView.matchPageAlreadyOpen`.
+            ScoringView(
+                rally: rally,
+                scoreLogId: route.scoreLogId,
+                matchPageAlreadyOpen: false,
+                onFinished: onScoringFinished(route.scoreLogId)
+            )
         }
         .navigationDestination(for: LocalPlayerRoute.self) { route in
             LocalPlayerView(rally: rally, analyze: analyze, entryId: route.entryId)
