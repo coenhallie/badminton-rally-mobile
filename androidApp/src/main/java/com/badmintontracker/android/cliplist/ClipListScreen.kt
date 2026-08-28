@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -53,6 +54,8 @@ import com.badmintontracker.android.localvideo.MatchDetailsSheet
 import com.badmintontracker.android.localvideo.localVideoSection
 import com.badmintontracker.android.share.ShareSheet
 import com.badmintontracker.android.ui.components.ConfirmDialog
+import com.badmintontracker.android.ui.components.ShuttlButton
+import com.badmintontracker.android.ui.components.ShuttlButtonVariant
 import com.badmintontracker.android.ui.components.SwipeToRemoveRow
 import com.badmintontracker.android.ui.components.ThemeToggleButton
 import com.badmintontracker.android.ui.theme.ShuttlTheme
@@ -62,6 +65,7 @@ import com.badmintontracker.shared.model.RallyClip
 import com.badmintontracker.shared.prefs.ThemePreferenceRepository
 import com.badmintontracker.shared.repo.MediaRepository
 import com.badmintontracker.shared.repo.SharesRepository
+import com.badmintontracker.shared.scoring.AttachKind
 import com.badmintontracker.shared.scoring.ScoreMatchCard
 import java.util.Locale
 import kotlinx.datetime.Instant
@@ -92,6 +96,8 @@ fun ClipListScreen(
     onRecord: () -> Unit = {},
     onImport: () -> Unit = {},
     onLabels: () -> Unit = {},
+    onAttachedMarkCourt: (String) -> Unit = {},
+    onAttachedRetry: (String) -> Unit = {},
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val themeMode by themePrefs.mode.collectAsStateWithLifecycle()
@@ -102,6 +108,10 @@ fun ClipListScreen(
     var leaveShareTarget by remember { mutableStateOf<MatchSummary?>(null) }
     var localRemoveTarget by remember { mutableStateOf<LocalVideoEntry?>(null) }
     var detailsTarget by remember { mutableStateOf<DetailsTarget?>(null) }
+
+    // A video picked for a match is represented by that match's row (MatchRow.Score.video).
+    // Listing it again here under "On this phone" would be the same match twice.
+    val standaloneRows = localRows.filter { it.entry.scoreLogId == null }
 
     // The entry is persisted before this runs, so a dismissed sheet, a
     // backgrounded app or a crash never costs the user the video they just took.
@@ -130,7 +140,7 @@ fun ClipListScreen(
     var resultDialog by remember { mutableStateOf<LocalVideoRow?>(null) }
     LaunchedEffect(localRows) {
         if (resultDialog == null) {
-            resultDialog = localRows.firstOrNull {
+            resultDialog = standaloneRows.firstOrNull {
                 it.entry.stage == AnalyzeStage.FAILED && !it.entry.resultSeen
             }
         }
@@ -205,7 +215,7 @@ fun ClipListScreen(
             modifier = Modifier.padding(padding).fillMaxSize(),
         ) {
             if (state.ownedRows.isEmpty() && state.sharedMatches.isEmpty() &&
-                localRows.isEmpty() && !state.isRefreshing
+                standaloneRows.isEmpty() && !state.isRefreshing
             ) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text("No matches yet. Score one or record a video with the + button above.")
@@ -213,7 +223,7 @@ fun ClipListScreen(
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     localVideoSection(
-                        rows = localRows,
+                        rows = standaloneRows,
                         header = { SectionHeader(it) },
                         onRowClick = onLocalClick,
                         onAnalyzeClick = onLocalAnalyze,
@@ -241,8 +251,12 @@ fun ClipListScreen(
                                         onShareClick = { sheetVideoId = row.match.videoId },
                                     )
                                     is MatchRow.Score -> ScoreMatchRow(
-                                        card = row.card,
+                                        row = row,
+                                        media = media,
                                         onClick = { onScoreMatchClick(row.card) },
+                                        onShareClick = row.video?.let { { sheetVideoId = it.videoId } },
+                                        onMarkCourt = { onAttachedMarkCourt(row.card.scoreLogId) },
+                                        onRetry = { onAttachedRetry(row.card.scoreLogId) },
                                     )
                                 }
                             }
@@ -492,29 +506,53 @@ internal fun ClipRow(
 
 /**
  * A match scored courtside, in the same shape as [VideoMatchRow] so the two kinds
- * line up down the list. The cover slot is the same 96x54 box with a placeholder
- * instead of a thumbnail: a row 4dp shorter than its neighbour reads as a bug.
+ * line up down the list. The cover slot is the same 96x54 box: a thumbnail once
+ * the row's video has produced clips, the placeholder icon otherwise. A row 4dp
+ * shorter than its neighbour reads as a bug.
  */
 @Composable
-private fun ScoreMatchRow(card: ScoreMatchCard, onClick: () -> Unit) {
+private fun ScoreMatchRow(
+    row: MatchRow.Score,
+    media: MediaRepository,
+    onClick: () -> Unit,
+    onShareClick: (() -> Unit)?,
+    onMarkCourt: () -> Unit,
+    onRetry: () -> Unit,
+) {
+    val card = row.card
+    val thumbUrl by produceState<String?>(initialValue = null, row.video?.videoId) {
+        val cover = row.video?.coverClip ?: return@produceState
+        value = runCatching { media.signedThumbnailUrl(cover) }.getOrNull()
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            // Matches VideoMatchRow's vertical padding: the two rows can now show
+            // the identical 96x54 thumbnail and must not differ by a few dp.
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = Modifier
-                .size(width = 96.dp, height = 54.dp)
-                .background(ShuttlTheme.extended.bgTertiary),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = Icons.Default.List,
+        if (thumbUrl != null) {
+            AsyncImage(
+                model = thumbUrl,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(96.dp, 54.dp),
             )
+        } else {
+            Box(
+                modifier = Modifier
+                    .size(width = 96.dp, height = 54.dp)
+                    .background(ShuttlTheme.extended.bgTertiary),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.List,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
@@ -539,15 +577,39 @@ private fun ScoreMatchRow(card: ScoreMatchCard, onClick: () -> Unit) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            row.attach?.let { attach ->
+                Text(
+                    text = attach.text,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (attach.kind == AttachKind.FAILED) MaterialTheme.colorScheme.error
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
-        // Present but disabled, with the reason: a score-only match cannot be
-        // shared because match_shares is keyed on video_id. An explicit disabled
-        // state teaches the rule; a missing button just puzzles.
-        IconButton(onClick = {}, enabled = false) {
-            Icon(
-                imageVector = Icons.Default.Share,
-                contentDescription = "Add a video to share this match",
-            )
+        when (row.attach?.kind) {
+            AttachKind.COURT_NOT_MARKED ->
+                ShuttlButton(text = "Mark court", onClick = onMarkCourt,
+                    variant = ShuttlButtonVariant.Primary, compact = true)
+            AttachKind.FAILED ->
+                ShuttlButton(text = "Retry", onClick = onRetry,
+                    variant = ShuttlButtonVariant.Primary, compact = true)
+            AttachKind.UPLOADING, AttachKind.CLIPPING, AttachKind.FINISHING_UP ->
+                // Boxed to the same 48dp the IconButton below occupies, so the trailing
+                // slot doesn't shift width when the state flips between the two.
+                Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                }
+            // Sharing needs a video: match_shares is keyed on video_id. Present but
+            // disabled with the reason until there is one, rather than absent.
+            null -> IconButton(onClick = { onShareClick?.invoke() }, enabled = onShareClick != null) {
+                Icon(
+                    imageVector = Icons.Default.Share,
+                    contentDescription = if (onShareClick != null) "Share match"
+                                         else "Add a video to share this match",
+                )
+            }
         }
     }
 }

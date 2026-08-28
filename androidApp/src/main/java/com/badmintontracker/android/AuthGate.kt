@@ -156,6 +156,27 @@ fun AuthGate(
                         onRecord = intake.record,
                         onImport = intake.import,
                         onLabels = { nav.navigate(Route.Labels) },
+                        onAttachedMarkCourt = { scoreLogId ->
+                            localVideos.entries.value
+                                .firstOrNull { it.scoreLogId == scoreLogId }
+                                ?.let { nav.navigate(Route.CourtMarking(it.id)) }
+                        },
+                        onAttachedRetry = { scoreLogId ->
+                            localVideos.entries.value
+                                .firstOrNull { it.scoreLogId == scoreLogId }
+                                ?.let { entry ->
+                                    // Same guard as onLocalAnalyze: a FAILED entry with no
+                                    // saved court points has nothing to resume - retrying it
+                                    // directly just re-fails instantly with "No court points
+                                    // saved" (AnalyzeCoordinator.runPipeline). Send it back to
+                                    // court marking instead.
+                                    if (entry.stage == AnalyzeStage.FAILED && entry.keypoints != null) {
+                                        localVm.retry(entry.id)
+                                    } else {
+                                        nav.navigate(Route.CourtMarking(entry.id))
+                                    }
+                                }
+                        },
                     )
                 }
                 composable<Route.NewMatch> {
