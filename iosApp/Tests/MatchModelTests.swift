@@ -5,9 +5,9 @@ import Shared
 /// The parity check. These are `MatchViewModelTest`'s cases, name for name: if
 /// the two lists diverge, the two surfaces have diverged.
 ///
-/// The first four need no dispatcher: `MatchModel` reads the store with
+/// The first six need no dispatcher: `MatchModel` reads the store with
 /// `ScoreLogsRepository.get(id:)`, a direct cache lookup rather than a flow, so a
-/// mutation made before construction is visible the moment `init` runs. The fifth
+/// mutation made before construction is visible the moment `init` runs. The last
 /// drives its mutation through `start()`'s `for await` loop instead - the path
 /// `MatchView`'s `.task` actually runs - because that loop, not a direct read, is
 /// what the app relies on to notice a match removed elsewhere.
@@ -31,30 +31,43 @@ final class MatchModelTests: XCTestCase {
         )
     }
 
+    /// Nothing under test here exercises the attach pipeline itself, so a fresh
+    /// `testLocalVideoRepository()` (empty, or carrying one hand-added entry) and
+    /// a coordinator wired to test doubles is enough to satisfy the initializer.
+    private func model(
+        scoreLogs: ScoreLogsRepository,
+        scoreLogId: String?,
+        localVideos: LocalVideoRepository = IosTestDoublesKt.testLocalVideoRepository()
+    ) -> MatchModel {
+        let clips = IosTestDoublesKt.testClipsRepository()
+        let analyze = IosTestDoublesKt.testAnalyzeCoordinator(localVideos: localVideos, clips: clips)
+        return MatchModel(scoreLogs: scoreLogs, localVideos: localVideos, analyze: analyze, clips: clips, scoreLogId: scoreLogId)
+    }
+
     func testAMatchStillBeingScoredCannotTakeAVideoYet() {
         // Its action is Score/Resume. Offering both would put "add the video"
         // beside a match that has not been played, and would need .live and
         // .bound to mean something together.
         let store = store()
         let log = newMatch(store)
-        let model = MatchModel(scoreLogs: store, scoreLogId: log.id)
-        XCTAssertFalse(model.canAddVideo)
+        let m = model(scoreLogs: store, scoreLogId: log.id)
+        XCTAssertFalse(m.canAddVideo)
     }
 
     func testAMatchTheRulesHaveEndedCanTakeAVideoEvenWhileStillMarkedLive() {
         let store = store()
         let log = newMatch(store)
         store.replaceEvents(id: log.id, events: Array(repeating: ScoreEventPointTo(side: .home), count: 42))
-        let model = MatchModel(scoreLogs: store, scoreLogId: log.id)
-        XCTAssertTrue(model.canAddVideo)
+        let m = model(scoreLogs: store, scoreLogId: log.id)
+        XCTAssertTrue(m.canAddVideo)
     }
 
     func testAMatchEndedByHandCanTakeAVideo() {
         let store = store()
         let log = newMatch(store)
         store.finish(id: log.id)
-        let model = MatchModel(scoreLogs: store, scoreLogId: log.id)
-        XCTAssertTrue(model.canAddVideo)
+        let m = model(scoreLogs: store, scoreLogId: log.id)
+        XCTAssertTrue(m.canAddVideo)
     }
 
     func testAMatchThatAlreadyHasAVideoIsNotOfferedAnotherOne() {
@@ -64,19 +77,55 @@ final class MatchModelTests: XCTestCase {
         let log = newMatch(store)
         store.finish(id: log.id)
         store.attachVideo(id: log.id, videoId: "vid-1")
-        let model = MatchModel(scoreLogs: store, scoreLogId: log.id)
-        XCTAssertFalse(model.canAddVideo)
+        let m = model(scoreLogs: store, scoreLogId: log.id)
+        XCTAssertFalse(m.canAddVideo)
+    }
+
+    func testAMatchWhoseVideoIsStillBeingPickedUpIsNotOfferedAnotherOne() {
+        // Wired through localVideos: an entry can exist for a while before the
+        // pipeline gives the match a videoId (LOCAL, UPLOADING, PROCESSING).
+        // Gating canAddVideo on videoId alone would let the picker reopen while
+        // an attach for this same match is already in flight.
+        let store = store()
+        let log = newMatch(store)
+        store.finish(id: log.id)
+        let videos = IosTestDoublesKt.testLocalVideoRepository()
+        videos.add(entry: LocalVideoEntry(
+            id: "e1", uri: "content://x/e1", displayName: "m.mp4",
+            durationMs: 1000, sizeBytes: 10, addedAtEpochMs: 0,
+            title: nil, description: nil, keypoints: nil,
+            stage: .local, failedStep: nil, failureMessage: nil, resultSeen: false,
+            scoreLogId: log.id
+        ))
+        let m = model(scoreLogs: store, scoreLogId: log.id, localVideos: videos)
+        XCTAssertFalse(m.canAddVideo)
+    }
+
+    func testTheMatchPageShowsTheSameStatusTheListRowWould() {
+        let store = store()
+        let log = newMatch(store)
+        store.finish(id: log.id)
+        let videos = IosTestDoublesKt.testLocalVideoRepository()
+        videos.add(entry: LocalVideoEntry(
+            id: "e1", uri: "content://x/e1", displayName: "m.mp4",
+            durationMs: 1000, sizeBytes: 10, addedAtEpochMs: 0,
+            title: nil, description: nil, keypoints: nil,
+            stage: .local, failedStep: nil, failureMessage: nil, resultSeen: false,
+            scoreLogId: log.id
+        ))
+        let m = model(scoreLogs: store, scoreLogId: log.id, localVideos: videos)
+        XCTAssertEqual(m.attach?.kind, .courtNotMarked)
     }
 
     func testADeletedMatchLeavesThePageInertRatherThanCrashing() async throws {
         let store = store()
         let log = newMatch(store)
-        let model = MatchModel(scoreLogs: store, scoreLogId: log.id)
+        let m = model(scoreLogs: store, scoreLogId: log.id)
 
         // Drives the mutation through the same `for await` loop `MatchView`'s
         // `.task` runs, not `reload()` - this is the path that must actually
         // notice a match removed elsewhere.
-        let collecting = Task { await model.start() }
+        let collecting = Task { await m.start() }
         defer { collecting.cancel() }
 
         store.removeLocally(id: log.id)
@@ -89,11 +138,11 @@ final class MatchModelTests: XCTestCase {
         // this test does not control directly, hence the poll instead of a bare
         // assertion right after `removeLocally`.
         let deadline = Date().addingTimeInterval(5)
-        while model.log != nil && Date() < deadline {
+        while m.log != nil && Date() < deadline {
             try await Task.sleep(nanoseconds: 20_000_000)
         }
 
-        XCTAssertNil(model.log)
-        XCTAssertFalse(model.canAddVideo)
+        XCTAssertNil(m.log)
+        XCTAssertFalse(m.canAddVideo)
     }
 }

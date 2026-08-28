@@ -140,7 +140,7 @@ fun AuthGate(
                 composable<Route.ClipList> {
                     val clipListVm: ClipListViewModel = viewModel(
                         factory = viewModelFactory {
-                            initializer { ClipListViewModel(rally.clips, rally.auth, rally.shares, rally.videos, rally.scoreLogs, localVideos, coordinator) }
+                            initializer { ClipListViewModel(rally.clips, rally.auth, rally.shares, rally.videos, rally.scoreLogs, localVideos, coordinator, localAnnotations) }
                         }
                     )
                     val localVm: LocalVideoListViewModel = viewModel(
@@ -261,7 +261,7 @@ fun AuthGate(
                     val args = entry.toRoute<Route.Match>()
                     val clipListVm: ClipListViewModel = viewModel(
                         factory = viewModelFactory {
-                            initializer { ClipListViewModel(rally.clips, rally.auth, rally.shares, rally.videos, rally.scoreLogs, localVideos, coordinator) }
+                            initializer { ClipListViewModel(rally.clips, rally.auth, rally.shares, rally.videos, rally.scoreLogs, localVideos, coordinator, localAnnotations) }
                         }
                     )
                     val logs by rally.scoreLogs.logs.collectAsStateWithLifecycle()
@@ -280,7 +280,9 @@ fun AuthGate(
                     val matchVm: MatchViewModel = viewModel(
                         key = args.scoreLogId,
                         factory = viewModelFactory {
-                            initializer { MatchViewModel(rally.scoreLogs, args.scoreLogId) }
+                            initializer {
+                                MatchViewModel(rally.scoreLogs, localVideos, coordinator, rally.clips, args.scoreLogId)
+                            }
                         }
                     )
                     MatchScreen(
@@ -310,6 +312,25 @@ fun AuthGate(
                                 AttachIntent.Import -> intake.import(target)
                                 AttachIntent.Record -> intake.record(target)
                             }
+                        },
+                        // Same lookups as ClipListScreen's onAttachedMarkCourt/
+                        // onAttachedRetry: the match page shows the same status as
+                        // the list row and must offer the same two actions on it.
+                        onMarkCourt = {
+                            localVideos.entries.value
+                                .firstOrNull { it.scoreLogId == args.scoreLogId }
+                                ?.let { nav.navigate(Route.CourtMarking(it.id)) }
+                        },
+                        onRetry = {
+                            localVideos.entries.value
+                                .firstOrNull { it.scoreLogId == args.scoreLogId }
+                                ?.let { entry ->
+                                    if (entry.stage == AnalyzeStage.FAILED && entry.keypoints != null) {
+                                        coordinator.retry(entry.id)
+                                    } else {
+                                        nav.navigate(Route.CourtMarking(entry.id))
+                                    }
+                                }
                         },
                     )
                 }

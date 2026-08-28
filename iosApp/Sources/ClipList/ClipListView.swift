@@ -375,7 +375,7 @@ struct ClipListView: View {
                         // deleted with no way for the coach to see whether the
                         // rest of it landed. Must match Android's
                         // ClipListViewModel.deleteBoundMatch.
-                        if await model.deleteScoreMatch(scoreLogId: scoreLogId) {
+                        if await model.deleteScoreMatch(scoreLogId: scoreLogId, hasVideo: true) {
                             await model.deleteMatch(videoId: videoId)
                         }
                     }

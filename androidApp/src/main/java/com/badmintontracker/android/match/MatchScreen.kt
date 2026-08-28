@@ -2,9 +2,13 @@ package com.badmintontracker.android.match
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -13,6 +17,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -33,10 +38,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -48,6 +55,8 @@ import com.badmintontracker.android.cliplist.formatDate
 import com.badmintontracker.android.cliplist.topRallyName
 import com.badmintontracker.android.scoring.AttachIntent
 import com.badmintontracker.android.share.ShareSheet
+import com.badmintontracker.android.ui.components.ShuttlButton
+import com.badmintontracker.android.ui.components.ShuttlButtonVariant
 import com.badmintontracker.android.ui.components.ThemeToggleButton
 import com.badmintontracker.android.ui.shareText
 import com.badmintontracker.shared.model.MatchLabelSummary
@@ -55,6 +64,8 @@ import com.badmintontracker.shared.model.RallyClip
 import com.badmintontracker.shared.prefs.ThemePreferenceRepository
 import com.badmintontracker.shared.repo.MediaRepository
 import com.badmintontracker.shared.repo.SharesRepository
+import com.badmintontracker.shared.scoring.AttachKind
+import com.badmintontracker.shared.scoring.AttachStatus
 import com.badmintontracker.shared.scoring.exportMatchText
 import java.util.Locale
 
@@ -86,6 +97,8 @@ fun MatchScreen(
     onClipClick: (RallyClip) -> Unit,
     onScore: () -> Unit,
     onAddVideo: (AttachIntent) -> Unit,
+    onMarkCourt: () -> Unit = {},
+    onRetry: () -> Unit = {},
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val matchState by matchVm.state.collectAsStateWithLifecycle()
@@ -120,13 +133,22 @@ fun MatchScreen(
         vm.dismissError()
     }
 
+    // rememberSaveable, not remember: court marking's exit does a bare
+    // nav.popBackStack() back to this same destination, whose `attach` argument
+    // is still set, so a plain `remember` flag (reset by that recomposition, and
+    // lost across process death besides) let the picker reopen unprompted on
+    // every return from court marking. Mirrors iOS's MatchView.attachHandled.
+    var attachHandled by rememberSaveable { mutableStateOf(false) }
+
     // The picker is plumbed to this screen and nowhere else, so "attach a video to
     // this match" has one implementation and two entry points: this button, and the
-    // prompt the board raises when a match finishes.
+    // prompt the board raises when a match finishes. Consumed once per push of this
+    // destination, not once per recomposition - see attachHandled above.
     LaunchedEffect(attach) {
+        if (attachHandled) return@LaunchedEffect
         when (attach) {
-            "Import" -> onAddVideo(AttachIntent.Import)
-            "Record" -> onAddVideo(AttachIntent.Record)
+            "Import" -> { attachHandled = true; onAddVideo(AttachIntent.Import) }
+            "Record" -> { attachHandled = true; onAddVideo(AttachIntent.Record) }
             else -> Unit
         }
     }
@@ -143,7 +165,10 @@ fun MatchScreen(
     // Held for the life of this composable, not re-keyed on hasPoints/hasRallies:
     // clipsForMatch briefly empties during a refresh, and re-keying on that would
     // silently snap a reader on the rallies facet back to Points mid-read.
-    var chosenFacet by remember { mutableStateOf(if (hasPoints) Facet.Points else Facet.Rallies) }
+    // rememberSaveable, not remember: returning from court marking (or any other
+    // pushed destination) must not snap a reader on the rallies facet back to
+    // Points. Matches iOS, where @State survives that return for free.
+    var chosenFacet by rememberSaveable { mutableStateOf(if (hasPoints) Facet.Points else Facet.Rallies) }
     // What actually renders: the user's choice when it is still available, else
     // whichever facet the match currently has.
     val facet = when {
@@ -274,6 +299,13 @@ fun MatchScreen(
         // MatchClipsScreen's pull-to-refresh.
         val pageBody: @Composable (Modifier) -> Unit = { modifier ->
             Column(modifier.fillMaxSize()) {
+                // Same status, same actions as the match list's own row - see
+                // AttachStatusBanner. Without this the page was blind about an
+                // attach in progress while simultaneously still offering "Add
+                // video", because canAddVideo used to close only on a videoId.
+                matchState.attach?.let { attach ->
+                    AttachStatusBanner(attach = attach, onMarkCourt = onMarkCourt, onRetry = onRetry)
+                }
                 if (hasPoints && hasRallies) {
                     SingleChoiceSegmentedButtonRow(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
@@ -350,5 +382,50 @@ fun MatchScreen(
             },
             onDismiss = { summarySheetOpen = false },
         )
+    }
+}
+
+/**
+ * What the match list's row says about this match's video, repeated on the match
+ * page itself: §4.9 of the 2026-08-28 design requires the page to say so and offer
+ * the same actions, not leave the coach reading a page that says nothing while
+ * "Add video" is also gone with no explanation. Same text, same three actions
+ * (Mark court / Retry / a spinner) as [ScoreMatchRow] in ClipListScreen.kt - see
+ * that file's doc comment for why sharing the derivation matters.
+ */
+@Composable
+private fun AttachStatusBanner(
+    attach: AttachStatus,
+    onMarkCourt: () -> Unit,
+    onRetry: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = attach.text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (attach.kind == AttachKind.FAILED) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(12.dp))
+        when (attach.kind) {
+            AttachKind.COURT_NOT_MARKED ->
+                ShuttlButton(text = "Mark court", onClick = onMarkCourt,
+                    variant = ShuttlButtonVariant.Primary, compact = true)
+            AttachKind.FAILED ->
+                ShuttlButton(text = "Retry", onClick = onRetry,
+                    variant = ShuttlButtonVariant.Primary, compact = true)
+            AttachKind.UPLOADING, AttachKind.CLIPPING, AttachKind.FINISHING_UP ->
+                Box(modifier = Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                }
+        }
     }
 }

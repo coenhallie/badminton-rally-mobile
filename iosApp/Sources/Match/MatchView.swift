@@ -102,7 +102,7 @@ struct MatchView: View {
         self.rally = rally
         self.analyze = analyze
         self.route = route
-        let model = MatchModel(rally: rally, scoreLogId: route.scoreLogId)
+        let model = MatchModel(rally: rally, analyze: analyze, scoreLogId: route.scoreLogId)
         _matchModel = State(initialValue: model)
         _chosenFacet = State(initialValue: model.log != nil ? .points : .rallies)
         _intake = State(initialValue: LocalVideoIntake(rally: rally))
@@ -215,6 +215,18 @@ struct MatchView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     VStack(spacing: 0) {
+                        // Same status, same actions as the match list's own row -
+                        // see AttachStatusBanner. Without this the page was blind
+                        // about an attach in progress while simultaneously still
+                        // offering "Add video", because canAddVideo used to close
+                        // only on a videoId.
+                        if let attach = matchModel.attach {
+                            AttachStatusBanner(
+                                attach: attach,
+                                onMarkCourt: { attachMarkCourt() },
+                                onRetry: { attachRetry() }
+                            )
+                        }
                         if hasPoints && hasRallies {
                             // Reads the derived facet, writes the chosen one: the
                             // control shows what is actually on screen, but a later
@@ -405,6 +417,23 @@ struct MatchView: View {
         }
     }
 
+    /// Same lookup and action as the merged row's own "Mark court" -
+    /// `ClipListView.scoreRow`'s `.courtNotMarked` case - so the match page
+    /// offers exactly what the list row offers for the same match.
+    private func attachMarkCourt() {
+        guard let entry = rally.localVideos.entries.value.first(where: { $0.scoreLogId == matchModel.scoreLogId })
+        else { return }
+        navigationTarget = CourtMarkingRoute(entryId: entry.id)
+    }
+
+    /// Same lookup and action as the merged row's own "Retry" -
+    /// `ClipListView.scoreRow`'s `.failed` case.
+    private func attachRetry() {
+        guard let entry = rally.localVideos.entries.value.first(where: { $0.scoreLogId == matchModel.scoreLogId })
+        else { return }
+        analyze.retry(entryId: entry.id)
+    }
+
     private var listBody: some View {
         List {
             if facet == .points, let log = matchModel.log {
@@ -476,5 +505,58 @@ struct MatchView: View {
                 .accessibilityLabel("Export as text")
             }
         }
+    }
+}
+
+/// What the match list's row says about this match's video, repeated on the
+/// match page itself: §4.9 of the 2026-08-28 design requires the page to say so
+/// and offer the same actions, not leave the coach reading a page that says
+/// nothing while "Add video" is also gone with no explanation. Same text, same
+/// three actions (Mark court / Retry / a spinner) as `ClipListView.scoreRow`.
+private struct AttachStatusBanner: View {
+    let attach: AttachStatus
+    let onMarkCourt: () -> Void
+    let onRetry: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(attach.text)
+                .font(.subheadline)
+                .foregroundStyle(attach.kind == .failed ? Shuttl.error : Shuttl.textSecondary)
+                .lineLimit(2)
+            Spacer()
+            switch attach.kind {
+            case .courtNotMarked:
+                Button(action: onMarkCourt) {
+                    Text("Mark court")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.black)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Shuttl.accent)
+                }
+                .buttonStyle(.borderless)
+            case .failed:
+                Button(action: onRetry) {
+                    Text("Retry")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.black)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Shuttl.accent)
+                }
+                .buttonStyle(.borderless)
+            case .uploading, .clipping, .finishingUp:
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: 24, height: 24)
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 12)
     }
 }

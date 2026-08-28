@@ -103,8 +103,24 @@ suspend fun AnnotationLabelsRepository.refreshLabelsOrMessage(): String? =
 suspend fun ScoreLogsRepository.syncScoreLogsOrMessage(): String? =
     sync().exceptionOrNull()?.let { "Couldn't sync your matches. They're saved on this phone." }
 
-suspend fun ScoreLogsRepository.deleteScoreMatchOrMessage(id: String): String? =
-    delete(id).exceptionOrNull()?.let { "Couldn't delete the match everywhere. It's gone from this phone." }
+/**
+ * [hasVideo] picks the wording: a bound match's delete is two things at once
+ * (the score log, then its video and clips), and this only ever runs the first
+ * half, so a failure here leaves the second half - the video and its clips -
+ * completely untouched, not merely undeleted on the server. Saying only "it's
+ * gone from this phone" is true of the match and silent about that, which reads
+ * as the whole gesture having landed. With the score_logs migration currently
+ * unapplied on the server this is not a rare failure: it is the only outcome a
+ * bound match's delete has today.
+ */
+suspend fun ScoreLogsRepository.deleteScoreMatchOrMessage(id: String, hasVideo: Boolean = false): String? =
+    delete(id).exceptionOrNull()?.let { scoreLogDeleteFailedMessage(hasVideo) }
+
+fun scoreLogDeleteFailedMessage(hasVideo: Boolean): String = if (hasVideo) {
+    "Couldn't delete the match everywhere. The match is gone from this phone, but its video and clips are still there."
+} else {
+    "Couldn't delete the match everywhere. It's gone from this phone."
+}
 
 /**
  * A match store the iOS test bundle can build.

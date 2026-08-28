@@ -1,10 +1,12 @@
 package com.badmintontracker.shared.scoring
 
+import com.badmintontracker.shared.localvideo.AnalyzeProgress
 import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.AnalyzeStep
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
+import kotlinx.datetime.Instant
 import kotlin.test.Test
 
 class AttachStatusTest {
@@ -12,13 +14,29 @@ class AttachStatusTest {
     private fun entry(
         stage: AnalyzeStage = AnalyzeStage.LOCAL,
         failureMessage: String? = null,
+        id: String = "vid-1",
+        scoreLogId: String? = "log-1",
     ) = LocalVideoEntry(
-        id = "vid-1", uri = "content://x/vid-1", displayName = "m.mp4",
+        id = id, uri = "content://x/$id", displayName = "m.mp4",
         durationMs = 1000, sizeBytes = 10, addedAtEpochMs = 0,
         stage = stage,
         failedStep = if (stage == AnalyzeStage.FAILED) AnalyzeStep.PROCESSING else null,
         failureMessage = failureMessage,
-        scoreLogId = "log-1",
+        scoreLogId = scoreLogId,
+    )
+
+    private fun log(videoId: String? = null) = ScoreLog(
+        id = "log-1",
+        videoId = videoId,
+        title = "Thu League",
+        homePlayers = listOf("Coen"),
+        awayPlayers = listOf("Marco"),
+        rules = ScoringRules.BWF_21,
+        setup = MatchSetup(doubles = false, firstServer = Side.HOME),
+        events = emptyList(),
+        status = if (videoId != null) ScoreLogStatus.BOUND else ScoreLogStatus.UNBOUND,
+        createdAt = Instant.parse("2026-08-27T18:00:00Z"),
+        updatedAt = Instant.parse("2026-08-27T18:00:00Z"),
     )
 
     @Test
@@ -101,5 +119,38 @@ class AttachStatusTest {
         val status = attachStatus(true, entry(AnalyzeStage.ANALYZED), null, clipCount = 0)
         status?.kind shouldBe AttachKind.FINISHING_UP
         status?.text shouldBe "Finishing up…"
+    }
+
+    @Test
+    fun the_per_log_derivation_finds_its_own_entry_among_others() {
+        // Both the match row and the match page call this with the whole entry
+        // list and the whole progress map - it has to pick out the one entry
+        // that actually belongs to this log, not just the first one around.
+        val status = scoreLogAttachStatus(
+            log = log(),
+            entries = listOf(entry(id = "other", scoreLogId = "log-other"), entry(id = "vid-1")),
+            progress = emptyMap(),
+            clipCount = 0,
+        )
+        status?.kind shouldBe AttachKind.COURT_NOT_MARKED
+    }
+
+    @Test
+    fun the_per_log_derivation_converts_upload_progress_the_same_way_attachStatus_does() {
+        val status = scoreLogAttachStatus(
+            log = log(),
+            entries = listOf(entry(AnalyzeStage.UPLOADING)),
+            progress = mapOf("vid-1" to AnalyzeProgress(entryId = "vid-1", uploadProgress = 0.42f)),
+            clipCount = 0,
+        )
+        status?.text shouldBe "Uploading 42%"
+    }
+
+    @Test
+    fun the_per_log_derivation_reads_hasVideo_off_the_log_itself() {
+        scoreLogAttachStatus(log = log(videoId = "v1"), entries = emptyList(), progress = emptyMap(), clipCount = 3)
+            .shouldBeNull()
+        scoreLogAttachStatus(log = log(videoId = "v1"), entries = emptyList(), progress = emptyMap(), clipCount = 0)
+            ?.kind shouldBe AttachKind.FINISHING_UP
     }
 }

@@ -397,6 +397,12 @@ listed separately.
   **The points and tags survive**, which is the entire reason `score_logs` owns
   the FK: `delete_match` cascades `rally_annotations` away, and the score log is
   where the coach's courtside work still exists afterwards.
+
+  No affordance for this is built in this pass: the list's delete gesture on a
+  bound match removes both the match and its clips together, and its confirm
+  dialog says so. `detachVideo`'s call above exists only to mirror the database
+  trigger, and to be the guard a future "remove video, keep match" affordance
+  would need.
 - **Deleting a bound match from the list.** Two things now hang off one gesture.
   The confirm has to say so: deleting the match deletes its clips and its
   points.

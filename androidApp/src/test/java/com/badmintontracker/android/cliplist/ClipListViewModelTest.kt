@@ -61,7 +61,10 @@ class ClipListViewModelTest {
         scoreLogs: ScoreLogsRepository,
     ): ClipListViewModel {
         val lv = localVideos()
-        return ClipListViewModel(clips, auth, shares, videos, scoreLogs, lv, coordinator(lv))
+        return ClipListViewModel(
+            clips, auth, shares, videos, scoreLogs, lv, coordinator(lv),
+            LocalAnnotationsRepository(MapSettings()),
+        )
     }
 
     @BeforeTest fun setMain() = Dispatchers.setMain(dispatcher)

@@ -3,7 +3,9 @@ package com.badmintontracker.android.cliplist
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.badmintontracker.shared.localvideo.AnalyzeCoordinator
+import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
+import com.badmintontracker.shared.localvideo.canRemoveLocalVideo
 import com.badmintontracker.shared.model.MatchMetadata
 import com.badmintontracker.shared.model.RallyClip
 import com.badmintontracker.shared.repo.AuthRepository
@@ -11,8 +13,8 @@ import com.badmintontracker.shared.repo.ClipsRepository
 import com.badmintontracker.shared.repo.SharesRepository
 import com.badmintontracker.shared.repo.VideosRepository
 import com.badmintontracker.shared.scoring.ScoreLogsRepository
-import com.badmintontracker.shared.scoring.attachStatus
 import com.badmintontracker.shared.scoring.buildScoreMatchCard
+import com.badmintontracker.shared.scoring.scoreLogAttachStatus
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -102,6 +104,7 @@ class ClipListViewModel(
     private val scoreLogs: ScoreLogsRepository,
     private val localVideos: LocalVideoRepository,
     private val coordinator: AnalyzeCoordinator,
+    private val localAnnotations: LocalAnnotationsRepository,
 ) : ViewModel() {
     private val refreshing      = MutableStateFlow(true)
     private val errors          = MutableStateFlow<String?>(null)
@@ -123,14 +126,10 @@ class ClipListViewModel(
         clips.observeClips(),
     ) { entries, progress, logs, allClips ->
         logs.mapNotNull { log ->
-            val entry = entries.firstOrNull { it.scoreLogId == log.id }
-            val percent = entry
-                ?.let { progress[it.id]?.uploadProgress }
-                ?.let { (it * 100).toInt() }
-            attachStatus(
-                hasVideo = log.videoId != null,
-                entry = entry,
-                uploadPercent = percent,
+            scoreLogAttachStatus(
+                log = log,
+                entries = entries,
+                progress = progress,
                 clipCount = allClips.count { it.videoId == log.videoId },
             )?.let { log.id to it }
         }.toMap()
@@ -210,6 +209,13 @@ class ClipListViewModel(
                 // unbind trigger, but the phone would not learn it until the next
                 // sync and would go on advertising clips for a deleted video.
                 // Idempotent against the trigger, which has already done it.
+                //
+                // No UI reaches this as "remove the video, keep the match" today -
+                // the list's only delete gesture on a bound match (deleteBoundMatch)
+                // removes both the match and its clips together, and its confirm
+                // dialog says so. This call exists to mirror the trigger above, and
+                // to be the guard a future "remove video, keep match" affordance
+                // would need - see the 2026-08-28 design, §4.8.
                 scoreLogs.logs.value
                     .filter { it.videoId == videoId }
                     .forEach { scoreLogs.detachVideo(it.id) }
@@ -228,11 +234,41 @@ class ClipListViewModel(
      * win or lose. Callers that chain another mutation after this one - see
      * [deleteBoundMatch] - need that server outcome to decide whether it is
      * safe to go on.
+     *
+     * [hasVideo] picks the failure wording: a bound match's delete is two things
+     * at once (this call, then [deleteMatchVideo]), and a failure here stops
+     * before the second half ever runs, so the video and its clips are left
+     * completely untouched, not merely undeleted on the server. Saying only
+     * "it's gone from this phone" is true of the match and silent about that,
+     * which reads as the whole gesture having landed. With the score_logs
+     * migration currently unapplied on the server this is not a rare failure:
+     * it is the only outcome a bound match's delete has today.
      */
-    private suspend fun deleteScoreLog(scoreLogId: String): Boolean {
+    private suspend fun deleteScoreLog(scoreLogId: String, hasVideo: Boolean = false): Boolean {
         val result = scoreLogs.delete(scoreLogId)
+        // The log is gone from this device either way - delete() removes it
+        // locally unconditionally, win or lose on the server - so an entry
+        // pointed at it is orphaned regardless of the server outcome below, and
+        // this must not be gated on result.isSuccess. Only when nothing is in
+        // flight for it: canRemoveLocalVideo already exists to protect an active
+        // upload/pipeline, and cancelling one mid-flight is deliberately out of
+        // scope here. Without this a settled entry - most reachably one
+        // AnalyzeCoordinator's zero-rally detection left FAILED - would be
+        // invisible ("On this phone" filters on scoreLogId == null) and
+        // unremovable.
+        localVideos.entries.value
+            .firstOrNull { it.scoreLogId == scoreLogId }
+            ?.takeIf { canRemoveLocalVideo(it.stage) }
+            ?.let { entry ->
+                localVideos.remove(entry.id)
+                localAnnotations.removeAllFor(entry.id)
+            }
         result.onFailure {
-            errors.value = "Couldn't delete the match everywhere. It's gone from this phone."
+            errors.value = if (hasVideo) {
+                "Couldn't delete the match everywhere. The match is gone from this phone, but its video and clips are still there."
+            } else {
+                "Couldn't delete the match everywhere. It's gone from this phone."
+            }
         }
         return result.isSuccess
     }
@@ -261,7 +297,7 @@ class ClipListViewModel(
      */
     fun deleteBoundMatch(videoId: String, scoreLogId: String) {
         viewModelScope.launch {
-            if (deleteScoreLog(scoreLogId)) {
+            if (deleteScoreLog(scoreLogId, hasVideo = true)) {
                 deleteMatchVideo(videoId)
             }
         }

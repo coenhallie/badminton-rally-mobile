@@ -1,5 +1,6 @@
 package com.badmintontracker.shared.scoring
 
+import com.badmintontracker.shared.localvideo.AnalyzeProgress
 import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 
@@ -65,4 +66,33 @@ fun attachStatus(
     // Bound with clips on screen: the rally facet already says everything.
     if (clipCount > 0) return null
     return AttachStatus("Finishing up…", AttachKind.FINISHING_UP)
+}
+
+/**
+ * [attachStatus] for one match, from the three sources every surface that shows
+ * it needs to combine: the local entry picked for [log] (if it still exists),
+ * the coordinator's transient upload progress keyed by entry id, and how many
+ * clips this match's video already has.
+ *
+ * Pulled out so the match list's row (`ClipListViewModel.attachStatuses`,
+ * `ClipListModel.attachMap()`) and the match page's own status
+ * (`MatchViewModel`, `MatchModel`) derive the same answer for the same match -
+ * three surfaces writing this by hand is three chances for them to disagree.
+ */
+fun scoreLogAttachStatus(
+    log: ScoreLog,
+    entries: List<LocalVideoEntry>,
+    progress: Map<String, AnalyzeProgress>,
+    clipCount: Int,
+): AttachStatus? {
+    val entry = entries.firstOrNull { it.scoreLogId == log.id }
+    val uploadPercent = entry
+        ?.let { progress[it.id]?.uploadProgress }
+        ?.let { (it * 100).toInt() }
+    return attachStatus(
+        hasVideo = log.videoId != null,
+        entry = entry,
+        uploadPercent = uploadPercent,
+        clipCount = clipCount,
+    )
 }

@@ -105,8 +105,6 @@ The mobile app is versioned independently from the web app.
 ### Fixed
 - A match ended early through "Finish match" no longer describes itself as
   still being scored, on its own page and in the match list.
-- Deleting the video of a match scored on the phone now keeps the match, its
-  points and its tags. Only the clips go.
 - Matches scored on the phone no longer disappear from the match list after
   restarting the app. They were never lost - they were on the phone the whole
   time - but the list read the stored matches before the app had finished
