@@ -202,12 +202,31 @@ class ClipListViewModel(
     fun signOut() = viewModelScope.launch { auth.signOut() }
     fun dismissError() { errors.value = null }
 
+    private suspend fun deleteMatchVideo(videoId: String) {
+        videos.deleteMatch(videoId)
+            .onSuccess {
+                clips.pruneVideo(videoId)
+                // The database does this too, through ON DELETE SET NULL and the
+                // unbind trigger, but the phone would not learn it until the next
+                // sync and would go on advertising clips for a deleted video.
+                // Idempotent against the trigger, which has already done it.
+                scoreLogs.logs.value
+                    .filter { it.videoId == videoId }
+                    .forEach { scoreLogs.detachVideo(it.id) }
+                refresh()
+            }
+            .onFailure { errors.value = "Couldn't delete the match. Please try again." }
+    }
+
     fun deleteMatch(videoId: String) {
-        viewModelScope.launch {
-            videos.deleteMatch(videoId)
-                .onSuccess { clips.pruneVideo(videoId); refresh() }
-                .onFailure { errors.value = "Couldn't delete the match. Please try again." }
-        }
+        viewModelScope.launch { deleteMatchVideo(videoId) }
+    }
+
+    private suspend fun deleteScoreLog(scoreLogId: String) {
+        scoreLogs.delete(scoreLogId)
+            .onFailure {
+                errors.value = "Couldn't delete the match everywhere. It's gone from this phone."
+            }
     }
 
     /**
@@ -215,11 +234,20 @@ class ClipListViewModel(
      * score-only match cannot be shared and therefore cannot be left.
      */
     fun deleteScoreMatch(scoreLogId: String) {
+        viewModelScope.launch { deleteScoreLog(scoreLogId) }
+    }
+
+    /**
+     * A bound row with clips deletes two things at once. Sequenced in one
+     * coroutine, score log first: [deleteMatchVideo]'s success path calls
+     * [refresh], which syncs score logs, and if that sync landed while the score
+     * log's own delete was still on the wire, it would pull the row back from
+     * the server and resurrect the match the user just deleted.
+     */
+    fun deleteBoundMatch(videoId: String, scoreLogId: String) {
         viewModelScope.launch {
-            scoreLogs.delete(scoreLogId)
-                .onFailure {
-                    errors.value = "Couldn't delete the match everywhere. It's gone from this phone."
-                }
+            deleteScoreLog(scoreLogId)
+            deleteMatchVideo(videoId)
         }
     }
 

@@ -103,6 +103,13 @@ final class ClipListModel {
             return
         }
         rally.clips.pruneVideo(videoId: videoId)
+        // The database does this too, through ON DELETE SET NULL and the unbind
+        // trigger, but the phone would not learn it until the next sync and
+        // would go on advertising clips for a deleted video. Idempotent against
+        // the trigger, which has already done it.
+        for log in rally.scoreLogs.logs.value where log.videoId == videoId {
+            rally.scoreLogs.detachVideo(id: log.id)
+        }
         await refresh()
     }
 

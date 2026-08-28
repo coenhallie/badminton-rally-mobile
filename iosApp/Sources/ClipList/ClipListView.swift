@@ -286,7 +286,19 @@ struct ClipListView: View {
                         case .score(let content):
                             scoreRow(content, model: model)
                                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                    Button { deleteScoreTarget = content.card } label: {
+                                    Button {
+                                        // A row with clips deletes two things, not one: the
+                                        // video and the score log. That case gets its own
+                                        // confirmation so the wording can say so.
+                                        if let video = content.video {
+                                            confirmTarget = PendingMatchAction(
+                                                match: video,
+                                                kind: .deleteBoundMatch(scoreLogId: content.card.scoreLogId)
+                                            )
+                                        } else {
+                                            deleteScoreTarget = content.card
+                                        }
+                                    } label: {
                                         Label("Delete", systemImage: "trash")
                                     }
                                     .tint(.red)
@@ -350,6 +362,15 @@ struct ClipListView: View {
                     switch kind {
                     case .deleteMatch: await model.deleteMatch(videoId: videoId)
                     case .leaveShare: await model.leaveShare(videoId: videoId)
+                    case .deleteBoundMatch(let scoreLogId):
+                        // Score log first: deleteMatch's refresh() syncs score
+                        // logs, and if that sync landed while the score log's
+                        // own delete was still on the wire, it would pull the
+                        // row back from the server and resurrect the match the
+                        // user just deleted. Must match Android's ordering in
+                        // ClipListViewModel.deleteBoundMatch.
+                        await model.deleteScoreMatch(scoreLogId: scoreLogId)
+                        await model.deleteMatch(videoId: videoId)
                     }
                 }
             }
@@ -592,6 +613,9 @@ private struct PendingMatchAction {
     enum Kind {
         case deleteMatch
         case leaveShare
+        /// A scored match that already has clips: deleting it removes the video
+        /// AND the score log, so the wording below must say both.
+        case deleteBoundMatch(scoreLogId: String)
     }
 
     let match: MatchSummary
@@ -603,12 +627,17 @@ private struct PendingMatchAction {
             return "Delete this match and all its rally clips? This can't be undone."
         case .leaveShare:
             return "Remove this shared match from your list? You'll need the owner to share it again."
+        case .deleteBoundMatch:
+            // Mirrors Android's ClipListScreen.kt wording exactly: a bound
+            // match's delete removes two things at once, the clips and the
+            // scored points, and neither of the wordings above says both.
+            return "Delete this match, every point you scored and all its rally clips? This can't be undone."
         }
     }
 
     var confirmLabel: String {
         switch kind {
-        case .deleteMatch: return "Delete"
+        case .deleteMatch, .deleteBoundMatch: return "Delete"
         case .leaveShare: return "Remove"
         }
     }

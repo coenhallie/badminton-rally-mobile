@@ -105,6 +105,7 @@ fun ClipListScreen(
     var sheetVideoId by remember { mutableStateOf<String?>(null) }
     var deleteTarget by remember { mutableStateOf<MatchSummary?>(null) }
     var deleteScoreTarget by remember { mutableStateOf<ScoreMatchCard?>(null) }
+    var deleteBoundMatchTarget by remember { mutableStateOf<MatchRow.Score?>(null) }
     var leaveShareTarget by remember { mutableStateOf<MatchSummary?>(null) }
     var localRemoveTarget by remember { mutableStateOf<LocalVideoEntry?>(null) }
     var detailsTarget by remember { mutableStateOf<DetailsTarget?>(null) }
@@ -238,7 +239,12 @@ fun ClipListScreen(
                                 onSwiped = {
                                     when (row) {
                                         is MatchRow.Video -> deleteTarget = row.match
-                                        is MatchRow.Score -> deleteScoreTarget = row.card
+                                        is MatchRow.Score ->
+                                            // A row with clips deletes two things, not one:
+                                            // the video and the score log. That case gets its
+                                            // own confirmation so the wording can say so.
+                                            if (row.video != null) deleteBoundMatchTarget = row
+                                            else deleteScoreTarget = row.card
                                     }
                                     false
                                 },
@@ -343,6 +349,22 @@ fun ClipListScreen(
             confirmLabel = "Delete",
             onConfirm = { vm.deleteScoreMatch(card.scoreLogId); deleteScoreTarget = null },
             onDismiss = { deleteScoreTarget = null },
+        )
+    }
+
+    deleteBoundMatchTarget?.let { row ->
+        val videoId = row.video?.videoId
+        ConfirmDialog(
+            title = "Delete match?",
+            // A bound match's delete removes two things at once: the clips and the
+            // scored points. Neither of the two wordings above says both.
+            message = "Delete this match, every point you scored and all its rally clips? This can't be undone.",
+            confirmLabel = "Delete",
+            onConfirm = {
+                if (videoId != null) vm.deleteBoundMatch(videoId, row.card.scoreLogId)
+                deleteBoundMatchTarget = null
+            },
+            onDismiss = { deleteBoundMatchTarget = null },
         )
     }
 
