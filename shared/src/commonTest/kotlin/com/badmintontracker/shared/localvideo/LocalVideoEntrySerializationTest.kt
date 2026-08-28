@@ -70,12 +70,23 @@ class LocalVideoEntrySerializationTest {
         // library, so a non-defaulted field here would silently wipe every local
         // video on the phone the first time this build runs.
         val legacy = """
-            {"id":"e1","uri":"content://x/e1","displayName":"m.mp4","durationMs":1000,
-             "sizeBytes":10,"addedAtEpochMs":0}
+            [
+              {
+                "id":"e1",
+                "uri":"content://x/e1",
+                "displayName":"m.mp4",
+                "durationMs":1000,
+                "sizeBytes":10,
+                "addedAtEpochMs":0
+              }
+            ]
         """.trimIndent()
-        val entry = Json { ignoreUnknownKeys = true }
-            .decodeFromString(LocalVideoEntry.serializer(), legacy)
-        entry.scoreLogId.shouldBeNull()
+        val settings = MapSettings().apply { putString("local_videos", legacy) }
+
+        val entries = LocalVideoRepository(settings).entries.value
+
+        entries.map { it.id } shouldBe listOf("e1")
+        entries[0].scoreLogId.shouldBeNull()
     }
 
     @Test
