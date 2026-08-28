@@ -1,8 +1,11 @@
 package com.badmintontracker.android.cliplist
 
 import com.badmintontracker.shared.model.RallyClip
+import com.badmintontracker.shared.scoring.AttachKind
+import com.badmintontracker.shared.scoring.AttachStatus
 import com.badmintontracker.shared.scoring.ScoreMatchCard
 import io.kotest.matchers.collections.shouldBeEmpty
+import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import kotlinx.datetime.Instant
 import org.junit.Test
@@ -25,16 +28,16 @@ class MatchRowMergeTest {
         isOwned = true,
     )
 
-    private fun scoreMatch(id: String, atMillis: Long) = ScoreMatchCard(
+    private fun scoreMatch(id: String, atMillis: Long, videoId: String? = null) = ScoreMatchCard(
         scoreLogId = id,
-        videoId = null,
+        videoId = videoId,
         title = "Thu League",
         createdAtEpochMs = atMillis,
         playersLine = "Coen vs Marco",
         scoreLine = "11-9",
         statusLine = "Scoring",
         isLive = true,
-        hasVideo = false,
+        hasVideo = videoId != null,
     )
 
     @Test
@@ -81,5 +84,47 @@ class MatchRowMergeTest {
     @Test
     fun an_account_with_neither_gets_nothing() {
         mergeMatchRows(emptyList(), emptyList()).shouldBeEmpty()
+    }
+
+    @Test
+    fun a_bound_match_is_one_row_and_not_two() {
+        // Once the pipeline produces clips, toMatches builds a video match for the
+        // same video the score log points at. Unmerged that is the same match twice,
+        // in the same section, which is the defect this fold exists to prevent.
+        val rows = mergeMatchRows(
+            videoMatches = listOf(videoMatch("v1", 300)),
+            scoreMatches = listOf(scoreMatch("s1", 200, videoId = "v1")),
+        )
+        rows.map { it.key } shouldBe listOf("score-s1")
+        (rows[0] as MatchRow.Score).video?.videoId shouldBe "v1"
+    }
+
+    @Test
+    fun a_bound_match_keeps_the_place_its_score_log_earned() {
+        // The coach created that match on Tuesday. It must not jump to the top of
+        // the list on Friday just because its clips arrived.
+        val rows = mergeMatchRows(
+            videoMatches = listOf(videoMatch("v1", 900), videoMatch("v2", 500)),
+            scoreMatches = listOf(scoreMatch("s1", 100, videoId = "v1")),
+        )
+        rows.map { it.key } shouldBe listOf("video-v2", "score-s1")
+    }
+
+    @Test
+    fun a_video_imported_on_its_own_is_still_its_own_row() {
+        val rows = mergeMatchRows(listOf(videoMatch("v1", 300)), listOf(scoreMatch("s1", 200)))
+        rows.map { it.key } shouldBe listOf("video-v1", "score-s1")
+    }
+
+    @Test
+    fun a_match_whose_video_is_still_clipping_carries_the_status_but_no_video() {
+        val rows = mergeMatchRows(
+            videoMatches = emptyList(),
+            scoreMatches = listOf(scoreMatch("s1", 200, videoId = "v1")),
+            attachByScoreLogId = mapOf("s1" to AttachStatus("Clipping…", AttachKind.CLIPPING)),
+        )
+        val row = rows.single() as MatchRow.Score
+        row.video.shouldBeNull()
+        row.attach?.text shouldBe "Clipping…"
     }
 }

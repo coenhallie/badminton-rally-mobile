@@ -2,6 +2,8 @@ package com.badmintontracker.android.cliplist
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.badmintontracker.shared.localvideo.AnalyzeCoordinator
+import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.model.MatchMetadata
 import com.badmintontracker.shared.model.RallyClip
 import com.badmintontracker.shared.repo.AuthRepository
@@ -9,6 +11,7 @@ import com.badmintontracker.shared.repo.ClipsRepository
 import com.badmintontracker.shared.repo.SharesRepository
 import com.badmintontracker.shared.repo.VideosRepository
 import com.badmintontracker.shared.scoring.ScoreLogsRepository
+import com.badmintontracker.shared.scoring.attachStatus
 import com.badmintontracker.shared.scoring.buildScoreMatchCard
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -97,6 +100,8 @@ class ClipListViewModel(
     private val shares: SharesRepository,
     private val videos: VideosRepository,
     private val scoreLogs: ScoreLogsRepository,
+    private val localVideos: LocalVideoRepository,
+    private val coordinator: AnalyzeCoordinator,
 ) : ViewModel() {
     private val refreshing      = MutableStateFlow(true)
     private val errors          = MutableStateFlow<String?>(null)
@@ -104,6 +109,31 @@ class ClipListViewModel(
     private val metadataByVideoId = MutableStateFlow<Map<String, MatchMetadata>>(emptyMap())
 
     private val scoreCards = scoreLogs.logs.map { logs -> logs.map(::buildScoreMatchCard) }
+
+    /**
+     * What each scored match's video is doing, keyed by score log id. Built here
+     * because it needs three sources at once: the entry, the coordinator's
+     * transient progress, and how many clips the match already has.
+     */
+    private val attachStatuses = combine(
+        localVideos.entries,
+        coordinator.progress,
+        scoreLogs.logs,
+        clips.observeClips(),
+    ) { entries, progress, logs, allClips ->
+        logs.mapNotNull { log ->
+            val entry = entries.firstOrNull { it.scoreLogId == log.id }
+            val percent = entry
+                ?.let { progress[it.id]?.uploadProgress }
+                ?.let { (it * 100).toInt() }
+            attachStatus(
+                hasVideo = log.videoId != null,
+                entry = entry,
+                uploadPercent = percent,
+                clipCount = allClips.count { it.videoId == log.videoId },
+            )?.let { log.id to it }
+        }.toMap()
+    }
 
     val state = combine(
         clips.observeClips(),
@@ -121,9 +151,11 @@ class ClipListViewModel(
             isRefreshing = r,
             error = e,
         )
-    }.combine(scoreCards) { base, cards ->
-        base.copy(ownedRows = mergeMatchRows(base.ownedMatches, cards))
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ClipListState())
+    }.combine(scoreCards) { base, cards -> base to cards }
+        .combine(attachStatuses) { (base, cards), attach ->
+            base.copy(ownedRows = mergeMatchRows(base.ownedMatches, cards, attach))
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ClipListState())
 
     init { refresh() }
 
