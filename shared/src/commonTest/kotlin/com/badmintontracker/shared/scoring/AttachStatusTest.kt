@@ -92,4 +92,14 @@ class AttachStatusTest {
         // annotations. Nothing is in flight.
         attachStatus(true, entry(AnalyzeStage.ANALYZED), null, clipCount = 3).shouldBeNull()
     }
+
+    @Test
+    fun an_analyzed_entry_whose_clips_have_not_synced_yet_is_finishing_up() {
+        // The pipeline succeeding and clips.refresh() bringing the rows back are
+        // two different moments; ANALYZED with no clips on screen yet is the same
+        // gap the no-entry FINISHING_UP case exists for, not a silent match.
+        val status = attachStatus(true, entry(AnalyzeStage.ANALYZED), null, clipCount = 0)
+        status?.kind shouldBe AttachKind.FINISHING_UP
+        status?.text shouldBe "Finishing up…"
+    }
 }

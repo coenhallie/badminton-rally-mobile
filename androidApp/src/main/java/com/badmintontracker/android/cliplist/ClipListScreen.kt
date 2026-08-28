@@ -558,8 +558,8 @@ private fun ScoreMatchRow(
         Column(Modifier.weight(1f)) {
             Text(
                 text = card.title,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onBackground,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )

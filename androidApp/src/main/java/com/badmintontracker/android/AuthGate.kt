@@ -170,6 +170,14 @@ fun AuthGate(
                                     // directly just re-fails instantly with "No court points
                                     // saved" (AnalyzeCoordinator.runPipeline). Send it back to
                                     // court marking instead.
+                                    //
+                                    // The `else` below is defensive, not reachable today: keypoints
+                                    // are written by startAnalysis before the entry's first
+                                    // launchPipeline call, and fail() only ever runs from inside
+                                    // runPipeline after that, so a FAILED entry always already has
+                                    // keypoints. Do not simplify this guard away on that basis - it
+                                    // is what stops the ScoreMatchRow "Retry" button from lying if
+                                    // that invariant ever stops holding.
                                     if (entry.stage == AnalyzeStage.FAILED && entry.keypoints != null) {
                                         localVm.retry(entry.id)
                                     } else {
