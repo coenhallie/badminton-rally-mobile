@@ -34,8 +34,9 @@ import com.badmintontracker.shared.scoring.Side
  * renders whichever facet is selected inside one shared scroll container.
  *
  * Lifted from `ScoreMatchScreen` unchanged: same header, same tally gate, same
- * newest-first point list. [onScore] is null once there is nothing left to
- * score - absent rather than disabled, because undo lives on the board itself.
+ * newest-first point list. The Score/Resume button, not [onScore] itself, is
+ * omitted once there is nothing left to score - absent rather than disabled,
+ * because undo lives on the board itself.
  */
 fun LazyListScope.pointsFacet(
     log: ScoreLog,

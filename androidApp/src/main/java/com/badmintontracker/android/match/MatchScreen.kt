@@ -122,8 +122,17 @@ fun MatchScreen(
     // it did before this page existed.
     val hasPoints = log != null
     val hasRallies = clipsForMatch.isNotEmpty()
-    var facet by remember(hasPoints, hasRallies) {
-        mutableStateOf(if (hasPoints) Facet.Points else Facet.Rallies)
+    // Held for the life of this composable, not re-keyed on hasPoints/hasRallies:
+    // clipsForMatch briefly empties during a refresh, and re-keying on that would
+    // silently snap a reader on the rallies facet back to Points mid-read.
+    var chosenFacet by remember { mutableStateOf(if (hasPoints) Facet.Points else Facet.Rallies) }
+    // What actually renders: the user's choice when it is still available, else
+    // whichever facet the match currently has.
+    val facet = when {
+        chosenFacet == Facet.Points && hasPoints -> Facet.Points
+        chosenFacet == Facet.Rallies && hasRallies -> Facet.Rallies
+        hasPoints -> Facet.Points
+        else -> Facet.Rallies
     }
 
     Scaffold(
@@ -222,12 +231,13 @@ fun MatchScreen(
             return@Scaffold
         }
 
-        PullToRefreshBox(
-            isRefreshing = state.isRefreshing,
-            onRefresh = { vm.refresh(); summaryVm?.refresh() },
-            modifier = Modifier.padding(padding).fillMaxSize(),
-        ) {
-            Column(Modifier.fillMaxSize()) {
+        // A pull gesture that spins and refreshes nothing is worse than no gesture:
+        // a score-only match has no video, so neither vm (clips) nor summaryVm
+        // (null here) has anything for onRefresh to touch. Only a video-backed
+        // match - the same condition that gives it a summaryVm - keeps the old
+        // MatchClipsScreen's pull-to-refresh.
+        val pageBody: @Composable (Modifier) -> Unit = { modifier ->
+            Column(modifier.fillMaxSize()) {
                 if (hasPoints && hasRallies) {
                     SingleChoiceSegmentedButtonRow(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
@@ -236,7 +246,7 @@ fun MatchScreen(
                             .forEachIndexed { index, (candidate, label) ->
                                 SegmentedButton(
                                     selected = facet == candidate,
-                                    onClick = { facet = candidate },
+                                    onClick = { chosenFacet = candidate },
                                     shape = SegmentedButtonDefaults.itemShape(index, 2),
                                 ) { Text(label) }
                             }
@@ -266,6 +276,18 @@ fun MatchScreen(
                     }
                 }
             }
+        }
+
+        if (videoId != null) {
+            PullToRefreshBox(
+                isRefreshing = state.isRefreshing,
+                onRefresh = { vm.refresh(); summaryVm?.refresh() },
+                modifier = Modifier.padding(padding).fillMaxSize(),
+            ) {
+                pageBody(Modifier)
+            }
+        } else {
+            pageBody(Modifier.padding(padding))
         }
     }
 
