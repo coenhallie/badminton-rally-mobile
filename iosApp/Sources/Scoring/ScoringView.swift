@@ -6,6 +6,14 @@ struct ScoringRoute: Hashable, Identifiable {
     var id: String { scoreLogId }
 }
 
+/// Where finishing a match can take the coach next, chosen on the "Add the
+/// video?" prompt. Mirrors Android's `AttachIntent`; `Hashable` because
+/// `MatchRoute` carries one and `MatchRoute` itself is `Hashable`.
+enum AttachIntent: Hashable {
+    case importVideo
+    case record
+}
+
 /// The courtside board. One tap on a side scores the rally it just won; a second
 /// tap on a label tags it.
 ///
@@ -15,11 +23,21 @@ struct ScoringRoute: Hashable, Identifiable {
 struct ScoringView: View {
     let rally: RallyApp
     let scoreLogId: String
+    var onFinished: (AttachIntent?) -> Void = { _ in }
 
     @Environment(\.dismiss) private var dismiss
     @State private var model: ScoringModel?
     @State private var confirming: Confirmation?
     @State private var noteOpen = false
+
+    // Fires on the transition to un-scoreable, from either exit: the Done button
+    // once the rules end it, and "Finish match" in the menu. `addVideoAsked` is
+    // plain view state, scoped to this ScoringView instance's lifetime the same
+    // way Android's board scopes its flag to the composition - so undo-then-
+    // refinish does not re-nag, but leaving and coming back to the board (a new
+    // instance, since it's pushed fresh each time) asks again.
+    @State private var addVideoAsked = false
+    @State private var addVideoOpen = false
 
     var body: some View {
         Group {
@@ -66,6 +84,17 @@ struct ScoringView: View {
 
             controlBar(model, match)
         }
+        // Keyed on both, not on `model.canScore` alone: an early "Finish match"
+        // from the menu can leave `match.isOver` false (the rules never ended it)
+        // while `log.status` moves off LIVE, and that exit must raise the prompt
+        // too. `.task(id:)` runs on first appearance as well as on a changed key,
+        // matching Android's `LaunchedEffect(match.isOver, log.status)` - a board
+        // opened on a match that is already un-scoreable asks immediately.
+        .task(id: FinishPromptKey(isOver: match.isOver, status: log.status)) {
+            guard !addVideoAsked, !log.isPlayable() else { return }
+            addVideoAsked = true
+            addVideoOpen = true
+        }
         .confirmationDialog(
             confirming?.title ?? "",
             isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } }),
@@ -84,6 +113,40 @@ struct ScoringView: View {
         } message: {
             Text(confirming?.body ?? "")
         }
+        .confirmationDialog(
+            "Add the video?",
+            // Any way the dialog closes - a button, or a swipe/tap outside it -
+            // must end in exactly one call: `finishBoard` guards on `addVideoOpen`
+            // still being true, so the tap that already handled it (via a button's
+            // own action) makes the system's own dismissal a no-op.
+            isPresented: Binding(get: { addVideoOpen }, set: { if !$0 { finishBoard(nil) } }),
+            titleVisibility: .visible
+        ) {
+            Button("Import video") { finishBoard(.importVideo) }
+            Button("Record") { finishBoard(.record) }
+            Button("Not now", role: .cancel) { finishBoard(nil) }
+        } message: {
+            Text(
+                "Import or record the video of this match and Shuttl will cut it into " +
+                "one clip per rally. You can also do this later from the match itself."
+            )
+        }
+    }
+
+    /// The single exit from the "Add the video?" prompt, whichever of its three
+    /// choices or its own dismissal reaches it.
+    ///
+    /// `dismiss()` runs first, and `onFinished` is deferred a runloop tick past
+    /// it rather than called inline: popping this view and pushing the match
+    /// page's `onFinished` sets up both land in the same SwiftUI transaction
+    /// otherwise, and NavigationStack does not reliably settle from a pop and a
+    /// push landing together - confirmed on-device, where the destination came
+    /// up with its content area permanently blank until this was split apart.
+    private func finishBoard(_ intent: AttachIntent?) {
+        guard addVideoOpen else { return }
+        addVideoOpen = false
+        dismiss()
+        DispatchQueue.main.async { onFinished(intent) }
     }
 
     /// The one line the coach glances up at. An announcement outranks the running
@@ -298,7 +361,16 @@ struct ScoringView: View {
                 // lives in the menu behind a confirm: a call to action beside a
                 // board being tapped every rally is a match ended by accident.
                 if match.isOver {
-                    Button("Done") { dismiss() }.buttonStyle(.borderedProminent)
+                    // In practice this fires only after the prompt above has
+                    // already been answered once this visit - it appears the
+                    // instant the match becomes un-scoreable, covering the board
+                    // before Done is reachable - but it stays wired the same way
+                    // Android's does, for the undo-then-refinish case the comment
+                    // on `addVideoAsked` describes.
+                    Button("Done") {
+                        dismiss()
+                        DispatchQueue.main.async { onFinished(nil) }
+                    }.buttonStyle(.borderedProminent)
                 }
             }
             .padding(.horizontal, 12)
@@ -366,6 +438,14 @@ struct ScoringView: View {
     static func runningSummary(_ log: ScoreLog, _ match: MatchState) -> String {
         if match.completedGames.isEmpty { return log.title }
         return match.completedGames.map { "\($0.home)-\($0.away)" }.joined(separator: ", ")
+    }
+
+    /// The `.task(id:)` key for the finish-prompt watcher. Both fields matter:
+    /// see the watcher's own comment for why `log.status` alone or `match.isOver`
+    /// alone would each miss one of the two terminal exits.
+    private struct FinishPromptKey: Equatable {
+        let isOver: Bool
+        let status: ScoreLogStatus
     }
 
     enum Confirmation {

@@ -19,6 +19,12 @@ struct ClipListView: View {
     @State private var showNewMatch = false
     @State private var scoringTarget: ScoringRoute? = nil
     @State private var deleteScoreTarget: ScoreMatchCard? = nil
+    // Where the board's "Add the video?" prompt (or its Done button) lands: a
+    // fresh push of the match page, carrying whatever the coach chose so the
+    // match page can act on it once. Separate from the `MatchRoute` pushed by a
+    // row tap - same pattern as `scoringTarget` alongside the `for:` destination
+    // below, so the two navigation triggers cannot fight over one binding.
+    @State private var matchTarget: MatchRoute? = nil
 
     init(rally: RallyApp, analyze: AnalyzeCoordinator) {
         self.rally = rally
@@ -126,6 +132,11 @@ struct ClipListView: View {
             // separate `for await` over the entries flow and still lags the add
             // that set this id, whereas get(id:) sees the value add() just wrote.
             guard let entry = rally.localVideos.get(id: id) else { return }
+            // A video picked for a match already carries that match's name
+            // (MatchTarget's title rode along on the INSERT), and videos.title is
+            // insert-only, so there is nothing to ask here - MatchView owns that
+            // pick and sends it straight to court marking instead.
+            guard entry.scoreLogId == nil else { return }
             detailsTarget = MatchDetailsTarget(entry: entry, autoOpened: true)
         }
         .sheet(isPresented: $showImporter) {
@@ -168,6 +179,17 @@ struct ClipListView: View {
         }
         .navigationDestination(isPresented: $showLabels) {
             LabelsView(rally: rally)
+        }
+    }
+
+    /// Lands on the match page rather than the list once the board is done,
+    /// because a match just created and scored in one sitting (New match ->
+    /// Scoring, no match page underneath it yet) has nothing to pop back to. The
+    /// chosen intent (if any) rides along on the fresh `MatchRoute` so the match
+    /// page can act on it once. Mirrors `AuthGate.kt`'s `Route.Scoring.onFinished`.
+    private func onScoringFinished(_ scoreLogId: String) -> (AttachIntent?) -> Void {
+        { intent in
+            matchTarget = MatchRoute(scoreLogId: scoreLogId, videoId: nil, attach: intent)
         }
     }
 
@@ -309,10 +331,13 @@ struct ClipListView: View {
         }
         .refreshable { await model.refresh() }
         .navigationDestination(for: MatchRoute.self) { route in
-            MatchView(rally: rally, route: route)
+            MatchView(rally: rally, analyze: analyze, route: route)
+        }
+        .navigationDestination(item: $matchTarget) { route in
+            MatchView(rally: rally, analyze: analyze, route: route)
         }
         .navigationDestination(for: ScoringRoute.self) { route in
-            ScoringView(rally: rally, scoreLogId: route.scoreLogId)
+            ScoringView(rally: rally, scoreLogId: route.scoreLogId, onFinished: onScoringFinished(route.scoreLogId))
         }
         .navigationDestination(isPresented: $showNewMatch) {
             NewMatchView(rally: rally) { id in
@@ -323,7 +348,7 @@ struct ClipListView: View {
             }
         }
         .navigationDestination(item: $scoringTarget) { route in
-            ScoringView(rally: rally, scoreLogId: route.scoreLogId)
+            ScoringView(rally: rally, scoreLogId: route.scoreLogId, onFinished: onScoringFinished(route.scoreLogId))
         }
         .navigationDestination(for: LocalPlayerRoute.self) { route in
             LocalPlayerView(rally: rally, analyze: analyze, entryId: route.entryId)

@@ -3,6 +3,15 @@ import Foundation
 import Photos
 import Shared
 
+/// The match a pick is for. Mirrors Android's `VideoIntake.MatchTarget`: the
+/// title is not decoration - it rides along on the videos INSERT and the
+/// database grants no UPDATE on videos.title, so this is the only moment the
+/// video can be given the name the coach already chose.
+struct MatchTarget {
+    let scoreLogId: String
+    let title: String
+}
+
 /// Mirrors Android's VideoIntake.addEntryFromUri: copy into the store, extract
 /// metadata, enforce the 1 GB cap, persist a LOCAL-stage entry.
 @MainActor @Observable
@@ -18,7 +27,8 @@ final class LocalVideoIntake {
     /// tempURL: file handed over by the picker/camera (consumed by this call).
     /// suggestedName: picker-provided name; recordings pass nil and get the
     /// shuttl_<epochMillis>.mp4 pattern. isRecording additionally saves to Photos.
-    func add(tempURL: URL, suggestedName: String?, isRecording: Bool) async {
+    /// forMatch: the score log this pick is for, or nil for a video-first import.
+    func add(tempURL: URL, suggestedName: String?, isRecording: Bool, forMatch: MatchTarget? = nil) async {
         error = nil
         let sizeBytes = (try? FileManager.default
             .attributesOfItem(atPath: tempURL.path)[.size] as? Int64).flatMap { $0 } ?? 0
@@ -55,14 +65,14 @@ final class LocalVideoIntake {
             durationMs: durationMs,
             sizeBytes: sizeBytes,
             addedAtEpochMs: epochMs,
-            title: nil,
+            title: forMatch?.title,
             description: nil,
             keypoints: nil,
             stage: .local,
             failedStep: nil,
             failureMessage: nil,
             resultSeen: false,
-            scoreLogId: nil
+            scoreLogId: forMatch?.scoreLogId
         ))
         lastAddedId = id
     }

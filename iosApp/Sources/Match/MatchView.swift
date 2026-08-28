@@ -7,6 +7,13 @@ import Shared
 struct MatchRoute: Hashable {
     let scoreLogId: String?
     let videoId: String?
+    /// The intent carried from the board's "Add the video?" prompt - "Import" or
+    /// "Record" chosen there, or nil (either "Not now", or a route pushed by
+    /// something other than that prompt, e.g. a plain row tap). Not part of a
+    /// route's identity beyond a single read by the match page itself - nothing
+    /// pops or re-pushes a `MatchRoute` by reconstructing one, so two instances
+    /// for the same match carrying different `attach` values is fine.
+    var attach: AttachIntent? = nil
 }
 
 /// Which half of a match page is on screen. Only meaningful when the match has
@@ -41,9 +48,27 @@ private enum MatchSheet: Identifiable, Hashable {
 /// `ScoreMatchView`.
 struct MatchView: View {
     let rally: RallyApp
+    let analyze: AnalyzeCoordinator
     let route: MatchRoute
 
     @State private var matchModel: MatchModel
+    // This page owns the picker, the same way `ClipListView` owns its own: "add
+    // a video to this match" needs exactly one implementation, whether it starts
+    // from this page's own "Add video" menu or from the board's finish prompt.
+    // A separate instance from ClipListView's - the two never race, since the
+    // match this page attaches to is the one thing ClipListView's own intake
+    // cannot be mid-picking on when this page is on screen.
+    @State private var intake: LocalVideoIntake
+    @State private var showImporter = false
+    @State private var showRecorder = false
+    @State private var pendingAttachTarget: MatchTarget? = nil
+    @State private var navigationTarget: CourtMarkingRoute? = nil
+    // `route.attach` is only ever meant to be acted on once per push of this
+    // page - a fresh `MatchRoute` each time the prompt fires, per `MatchRoute`'s
+    // own doc comment - so this flag (scoped to this view instance) is enough;
+    // `.onAppear` re-firing on a later return to this same instance must not
+    // replay it.
+    @State private var attachHandled = false
     // Fetched here rather than handed down: the list navigates by video id alone,
     // and a soft-failing read is cheaper than threading a summary through the route.
     @State private var allClips: [RallyClip] = []
@@ -66,12 +91,14 @@ struct MatchView: View {
     // silently snap a reader on the rallies facet back to Points mid-read.
     @State private var chosenFacet: Facet
 
-    init(rally: RallyApp, route: MatchRoute) {
+    init(rally: RallyApp, analyze: AnalyzeCoordinator, route: MatchRoute) {
         self.rally = rally
+        self.analyze = analyze
         self.route = route
         let model = MatchModel(rally: rally, scoreLogId: route.scoreLogId)
         _matchModel = State(initialValue: model)
         _chosenFacet = State(initialValue: model.log != nil ? .points : .rallies)
+        _intake = State(initialValue: LocalVideoIntake(rally: rally))
     }
 
     // The score log is authoritative: a match bound after this page was opened
@@ -168,29 +195,34 @@ struct MatchView: View {
     }
 
     var body: some View {
-        Group {
-            if isMissing {
-                VStack {
-                    Text("This match is no longer on this phone.")
-                        .foregroundStyle(Shuttl.textSecondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                VStack(spacing: 0) {
-                    if hasPoints && hasRallies {
-                        // Reads the derived facet, writes the chosen one: the
-                        // control shows what is actually on screen, but a later
-                        // fallback (rallies emptying mid-refresh) must not overwrite
-                        // what the user picked - see `chosenFacet`'s own comment.
-                        Picker("Facet", selection: Binding(get: { facet }, set: { chosenFacet = $0 })) {
-                            Text("Points").tag(Facet.points)
-                            Text("Rallies").tag(Facet.rallies)
-                        }
-                        .pickerStyle(.segmented)
-                        .padding(.horizontal)
-                        .padding(.vertical, 8)
+        VStack(spacing: 0) {
+            if let intakeError = intake.error {
+                ErrorBanner(message: intakeError)
+            }
+            Group {
+                if isMissing {
+                    VStack {
+                        Text("This match is no longer on this phone.")
+                            .foregroundStyle(Shuttl.textSecondary)
                     }
-                    listContent
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    VStack(spacing: 0) {
+                        if hasPoints && hasRallies {
+                            // Reads the derived facet, writes the chosen one: the
+                            // control shows what is actually on screen, but a later
+                            // fallback (rallies emptying mid-refresh) must not overwrite
+                            // what the user picked - see `chosenFacet`'s own comment.
+                            Picker("Facet", selection: Binding(get: { facet }, set: { chosenFacet = $0 })) {
+                                Text("Points").tag(Facet.points)
+                                Text("Rallies").tag(Facet.rallies)
+                            }
+                            .pickerStyle(.segmented)
+                            .padding(.horizontal)
+                            .padding(.vertical, 8)
+                        }
+                        listContent
+                    }
                 }
             }
         }
@@ -239,6 +271,45 @@ struct MatchView: View {
         .navigationDestination(item: $clipRoute) { route in
             ClipDetailView(rally: rally, clipId: route.id)
         }
+        .navigationDestination(item: $navigationTarget) { route in
+            CourtMarkingView(rally: rally, analyze: analyze, entryId: route.entryId)
+        }
+        .sheet(isPresented: $showImporter) {
+            VideoPicker(
+                onPicked: { tempURL, suggestedName in
+                    let target = pendingAttachTarget
+                    Task { await intake.add(tempURL: tempURL, suggestedName: suggestedName, isRecording: false, forMatch: target) }
+                },
+                onFailed: { intake.error = "Couldn't import the video. Please try again." }
+            )
+        }
+        .fullScreenCover(isPresented: $showRecorder) {
+            CameraRecorder { tempURL in
+                let target = pendingAttachTarget
+                Task { await intake.add(tempURL: tempURL, suggestedName: nil, isRecording: true, forMatch: target) }
+            }
+            .ignoresSafeArea()
+        }
+        .onChange(of: intake.lastAddedId) { _, id in
+            guard let id else { return }
+            // Consumed unconditionally, before the lookup can fail - see
+            // ClipListView's identical guard for why.
+            intake.lastAddedId = nil
+            // The coach already said he wants this video analysed; sending him
+            // straight to court marking rather than back to this page first is
+            // the same shortcut `AuthGate.kt`'s `onAdded` takes for a match-
+            // attached pick, and the whole reason Step 2 skips the details sheet.
+            navigationTarget = CourtMarkingRoute(entryId: id)
+        }
+        // The picker is plumbed to this page and nowhere else, so "attach a video
+        // to this match" has one implementation and two entry points: the "Add
+        // video" menu below, and the prompt the board raises when a match
+        // finishes (`route.attach`, read once per push of this page).
+        .onAppear {
+            guard !attachHandled, let attach = route.attach else { return }
+            attachHandled = true
+            attachVideo(attach)
+        }
         .task { await matchModel.start() }
         // Soft failure: no metadata just means the date headline, as before. Keyed
         // on the effective video id, not a bare `.task`: a score-only match that
@@ -280,6 +351,35 @@ struct MatchView: View {
             }
         } else {
             listBody
+        }
+    }
+
+    /// Starts a pick for this match, from either entry point (the "Add video"
+    /// menu or the board's finish prompt). Mirrors `AuthGate.kt`'s `onAddVideo`.
+    private func attachVideo(_ intent: AttachIntent) {
+        guard let log = matchModel.log else { return }
+        // A match acquires a video only once it is closed: attaching to a log
+        // still marked live would leave a bound match advertising "Resume
+        // scoring" for the whole upload and clipping window.
+        if log.status == .live {
+            rally.scoreLogs.finish(id: log.id)
+            matchModel.reload()
+        }
+        pendingAttachTarget = MatchTarget(scoreLogId: log.id, title: log.title)
+        switch intent {
+        case .importVideo:
+            showImporter = true
+        case .record:
+            // Same guard as ClipListView's own record entry point: the
+            // simulator (and any device with no camera) has nothing for
+            // `showRecorder` to present. Checked here rather than at each call
+            // site, so both this page's own menu and the board's finish prompt
+            // (which reaches this through `route.attach`) get it for free.
+            if CameraRecorder.isAvailable {
+                showRecorder = true
+            } else {
+                intake.error = "Camera is not available on this device."
+            }
         }
     }
 
@@ -327,6 +427,19 @@ struct MatchView: View {
                     Image(systemName: "square.and.arrow.up")
                 }
                 .accessibilityLabel("Share match")
+            }
+        }
+        // A finished match with no video yet - the one condition
+        // `MatchModel.canAddVideo` is true for.
+        if matchModel.canAddVideo {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button("Import video") { attachVideo(.importVideo) }
+                    Button("Record video") { attachVideo(.record) }
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .accessibilityLabel("Add video")
             }
         }
         // A distinct glyph from the button above: a match with both a video and a
