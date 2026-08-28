@@ -374,6 +374,10 @@ struct ClipListView: View {
                     } label: {
                         Image(systemName: "square.and.arrow.up")
                     }
+                    // Same 44x44 as the score row's trailing controls: the two row
+                    // kinds sit adjacent in one list, so their trailing footprints
+                    // must match or the boundary between them reads as a seam.
+                    .frame(width: 44, height: 44)
                     .buttonStyle(.borderless)
                 }
             }
@@ -443,30 +447,37 @@ struct ClipListView: View {
                 Spacer()
                 switch content.attach?.kind {
                 case .courtNotMarked:
-                    Button("Mark court") {
+                    // Padding/background live inside the label, not chained onto
+                    // the Button, so the tappable area is exactly the visible
+                    // pill - matching `chip` in PlaybackControlBar.swift. This row
+                    // is a NavigationLink's label; a dead zone here would silently
+                    // open the match instead of marking the court.
+                    Button {
                         if let entry { navigationTarget = CourtMarkingRoute(entryId: entry.id) }
+                    } label: {
+                        Text("Mark court")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.black)
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Shuttl.accent)
                     }
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.black)
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
-                    .layoutPriority(1)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Shuttl.accent)
                     .buttonStyle(.borderless)
                 case .failed:
-                    Button("Retry") {
+                    Button {
                         if let entry { analyze.retry(entryId: entry.id) }
+                    } label: {
+                        Text("Retry")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.black)
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Shuttl.accent)
                     }
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.black)
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
-                    .layoutPriority(1)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Shuttl.accent)
                     .buttonStyle(.borderless)
                 case .uploading, .clipping, .finishingUp:
                     // Boxed to the same 44x44 footprint as the share button

@@ -133,7 +133,10 @@ func mergeMatchRows(
     scoreMatches: [ScoreMatchCard],
     attachByScoreLogId: [String: AttachStatus]
 ) -> [MatchRow] {
-    let videoById = Dictionary(uniqueKeysWithValues: videoMatches.map { ($0.videoId, $0) })
+    // uniquingKeysWith rather than uniqueKeysWithValues: a duplicate videoId is
+    // unreachable today, but Kotlin's associateBy silently last-wins on one, and
+    // this must not trap where Android would not.
+    let videoById = Dictionary(videoMatches.map { ($0.videoId, $0) }, uniquingKeysWith: { _, last in last })
     let claimed = Set(scoreMatches.compactMap(\.videoId))
     let scoreRows = scoreMatches.map { card in
         MatchRow.score(ScoreRowContent(
