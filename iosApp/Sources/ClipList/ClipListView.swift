@@ -363,14 +363,21 @@ struct ClipListView: View {
                     case .deleteMatch: await model.deleteMatch(videoId: videoId)
                     case .leaveShare: await model.leaveShare(videoId: videoId)
                     case .deleteBoundMatch(let scoreLogId):
-                        // Score log first: deleteMatch's refresh() syncs score
-                        // logs, and if that sync landed while the score log's
-                        // own delete was still on the wire, it would pull the
-                        // row back from the server and resurrect the match the
-                        // user just deleted. Must match Android's ordering in
+                        // Score log first, and only go on to the video if that
+                        // succeeded on the server: deleteMatch's refresh() syncs
+                        // score logs, and if that sync landed while the score
+                        // log's own delete was still on the wire, it would pull
+                        // the row back from the server and resurrect the match
+                        // the user just deleted. On failure this stops here -
+                        // the score log is already gone from this phone
+                        // (deleteScoreMatch's error message says so), and the
+                        // video and its clips are left untouched rather than
+                        // deleted with no way for the coach to see whether the
+                        // rest of it landed. Must match Android's
                         // ClipListViewModel.deleteBoundMatch.
-                        await model.deleteScoreMatch(scoreLogId: scoreLogId)
-                        await model.deleteMatch(videoId: videoId)
+                        if await model.deleteScoreMatch(scoreLogId: scoreLogId) {
+                            await model.deleteMatch(videoId: videoId)
+                        }
                     }
                 }
             }

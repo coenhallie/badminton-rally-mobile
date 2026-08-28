@@ -124,10 +124,19 @@ final class ClipListModel {
 
     /// No refresh afterwards: the repository has already dropped it locally and its
     /// flow has pushed the shorter list through `regroup()`.
-    func deleteScoreMatch(scoreLogId: String) async {
+    ///
+    /// Returns whether the server accepted the delete, not whether the row left
+    /// this phone - the repository removes it locally either way, win or lose.
+    /// A caller chaining another mutation after this one (see `ClipListView`'s
+    /// `.deleteBoundMatch`) needs that server outcome to decide whether it is
+    /// safe to go on.
+    @discardableResult
+    func deleteScoreMatch(scoreLogId: String) async -> Bool {
         if let message = try? await rally.scoreLogs.deleteScoreMatchOrMessage(id: scoreLogId) {
             error = message
+            return false
         }
+        return true
     }
 
     func thumbnail(forCoverOf match: MatchSummary) async {

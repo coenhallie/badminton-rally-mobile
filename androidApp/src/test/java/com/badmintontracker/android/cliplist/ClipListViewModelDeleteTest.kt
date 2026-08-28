@@ -122,4 +122,39 @@ class ClipListViewModelDeleteTest {
         val log = scoreLogs.get(match.id)!!
         log.videoId shouldBe "vid-other"
     }
+
+    /**
+     * Locks in `deleteBoundMatch`'s ordering. The local-only store this test uses
+     * has no client, so `scoreLogs.delete`'s server call always fails here (its
+     * local removal still happens unconditionally) - exactly the case where
+     * going on to delete the video would be wrong: `deleteMatchVideo`'s success
+     * path calls `refresh()`, which syncs score logs, and syncing while the
+     * score log's own delete is still unacknowledged by the server would pull
+     * that row straight back in, resurrecting the match within this same
+     * action. A regression that reorders the two deletes, or fires them
+     * concurrently instead of gating the second on the first's outcome, would
+     * call `videos.deleteMatch` here regardless of the failure - this must not
+     * happen.
+     */
+    @Test
+    fun deleteBoundMatch_does_not_touch_the_video_when_the_score_log_delete_fails_on_the_server() = runTest {
+        val scoreLogs = scoreLogs()
+        val match = scoreLogs.create(
+            title = "Thu League",
+            homePlayers = listOf("Coen"),
+            awayPlayers = listOf("Marco"),
+            rules = ScoringRules.BWF_21,
+            setup = MatchSetup(doubles = false, firstServer = Side.HOME),
+        )
+        scoreLogs.attachVideo(match.id, "vid-1")
+
+        val videos = FakeVideosRepository()
+        val vm = newViewModel(videos, scoreLogs)
+
+        vm.deleteBoundMatch("vid-1", match.id)
+        advanceUntilIdle()
+
+        videos.deleteMatchCalls shouldHaveSize 0
+        scoreLogs.get(match.id).shouldBeNull()
+    }
 }

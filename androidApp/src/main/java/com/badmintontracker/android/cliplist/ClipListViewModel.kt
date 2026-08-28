@@ -222,11 +222,19 @@ class ClipListViewModel(
         viewModelScope.launch { deleteMatchVideo(videoId) }
     }
 
-    private suspend fun deleteScoreLog(scoreLogId: String) {
-        scoreLogs.delete(scoreLogId)
-            .onFailure {
-                errors.value = "Couldn't delete the match everywhere. It's gone from this phone."
-            }
+    /**
+     * Returns whether the server accepted the delete, not whether the row left
+     * this device: [ScoreLogsRepository.delete] removes it locally either way,
+     * win or lose. Callers that chain another mutation after this one - see
+     * [deleteBoundMatch] - need that server outcome to decide whether it is
+     * safe to go on.
+     */
+    private suspend fun deleteScoreLog(scoreLogId: String): Boolean {
+        val result = scoreLogs.delete(scoreLogId)
+        result.onFailure {
+            errors.value = "Couldn't delete the match everywhere. It's gone from this phone."
+        }
+        return result.isSuccess
     }
 
     /**
@@ -243,11 +251,19 @@ class ClipListViewModel(
      * [refresh], which syncs score logs, and if that sync landed while the score
      * log's own delete was still on the wire, it would pull the row back from
      * the server and resurrect the match the user just deleted.
+     *
+     * If the score log's server delete fails, [deleteMatchVideo] does not run
+     * at all, rather than running without the refresh that would otherwise
+     * resurrect it: the row is already gone from this device (the failure
+     * message says so), and the video and its clips are left untouched rather
+     * than deleted on a best-effort basis while the coach cannot see whether
+     * the rest of the delete actually landed.
      */
     fun deleteBoundMatch(videoId: String, scoreLogId: String) {
         viewModelScope.launch {
-            deleteScoreLog(scoreLogId)
-            deleteMatchVideo(videoId)
+            if (deleteScoreLog(scoreLogId)) {
+                deleteMatchVideo(videoId)
+            }
         }
     }
 
