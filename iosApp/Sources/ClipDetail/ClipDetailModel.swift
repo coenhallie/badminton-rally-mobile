@@ -65,11 +65,12 @@ final class ClipDetailModel {
         isLoading = false
     }
 
-    /// Streams the signed-in user's labels for the picker and the badge lookup.
-    /// Runs for the lifetime of the screen (call once from a detached `.task`);
-    /// `rally.labels` is a singleton, so this just mirrors its current value.
+    /// Streams the clip-scoped subset of labels for the picker and the badge
+    /// lookup. Runs for the lifetime of the screen (call once from a detached
+    /// `.task`); `rally.labels` is a singleton, so this just mirrors its
+    /// current value.
     func observeLabels() async {
-        for await ls in rally.labels.labels {
+        for await ls in rally.labels.clipLabels {
             labels = ls
         }
     }

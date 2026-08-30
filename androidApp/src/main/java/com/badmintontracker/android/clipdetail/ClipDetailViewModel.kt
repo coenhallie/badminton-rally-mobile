@@ -52,7 +52,9 @@ class ClipDetailViewModel(
 
     init {
         viewModelScope.launch {
-            labels.labels.collect { list -> state.update { it.copy(labels = list) } }
+            // Clip-scoped subset: a label made purely for the courtside board
+            // has no business cluttering the note picker here.
+            labels.clipLabels.collect { list -> state.update { it.copy(labels = list) } }
         }
         // Result deliberately discarded: AnnotationLabelsRepository already
         // seeds `labels` from its own on-disk cache, so a failed refresh here

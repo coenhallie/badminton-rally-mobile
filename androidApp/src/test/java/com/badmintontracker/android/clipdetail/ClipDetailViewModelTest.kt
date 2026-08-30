@@ -8,6 +8,7 @@ import com.badmintontracker.android.testing.FakeAuthRepository
 import com.badmintontracker.android.testing.FakeClipsRepository
 import com.badmintontracker.android.testing.FakeMediaRepository
 import com.badmintontracker.shared.model.AnnotationLabel
+import com.badmintontracker.shared.model.LabelUsage
 import com.badmintontracker.shared.model.RallyAnnotation
 import com.badmintontracker.shared.model.RallyClip
 import io.kotest.matchers.collections.shouldBeEmpty
@@ -387,6 +388,19 @@ class ClipDetailViewModelTest {
     @Test
     fun state_labels_reflects_the_label_repository() = runTest {
         val (vm, _, _, _) = setup(labels = FakeAnnotationLabelsRepository(listOf(netKill)))
+        advanceUntilIdle()
+
+        vm.state.value.labels shouldBe listOf(netKill)
+    }
+
+    @Test
+    fun state_labels_excludes_a_label_scoped_only_to_the_scoreboard() = runTest {
+        val boardOnly = AnnotationLabel(
+            id = "l9", name = "Serve", colorKey = "blue",
+            createdAt = Instant.parse("2026-08-24T12:00:00Z"),
+            usage = LabelUsage.SCOREBOARD.key,
+        )
+        val (vm, _, _, _) = setup(labels = FakeAnnotationLabelsRepository(listOf(netKill, boardOnly)))
         advanceUntilIdle()
 
         vm.state.value.labels shouldBe listOf(netKill)
