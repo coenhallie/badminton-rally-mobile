@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.plus
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -67,14 +68,22 @@ class AnnotationLabelsRepositoryImpl internal constructor(
     private val json = Json { ignoreUnknownKeys = true }
 
     /**
-     * A background scope this repository owns for exactly one job: see
-     * [cacheReconciliation] below. It is not threaded in from RallyApp because
-     * nothing in this codebase's app graph yet owns an app-lifetime scope with a
-     * teardown hook, and this repository is a singleton that lives as long as the
-     * process - a coroutine that runs once, completes, and never needs cancelling
-     * is not a leak on an object with that lifetime. Introducing a shared
-     * app-scope contract (who cancels it, when) for this one caller would be
-     * speculative infrastructure the rest of the graph does not need yet.
+     * A background scope this repository owns for three jobs: [cacheReconciliation]
+     * below, plus the eager sharing coroutines behind [scoreboardLabels] and
+     * [clipLabels]. It is not threaded in from RallyApp because nothing in this
+     * codebase's app graph yet owns an app-lifetime scope with a teardown hook,
+     * and this repository is a singleton that lives as long as the process - a
+     * coroutine with no natural end is not a leak on an object with that
+     * lifetime. Introducing a shared app-scope contract (who cancels it, when)
+     * for this one caller would be speculative infrastructure the rest of the
+     * graph does not need yet.
+     *
+     * [cacheReconciliation] runs once and completes; the two sharing coroutines
+     * never do - [SharingStarted.Eagerly] keeps each subscribed to [state] for
+     * as long as this object exists, which is the whole point of them (see
+     * [scoreboardLabels]'s comment). All three are fine to leave running forever
+     * for the same reason: nothing here is holding a resource that needs
+     * releasing, and the object's own lifetime is "forever" already.
      *
      * Declared above [state] because [scoreboardLabels] and [clipLabels] need it
      * to eagerly start their own derivation: property initializers run in
@@ -92,14 +101,36 @@ class AnnotationLabelsRepositoryImpl internal constructor(
      * screen reads it, and there is nothing to defer - it is a filter over a
      * list already in memory. See [scope]'s comment for why a coroutine that
      * never completes is acceptable on this object.
+     *
+     * Shared on `scope + Dispatchers.Unconfined`, not bare [scope] (which is
+     * [Dispatchers.Default], a real thread pool): [SharingStarted.Eagerly]
+     * only guarantees the sharing coroutine is *launched* during property
+     * init, not that it has run. On a dispatcher that has to hop onto a pool
+     * thread, `state.value = next` in [publish] would be visible here only
+     * after that hop is scheduled - an async window a synchronous `.value`
+     * read right after a mutation could lose. Unconfined runs the collector
+     * inline on whichever thread resumes it, so the initial subscription
+     * happens synchronously during construction (reading [state]'s current
+     * value, which is already initialized above), and every later `publish`
+     * pushes straight through the `map` filter on the calling thread before
+     * that call returns - which is what makes the "correct the instant a
+     * screen reads it" guarantee actually true, not just true at startup.
      */
     override val scoreboardLabels: StateFlow<List<AnnotationLabel>> =
         state.map { all -> all.filter { it.scope.onScoreboard } }
-            .stateIn(scope, SharingStarted.Eagerly, state.value.filter { it.scope.onScoreboard })
+            .stateIn(
+                scope + Dispatchers.Unconfined,
+                SharingStarted.Eagerly,
+                state.value.filter { it.scope.onScoreboard },
+            )
 
     override val clipLabels: StateFlow<List<AnnotationLabel>> =
         state.map { all -> all.filter { it.scope.onClips } }
-            .stateIn(scope, SharingStarted.Eagerly, state.value.filter { it.scope.onClips })
+            .stateIn(
+                scope + Dispatchers.Unconfined,
+                SharingStarted.Eagerly,
+                state.value.filter { it.scope.onClips },
+            )
 
     /**
      * supabase-kt restores a persisted session asynchronously: right after a

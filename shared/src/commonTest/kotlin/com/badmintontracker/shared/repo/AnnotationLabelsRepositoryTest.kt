@@ -428,8 +428,13 @@ class AnnotationLabelsRepositoryTest {
 
     @Test
     fun set_usage_moves_a_label_between_the_flows() = runTest {
+        // Seeded scoreboard-only, not both: a both-scoped label already sits on
+        // both flows before setUsage runs, so moving it to CLIPS would leave the
+        // clip side's assertion trivially true and prove nothing about it.
+        // Starting scoreboard-only gives both sides a real transition to await -
+        // scoreboard populated to empty, clips empty to populated.
         val row = """
-          [{"id":"l1","name":"Good shot","color_key":"green","created_at":"2026-08-24T12:00:00Z","usage":"both"}]
+          [{"id":"l1","name":"Good shot","color_key":"green","created_at":"2026-08-24T12:00:00Z","usage":"scoreboard"}]
         """.trimIndent()
         val client = TestSupabase.client { jsonResponse(row) }
         val repo = AnnotationLabelsRepositoryImpl(client, MapSettings())
@@ -458,7 +463,7 @@ class AnnotationLabelsRepositoryTest {
         warmClient.signInAs("u1")
         val warm = AnnotationLabelsRepositoryImpl(warmClient, settings)
         warm.refresh()
-        warm.setUsage("l1", LabelUsage.SCOREBOARD)
+        warm.setUsage("l1", LabelUsage.SCOREBOARD).isSuccess shouldBe true
 
         // A cold start, offline: the scope has to come back off disk with the
         // label, or the board would forget the choice every launch.
