@@ -30,6 +30,12 @@ data class ScoringUiState(
     val pendingTagOrdinal: Int? = null,
     val canScore: Boolean = false,
     val canUndo: Boolean = false,
+    /**
+     * Whether the account has any labels at all, board-scoped or not. Lets the
+     * board tell "you have not made any labels" apart from "none of yours are
+     * on the board", which are different problems with different fixes.
+     */
+    val hasAnyLabels: Boolean = false,
 )
 
 /**
@@ -57,16 +63,18 @@ class ScoringViewModel(
      * reason: a blank one would say the match is not on this phone, and the surface
      * would flash that at the coach for a frame on the way in.
      */
-    val state = combine(scoreLogs.logs, labels.labels, pending, ::build)
-        .stateIn(
-            viewModelScope,
-            SharingStarted.Eagerly,
-            build(scoreLogs.logs.value, labels.labels.value, pending.value),
-        )
+    val state = combine(
+        scoreLogs.logs, labels.scoreboardLabels, labels.labels, pending, ::build,
+    ).stateIn(
+        viewModelScope,
+        SharingStarted.Eagerly,
+        build(scoreLogs.logs.value, labels.scoreboardLabels.value, labels.labels.value, pending.value),
+    )
 
     private fun build(
         logs: List<ScoreLog>,
-        palette: List<AnnotationLabel>,
+        boardLabels: List<AnnotationLabel>,
+        allLabels: List<AnnotationLabel>,
         pendingOrdinal: Int?,
     ): ScoringUiState {
         val log = logs.firstOrNull { it.id == scoreLogId }
@@ -74,13 +82,14 @@ class ScoringViewModel(
         return ScoringUiState(
             log = log,
             match = match,
-            labels = palette,
+            labels = boardLabels,
             // A row still pointing at a rally that undo took back would put the next
             // label on a point that no longer exists, so the clamp lives here rather
             // than in every caller.
             pendingTagOrdinal = pendingOrdinal?.takeIf { match != null && it < match.pointCount },
             canScore = match?.isOver == false,
             canUndo = log?.events?.isNotEmpty() == true,
+            hasAnyLabels = allLabels.isNotEmpty(),
         )
     }
 

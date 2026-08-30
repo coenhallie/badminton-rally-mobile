@@ -2,13 +2,12 @@ package com.badmintontracker.android.scoring
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,8 +15,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -151,6 +148,7 @@ fun ScoringScreen(
         ControlBar(
             match = match,
             labels = state.labels,
+            hasAnyLabels = state.hasAnyLabels,
             pendingTagOrdinal = state.pendingTagOrdinal,
             canUndo = state.canUndo,
             noteOpen = noteOpen,
@@ -461,13 +459,22 @@ private fun GamesWonBox(games: Int) {
 }
 
 /**
- * The tag row and Undo. The row is on screen before the rally it will tag, which is
- * the whole reason tagging costs the coach one tap rather than a dialog.
+ * The tag row, the note field, and the fixed action row. The tag row is on
+ * screen before the rally it will tag, which is the whole reason tagging costs
+ * the coach one tap rather than a dialog.
+ *
+ * The chips wrap rather than scroll. Only labels scoped to the board reach here
+ * (see LabelUsage), so the set is small by construction - and when the coach
+ * scopes one more than fits, the cost is a line of board height he can see,
+ * not a chip hidden off the right edge. Note sits on the action row below,
+ * outside the wrapping area: it used to be the last chip in a scrolling row,
+ * which is exactly why it became unreachable.
  */
 @Composable
 private fun ControlBar(
     match: MatchState,
     labels: List<AnnotationLabel>,
+    hasAnyLabels: Boolean,
     pendingTagOrdinal: Int?,
     canUndo: Boolean,
     noteOpen: Boolean,
@@ -484,28 +491,34 @@ private fun ControlBar(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                labels.forEach { label ->
-                    TagChip(
-                        label = label,
-                        selected = point?.tags?.any { it.labelName == label.name } == true,
-                        enabled = point != null,
-                        onClick = { pendingTagOrdinal?.let { onToggleTag(it, label) } },
-                    )
+            if (labels.isEmpty()) {
+                Text(
+                    // Two different problems, and one sentence used to cover
+                    // both: an account with no labels at all, and an account
+                    // whose labels are all scoped to clips. The second would
+                    // otherwise claim there are no labels while the Labels
+                    // screen plainly shows several.
+                    text =
+                        if (hasAnyLabels) "No board labels - choose them on the labels screen."
+                        else "No labels yet - add them on the labels screen.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    labels.forEach { label ->
+                        TagChip(
+                            label = label,
+                            selected = point?.tags?.any { it.labelName == label.name } == true,
+                            enabled = point != null,
+                            onClick = { pendingTagOrdinal?.let { onToggleTag(it, label) } },
+                        )
+                    }
                 }
-                if (labels.isEmpty()) {
-                    Text(
-                        "No labels yet - add them on the labels screen.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                TextButton(onClick = onToggleNote, enabled = point != null) { Text("Note") }
-                Spacer(Modifier.width(4.dp))
             }
 
             if (noteOpen && point != null) {
@@ -547,6 +560,7 @@ private fun ControlBar(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                 )
+                TextButton(onClick = onToggleNote, enabled = point != null) { Text("Note") }
                 // Only once the match is actually over. While it is live, finishing
                 // lives in the overflow behind a confirm: a call to action sitting
                 // beside a board being tapped every rally is a match ended by accident.

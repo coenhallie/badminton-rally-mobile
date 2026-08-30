@@ -2,6 +2,7 @@ package com.badmintontracker.android.scoring
 
 import com.badmintontracker.android.testing.FakeAnnotationLabelsRepository
 import com.badmintontracker.shared.model.AnnotationLabel
+import com.badmintontracker.shared.model.LabelUsage
 import com.badmintontracker.shared.scoring.MatchSetup
 import com.badmintontracker.shared.scoring.ScoreLogStatus
 import com.badmintontracker.shared.scoring.ScoreLogsRepository
@@ -42,6 +43,10 @@ class ScoringViewModelTest {
     )
     private val forcedError = AnnotationLabel(
         id = "l2", name = "Forced error", colorKey = "amber", createdAt = t0,
+    )
+    private val footwork = AnnotationLabel(
+        id = "l3", name = "Footwork", colorKey = "teal", createdAt = t0,
+        usage = LabelUsage.CLIPS.key,
     )
 
     private fun repo() = ScoreLogsRepository(MapSettings(), now = { t0 }, ownerId = { "owner-1" })
@@ -122,6 +127,28 @@ class ScoringViewModelTest {
         val tag = vm.state.value.match!!.points[0].tags.single()
         tag.labelName shouldBe "Forced error"
         tag.labelColor shouldBe "amber"
+    }
+
+    @Test
+    fun the_board_offers_only_labels_scoped_to_it() = runTest(dispatcher) {
+        // The whole point of the scope: a label made for reviewing clips does
+        // not take up room on a board being tapped every rally.
+        val (_, _, vm) = fixture(labels = listOf(goodShot, forcedError, footwork))
+        advanceUntilIdle()
+
+        vm.state.value.labels.map { it.id } shouldBe listOf("l1", "l2")
+    }
+
+    @Test
+    fun hasAnyLabels_is_true_even_when_none_of_them_are_scoped_to_the_board() = runTest(dispatcher) {
+        // The account is not empty - it has one clips-only label. The board must
+        // say "none of yours are on the board", not "you have not made any
+        // labels", and those are different messages for different problems.
+        val (_, _, vm) = fixture(labels = listOf(footwork))
+        advanceUntilIdle()
+
+        vm.state.value.labels.shouldBeEmpty()
+        vm.state.value.hasAnyLabels shouldBe true
     }
 
     @Test
