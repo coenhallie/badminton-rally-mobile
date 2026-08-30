@@ -42,12 +42,6 @@ final class ScoringModel {
         scoreLogs: ScoreLogsRepository,
         labelsRepository: AnnotationLabelsRepository? = nil,
         scoreboardLabels: [AnnotationLabel] = [],
-        /// The account-wide set, for `hasAnyLabels`. Defaults to `scoreboardLabels`,
-        /// which is right whenever every label the account has is also on the
-        /// board. A test hands both in to cover the case where none of them are -
-        /// the case a Swift-side fake of `labelsRepository` cannot reach, since
-        /// that interface has suspend members.
-        allLabels: [AnnotationLabel]? = nil,
         scoreLogId: String
     ) {
         self.scoreLogs = scoreLogs
@@ -55,7 +49,7 @@ final class ScoringModel {
         self.scoreLogId = scoreLogId
         self.scorer = MatchScorer(repo: scoreLogs, scoreLogId: scoreLogId)
         self.labels = labelsRepository?.scoreboardLabels.value ?? scoreboardLabels
-        self.hasAnyLabels = !(labelsRepository?.labels.value ?? allLabels ?? scoreboardLabels).isEmpty
+        self.hasAnyLabels = !(labelsRepository?.labels.value.isEmpty ?? scoreboardLabels.isEmpty)
         readStore()
     }
 

@@ -116,9 +116,10 @@ final class ScoringModelTests: XCTestCase {
         // say "none of yours are on the board", not "you have not made any
         // labels", and those are different messages for different problems.
         //
-        // Swift cannot fake AnnotationLabelsRepository (it has suspend members),
-        // so the two sets reach the model through `allLabels` rather than through
-        // a repository double the way the Android test does.
+        // A real repository double, the same seam MatchModelTests uses for its
+        // own dependencies: only through the repository path does `labels` and
+        // `scoreboardLabels` actually diverge, which is the whole point of this
+        // test - a fixed array cannot exercise it.
         let repo = SwiftInteropKt.testScoreLogsRepository(now: t0, ownerId: "owner-1")
         let log = repo.create(
             title: "Thu League",
@@ -127,12 +128,8 @@ final class ScoringModelTests: XCTestCase {
             rules: ScoringRules.companion.BWF_21,
             setup: MatchSetup(doubles: false, firstServer: .home, homeStartsRight: .first, awayStartsRight: .first)
         )
-        let model = ScoringModel(
-            scoreLogs: repo,
-            scoreboardLabels: [],
-            allLabels: [footwork],
-            scoreLogId: log.id
-        )
+        let labels = AnnotationLabelsTestDoublesKt.testAnnotationLabelsRepository(labels: [footwork])
+        let model = ScoringModel(scoreLogs: repo, labelsRepository: labels, scoreLogId: log.id)
 
         XCTAssertTrue(model.labels.isEmpty)
         XCTAssertTrue(model.hasAnyLabels)
