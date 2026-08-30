@@ -52,6 +52,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -228,10 +229,17 @@ private fun LabelRow(
                     .background(dotColor, CircleShape),
             )
             Spacer(Modifier.width(12.dp))
+            // weight(fill = false) lets the name take only the space it needs, up to
+            // its share of the row, instead of the unbounded width an unweighted Text
+            // would claim - without this a long name pushes the scope caption past the
+            // row's edge instead of ellipsizing to leave it room.
             Text(
                 label.name,
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onBackground,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
             )
 
             // Only on rows that are not `both`, so the common case stays quiet
