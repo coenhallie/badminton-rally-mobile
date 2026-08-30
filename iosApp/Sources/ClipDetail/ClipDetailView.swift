@@ -86,10 +86,6 @@ struct ClipDetailView: View {
         .sheet(isPresented: $showAddSheet) {
             AddAnnotationSheet(
                 labels: model.labels,
-                canCreateLabel: true,
-                onCreateLabel: { name in
-                    Task { await model.createLabel(name) }
-                },
                 onAdd: { label, body in
                     Task { await model.add(label: label, body: body) }
                 }

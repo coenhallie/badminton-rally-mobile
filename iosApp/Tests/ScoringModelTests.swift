@@ -11,7 +11,7 @@ final class ScoringModelTests: XCTestCase {
     private let t0 = KotlinInstant.companion.fromEpochMilliseconds(epochMilliseconds: 1_787_853_600_000)
 
     private func label(_ id: String, _ name: String, _ color: String) -> AnnotationLabel {
-        AnnotationLabel(id: id, name: name, colorKey: color, createdAt: t0)
+        AnnotationLabel(id: id, name: name, colorKey: color, createdAt: t0, usage: LabelUsage.both.key)
     }
 
     private var goodShot: AnnotationLabel { label("l1", "Good shot", "green") }

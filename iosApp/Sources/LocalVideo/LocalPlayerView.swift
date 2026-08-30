@@ -140,10 +140,6 @@ struct LocalPlayerView: View {
         .sheet(item: $addSheet) { item in
             AddAnnotationSheet(
                 labels: model.labels,
-                canCreateLabel: true,
-                onCreateLabel: { name in
-                    Task { await model.createLabel(name) }
-                },
                 onAdd: { label, body in
                     model.add(label: label, body: body, atSeconds: item.timestamp)
                 }

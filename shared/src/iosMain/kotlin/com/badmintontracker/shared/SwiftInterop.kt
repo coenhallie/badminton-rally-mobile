@@ -68,9 +68,6 @@ suspend fun AnnotationsRepository.deleteAnnotationOrMessage(id: String): String?
 
 class CreateLabelOutcome(val label: AnnotationLabel?, val errorMessage: String?)
 
-suspend fun AnnotationLabelsRepository.createLabelForSwift(name: String): CreateLabelOutcome =
-    createLabelForSwift(name, color = null)
-
 /**
  * [color] null picks a swatch automatically, matching the Add-note sheet's
  * name-only inline creation. The Labels screen's own "New label" row lets the

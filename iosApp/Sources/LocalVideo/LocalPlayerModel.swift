@@ -51,16 +51,6 @@ final class LocalPlayerModel {
         _ = try? await rally.labels.refreshLabelsOrMessage()
     }
 
-    func createLabel(_ name: String) async {
-        guard let outcome = try? await SwiftInteropKt.createLabelForSwift(rally.labels, name: name) else {
-            actionError = "Couldn't add label"
-            return
-        }
-        // Assigning unconditionally (rather than only on non-nil) clears a
-        // stale banner from an earlier failure once this one succeeds.
-        actionError = outcome.errorMessage
-    }
-
     func currentTimestampSeconds() -> Float {
         let time = player.currentTime()
         guard time.isNumeric else { return 0 }

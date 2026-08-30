@@ -81,16 +81,6 @@ final class ClipDetailModel {
         _ = try? await rally.labels.refreshLabelsOrMessage()
     }
 
-    func createLabel(_ name: String) async {
-        guard let outcome = try? await SwiftInteropKt.createLabelForSwift(rally.labels, name: name) else {
-            actionError = "Couldn't add label"
-            return
-        }
-        // Assigning unconditionally (rather than only on non-nil) clears a
-        // stale banner from an earlier failure once this one succeeds.
-        actionError = outcome.errorMessage
-    }
-
     /// Re-sign the URL (used by load and by the manual Retry on player failure).
     func sign(clip: RallyClip) async {
         statusObservation?.invalidate()
