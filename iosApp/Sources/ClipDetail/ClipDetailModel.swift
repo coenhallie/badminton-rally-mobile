@@ -75,8 +75,7 @@ final class ClipDetailModel {
     }
 
     /// Kicks a real load off the network so a stale or empty cache catches up.
-    /// Errors are swallowed here: the cached/streamed value above still renders,
-    /// and a `createLabel` failure surfaces its own message.
+    /// Errors are swallowed here: the cached/streamed value above still renders.
     func refreshLabels() async {
         _ = try? await rally.labels.refreshLabelsOrMessage()
     }

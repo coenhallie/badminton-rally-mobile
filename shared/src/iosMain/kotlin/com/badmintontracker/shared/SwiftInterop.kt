@@ -69,10 +69,10 @@ suspend fun AnnotationsRepository.deleteAnnotationOrMessage(id: String): String?
 class CreateLabelOutcome(val label: AnnotationLabel?, val errorMessage: String?)
 
 /**
- * [color] null picks a swatch automatically, matching the Add-note sheet's
- * name-only inline creation. The Labels screen's own "New label" row lets the
- * owner choose a swatch up front, so it passes one explicitly instead of
- * creating with an auto-assigned colour and recolouring right after.
+ * [color] null picks a swatch automatically. The Labels screen's own "New
+ * label" row lets the owner choose a swatch up front, so it passes one
+ * explicitly instead of creating with an auto-assigned colour and
+ * recolouring right after.
  */
 suspend fun AnnotationLabelsRepository.createLabelForSwift(name: String, color: LabelColor?): CreateLabelOutcome =
     create(name, color).fold(
