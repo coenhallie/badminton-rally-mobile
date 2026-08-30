@@ -402,11 +402,14 @@ class AnnotationLabelsRepositoryTest {
         val repo = AnnotationLabelsRepositoryImpl(client, MapSettings())
         repo.refresh()
 
-        // The derived flows are eagerly collected on this class's own
-        // background scope (Dispatchers.Default in production), not the test
-        // dispatcher, so a synchronous read of .value right after refresh()
-        // races the collector that has to run before the filtered value lands.
-        // first { predicate } waits for that propagation instead of assuming it.
+        // scoreboardLabels and clipLabels are shared on `scope + Dispatchers.Unconfined`
+        // (see the doc comments on AnnotationLabelsRepositoryImpl.scope and
+        // .scoreboardLabels), specifically so a mutation is visible synchronously:
+        // by the time refresh() returns from publish(), both filtered flows already
+        // hold the new value, no dispatcher hop pending. first { predicate } is not
+        // waiting out a race here - it is used because it doubles as the assertion,
+        // reading the already-current value and failing with a clear predicate if the
+        // partition is ever wrong.
         repo.scoreboardLabels.first { it.size == 2 }.map { it.id } shouldBe listOf("l1", "l2")
         repo.clipLabels.first { it.size == 2 }.map { it.id } shouldBe listOf("l1", "l3")
     }

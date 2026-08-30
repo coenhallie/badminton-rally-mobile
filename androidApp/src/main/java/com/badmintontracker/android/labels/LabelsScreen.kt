@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
@@ -56,6 +57,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.badmintontracker.android.ui.components.FieldLabel
 import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlOutlinedTextField
 import com.badmintontracker.android.ui.components.SwipeToRemoveRow
@@ -229,17 +231,19 @@ private fun LabelRow(
                     .background(dotColor, CircleShape),
             )
             Spacer(Modifier.width(12.dp))
-            // weight(fill = false) lets the name take only the space it needs, up to
-            // its share of the row, instead of the unbounded width an unweighted Text
-            // would claim - without this a long name pushes the scope caption past the
-            // row's edge instead of ellipsizing to leave it room.
+            // The name is the sole weighted child so it absorbs all of the row's slack
+            // instead of splitting it with a second weighted spacer. The scope caption's
+            // width must stay intrinsic (it is a fixed short word, not something that
+            // should stretch or move), so the name yields space to it rather than the
+            // other way around: a long name ellipsizes, a short one lets the caption
+            // sit flush against the row's trailing edge every time.
             Text(
                 label.name,
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onBackground,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
+                modifier = Modifier.weight(1f),
             )
 
             // Only on rows that are not `both`, so the common case stays quiet
@@ -252,7 +256,6 @@ private fun LabelRow(
                 LabelUsage.CLIPS -> "CLIPS"
             }
             if (scopeCaption != null) {
-                Spacer(Modifier.weight(1f))
                 Text(
                     text = scopeCaption,
                     style = MaterialTheme.typography.labelSmall,
@@ -342,6 +345,14 @@ private fun LabelEditorFields(
 /**
  * Where this label may be offered. Same control the new-match screen uses for
  * singles/doubles, so it reads as one app rather than as a settings row.
+ *
+ * "Both / Scoreboard / Clips" reads as ambiguous with nothing above it to say what
+ * is being chosen, so the design calls for a "Use" caption here - the same quiet
+ * FieldLabel the "Name" field above uses, not a shout. The contentDescription on
+ * the row itself carries that same name to accessibility services: without it a
+ * screen reader lands on "Both, Scoreboard, Clips" with no indication of what the
+ * three options mean, since the visible caption above is a separate text node a
+ * user could easily swipe past without connecting it to the control below.
  */
 @Composable
 private fun UsagePicker(selected: LabelUsage, onSelect: (LabelUsage) -> Unit) {
@@ -350,13 +361,21 @@ private fun UsagePicker(selected: LabelUsage, onSelect: (LabelUsage) -> Unit) {
         LabelUsage.SCOREBOARD to "Scoreboard",
         LabelUsage.CLIPS to "Clips",
     )
-    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-        options.forEachIndexed { index, (usage, text) ->
-            SegmentedButton(
-                selected = selected == usage,
-                onClick = { onSelect(usage) },
-                shape = SegmentedButtonDefaults.itemShape(index, options.size),
-            ) { Text(text) }
+    Column {
+        FieldLabel("Use")
+        Spacer(Modifier.height(6.dp))
+        SingleChoiceSegmentedButtonRow(
+            Modifier
+                .fillMaxWidth()
+                .semantics { contentDescription = "Use" },
+        ) {
+            options.forEachIndexed { index, (usage, text) ->
+                SegmentedButton(
+                    selected = selected == usage,
+                    onClick = { onSelect(usage) },
+                    shape = SegmentedButtonDefaults.itemShape(index, options.size),
+                ) { Text(text) }
+            }
         }
     }
 }

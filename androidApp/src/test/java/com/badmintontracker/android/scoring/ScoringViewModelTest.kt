@@ -48,6 +48,10 @@ class ScoringViewModelTest {
         id = "l3", name = "Footwork", colorKey = "teal", createdAt = t0,
         usage = LabelUsage.CLIPS.key,
     )
+    private val serve = AnnotationLabel(
+        id = "l4", name = "Serve", colorKey = "blue", createdAt = t0,
+        usage = LabelUsage.SCOREBOARD.key,
+    )
 
     private fun repo() = ScoreLogsRepository(MapSettings(), now = { t0 }, ownerId = { "owner-1" })
 
@@ -132,11 +136,12 @@ class ScoringViewModelTest {
     @Test
     fun the_board_offers_only_labels_scoped_to_it() = runTest(dispatcher) {
         // The whole point of the scope: a label made for reviewing clips does
-        // not take up room on a board being tapped every rally.
-        val (_, _, vm) = fixture(labels = listOf(goodShot, forcedError, footwork))
+        // not take up room on a board being tapped every rally, and a label
+        // scoped to the board specifically (not just `both`) still shows up.
+        val (_, _, vm) = fixture(labels = listOf(goodShot, forcedError, footwork, serve))
         advanceUntilIdle()
 
-        vm.state.value.labels.map { it.id } shouldBe listOf("l1", "l2")
+        vm.state.value.labels.map { it.id } shouldBe listOf("l1", "l2", "l4")
     }
 
     @Test

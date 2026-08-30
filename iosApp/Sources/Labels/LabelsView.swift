@@ -194,13 +194,25 @@ private struct EditorFields: View {
                     }
                 }
             // Where this label may be offered. Same control the new-match
-            // screen uses for singles/doubles, so it reads as one app.
-            Picker("Use", selection: Binding(get: { selectedUsage }, set: onSelectUsage)) {
-                Text("Both").tag(LabelUsage.both)
-                Text("Scoreboard").tag(LabelUsage.scoreboard)
-                Text("Clips").tag(LabelUsage.clips)
+            // screen uses for singles/doubles, so it reads as one app - but
+            // that screen draws its Picker label through a Form Section
+            // header, and this editor is not in a Form, so `Picker("Use", ...)`
+            // alone renders no visible label under `.pickerStyle(.segmented)`.
+            // The caption below fills that gap; VoiceOver already reads "Use"
+            // from the Picker itself regardless, so this is purely the sighted
+            // half of the same label.
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Use")
+                    .font(.caption)
+                    .foregroundStyle(Shuttl.textSecondary)
+                    .textCase(.uppercase)
+                Picker("Use", selection: Binding(get: { selectedUsage }, set: onSelectUsage)) {
+                    Text("Both").tag(LabelUsage.both)
+                    Text("Scoreboard").tag(LabelUsage.scoreboard)
+                    Text("Clips").tag(LabelUsage.clips)
+                }
+                .pickerStyle(.segmented)
             }
-            .pickerStyle(.segmented)
             SwatchGrid(selectedKey: selectedKey, onSelect: onSelectColor)
         }
         .padding(.bottom, 12)

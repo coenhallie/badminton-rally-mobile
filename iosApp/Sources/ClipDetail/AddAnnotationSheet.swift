@@ -18,7 +18,7 @@ struct AddAnnotationSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Add note")
                 .font(.title2.weight(.semibold))
-            HStack(spacing: 8) {
+            ChipFlow(spacing: 8) {
                 ForEach(labels, id: \.id) { label in
                     chip(label)
                 }
