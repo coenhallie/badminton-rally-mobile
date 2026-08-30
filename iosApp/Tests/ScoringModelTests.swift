@@ -10,12 +10,14 @@ final class ScoringModelTests: XCTestCase {
     // 2026-08-27T18:00:00Z. Fixed, because the store stamps created_at from it.
     private let t0 = KotlinInstant.companion.fromEpochMilliseconds(epochMilliseconds: 1_787_853_600_000)
 
-    private func label(_ id: String, _ name: String, _ color: String) -> AnnotationLabel {
-        AnnotationLabel(id: id, name: name, colorKey: color, createdAt: t0, usage: LabelUsage.both.key)
+    private func label(_ id: String, _ name: String, _ color: String,
+                       _ usage: LabelUsage = .both) -> AnnotationLabel {
+        AnnotationLabel(id: id, name: name, colorKey: color, createdAt: t0, usage: usage.key)
     }
 
     private var goodShot: AnnotationLabel { label("l1", "Good shot", "green") }
     private var forcedError: AnnotationLabel { label("l2", "Forced error", "amber") }
+    private var footwork: AnnotationLabel { label("l3", "Footwork", "teal", .clips) }
 
     /// The model plus the store and the match id behind it. The store is the
     /// local-only one, the same seam androidApp's tests use.
@@ -30,7 +32,7 @@ final class ScoringModelTests: XCTestCase {
             rules: rules,
             setup: MatchSetup(doubles: false, firstServer: .home, homeStartsRight: .first, awayStartsRight: .first)
         )
-        let model = ScoringModel(scoreLogs: repo, labels: [goodShot, forcedError], scoreLogId: log.id)
+        let model = ScoringModel(scoreLogs: repo, scoreboardLabels: [goodShot, forcedError], scoreLogId: log.id)
         return (repo, log.id, model)
     }
 
@@ -84,6 +86,56 @@ final class ScoringModelTests: XCTestCase {
         let tag = model.match?.points[0].tags.first
         XCTAssertEqual(tag?.labelName, "Forced error")
         XCTAssertEqual(tag?.labelColor, "amber")
+    }
+
+    func testTheBoardOffersOnlyLabelsScopedToIt() {
+        // Mirrors ScoringViewModelTest.the_board_offers_only_labels_scoped_to_it.
+        // The model is handed the already-scoped set: filtering is the
+        // repository's job and is asserted in commonTest against it.
+        let repo = SwiftInteropKt.testScoreLogsRepository(now: t0, ownerId: "owner-1")
+        let log = repo.create(
+            title: "Thu League",
+            homePlayers: ["Coen"],
+            awayPlayers: ["Marco"],
+            rules: ScoringRules.companion.BWF_21,
+            setup: MatchSetup(doubles: false, firstServer: .home, homeStartsRight: .first, awayStartsRight: .first)
+        )
+        let model = ScoringModel(
+            scoreLogs: repo,
+            scoreboardLabels: [goodShot, forcedError],
+            scoreLogId: log.id
+        )
+
+        XCTAssertEqual(model.labels.map(\.id), ["l1", "l2"])
+        XCTAssertFalse(model.labels.contains { $0.id == footwork.id })
+    }
+
+    func testHasAnyLabelsIsTrueEvenWhenNoneOfThemAreScopedToTheBoard() {
+        // Mirrors ScoringViewModelTest.hasAnyLabels_is_true_even_when_none_of_them_are_scoped_to_the_board.
+        // The account is not empty - it has one clips-only label. The board must
+        // say "none of yours are on the board", not "you have not made any
+        // labels", and those are different messages for different problems.
+        //
+        // Swift cannot fake AnnotationLabelsRepository (it has suspend members),
+        // so the two sets reach the model through `allLabels` rather than through
+        // a repository double the way the Android test does.
+        let repo = SwiftInteropKt.testScoreLogsRepository(now: t0, ownerId: "owner-1")
+        let log = repo.create(
+            title: "Thu League",
+            homePlayers: ["Coen"],
+            awayPlayers: ["Marco"],
+            rules: ScoringRules.companion.BWF_21,
+            setup: MatchSetup(doubles: false, firstServer: .home, homeStartsRight: .first, awayStartsRight: .first)
+        )
+        let model = ScoringModel(
+            scoreLogs: repo,
+            scoreboardLabels: [],
+            allLabels: [footwork],
+            scoreLogId: log.id
+        )
+
+        XCTAssertTrue(model.labels.isEmpty)
+        XCTAssertTrue(model.hasAnyLabels)
     }
 
     func testThePaletteIsWhateverWasCachedOffline() {

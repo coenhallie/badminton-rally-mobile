@@ -350,8 +350,21 @@ struct ScoringView: View {
         let point = model.pendingPoint
 
         VStack(alignment: .leading, spacing: 4) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
+            if model.labels.isEmpty {
+                Text(
+                    model.hasAnyLabels
+                        ? "No board labels - choose them on the labels screen."
+                        : "No labels yet - add them on the labels screen."
+                )
+                .font(.footnote)
+                .foregroundStyle(Shuttl.textSecondary)
+                .padding(.horizontal, 8)
+            } else {
+                // Wraps rather than scrolls. Only board-scoped labels reach
+                // here, so the set is small by construction - and when one more
+                // than fits is scoped, the cost is a line of board height that
+                // is visible, not a chip hidden off the right edge.
+                ChipFlow(spacing: 6) {
                     ForEach(model.labels, id: \.id) { label in
                         tagChip(
                             label: label,
@@ -363,14 +376,6 @@ struct ScoringView: View {
                             }
                         }
                     }
-                    if model.labels.isEmpty {
-                        Text("No labels yet - add them on the labels screen.")
-                            .font(.footnote)
-                            .foregroundStyle(Shuttl.textSecondary)
-                    }
-                    Button("Note") { noteOpen.toggle() }
-                        .disabled(point == nil)
-                        .padding(.horizontal, 4)
                 }
                 .padding(.horizontal, 8)
             }
@@ -392,6 +397,11 @@ struct ScoringView: View {
                     .foregroundStyle(Shuttl.textSecondary)
                     .lineLimit(1)
                 Spacer()
+                // Outside the wrapping area on purpose: it used to be the last
+                // chip in a horizontally scrolling row, which is exactly why it
+                // became unreachable once a few labels existed.
+                Button("Note") { noteOpen.toggle() }
+                    .disabled(point == nil)
                 // Only once the match is actually over. While it is live, finishing
                 // lives in the menu behind a confirm: a call to action beside a
                 // board being tapped every rally is a match ended by accident.

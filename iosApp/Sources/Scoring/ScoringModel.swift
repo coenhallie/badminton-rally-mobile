@@ -17,6 +17,11 @@ final class ScoringModel {
     private(set) var match: MatchState? = nil
     private(set) var labels: [AnnotationLabel] = []
 
+    /// Whether the account has any labels at all, board-scoped or not. Lets the
+    /// board tell "you have not made any labels" apart from "none of yours are
+    /// on the board", which are different problems with different fixes.
+    private(set) var hasAnyLabels: Bool = false
+
     /// The point the tag row is pointing at. State rather than a dialog: that is
     /// what lets one tap score and a second tap tag without a modal ever appearing
     /// between the coach and the next rally.
@@ -29,21 +34,28 @@ final class ScoringModel {
     private let scorer: MatchScorer
     /// Nil in tests. Swift cannot cheaply stand in for a Kotlin interface, so the
     /// tests hand over a fixed palette instead of a repository to observe - which
-    /// is also what the surface actually needs, since it reads the cache and never
-    /// refreshes on entry.
+    /// is also what the surface actually needs, since it reads the board-scoped
+    /// subset of the cache and never refreshes on entry.
     private let labelsRepository: AnnotationLabelsRepository?
 
     init(
         scoreLogs: ScoreLogsRepository,
         labelsRepository: AnnotationLabelsRepository? = nil,
-        labels: [AnnotationLabel] = [],
+        scoreboardLabels: [AnnotationLabel] = [],
+        /// The account-wide set, for `hasAnyLabels`. Defaults to `scoreboardLabels`,
+        /// which is right whenever every label the account has is also on the
+        /// board. A test hands both in to cover the case where none of them are -
+        /// the case a Swift-side fake of `labelsRepository` cannot reach, since
+        /// that interface has suspend members.
+        allLabels: [AnnotationLabel]? = nil,
         scoreLogId: String
     ) {
         self.scoreLogs = scoreLogs
         self.labelsRepository = labelsRepository
         self.scoreLogId = scoreLogId
         self.scorer = MatchScorer(repo: scoreLogs, scoreLogId: scoreLogId)
-        self.labels = labelsRepository?.labels.value ?? labels
+        self.labels = labelsRepository?.scoreboardLabels.value ?? scoreboardLabels
+        self.hasAnyLabels = !(labelsRepository?.labels.value ?? allLabels ?? scoreboardLabels).isEmpty
         readStore()
     }
 
@@ -57,8 +69,13 @@ final class ScoringModel {
         // on entry - a sports hall has no signal.
         if let labelsRepository {
             Task {
-                for await palette in labelsRepository.labels {
+                for await palette in labelsRepository.scoreboardLabels {
                     labels = palette
+                }
+            }
+            Task {
+                for await all in labelsRepository.labels {
+                    hasAnyLabels = !all.isEmpty
                 }
             }
         }
