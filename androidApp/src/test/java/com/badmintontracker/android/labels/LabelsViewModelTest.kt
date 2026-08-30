@@ -4,6 +4,7 @@ import com.badmintontracker.android.testing.FakeAnnotationLabelsRepository
 import com.badmintontracker.shared.model.AnnotationLabel
 import com.badmintontracker.shared.model.LabelColor
 import com.badmintontracker.shared.model.LabelUsage
+import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
@@ -172,6 +173,33 @@ class LabelsViewModelTest {
         advanceUntilIdle()
 
         vm.state.value.labels.first { it.id == "l1" }.colorKey shouldBe LabelColor.TEAL.key
+    }
+
+    @Test
+    fun setting_a_scope_writes_it_through() = runTest {
+        val goodShot = label("l1", "Good shot", "green")
+        val repo = FakeAnnotationLabelsRepository(listOf(goodShot))
+        val vm = LabelsViewModel(repo)
+        advanceUntilIdle()
+
+        vm.setUsage(goodShot.id, LabelUsage.SCOREBOARD)
+        advanceUntilIdle()
+
+        vm.state.value.labels.single().scope shouldBe LabelUsage.SCOREBOARD
+        repo.scoreboardLabels.value.map { it.id } shouldBe listOf(goodShot.id)
+        repo.clipLabels.value.shouldBeEmpty()
+    }
+
+    @Test
+    fun creating_a_label_carries_its_scope() = runTest {
+        val repo = FakeAnnotationLabelsRepository()
+        val vm = LabelsViewModel(repo)
+        advanceUntilIdle()
+
+        vm.create("Serve", LabelColor.BLUE, LabelUsage.SCOREBOARD) shouldBe true
+        advanceUntilIdle()
+
+        repo.labels.value.single().scope shouldBe LabelUsage.SCOREBOARD
     }
 
     @Test

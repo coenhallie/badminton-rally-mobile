@@ -27,6 +27,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -164,6 +167,7 @@ fun LabelsScreen(vm: LabelsViewModel, onBack: () -> Unit) {
                                 onToggle = { vm.expand(label.id) },
                                 onRename = { vm.rename(label.id, it) },
                                 onRecolor = { vm.recolor(label.id, it) },
+                                onSetUsage = { vm.setUsage(label.id, it) },
                             )
                         }
                     }
@@ -201,6 +205,7 @@ private fun LabelRow(
     onToggle: () -> Unit,
     onRename: (String) -> Unit,
     onRecolor: (LabelColor) -> Unit,
+    onSetUsage: (LabelUsage) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -228,6 +233,24 @@ private fun LabelRow(
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onBackground,
             )
+
+            // Only on rows that are not `both`, so the common case stays quiet
+            // and the caption reads as an exception rather than as a column.
+            // Without it the split is invisible from the list, and "which labels
+            // are on my board?" means opening every row in turn.
+            val scopeCaption = when (label.scope) {
+                LabelUsage.BOTH -> null
+                LabelUsage.SCOREBOARD -> "BOARD"
+                LabelUsage.CLIPS -> "CLIPS"
+            }
+            if (scopeCaption != null) {
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = scopeCaption,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
 
         if (expanded) {
@@ -258,19 +281,21 @@ private fun LabelRow(
                 palette = palette,
                 selectedColorKey = label.colorKey,
                 onSelectColor = onRecolor,
+                selectedUsage = label.scope,
+                onSelectUsage = onSetUsage,
             )
         }
     }
 }
 
 /**
- * The name field and swatch grid shared by an expanded [LabelRow] and by
- * [DraftLabelRow] - the same in-place editor either way. What differs between
- * the two callers is only the wiring around it: an existing row persists a
- * rename or a recolour immediately, since the label already exists; the
- * not-yet-created draft can only hold its typed name and chosen colour
- * locally until both are submitted together as one [LabelsViewModel.create]
- * call.
+ * The name field, scope picker, and swatch grid shared by an expanded
+ * [LabelRow] and by [DraftLabelRow] - the same in-place editor either way.
+ * What differs between the two callers is only the wiring around it: an
+ * existing row persists a rename, a scope change, or a recolour immediately,
+ * since the label already exists; the not-yet-created draft can only hold
+ * its typed name, chosen scope, and chosen colour locally until all three
+ * are submitted together as one [LabelsViewModel.create] call.
  */
 @Composable
 private fun LabelEditorFields(
@@ -281,6 +306,8 @@ private fun LabelEditorFields(
     palette: List<LabelColor>,
     selectedColorKey: String?,
     onSelectColor: (LabelColor) -> Unit,
+    selectedUsage: LabelUsage,
+    onSelectUsage: (LabelUsage) -> Unit,
     focusRequester: FocusRequester? = null,
 ) {
     Column(
@@ -299,7 +326,30 @@ private fun LabelEditorFields(
                 .let { if (focusRequester != null) it.focusRequester(focusRequester) else it }
                 .onFocusChanged(onFocusChanged),
         )
+        UsagePicker(selected = selectedUsage, onSelect = onSelectUsage)
         SwatchGrid(palette = palette, selectedKey = selectedColorKey, onSelect = onSelectColor)
+    }
+}
+
+/**
+ * Where this label may be offered. Same control the new-match screen uses for
+ * singles/doubles, so it reads as one app rather than as a settings row.
+ */
+@Composable
+private fun UsagePicker(selected: LabelUsage, onSelect: (LabelUsage) -> Unit) {
+    val options = listOf(
+        LabelUsage.BOTH to "Both",
+        LabelUsage.SCOREBOARD to "Scoreboard",
+        LabelUsage.CLIPS to "Clips",
+    )
+    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+        options.forEachIndexed { index, (usage, text) ->
+            SegmentedButton(
+                selected = selected == usage,
+                onClick = { onSelect(usage) },
+                shape = SegmentedButtonDefaults.itemShape(index, options.size),
+            ) { Text(text) }
+        }
     }
 }
 
@@ -406,9 +456,10 @@ internal class CommitGuard {
  * already uses for name-only creation elsewhere (the Add-note sheet's inline
  * picker, Task 10), so an unchanged default still behaves exactly as before.
  *
- * Name and colour are held locally, not persisted, until the name field
- * commits: there is no id yet to rename or recolour against, so unlike an
- * expanded [LabelRow] this row cannot write through on every swatch tap.
+ * Name, scope, and colour are held locally, not persisted, until the name
+ * field commits: there is no id yet to rename, re-scope, or recolour
+ * against, so unlike an expanded [LabelRow] this row cannot write through on
+ * every scope or swatch tap.
  * Once [onCreate] succeeds, [LabelsViewModel.create] moves the expansion
  * target to the new label's own id, and this composable stops being shown -
  * the *same* [LabelEditorFields] then keeps rendering, bound to the real row.
@@ -428,6 +479,7 @@ private fun DraftLabelRow(
     var selectedColor by remember(existingColorKeys) {
         mutableStateOf(AnnotationLabelsRepositoryImpl.nextUnusedColor(existingColorKeys))
     }
+    var selectedUsage by remember { mutableStateOf(LabelUsage.BOTH) }
     val commitGuard = remember { CommitGuard() }
     val focusRequester = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
@@ -442,13 +494,13 @@ private fun DraftLabelRow(
         // a separate flag for "has this row ever been focused".
         if (!commitGuard.begin(trimmed)) return
         scope.launch {
-            // Task 6 replaces BOTH with the owner's choice.
-            val succeeded = onCreate(trimmed, selectedColor, LabelUsage.BOTH)
+            val succeeded = onCreate(trimmed, selectedColor, selectedUsage)
             // A failed create leaves this row mounted (LabelsViewModel.create
             // only changes the expansion target on success) with its typed
-            // name and chosen colour untouched, so rolling the guard back
-            // here is what lets the user's corrected retry actually fire
-            // instead of looking like a repeat of the commit that failed.
+            // name, chosen scope, and chosen colour untouched, so rolling
+            // the guard back here is what lets the user's corrected retry
+            // actually fire instead of looking like a repeat of the commit
+            // that failed.
             if (!succeeded) commitGuard.failed(previous)
         }
     }
@@ -466,5 +518,7 @@ private fun DraftLabelRow(
         palette = palette,
         selectedColorKey = selectedColor.key,
         onSelectColor = { selectedColor = it },
+        selectedUsage = selectedUsage,
+        onSelectUsage = { selectedUsage = it },
     )
 }

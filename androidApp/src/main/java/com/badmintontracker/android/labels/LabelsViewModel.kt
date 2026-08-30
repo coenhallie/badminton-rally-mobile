@@ -134,6 +134,7 @@ class LabelsViewModel(private val labels: AnnotationLabelsRepository) : ViewMode
 
     fun rename(id: String, name: String) = run { labels.rename(id, name) }
     fun recolor(id: String, color: LabelColor) = run { labels.recolor(id, color) }
+    fun setUsage(id: String, usage: LabelUsage) = run { labels.setUsage(id, usage) }
     fun delete(id: String) = run { labels.delete(id) }
 
     fun errorShown() { _state.value = _state.value.copy(errorMessage = null) }
