@@ -3,6 +3,7 @@ package com.badmintontracker.android.labels
 import com.badmintontracker.android.testing.FakeAnnotationLabelsRepository
 import com.badmintontracker.shared.model.AnnotationLabel
 import com.badmintontracker.shared.model.LabelColor
+import com.badmintontracker.shared.model.LabelUsage
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
@@ -82,7 +83,7 @@ class LabelsViewModelTest {
         advanceUntilIdle()
 
         vm.startCreating()
-        val succeeded = vm.create("Smash winner", LabelColor.PURPLE)
+        val succeeded = vm.create("Smash winner", LabelColor.PURPLE, LabelUsage.BOTH)
         advanceUntilIdle()
 
         succeeded shouldBe true
@@ -97,7 +98,7 @@ class LabelsViewModelTest {
         advanceUntilIdle()
 
         vm.startCreating()
-        val succeeded = vm.create("good shot", LabelColor.PURPLE)
+        val succeeded = vm.create("good shot", LabelColor.PURPLE, LabelUsage.BOTH)
         advanceUntilIdle()
 
         // This return value is what lets DraftLabelRow's CommitGuard roll
@@ -142,7 +143,7 @@ class LabelsViewModelTest {
         val vm = LabelsViewModel(repo)
         advanceUntilIdle()
 
-        vm.create("Smash winner", LabelColor.PURPLE)
+        vm.create("Smash winner", LabelColor.PURPLE, LabelUsage.BOTH)
         advanceUntilIdle()
 
         val created = vm.state.value.labels.single()

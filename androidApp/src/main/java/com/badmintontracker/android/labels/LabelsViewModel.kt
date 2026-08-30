@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.badmintontracker.shared.model.AnnotationLabel
 import com.badmintontracker.shared.model.LabelColor
+import com.badmintontracker.shared.model.LabelUsage
 import com.badmintontracker.shared.repo.AnnotationLabelsRepository
 import com.badmintontracker.shared.repo.userFacingMessage
 import kotlinx.coroutines.async
@@ -117,9 +118,9 @@ class LabelsViewModel(private val labels: AnnotationLabelsRepository) : ViewMode
      * and with it, the commit guard's rollback - is abandoned, which is
      * harmless since the row that would have shown the rollback is gone.
      */
-    suspend fun create(name: String, color: LabelColor): Boolean =
+    suspend fun create(name: String, color: LabelColor, usage: LabelUsage): Boolean =
         viewModelScope.async {
-            labels.create(name, color)
+            labels.create(name, color, usage)
                 .onSuccess { created ->
                     _state.value = _state.value.copy(expanded = LabelEditTarget.Existing(created.id))
                 }

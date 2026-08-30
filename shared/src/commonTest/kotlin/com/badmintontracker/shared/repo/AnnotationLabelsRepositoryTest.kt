@@ -1,6 +1,7 @@
 package com.badmintontracker.shared.repo
 
 import com.badmintontracker.shared.model.LabelColor
+import com.badmintontracker.shared.model.LabelUsage
 import com.badmintontracker.shared.testing.TestSupabase
 import com.badmintontracker.shared.testing.jsonResponse
 import com.russhwolf.settings.MapSettings
@@ -17,6 +18,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.TextContent
 import io.ktor.http.headersOf
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 
@@ -114,7 +116,7 @@ class AnnotationLabelsRepositoryTest {
         client.signInAs("u1")
         val repo = AnnotationLabelsRepositoryImpl(client, settings)
         repo.refresh()
-        repo.create("Net kill", null).isSuccess shouldBe true
+        repo.create("Net kill", null, LabelUsage.BOTH).isSuccess shouldBe true
 
         val offline = TestSupabase.client { request ->
             if (request.url.encodedPath.contains("/token")) jsonResponse(tokenResponseFor("u1"))
@@ -166,11 +168,12 @@ class AnnotationLabelsRepositoryTest {
         val repo = AnnotationLabelsRepositoryImpl(client, MapSettings())
         repo.refresh()
 
-        val created = repo.create("Net kill", null)
+        val created = repo.create("Net kill", null, LabelUsage.BOTH)
 
         created.isSuccess shouldBe true
         // green, amber and red are taken by the seeded three, so teal is next.
         posted!!.shouldContain(""""color_key":"teal"""")
+        posted!!.shouldContain(""""usage":"both"""")
         repo.labels.value shouldHaveSize 4
     }
 
@@ -179,7 +182,7 @@ class AnnotationLabelsRepositoryTest {
         val client = TestSupabase.client { jsonResponse(seeded) }
         val repo = AnnotationLabelsRepositoryImpl(client, MapSettings())
 
-        repo.create("   ", null).isFailure shouldBe true
+        repo.create("   ", null, LabelUsage.BOTH).isFailure shouldBe true
     }
 
     @Test
@@ -198,7 +201,7 @@ class AnnotationLabelsRepositoryTest {
         }
         val repo = AnnotationLabelsRepositoryImpl(client, MapSettings())
 
-        repo.create("  Net kill  ", null).isSuccess shouldBe true
+        repo.create("  Net kill  ", null, LabelUsage.BOTH).isSuccess shouldBe true
 
         posted!!.shouldContain(""""name":"Net kill"""")
     }
@@ -208,7 +211,7 @@ class AnnotationLabelsRepositoryTest {
         val client = TestSupabase.client { jsonResponse(seeded) }
         val repo = AnnotationLabelsRepositoryImpl(client, MapSettings())
 
-        val overLimit = repo.create("a".repeat(25), null)
+        val overLimit = repo.create("a".repeat(25), null, LabelUsage.BOTH)
         overLimit.isFailure shouldBe true
         overLimit.exceptionOrNull()?.message shouldContain "up to 24 characters"
     }
@@ -219,7 +222,7 @@ class AnnotationLabelsRepositoryTest {
         val repo = AnnotationLabelsRepositoryImpl(client, MapSettings())
         repo.refresh()
 
-        repo.create("good SHOT", null).isFailure shouldBe true
+        repo.create("good SHOT", null, LabelUsage.BOTH).isFailure shouldBe true
     }
 
     // The shape Postgrest actually returns for a unique-violation: HTTP 409 with a
@@ -246,7 +249,7 @@ class AnnotationLabelsRepositoryTest {
         }
         val repo = AnnotationLabelsRepositoryImpl(client, MapSettings())
 
-        val result = repo.create("Net kill", null)
+        val result = repo.create("Net kill", null, LabelUsage.BOTH)
 
         result.isFailure shouldBe true
         result.exceptionOrNull()?.message shouldBe "You already have a label called \"Net kill\"."
@@ -384,5 +387,87 @@ class AnnotationLabelsRepositoryTest {
         val taken = LabelColor.PALETTE.map { it.key }
         AnnotationLabelsRepositoryImpl.nextUnusedColor(taken) shouldBe LabelColor.GREEN
         AnnotationLabelsRepositoryImpl.nextUnusedColor(taken + "green") shouldBe LabelColor.TEAL
+    }
+
+    @Test
+    fun scoreboard_and_clip_flows_partition_the_palette() = runTest {
+        val rows = """
+          [
+            {"id":"l1","name":"Good shot","color_key":"green","created_at":"2026-08-24T12:00:00Z","usage":"both"},
+            {"id":"l2","name":"Serve","color_key":"blue","created_at":"2026-08-24T12:00:01Z","usage":"scoreboard"},
+            {"id":"l3","name":"Footwork","color_key":"teal","created_at":"2026-08-24T12:00:02Z","usage":"clips"}
+          ]
+        """.trimIndent()
+        val client = TestSupabase.client { jsonResponse(rows) }
+        val repo = AnnotationLabelsRepositoryImpl(client, MapSettings())
+        repo.refresh()
+
+        // The derived flows are eagerly collected on this class's own
+        // background scope (Dispatchers.Default in production), not the test
+        // dispatcher, so a synchronous read of .value right after refresh()
+        // races the collector that has to run before the filtered value lands.
+        // first { predicate } waits for that propagation instead of assuming it.
+        repo.scoreboardLabels.first { it.size == 2 }.map { it.id } shouldBe listOf("l1", "l2")
+        repo.clipLabels.first { it.size == 2 }.map { it.id } shouldBe listOf("l1", "l3")
+    }
+
+    @Test
+    fun an_unknown_usage_lands_in_both_flows() = runTest {
+        // Fail-safe: a label written by a newer build is still reachable rather
+        // than silently absent from every picker.
+        val row = """
+          [{"id":"l9","name":"Drive","color_key":"red","created_at":"2026-08-24T12:00:00Z","usage":"courtside"}]
+        """.trimIndent()
+        val client = TestSupabase.client { jsonResponse(row) }
+        val repo = AnnotationLabelsRepositoryImpl(client, MapSettings())
+        repo.refresh()
+
+        repo.scoreboardLabels.first { it.size == 1 }.map { it.id } shouldBe listOf("l9")
+        repo.clipLabels.first { it.size == 1 }.map { it.id } shouldBe listOf("l9")
+    }
+
+    @Test
+    fun set_usage_moves_a_label_between_the_flows() = runTest {
+        val row = """
+          [{"id":"l1","name":"Good shot","color_key":"green","created_at":"2026-08-24T12:00:00Z","usage":"both"}]
+        """.trimIndent()
+        val client = TestSupabase.client { jsonResponse(row) }
+        val repo = AnnotationLabelsRepositoryImpl(client, MapSettings())
+        repo.refresh()
+        repo.scoreboardLabels.first { it.size == 1 } // waits for the refresh to land
+
+        repo.setUsage("l1", LabelUsage.CLIPS).isSuccess shouldBe true
+
+        // Awaiting the transition on each side, not the plain .value: scoreboard
+        // starts out empty before the refresh above lands too, so an unawaited
+        // isEmpty() check could pass without setUsage having done anything.
+        repo.scoreboardLabels.first { it.isEmpty() }
+        repo.clipLabels.first { it.map { l -> l.id } == listOf("l1") }
+    }
+
+    @Test
+    fun set_usage_persists_through_the_cache() = runTest {
+        val settings = MapSettings()
+        val row = """
+          [{"id":"l1","name":"Good shot","color_key":"green","created_at":"2026-08-24T12:00:00Z","usage":"both"}]
+        """.trimIndent()
+        val warmClient = TestSupabase.client(settings) { request ->
+            if (request.url.encodedPath.contains("/token")) jsonResponse(tokenResponseFor("u1"))
+            else jsonResponse(row)
+        }
+        warmClient.signInAs("u1")
+        val warm = AnnotationLabelsRepositoryImpl(warmClient, settings)
+        warm.refresh()
+        warm.setUsage("l1", LabelUsage.SCOREBOARD)
+
+        // A cold start, offline: the scope has to come back off disk with the
+        // label, or the board would forget the choice every launch.
+        val coldClient = TestSupabase.client(settings) { request ->
+            if (request.url.encodedPath.contains("/token")) jsonResponse(tokenResponseFor("u1"))
+            else error("offline")
+        }
+        coldClient.signInAs("u1")
+        val cold = AnnotationLabelsRepositoryImpl(coldClient, settings)
+        cold.labels.value.single().scope shouldBe LabelUsage.SCOREBOARD
     }
 }

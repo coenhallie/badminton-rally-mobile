@@ -57,6 +57,7 @@ import com.badmintontracker.android.ui.components.ShuttlOutlinedTextField
 import com.badmintontracker.android.ui.components.SwipeToRemoveRow
 import com.badmintontracker.shared.model.AnnotationLabel
 import com.badmintontracker.shared.model.LabelColor
+import com.badmintontracker.shared.model.LabelUsage
 import com.badmintontracker.shared.repo.AnnotationLabelsRepositoryImpl
 import kotlinx.coroutines.launch
 
@@ -416,7 +417,7 @@ internal class CommitGuard {
 private fun DraftLabelRow(
     palette: List<LabelColor>,
     existingColorKeys: List<String>,
-    onCreate: suspend (String, LabelColor) -> Boolean,
+    onCreate: suspend (String, LabelColor, LabelUsage) -> Boolean,
 ) {
     var name by remember { mutableStateOf("") }
     // Keyed on existingColorKeys: the row can open before the label list has
@@ -441,7 +442,8 @@ private fun DraftLabelRow(
         // a separate flag for "has this row ever been focused".
         if (!commitGuard.begin(trimmed)) return
         scope.launch {
-            val succeeded = onCreate(trimmed, selectedColor)
+            // Task 6 replaces BOTH with the owner's choice.
+            val succeeded = onCreate(trimmed, selectedColor, LabelUsage.BOTH)
             // A failed create leaves this row mounted (LabelsViewModel.create
             // only changes the expansion target on success) with its typed
             // name and chosen colour untouched, so rolling the guard back

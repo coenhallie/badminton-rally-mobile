@@ -4,6 +4,7 @@ import com.badmintontracker.shared.repo.userFacingMessage
 import com.badmintontracker.shared.auth.friendlyAuthError
 import com.badmintontracker.shared.model.AnnotationLabel
 import com.badmintontracker.shared.model.LabelColor
+import com.badmintontracker.shared.model.LabelUsage
 import com.badmintontracker.shared.model.MatchMetadata
 import com.badmintontracker.shared.model.MatchShare
 import com.badmintontracker.shared.model.RallyAnnotation
@@ -69,16 +70,22 @@ suspend fun AnnotationsRepository.deleteAnnotationOrMessage(id: String): String?
 class CreateLabelOutcome(val label: AnnotationLabel?, val errorMessage: String?)
 
 /**
- * [color] null picks a swatch automatically. The Labels screen's own "New
- * label" row lets the owner choose a swatch up front, so it passes one
- * explicitly instead of creating with an auto-assigned colour and
- * recolouring right after.
+ * [color] null picks a swatch automatically. Both parameters are explicit
+ * rather than defaulted because Kotlin default arguments do not cross the ObjC
+ * boundary - Swift has to name them either way.
  */
-suspend fun AnnotationLabelsRepository.createLabelForSwift(name: String, color: LabelColor?): CreateLabelOutcome =
-    create(name, color).fold(
+suspend fun AnnotationLabelsRepository.createLabelForSwift(
+    name: String,
+    color: LabelColor?,
+    usage: LabelUsage,
+): CreateLabelOutcome =
+    create(name, color, usage).fold(
         onSuccess = { CreateLabelOutcome(it, null) },
         onFailure = { CreateLabelOutcome(null, it.userFacingMessage("Couldn't add label")) },
     )
+
+suspend fun AnnotationLabelsRepository.setLabelUsageOrMessage(id: String, usage: LabelUsage): String? =
+    setUsage(id, usage).exceptionOrNull()?.let { it.userFacingMessage("Couldn't change where this label is used") }
 
 suspend fun AnnotationLabelsRepository.renameLabelOrMessage(id: String, name: String): String? =
     rename(id, name).exceptionOrNull()?.let { it.userFacingMessage("Couldn't rename label") }

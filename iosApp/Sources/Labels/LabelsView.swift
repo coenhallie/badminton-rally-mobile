@@ -38,7 +38,9 @@ struct LabelsView: View {
                     if model.expanded == .new {
                         DraftLabelEditor(
                             existingColorKeys: model.labels.map(\.colorKey),
-                            onCreate: { name, color in await model.create(name, color: color) }
+                            onCreate: { name, color in
+                                await model.create(name, color: color, usage: .both)
+                            }
                         )
                     }
                     ForEach(model.labels, id: \.id) { label in
