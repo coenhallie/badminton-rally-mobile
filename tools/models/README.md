@@ -2,9 +2,10 @@
 
 Scripts for the Stage 0 on-device ML gates: acquire and pin the source
 weights, convert TrackNet and InpaintNet to ONNX, prove numerical parity,
-and measure shuttle coverage against real footage. This directory only
-contains tooling; none of the acquisition, conversion, or measurement steps
-below have been run yet in this environment (see "Blocked on").
+measure shuttle coverage against real footage, and measure sustained pose
+throughput. This directory only contains tooling; none of the acquisition,
+conversion, or measurement steps below have been run yet in this environment
+(see "Blocked on").
 
 Run every script below from the repo root; their paths
 (`tools/models/weights/`, `tools/models/onnx/`, `tools/models/reports/`) are
@@ -311,9 +312,58 @@ step's output:
    gate-only report - (b) is advisory and must never be able to look like a
    gate failure.
 
+5. **Export the detector and pose models** - `export_yolo.py`
+
+   ```bash
+   python tools/models/export_yolo.py
+   ```
+
+   Reads `tools/models/weights/badminton.pt` and `pose.pt` and writes ONNX
+   fp32/fp16 pairs to `tools/models/onnx/`: the detector at 640, and pose at
+   both 960 (the size the cloud runs) and 640, so the 960-versus-640 trade
+   can be measured rather than assumed. The default size is written
+   unsuffixed (`pose.fp16.onnx`), the others with a `.<size>` infix.
+
+   fp16 comes from a second `onnxconverter-common` pass over the fp32 graph
+   rather than Ultralytics' own `half=True`, which requires a CUDA device and
+   raises on the CPU-only machines this will usually run on. Same two-pass
+   shape as `export_tracknet.py`, and it leaves the fp32 graph behind for a
+   parity check. Like that script, it cleans up after itself: either both
+   files of a pair exist and are from this run, or neither does.
+
+   Record the printed byte sizes here - they decide bundle-versus-download
+   (design section 5.4).
+
+6. **Measure sustained pose throughput** - `measure_pose_throughput.py`, the
+   0b measurement
+
+   ```bash
+   python tools/models/measure_pose_throughput.py --device pixel-6a
+   ```
+
+   Runs the exported pose graph on a fixed input for ten minutes at each
+   size and writes `tools/models/reports/throughput-<device>.json`: the
+   median ms/frame for each MINUTE, the last-minute-over-first ratio, and the
+   projected wall clock for a 30-minute 30fps video (54,000 frames) computed
+   from the LAST minute.
+
+   The per-minute bucketing is the point. A mean over ten minutes hides
+   thermal throttling, which is the thing being measured. On a synthetic
+   curve degrading from 40 to 120 ms/frame, the last-minute projection is 108
+   minutes and the mean says 64 - a 1.69x optimistic answer to the only
+   question being asked. Buckets are keyed off elapsed time, not sample
+   index, so a throttled minute holds fewer inferences and still counts as
+   one minute.
+
+   **This script alone does not close the 0b gate.** Run on a laptop it gives
+   a desktop baseline; the number the section 5.6 routing threshold needs
+   comes from phones - the oldest device intended for support and a current
+   flagship - which needs a host app embedding ONNX Runtime. This script is
+   the measurement and reporting logic that harness should reproduce.
+
 ## Blocked on
 
-Four environment gaps stop every measurement step above from having been
+Five environment gaps stop every measurement step above from having been
 run as part of this change:
 
 - No Supabase credentials exist (Task 1 cannot fetch)
@@ -322,11 +372,22 @@ run as part of this change:
 - `onnx`, `onnxruntime`, and `onnxconverter-common` are not installed (Task 3
   needs all three - `export_tracknet.py` imports `onnxconverter_common`
   directly for the fp16 conversion pass, not just `onnx`/`onnxruntime`, for
-  both TrackNet and InpaintNet - and Task 4 needs `onnxruntime`)
+  both TrackNet and InpaintNet - and Tasks 4 and 5 need `onnxruntime`).
+  `torch`, `ultralytics`, `numpy` and `cv2` ARE present, so only the ONNX
+  packages are missing.
 - No source `.mp4` or corpus exists (Task 4 cannot measure)
+- No physical device is reachable, and no host app embedding ONNX Runtime
+  exists (Task 5 cannot produce the on-device numbers that decide the
+  section 5.6 routing threshold)
 
 Everything in this directory is the tooling those steps need once a human
-supplies the missing credentials, CLI, packages, and source footage. No
-weights have been pulled, no `manifest.json` or vendored TrackNetV3 licence
-exists yet, no ONNX export has been produced, and no parity or coverage
-numbers have been recorded.
+supplies the missing credentials, CLI, packages, source footage and device.
+No weights have been pulled, no `manifest.json` or vendored TrackNetV3
+licence exists yet, no ONNX export has been produced, and no parity,
+coverage or throughput numbers have been recorded.
+
+What HAS been verified without those: `export_yolo.py` fails cleanly with
+exit 2 when the weights are absent, and `measure_pose_throughput.py`'s
+per-minute bucketing was checked against a synthetic throttling curve - it
+recovers the 3.00x ratio exactly and buckets by elapsed time as intended.
+Neither has been run against a real model.

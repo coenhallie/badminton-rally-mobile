@@ -671,7 +671,7 @@ Needs a physical device. Produces the number that sets the capability-routing th
 - Consumes: `tools/models/weights/pose.pt`, `badminton.pt`
 - Produces: `tools/models/onnx/{pose,badminton}.fp16.onnx`, and `tools/models/reports/throughput-<device>.json`
 
-- [ ] **Step 1: Write the YOLO export script**
+- [x] **Step 1: Write the YOLO export script**
 
 ```python
 #!/usr/bin/env python3
