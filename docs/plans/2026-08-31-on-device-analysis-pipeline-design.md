@@ -297,6 +297,17 @@ the ordering.
 Sequential decode is not optional. Seeking per frame tens of thousands of times
 is pathologically slow on both platforms.
 
+**Correction, 2026-08-31.** "One decode pass" is too strong as written. The
+shuttle path needs a **bounded seek pre-pass** first: the median background in
+stage 1 below is computed from up to 300 frames sampled evenly across the whole
+video (`max_bg_samples: int = 300`, `inference.py:111`; `np.linspace` sampling
+at `inference.py:200-201`), each reached by a seek, and that background is an
+input to the very first inference of the main pass, so it cannot be computed
+lazily as the main pass goes. 300 seeks is not what the paragraph above
+objects to. The accurate statement is: one bounded seek pre-pass of at most 300
+frames, then one sequential frame-by-frame decode pass. See Task 11 of
+`2026-08-31-stage1-device-layer-ios-plan.md`.
+
 **Shuttle postprocessing must reproduce production exactly, not approximate it.**
 Added 2026-08-31 after reading `backend/tracknet/inference.py` closely. The cloud's
 shuttle track is not a heatmap argmax. Three stages sit between the model and a
