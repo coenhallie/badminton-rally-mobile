@@ -64,25 +64,35 @@ shuttle leaves frame - so the InpaintNet half of the deployed configuration
 is actually exercised. See EXIT CODES below for how this script tells you
 when it was not.
 
-EXIT CODES:
-  0 - GATE PASS.
-  1 - GATE FAIL: visibility agreement or position delta missed threshold.
+EXIT CODES, checked worst-first so a real failure can never be masked by a
+weaker signal from later in the list:
+  0 - GATE PASS. Measured on its own terms, and (if both models were
+      swapped) InpaintNet's shim was actually called.
+  1 - GATE FAIL: visibility agreement or position delta missed threshold,
+      on the gate's own measured terms. Takes priority over 3 below: a
+      catastrophic ONNX collapse can itself be severe enough to also trip
+      production's near-missing skip (inference.py:363) and leave
+      InpaintNet's shim uncalled, and that run must be reported as FAIL,
+      not steered toward "pick a better clip" - inpaintnet_unexercised is
+      still recorded in the JSON either way.
   2 - UNMEASURABLE: the video would not open, decoded no frames, or the
       shuttle was visible too rarely in the torch reference to measure
       anything (GATE_MIN_VISIBLE_FRACTION).
-  3 - INPAINTNET UNEXERCISED: both models were swapped (the default,
-      deployed configuration) but the InpaintNet shim was never actually
-      called on this video, so this run did not validate InpaintNet's
-      conversion despite the "swapped" label - see the PERFORMANCE NOTE
-      above. gate_pass in the JSON report is forced false for this case
-      regardless of what TrackNet alone measured, so neither this exit
-      code nor the JSON can be mistaken for a validated deployed-config
-      pass.
+  3 - INPAINTNET UNEXERCISED: the gate would otherwise have been a clean
+      PASS, but both models were swapped (the default, deployed
+      configuration) and the InpaintNet shim was never actually called on
+      this video, so this run did not validate InpaintNet's conversion
+      despite the "swapped" label - see the PERFORMANCE NOTE above.
+      gate_pass in the JSON report is forced false for this case, so
+      neither this exit code nor the JSON can be mistaken for a validated
+      deployed-config pass.
   4 - CRASH: the ONNX side of the gate itself raised (a bad ONNX file, a
       shape mismatch, an ONNX Runtime internal error). Distinct from 1
       (FAIL) because no divergence was actually measured - the conversion
       could not even be run, which is not the same claim as "ran and
-      diverged". A report is still written recording the failure.
+      diverged". A report is written recording the crash, under its own
+      "-crashed" filename so it can never overwrite a prior successful
+      run's report for the same video and configuration.
 """
 import argparse, json, subprocess, sys
 from pathlib import Path
@@ -279,6 +289,12 @@ def main() -> int:
     # or a later "which run produced this JSON" question has no answer.
     config_suffix = "tracknet-only" if args.tracknet_only else "full"
     report_path = report_dir / f"coverage-{name}-{config_suffix}.json"
+    # Deliberately a distinct filename, not the same path with an
+    # overwrite-if-crashed guard: a crash report is written unconditionally
+    # below on the ONNX-crash path, and must never be able to clobber a
+    # prior successful multi-minute run's report for this same video and
+    # configuration just because this run happened to fail.
+    crash_report_path = report_dir / f"coverage-{name}-{config_suffix}-crashed.json"
 
     provenance = {
         "video": str(args.video),
@@ -306,7 +322,9 @@ def main() -> int:
         # lost the report entirely, since it was only ever written at the
         # very end of a multi-minute run.
         print(f"ONNX side crashed while running track_video: {e}", file=sys.stderr)
-        report_path.write_text(json.dumps({
+        print(f"crash report written to {crash_report_path} (not {report_path}, "
+              f"which is left untouched if it already holds a prior result)", file=sys.stderr)
+        crash_report_path.write_text(json.dumps({
             "provenance": provenance,
             "crashed": True,
             "crash_phase": "onnx track_video",
@@ -351,8 +369,15 @@ def main() -> int:
         "tracknet_shim_calls": tracknet_shim.calls,
         "inpaintnet_shim_calls": inpaintnet_shim.calls if inpaintnet_shim is not None else None,
     }
-    gate_ok = measurable and (
+    # gate_ok_raw is what the gate measured, on its own terms, ignoring
+    # whether InpaintNet's shim ever got called. Belt-and-braces: the
+    # `gate["p95..."] is not None` guard is redundant with the proof above
+    # (GATE_MIN_VISIBLE_FRACTION + VISIBILITY_AGREEMENT_MIN > 1 forces the
+    # `and` to short-circuit before reaching a None p95), but costs nothing
+    # to state explicitly here.
+    gate_ok_raw = measurable and (
         gate["visibility_agreement"] >= VISIBILITY_AGREEMENT_MIN
+        and gate["p95_delta_px_at_512x288"] is not None
         and gate["p95_delta_px_at_512x288"] <= GATE_DELTA_PX_MAX
     )
     # _run_inpaintnet skips the model entirely on a nearly-fully-visible or
@@ -361,15 +386,31 @@ def main() -> int:
     # On such a video the InpaintNet shim is swapped in but never called, so
     # a PASS here would only have measured TrackNet despite the "swapped"
     # label saying otherwise - the same silent-no-op failure mode
-    # GATE_MIN_VISIBLE_FRACTION exists to catch for the whole gate. Forcing
-    # gate_ok False here (rather than merely printing a warning) is the
-    # actual fix: a warning alone still let a passing TrackNet-only result
-    # print "GATE PASS" and write gate_pass: true under the "TrackNet +
-    # InpaintNet (deployed config)" label, which is the false GO this
-    # exists to prevent.
+    # GATE_MIN_VISIBLE_FRACTION exists to catch for the whole gate.
     inpaintnet_unexercised = inpaintnet_shim is not None and inpaintnet_shim.calls == 0
-    if inpaintnet_unexercised:
-        gate_ok = False
+
+    # Priority, worst-first: a gate that already failed on its own measured
+    # terms must be reported as FAIL, even when InpaintNet's shim also went
+    # unexercised on the same run - a catastrophic ONNX collapse that also
+    # trips production's own near-missing skip at inference.py:363 must not
+    # be reported as "pick a better clip" when the true story is "the
+    # conversion is broken". INPAINTNET_UNEXERCISED only applies to a run
+    # that would otherwise have been a clean PASS: the one case where "the
+    # measurement itself is not trustworthy as deployed-config coverage" is
+    # the only thing wrong with it. Both signals are always kept in the
+    # JSON regardless of which one decided the exit code.
+    if not measurable:
+        exit_code = 2
+        reported_gate_pass = False
+    elif not gate_ok_raw:
+        exit_code = 1
+        reported_gate_pass = False
+    elif inpaintnet_unexercised:
+        exit_code = 3
+        reported_gate_pass = False
+    else:
+        exit_code = 0
+        reported_gate_pass = True
 
     print(f"=== (a) GATE: conversion fidelity (PyTorch fp32/CPU vs ONNX fp16; swapped: {swapped}) ===")
     for k, v in gate.items():
@@ -379,27 +420,22 @@ def main() -> int:
               f"fewer than {GATE_MIN_VISIBLE_FRACTION:.0%} of frames, so there is nothing "
               f"to measure position drift on. This is not evidence the conversion is "
               f"fine; check the video path and that it actually shows play.")
-    else:
-        print("  GATE PASS" if gate_ok else "  GATE FAIL")
-    if inpaintnet_unexercised:
-        print("  GATE INPAINTNET UNEXERCISED (exit 3) - InpaintNet's ONNX shim was "
-              "swapped in but never called on this video (its trajectory had too few "
-              "gaps, or too few detections, for _run_inpaintnet to invoke it), so this "
-              "run did not validate InpaintNet's conversion despite the \"swapped\" "
-              "label above. gate_pass is forced false. Re-run against a video with a "
-              "real gap in shuttle detection.")
-
-    # Exit code and gate_pass are both fully decided at this point, from (a)
-    # alone. Everything from here down - writing the report, then section
-    # (b) - must not be able to change either, so both are fixed into plain
-    # variables now rather than computed inline at the return statements.
-    if not measurable:
-        exit_code = 2
+    elif not gate_ok_raw:
+        print("  GATE FAIL")
+        if inpaintnet_unexercised:
+            print("  (InpaintNet's shim also went unexercised on this run, but the gate "
+                  "already failed on its own measured terms - that is reported first; "
+                  "see inpaintnet_shim_calls in the JSON.)")
     elif inpaintnet_unexercised:
-        exit_code = 3
+        print("  GATE INPAINTNET UNEXERCISED (exit 3) - visibility agreement and delta "
+              "both passed, but InpaintNet's ONNX shim was swapped in and never called "
+              "on this video (its trajectory had too few gaps, or too few detections, "
+              "for _run_inpaintnet to invoke it), so this run did not validate "
+              "InpaintNet's conversion despite the \"swapped\" label above. gate_pass "
+              "is forced false. Re-run against a video with a real gap in shuttle "
+              "detection.")
     else:
-        exit_code = 0 if gate_ok else 1
-    reported_gate_pass = gate_ok  # already forced False above when inpaintnet_unexercised
+        print("  GATE PASS")
 
     report = {"provenance": provenance, "gate": gate, "gate_measurable": measurable,
               "gate_pass": reported_gate_pass, "inpaintnet_unexercised": inpaintnet_unexercised,

@@ -207,20 +207,23 @@ step's output:
    not be executed until that is resolved. This has not been run yet in
    this environment; no result is recorded.
 
-   **Exit codes** (also documented in the script's module docstring):
+   **Exit codes** (also documented in the script's module docstring),
+   checked worst-first so a real failure is never masked by a weaker
+   signal further down the list:
 
    | Code | Meaning |
    | --- | --- |
-   | 0 | GATE PASS |
-   | 1 | GATE FAIL - visibility agreement or p95 delta missed threshold |
+   | 0 | GATE PASS - measured clean, and (if both models were swapped) InpaintNet's shim was actually called |
+   | 1 | GATE FAIL - visibility agreement or p95 delta missed threshold, on the gate's own measured terms. Takes priority over 3: a catastrophic ONNX collapse can itself be severe enough to also leave InpaintNet's shim uncalled, and that must be reported as FAIL, not steered toward "pick a better clip" |
    | 2 | UNMEASURABLE - video would not open, decoded no frames, or the shuttle was visible too rarely in the torch reference to measure anything |
-   | 3 | INPAINTNET UNEXERCISED - both models were swapped (the default) but the InpaintNet shim was never actually called on this video, so this run did not validate the deployed configuration despite the label. `gate_pass` in the JSON is forced `false`; re-run against a clip with a real detection gap |
-   | 4 | CRASH - the ONNX side itself raised (bad ONNX file, shape mismatch, ONNX Runtime error). Distinct from FAIL: no divergence was measured, the conversion could not be run at all. A report is still written |
+   | 3 | INPAINTNET UNEXERCISED - the gate would otherwise have been a clean PASS, but both models were swapped (the default) and the InpaintNet shim was never actually called on this video, so this run did not validate the deployed configuration despite the label. `gate_pass` in the JSON is forced `false`; re-run against a clip with a real detection gap |
+   | 4 | CRASH - the ONNX side itself raised (bad ONNX file, shape mismatch, ONNX Runtime error). Distinct from FAIL: no divergence was measured, the conversion could not be run at all. Written to a separate `coverage-<name>-<config>-crashed.json`, never to the plain `coverage-<name>-<config>.json` path, so a crashed re-run cannot overwrite a prior successful run's report |
 
    The report's `gate` object also records `tracknet_shim_calls` and
-   `inpaintnet_shim_calls` (the latter `null` under `--tracknet-only`) so a
-   reader does not have to infer exit code 3 from anything but the number
-   itself.
+   `inpaintnet_shim_calls` (the latter `null` under `--tracknet-only`),
+   and `inpaintnet_unexercised` is recorded at the top level regardless of
+   which exit code actually decided the run (1 or 3), so a reader does not
+   have to infer either from anything but those fields.
 
    A video that will not open at all (bad path, unreadable file) is caught
    by `track_video`'s own `cap.isOpened()` check (`inference.py:145-146`)

@@ -32,7 +32,7 @@ SWEEPS LENGTHS BY DEFAULT, DOES NOT TEST ONLY ONE. export_tracknet.py's
 _export_inpaintnet traces the graph at a single dummy length (256) and marks
 the length axis dynamic, but whether torch's ONNX exporter actually emits a
 length-agnostic Resize node (`scales`) for the model's three
-nn.Upsample(scale_factor=2, mode="linear") calls (model.py:186, hit three
+nn.Upsample(scale_factor=2, mode="linear") calls (model.py:188, hit three
 times in InpaintNet.forward), or instead bakes in a `sizes` constant derived
 from the traced length, is version-dependent and not something tracing
 itself reveals. If sizes got baked, every chunk whose length matches (or
