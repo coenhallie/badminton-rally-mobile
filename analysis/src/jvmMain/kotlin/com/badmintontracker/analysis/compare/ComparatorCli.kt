@@ -26,7 +26,7 @@ object ComparatorCli {
         println(compare(local = local, cloud = cloud).toJson())
     }
 
-    private fun readResult(path: String): AnalysisResult? {
+    internal fun readResult(path: String): AnalysisResult? {
         val file = File(path)
         if (!file.isFile) {
             System.err.println("not a file: $path")

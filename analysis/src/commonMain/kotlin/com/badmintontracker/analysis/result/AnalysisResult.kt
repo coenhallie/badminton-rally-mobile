@@ -84,7 +84,15 @@ data class SerializedShuttle(
     @SerialName("visible") val visible: Boolean,
 )
 
-/** Present only in A/B mode. Phase 1 never populates it. */
+/**
+ * Present only in A/B mode. Phase 1 never populates it.
+ *
+ * These two fields are PROVISIONAL, not the cloud's schema. Nothing in Stage 1
+ * writes a skeleton frame, so the shape has never been checked against a real
+ * capture; Stage 3 must take it from the worker's own payload before anything
+ * relies on it. Read the current pair as a placeholder that keeps the A/B key
+ * present, not as the contract.
+ */
 @Serializable
 data class SkeletonFrame(
     @SerialName("frame") val frame: Int,
