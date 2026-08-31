@@ -450,7 +450,7 @@ Production decodes with OpenCV `VideoCapture`, resizes to 512x288 with `cv2.resi
 **Interfaces:**
 - Produces: `func preprocess(_ buffer: CVPixelBuffer) -> [Float]` returning CHW RGB in [0,1] at 512x288, and a report at `tools/models/reports/decode-parity-<device>.json`
 
-- [ ] **Step 1: Write the Python reference side**
+- [x] **Step 1: Write the Python reference side**
 
 `check_decode_parity.py` takes a video and a frame index list, decodes with OpenCV exactly as production does, and writes each 512x288x3 RGB tensor to a `.npy` plus a summary JSON. Sample at least 30 frames spread across the video, not the first 30: decoder differences concentrate at keyframe boundaries and after seeks.
 
@@ -458,7 +458,7 @@ Production decodes with OpenCV `VideoCapture`, resizes to 512x288 with `cv2.resi
 
 Resize on the CPU with `vImage` or an explicit bilinear resample rather than delegating to whatever `AVAssetReader`'s output settings do. §5.4: "match the platform scaler to `INTER_LINEAR` or resize on the CPU, rather than discovering the difference later as unexplained drift in shuttle positions." Choosing the platform scaler and hoping is the failure mode this task exists to prevent.
 
-- [ ] **Step 3: Compare and record**
+- [x] **Step 3: Compare and record**
 
 Write `tools/models/reports/decode-parity-<device>.json` with, per sampled frame: mean absolute difference, max absolute difference, and the fraction of channel values differing by more than 1/255.
 
@@ -770,7 +770,7 @@ conversion at `inference.py:263-264`; the `/255.0` and CHW permute in
 - Create: `androidApp/src/main/java/com/badmintontracker/android/localanalysis/FramePreprocessor.kt`
 - Create: `androidApp/src/androidTest/java/com/badmintontracker/android/localanalysis/FramePreprocessorTest.kt`
 
-- [ ] **Step 1: Write the Python reference side**
+- [x] **Step 1: Write the Python reference side**
 
 `check_decode_parity.py` takes a video and frame indices, decodes with OpenCV
 exactly as production does, and writes each 512x288x3 RGB tensor as `.npy` plus
@@ -778,7 +778,7 @@ a summary JSON. Sample at least 30 frames spread across the video, not the
 first 30: decoder differences concentrate at keyframe boundaries and after
 seeks.
 
-- [ ] **Step 2: Implement the Kotlin preprocessor**
+- [x] **Step 2: Implement the Kotlin preprocessor**
 
 Resize explicitly rather than delegating to whatever `MediaCodec`'s output
 surface scaler does. Section 5.4: match the platform scaler to `INTER_LINEAR`
@@ -790,7 +790,7 @@ hoping is the failure this task exists to prevent.
 have - it decodes BGR and swaps. Get the YUV matrix right (BT.601 versus
 BT.709) or every pixel is off before any model sees it.
 
-- [ ] **Step 3: Compare and record**
+- [x] **Step 3: Compare and record**
 
 Write `tools/models/reports/decode-parity-s23.json` with, per sampled frame:
 mean absolute difference, max absolute difference, and the fraction of channel
