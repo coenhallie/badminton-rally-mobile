@@ -55,9 +55,36 @@ rallies rather than precision - which is why (a) exists as a hard gate at all.
 
 PERFORMANCE NOTE: this runs track_video (full median-background sampling
 plus per-frame inference) twice, once per side, entirely on CPU. Use a short
-clip; a long video will be slow.
+clip - but "short" is not sufficient on its own. _run_inpaintnet skips
+itself entirely when a trajectory is nearly-fully visible or nearly-fully
+missing (inference.py:363), which a short, easy, fully-tracked clip is
+likely to be. Pick (or trim to) a clip that actually contains a real gap in
+shuttle detection - a lost-behind-the-body moment, a fast smash, a frame the
+shuttle leaves frame - so the InpaintNet half of the deployed configuration
+is actually exercised. See EXIT CODES below for how this script tells you
+when it was not.
+
+EXIT CODES:
+  0 - GATE PASS.
+  1 - GATE FAIL: visibility agreement or position delta missed threshold.
+  2 - UNMEASURABLE: the video would not open, decoded no frames, or the
+      shuttle was visible too rarely in the torch reference to measure
+      anything (GATE_MIN_VISIBLE_FRACTION).
+  3 - INPAINTNET UNEXERCISED: both models were swapped (the default,
+      deployed configuration) but the InpaintNet shim was never actually
+      called on this video, so this run did not validate InpaintNet's
+      conversion despite the "swapped" label - see the PERFORMANCE NOTE
+      above. gate_pass in the JSON report is forced false for this case
+      regardless of what TrackNet alone measured, so neither this exit
+      code nor the JSON can be mistaken for a validated deployed-config
+      pass.
+  4 - CRASH: the ONNX side of the gate itself raised (a bad ONNX file, a
+      shape mismatch, an ONNX Runtime internal error). Distinct from 1
+      (FAIL) because no divergence was actually measured - the conversion
+      could not even be run, which is not the same claim as "ran and
+      diverged". A report is still written recording the failure.
 """
-import argparse, json, sys
+import argparse, json, subprocess, sys
 from pathlib import Path
 
 import cv2
@@ -83,8 +110,13 @@ GATE_DELTA_PX_MAX = 2.0
 # seen often enough to measure a position drift on. Without this, a video
 # with the wrong path, a black clip, or one where the shuttle is essentially
 # never above the visibility threshold would score visibility_agreement ==
-# 1.0 (both sides silently agree "not visible" every frame) and both_visible
-# == 0 - a falsely reassuring GATE PASS with nothing actually measured.
+# 1.0 (both sides silently agree "not visible" every frame) - a falsely
+# reassuring GATE PASS with nothing actually measured. This is keyed on the
+# torch reference's own visible fraction alone, deliberately not on whether
+# both sides agreed on any visible frame: if torch sees the shuttle often
+# but ONNX never agrees, that is a real, measurable divergence
+# (visibility_agreement collapses) and must reach GATE FAIL, not be
+# reported as UNMEASURABLE.
 GATE_MIN_VISIBLE_FRACTION = 0.05
 
 
@@ -103,9 +135,9 @@ class _OnnxModelShim:
         self.sess = ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
         self.input_name = self.sess.get_inputs()[0].name
         # _run_inpaintnet skips the model entirely when the trajectory is
-        # nearly-fully visible or nearly-fully missing (inference.py:361-363)
+        # nearly-fully visible or nearly-fully missing (inference.py:363)
         # and skips individual chunks that are all-visible or all-invisible
-        # (inference.py:399-400), so on some videos the InpaintNet shim is
+        # (inference.py:388-390), so on some videos the InpaintNet shim is
         # never actually called even though it was swapped in. Counting
         # calls here is how main() detects and reports that, instead of
         # silently gating "TrackNet + InpaintNet" while only TrackNet was
@@ -154,6 +186,26 @@ def _video_dims(video_path, fallback_w, fallback_h):
     finally:
         cap.release()
     return w, h
+
+
+def _tracker_repo_commit(tracker_repo):
+    """Best-effort git commit hash of the (read-only) tracker repo checkout,
+    for provenance in the report JSON - so a report can be traced back to
+    exactly which version of the production pipeline it ran. Returns None
+    rather than raising if this cannot be determined (not a git checkout,
+    git not on PATH, or any other lookup failure); provenance is a nicety,
+    not something worth failing a multi-minute run over.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(tracker_repo), "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return None
 
 
 def _percentile_sorted(sorted_values: list, p: float):
@@ -219,8 +271,48 @@ def main() -> int:
         print(f"no frames decoded from video: {args.video}", file=sys.stderr)
         return 2
 
-    onnx_positions = onnx_tracker.track_video(
-        args.video, batch_size=args.batch_size, max_bg_samples=args.max_bg_samples)
+    report_dir = Path("tools/models/reports")
+    report_dir.mkdir(parents=True, exist_ok=True)
+    name = Path(args.corpus).name if args.corpus else Path(args.video).stem
+    # Disambiguated by configuration: a --tracknet-only isolation run must
+    # not silently overwrite the deployed-config report for the same video,
+    # or a later "which run produced this JSON" question has no answer.
+    config_suffix = "tracknet-only" if args.tracknet_only else "full"
+    report_path = report_dir / f"coverage-{name}-{config_suffix}.json"
+
+    provenance = {
+        "video": str(args.video),
+        "tracker_repo": str(args.tracker_repo),
+        "tracker_repo_commit": _tracker_repo_commit(args.tracker_repo),
+        "tracknet_weights": str(args.tracknet_weights),
+        "inpaintnet_weights": str(args.inpaintnet_weights),
+        "tracknet_onnx": str(args.onnx),
+        "inpaintnet_onnx": str(args.inpaintnet_onnx) if not args.tracknet_only else None,
+        "swapped": swapped,
+        "batch_size": args.batch_size,
+        "max_bg_samples": args.max_bg_samples,
+    }
+
+    try:
+        onnx_positions = onnx_tracker.track_video(
+            args.video, batch_size=args.batch_size, max_bg_samples=args.max_bg_samples)
+    except Exception as e:
+        # Distinct from GATE FAIL (exit 1): nothing was actually measured
+        # here, the ONNX side itself did not run to completion - a bad ONNX
+        # file, a shape mismatch, an ONNX Runtime internal error. Treating
+        # this as exit 1 would make "the conversion diverged" and "the
+        # conversion could not even be evaluated" indistinguishable to a
+        # caller checking the exit code, and previously would also have
+        # lost the report entirely, since it was only ever written at the
+        # very end of a multi-minute run.
+        print(f"ONNX side crashed while running track_video: {e}", file=sys.stderr)
+        report_path.write_text(json.dumps({
+            "provenance": provenance,
+            "crashed": True,
+            "crash_phase": "onnx track_video",
+            "error": str(e),
+        }, indent=2))
+        return 4
 
     orig_w, orig_h = _video_dims(args.video, MODEL_W, MODEL_H)
     w_scale = orig_w / MODEL_W
@@ -239,7 +331,15 @@ def main() -> int:
 
     deltas_a = sorted(_delta_model_px(f) for f in both_a)
     torch_visible_fraction = sum(1 for f in frames_a if torch_positions[f]["visible"]) / max(len(frames_a), 1)
-    measurable = torch_visible_fraction >= GATE_MIN_VISIBLE_FRACTION and len(both_a) > 0
+    # Keyed on the torch reference's own visible fraction alone - NOT on
+    # len(both_a) > 0. If torch sees the shuttle often but ONNX agrees on
+    # none of those frames, that is a real, measurable divergence: agree
+    # can be at most (1 - torch_visible_fraction) in that case, so
+    # visibility_agreement necessarily falls below VISIBILITY_AGREEMENT_MIN
+    # and the gate_ok check below fails on that term before it would ever
+    # reach the (then-None) p95 comparison - see the GATE_MIN_VISIBLE_FRACTION
+    # comment above. That is meant to reach GATE FAIL, not UNMEASURABLE.
+    measurable = torch_visible_fraction >= GATE_MIN_VISIBLE_FRACTION
 
     gate = {
         "frames": len(frames_a),
@@ -256,79 +356,103 @@ def main() -> int:
         and gate["p95_delta_px_at_512x288"] <= GATE_DELTA_PX_MAX
     )
     # _run_inpaintnet skips the model entirely on a nearly-fully-visible or
-    # nearly-fully-missing trajectory (inference.py:361-363) and skips
-    # individual all-visible/all-invisible chunks (inference.py:399-400).
+    # nearly-fully-missing trajectory (inference.py:363) and skips
+    # individual all-visible/all-invisible chunks (inference.py:388-390).
     # On such a video the InpaintNet shim is swapped in but never called, so
     # a PASS here would only have measured TrackNet despite the "swapped"
     # label saying otherwise - the same silent-no-op failure mode
-    # GATE_MIN_VISIBLE_FRACTION exists to catch for the whole gate.
+    # GATE_MIN_VISIBLE_FRACTION exists to catch for the whole gate. Forcing
+    # gate_ok False here (rather than merely printing a warning) is the
+    # actual fix: a warning alone still let a passing TrackNet-only result
+    # print "GATE PASS" and write gate_pass: true under the "TrackNet +
+    # InpaintNet (deployed config)" label, which is the false GO this
+    # exists to prevent.
     inpaintnet_unexercised = inpaintnet_shim is not None and inpaintnet_shim.calls == 0
+    if inpaintnet_unexercised:
+        gate_ok = False
 
     print(f"=== (a) GATE: conversion fidelity (PyTorch fp32/CPU vs ONNX fp16; swapped: {swapped}) ===")
     for k, v in gate.items():
         print(f"  {k:30}: {v}")
     if not measurable:
-        print(f"  GATE UNMEASURABLE - the shuttle was visible on fewer than "
-              f"{GATE_MIN_VISIBLE_FRACTION:.0%} of frames (or never agreed visible "
-              f"on both sides), so there is nothing to measure position drift on. "
-              f"This is not evidence the conversion is fine; check the video path "
-              f"and that it actually shows play.")
+        print(f"  GATE UNMEASURABLE - the shuttle was visible in the torch reference on "
+              f"fewer than {GATE_MIN_VISIBLE_FRACTION:.0%} of frames, so there is nothing "
+              f"to measure position drift on. This is not evidence the conversion is "
+              f"fine; check the video path and that it actually shows play.")
     else:
         print("  GATE PASS" if gate_ok else "  GATE FAIL")
     if inpaintnet_unexercised:
-        print("  WARNING: InpaintNet's ONNX shim was swapped in but never called on this "
-              "video (its trajectory had too few gaps, or too few detections, for "
-              "_run_inpaintnet to invoke it) - this run only actually gated TrackNet's "
-              "conversion. Use a video with a real gap in shuttle detection, or read "
-              "inpaintnet_shim_calls in the JSON report, before trusting this result as "
-              "coverage of the InpaintNet conversion too.")
+        print("  GATE INPAINTNET UNEXERCISED (exit 3) - InpaintNet's ONNX shim was "
+              "swapped in but never called on this video (its trajectory had too few "
+              "gaps, or too few detections, for _run_inpaintnet to invoke it), so this "
+              "run did not validate InpaintNet's conversion despite the \"swapped\" "
+              "label above. gate_pass is forced false. Re-run against a video with a "
+              "real gap in shuttle detection.")
+
+    # Exit code and gate_pass are both fully decided at this point, from (a)
+    # alone. Everything from here down - writing the report, then section
+    # (b) - must not be able to change either, so both are fixed into plain
+    # variables now rather than computed inline at the return statements.
+    if not measurable:
+        exit_code = 2
+    elif inpaintnet_unexercised:
+        exit_code = 3
+    else:
+        exit_code = 0 if gate_ok else 1
+    reported_gate_pass = gate_ok  # already forced False above when inpaintnet_unexercised
+
+    report = {"provenance": provenance, "gate": gate, "gate_measurable": measurable,
+              "gate_pass": reported_gate_pass, "inpaintnet_unexercised": inpaintnet_unexercised,
+              "informational": None}
+    report_path.write_text(json.dumps(report, indent=2))
 
     # --- (b) INFORMATIONAL -----------------------------------------------
-    informational = None
+    # Wrapped end to end: a typo'd --corpus, a malformed results.json, or
+    # any other failure in this section must never reach the exit code or
+    # overwrite the gate-only report already written above. (b) is
+    # advisory only, and a crash in it is not a gate failure.
     if args.corpus:
-        results = json.loads((Path(args.corpus) / "results.json").read_text())
-        cloud = {int(k): v for k, v in results.get("shuttle_positions", {}).items()}
-        frames_b = sorted(set(torch_positions) & set(cloud))
-        both_b = [f for f in frames_b if cloud[f].get("visible") and torch_positions[f]["visible"]]
+        try:
+            results = json.loads((Path(args.corpus) / "results.json").read_text())
+            cloud = {int(k): v for k, v in results.get("shuttle_positions", {}).items()}
+            frames_b = sorted(set(torch_positions) & set(cloud))
+            both_b = [f for f in frames_b if cloud[f].get("visible") and torch_positions[f]["visible"]]
 
-        def _delta_orig_px(f):
-            a, b = torch_positions[f], cloud[f]
-            return ((a["x"] - b["x"]) ** 2 + (a["y"] - b["y"]) ** 2) ** 0.5
+            def _delta_orig_px(f):
+                a, b = torch_positions[f], cloud[f]
+                return ((a["x"] - b["x"]) ** 2 + (a["y"] - b["y"]) ** 2) ** 0.5
 
-        deltas_b = sorted(_delta_orig_px(f) for f in both_b)
-        informational = {
-            "note": ("NOT a gate: local now runs the same production pipeline as the "
-                     "cloud (median background, blob detection, InpaintNet gap-fill, "
-                     "scaling to native resolution) via TrackNetInference.track_video, "
-                     "so this is no longer comparing raw model output to a filtered "
-                     "track. What remains is the cloud's court-ROI polygon rejection, "
-                     "static-cluster suppression, and minimum-movement suppression "
-                     "(_build_shuttle_positions_dict, modal_supabase_processor.py:4073) "
-                     "applied on top of its own track_video output, plus the ONNX "
-                     "conversion and any decode differences. A divergence here is still "
-                     "expected, for a narrower set of reasons than before, and must not "
-                     "be used as a pass/fail signal."),
-            "frames_compared": len(frames_b),
-            "both_visible": len(both_b),
-            "median_delta_px": _percentile_sorted(deltas_b, 0.5),
-            "p95_delta_px": _percentile_sorted(deltas_b, 0.95),
-        }
-        print("=== (b) INFORMATIONAL: reimplementation fidelity vs cloud (NOT a gate) ===")
-        for k, v in informational.items():
-            print(f"  {k:30}: {v}")
+            deltas_b = sorted(_delta_orig_px(f) for f in both_b)
+            informational = {
+                "note": ("NOT a gate: local now runs the same production pipeline as the "
+                         "cloud (median background, blob detection, InpaintNet gap-fill, "
+                         "scaling to native resolution) via TrackNetInference.track_video, "
+                         "so this is no longer comparing raw model output to a filtered "
+                         "track. What remains is the cloud's court-ROI polygon rejection, "
+                         "static-cluster suppression, and minimum-movement suppression "
+                         "(_build_shuttle_positions_dict, modal_supabase_processor.py:4073) "
+                         "applied on top of its own track_video output, plus the ONNX "
+                         "conversion and any decode differences. A divergence here is still "
+                         "expected, for a narrower set of reasons than before, and must not "
+                         "be used as a pass/fail signal."),
+                "frames_compared": len(frames_b),
+                "both_visible": len(both_b),
+                "median_delta_px": _percentile_sorted(deltas_b, 0.5),
+                "p95_delta_px": _percentile_sorted(deltas_b, 0.95),
+            }
+            print("=== (b) INFORMATIONAL: reimplementation fidelity vs cloud (NOT a gate) ===")
+            for k, v in informational.items():
+                print(f"  {k:30}: {v}")
+            report["informational"] = informational
+            report_path.write_text(json.dumps(report, indent=2))
+        except Exception as e:
+            print("=== (b) INFORMATIONAL: failed, skipped (does not affect the gate) ===",
+                  file=sys.stderr)
+            print(f"  {e}", file=sys.stderr)
     else:
         print("=== (b) INFORMATIONAL: skipped (no --corpus given) ===")
 
-    report = {"gate": gate, "gate_measurable": measurable, "gate_pass": gate_ok,
-              "swapped": swapped, "inpaintnet_unexercised": inpaintnet_unexercised,
-              "informational": informational}
-    Path("tools/models/reports").mkdir(parents=True, exist_ok=True)
-    name = Path(args.corpus).name if args.corpus else Path(args.video).stem
-    Path(f"tools/models/reports/coverage-{name}.json").write_text(json.dumps(report, indent=2))
-
-    if not measurable:
-        return 2
-    return 0 if gate_ok else 1
+    return exit_code
 
 
 if __name__ == "__main__":

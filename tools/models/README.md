@@ -60,13 +60,21 @@ step's output:
    `inpaintnet.fp16.onnx`. Unlike TrackNet's frame axis, InpaintNet's input
    `(1, 3, length)` has a **dynamic** length axis, not a static one:
    production chunks a trajectory with `chunk_size=256`, `stride=128`
-   (`inference.py:356-357`) and pads only to the next multiple of 8
-   (`inference.py:395`), so real chunk lengths range from 16 to 256. The
+   (`inference.py:367-368`) and pads only to the next multiple of 8
+   (`inference.py:401`), so real chunk lengths range from 16 to 256. The
    traced graph is only valid for lengths that are a multiple of 8 - see the
    comment in `_export_inpaintnet` for why that is guaranteed by
    production's own padding and is not a workaround. InpaintNet is now a
    required export, not optional: the on-device gate below runs it by
    default alongside TrackNet.
+
+   **Run `check_inpaintnet_parity.py` (step 3 below) immediately after this
+   export, before step 4.** Tracing at a single length does not prove the
+   dynamic axis actually behaves dynamically in the exported graph - see
+   that script's module docstring for the specific risk (a `sizes` constant
+   baked from the trace instead of a length-agnostic `scales`). It sweeps
+   multiple lengths by default for exactly this reason; do not skip it or
+   narrow it to a single `--lengths 256` and call the export verified.
 
 3. **Check numerical parity**
 
@@ -111,6 +119,14 @@ step's output:
      a sigmoid, so synthetic input is not representative of the correlated,
      mostly-in-range trajectories it actually sees.
 
+     **Sweeps multiple trajectory lengths by default** (`--lengths`,
+     default `16,24,32,64,128,136,192,248,256`), not just the 256 the
+     export was traced at - a single-length run cannot tell whether the
+     exported graph's Resize nodes are genuinely length-agnostic or just
+     happen to work at the traced length. See the module docstring for
+     why. Do not narrow this to a single length and treat the result as a
+     verified export.
+
 4. **Measure shuttle coverage against real footage** - the 0a gate,
    `measure_shuttle_coverage.py`
 
@@ -134,7 +150,13 @@ step's output:
    median background, blob detection, InpaintNet gap-filling, coordinate
    scaling - is the same production code on both sides, so a divergence can
    only come from the ONNX conversion. Writes both results to
-   `tools/models/reports/coverage-<name>.json`:
+   `tools/models/reports/coverage-<name>-<full|tracknet-only>.json` (the
+   configuration is part of the filename so a `--tracknet-only` isolation
+   run does not overwrite the deployed-config report for the same video).
+   The report also records `provenance`: the video path, `--tracker-repo`
+   path and its git commit if it is a git checkout, both weights paths,
+   both ONNX paths, `swapped`, `batch_size`, and `max_bg_samples` - enough
+   to trace the artifact back to exactly what produced it.
 
    - **(a) THE GATE - conversion fidelity.** Reports per-frame visibility
      agreement and the pixel delta (converted back to the 512x288 model
@@ -166,7 +188,15 @@ step's output:
 
    **Performance note:** this runs `track_video`'s full pipeline (including
    median-background sampling over up to 300 frames) twice, entirely on
-   CPU. Use a short clip.
+   CPU. Use a short clip - but a short clip is not sufficient on its own.
+   `_run_inpaintnet` skips itself entirely on a trajectory that is
+   nearly-fully visible or nearly-fully missing (`inference.py:363`), which
+   a short, easy, fully-tracked clip is likely to be. **Pick (or trim to) a
+   clip that contains a real gap in shuttle detection** - a moment the
+   shuttle is lost behind a player, a fast smash, a frame it leaves the
+   frame - or the InpaintNet half of the default, deployed configuration is
+   never actually exercised. See exit code 3 below for how the script
+   reports when that happened.
 
    **(a) is the gate that decides whether the rest of the on-device plan
    proceeds.** Visibility agreement at or above 99% and a p95 delta at or
@@ -177,16 +207,33 @@ step's output:
    not be executed until that is resolved. This has not been run yet in
    this environment; no result is recorded.
 
-   If the shuttle is visible on too small a fraction of frames to measure a
-   position delta on at all (wrong video, a clip with no play, or similar),
-   the script prints **GATE UNMEASURABLE** and exits 2 rather than a false
-   PASS - agreeing "not visible" on every frame is not evidence the
-   conversion is fine. A video that will not open at all (bad path,
-   unreadable file) is now caught by `track_video`'s own `cap.isOpened()`
-   check (`inference.py:145-146`) rather than by this script reopening it -
-   this script no longer decodes video itself, so that loud-failure
-   responsibility now belongs to production code, not a reimplementation
-   of it. It surfaces the same way: printed to stderr, exit 2.
+   **Exit codes** (also documented in the script's module docstring):
+
+   | Code | Meaning |
+   | --- | --- |
+   | 0 | GATE PASS |
+   | 1 | GATE FAIL - visibility agreement or p95 delta missed threshold |
+   | 2 | UNMEASURABLE - video would not open, decoded no frames, or the shuttle was visible too rarely in the torch reference to measure anything |
+   | 3 | INPAINTNET UNEXERCISED - both models were swapped (the default) but the InpaintNet shim was never actually called on this video, so this run did not validate the deployed configuration despite the label. `gate_pass` in the JSON is forced `false`; re-run against a clip with a real detection gap |
+   | 4 | CRASH - the ONNX side itself raised (bad ONNX file, shape mismatch, ONNX Runtime error). Distinct from FAIL: no divergence was measured, the conversion could not be run at all. A report is still written |
+
+   The report's `gate` object also records `tracknet_shim_calls` and
+   `inpaintnet_shim_calls` (the latter `null` under `--tracknet-only`) so a
+   reader does not have to infer exit code 3 from anything but the number
+   itself.
+
+   A video that will not open at all (bad path, unreadable file) is caught
+   by `track_video`'s own `cap.isOpened()` check (`inference.py:145-146`)
+   rather than by this script reopening it - this script no longer decodes
+   video itself, so that loud-failure responsibility now belongs to
+   production code, not a reimplementation of it. It surfaces the same way:
+   printed to stderr, exit 2.
+
+   Section (b) is wrapped so that a typo'd `--corpus`, a malformed
+   `results.json`, or any other failure in it is printed to stderr and
+   skipped, never reaching the exit code or overwriting the already-written
+   gate-only report - (b) is advisory and must never be able to look like a
+   gate failure.
 
 ## Blocked on
 

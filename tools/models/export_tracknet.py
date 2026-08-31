@@ -12,8 +12,8 @@ InpaintNet input is (1, 3, L): a trajectory chunk of L frames, channels
 backend/tracknet/inference.py:416, _run_inpaintnet). Output is (1, 2, L),
 predicted [x, y]. Unlike TrackNet's frame axis, L is NOT fixed: production
 chunks a video's trajectory with chunk_size=256 and stride=128
-(inference.py:356-357), padding each chunk only to the next multiple of 8
-(`pad_len = ((len(chunk_x) + 7) // 8) * 8`, inference.py:395) - so a video
+(inference.py:367-368), padding each chunk only to the next multiple of 8
+(`pad_len = ((len(chunk_x) + 7) // 8) * 8`, inference.py:401) - so a video
 whose trajectory length is not a multiple of 128 has a final chunk anywhere
 from 16 to 256 frames long. A static L would only match the first chunk of
 every video and silently break on every other one, so InpaintNet is exported
@@ -101,11 +101,18 @@ def _export_inpaintnet(out: Path) -> None:
     # divisible by 8 (three halvings and three doublings of a multiple of 8
     # always land exactly), which is exactly why production always pads
     # chunks to a multiple of 8 before calling InpaintNet
-    # (inference.py:395, `pad_len = ((len(chunk_x) + 7) // 8) * 8`). So the
+    # (inference.py:401, `pad_len = ((len(chunk_x) + 7) // 8) * 8`). So the
     # exported graph's baked-in "no slice needed" branch is correct for
     # every length production will ever feed it - but only for those. Do not
     # feed this ONNX model a trajectory length that is not a multiple of 8;
     # the traced graph will not defend against it.
+    #
+    # A separate risk from the same trace: whether torch's ONNX exporter
+    # emits the three nn.Upsample(scale_factor=2) calls as length-agnostic
+    # Resize nodes (`scales`) or bakes in a `sizes` constant derived from
+    # this dummy's length is version-dependent and invisible here. Run
+    # check_inpaintnet_parity.py (it sweeps lengths by default, not just
+    # 256) right after this export, before trusting it.
     #
     # 256 as the representative dummy length (production's chunk_size), but
     # the axis is marked dynamic below so the exported graph is not actually

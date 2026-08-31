@@ -4,7 +4,7 @@
 A sibling to check_tracknet_parity.py rather than an extension of it, because
 InpaintNet's real input is not raw video frames - it is an (x, y, visibility)
 trajectory chunk already produced by running TrackNet plus blob detection
-over a real video (backend/tracknet/inference.py:338-430, _run_inpaintnet).
+over a real video (backend/tracknet/inference.py:338-469, _run_inpaintnet).
 That means check_tracknet_parity.py's --video mode (decode frames, stack,
 feed the model) has no InpaintNet equivalent without first trusting the very
 TrackNet ONNX conversion that script exists to gate - bootstrapping that
@@ -27,6 +27,26 @@ Compares predicted [x, y] coordinates directly (there is no "peak" to find in
 a continuous regression output), converted to a pixel-equivalent distance in
 the 512x288 model space InpaintNet's normalized [0, 1] coordinates are scaled
 into elsewhere in the pipeline.
+
+SWEEPS LENGTHS BY DEFAULT, DOES NOT TEST ONLY ONE. export_tracknet.py's
+_export_inpaintnet traces the graph at a single dummy length (256) and marks
+the length axis dynamic, but whether torch's ONNX exporter actually emits a
+length-agnostic Resize node (`scales`) for the model's three
+nn.Upsample(scale_factor=2, mode="linear") calls (model.py:186, hit three
+times in InpaintNet.forward), or instead bakes in a `sizes` constant derived
+from the traced length, is version-dependent and not something tracing
+itself reveals. If sizes got baked, every chunk whose length matches (or
+happens to still divide out correctly from) 256 would pass and only a
+shorter, real trailing chunk would fail - and it would fail at the Concat
+node, not gracefully, because the `if d.shape[2] != e.shape[2]: d = d[:, :, :n]`
+guards in InpaintNet.forward (model.py:202,208,214) are themselves traced
+away for any length that is a multiple of 8 (see the comment in
+export_tracknet.py's _export_inpaintnet for why). A single fixed --length
+would therefore prove nothing about any other length. Production's own
+range is confirmed by inference.py: chunks below 16 are dropped
+(inference.py:379's `if end - start < 16: break`), chunk_size caps at 256
+(inference.py:367), and every real chunk is rounded up to a multiple of 8
+(inference.py:401) - so the default sweep below spans that range.
 """
 import argparse, sys
 from pathlib import Path
@@ -67,35 +87,53 @@ def _shift_px(pred_ref: np.ndarray, pred_got: np.ndarray) -> float:
     return float(dist.max())
 
 
+# Production's real range: chunks under 16 frames are dropped (inference.py:379),
+# chunk_size caps at 256 (inference.py:367), and every real chunk is rounded up
+# to a multiple of 8 (inference.py:401). This sweep's boundary values (16, 24,
+# 248, 256) are the ones most likely to expose a torch ONNX exporter that baked
+# a `sizes` constant into the Resize nodes instead of emitting `scales` - see
+# the module docstring - since 256 is what export_tracknet.py traces at.
+DEFAULT_LENGTHS = "16,24,32,64,128,136,192,248,256"
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--tracker-repo", required=True)
     ap.add_argument("--onnx", default="tools/models/onnx/inpaintnet.fp16.onnx",
                      help="path to the exported InpaintNet fp16 ONNX model")
     ap.add_argument("--weights", default="tools/models/weights/inpaintnet.pt")
-    ap.add_argument("--trials", type=int, default=32, help="synthetic-trajectory trials")
-    ap.add_argument("--length", type=int, default=256,
-                     help="trajectory chunk length per trial; production's chunk_size is "
-                          "256, but any multiple of 8 is valid since the ONNX export uses "
-                          "a dynamic length axis")
+    ap.add_argument("--trials", type=int, default=8, help="synthetic-trajectory trials per length")
+    ap.add_argument("--lengths", default=DEFAULT_LENGTHS,
+                     help="comma-separated trajectory chunk lengths to sweep. Defaults to "
+                          f"'{DEFAULT_LENGTHS}', covering production's real range "
+                          "(16 to 256, always a multiple of 8) including its boundaries. "
+                          "A single --lengths 256 run only proves the exact length "
+                          "export_tracknet.py traced at, which is not sufficient - see "
+                          "the module docstring for why.")
     args = ap.parse_args()
+
+    lengths = [int(v) for v in args.lengths.split(",") if v.strip()]
 
     model = _load_torch_inpaintnet(args.tracker_repo, args.weights)
     sess = ort.InferenceSession(args.onnx, providers=["CPUExecutionProvider"])
     input_name = sess.get_inputs()[0].name
 
     rng = np.random.default_rng(0)
-    max_shift = 0.0
-    for _ in range(args.trials):
-        inp = _synthetic_trajectory(rng, args.length)
-        with torch.no_grad():
-            pred_ref = model(torch.from_numpy(inp)).numpy()
-        pred_got = sess.run(None, {input_name: inp})[0]
-        max_shift = max(max_shift, _shift_px(pred_ref, pred_got))
-
     print("input source      : synthetic trajectory (no real-input mode; see module docstring)")
-    print(f"trials             : {args.trials}, length={args.length}")
-    print(f"largest shift      : {max_shift:.3f} px-equivalent (at 512x288)")
+    print(f"trials per length  : {args.trials}")
+    overall_max_shift = 0.0
+    for length in lengths:
+        max_shift = 0.0
+        for _ in range(args.trials):
+            inp = _synthetic_trajectory(rng, length)
+            with torch.no_grad():
+                pred_ref = model(torch.from_numpy(inp)).numpy()
+            pred_got = sess.run(None, {input_name: inp})[0]
+            max_shift = max(max_shift, _shift_px(pred_ref, pred_got))
+        overall_max_shift = max(overall_max_shift, max_shift)
+        print(f"  length={length:4d}      : largest shift {max_shift:.3f} px-equivalent (at 512x288)")
+
+    print(f"largest shift (any length): {overall_max_shift:.3f} px-equivalent (at 512x288)")
     print("PARITY INCONCLUSIVE (synthetic input only; there is no --video-equivalent "
           "real mode for InpaintNet, see module docstring for why)")
     return 0
