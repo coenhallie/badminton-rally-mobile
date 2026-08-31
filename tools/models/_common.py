@@ -1,10 +1,13 @@
-"""Shared helpers for the tools/models/ scripts.
+"""Shared helpers for tools/models/check_tracknet_parity.py.
 
-Not a tool on its own; imported by export_tracknet.py, check_tracknet_parity.py
-and measure_shuttle_coverage.py so that frame decoding, normalisation, and
-heatmap postprocessing are byte-identical wherever that identity matters - in
-particular between the PyTorch and ONNX sides of the 0a conversion-fidelity
-gate in measure_shuttle_coverage.py.
+Not a tool on its own. The only remaining importer is
+check_tracknet_parity.py, which uses these to decode video frames into
+TrackNet's input stacks and to run the PyTorch and ONNX Runtime sides on
+identical input. export_tracknet.py does not import this module (it loads
+its own checkpoint and builds its own dummy input). measure_shuttle_coverage.py
+no longer does either: it drives production's own TrackNetInference.track_video
+directly, so it needs none of the decode/postprocess reimplementation this
+module used to provide for it.
 """
 import sys
 from pathlib import Path
@@ -14,10 +17,6 @@ import numpy as np
 import torch
 
 WIDTH, HEIGHT, SEQ = 512, 288, 8
-# The cloud thresholds a sigmoid heatmap at 0.5 to decide visibility; matching
-# it here keeps any comparison about conversion or reimplementation fidelity,
-# not about a new threshold.
-VIS_THRESHOLD = 0.5
 
 WEIGHTS_DEFAULT = Path("tools/models/weights/tracknet.pt")
 ONNX_DEFAULT = "tools/models/onnx/tracknet.fp16.onnx"
@@ -106,28 +105,6 @@ def iter_batches(cap: cv2.VideoCapture, seq: int = SEQ):
         yield start, stack, real
 
 
-def heatmap_to_positions(hm: np.ndarray, scale_w: float, scale_h: float, count=None) -> list:
-    """Per-plane argmax -> [{x, y, visible}, ...].
-
-    x/y are scaled from the model's 512x288 heatmap grid to a (scale_w,
-    scale_h) target. Pass WIDTH/HEIGHT for raw model-space pixels (identity
-    scale), or a video's original resolution to compare against coordinates
-    recorded in that space.
-    """
-    n = count if count is not None else hm.shape[1]
-    out = []
-    for i in range(n):
-        plane = hm[0, i]
-        flat = int(np.argmax(plane))
-        peak = float(plane.flat[flat])
-        out.append({
-            "x": (flat % WIDTH) * (scale_w / WIDTH),
-            "y": (flat // WIDTH) * (scale_h / HEIGHT),
-            "visible": peak >= VIS_THRESHOLD,
-        })
-    return out
-
-
 def run_torch(model, stack: np.ndarray) -> np.ndarray:
     with torch.no_grad():
         return model(torch.from_numpy(stack)).numpy()
@@ -135,15 +112,3 @@ def run_torch(model, stack: np.ndarray) -> np.ndarray:
 
 def run_onnx(sess, stack: np.ndarray) -> np.ndarray:
     return sess.run(None, {"frames": stack})[0]
-
-
-def euclidean(a: dict, b: dict) -> float:
-    return ((a["x"] - b["x"]) ** 2 + (a["y"] - b["y"]) ** 2) ** 0.5
-
-
-def percentile_sorted(sorted_values: list, p: float):
-    """Nearest-rank percentile over an already-sorted list, or None if empty."""
-    if not sorted_values:
-        return None
-    idx = min(int(len(sorted_values) * p), len(sorted_values) - 1)
-    return sorted_values[idx]
