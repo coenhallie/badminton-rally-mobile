@@ -13,6 +13,23 @@ import kotlin.test.Test
 
 class Phase1PipelineTest {
 
+    /**
+     * The one value the corpus cannot supply faithfully is the video duration.
+     *
+     * The worker pads with ffprobe's container duration
+     * (`pad_rally_windows(..., video_duration=probe_video_duration(path))`),
+     * and that number is persisted nowhere: `results.json`'s
+     * `video_metadata.duration_seconds` and the `videos` row's
+     * `results_meta.duration` are both `total_frames / fps`. Substituting
+     * that is the closest available value and is what happens below.
+     *
+     * It only bites through `padRallyWindows`' final `min(clipEnd,
+     * videoDuration)` clamp, so at most the LAST clip's end can disagree, and
+     * only when the container duration and `total_frames / fps` differ - which
+     * they do on variable-frame-rate sources and through metadata rounding.
+     * If `clip_windows_match_the_rally_clips_rows_the_cloud_wrote` ever fails
+     * on the last clip alone, check that before reading it as a porting bug.
+     */
     private fun runOn(e: CorpusEntry): Phase1Output = runPhase1(
         Phase1Input(
             rawShuttle = e.shuttlePositions,

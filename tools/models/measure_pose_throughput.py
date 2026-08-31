@@ -48,8 +48,8 @@ def summarise(samples, seconds_per_bucket=60.0):
         return {"buckets": [], "last_over_first": None, "projected_seconds_30min": None}
 
     ordered = [
-        {"minute": i + 1, "inferences": len(buckets[k]), "median_ms": statistics.median(buckets[k])}
-        for i, k in enumerate(sorted(buckets))
+        {"minute": k + 1, "inferences": len(buckets[k]), "median_ms": statistics.median(buckets[k])}
+        for k in sorted(buckets)
     ]
     first, last = ordered[0]["median_ms"], ordered[-1]["median_ms"]
     return {
@@ -104,11 +104,23 @@ def main() -> int:
             return 2
 
         sess = ort.InferenceSession(str(model), providers=ort.get_available_providers())
-        name = sess.get_inputs()[0].name
+        spec = sess.get_inputs()[0]
+
+        # Take the shape from the graph rather than assuming (1, 3, size,
+        # size). It also catches the fallback above resolving to the wrong
+        # file: asking for a size that was never exported lands on the default
+        # graph, and without this check that surfaces as an opaque onnxruntime
+        # shape error instead of saying which export is missing.
+        shape = [1 if not isinstance(d, int) else d for d in spec.shape]
+        if len(shape) == 4 and (shape[2], shape[3]) != (size, size):
+            print(f"{model.name} takes {shape[2]}x{shape[3]}, not {size}x{size}; "
+                  f"no {size} export exists in {onnx_dir}", file=sys.stderr)
+            return 2
+
         # A fixed input on purpose: this measures the model and the thermal
         # envelope, not the decoder. Real frames would add decode time and
         # per-frame variance to a number meant to isolate inference.
-        feed = {name: np.zeros((1, 3, size, size), dtype=np.float32)}
+        feed = {spec.name: np.zeros(shape, dtype=np.float32)}
 
         print(f"measuring {model.name} at {size} for {args.minutes:g} min "
               f"on {sess.get_providers()[0]} ...")
