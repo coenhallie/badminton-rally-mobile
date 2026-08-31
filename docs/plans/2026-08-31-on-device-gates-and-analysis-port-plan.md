@@ -757,7 +757,7 @@ run hides the thermal throttling that decides whether this is viable."
 - Consumes: nothing
 - Produces: the `:analysis` Gradle module targeting android/jvm/iosX64/iosArm64/iosSimulatorArm64, and `normalizeFps(value: Double?): FpsResult` where `data class FpsResult(val fps: Double, val substituted: Boolean)`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```kotlin
 package com.badmintontracker.analysis
@@ -790,7 +790,7 @@ class VideoMetadataTest {
 }
 ```
 
-- [ ] **Step 2: Create the module**
+- [x] **Step 2: Create the module**
 
 `settings.gradle.kts`, add after the `:shared` include:
 
@@ -844,12 +844,12 @@ android {
 }
 ```
 
-- [ ] **Step 3: Run the test to verify it fails**
+- [x] **Step 3: Run the test to verify it fails**
 
 Run: `./gradlew :analysis:jvmTest`
 Expected: compilation failure, `normalizeFps` unresolved.
 
-- [ ] **Step 4: Write the implementation**
+- [x] **Step 4: Write the implementation**
 
 ```kotlin
 package com.badmintontracker.analysis
@@ -874,12 +874,12 @@ fun normalizeFps(value: Double?, default: Double = DEFAULT_FPS): FpsResult {
 }
 ```
 
-- [ ] **Step 5: Run the test to verify it passes**
+- [x] **Step 5: Run the test to verify it passes**
 
 Run: `./gradlew :analysis:jvmTest`
 Expected: PASS.
 
-- [ ] **Step 6: Wire it into CI**
+- [x] **Step 6: Wire it into CI**
 
 In `.github/workflows/ci.yml`, change the `shared-tests` job's run step to cover both modules:
 
@@ -887,7 +887,7 @@ In `.github/workflows/ci.yml`, change the `shared-tests` job's run step to cover
       - run: ./gradlew :shared:jvmTest :analysis:jvmTest
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add settings.gradle.kts analysis .github/workflows/ci.yml
@@ -919,7 +919,7 @@ Ported from `badminton-tracker/src/utils/homography.ts`, not from `speed_calc.py
   - `fun CourtKeypoints.homography(): Matrix3x3?`
   - `typealias Matrix3x3 = List<List<Double>>`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```kotlin
 package com.badmintontracker.analysis.geometry
@@ -1003,12 +1003,12 @@ private infix fun Double.shouldBeLessThan(other: Double) {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `./gradlew :analysis:jvmTest --tests "*HomographyTest*"`
 Expected: compilation failure, unresolved references.
 
-- [ ] **Step 3: Write `CourtGeometry.kt`**
+- [x] **Step 3: Write `CourtGeometry.kt`**
 
 ```kotlin
 package com.badmintontracker.analysis.geometry
@@ -1086,7 +1086,7 @@ val COURT_KEYPOINT_POSITIONS: List<Point> = listOf(
 )
 ```
 
-- [ ] **Step 4: Write `Homography.kt`**
+- [x] **Step 4: Write `Homography.kt`**
 
 ```kotlin
 package com.badmintontracker.analysis.geometry
@@ -1228,12 +1228,12 @@ private fun solveLeastSquares(a: List<List<Double>>, b: List<Double>): List<Doub
 }
 ```
 
-- [ ] **Step 5: Run the test to verify it passes**
+- [x] **Step 5: Run the test to verify it passes**
 
 Run: `./gradlew :analysis:jvmTest --tests "*HomographyTest*"`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add analysis/src/commonMain/kotlin/com/badmintontracker/analysis/geometry \
@@ -1262,7 +1262,7 @@ Two small pure helpers that later tasks need. `validNetLine` guards the identity
   - `fun List<Point>.expandedAbout(centroidFactor: Double): List<Point>`
   - `fun List<Point>.contains(p: Point): Boolean`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```kotlin
 package com.badmintontracker.analysis.geometry
@@ -1336,12 +1336,12 @@ class PolygonTest {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `./gradlew :analysis:jvmTest --tests "*PolygonTest*"`
 Expected: compilation failure.
 
-- [ ] **Step 3: Write `Polygon.kt`**
+- [x] **Step 3: Write `Polygon.kt`**
 
 ```kotlin
 package com.badmintontracker.analysis.geometry
@@ -1402,12 +1402,12 @@ fun validNetLine(left: Point?, right: Point?, width: Double, height: Double): Bo
 }
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `./gradlew :analysis:jvmTest --tests "*PolygonTest*"`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add analysis/src/commonMain/kotlin/com/badmintontracker/analysis/geometry/Polygon.kt \
@@ -1434,7 +1434,7 @@ Port of `_build_shuttle_positions_dict`. Court ROI plus static-cluster rejection
   - `data class ShuttleSample(val x: Double, val y: Double, val visible: Boolean)`
   - `fun buildFilteredTrack(raw: Map<Int, ShuttleSample>, fps: Double, videoWidth: Int, videoHeight: Int, courtCorners: List<Point>?): Map<Int, ShuttleSample>`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```kotlin
 package com.badmintontracker.analysis.shuttle
@@ -1502,12 +1502,12 @@ class ShuttleTrackTest {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `./gradlew :analysis:jvmTest --tests "*ShuttleTrackTest*"`
 Expected: compilation failure.
 
-- [ ] **Step 3: Write `ShuttleTrack.kt`**
+- [x] **Step 3: Write `ShuttleTrack.kt`**
 
 ```kotlin
 package com.badmintontracker.analysis.shuttle
@@ -1606,12 +1606,12 @@ private fun dist(p: Point, x: Double, y: Double): Double =
     sqrt((p.x - x) * (p.x - x) + (p.y - y) * (p.y - y))
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `./gradlew :analysis:jvmTest --tests "*ShuttleTrackTest*"`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add analysis/src/commonMain/kotlin/com/badmintontracker/analysis/shuttle \
@@ -1640,7 +1640,7 @@ Port of `detect_shuttle_shots` in `shot_detection.py`, which is itself a port of
   - `data class Shot(val frame: Int, val timestamp: Double, val x: Double, val y: Double)`
   - `fun detectShuttleShots(frames: List<FrameSample>, fps: Double, minShotGapSec: Double = 0.6, minSpeedSq: Double = 225.0, cosAngleMax: Double = 0.0, rejectOutliers: Boolean = true, autoStrideSec: Double = 0.3): List<Shot>`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```kotlin
 package com.badmintontracker.analysis.shots
@@ -1715,12 +1715,12 @@ class ShotDetectionTest {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `./gradlew :analysis:jvmTest --tests "*ShotDetectionTest*"`
 Expected: compilation failure.
 
-- [ ] **Step 3: Write `ShotDetection.kt`**
+- [x] **Step 3: Write `ShotDetection.kt`**
 
 ```kotlin
 package com.badmintontracker.analysis.shots
@@ -1825,12 +1825,12 @@ private fun filterOutliers(points: List<Sample>): List<Sample> {
 }
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `./gradlew :analysis:jvmTest --tests "*ShotDetectionTest*"`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add analysis/src/commonMain/kotlin/com/badmintontracker/analysis/shots \
@@ -1858,7 +1858,7 @@ Port of `detect_rallies_from_shots`. This is the detector whose output drives cl
   - `fun detectRalliesFromShots(frames: List<FrameSample>, fps: Double): List<Rally>`
   - constants `MIN_SHOTS = 2`, `RALLY_GAP_SECONDS = 3.1`, `MIN_RALLY_DURATION_S = 0.8`, `SHUTTLE_VISIBILITY_THRESHOLD = 0.25`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```kotlin
 package com.badmintontracker.analysis.rally
@@ -1940,12 +1940,12 @@ class ShotGapRallyDetectorTest {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `./gradlew :analysis:jvmTest --tests "*ShotGapRallyDetectorTest*"`
 Expected: compilation failure.
 
-- [ ] **Step 3: Write `ShotGapRallyDetector.kt`**
+- [x] **Step 3: Write `ShotGapRallyDetector.kt`**
 
 ```kotlin
 package com.badmintontracker.analysis.rally
@@ -2031,12 +2031,12 @@ fun detectRalliesFromShots(frames: List<FrameSample>, fps: Double): List<Rally> 
 }
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `./gradlew :analysis:jvmTest --tests "*ShotGapRallyDetectorTest*"`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add analysis/src/commonMain/kotlin/com/badmintontracker/analysis/rally \
@@ -2061,7 +2061,7 @@ Port of `rally_detection.detect_rallies`. Same shot-reversal idea as Task 10 but
 - Consumes: `ShuttleSample` from Task 9, `Rally` from Task 11
 - Produces: `fun detectRalliesGradient(shuttlePositions: Map<Int, ShuttleSample>, fps: Double, totalFrames: Int, minRallyDurationS: Double = 0.8, minGapDurationS: Double = 3.0): List<Rally>`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```kotlin
 package com.badmintontracker.analysis.rally
@@ -2124,12 +2124,12 @@ class GradientRallyDetectorTest {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `./gradlew :analysis:jvmTest --tests "*GradientRallyDetectorTest*"`
 Expected: compilation failure.
 
-- [ ] **Step 3: Write `GradientRallyDetector.kt`**
+- [x] **Step 3: Write `GradientRallyDetector.kt`**
 
 ```kotlin
 package com.badmintontracker.analysis.rally
@@ -2224,12 +2224,12 @@ fun detectRalliesGradient(
 }
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `./gradlew :analysis:jvmTest --tests "*GradientRallyDetectorTest*"`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add analysis/src/commonMain/kotlin/com/badmintontracker/analysis/rally/GradientRallyDetector.kt \
@@ -2261,7 +2261,7 @@ Three combinators that turn two rally lists into the stored list and the clip li
   - `fun padRallyWindows(rallies: List<Rally>, videoDuration: Double?, preRoll: Double = CLIP_PRE_ROLL_S, postRoll: Double = CLIP_POST_ROLL_S): List<ClipWindow>`
   - constants `CLIP_PRE_ROLL_S = 2.0`, `CLIP_POST_ROLL_S = 1.5`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```kotlin
 package com.badmintontracker.analysis.rally
@@ -2377,12 +2377,12 @@ class ClipWindowsTest {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `./gradlew :analysis:jvmTest --tests "*RallyCombinationTest*" --tests "*ClipWindowsTest*"`
 Expected: compilation failure.
 
-- [ ] **Step 3: Write `RallyCombination.kt`**
+- [x] **Step 3: Write `RallyCombination.kt`**
 
 ```kotlin
 package com.badmintontracker.analysis.rally
@@ -2480,7 +2480,7 @@ fun unionRallies(
 }
 ```
 
-- [ ] **Step 4: Write `ClipWindows.kt`**
+- [x] **Step 4: Write `ClipWindows.kt`**
 
 ```kotlin
 package com.badmintontracker.analysis.rally
@@ -2540,12 +2540,12 @@ fun padRallyWindows(
 }
 ```
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `./gradlew :analysis:jvmTest --tests "*RallyCombinationTest*" --tests "*ClipWindowsTest*"`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add analysis/src/commonMain/kotlin/com/badmintontracker/analysis/rally/RallyCombination.kt \
@@ -2572,7 +2572,7 @@ Test-only. Reads a trimmed fixture into the types the pipeline consumes, so Task
   - `data class CloudClip(val rallyIndex: Int, val startTimestamp: Double, val endTimestamp: Double)`
   - `expect fun loadCorpusEntry(name: String): CorpusEntry`
 
-- [ ] **Step 1: Add the resources source set**
+- [x] **Step 1: Add the resources source set**
 
 In `analysis/build.gradle.kts`, inside the `kotlin { sourceSets { ... } }` block, add:
 
@@ -2584,7 +2584,7 @@ In `analysis/build.gradle.kts`, inside the `kotlin { sourceSets { ... } }` block
         jvmTest.resources.srcDir("src/commonTest/resources")
 ```
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 ```kotlin
 package com.badmintontracker.analysis.corpus
@@ -2614,12 +2614,12 @@ class CorpusFixtureTest {
 }
 ```
 
-- [ ] **Step 3: Run to verify it fails**
+- [x] **Step 3: Run to verify it fails**
 
 Run: `./gradlew :analysis:jvmTest --tests "*CorpusFixtureTest*"`
 Expected: compilation failure, `loadCorpusEntry` unresolved.
 
-- [ ] **Step 4: Write the loader**
+- [x] **Step 4: Write the loader**
 
 `analysis/src/commonTest/kotlin/com/badmintontracker/analysis/corpus/CorpusFixture.kt`:
 
@@ -2717,12 +2717,12 @@ actual fun readFixtureFile(name: String, file: String): String {
 
 The tests reference a fixture named `sample`. Ensure `analysis/src/commonTest/resources/corpus/sample/` exists with the three files, from Task 1 step 4.
 
-- [ ] **Step 6: Run to verify it passes**
+- [x] **Step 6: Run to verify it passes**
 
 Run: `./gradlew :analysis:jvmTest --tests "*CorpusFixtureTest*"`
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add analysis/build.gradle.kts \
@@ -2748,7 +2748,7 @@ Ties every previous task together and asserts the Kotlin port agrees with the cl
   - `data class Phase1Output(val storedRallies: List<Rally>, val clipWindows: List<ClipWindow>, val filteredTrack: Map<Int, ShuttleSample>)`
   - `fun runPhase1(input: Phase1Input): Phase1Output`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```kotlin
 package com.badmintontracker.analysis
@@ -2832,12 +2832,12 @@ class Phase1PipelineTest {
 }
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `./gradlew :analysis:jvmTest --tests "*Phase1PipelineTest*"`
 Expected: compilation failure.
 
-- [ ] **Step 3: Write `Phase1Pipeline.kt`**
+- [x] **Step 3: Write `Phase1Pipeline.kt`**
 
 ```kotlin
 package com.badmintontracker.analysis
@@ -2918,19 +2918,19 @@ fun runPhase1(input: Phase1Input): Phase1Output {
 }
 ```
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `./gradlew :analysis:jvmTest`
 Expected: PASS, all tests in the module.
 
 If the rally counts disagree with the cloud, that is the plan working as intended. Do **not** loosen the assertion. Diagnose by comparing intermediate outputs: does `filteredTrack` visibility match the cloud's `shuttle_positions`? Do the shot counts match? Record the discrepancy and its cause. A genuine, understood divergence gets added to the design's §6 register with its reason; anything else is a porting bug to fix.
 
-- [ ] **Step 5: Run the whole suite and both other modules**
+- [x] **Step 5: Run the whole suite and both other modules**
 
 Run: `./gradlew :analysis:jvmTest :shared:jvmTest :androidApp:testDebugUnitTest`
 Expected: all PASS. Confirms nothing in the new module broke existing builds.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add analysis/src/commonMain/kotlin/com/badmintontracker/analysis/Phase1Pipeline.kt \

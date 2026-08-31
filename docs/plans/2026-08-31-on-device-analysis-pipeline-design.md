@@ -466,8 +466,38 @@ report. **Anything not on this list that differs is a bug.**
    aggregation, resolving ref §8.10 rather than porting it.
 3. **Frame indexing done correctly.** No off-by-one between shuttle position and
    frame; the cloud's ref §8.3 defect is not reproduced.
+4. **`runPhase1` takes the raw shuttle track as given.** In the worker the raw
+   track is TrackNet output already gated by a permissive court ROI: x expanded
+   1.40 about the centroid, every vertex above the centroid clamped to y = 0
+   (`modal_supabase_processor.py:2193-2208`). `runPhase1` applies no such gate,
+   so it is MORE permissive than the cloud, and `refineRallies` can widen a
+   rally toward noise the cloud had already discarded. Cheap to close - apply
+   that ROI to `rawShuttle` before the call - but not worth guessing at before
+   the golden comparison says whether it moves any boundary. Revisit as soon as
+   a corpus exists.
 
 This register lives here and grows as more are found.
+
+### 6.1 Not divergences: cloud behaviour reproduced on purpose
+
+Found while porting, confirmed against the source, and deliberately kept. They
+look like bugs, so they are recorded to stop a later reader "fixing" them into
+a real divergence.
+
+- **Refinement emits overlapping rallies.** `refine_rallies` clamps each
+  boundary against the ORIGINAL filtered bounds, never the refined ones, so one
+  raw rally spanning two filtered rallies widens the first forwards and the
+  second backwards past it. Refining `(10, 20)` and `(23.5, 33)` against raw
+  `(9.5, 25)` gives `(9.5, 23.1)` and `(20.4, 33)`.
+- **Two clips can therefore cover the same footage.** `pad_rally_windows`
+  documents that "no two clips duplicate rally footage", and that holds only
+  for non-overlapping input, which its own upstream does not guarantee. The
+  pair above pads to `[7.5, 23.1]` and `[20.4, 34.5]`. Anything downstream
+  assuming disjoint clips is wrong against the cloud as well as against this
+  port. Pinned by `Phase1PipelineTest.clip_windows_can_overlap_when_refinement_overlaps`.
+- **The two rally detectors use different gap thresholds**, 3.0s for the
+  gradient detector and 3.1s for the shot-gap one. Unifying them would change
+  the union, so it is a measured change, not a tidy-up.
 
 ---
 
