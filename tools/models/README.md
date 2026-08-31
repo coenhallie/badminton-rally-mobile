@@ -331,8 +331,34 @@ step's output:
    parity check. Like that script, it cleans up after itself: either both
    files of a pair exist and are from this run, or neither does.
 
-   Record the printed byte sizes here - they decide bundle-versus-download
-   (design section 5.4).
+   **Run 2026-09-01.** Exported sizes, opset 17:
+
+   | graph | input | fp32 | fp16 |
+   |---|---|---|---|
+   | `badminton` | 1x3x640x640 | 12.3 MB | 6.2 MB |
+   | `pose` | 1x3x960x960 | 86.9 MB | 43.5 MB |
+   | `pose.640` | 1x3x640x640 | 86.6 MB | 43.4 MB |
+
+   All six graphs load and run under ONNX Runtime 1.19.2, and the
+   CoreMLExecutionProvider accepts them, which is the relevant signal for iOS.
+
+   **93.1 MB of fp16 for all three is too much to bundle**, and Phase 1 needs
+   only the detector: 6.2 MB, which bundles comfortably. Pose is Phase 2 and
+   downloads from the `models` bucket per section 5.4, which this measurement
+   supports rather than contradicts.
+
+   Two things this run pinned that were previously assumptions:
+
+   - **The opset is pinned to 17**, not left to Ultralytics. It followed the
+     installed torch and chose 22, which ONNX Runtime refuses outright:
+     "Current official support for domain ai.onnx is till opset 21." 17 is
+     what `export_tracknet.py` already targets.
+   - **fp16 comes from Ultralytics' `half=True`**, not an
+     `onnxconverter-common` pass. The earlier note here claimed `half=True`
+     needed CUDA; it does not, it works on CPU. The converter route fails on
+     every one of these graphs with a Resize type mismatch that
+     `keep_io_types`, `disable_shape_infer` and an `op_block_list` all fail to
+     avoid.
 
 6. **Measure sustained pose throughput** - `measure_pose_throughput.py`, the
    0b measurement
@@ -355,6 +381,24 @@ step's output:
    index, so a throttled minute holds fewer inferences and still counts as
    one minute.
 
+   **Desktop baseline, 2026-09-01** (MacBook M4 Pro, CoreMLExecutionProvider,
+   `tools/models/reports/throughput-macbook-m4pro-baseline.json`):
+
+   | size | ms/frame | projected for a 30-min 30fps video |
+   |---|---|---|
+   | 960 | 299.8 | 269.8 min, about 9x realtime |
+   | 640 | 136.5 | 122.9 min, about 4.1x realtime |
+
+   640 is 2.2x faster than 960, which is the size trade the design asked to be
+   measured rather than assumed.
+
+   Read these as an upper bound on speed, not a device number: a laptop is
+   faster than a phone, but this path also carries Python and per-call
+   onnxruntime overhead a native app would not, and CoreML falls back to CPU
+   for part of the graph ("CoreML does not support input dim > 16384"). The
+   direction is still stark. Even here, pose at the cloud's 960 would take
+   four and a half hours for a 30-minute match.
+
    **This script alone does not close the 0b gate.** Run on a laptop it gives
    a desktop baseline; the number the section 5.6 routing threshold needs
    comes from phones - the oldest device intended for support and a current
@@ -369,12 +413,14 @@ run as part of this change:
 - No Supabase credentials exist (Task 1 cannot fetch)
 - The Modal CLI is not installed (Task 2 cannot pull TrackNet/InpaintNet
   weights)
-- `onnx`, `onnxruntime`, and `onnxconverter-common` are not installed (Task 3
-  needs all three - `export_tracknet.py` imports `onnxconverter_common`
-  directly for the fp16 conversion pass, not just `onnx`/`onnxruntime`, for
-  both TrackNet and InpaintNet - and Tasks 4 and 5 need `onnxruntime`).
-  `torch`, `ultralytics`, `numpy` and `cv2` ARE present, so only the ONNX
-  packages are missing.
+- ~~`onnx`, `onnxruntime`, `onnxconverter-common` are not installed~~
+  **Installed 2026-09-01**: onnx 1.19.1, onnxruntime 1.19.2, onnxslim 0.1.96,
+  onnxconverter-common. `torch` 2.8.0, `ultralytics` 8.4.8, `numpy` 2.0.2 and
+  `cv2` 4.13.0 were already present and are unchanged by the install.
+  `export_tracknet.py` still imports `onnxconverter_common` for TrackNet and
+  InpaintNet - note that path is UNVERIFIED, since the converter turned out to
+  produce unloadable graphs for every YOLO model tried. Expect to need the
+  same treatment there.
 - No source `.mp4` or corpus exists (Task 4 cannot measure)
 - No physical device is reachable, and no host app embedding ONNX Runtime
   exists (Task 5 cannot produce the on-device numbers that decide the
@@ -386,8 +432,9 @@ No weights have been pulled, no `manifest.json` or vendored TrackNetV3
 licence exists yet, no ONNX export has been produced, and no parity,
 coverage or throughput numbers have been recorded.
 
-What HAS been verified without those: `export_yolo.py` fails cleanly with
-exit 2 when the weights are absent, and `measure_pose_throughput.py`'s
-per-minute bucketing was checked against a synthetic throttling curve - it
-recovers the 3.00x ratio exactly and buckets by elapsed time as intended.
-Neither has been run against a real model.
+**Steps 5 and 6 have now been run** against real weights, on desktop. The
+badminton detector came from the `badminton-tracker` checkout and the pose
+model from Ultralytics, neither of which needs Modal; only TrackNet and
+InpaintNet do. `manifest.json` is still absent because `pull_weights.py`
+cannot complete without the Modal pulls, so **these exports are not yet
+pinned** - re-running may not reproduce them byte for byte.

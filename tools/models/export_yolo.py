@@ -5,16 +5,19 @@ The cloud runs pose at imgsz=960 and the detector at the Ultralytics default
 of 640. Both sizes are exported for pose so the 960-versus-640 trade can be
 measured by measure_pose_throughput.py rather than assumed.
 
-fp16 is produced by a second onnxconverter-common pass over the fp32 graph,
-not by Ultralytics' own `half=True`. That flag requires a CUDA device and
-raises on CPU-only machines, which is most of the machines this will be run
-on; the two-pass route matches export_tracknet.py and works anywhere. It also
-leaves the fp32 graph on disk, which is what a parity check needs to compare
-against.
+fp16 comes from Ultralytics' own `half=True`, and each model is exported
+twice: once plain to `<name>.onnx` and once half to `<name>.fp16.onnx`, so a
+parity check has both graphs to compare.
 
-`keep_io_types=True` keeps the input and output tensors fp32 so callers feed
-and read the same arrays they would for the fp32 graph, with only the weights
-and intermediate activations at half precision.
+An earlier version instead ran `onnxconverter_common.float16` over the fp32
+graph, on the assumption that `half=True` needed CUDA. It does not - it works
+on CPU - and the converter route does not work here at all: on every one of
+these graphs it produces a model ONNX Runtime refuses to load, with
+"Type (tensor(float)) of output arg (/model.10/Resize_output_0) ... does not
+match expected type (tensor(float16))". `keep_io_types`, `disable_shape_infer`
+and blocking Resize in `op_block_list` all fail the same way. Ultralytics'
+export produces fp16 weights with fp32 I/O, which is what `keep_io_types` was
+wanted for anyway.
 """
 import argparse
 import sys
@@ -22,18 +25,18 @@ from pathlib import Path
 
 # Size the cloud runs each model at. The FIRST entry is the default and gets
 # the unsuffixed filename; the rest are written with a ".<size>" infix.
+# Pinned, not inherited. Ultralytics follows the installed torch and picked
+# opset 22 here, which onnxruntime 1.19.2 refuses outright: "Current official
+# support for domain ai.onnx is till opset 21." A default that moves with a
+# library version is exactly what a conversion pipeline must not have, and 17
+# is what export_tracknet.py already targets, so the two halves of the model
+# set agree.
+OPSET = 17
+
 MODELS = [
     ("badminton", "badminton.pt", [640]),
     ("pose", "pose.pt", [960, 640]),
 ]
-
-
-def _to_fp16(fp32: Path, fp16: Path) -> None:
-    import onnx
-    from onnxconverter_common import float16
-
-    model = onnx.load(str(fp32))
-    onnx.save(float16.convert_float_to_float16(model, keep_io_types=True), str(fp16))
 
 
 def _export_one(weight: Path, dest_fp32: Path, dest_fp16: Path, size: int) -> None:
@@ -49,12 +52,17 @@ def _export_one(weight: Path, dest_fp32: Path, dest_fp16: Path, size: int) -> No
     dest_fp32.parent.mkdir(parents=True, exist_ok=True)
     produced = None
     try:
-        # A fresh YOLO per export: export() mutates the model in place, so
-        # reusing one across sizes silently exports the first size twice.
-        produced = Path(YOLO(str(weight)).export(format="onnx", imgsz=size, simplify=True))
-        produced.replace(dest_fp32)
-        produced = None
-        _to_fp16(dest_fp32, dest_fp16)
+        for half, dest in ((False, dest_fp32), (True, dest_fp16)):
+            # A fresh YOLO per export: export() mutates the model in place, so
+            # reusing one across sizes or precisions silently exports the same
+            # graph twice.
+            produced = Path(
+                YOLO(str(weight)).export(
+                    format="onnx", imgsz=size, simplify=True, opset=OPSET, half=half
+                )
+            )
+            produced.replace(dest)
+            produced = None
     except Exception:
         if produced is not None:
             produced.unlink(missing_ok=True)

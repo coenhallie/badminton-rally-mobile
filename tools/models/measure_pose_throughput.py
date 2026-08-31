@@ -120,7 +120,15 @@ def main() -> int:
         # A fixed input on purpose: this measures the model and the thermal
         # envelope, not the decoder. Real frames would add decode time and
         # per-frame variance to a number meant to isolate inference.
-        feed = {spec.name: np.zeros(shape, dtype=np.float32)}
+        #
+        # Seeded noise rather than zeros. An all-zero image is not a valid
+        # input to this graph: YOLO26's postprocessing indexes by score, and on
+        # a uniform image those indices go out of range - at 640 the run dies
+        # with "GatherElements op: Out of range value in index tensor". The
+        # 960 graph happened to survive it, which is worse than failing,
+        # because it would have reported a number for a path real frames never
+        # take. Seeded so the input is still identical across runs and devices.
+        feed = {spec.name: np.random.default_rng(0).random(shape, dtype=np.float32)}
 
         print(f"measuring {model.name} at {size} for {args.minutes:g} min "
               f"on {sess.get_providers()[0]} ...")

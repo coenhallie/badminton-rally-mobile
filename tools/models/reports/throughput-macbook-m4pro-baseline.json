@@ -1,0 +1,40 @@
+{
+  "device": "macbook-m4pro-baseline",
+  "minutes": 1.0,
+  "configs": {
+    "960": {
+      "buckets": [
+        {
+          "minute": 1,
+          "inferences": 200,
+          "median_ms": 299.7985414999977
+        }
+      ],
+      "last_over_first": 1.0,
+      "projected_seconds_30min": 16189.121240999877,
+      "model": "pose.fp16.onnx",
+      "providers": [
+        "CoreMLExecutionProvider",
+        "AzureExecutionProvider",
+        "CPUExecutionProvider"
+      ]
+    },
+    "640": {
+      "buckets": [
+        {
+          "minute": 1,
+          "inferences": 437,
+          "median_ms": 136.5492499999874
+        }
+      ],
+      "last_over_first": 1.0,
+      "projected_seconds_30min": 7373.65949999932,
+      "model": "pose.640.fp16.onnx",
+      "providers": [
+        "CoreMLExecutionProvider",
+        "AzureExecutionProvider",
+        "CPUExecutionProvider"
+      ]
+    }
+  }
+}
