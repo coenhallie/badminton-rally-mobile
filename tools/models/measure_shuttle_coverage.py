@@ -616,12 +616,22 @@ def main() -> int:
     # Where each floor is actually enforced today, since these are checked
     # in three different places rather than one loop:
     #   visibility_agreement - `if not torch_positions: return 2` above
-    #     rules out a zero-frame sample, and GATE_MIN_VISIBLE_FRACTION is a
-    #     stronger, content-based floor on top of it (via `measurable`).
-    #   p95_delta_px        - the `p95_delta_px is not None` guard below,
-    #     which is load-bearing, not belt-and-braces: p95_ok is hoisted out
-    #     of the `and` chain for reporting, so it no longer benefits from
-    #     the short-circuit that GATE_MIN_VISIBLE_FRACTION used to provide.
+    #     rules out a zero-frame sample. GATE_MIN_VISIBLE_FRACTION then
+    #     keeps the ratio non-vacuous on top of that: without it, a video
+    #     where the shuttle is essentially never seen scores 1.0 here
+    #     because both sides silently agree "not visible" every frame.
+    #   p95_delta_px        - GATE_MIN_VISIBLE_FRACTION is this term's real,
+    #     content-based floor (see the constant's own comment above, which
+    #     is written about the delta half of the gate); its mechanism is
+    #     torch_visible_fraction via `measurable`, since the torch reference
+    #     seeing the shuttle is the precondition for there being any
+    #     both-visible frame to measure a drift on. The
+    #     `p95_delta_px is not None` guard below is the hard floor
+    #     underneath it, for the case where torch clears the fraction but
+    #     ONNX agrees on no frame at all, and it is load-bearing rather than
+    #     belt-and-braces now: p95_ok is hoisted out of the `and` chain for
+    #     reporting, so it no longer benefits from the short-circuit that
+    #     used to reach it only after the agreement term had passed.
     #   inpaint_scoped      - inpaintnet_unexercised below, which is this
     #     term's floor and nothing else. n_required is 1 under the deployed
     #     configuration and 0 under --tracknet-only, where both sides run
