@@ -62,6 +62,52 @@ class HomographyTest {
     }
 
     @Test
+    fun keypoints_map_back_onto_their_own_court_positions() {
+        // CourtKeypoints.homography() exists to feed calculateHomography the
+        // twelve keypoints in the order COURT_KEYPOINT_POSITIONS expects, and
+        // that ordering is the only thing it does. Swap any two of them - the
+        // net pair, the near and far service lines, the two centre points -
+        // and it still returns a plausible matrix built from twelve real
+        // correspondences, just one that maps the court wrong. Nothing else
+        // in the suite calls this function, so nothing else would notice.
+        //
+        // Projecting the court positions through a camera and requiring each
+        // pixel to land back on the position it came from pins the order:
+        // a swapped pair no longer round-trips.
+        val camera = listOf(
+            listOf(0.9, -0.35, 640.0),
+            listOf(0.05, 0.6, 180.0),
+            listOf(0.00004, -0.0007, 1.0),
+        )
+        fun project(p: Point): Point {
+            val w = camera[2][0] * p.x + camera[2][1] * p.y + camera[2][2]
+            return Point(
+                (camera[0][0] * p.x + camera[0][1] * p.y + camera[0][2]) / w,
+                (camera[1][0] * p.x + camera[1][1] * p.y + camera[1][2]) / w,
+            )
+        }
+
+        val names = listOf(
+            "top_left", "top_right", "bottom_right", "bottom_left",
+            "net_left", "net_right",
+            "service_line_near_left", "service_line_near_right",
+            "service_line_far_left", "service_line_far_right",
+            "center_near", "center_far",
+        )
+        val pixels = COURT_KEYPOINT_POSITIONS.map(::project)
+        val keypoints = CourtKeypoints.fromMap(
+            names.zip(pixels).associate { (n, p) -> n to listOf(p.x, p.y) }
+        )!!
+
+        val h = keypoints.homography()!!
+        pixels.zip(COURT_KEYPOINT_POSITIONS).forEach { (pixel, expected) ->
+            val got = h.apply(pixel.x, pixel.y)!!
+            kotlin.math.abs(got.x - expected.x) shouldBeLessThan 1e-9
+            kotlin.math.abs(got.y - expected.y) shouldBeLessThan 1e-9
+        }
+    }
+
+    @Test
     fun a_point_behind_the_camera_plane_returns_null() {
         // w == 0 means the point projects to infinity. Dividing by it would
         // yield an infinity that propagates into distance totals.
