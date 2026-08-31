@@ -81,9 +81,9 @@ private fun compareShuttle(local: AnalysisResult, cloud: AnalysisResult): Shuttl
         val lVisible = l?.visible == true
         val cVisible = c?.visible == true
         when {
-            lVisible && cVisible -> {
+            l != null && c != null && lVisible && cVisible -> {
                 both++
-                val dx = l!!.x - c!!.x
+                val dx = l.x - c.x
                 val dy = l.y - c.y
                 deltas.add(sqrt(dx * dx + dy * dy))
             }

@@ -37,9 +37,22 @@ class AnalysisResultCorpusTest {
         val original = Json.parseToJsonElement(text).jsonObject
         val reSerialised = Json.parseToJsonElement(AnalysisResult.fromJson(text).toJson()).jsonObject
 
-        // Any key the cloud writes and this type cannot reproduce is a field
-        // AnalysisResult is missing. Reported as the set, not as a boolean, so
-        // a failure names what to add.
-        (original.keys - reSerialised.keys) shouldBe emptySet()
+        // Added by trim_corpus.py, never written by the cloud.
+        val fixtureOnly = setOf("fusion_shuttle_track", "trimmed_window")
+
+        // Written only by Phase 2. AnalysisResult models the PHASE 1 contract,
+        // which modal_supabase_processor.py:4189-4200 fixes at seven keys, and
+        // a `completed` capture is a superset of it. Not modelling these is a
+        // scope decision, not an omission - but it is the reason a capture
+        // cannot be round-tripped byte for byte, and Stage 3 has to model them
+        // before it can write a Phase 2 results.json.
+        val phase2Only = setOf(
+            "video_id", "duration", "processed_frames", "video_width",
+            "video_height", "shuttle", "court_detection", "player_zone_analytics",
+        )
+
+        // Whatever is left is a PHASE 1 field this type drops. Reported as the
+        // set rather than a boolean so a failure names what to add.
+        (original.keys - reSerialised.keys - fixtureOnly - phase2Only) shouldBe emptySet()
     }
 }

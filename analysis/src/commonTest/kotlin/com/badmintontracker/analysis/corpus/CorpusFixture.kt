@@ -20,7 +20,15 @@ data class CorpusEntry(
     val totalFrames: Int,
     val videoWidth: Int,
     val videoHeight: Int,
+    /** The cloud's FILTERED track, which feeds its gradient detector. */
     val shuttlePositions: Map<Int, ShuttleSample>,
+    /**
+     * The cloud's per-frame TrackNet/YOLO fusion track, which feeds its
+     * shot-gap detector. Far less filtered than [shuttlePositions] and a
+     * different shape in results.json, projected out of skeleton_frames by
+     * trim_corpus.py. Empty for a phase1 capture, which has no skeleton data.
+     */
+    val fusionTrack: Map<Int, ShuttleSample>,
     val cloudRallies: List<Rally>,
     val cloudClips: List<CloudClip>,
     val keypoints: CourtKeypoints?,
@@ -48,6 +56,15 @@ fun loadCorpusEntryOrNull(name: String): CorpusEntry? {
     val results = Json.parseToJsonElement(resultsText).jsonObject
     val video = Json.parseToJsonElement(videoText).jsonObject
     val clips = Json.parseToJsonElement(clipsText).jsonArray
+
+    val fusion = results["fusion_shuttle_track"]?.jsonObject.orEmpty().entries.associate { (k, v) ->
+        val o = v.jsonObject
+        k.toInt() to ShuttleSample(
+            x = o["x"]!!.jsonPrimitive.double,
+            y = o["y"]!!.jsonPrimitive.double,
+            visible = true,
+        )
+    }
 
     val shuttle = results["shuttle_positions"]?.jsonObject.orEmpty().entries.associate { (k, v) ->
         val o = v.jsonObject
@@ -82,6 +99,7 @@ fun loadCorpusEntryOrNull(name: String): CorpusEntry? {
         videoWidth = results["video_width"]?.jsonPrimitive?.int ?: 1920,
         videoHeight = results["video_height"]?.jsonPrimitive?.int ?: 1080,
         shuttlePositions = shuttle,
+        fusionTrack = fusion,
         cloudRallies = rallies,
         cloudClips = clips.map {
             val o = it.jsonObject

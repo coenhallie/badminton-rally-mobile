@@ -489,6 +489,40 @@ report. **Anything not on this list that differs is a bug.**
 
 This register lives here and grows as more are found.
 
+### 6.2 Open, unexplained: rally welding against the cloud
+
+Measured 2026-08-31 on the first real capture (`2eabfc01`, 25fps, 12032
+frames), feeding the cloud's own two persisted tracks into the ported
+detectors:
+
+- **19 of 26 cloud rallies matched**, and where they matched the bounds agreed
+  **to the frame** - median start delta 0.0s, median end delta 0.0s.
+- 7 cloud rallies unmatched, 1 local rally matching nothing.
+- The shape of the miss is **welding**: cloud rallies 2 to 5 arrive as a single
+  local rally spanning frames 196 to 2510.
+
+This is **not** an accepted divergence. It is unexplained, and until it is
+explained it should be read as a probable porting bug rather than a tolerable
+difference. Pinned by `Phase1PipelineTest.the_rally_count_does_not_yet_match_the_cloud`
+so the numbers cannot drift while it is investigated.
+
+Ruled out so far: timestamp source (the cloud's are container PTS and diverge
+from `frame / fps` by at most 0.08s here, against a 3.1s gap threshold) and
+stride subsampling (coverage is 0.36 on both sides, below the 0.5 threshold, so
+neither strides). The next thing to check is whether `unionRallies` is merging
+where the cloud's did not, since the cloud's own comment warns that the raw
+shot-gap track "can weld adjacent rallies into one when noise bridges the
+inter-rally gap" - yet the cloud still emitted 26 separate rallies.
+
+**A note on what the corpus can and cannot verify.** The raw TrackNet track is
+persisted nowhere. `results.json` carries the FILTERED track
+(`shuttle_positions`) and, in a `completed` capture, a TrackNet/YOLO per-frame
+fusion inside `skeleton_frames`. Passing the filtered track to `runPhase1`
+filters it twice: on this capture that dropped a further 279 of 605 visible
+positions in the first 68 seconds. So the corpus verifies everything
+downstream of filtering, and `ShuttleTrackParityTest` verifies the filter
+itself directly against the worker's Python.
+
 ### 6.1 Not divergences: cloud behaviour reproduced on purpose
 
 Found while porting, confirmed against the source, and deliberately kept. They

@@ -55,7 +55,6 @@ data class Phase1Output(
  */
 fun runPhase1(input: Phase1Input): Phase1Output {
     val fps = normalizeFps(input.fps).fps
-
     val filtered = buildFilteredTrack(
         raw = input.rawShuttle,
         fps = fps,
@@ -63,8 +62,37 @@ fun runPhase1(input: Phase1Input): Phase1Output {
         videoHeight = input.videoHeight,
         courtCorners = input.keypoints?.corners,
     )
+    return runPhase1FromTracks(
+        fusionTrack = input.rawShuttle,
+        filteredTrack = filtered,
+        fps = fps,
+        totalFrames = input.totalFrames,
+        videoDuration = input.videoDuration,
+    )
+}
 
-    val gradient = detectRalliesGradient(filtered, fps, input.totalFrames)
+/**
+ * Phase 1 from the two tracks it actually consumes, skipping the filter.
+ *
+ * [runPhase1] is the production path: it derives the filtered track from raw
+ * model output. This entry point exists because the cloud persists both tracks
+ * and never persists the raw one, so a comparison against recorded cloud
+ * output has to supply them rather than recompute them. Feeding the cloud's
+ * filtered track back through `buildFilteredTrack` would filter it twice, and
+ * on a real capture that silently drops a further 279 of 605 visible positions.
+ *
+ * The filter itself is verified separately, against the worker's own Python,
+ * by ShuttleTrackParityTest.
+ */
+fun runPhase1FromTracks(
+    fusionTrack: Map<Int, ShuttleSample>,
+    filteredTrack: Map<Int, ShuttleSample>,
+    fps: Double,
+    totalFrames: Int,
+    videoDuration: Double?,
+): Phase1Output {
+    val filtered = filteredTrack
+    val gradient = detectRalliesGradient(filtered, fps, totalFrames)
 
     // Both detectors read a frame list, and "no shuttle here" has to mean the
     // same thing in both representations: buildFilteredTrack marks a rejected
@@ -85,11 +113,11 @@ fun runPhase1(input: Phase1Input): Phase1Output {
     // results.json is 1-based. Indexing from 0 here is deliberate and is
     // divergence 3 in the design register.
     fun frames(track: Map<Int, ShuttleSample>): List<FrameSample> =
-        (0 until input.totalFrames).map { f ->
+        (0 until totalFrames).map { f ->
             FrameSample(f, f / fps, track[f]?.takeIf { it.visible })
         }
 
-    val rawShotGap = detectRalliesFromShots(frames(input.rawShuttle), fps)
+    val rawShotGap = detectRalliesFromShots(frames(fusionTrack), fps)
     val filteredShotGap = detectRalliesFromShots(frames(filtered), fps)
 
     val stored = unionRallies(gradient, rawShotGap, fps)
@@ -98,7 +126,7 @@ fun runPhase1(input: Phase1Input): Phase1Output {
 
     return Phase1Output(
         storedRallies = stored,
-        clipWindows = padRallyWindows(clipRallies, input.videoDuration),
+        clipWindows = padRallyWindows(clipRallies, videoDuration),
         filteredTrack = filtered,
     )
 }
