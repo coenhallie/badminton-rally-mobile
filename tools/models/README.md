@@ -34,13 +34,24 @@ step's output:
    re-run after a partial failure is safe. To force a full refetch, clear
    `tools/models/weights/` first.
 
-   The TrackNetV3 licence also needs verifying and vendoring as part of this
-   step: confirm the upstream licence at
-   `https://github.com/qaz812345/TrackNetV3`, save it to
-   `tools/models/licenses/TrackNetV3-LICENSE.txt`, and record here whether
-   the published checkpoints (as opposed to the code) carry separate terms.
-   `manifest.json` and the licence file are not yet part of this repo; see
-   "Blocked on" below.
+   **Run 2026-09-01.** All four weights pulled and pinned in
+   `manifest.json` with SHA-256:
+
+   | weight | source | bytes |
+   |---|---|---|
+   | `tracknet.pt` | Modal volume | 136,190,877 |
+   | `inpaintnet.pt` | Modal volume | 6,264,451 |
+   | `badminton.pt` | badminton-tracker checkout | 6,228,906 |
+   | `pose.pt` | Ultralytics | 49,036,866 |
+
+   **Licence question closed, and the answer is the good one.** The upstream
+   licence is vendored at `licenses/TrackNetV3-LICENSE.txt` and the
+   checkpoints are explicitly covered - the MIT grant is deliberately widened
+   from "this software" to "this software, pretrained model checkpoints, and
+   associated documentation files", and the upstream README says the same in
+   prose, commercial use included. Design section 3.5 raised this as capable
+   of forcing the models out of the app bundle; it does not. See
+   `licenses/README.md`, including the one obligation it does create.
 
 2. **Export TrackNet and InpaintNet to ONNX** - `export_tracknet.py`
 
@@ -412,8 +423,8 @@ Five environment gaps stop every measurement step above from having been
 run as part of this change:
 
 - No Supabase credentials exist (Task 1 cannot fetch)
-- The Modal CLI is not installed (Task 2 cannot pull TrackNet/InpaintNet
-  weights)
+- ~~The Modal CLI is not installed~~ **Installed and already authenticated
+  2026-09-01**; TrackNet and InpaintNet pulled, `manifest.json` written.
 - ~~`onnx`, `onnxruntime`, `onnxconverter-common` are not installed~~
   **Installed 2026-09-01**: onnx 1.19.1, onnxruntime 1.19.2, onnxslim 0.1.96,
   onnxconverter-common. `torch` 2.8.0, `ultralytics` 8.4.8, `numpy` 2.0.2 and
@@ -424,7 +435,12 @@ run as part of this change:
   model tried here, the failure was at a Resize node, and TrackNet upsamples
   too. Check it first when Modal access exists; it probably needs the same
   change away from the converter.
-- No source `.mp4` or corpus exists (Task 4 cannot measure)
+- ~~No source `.mp4` or corpus exists~~ **Both obtained 2026-09-01.** Three
+  corpora captured, and a source video pulled from the Supabase `videos`
+  bucket with the same service-role key. Its container frame count, decoded
+  frame count and `results.json` `total_frames` all agree exactly at 5972,
+  and its fps matches to full precision - one decode risk section 5.4 flags
+  that does not materialise here.
 - No physical device is reachable, and no host app embedding ONNX Runtime
   exists (Task 5 cannot produce the on-device numbers that decide the
   section 5.6 routing threshold)
