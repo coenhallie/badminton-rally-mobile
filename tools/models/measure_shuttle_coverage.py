@@ -16,6 +16,20 @@
     TrackNet's conversion alone). This needs no cloud data at all, and it
     alone drives GATE PASS/FAIL and the exit code.
 
+    The gate has THREE terms, not two: whole-video visibility agreement,
+    whole-video p95 position delta, and a third term scoped to exactly the
+    frames either side's InpaintNet pass filled (see _InpaintCapture and the
+    "InpaintNet gate term" comment in main()). The first two are both
+    frame-denominated aggregates over the entire video, and InpaintNet by
+    construction only ever touches a small minority of frames (the gaps),
+    so a broken ONNX InpaintNet that fills gaps at wrong-but-in-range
+    coordinates can be structurally invisible to both of them - p95
+    discards the largest 5% of frames outright, and a fixed handful of
+    divergent frames sits near the 0.99 agreement boundary at one video
+    length and clears it at another. The third term exists specifically
+    because the first two cannot be trusted to catch an InpaintNet-only
+    defect.
+
     HONEST CAVEAT ON WHAT THIS DOES NOT PROVE: this script forces
     device="cpu" so it can run anywhere, which means the PyTorch reference
     side runs fp32. TrackNetInference.use_half is only True when
@@ -66,33 +80,41 @@ when it was not.
 
 EXIT CODES, checked worst-first so a real failure can never be masked by a
 weaker signal from later in the list:
-  0 - GATE PASS. Measured on its own terms, and (if both models were
-      swapped) InpaintNet's shim was actually called.
-  1 - GATE FAIL: visibility agreement or position delta missed threshold,
-      on the gate's own measured terms. Takes priority over 3 below: a
-      catastrophic ONNX collapse can itself be severe enough to also trip
-      production's near-missing skip (inference.py:363) and leave
-      InpaintNet's shim uncalled, and that run must be reported as FAIL,
-      not steered toward "pick a better clip" - inpaintnet_unexercised is
-      still recorded in the JSON either way.
-  2 - UNMEASURABLE: the video would not open, decoded no frames, or the
+  0 - GATE PASS. Measured clean on all three gate terms (visibility
+      agreement, whole-video p95 delta, and the InpaintNet-scoped term -
+      see the "THREE terms, not two" note above), and (if both models were
+      swapped) InpaintNet's shim was actually called. A call count alone
+      does not establish this: exit 0 additionally means that whatever
+      either side's InpaintNet pass filled, torch and ONNX filled the same
+      frames with numerically matching coordinates.
+  1 - GATE FAIL: visibility agreement, whole-video p95 delta, or the
+      InpaintNet-scoped term missed threshold, on the gate's own measured
+      terms. Takes priority over 3 below: a catastrophic ONNX collapse can
+      itself be severe enough to also trip production's near-missing skip
+      (inference.py:363) and leave InpaintNet's shim uncalled, and that run
+      must be reported as FAIL, not steered toward "pick a better clip" -
+      inpaintnet_unexercised is still recorded in the JSON either way.
+  2 - UNMEASURABLE: the video would not open, decoded no frames, the
       shuttle was visible too rarely in the torch reference to measure
-      anything (GATE_MIN_VISIBLE_FRACTION).
+      anything (GATE_MIN_VISIBLE_FRACTION), or argparse itself rejected the
+      command line (its own usage-error exit code, unchanged by this script).
   3 - INPAINTNET UNEXERCISED: the gate would otherwise have been a clean
-      PASS, but both models were swapped (the default, deployed
-      configuration) and the InpaintNet shim was never actually called on
-      this video, so this run did not validate InpaintNet's conversion
-      despite the "swapped" label - see the PERFORMANCE NOTE above.
-      gate_pass in the JSON report is forced false for this case, so
+      PASS on all three terms, but both models were swapped (the default,
+      deployed configuration) and the InpaintNet shim was never actually
+      called on this video, so this run did not validate InpaintNet's
+      conversion despite the "swapped" label - see the PERFORMANCE NOTE
+      above. gate_pass in the JSON report is forced false for this case, so
       neither this exit code nor the JSON can be mistaken for a validated
       deployed-config pass.
-  4 - CRASH: the ONNX side of the gate itself raised (a bad ONNX file, a
-      shape mismatch, an ONNX Runtime internal error). Distinct from 1
-      (FAIL) because no divergence was actually measured - the conversion
-      could not even be run, which is not the same claim as "ran and
-      diverged". A report is written recording the crash, under its own
-      "-crashed" filename so it can never overwrite a prior successful
-      run's report for the same video and configuration.
+  4 - CRASH: setup (importing TrackNetInference, building either tracker,
+      opening either ONNX Runtime session - a missing/truncated .onnx file,
+      missing weights, or a bad --tracker-repo) or the ONNX side of
+      track_video itself raised. Distinct from 1 (FAIL) because no
+      divergence was actually measured - the conversion could not even be
+      run, which is not the same claim as "ran and diverged". A report is
+      written recording the crash, under its own "-crashed" filename so it
+      can never overwrite a prior successful run's report for the same
+      video and configuration.
 """
 import argparse, json, subprocess, sys
 from pathlib import Path
@@ -166,6 +188,42 @@ class _OnnxModelShim:
         outs = [self.sess.run(None, {self.input_name: arr[i:i + 1]})[0] for i in range(arr.shape[0])]
         out = np.concatenate(outs, axis=0)
         return torch.from_numpy(out).to(dtype=x.dtype, device=x.device)
+
+
+class _InpaintCapture:
+    """Wraps a TrackNetInference instance's bound _run_inpaintnet method to
+    record exactly which frames it filled.
+
+    _OnnxModelShim.calls proves InpaintNet's model forward pass ran - not
+    that any of its output reached the final trajectory. Production's own
+    continuity checks inside _run_inpaintnet (inference.py:424-446, the
+    0 < pred < 1 bounds and the forward/backward gap-distance checks) can
+    reject every candidate InpaintNet emits, in which case the model ran
+    (calls > 0) but changed nothing. That is the round-1 bug one level
+    too shallow: a broken ONNX InpaintNet whose garbage gets rejected looks
+    identical, by call count alone, to a healthy one that simply had no
+    gaps to fill. Diffing this wrapper's input coords against its return
+    value is the only way to know which frames a side's InpaintNet pass
+    actually changed, independent of whether the model was called.
+
+    track_video calls `self._run_inpaintnet(raw_coords, total_frames,
+    log_callback=log)` at inference.py:173 as a plain bound-method
+    attribute access, exactly like the model calls _OnnxModelShim
+    replaces, so the same instance-attribute-shadowing technique applies
+    here without editing the sibling repo.
+    """
+
+    def __init__(self, tracker):
+        self._original = tracker._run_inpaintnet
+        self.inpainted_frames = None
+        tracker._run_inpaintnet = self._wrapped
+
+    def _wrapped(self, coords, total_frames, log_callback=None):
+        before_visible = {f for f, c in coords.items() if c.get("visible")}
+        result = self._original(coords, total_frames, log_callback=log_callback)
+        after_visible = {f for f, c in result.items() if c.get("visible")}
+        self.inpainted_frames = after_visible - before_visible
+        return result
 
 
 def _build_tracker(tracknet_weights, inpaintnet_weights):
@@ -252,18 +310,82 @@ def main() -> int:
                           "(b) comparison against the cloud's results.json. Not required for the gate.")
     args = ap.parse_args()
 
-    sys.path.insert(0, str(Path(args.tracker_repo) / "backend"))
-    from tracknet.inference import WIDTH as MODEL_W, HEIGHT as MODEL_H
-
-    torch_tracker = _build_tracker(args.tracknet_weights, args.inpaintnet_weights)
-    onnx_tracker = _build_tracker(args.tracknet_weights, args.inpaintnet_weights)
-    tracknet_shim = _OnnxModelShim(args.onnx)
-    onnx_tracker.tracknet = tracknet_shim
-    inpaintnet_shim = None
-    if not args.tracknet_only:
-        inpaintnet_shim = _OnnxModelShim(args.inpaintnet_onnx)
-        onnx_tracker.inpaintnet = inpaintnet_shim
     swapped = "TrackNet only" if args.tracknet_only else "TrackNet + InpaintNet (deployed config)"
+
+    report_dir = Path("tools/models/reports")
+    report_dir.mkdir(parents=True, exist_ok=True)
+    name = Path(args.corpus).name if args.corpus else Path(args.video).stem
+    # Disambiguated by configuration: a --tracknet-only isolation run must
+    # not silently overwrite the deployed-config report for the same video,
+    # or a later "which run produced this JSON" question has no answer.
+    config_suffix = "tracknet-only" if args.tracknet_only else "full"
+    report_path = report_dir / f"coverage-{name}-{config_suffix}.json"
+    # Deliberately a distinct filename, not the same path with an
+    # overwrite-if-crashed guard: a crash report is written unconditionally
+    # on either crash path below, and must never be able to clobber a prior
+    # successful multi-minute run's report for this same video and
+    # configuration just because this run happened to fail.
+    crash_report_path = report_dir / f"coverage-{name}-{config_suffix}-crashed.json"
+
+    # Computed before setup, not after: a crash during setup itself (see the
+    # try block immediately below) needs this to write a crash report too,
+    # so it cannot depend on setup having already succeeded.
+    provenance = {
+        "video": str(args.video),
+        "tracker_repo": str(args.tracker_repo),
+        "tracker_repo_commit": _tracker_repo_commit(args.tracker_repo),
+        "tracknet_weights": str(args.tracknet_weights),
+        "inpaintnet_weights": str(args.inpaintnet_weights),
+        "tracknet_onnx": str(args.onnx),
+        "inpaintnet_onnx": str(args.inpaintnet_onnx) if not args.tracknet_only else None,
+        "swapped": swapped,
+        "batch_size": args.batch_size,
+        "max_bg_samples": args.max_bg_samples,
+    }
+
+    def _write_crash(phase, error):
+        print(f"{phase} crashed: {error}", file=sys.stderr)
+        print(f"crash report written to {crash_report_path} (not {report_path}, "
+              f"which is left untouched if it already holds a prior result)", file=sys.stderr)
+        crash_report_path.write_text(json.dumps({
+            "provenance": provenance,
+            "crashed": True,
+            "crash_phase": phase,
+            "error": str(error),
+        }, indent=2))
+
+    try:
+        # Setup, not measurement: importing TrackNetInference, building both
+        # trackers (which loads and parses both .pt checkpoints), opening
+        # both ONNX Runtime sessions, and wrapping _run_inpaintnet on both
+        # instances. A missing or truncated .onnx file, missing weights, or
+        # a bad --tracker-repo all raise here, uncaught, before any video is
+        # even touched - previously this was outside every try in this
+        # function, so it raised as a bare Python exception (exit 1),
+        # indistinguishable from a measured GATE FAIL, with no crash report
+        # written. Distinct from exit 1 for the same reason the ONNX-side
+        # track_video crash below is: nothing was measured, the gate could
+        # not even start.
+        sys.path.insert(0, str(Path(args.tracker_repo) / "backend"))
+        from tracknet.inference import WIDTH as MODEL_W, HEIGHT as MODEL_H
+
+        torch_tracker = _build_tracker(args.tracknet_weights, args.inpaintnet_weights)
+        onnx_tracker = _build_tracker(args.tracknet_weights, args.inpaintnet_weights)
+        # Wraps _run_inpaintnet on BOTH trackers, unconditionally - both
+        # always load a real torch InpaintNet in _build_tracker regardless
+        # of --tracknet-only, so InpaintNet always runs on both sides, only
+        # its model attribute (swapped below) differs.
+        torch_inpaint = _InpaintCapture(torch_tracker)
+        onnx_inpaint = _InpaintCapture(onnx_tracker)
+        tracknet_shim = _OnnxModelShim(args.onnx)
+        onnx_tracker.tracknet = tracknet_shim
+        inpaintnet_shim = None
+        if not args.tracknet_only:
+            inpaintnet_shim = _OnnxModelShim(args.inpaintnet_onnx)
+            onnx_tracker.inpaintnet = inpaintnet_shim
+    except Exception as e:
+        _write_crash("setup", e)
+        return 4
 
     try:
         torch_positions = torch_tracker.track_video(
@@ -281,34 +403,6 @@ def main() -> int:
         print(f"no frames decoded from video: {args.video}", file=sys.stderr)
         return 2
 
-    report_dir = Path("tools/models/reports")
-    report_dir.mkdir(parents=True, exist_ok=True)
-    name = Path(args.corpus).name if args.corpus else Path(args.video).stem
-    # Disambiguated by configuration: a --tracknet-only isolation run must
-    # not silently overwrite the deployed-config report for the same video,
-    # or a later "which run produced this JSON" question has no answer.
-    config_suffix = "tracknet-only" if args.tracknet_only else "full"
-    report_path = report_dir / f"coverage-{name}-{config_suffix}.json"
-    # Deliberately a distinct filename, not the same path with an
-    # overwrite-if-crashed guard: a crash report is written unconditionally
-    # below on the ONNX-crash path, and must never be able to clobber a
-    # prior successful multi-minute run's report for this same video and
-    # configuration just because this run happened to fail.
-    crash_report_path = report_dir / f"coverage-{name}-{config_suffix}-crashed.json"
-
-    provenance = {
-        "video": str(args.video),
-        "tracker_repo": str(args.tracker_repo),
-        "tracker_repo_commit": _tracker_repo_commit(args.tracker_repo),
-        "tracknet_weights": str(args.tracknet_weights),
-        "inpaintnet_weights": str(args.inpaintnet_weights),
-        "tracknet_onnx": str(args.onnx),
-        "inpaintnet_onnx": str(args.inpaintnet_onnx) if not args.tracknet_only else None,
-        "swapped": swapped,
-        "batch_size": args.batch_size,
-        "max_bg_samples": args.max_bg_samples,
-    }
-
     try:
         onnx_positions = onnx_tracker.track_video(
             args.video, batch_size=args.batch_size, max_bg_samples=args.max_bg_samples)
@@ -321,15 +415,7 @@ def main() -> int:
         # caller checking the exit code, and previously would also have
         # lost the report entirely, since it was only ever written at the
         # very end of a multi-minute run.
-        print(f"ONNX side crashed while running track_video: {e}", file=sys.stderr)
-        print(f"crash report written to {crash_report_path} (not {report_path}, "
-              f"which is left untouched if it already holds a prior result)", file=sys.stderr)
-        crash_report_path.write_text(json.dumps({
-            "provenance": provenance,
-            "crashed": True,
-            "crash_phase": "onnx track_video",
-            "error": str(e),
-        }, indent=2))
+        _write_crash("onnx track_video", e)
         return 4
 
     orig_w, orig_h = _video_dims(args.video, MODEL_W, MODEL_H)
@@ -359,6 +445,55 @@ def main() -> int:
     # comment above. That is meant to reach GATE FAIL, not UNMEASURABLE.
     measurable = torch_visible_fraction >= GATE_MIN_VISIBLE_FRACTION
 
+    # The whole-video terms above (visibility_agreement, p95) are both
+    # frame-denominated aggregates over EVERY frame, but InpaintNet by
+    # construction only ever touches gap frames - a small minority. p95 at
+    # :95 of visible frames simply discards the largest 5% before the
+    # threshold check, so a broken InpaintNet filling gaps at
+    # wrong-but-in-range coordinates cannot move p95 at all, at any video
+    # length. And a divergent handful of frames (say 30) sits exactly on
+    # the 0.99 visibility_agreement boundary in a 3000-frame clip but
+    # passes clean in a 4000-frame one - agreement alone is ratio-dependent
+    # and usually loses too. Neither whole-video term can reliably catch an
+    # InpaintNet-only defect. This term is the fix: it looks only at the
+    # frames either side's InpaintNet pass actually filled (see
+    # _InpaintCapture), where set equality plus a MAX (not p95 or median)
+    # delta is the only statistic that cannot look past a single
+    # wrong-but-in-range inpainted frame the way an aggregate over the
+    # whole video can.
+    torch_inpainted = sorted(torch_inpaint.inpainted_frames or set())
+    onnx_inpainted = sorted(onnx_inpaint.inpainted_frames or set())
+    inpaint_union = sorted(set(torch_inpainted) | set(onnx_inpainted))
+    inpaint_sets_match = set(torch_inpainted) == set(onnx_inpainted)
+    # A frame in inpainted_frames is, by _InpaintCapture's own construction,
+    # always marked visible in _run_inpaintnet's return value, and track_video
+    # only rescales x/y after that point without touching visible - so every
+    # frame in inpaint_union should already be visible on both sides
+    # whenever the sets match. The `if ... visible` filter below is
+    # belt-and-braces against that invariant, not load-bearing for it.
+    inpaint_deltas = [_delta_model_px(f) for f in inpaint_union
+                       if torch_positions[f]["visible"] and onnx_positions[f]["visible"]]
+    max_inpaint_delta_px = max(inpaint_deltas) if inpaint_deltas else None
+    if not inpaint_union:
+        # Nothing was inpainted on either side - there is nothing here to
+        # measure a defect on. This is exactly the situation
+        # inpaintnet_unexercised (below) already flags as its own, separate
+        # signal; this term does not also claim a pass on evidence it does
+        # not have.
+        inpaint_gate_ok = True
+    elif not inpaint_sets_match:
+        # One side filled frames the other did not - for example ONNX's
+        # garbage rejected by production's own 0 < pred < 1 and continuity
+        # checks (inference.py:424-446) while torch's real fill was
+        # accepted, or vice versa.
+        inpaint_gate_ok = False
+    elif max_inpaint_delta_px is None:
+        # Unreachable if the invariant above holds; treated as a failure,
+        # not a silent pass, if it is ever violated.
+        inpaint_gate_ok = False
+    else:
+        inpaint_gate_ok = max_inpaint_delta_px <= GATE_DELTA_PX_MAX
+
     gate = {
         "frames": len(frames_a),
         "visibility_agreement": agree / max(len(frames_a), 1),
@@ -366,19 +501,32 @@ def main() -> int:
         "torch_visible_fraction": torch_visible_fraction,
         "median_delta_px_at_512x288": _percentile_sorted(deltas_a, 0.5),
         "p95_delta_px_at_512x288": _percentile_sorted(deltas_a, 0.95),
+        # tracknet_shim_calls is reported but not asserted > 0, unlike its
+        # InpaintNet twin below: a TrackNet shim that is never called
+        # produces all-invisible output on the ONNX side, which drives
+        # torch_visible_fraction-based `measurable` to (still) reflect the
+        # TORCH side's own visibility, but drags visibility_agreement toward
+        # 0 whenever torch sees anything at all, which fails gate_ok_raw
+        # and reaches exit 1 (or exit 2 if torch itself saw nothing) - there
+        # is no reachable path to a false GATE PASS through this field.
         "tracknet_shim_calls": tracknet_shim.calls,
         "inpaintnet_shim_calls": inpaintnet_shim.calls if inpaintnet_shim is not None else None,
+        "inpainted_frames_torch": torch_inpainted,
+        "inpainted_frames_onnx": onnx_inpainted,
+        "inpaint_sets_match": inpaint_sets_match,
+        "max_inpaint_delta_px_at_512x288": max_inpaint_delta_px,
     }
     # gate_ok_raw is what the gate measured, on its own terms, ignoring
-    # whether InpaintNet's shim ever got called. Belt-and-braces: the
-    # `gate["p95..."] is not None` guard is redundant with the proof above
-    # (GATE_MIN_VISIBLE_FRACTION + VISIBILITY_AGREEMENT_MIN > 1 forces the
-    # `and` to short-circuit before reaching a None p95), but costs nothing
-    # to state explicitly here.
+    # whether InpaintNet's shim ever got called (that is inpaintnet_unexercised,
+    # a separate signal below). Belt-and-braces: the `gate["p95..."] is not
+    # None` guard is redundant with the proof above (GATE_MIN_VISIBLE_FRACTION
+    # + VISIBILITY_AGREEMENT_MIN > 1 forces the `and` to short-circuit before
+    # reaching a None p95), but costs nothing to state explicitly here.
     gate_ok_raw = measurable and (
         gate["visibility_agreement"] >= VISIBILITY_AGREEMENT_MIN
         and gate["p95_delta_px_at_512x288"] is not None
         and gate["p95_delta_px_at_512x288"] <= GATE_DELTA_PX_MAX
+        and inpaint_gate_ok
     )
     # _run_inpaintnet skips the model entirely on a nearly-fully-visible or
     # nearly-fully-missing trajectory (inference.py:363) and skips
@@ -387,6 +535,10 @@ def main() -> int:
     # a PASS here would only have measured TrackNet despite the "swapped"
     # label saying otherwise - the same silent-no-op failure mode
     # GATE_MIN_VISIBLE_FRACTION exists to catch for the whole gate.
+    # inpaint_gate_ok above is a stronger, complementary check: this field
+    # can be false (calls == 0, nothing attempted) while inpaint_gate_ok is
+    # separately false too (nothing to inpaint on either side); they are
+    # not the same question and both are kept.
     inpaintnet_unexercised = inpaintnet_shim is not None and inpaintnet_shim.calls == 0
 
     # Priority, worst-first: a gate that already failed on its own measured
@@ -422,6 +574,11 @@ def main() -> int:
               f"fine; check the video path and that it actually shows play.")
     elif not gate_ok_raw:
         print("  GATE FAIL")
+        if not inpaint_gate_ok:
+            print(f"  (InpaintNet gate term failed: inpaint_sets_match={inpaint_sets_match}, "
+                  f"max_inpaint_delta_px_at_512x288={max_inpaint_delta_px} - torch inpainted "
+                  f"{len(torch_inpainted)} frame(s), onnx inpainted {len(onnx_inpainted)} "
+                  f"frame(s). See inpainted_frames_torch/inpainted_frames_onnx in the JSON.)")
         if inpaintnet_unexercised:
             print("  (InpaintNet's shim also went unexercised on this run, but the gate "
                   "already failed on its own measured terms - that is reported first; "

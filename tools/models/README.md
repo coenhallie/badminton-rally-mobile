@@ -158,11 +158,28 @@ step's output:
    both ONNX paths, `swapped`, `batch_size`, and `max_bg_samples` - enough
    to trace the artifact back to exactly what produced it.
 
-   - **(a) THE GATE - conversion fidelity.** Reports per-frame visibility
-     agreement and the pixel delta (converted back to the 512x288 model
-     space) on frames both sides consider visible. Needs no cloud data
-     (`--corpus` is optional for this part) and is what the script's exit
-     code is based on.
+   - **(a) THE GATE - conversion fidelity.** Has THREE terms, not two.
+     Reports per-frame visibility agreement and the pixel delta (converted
+     back to the 512x288 model space) on frames both sides consider
+     visible - but those two are both whole-video, frame-denominated
+     aggregates, and InpaintNet by construction only ever touches a small
+     minority of frames (the gaps it fills). A broken ONNX InpaintNet that
+     fills gaps at wrong-but-in-range coordinates can be structurally
+     invisible to both of them: p95 discards the worst 5% of frames before
+     the threshold check even runs, and a fixed handful of divergent
+     frames sits near the 0.99 agreement boundary at one video length and
+     clears it at another. The third term exists specifically to catch
+     that: it diffs each side's `_run_inpaintnet` input against its output
+     (via a bound-method wrap, the same technique as the model shims) to
+     get the exact set of frames that side's InpaintNet pass filled, then
+     requires the two sets to match exactly and the MAX (not p95 or
+     median) delta over their union to stay within `GATE_DELTA_PX_MAX` - a
+     max over a small set is the only statistic that cannot look past a
+     single wrong-but-in-range inpainted frame. The report records
+     `inpainted_frames_torch`, `inpainted_frames_onnx`,
+     `inpaint_sets_match`, and `max_inpaint_delta_px_at_512x288`. Needs no
+     cloud data (`--corpus` is optional for this part) and is what the
+     script's exit code is based on.
    - **(b) INFORMATIONAL - reimplementation fidelity, only if `--corpus` is
      given.** Local `track_video` output versus the cloud's
      `results.json["shuttle_positions"]`. This is explicitly **not** a
@@ -199,13 +216,15 @@ step's output:
    reports when that happened.
 
    **(a) is the gate that decides whether the rest of the on-device plan
-   proceeds.** Visibility agreement at or above 99% and a p95 delta at or
-   below 2px on every corpus video means proceed; falling short on any of
-   them means stop and report rather than continuing to later tasks; the
-   design's assumption that the on-device conversion preserves the
-   PyTorch model's behavior would not hold, and the remaining plan should
-   not be executed until that is resolved. This has not been run yet in
-   this environment; no result is recorded.
+   proceeds.** Visibility agreement at or above 99%, a whole-video p95
+   delta at or below 2px, AND matching inpainted-frame sets with a max
+   delta at or below 2px on the InpaintNet-scoped term - on every corpus
+   video - means proceed; falling short on any of the three means stop and
+   report rather than continuing to later tasks; the design's assumption
+   that the on-device conversion preserves the PyTorch model's behavior
+   would not hold, and the remaining plan should not be executed until
+   that is resolved. This has not been run yet in this environment; no
+   result is recorded.
 
    **Exit codes** (also documented in the script's module docstring),
    checked worst-first so a real failure is never masked by a weaker
@@ -213,17 +232,22 @@ step's output:
 
    | Code | Meaning |
    | --- | --- |
-   | 0 | GATE PASS - measured clean, and (if both models were swapped) InpaintNet's shim was actually called |
-   | 1 | GATE FAIL - visibility agreement or p95 delta missed threshold, on the gate's own measured terms. Takes priority over 3: a catastrophic ONNX collapse can itself be severe enough to also leave InpaintNet's shim uncalled, and that must be reported as FAIL, not steered toward "pick a better clip" |
-   | 2 | UNMEASURABLE - video would not open, decoded no frames, or the shuttle was visible too rarely in the torch reference to measure anything |
-   | 3 | INPAINTNET UNEXERCISED - the gate would otherwise have been a clean PASS, but both models were swapped (the default) and the InpaintNet shim was never actually called on this video, so this run did not validate the deployed configuration despite the label. `gate_pass` in the JSON is forced `false`; re-run against a clip with a real detection gap |
-   | 4 | CRASH - the ONNX side itself raised (bad ONNX file, shape mismatch, ONNX Runtime error). Distinct from FAIL: no divergence was measured, the conversion could not be run at all. Written to a separate `coverage-<name>-<config>-crashed.json`, never to the plain `coverage-<name>-<config>.json` path, so a crashed re-run cannot overwrite a prior successful run's report |
+   | 0 | GATE PASS - all three gate terms measured clean (visibility agreement, whole-video p95 delta, and the InpaintNet-scoped term), and (if both models were swapped) InpaintNet's shim was actually called. A call count alone does not establish this - exit 0 additionally means torch and ONNX filled the same frames with numerically matching coordinates, wherever either side's InpaintNet pass filled anything |
+   | 1 | GATE FAIL - visibility agreement, whole-video p95 delta, or the InpaintNet-scoped term missed threshold, on the gate's own measured terms. Takes priority over 3: a catastrophic ONNX collapse can itself be severe enough to also leave InpaintNet's shim uncalled, and that must be reported as FAIL, not steered toward "pick a better clip" |
+   | 2 | UNMEASURABLE - video would not open, decoded no frames, the shuttle was visible too rarely in the torch reference to measure anything (`GATE_MIN_VISIBLE_FRACTION = 0.05`, i.e. below 5%), or argparse itself rejected the command line (its own usage-error exit code, unrelated to and unchanged by this script) |
+   | 3 | INPAINTNET UNEXERCISED - the gate would otherwise have been a clean PASS on all three terms, but both models were swapped (the default) and the InpaintNet shim was never actually called on this video, so this run did not validate the deployed configuration despite the label. `gate_pass` in the JSON is forced `false`; re-run against a clip with a real detection gap |
+   | 4 | CRASH - setup (importing `TrackNetInference`, building either tracker, opening either ONNX Runtime session) or the ONNX side of `track_video` itself raised. Distinct from FAIL: no divergence was measured, the conversion could not even be run. Written to a separate `coverage-<name>-<config>-crashed.json`, never to the plain `coverage-<name>-<config>.json` path, so a crashed re-run cannot overwrite a prior successful run's report |
 
-   The report's `gate` object also records `tracknet_shim_calls` and
-   `inpaintnet_shim_calls` (the latter `null` under `--tracknet-only`),
-   and `inpaintnet_unexercised` is recorded at the top level regardless of
+   The report's `gate` object also records `tracknet_shim_calls` (not
+   asserted `> 0` the way `inpaintnet_shim_calls` effectively is - a
+   zero-call TrackNet shim collapses onnx-side visibility, which fails
+   visibility agreement and reaches exit 1 or 2, so there is no reachable
+   false-PASS path through it), `inpaintnet_shim_calls` (`null` under
+   `--tracknet-only`), `inpainted_frames_torch`, `inpainted_frames_onnx`,
+   `inpaint_sets_match`, and `max_inpaint_delta_px_at_512x288`.
+   `inpaintnet_unexercised` is recorded at the top level regardless of
    which exit code actually decided the run (1 or 3), so a reader does not
-   have to infer either from anything but those fields.
+   have to infer any of this from anything but those fields.
 
    A video that will not open at all (bad path, unreadable file) is caught
    by `track_video`'s own `cap.isOpened()` check (`inference.py:145-146`)
