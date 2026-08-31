@@ -23,7 +23,12 @@ def main() -> int:
     sys.path.insert(0, str(Path(args.tracker_repo) / "backend"))
     from tracknet.model import TrackNet
 
-    ckpt = torch.load("tools/models/weights/tracknet.pt", map_location="cpu")
+    # weights_only=False: torch 2.6+ defaults to True, which refuses to
+    # unpickle this checkpoint because it carries param_dict (seq_len,
+    # bg_mode) alongside the state dict, not just tensors. Do not drop this.
+    ckpt = torch.load(
+        "tools/models/weights/tracknet.pt", map_location="cpu", weights_only=False
+    )
     params = ckpt.get("param_dict", {})
     seq_len = params.get("seq_len", 8)
     bg_mode = params.get("bg_mode", "concat")
