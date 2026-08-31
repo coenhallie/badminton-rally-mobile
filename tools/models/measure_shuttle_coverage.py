@@ -37,7 +37,7 @@ def main() -> int:
     first: np.ndarray | None = None
     frame_idx = 0
 
-    def flush(start: int, count: int | None = None) -> None:
+    def flush(start: int, count=None) -> None:
         # Background-concat mode: the first decoded frame stands in as the
         # background plane, matching how the checkpoint was trained.
         stack = np.concatenate([first] + buf, axis=0)[None].astype(np.float32)
