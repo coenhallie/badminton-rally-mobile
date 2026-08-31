@@ -301,7 +301,7 @@ git commit -m "feat: AnalysisResult mirroring the cloud results.json schema"
 
 **Rally matching rule:** two rallies match when their time ranges overlap by more than half the shorter one's duration. Reuse the predicate already in `unionRallies` (`analysis/.../rally/RallyCombination.kt`) rather than writing a second one - two definitions of "the same rally" is exactly the duplication §5.3 says porting is meant to collapse. Extract it to an internal function both call.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `ComparatorTest` must prove, all on hand-built inputs so no corpus is needed:
 1. **Identical inputs report perfect agreement:** zero `localOnly`, zero `cloudOnly`, `medianPixelDelta` of 0.0, `matched` equal to the rally count, and empty unmatched lists.
@@ -311,17 +311,17 @@ git commit -m "feat: AnalysisResult mirroring the cloud results.json schema"
 5. **Percentiles are defined on an empty overlap:** when the two sides never both see the shuttle, `medianPixelDelta` is null rather than a crash or a zero. Zero would read as perfect agreement.
 6. **The report serialises** to JSON with stable key names, since §8 says cross-video statistics are a tool over exported reports.
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `./gradlew :analysis:jvmTest --tests "*ComparatorTest*"`
 
-- [ ] **Step 3: Implement the comparator**
+- [x] **Step 3: Implement the comparator**
 
-- [ ] **Step 4: Implement the CLI**
+- [x] **Step 4: Implement the CLI**
 
 `ComparatorCli` takes two `results.json` paths and prints the report as JSON. It lives in `jvmMain` because it needs file I/O, which `commonMain` is forbidden by §5.3. Keep the logic in `commonMain`; the CLI is argument parsing and reading two files.
 
-- [ ] **Step 5: Run and commit**
+- [x] **Step 5: Run and commit**
 
 Run: `./gradlew :analysis:jvmTest :analysis:iosSimulatorArm64Test`
 

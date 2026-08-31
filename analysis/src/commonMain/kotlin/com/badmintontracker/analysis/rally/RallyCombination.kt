@@ -56,6 +56,15 @@ fun refineRallies(
 }
 
 /**
+ * Fraction of the shorter rally that must overlap for two to be "the same".
+ *
+ * Named because the A/B comparator has to use the same number: if the union
+ * merges a pair at 0.5 and the comparator matched at some other value, the
+ * two disagree about how many rallies exist and nothing reports it.
+ */
+const val RALLY_OVERLAP_THRESHOLD: Double = 0.5
+
+/**
  * Combine two rally lists, deduplicating by temporal overlap.
  *
  * Two rallies are the same when their overlap exceeds `overlapThreshold` of
@@ -66,7 +75,7 @@ fun unionRallies(
     a: List<Rally>,
     b: List<Rally>,
     fps: Double,
-    overlapThreshold: Double = 0.5,
+    overlapThreshold: Double = RALLY_OVERLAP_THRESHOLD,
 ): List<Rally> {
     val safeFps = if (fps > 0) fps else 30.0
     val combined = ArrayList<DoubleArray>()  // [start, end]
@@ -74,11 +83,10 @@ fun unionRallies(
     for (r in (a + b).sortedBy { it.startTimestamp }) {
         var absorbed = false
         for (c in combined) {
-            val s = max(r.startTimestamp, c[0])
-            val e = min(r.endTimestamp, c[1])
-            if (e <= s) continue
-            val shorter = min(r.endTimestamp - r.startTimestamp, c[1] - c[0])
-            if (shorter <= 0 || (e - s) / shorter < overlapThreshold) continue
+            if (!overlapsByFraction(
+                    r.startTimestamp, r.endTimestamp, c[0], c[1], overlapThreshold
+                )
+            ) continue
             c[0] = min(c[0], r.startTimestamp)
             c[1] = max(c[1], r.endTimestamp)
             absorbed = true
@@ -97,4 +105,27 @@ fun unionRallies(
             durationSeconds = c[1] - c[0],
         )
     }
+}
+
+/**
+ * Are these two time ranges "the same rally"?
+ *
+ * True when they overlap by more than [threshold] of the SHORTER one's
+ * duration. Shared by [unionRallies] and by the A/B comparator on purpose:
+ * two definitions of rally identity would let the union merge a pair the
+ * comparator reports as unmatched, and that disagreement is invisible in
+ * both places.
+ */
+internal fun overlapsByFraction(
+    aStart: Double,
+    aEnd: Double,
+    bStart: Double,
+    bEnd: Double,
+    threshold: Double,
+): Boolean {
+    val start = max(aStart, bStart)
+    val end = min(aEnd, bEnd)
+    if (end <= start) return false
+    val shorter = min(aEnd - aStart, bEnd - bStart)
+    return shorter > 0 && (end - start) / shorter >= threshold
 }
