@@ -1,0 +1,28 @@
+{
+  "weights": {
+    "tracknet": {
+      "source": "modal://badminton-tracker-models/tracknet/TrackNet_best.pt",
+      "sha256": "df867641a02712b021f04548ff4b1208ddfdb47f629ab2094ceb978667e83b1a",
+      "bytes": 136190877,
+      "retrieved_at": "2026-08-31T22:07:37.146282+00:00"
+    },
+    "inpaintnet": {
+      "source": "modal://badminton-tracker-models/tracknet/InpaintNet_best.pt",
+      "sha256": "5749b66b8002f3ad9e0af841604004706fc796df30599e6bf01952696009688c",
+      "bytes": 6264451,
+      "retrieved_at": "2026-08-31T22:07:37.146282+00:00"
+    },
+    "badminton": {
+      "source": "badminton-tracker:backend/models/badminton/weights/best.pt",
+      "sha256": "54ac22a8386513b824eabd628197c2c188e07e97ea311cda6e11c48c0e8b7e36",
+      "bytes": 6228906,
+      "retrieved_at": "2026-08-31T22:07:37.146282+00:00"
+    },
+    "pose": {
+      "source": "ultralytics://yolo26m-pose.pt",
+      "sha256": "2fbf16367022256a226035695c5c389384c6706e8bb8ab8fcd0e7976f05443c4",
+      "bytes": 49036866,
+      "retrieved_at": "2026-08-31T22:07:37.146282+00:00"
+    }
+  }
+}
