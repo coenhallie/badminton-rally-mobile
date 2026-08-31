@@ -643,11 +643,27 @@ the catalog like every other dependency here.
 
 - [ ] **Step 2: Decide bundle versus download, against the real numbers**
 
-The Phase 1 set is TrackNet 22.7MB, InpaintNet 1.1MB and the detector 6.2MB at
-fp16: **30.0MB**, which bundles. Pose is 43.5MB and is Phase 2, so it is not in
-this build at all. Section 5.4's `models` bucket is therefore not needed for
-Stage 1, and the licence does not force it either - the checkpoints are MIT
-including commercial use, recorded in `tools/models/licenses/README.md`.
+**Measured 2026-09-01.** The models cost 28.5MB in the APK, and Pose is
+absent because it is Phase 2. But the models are not the expensive part:
+
+| component | in APK |
+|---|---|
+| ONNX Runtime, x86_64 | 20.2 MB |
+| ONNX Runtime, x86 | 20.1 MB |
+| ONNX Runtime, arm64-v8a | 17.6 MB |
+| ONNX Runtime, armeabi-v7a | 12.5 MB |
+| the three Phase 1 models | 28.5 MB |
+
+The debug APK is **115.9MB**, and the runtime's native libraries across four
+ABIs outweigh the models more than two to one. **An arm64 phone actually needs
+17.6 + 28.5 = 46.2MB.** The rest is other people's architectures.
+
+So the bundle-versus-download question in section 5.4 has an answer for Stage 1
+- bundling is fine at 46MB per device - but only if the shipped artifact is an
+AAB, so Play delivers one ABI rather than four. Shipping this as a universal
+APK would put 70MB of unusable native code on every phone. The licence does not
+force a download either: the checkpoints are MIT including commercial use, per
+`tools/models/licenses/README.md`.
 
 Put the three graphs in `src/main/assets/models/`. Record the resulting APK
 size change; 30MB of assets is not free and someone should see the number.

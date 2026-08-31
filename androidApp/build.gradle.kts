@@ -29,6 +29,21 @@ val sharedVersionName: String = versionConfig["MARKETING_VERSION"]
 val sharedVersionCode: Int = versionConfig["CURRENT_PROJECT_VERSION"]?.toIntOrNull()
     ?: error("CURRENT_PROJECT_VERSION missing or not an Int in Config/Version.xcconfig")
 
+// Phase 1 model identity: the first 8 hex of each pinned weight SHA, in a
+// fixed order. Changes if and only if the weights change.
+val phase1ModelVersion: String = run {
+    val manifest = rootProject.file("tools/models/manifest.json")
+    if (!manifest.exists()) {
+        "unpinned"
+    } else {
+        @Suppress("UNCHECKED_CAST")
+        val weights = (groovy.json.JsonSlurper().parse(manifest) as Map<String, Any>)["weights"]
+            as Map<String, Map<String, Any>>
+        listOf("tracknet", "inpaintnet", "badminton")
+            .joinToString("-") { (weights[it]?.get("sha256") as? String)?.take(8) ?: "missing" }
+    }
+}
+
 android {
     namespace = "com.badmintontracker.android"
     compileSdk = 36
@@ -42,6 +57,15 @@ android {
 
         buildConfigField("String", "SUPABASE_URL",      "\"$supabaseUrl\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")
+
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Derived from the pinned weight SHAs, never hand-typed. Section 5.4's
+        // re-anchoring rule keys on this: when a model change moves a clip
+        // boundary, every annotation on that clip has to move with it. A
+        // version string someone forgets to bump makes that change invisible
+        // and silently strands the annotations.
+        buildConfigField("String", "MODEL_VERSION", "\"$phase1ModelVersion\"")
     }
 
     buildFeatures {
@@ -69,6 +93,7 @@ kotlin {
 
 dependencies {
     implementation(project(":shared"))
+    implementation(libs.onnxruntime.android)
 
     implementation(platform(libs.supabase.bom))
     implementation(libs.supabase.auth)
@@ -91,6 +116,9 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
     implementation(libs.coil.video)
+
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.ext.junit)
     implementation(libs.kotlinx.serialization.json)
 
     implementation(libs.settings)
@@ -101,3 +129,39 @@ dependencies {
     testImplementation(libs.kotest.assertions)
     testImplementation(libs.settings.test)
 }
+
+// The Phase 1 ONNX graphs ship as assets, but they are NOT in git: they are
+// 30MB of binary reproducible from the SHA-pinned weights in
+// tools/models/manifest.json via tools/models/export_yolo.py and
+// export_tracknet.py. Copying them in at build time keeps the repository free
+// of large derived artifacts without making the app fetch anything at runtime.
+//
+// Phase 1 only. Pose is 43.5MB and belongs to Phase 2, so it is deliberately
+// absent rather than bundled early.
+val phase1Models = listOf("tracknet.fp16.onnx", "inpaintnet.fp16.onnx", "badminton.fp16.onnx")
+val onnxSourceDir = rootProject.layout.projectDirectory.dir("tools/models/onnx")
+val onnxAssetsDir = layout.buildDirectory.dir("generated/onnxAssets")
+
+val copyOnnxModels by tasks.registering(Copy::class) {
+    description = "Stage the Phase 1 ONNX graphs as app assets."
+    from(onnxSourceDir) { include(phase1Models) }
+    into(onnxAssetsDir.map { it.dir("models") })
+    doFirst {
+        // Fail with the command that fixes it. Without this the app builds
+        // fine and dies at runtime on a missing asset, which is a far worse
+        // place to learn the export was never run.
+        val missing = phase1Models.filterNot { onnxSourceDir.file(it).asFile.exists() }
+        if (missing.isNotEmpty()) {
+            error(
+                "missing ONNX graphs in ${onnxSourceDir.asFile}: ${missing.joinToString()}\n" +
+                    "Run: python tools/models/pull_weights.py --tracker-repo ../badminton-tracker\n" +
+                    "then: python tools/models/export_tracknet.py --tracker-repo ../badminton-tracker\n" +
+                    "then: python tools/models/export_yolo.py"
+            )
+        }
+    }
+}
+
+android.sourceSets.getByName("main").assets.srcDir(onnxAssetsDir)
+tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }
+    .configureEach { dependsOn(copyOnnxModels) }
