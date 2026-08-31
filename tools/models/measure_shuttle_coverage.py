@@ -117,11 +117,18 @@ weaker signal from later in the list:
       RuntimeError is reported as UNMEASURABLE with its message on stderr
       rather than as a crash report. Both are non-pass and both are loud,
       so the mislabel cannot turn into a false GO.
-  3 - INPAINTNET UNEXERCISED: the gate would otherwise have been a clean
-      PASS on all three terms, but both models were swapped (the default,
-      deployed configuration) and NEITHER SIDE's InpaintNet pass filled a
-      single frame on this video. The InpaintNet-scoped term was therefore
-      computed over an EMPTY sample, and this run holds no evidence
+  3 - A GATE TERM MEASURED NOTHING: every term that had a sample passed,
+      but at least one stood on a sample below its own denominator floor,
+      so its verdict rests on nothing (see _register_gate_term and the
+      DENOMINATOR FLOORS block in main()). The terms concerned are listed
+      in underfloor_gate_terms in the JSON report. Today inpaint_scoped is
+      the only term that can reach this branch, so in practice this still
+      means INPAINTNET UNEXERCISED: the gate would otherwise have been a
+      clean PASS on all three terms, but both models were swapped (the
+      default, deployed configuration) and NEITHER SIDE's InpaintNet pass
+      filled a single frame on this video. The InpaintNet-scoped term was
+      therefore computed over an EMPTY sample, and this run holds no
+      evidence
       whatsoever about InpaintNet's ONNX output despite the "swapped"
       label - see the PERFORMANCE NOTE above. This covers both ways that
       happens: the model never being called at all (the near-fully-visible
@@ -136,9 +143,11 @@ weaker signal from later in the list:
       for a validated deployed-config pass.
   4 - CRASH: setup (importing TrackNetInference, building either tracker,
       opening either ONNX Runtime session - a missing/truncated .onnx file,
-      missing weights, or a bad --tracker-repo), or either side of
-      track_video itself, raised something other than the RuntimeError
-      production uses to report an unusable input. Distinct from 1 (FAIL)
+      missing weights, or a bad --tracker-repo), either side of track_video
+      itself, or the gate's own term construction (a term declared without
+      a denominator floor - see _register_gate_term) raised something other
+      than the RuntimeError production uses to report an unusable input.
+      Distinct from 1 (FAIL)
       because no divergence was actually measured - the conversion could
       not even be run, which is not the same claim as "ran and diverged".
       A report is written recording the crash and which phase raised,
@@ -332,6 +341,72 @@ def _percentile_sorted(sorted_values: list, p: float):
         return None
     idx = min(int(len(sorted_values) * p), len(sorted_values) - 1)
     return sorted_values[idx]
+
+
+def _register_gate_term(terms, name, ok, value, n_measured, n_required, sample,
+                        threshold_min=None, threshold_max=None,
+                        floor_waived_because=None, **extra):
+    """Register one gate term, REFUSING a term that carries no denominator floor.
+
+    This function is the enforcement of the DENOMINATOR FLOORS principle in
+    main(); the comment block there is only its explanation. Four separate
+    reviews of this file each found a different gate term that could be
+    satisfied by an empty or diluted sample - wrong sample, then empty
+    sample, then diluted sample, then empty scope. All four are one root
+    cause: a term's verdict is worthless without a floor on the size of the
+    sample it was computed over, and a floor that has to be remembered and
+    hand-written somewhere else is a floor that will eventually be
+    forgotten. So a term cannot be registered here without declaring one.
+
+    n_required == 0 is not "no floor needed", it is a claim that this term
+    has genuinely nothing to measure in this configuration, and it must be
+    argued in writing via floor_waived_because. There is deliberately no way
+    to register a floorless term by omission or by typing a zero: both raise
+    rather than passing. A fifth term added to this gate gets its floor on
+    day one, because it cannot be added without one.
+
+    Raises ValueError on any misdeclaration. main() catches that and exits
+    4 (CRASH) with a crash report, never a bare traceback - a
+    misconfiguration of the gate must not be able to look like a measured
+    GATE FAIL.
+    """
+    if name in terms:
+        raise ValueError(f"gate term {name!r} registered twice")
+    # bool is a subclass of int, so it would otherwise sneak through as 0/1.
+    if isinstance(n_required, bool) or not isinstance(n_required, int) or n_required < 0:
+        raise ValueError(
+            f"gate term {name!r}: n_required must be a non-negative int, got {n_required!r}")
+    if isinstance(n_measured, bool) or not isinstance(n_measured, int) or n_measured < 0:
+        raise ValueError(
+            f"gate term {name!r}: n_measured must be a non-negative int, got {n_measured!r}")
+    if n_required == 0 and not floor_waived_because:
+        raise ValueError(
+            f"gate term {name!r} declares no denominator floor (n_required == 0) and gives no "
+            f"reason. Every term in this gate is satisfiable by an empty sample: an agreement "
+            f"ratio over zero frames is 1.0, a p95 over zero deltas is undefined, set equality "
+            f"over two empty sets holds, a max over an empty set is within any bound. Give the "
+            f"term a real floor, or pass floor_waived_because=... arguing why this term has "
+            f"genuinely nothing it must measure in this configuration.")
+    if n_required > 0 and floor_waived_because:
+        raise ValueError(
+            f"gate term {name!r} both declares a floor of {n_required} and waives it")
+    if (threshold_min is None) == (threshold_max is None):
+        raise ValueError(
+            f"gate term {name!r}: pass exactly one of threshold_min / threshold_max")
+
+    term = {"ok": bool(ok), "value": value}
+    if threshold_min is not None:
+        term["threshold_min"] = threshold_min
+    else:
+        term["threshold_max"] = threshold_max
+    term.update(extra)
+    term["n_measured"] = n_measured
+    term["n_required"] = n_required
+    term["sample"] = sample
+    if floor_waived_because:
+        term["floor_waived_because"] = floor_waived_because
+    terms[name] = term
+    return term
 
 
 def main() -> int:
@@ -610,11 +685,20 @@ def main() -> int:
     # term below reports its verdict together with the size of the sample it
     # was computed over (n_measured) and the smallest sample that verdict is
     # allowed to rest on (n_required), and no term may be believed while its
-    # n_measured is under its n_required. Add a fourth term and it needs its
-    # own floor on day one, not after the review that finds it.
+    # n_measured is under its n_required.
     #
-    # Where each floor is actually enforced today, since these are checked
-    # in three different places rather than one loop:
+    # THE ENFORCEMENT is _register_gate_term plus the two derivations below,
+    # NOT this comment. A term cannot be registered without declaring a
+    # floor (a missing or zero n_required raises unless it is argued in
+    # writing), and the pass condition is a single loop over the resulting
+    # table rather than three hand-written conjuncts. Previously the three
+    # floors were enforced in three separate places with only prose tying
+    # them together, which is precisely how a fifth term would have been
+    # added floorless and printed `n=0 (need >= 0)` on its way to a PASS.
+    # This comment is now the explanation of the loop, not a substitute for
+    # it.
+    #
+    # What each term's floor means, and where the value comes from:
     #   visibility_agreement - `if not torch_positions: return 2` above
     #     rules out a zero-frame sample. GATE_MIN_VISIBLE_FRACTION then
     #     keeps the ratio non-vacuous on top of that: without it, a video
@@ -632,53 +716,79 @@ def main() -> int:
     #     belt-and-braces now: p95_ok is hoisted out of the `and` chain for
     #     reporting, so it no longer benefits from the short-circuit that
     #     used to reach it only after the agreement term had passed.
-    #   inpaint_scoped      - inpaintnet_unexercised below, which is this
-    #     term's floor and nothing else. n_required is 1 under the deployed
-    #     configuration and 0 under --tracknet-only, where both sides run
-    #     the real torch InpaintNet and the term is genuinely inapplicable.
+    #   inpaint_scoped      - an empty inpainted-frame union means neither
+    #     side filled a single frame, so inpaint_gate_ok is vacuously True
+    #     (see its `not inpaint_union` branch above) and the run holds no
+    #     evidence at all about InpaintNet's ONNX output. n_required is 1
+    #     under the deployed configuration. Under --tracknet-only the floor
+    #     is waived, not zeroed by default: both sides run the real PyTorch
+    #     InpaintNet there, so there is no InpaintNet conversion for this
+    #     term to have measured, and the waiver has to be argued in writing
+    #     to _register_gate_term rather than passed as a bare 0.
     agreement_ok = visibility_agreement >= VISIBILITY_AGREEMENT_MIN
     p95_ok = p95_delta_px is not None and p95_delta_px <= GATE_DELTA_PX_MAX
 
-    gate["gate_terms"] = {
-        "visibility_agreement": {
-            "ok": agreement_ok,
-            "value": visibility_agreement,
-            "threshold_min": VISIBILITY_AGREEMENT_MIN,
-            "n_measured": len(frames_a),
-            "n_required": 1,
-            "sample": "frames present in both the torch and the ONNX run",
-        },
-        "p95_delta_px_at_512x288": {
-            "ok": p95_ok,
-            "value": p95_delta_px,
-            "threshold_max": GATE_DELTA_PX_MAX,
-            "n_measured": len(deltas_a),
-            "n_required": 1,
-            "sample": "frames both sides call the shuttle visible",
-        },
-        "inpaint_scoped": {
-            "ok": inpaint_gate_ok,
-            "value": max_inpaint_delta_px,
-            "threshold_max": GATE_DELTA_PX_MAX,
-            "sets_match": inpaint_sets_match,
-            "n_measured": len(inpaint_union),
-            "n_required": 0 if inpaintnet_shim is None else 1,
-            "sample": "frames either side's InpaintNet pass actually filled",
-        },
-    }
+    gate_terms = {}
+    try:
+        _register_gate_term(
+            gate_terms, "visibility_agreement",
+            ok=agreement_ok, value=visibility_agreement,
+            threshold_min=VISIBILITY_AGREEMENT_MIN,
+            n_measured=len(frames_a), n_required=1,
+            sample="frames present in both the torch and the ONNX run")
+        _register_gate_term(
+            gate_terms, "p95_delta_px_at_512x288",
+            ok=p95_ok, value=p95_delta_px,
+            threshold_max=GATE_DELTA_PX_MAX,
+            n_measured=len(deltas_a), n_required=1,
+            sample="frames both sides call the shuttle visible")
+        _register_gate_term(
+            gate_terms, "inpaint_scoped",
+            ok=inpaint_gate_ok, value=max_inpaint_delta_px,
+            threshold_max=GATE_DELTA_PX_MAX,
+            sets_match=inpaint_sets_match,
+            n_measured=len(inpaint_union),
+            n_required=0 if inpaintnet_shim is None else 1,
+            floor_waived_because=(
+                None if inpaintnet_shim is not None else
+                "--tracknet-only: both sides run the real PyTorch InpaintNet, so there is no "
+                "InpaintNet conversion for this term to measure and no minimum sample it must "
+                "reach. The term still runs and can still fail, catching a TrackNet drift that "
+                "changes which frames get inpainted."),
+            sample="frames either side's InpaintNet pass actually filled")
+    except Exception as e:
+        # A misdeclared gate term is a programming error, but it must not
+        # reach the operator as a bare traceback and a Python exit status of
+        # 1, which is indistinguishable from a measured GATE FAIL. Same
+        # discipline as every other phase in this script.
+        _write_crash("gate term construction", e)
+        return 4
+    gate["gate_terms"] = gate_terms
 
-    # gate_ok_raw is what the gate measured, on its own terms, ignoring the
-    # denominator floor that lives in inpaintnet_unexercised below. Built
-    # from the same three locals the gate_terms block reports, so the
-    # printed/recorded verdicts cannot drift from the decided one.
-    gate_ok_raw = measurable and agreement_ok and p95_ok and inpaint_gate_ok
+    # THE PASS CONDITION, as one expression over the table above: the gate
+    # passes only when the run was measurable AND every term is both `ok`
+    # and standing on a sample at or above its own floor. It is split into
+    # two derivations rather than one boolean solely so the exit code can
+    # keep saying WHICH of the two went wrong, which the existing precedence
+    # (2 > 1 > 3 > 0) depends on: a term that failed on its merits is a
+    # GATE FAIL (exit 1) and a term that measured nothing is "pick a better
+    # clip" (exit 3), and collapsing them would silently retire exit 3.
+    # exit_code == 0 holds if and only if
+    #   measurable and all(t["ok"] and t["n_measured"] >= t["n_required"]).
+    gate_ok_raw = measurable and all(t["ok"] for t in gate_terms.values())
+    underfloor_terms = sorted(name for name, t in gate_terms.items()
+                              if t["n_measured"] < t["n_required"])
 
-    # The inpaint_scoped term's denominator floor, and the only reason exit
-    # 3 exists. An empty union means neither side filled a single frame, so
-    # inpaint_gate_ok above is vacuously True (see its `not inpaint_union`
-    # branch) and this run holds no evidence at all about InpaintNet's ONNX
-    # output - it must not be allowed to print PASS under the deployed-config
-    # label.
+    # Derived from the table, not computed a second time alongside it, so
+    # the reported floors and the decided exit code cannot disagree. Today
+    # inpaint_scoped is the only term that can be under its floor while the
+    # other two still pass - the agreement term going under its floor means
+    # zero common frames, which `measurable` already turns into exit 2, and
+    # the p95 term going under its floor means ONNX agreed on no visible
+    # frame at all, which drags visibility_agreement below its threshold and
+    # fails on the merits first. So this predicate is exactly the round-4
+    # empty-union condition it replaces, now expressed as an instance of the
+    # general rule instead of as a special case beside it.
     #
     # Keyed on the union being empty, NOT on inpaintnet_shim.calls == 0,
     # which was a proxy for a different quantity and is why this bug
@@ -693,8 +803,8 @@ def main() -> int:
     # having been called, so calls == 0 always implies an empty ONNX set,
     # hence either an empty union (exit 3) or a set mismatch (exit 1); there
     # is no path from calls == 0 to exit 0. Inert under --tracknet-only,
-    # where inpaintnet_shim is None.
-    inpaintnet_unexercised = inpaintnet_shim is not None and not inpaint_union
+    # where the term's floor is waived and it therefore cannot be underfloor.
+    inpaintnet_unexercised = "inpaint_scoped" in underfloor_terms
 
     # Priority, worst-first: a gate that already failed on its own measured
     # terms must be reported as FAIL, even when the InpaintNet-scoped term
@@ -716,7 +826,11 @@ def main() -> int:
     elif not gate_ok_raw:
         exit_code = 1
         reported_gate_pass = False
-    elif inpaintnet_unexercised:
+    elif underfloor_terms:
+        # Any term standing on a sample below its own floor, not just the
+        # InpaintNet one: today inpaint_scoped is the only term that can
+        # reach here (see the derivation above), but a term added later that
+        # measures nothing lands here too rather than sliding into exit 0.
         exit_code = 3
         reported_gate_pass = False
     else:
@@ -751,27 +865,30 @@ def main() -> int:
                   f"max_inpaint_delta_px_at_512x288={max_inpaint_delta_px} - torch inpainted "
                   f"{len(torch_inpainted)} frame(s), onnx inpainted {len(onnx_inpainted)} "
                   f"frame(s). See inpainted_frames_torch/inpainted_frames_onnx in the JSON.)")
+        if underfloor_terms:
+            print(f"  (These terms were also under their denominator floor on this run and "
+                  f"measured nothing: {', '.join(underfloor_terms)}. The gate already failed "
+                  f"on another term's merits, and that is reported first; see gate_terms in "
+                  f"the JSON.)")
+    elif underfloor_terms:
+        print(f"  GATE TERM MEASURED NOTHING (exit 3) - every term that had a sample passed, "
+              f"but these stood on a sample below their own denominator floor, so their "
+              f"verdicts rest on nothing: {', '.join(underfloor_terms)}. gate_pass is forced "
+              f"false; see gate_terms in the JSON for each term's n_measured and n_required.")
         if inpaintnet_unexercised:
-            print("  (The InpaintNet-scoped term also had an empty sample on this run - "
-                  "neither side filled a single frame - so it measured nothing either. "
-                  "The gate already failed on another term, and that is reported first; "
-                  "see inpaint_union_size and gate_terms.inpaint_scoped in the JSON.)")
-    elif inpaintnet_unexercised:
-        print("  GATE INPAINTNET UNEXERCISED (exit 3) - visibility agreement and delta "
-              "both passed, but neither side's InpaintNet pass filled a single frame on "
-              "this video, so the InpaintNet-scoped term was computed over an empty "
-              "sample and this run holds no evidence at all about InpaintNet's ONNX "
-              "output despite the \"swapped\" label above. Either _run_inpaintnet never "
-              "invoked the model (too few gaps, or too few detections) or every "
-              "candidate it produced was rejected by production's own bounds and "
-              "continuity checks - inpaintnet_shim_calls in the JSON tells you which. "
-              "gate_pass is forced false. Re-run against a video with a real gap in "
-              "shuttle detection that InpaintNet can actually bridge.")
+            print("  (inpaint_scoped: neither side's InpaintNet pass filled a single frame on "
+                  "this video, so this run holds no evidence at all about InpaintNet's ONNX "
+                  "output despite the \"swapped\" label above. Either _run_inpaintnet never "
+                  "invoked the model (too few gaps, or too few detections) or every candidate "
+                  "it produced was rejected by production's own bounds and continuity checks - "
+                  "inpaintnet_shim_calls in the JSON tells you which. Re-run against a video "
+                  "with a real gap in shuttle detection that InpaintNet can actually bridge.)")
     else:
         print("  GATE PASS")
 
     report = {"provenance": provenance, "gate": gate, "gate_measurable": measurable,
-              "gate_pass": reported_gate_pass, "inpaintnet_unexercised": inpaintnet_unexercised,
+              "gate_pass": reported_gate_pass, "underfloor_gate_terms": underfloor_terms,
+              "inpaintnet_unexercised": inpaintnet_unexercised,
               "informational": None}
     report_path.write_text(json.dumps(report, indent=2))
 

@@ -191,12 +191,25 @@ step's output:
      computed over, in `gate.gate_terms.<term>` as `ok`, `value`,
      `n_measured`, `n_required`, and a plain-English `sample` description,
      and the same denominators are printed next to each verdict on stdout.
-     `n_required` for the InpaintNet-scoped term is `1` under the deployed
-     configuration and `0` under `--tracknet-only` (where both sides run
-     the real PyTorch InpaintNet and the term is genuinely inapplicable).
      A term whose `n_measured` is below its `n_required` measured nothing,
-     whatever its `ok` says - reading a PASS means reading those
-     denominators.
+     whatever its `ok` says.
+
+     **That rule is enforced, not just documented.** The gate passes only
+     when the run was measurable AND every term is both `ok` and standing
+     at or above its own floor - one loop over the table, rather than
+     hand-written conjuncts that a fourth term could be added beside. And a
+     term cannot be registered without declaring a floor: `n_required`
+     missing, zero, negative or non-integer raises rather than passing
+     (`_register_gate_term`), so a floorless term is a startup crash
+     (exit 4), never a silent PASS. The single legitimate zero is
+     `--tracknet-only`'s InpaintNet-scoped term, where both sides run the
+     real PyTorch InpaintNet and there is no conversion for the term to
+     have measured; that waiver has to be argued in writing via
+     `floor_waived_because`, which is recorded in the JSON, rather than
+     passed as a bare `0`. The term still runs there and can still fail,
+     catching a TrackNet drift that changes which frames get inpainted.
+     Terms found under their floor are listed in the report's top-level
+     `underfloor_gate_terms`.
    - **(b) INFORMATIONAL - reimplementation fidelity, only if `--corpus` is
      given.** Local `track_video` output versus the cloud's
      `results.json["shuttle_positions"]`. This is explicitly **not** a
@@ -259,8 +272,8 @@ step's output:
    | 0 | GATE PASS - all three gate terms measured clean **over a non-empty sample each**. Under the deployed configuration (both models swapped) that last part is the substantive claim: at least one frame was actually filled by one side's InpaintNet pass, torch and ONNX filled exactly the same frames, and their coordinates matched. A nonzero InpaintNet call count is **not** what exit 0 asserts and never was sufficient to assert it - production rejects inpaint candidates on the torch side too (`inference.py:424`, `:425`, `:429-446`), so InpaintNet can run on both sides and change nothing on either, which is evidence of nothing. That case is exit 3 |
    | 1 | GATE FAIL - visibility agreement, whole-video p95 delta, or the InpaintNet-scoped term missed threshold, on the gate's own measured terms. Takes priority over 3: a catastrophic ONNX collapse can itself be severe enough to also leave the InpaintNet-scoped term with an empty sample, and that must be reported as FAIL, not steered toward "pick a better clip" |
    | 2 | UNMEASURABLE - video would not open, decoded no frames, the shuttle was visible too rarely in the torch reference to measure anything (`GATE_MIN_VISIBLE_FRACTION = 0.05`, i.e. below 5%), or argparse itself rejected the command line (its own usage-error exit code, unrelated to and unchanged by this script). A torch-internal `RuntimeError` from the reference `track_video` also lands here rather than at 4: production raises `RuntimeError` only for an unusable input (`inference.py:134`, `:146`, `:244`), so the script reads it that way. Both codes are non-pass and both print the message, so the mislabel cannot become a false GO |
-   | 3 | INPAINTNET UNEXERCISED - the gate would otherwise have been a clean PASS on all three terms, but both models were swapped (the default) and **neither side's InpaintNet pass filled a single frame** on this video, so the InpaintNet-scoped term was computed over an empty sample and the run holds no evidence at all about InpaintNet's ONNX output despite the label. Covers both ways that happens: the model never being called (`inference.py:363`, `:388-390`) and the model being called on both sides with every candidate rejected by production's own bounds and continuity checks (`:424-446`) - `inpaintnet_shim_calls` in the JSON distinguishes them. `gate_pass` in the JSON is forced `false`; re-run against a clip with a real detection gap that InpaintNet can actually bridge |
-   | 4 | CRASH - setup (importing `TrackNetInference`, building either tracker, opening either ONNX Runtime session), or **either** side of `track_video`, raised something other than the `RuntimeError` production uses to report an unusable input. Distinct from FAIL: no divergence was measured, the conversion could not even be run. Written to a separate `coverage-<name>-<config>-crashed.json`, never to the plain `coverage-<name>-<config>.json` path, so a crashed re-run cannot overwrite a prior successful run's report. The report's `crash_phase` says which of `setup`, `torch track_video`, or `onnx track_video` died |
+   | 3 | A GATE TERM MEASURED NOTHING - every term that had a sample passed, but at least one stood on a sample below its own denominator floor, so its verdict rests on nothing; the terms are listed in `underfloor_gate_terms`. Today `inpaint_scoped` is the only term that can reach this branch, so in practice this still means INPAINTNET UNEXERCISED: the gate would otherwise have been a clean PASS on all three terms, but both models were swapped (the default) and **neither side's InpaintNet pass filled a single frame** on this video, so the InpaintNet-scoped term was computed over an empty sample and the run holds no evidence at all about InpaintNet's ONNX output despite the label. Covers both ways that happens: the model never being called (`inference.py:363`, `:388-390`) and the model being called on both sides with every candidate rejected by production's own bounds and continuity checks (`:424-446`) - `inpaintnet_shim_calls` in the JSON distinguishes them. `gate_pass` in the JSON is forced `false`; re-run against a clip with a real detection gap that InpaintNet can actually bridge |
+   | 4 | CRASH - setup (importing `TrackNetInference`, building either tracker, opening either ONNX Runtime session), **either** side of `track_video`, or the gate's own term construction (a term declared without a denominator floor, see `_register_gate_term`), raised something other than the `RuntimeError` production uses to report an unusable input. Distinct from FAIL: no divergence was measured, the conversion could not even be run. Written to a separate `coverage-<name>-<config>-crashed.json`, never to the plain `coverage-<name>-<config>.json` path, so a crashed re-run cannot overwrite a prior successful run's report. The report's `crash_phase` says which of `setup`, `torch track_video`, `onnx track_video`, or `gate term construction` died |
 
    The report's `gate` object also records `tracknet_shim_calls` and
    `inpaintnet_shim_calls` (`null` under `--tracknet-only`). **Both are
@@ -278,7 +291,9 @@ step's output:
    problem. The `gate` object also records `inpainted_frames_torch`,
    `inpainted_frames_onnx`, `inpaint_union_size`, `inpaint_sets_match`,
    `max_inpaint_delta_px_at_512x288`, and the per-term `gate_terms` block
-   described above. `inpaintnet_unexercised` is recorded at the top level
+   described above. `underfloor_gate_terms` and `inpaintnet_unexercised`
+   (the latter derived from the former, so they cannot disagree) are
+   recorded at the top level
    regardless of which exit code actually decided the run (1 or 3), so a
    reader does not have to infer any of this from anything but those
    fields.
