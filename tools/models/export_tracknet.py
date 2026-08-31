@@ -41,19 +41,30 @@ def main() -> int:
 
     dummy = torch.randn(1, in_dim, 288, 512)
     out = Path(args.out)
+    fp16_out = out.with_suffix(".fp16.onnx")
     out.parent.mkdir(parents=True, exist_ok=True)
-    torch.onnx.export(
-        model, dummy, str(out),
-        input_names=["frames"], output_names=["heatmaps"],
-        opset_version=17, dynamic_axes=None,
-    )
+    try:
+        torch.onnx.export(
+            model, dummy, str(out),
+            input_names=["frames"], output_names=["heatmaps"],
+            opset_version=17, dynamic_axes=None,
+        )
 
-    # fp16 as a separate pass so the fp32 graph exists for the parity check.
-    import onnx
-    from onnxconverter_common import float16
-    m16 = float16.convert_float_to_float16(onnx.load(str(out)), keep_io_types=True)
-    onnx.save(m16, str(out.with_suffix(".fp16.onnx")))
-    print(f"wrote {out} and {out.with_suffix('.fp16.onnx')}")
+        # fp16 as a separate pass so the fp32 graph exists for the parity check.
+        import onnx
+        from onnxconverter_common import float16
+        m16 = float16.convert_float_to_float16(onnx.load(str(out)), keep_io_types=True)
+        onnx.save(m16, str(fp16_out))
+    except Exception:
+        # Leave no half-complete pair behind: either both ONNX files exist
+        # and are current, or neither does. Without this, a failure after
+        # the fp32 export (for example a missing onnxconverter-common) left
+        # a stale tracknet.onnx that a re-run's success message would then
+        # sit next to, with no way to tell it was actually from this run.
+        out.unlink(missing_ok=True)
+        fp16_out.unlink(missing_ok=True)
+        raise
+    print(f"wrote {out} and {fp16_out}")
     return 0
 
 

@@ -24,6 +24,14 @@ def sha256(p: Path) -> str:
 
 
 def pull_from_modal(remote: str, dest: Path) -> None:
+    if dest.exists():
+        # `modal volume get` refuses to overwrite an existing destination and
+        # aborts under check=True, which would otherwise make this script
+        # fail on every re-run after the first. Skipping an existing file
+        # makes a re-run idempotent; delete tools/models/weights/ first to
+        # force a refetch.
+        print(f"skip {dest} (already present; delete it to refetch)")
+        return
     subprocess.run(
         ["modal", "volume", "get", "badminton-tracker-models", remote, str(dest)],
         check=True,
@@ -55,8 +63,16 @@ def main() -> int:
     # Ultralytics resolves this by name at runtime in the cloud worker, which is
     # exactly why it is unpinned there. Downloading it once and recording the
     # SHA is the whole point of this step.
+    #
+    # Pass an explicit destination path rather than a bare filename: YOLO()
+    # downloads a not-yet-local checkpoint to exactly the path it is given,
+    # and a bare filename resolves relative to the current working directory
+    # (the repo root, per this script's README), dropping ~50MB of untracked
+    # .pt there. Downloading straight into WEIGHTS keeps it inside the
+    # already-gitignored tools/models/weights/.
     from ultralytics import YOLO
-    m = YOLO("yolo26m-pose.pt")
+    pose_src = WEIGHTS / "yolo26m-pose.pt"
+    m = YOLO(str(pose_src))
     shutil.copy2(m.ckpt_path, WEIGHTS / "pose.pt")
     entries["pose"] = {"source": "ultralytics://yolo26m-pose.pt"}
 
