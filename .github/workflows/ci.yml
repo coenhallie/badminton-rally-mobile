@@ -27,7 +27,7 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
-      - run: ./gradlew :shared:linkDebugFrameworkIosSimulatorArm64
+      - run: ./gradlew :shared:linkDebugFrameworkIosSimulatorArm64 :analysis:compileTestKotlinIosSimulatorArm64
 
   android-tests:
     runs-on: ubuntu-latest

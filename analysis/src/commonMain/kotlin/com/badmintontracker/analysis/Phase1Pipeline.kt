@@ -71,6 +71,19 @@ fun runPhase1(input: Phase1Input): Phase1Output {
     // position INVISIBLE rather than dropping it, and the shot detector reads
     // absence as null. The worker performs the same remap when it builds
     // filtered_frames, so this conversion is part of the port, not glue.
+    //
+    // The LENGTH of this list matters as much as its contents. The shot
+    // detector divides by it to get coverage, and coverage decides whether
+    // stride subsampling runs at all - which changes every shot and therefore
+    // every rally boundary, not some rounding detail. Using totalFrames is
+    // right because the worker's detection loop appends one skeleton_frame per
+    // decoded frame with no stride or skip, so its denominator is the same
+    // number.
+    //
+    // Note the worker numbers those frames from 1, not 0: it increments
+    // frame_count before using it, so shuttle_positions in a captured
+    // results.json is 1-based. Indexing from 0 here is deliberate and is
+    // divergence 3 in the design register.
     fun frames(track: Map<Int, ShuttleSample>): List<FrameSample> =
         (0 until input.totalFrames).map { f ->
             FrameSample(f, f / fps, track[f]?.takeIf { it.visible })
