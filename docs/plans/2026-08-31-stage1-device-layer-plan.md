@@ -586,215 +586,353 @@ git commit -m "feat: Kotlin shuttle heatmap postprocessing against the golden ve
 
 ---
 
-# Part C: the iOS device layer
+# Part C: the Android device layer
 
-**BLOCKED** on all of Part B, on the weights, and on the 0a gate having passed.
+**Android first, not iOS.** The design's section 9 puts iOS first, on the
+grounds that its hardware range is narrower and the signal cleaner. That
+reasoning still holds in the abstract, but there is no iPhone available and
+there is a Galaxy S23, and a device you can run on beats a cleaner signal you
+cannot measure.
+
+It also turns out to be the better first target on the merits, which is worth
+stating so this is not read as settling:
+
+- **`androidApp` is Kotlin, so `:analysis` runs on the device unchanged.** It
+  already depends on `:shared`, which now re-exports `:analysis` through
+  `api(project(":analysis"))`. `RawInferenceCodec` and the heatmap
+  postprocessing are used directly rather than reimplemented.
+- **That removes the one two-language implementation the design accepted.**
+  Section 5.4 concedes a Swift and Kotlin pair for the heatmap blob detection
+  and buys it with a shared golden vector. On Android there is no pair: the
+  Kotlin from Task 9 is what runs. The former Task 13 is deleted outright, and
+  Task 8's fixture stays only as the check that the single implementation
+  matches production's Python.
+- **The `RawInference` writer is the reader.** No second byte-level
+  implementation, so the endianness contract has one side rather than two.
+
+iOS becomes the later stage, and it inherits a device layer whose interface
+has already been exercised against a real engine rather than only a fake -
+which is a better position than the plan started from.
+
+**BLOCKED** on the 0a gate having passed. Everything else it needed is in
+place: the weights are pulled and pinned, TrackNet and InpaintNet are exported
+and numerically verified, and a source video is available.
 
 ---
 
-## Task 10: ONNX Runtime and the model bundle in the iOS build
-
-Covers §5.4's distribution paragraph as well as the runtime: "Phase 1 models bundle with the app if they fit comfortably; the pose model downloads on first analysis from a Supabase `models` bucket." Stage 1 is Phase 1, so TrackNet, InpaintNet and the detector bundle; pose is Stage 3 and does not ship here. The `models` bucket is also the fallback if §3.5's checkpoint-licence question comes back badly, and it is what allows shipping a model fix without an app release.
+## Task 10: ONNX Runtime and the Phase 1 models in the Android build
 
 **Files:**
-- Modify: `iosApp/project.yml`
-- Create: `iosApp/Sources/LocalAnalysis/OnnxSession.swift`
-- Create: `iosApp/Sources/LocalAnalysis/ModelCatalog.swift`
-- Create: `iosApp/Tests/OnnxSessionTests.swift`
+- Modify: `gradle/libs.versions.toml`
+- Modify: `androidApp/build.gradle.kts`
+- Create: `androidApp/src/main/java/com/badmintontracker/android/localanalysis/OnnxSession.kt`
+- Create: `androidApp/src/main/java/com/badmintontracker/android/localanalysis/ModelCatalog.kt`
+- Create: `androidApp/src/androidTest/java/com/badmintontracker/android/localanalysis/OnnxSessionTest.kt`
+- Create: `androidApp/src/main/assets/models/` - the bundled graphs
 
 **Interfaces:**
 - Produces:
-  - `final class OnnxSession { init(modelPath: String) throws; func run(_ inputs: [String: OnnxTensor]) throws -> [String: OnnxTensor] }`
-  - `enum ModelCatalog { static func url(for model: Model) throws -> URL; static var version: String }` where `version` is the stamp Task 16 writes into `results_meta`
+  - `class OnnxSession(modelPath: String) : Closeable` with `fun run(inputs: Map<String, FloatArray>, shapes: Map<String, LongArray>): Map<String, FloatArray>`
+  - `object ModelCatalog { fun path(model: Model): String; val version: String }`
 
-- [ ] **Step 1: Add the package**
+- [ ] **Step 1: Add the dependency**
 
-Add `onnxruntime-swift-package-manager` to `packages:` in `iosApp/project.yml` and to the `iosApp` target's `dependencies:`. There are no SPM packages in the project today, so this adds the `packages:` key. Do not hand-edit the pbxproj; it is generated.
+`com.microsoft.onnxruntime:onnxruntime-android` in the version catalog, then
+`implementation(libs.onnxruntime.android)` in `androidApp`. Pin the version in
+the catalog like every other dependency here.
 
-- [ ] **Step 2: Regenerate and confirm the project still builds**
+- [ ] **Step 2: Decide bundle versus download, against the real numbers**
 
-Run: `cd iosApp && xcodegen generate`, then the existing simulator build.
-Expected: builds clean, and the app still launches. Adding a package that changes nothing observable is the correct outcome of this step.
+The Phase 1 set is TrackNet 22.7MB, InpaintNet 1.1MB and the detector 6.2MB at
+fp16: **30.0MB**, which bundles. Pose is 43.5MB and is Phase 2, so it is not in
+this build at all. Section 5.4's `models` bucket is therefore not needed for
+Stage 1, and the licence does not force it either - the checkpoints are MIT
+including commercial use, recorded in `tools/models/licenses/README.md`.
+
+Put the three graphs in `src/main/assets/models/`. Record the resulting APK
+size change; 30MB of assets is not free and someone should see the number.
 
 - [ ] **Step 3: Wrap the session**
 
-Keep the wrapper thin: model loading, input binding, output extraction. §8 says native Core ML and LiteRT are designed for but not built, so the wrapper should not leak ONNX types into callers, or that escape hatch closes.
+Thin: model loading from assets, input binding, output extraction. Section 8
+keeps native LiteRT as a designed-for escape hatch, so ONNX Runtime types must
+not leak into callers or that hatch closes.
 
-- [ ] **Step 4: Test against a trivial model**
+- [ ] **Step 4: Test on the device against a real graph**
 
-Commit a tiny identity ONNX model as a test resource and assert a known tensor round-trips. This proves the runtime is linked and the binding is correct without depending on TrackNet, so a failure here is unambiguous.
+An instrumented test that loads the bundled detector and runs one inference on
+a fixed input, asserting the output shape is `[1, 7, 8400]` - the shape the
+desktop export produced and which `tools/models/README.md` records. This is the
+first thing that proves the runtime works on the S23 rather than on a laptop.
 
-- [ ] **Step 5: Bundle the Phase 1 models and record the cost**
+**Do not feed it zeros.** Desktop measurement showed an all-zero image drives
+YOLO26's score-indexed postprocessing out of range and kills the run with
+`GatherElements op: Out of range value in index tensor`. Use seeded noise, as
+`measure_pose_throughput.py` does.
 
-Add the three fp16 graphs from `tools/models/onnx/` as bundled resources in `project.yml`. Record the resulting `.ipa` size increase; §5.4 makes bundling conditional on the models fitting "comfortably", and that is a decision someone has to make against a number, not a hope. If the total is too large, the same `models` bucket the pose model will use is the fallback - build the download path now rather than discovering the size problem at submission.
+- [ ] **Step 5: Attribution**
 
-- [ ] **Step 6: Stamp the model version**
+MIT requires the notice to travel with redistributed copies, and bundling these
+weights is redistribution. Add an attribution entry carrying
+`tools/models/licenses/TrackNetV3-LICENSE.txt`. This obligation is currently
+unmet and shipping without it is a licence violation, not an oversight.
 
-`ModelCatalog.version` must derive from the SHAs in `tools/models/manifest.json`, not a hand-typed string. It is what Task 16 writes into `results_meta` and what §5.4's re-anchoring rule keys on: a hand-typed version that someone forgets to bump makes a weights change invisible, and clip bounds then move with nothing recording why.
-
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add iosApp/project.yml iosApp/Sources/LocalAnalysis/OnnxSession.swift iosApp/Sources/LocalAnalysis/ModelCatalog.swift iosApp/Tests/OnnxSessionTests.swift
-git commit -m "feat: link ONNX Runtime and bundle the Phase 1 models"
+git add gradle/libs.versions.toml androidApp/build.gradle.kts androidApp/src/main/java/com/badmintontracker/android/localanalysis androidApp/src/androidTest androidApp/src/main/assets
+git commit -m "feat: link ONNX Runtime and bundle the Phase 1 models on Android"
 ```
 
 ---
 
 ## Task 11: The bounded pre-pass and the sequential decode pass
 
-Implements the correction recorded above: one bounded seek pre-pass of at most 300 frames for the median background, then one sequential frame-by-frame pass.
+Implements the correction recorded above: one bounded seek pre-pass of at most
+300 frames for the median background, then one sequential frame-by-frame pass.
 
 **Files:**
-- Create: `iosApp/Sources/LocalAnalysis/VideoFrameSource.swift`
-- Create: `iosApp/Tests/VideoFrameSourceTests.swift`
+- Create: `androidApp/src/main/java/com/badmintontracker/android/localanalysis/VideoFrameSource.kt`
+- Create: `androidApp/src/androidTest/java/com/badmintontracker/android/localanalysis/VideoFrameSourceTest.kt`
 
 **Interfaces:**
 - Produces:
-  - `func sampleFramesForBackground(url: URL, maxSamples: Int = 300) throws -> [[UInt8]]`
-  - `func forEachFrame(url: URL, _ body: (Int, Double, CVPixelBuffer) throws -> Void) throws`
+  - `fun sampleFramesForBackground(uri: Uri, maxSamples: Int = 300): List<ByteArray>`
+  - `fun forEachFrame(uri: Uri, body: (Int, Double, Image) -> Unit)`
 
 - [ ] **Step 1: Implement the sampling pre-pass**
 
-Sample indices exactly as production does: `np.linspace(0, total_frames - 1, min(total_frames, 300), dtype=int)` then unique (`inference.py:200-201`). `np.linspace` with `dtype=int` **truncates** rather than rounds, so reproduce truncation. Off-by-one here shifts which frames form the background, which changes the background, which changes every heatmap.
+`MediaMetadataRetriever` with `OPTION_CLOSEST_SYNC` is the wrong tool here: it
+snaps to keyframes, so the sampled set would be biased toward I-frames rather
+than spread evenly. Use `MediaExtractor.seekTo` with
+`SEEK_TO_CLOSEST_SYNC` plus decode-forward, or accept the keyframe bias only
+after measuring what it does to the median.
+
+Sample indices exactly as production does: `np.linspace(0, total_frames - 1,
+min(total_frames, 300))` then unique (`inference.py:200-201`). `np.linspace`
+with `dtype=int` **truncates** rather than rounds; reproduce truncation. Getting
+this wrong changes the background, which changes every heatmap.
 
 - [ ] **Step 2: Implement the sequential pass**
 
-`AVAssetReader` with a single pass, no seeking. Timestamps come from the sample buffer's presentation timestamp, per §5.2 - not computed as `frame / fps`, because on variable-frame-rate sources those disagree and the cloud's own timestamps come from the container.
+`MediaCodec` in asynchronous mode with `MediaExtractor`, one pass, no seeking.
+Timestamps come from the buffer's presentation time, per section 5.2 - not
+computed as `frame / fps`, because on variable-frame-rate sources those
+disagree and the cloud's own timestamps come from the container.
 
-- [ ] **Step 3: Test both**
+- [ ] **Step 3: Test both against known numbers**
 
-Commit a short fixture video. Tests must prove: the sampled indices match a hand-computed list for a known frame count; the sequential pass yields frames in order with no gaps; the frame count matches what Task 7 recorded; and presentation timestamps are non-decreasing.
+Push the corpus source video to the device. The desktop measurement recorded
+that this file decodes to **exactly 5972 frames**, matching both its container
+metadata and `results.json`'s `total_frames`, at fps 29.73572449542545. The
+instrumented test must reproduce that frame count. A different count on Android
+is a real finding, not a rounding difference: it shifts every frame index and
+therefore every rally boundary.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add iosApp/Sources/LocalAnalysis/VideoFrameSource.swift iosApp/Tests/VideoFrameSourceTests.swift
-git commit -m "feat: bounded background sampling and single sequential decode pass"
+git add androidApp/src/main/java/com/badmintontracker/android/localanalysis/VideoFrameSource.kt androidApp/src/androidTest
+git commit -m "feat: bounded background sampling and single sequential decode on Android"
 ```
 
 ---
 
-## Task 12: Model runners - TrackNet, InpaintNet, detector
+## Task 12: Preprocessing parity against production's OpenCV
+
+Was Task 7 in the iOS ordering, and it moves here because on Android it is a
+device test rather than a desktop one.
+
+Production decodes with OpenCV, resizes to 512x288 with `cv2.resize` at its
+default `INTER_LINEAR`, converts BGR to RGB, and scales by 1/255. Citations:
+`WIDTH = 512`, `HEIGHT = 288` at `inference.py:23-24`; resize and colour
+conversion at `inference.py:263-264`; the `/255.0` and CHW permute in
+`_frame_to_tensor` at `inference.py:471-474`.
 
 **Files:**
-- Create: `iosApp/Sources/LocalAnalysis/TrackNetRunner.swift`
-- Create: `iosApp/Sources/LocalAnalysis/DetectorRunner.swift`
-- Create: `iosApp/Tests/TrackNetRunnerTests.swift`
+- Create: `tools/models/check_decode_parity.py`
+- Create: `androidApp/src/main/java/com/badmintontracker/android/localanalysis/FramePreprocessor.kt`
+- Create: `androidApp/src/androidTest/java/com/badmintontracker/android/localanalysis/FramePreprocessorTest.kt`
 
-**Shapes**, from the predecessor plan's export task and `tools/models/README.md`:
-- TrackNet input `(1, 27, 288, 512)` - 8 sequence frames plus one background frame, 3 channels each - and output `(1, 8, 288, 512)`, one heatmap per input frame.
-- InpaintNet input `(1, 3, length)` with a **dynamic** length axis; production chunks with `chunk_size=256`, `stride=128` (`inference.py:367-368`) and pads to the next multiple of 8 (`inference.py:401`).
+- [ ] **Step 1: Write the Python reference side**
+
+`check_decode_parity.py` takes a video and frame indices, decodes with OpenCV
+exactly as production does, and writes each 512x288x3 RGB tensor as `.npy` plus
+a summary JSON. Sample at least 30 frames spread across the video, not the
+first 30: decoder differences concentrate at keyframe boundaries and after
+seeks.
+
+- [ ] **Step 2: Implement the Kotlin preprocessor**
+
+Resize explicitly rather than delegating to whatever `MediaCodec`'s output
+surface scaler does. Section 5.4: match the platform scaler to `INTER_LINEAR`
+or resize on the CPU, "rather than discovering the difference later as
+unexplained drift in shuttle positions". Choosing the platform scaler and
+hoping is the failure this task exists to prevent.
+
+`ImageFormat.YUV_420_888` to RGB is a second conversion production does not
+have - it decodes BGR and swaps. Get the YUV matrix right (BT.601 versus
+BT.709) or every pixel is off before any model sees it.
+
+- [ ] **Step 3: Compare and record**
+
+Write `tools/models/reports/decode-parity-s23.json` with, per sampled frame:
+mean absolute difference, max absolute difference, and the fraction of channel
+values differing by more than 1/255.
+
+**Threshold:** a mean absolute difference above `2/255` on any sampled frame
+means the pipelines disagree materially and must be reconciled before Task 13.
+Record the number either way; a passing measurement is the evidence that later
+shuttle drift is not a decode artifact.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add tools/models/check_decode_parity.py tools/models/reports androidApp/src/main/java/com/badmintontracker/android/localanalysis/FramePreprocessor.kt androidApp/src/androidTest
+git commit -m "test: pin Android decode and preprocessing against production's OpenCV"
+```
+
+---
+
+## Task 13: Model runners - TrackNet, InpaintNet, detector
+
+**Files:**
+- Create: `androidApp/src/main/java/com/badmintontracker/android/localanalysis/TrackNetRunner.kt`
+- Create: `androidApp/src/main/java/com/badmintontracker/android/localanalysis/DetectorRunner.kt`
+- Create: `androidApp/src/androidTest/java/com/badmintontracker/android/localanalysis/TrackNetRunnerTest.kt`
+
+**Shapes**, confirmed from the exported graphs on 2026-09-01:
+- TrackNet input `(1, 27, 288, 512)` fp32 I/O, output `(1, 8, 288, 512)`. 27 is
+  8 sequence frames plus one background frame, 3 channels each.
+- InpaintNet input `(1, 3, length)` with a **dynamic** length axis, output
+  `(1, 2, length)`. Production chunks with `chunk_size=256`, `stride=128`
+  (`inference.py:367-368`) and pads to the next multiple of 8
+  (`inference.py:401`).
+- Detector input `(1, 3, 640, 640)`, output `(1, 7, 8400)`.
 
 - [ ] **Step 1: Implement the TrackNet ring buffer**
 
-8-frame sequences with the background plane concatenated as the extra three channels, matching `bg_mode = "concat"`. The buffer advances by 8, not by 1: production processes `ceil(total_frames / seq_len)` sequences (`inference.py:163`).
+8-frame sequences with the median background concatenated as the extra three
+channels, matching `bg_mode = "concat"`. The buffer advances by 8, not by 1:
+production processes `ceil(total_frames / seq_len)` sequences
+(`inference.py:163`).
 
 - [ ] **Step 2: Handle the final partial sequence**
 
-The graph has static shapes, so a trailing partial sequence must be padded. Only the first `real_count` output planes correspond to real frames; the rest must be discarded, not emitted as frames. Emitting them fabricates shuttle positions past the end of the video.
+The graph has static shapes, so a trailing partial sequence must be padded.
+Only the first `real_count` output planes correspond to real frames; the rest
+must be discarded, not emitted. Emitting them fabricates shuttle positions past
+the end of the video.
 
-- [ ] **Step 3: Implement InpaintNet over the completed trajectory**
+- [ ] **Step 3: Use the Kotlin heatmap postprocessing from Task 9**
 
-Runs after the whole TrackNet pass, on the trajectory rather than per frame (`inference.py:169-172`). §5.4: it **raises** coverage by filling gaps, and coverage is what the shot-gap detector's 25 percent visibility gate consumes, so omitting it systematically lowers the coverage that decides whether a rally is accepted at all.
+`heatmapToCoord` from `:analysis`, not a reimplementation. This is the whole
+reason Android is first, and the golden vectors from Task 8 already hold it to
+production's Python.
 
-- [ ] **Step 4: Implement the detector runner**
+Scale coordinates back to source pixels with `w_scale = orig_w / 512` and
+`h_scale = orig_h / 288` (`inference.py:154-155`).
 
-The badminton detector at 640, per the predecessor plan's `export_yolo.py`. Its boxes go into `RawInference.boxes`.
+- [ ] **Step 4: Run InpaintNet over the completed trajectory**
 
-- [ ] **Step 5: Re-confirm coverage on the device path**
+After the whole TrackNet pass, on the trajectory rather than per frame
+(`inference.py:169-172`). Section 5.4: it **raises** coverage by filling gaps,
+and coverage is what the shot-gap detector's 25 percent visibility gate
+consumes, so omitting it systematically lowers the coverage that decides
+whether a rally is accepted at all.
 
-Run the whole thing on a corpus video and compare shuttle visibility rate against that video's `results.json`.
+**Use the fp32 InpaintNet if coverage looks wrong.** Desktop parity found the
+fp16 graph shifts 5.713 px-equivalent at length 128 - production's chunk stride
+- where fp32 is exact. That was synthetic input and inconclusive, so measure
+before deciding, but the fallback is 2.1MB against 1.1MB and nearly free.
 
-**This is not the 0a gate.** 0a is the predecessor plan's Task 4, run on desktop through `measure_shuttle_coverage.py`, and it must already have passed before Part C starts - it asks whether ONNX conversion preserved TrackNet. This step asks a different question: whether the *device* path preserves it too. Between them sit a different decoder, a different scaler and a second implementation of the blob detector, none of which desktop 0a exercises.
+- [ ] **Step 5: Measure coverage against the cloud on the device**
 
-So the two can disagree, and the direction of the disagreement is the diagnosis:
-- Desktop 0a passed and this fails: the conversion is fine and the fault is in the device path. Look at Task 7's decode parity first, then Task 13's Swift postprocessing against the shared vectors. Do not re-open the conversion.
-- Both fail: the conversion was the problem after all, and 0a's pass was measured on unrepresentative footage.
+Compare shuttle visibility rate against the corpus `results.json`. This is the
+0a gate re-confirmed on the device path, and it asks a different question from
+the desktop gate: between them sit a different decoder, a different scaler and
+NNAPI or XNNPACK rather than CPU.
 
-A failure here stops Stage 1 just as 0a would, but it is a bug to find rather than a project-level verdict.
+Desktop 0a passing and this failing means the fault is in the device path -
+check Task 12's decode parity first. Both failing means the conversion was the
+problem after all.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add iosApp/Sources/LocalAnalysis/TrackNetRunner.swift iosApp/Sources/LocalAnalysis/DetectorRunner.swift iosApp/Tests/TrackNetRunnerTests.swift
-git commit -m "feat: TrackNet, InpaintNet and detector runners on iOS"
+git add androidApp/src/main/java/com/badmintontracker/android/localanalysis androidApp/src/androidTest
+git commit -m "feat: TrackNet, InpaintNet and detector runners on Android"
 ```
 
 ---
 
-## Task 13: Swift shuttle postprocessing against the shared golden vector
+## Task 14: The Android `LocalInferenceEngine`
 
 **Files:**
-- Create: `iosApp/Sources/LocalAnalysis/HeatmapPeak.swift`
-- Create: `iosApp/Tests/HeatmapPeakTests.swift`
-- Modify: `iosApp/project.yml` - add the fixture directory as a test resource
+- Create: `androidApp/src/main/java/com/badmintontracker/android/localanalysis/AndroidLocalInferenceEngine.kt`
+- Create: `androidApp/src/androidTest/java/com/badmintontracker/android/localanalysis/AndroidLocalInferenceEngineTest.kt`
 
-- [ ] **Step 1: Read the same fixture**
+- [ ] **Step 1: Assemble the engine**
 
-Point the test at `analysis/src/commonTest/resources/shuttle/`. It must be the same bytes the Kotlin tests read, not a copy: two copies drift, and the entire justification for allowing a two-language implementation is that one fixture governs both.
+Satisfies `LocalInferenceEngine` from Task 6: background pre-pass, sequential
+decode, per-frame TrackNet ring buffer and detector, trajectory InpaintNet,
+coordinates scaled back to source pixels, emit `RawInference`.
 
-- [ ] **Step 2: Implement and assert every case**
+It computes no metric, assigns no `player_id`, decides no rally boundary -
+section 5.1. Those all live in `:analysis`, which this device can call directly.
 
-Same eight distinguishing cases as Task 9, same `1e-6` tolerance, 8-connected components.
+- [ ] **Step 2: Feed it through the coordinator built in Task 6**
 
-- [ ] **Step 3: Commit**
+`RallyApp.localAnalysisCoordinator(engine)`, the same factory the fake engine
+went through. If the real engine produces a `RawInference` the coordinator
+handles, the whole Part A computation path is now running on a phone with no
+new shared code.
 
-```bash
-git add iosApp/Sources/LocalAnalysis/HeatmapPeak.swift iosApp/Tests/HeatmapPeakTests.swift iosApp/project.yml
-git commit -m "feat: Swift shuttle postprocessing against the shared golden vectors"
-```
+- [ ] **Step 3: Assert the round trip in memory**
 
----
-
-## Task 14: The iOS `LocalInferenceEngine`
-
-**Files:**
-- Create: `iosApp/Sources/LocalAnalysis/RawInferenceWriter.swift`
-- Create: `iosApp/Sources/LocalAnalysis/IosLocalInferenceEngine.swift`
-- Create: `iosApp/Tests/RawInferenceWriterTests.swift`
-
-- [ ] **Step 1: Implement the writer**
-
-Byte-for-byte the Task 2 format.
-
-- [ ] **Step 2: Prove the two implementations agree**
-
-Write a `RawInference` from Swift, read it with the Kotlin decoder through the `Shared` framework, and assert equality field by field. A Swift-only round trip proves only that Swift is self-consistent; this pair is the actual contract.
-
-- [ ] **Step 3: Assemble the engine**
-
-Satisfies `LocalInferenceEngine` from Task 6: background pre-pass, sequential decode, per-frame TrackNet ring buffer and detector, trajectory InpaintNet, scale coordinates back to source pixels using `w_scale = orig_w / 512` and `h_scale = orig_h / 288` (`inference.py:154-155`), write `RawInference`. It computes no metric, assigns no `player_id`, decides no rally boundary - §5.1.
+`RawInferenceCodec.decode(RawInferenceCodec.encode(x)) == x` on real engine
+output. Cheaper than the cross-language test the iOS plan needed, and it still
+catches a writer that produces something the reader cannot take.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add iosApp/Sources/LocalAnalysis/RawInferenceWriter.swift iosApp/Sources/LocalAnalysis/IosLocalInferenceEngine.swift iosApp/Tests/RawInferenceWriterTests.swift
-git commit -m "feat: iOS local inference engine writing RawInference"
+git add androidApp/src/main/java/com/badmintontracker/android/localanalysis androidApp/src/androidTest
+git commit -m "feat: Android local inference engine producing RawInference"
 ```
 
 ---
 
 ## Task 15: Device-side clip cutting
 
-§5.4: frame-accurate boundaries need a re-encode, not a stream copy, for the same reason the cloud re-encodes.
+Section 5.4: frame-accurate boundaries need a re-encode, not a stream copy, for
+the same reason the cloud re-encodes.
 
 **Files:**
-- Create: `iosApp/Sources/LocalAnalysis/ClipCutter.swift`
-- Create: `iosApp/Tests/ClipCutterTests.swift`
+- Create: `androidApp/src/main/java/com/badmintontracker/android/localanalysis/ClipCutter.kt`
+- Create: `androidApp/src/androidTest/java/com/badmintontracker/android/localanalysis/ClipCutterTest.kt`
 
 **Interfaces:**
-- Produces: `func cut(source: URL, windows: [ClipWindow], into directory: URL) async throws -> [URL]`
+- Produces: `suspend fun cut(source: Uri, windows: List<ClipWindow>, into: File): List<File>`
 
-- [ ] **Step 1: Implement with `AVAssetWriter`**
+- [ ] **Step 1: Implement with `MediaCodec` plus `MediaMuxer`**
+
+Decode, re-encode, mux. A `MediaExtractor`-only stream copy cannot start on a
+non-keyframe, which is exactly what a rally boundary usually is.
 
 - [ ] **Step 2: Test boundary accuracy**
 
-Assert each output's duration is within one frame of `clipEnd - clipStart`, and that its first frame matches the source frame at `clipStart`. Duration alone passes for a clip cut at the wrong offset.
+Assert each output's duration is within one frame of `clipEnd - clipStart`, and
+that its first frame matches the source frame at `clipStart`. Duration alone
+passes for a clip cut at the wrong offset.
 
 - [ ] **Step 3: Handle overlapping windows**
 
-`refineRallies` can emit overlapping rallies and padding preserves the overlap - recorded in the design's section 6.1 and pinned by `Phase1PipelineTest.clip_windows_can_overlap_when_refinement_overlaps`. Two clips can therefore cover the same footage. The cutter must handle that rather than assume a monotonic non-overlapping sequence, and a test must cover it.
+`refineRallies` can emit overlapping rallies and padding preserves the overlap -
+recorded in design section 6.1 and pinned by
+`Phase1PipelineTest.clip_windows_can_overlap_when_refinement_overlaps`. Two
+clips can cover the same footage. The cutter must handle that rather than
+assume a monotonic non-overlapping sequence, and a test must cover it.
 
 - [ ] **Step 4: Generate thumbnails**
 
@@ -803,8 +941,8 @@ One per clip for the `thumbnails` bucket, matching what the cloud writes.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add iosApp/Sources/LocalAnalysis/ClipCutter.swift iosApp/Tests/ClipCutterTests.swift
-git commit -m "feat: device-side clip cutting with AVAssetWriter"
+git add androidApp/src/main/java/com/badmintontracker/android/localanalysis/ClipCutter.kt androidApp/src/androidTest
+git commit -m "feat: device-side clip cutting with MediaCodec and MediaMuxer"
 ```
 
 ---

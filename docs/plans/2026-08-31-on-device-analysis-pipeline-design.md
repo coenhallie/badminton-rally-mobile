@@ -642,8 +642,17 @@ produced entirely on device, syncing to Supabase, with measured agreement agains
 cloud. iOS first because its hardware range is narrower and the signal is
 cleaner.
 
-**Stage 2: Phase 1 on Android.** Only the platform layer is new. `:analysis` and
-the comparator are done and tested. This is the payoff for the §5.1 boundary.
+**Stage 2: Phase 1 on iOS.** Only the platform layer is new. `:analysis` and the
+comparator are done and tested. This is the payoff for the §5.1 boundary.
+
+**Revised 2026-09-01: stages 1 and 2 are swapped, Android goes first.** There
+is no iPhone available and there is a Galaxy S23. Beyond availability, Android
+is the better first target: `androidApp` is Kotlin, so `:analysis` runs on the
+device unchanged, which removes the one two-language implementation this design
+accepted in §5.4 and the shared golden vector that paid for it. The
+`RawInference` writer is also the reader, so its byte-order contract has one
+side rather than two. iOS then inherits a device interface already exercised
+against a real engine rather than only a fake.
 
 **Stage 3: Phase 2.** `:analysis` grows the identity tracker, pose
 classification, the speed and distance chain, and the ref §5.2 analytics, each with
