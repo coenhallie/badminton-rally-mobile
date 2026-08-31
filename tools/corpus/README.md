@@ -41,6 +41,46 @@ Service role is required because `results.json` sits behind per-owner
 storage RLS and capture needs to work for any video, not only the caller's
 own.
 
+### Local setup
+
+The `service_role` key bypasses row-level security entirely, so it is kept
+out of the repository and out of any shell history or transcript. Two things
+live under `~/.config/shuttl/`, both outside the git tree so neither can be
+committed by accident:
+
+- `corpus.env` (mode 600) - `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
+  The URL is not secret; it ships inside the apps. Only the key is.
+- `venv/` - a virtualenv holding just `supabase-py`.
+
+The venv exists because the host Python is the system 3.9 that also carries
+`torch`, `ultralytics`, `numpy` and `cv2` for the model tooling. Installing
+the Supabase client beside them risks resolving a shared transitive
+dependency to a different version and breaking the model scripts for a task
+that has nothing to do with them.
+
+```bash
+python3 -m venv ~/.config/shuttl/venv
+~/.config/shuttl/venv/bin/python -m pip install supabase
+```
+
+Then capture with:
+
+```bash
+set -a; source ~/.config/shuttl/corpus.env; set +a
+~/.config/shuttl/venv/bin/python tools/corpus/fetch_corpus.py <video_id> --out corpus
+```
+
+`set -a` exports what the file defines so the child process inherits it,
+without the key ever appearing on a command line where `ps` or a shell
+history file would capture it.
+
+Exit codes: `2` when the credentials are absent, `1` when the video id has no
+row, no `results_storage_path`, or the key is rejected. On any failure
+nothing is written to stdout, so a failed capture cannot be mistaken for an
+empty one.
+
+Or, with credentials already exported some other way:
+
 ```bash
 python tools/corpus/fetch_corpus.py <video_id> --out corpus
 ```
