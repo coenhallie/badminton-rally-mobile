@@ -32,3 +32,6 @@ supabase/.temp/
 # by tools/models/pull_weights.py and tools/models/export_tracknet.py)
 tools/models/weights/
 tools/models/onnx/
+
+# Decode parity reference tensors (10MB, regenerate with check_decode_parity.py)
+tools/models/reports/*.bin

@@ -597,6 +597,31 @@ correctly refuses to report a pass without one. That is the gate working: the
 two terms that had samples passed by wide margins, and the third is honestly
 reported as measuring nothing rather than quietly counted as a pass.
 
+### 6.4 The cloud decodes BT.709 footage with BT.601 coefficients
+
+Measured 2026-09-01 on the S23 against production's own output. The corpus
+video declares `color_space=bt709` and `color_range=tv`, but production's decode
+matches **BT.601 limited range**: mean absolute difference 1.56/255 against
+3.45 for BT.709 limited, 6.55 for BT.601 full and 8.05 for BT.709 full.
+
+OpenCV's `VideoCapture` converts YUV to BGR without passing the container's
+colour space to swscale, which falls back to BT.601. The device layer therefore
+uses BT.601 limited too. This is not a divergence: it is the port matching the
+cloud's implementation rather than the standard the file claims, which is what
+parity means.
+
+Recorded because it looks wrong and invites correction. Two reasonable guesses
+preceded the measurement - BT.601 full, then BT.709 limited on the strength of
+the file's metadata - and both were wrong. Anyone reading
+`FramePreprocessor.YuvMatrix` and "fixing" it to honour the container will
+reintroduce a mean error of 3.45/255 on every pixel of every frame.
+
+The obligation this creates: if the cloud ever moves off OpenCV to a
+colour-aware decoder, this default silently becomes wrong.
+`report_every_colour_conversion_against_production` prints all four variants on
+every run rather than only judging the chosen one, so the evidence is there
+whether or not anyone is looking for it.
+
 ### 6.1 Not divergences: cloud behaviour reproduced on purpose
 
 Found while porting, confirmed against the source, and deliberately kept. They
