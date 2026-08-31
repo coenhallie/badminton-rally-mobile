@@ -260,7 +260,13 @@ Expected: compilation failure.
 
 `:analysis` already has `kotlinx.serialization.json` on `commonMain` and the plugin applied, so no build change is needed.
 
-- [ ] **Step 4: Run and commit**
+- [ ] **Step 4: Add the reverse round trip - BLOCKED on a captured corpus**
+
+The tests above run the schema in the easy direction: this writer out, this reader back. The direction that actually bites is the other one, because the consumers are the web app and `fetch_corpus.py`, not this module. A field omitted from `AnalysisResult` round-trips perfectly through a writer that never emits it.
+
+So: parse a real captured `results.json` into `AnalysisResult`, re-serialise, and diff against the original JSON object keys. Any key present in the capture and absent from the re-serialisation is a field this type is missing. Gate it with `withCorpus()` so it skips loudly until a capture exists, and mark it in the commit as unrun.
+
+- [ ] **Step 5: Run and commit**
 
 Run: `./gradlew :analysis:jvmTest`
 
@@ -527,6 +533,8 @@ Keep it small enough to commit. At 512x288 float32 a single heatmap is 590KB, so
 
 `README.md` beside the fixture states which video, which weights SHA from `tools/models/manifest.json`, and the exact command. A golden vector whose origin is unrecorded cannot be regenerated when a model changes, and becomes unfalsifiable.
 
+Record **`total_frames` and the trim window** as well, not just the video name. `_compute_median_background` samples with `np.linspace(0, total_frames - 1, ...)`, so the sampled indices - and therefore the background, and therefore every heatmap in the fixture - depend on the frame count of the exact clip used. Regenerating from a differently-trimmed cut of the same source silently produces different vectors, and the Swift and Kotlin implementations would then be checked against a fixture nobody can reproduce.
+
 - [ ] **Step 4: Commit**
 
 ```bash
@@ -694,9 +702,17 @@ Runs after the whole TrackNet pass, on the trajectory rather than per frame (`in
 
 The badminton detector at 640, per the predecessor plan's `export_yolo.py`. Its boxes go into `RawInference.boxes`.
 
-- [ ] **Step 5: Test coverage against the cloud on one video**
+- [ ] **Step 5: Re-confirm coverage on the device path**
 
-Run the whole thing on a corpus video and compare shuttle visibility rate against that video's `results.json`. This is the 0a gate measured on-device rather than on desktop, and it is the number that decides whether Stage 1 is viable.
+Run the whole thing on a corpus video and compare shuttle visibility rate against that video's `results.json`.
+
+**This is not the 0a gate.** 0a is the predecessor plan's Task 4, run on desktop through `measure_shuttle_coverage.py`, and it must already have passed before Part C starts - it asks whether ONNX conversion preserved TrackNet. This step asks a different question: whether the *device* path preserves it too. Between them sit a different decoder, a different scaler and a second implementation of the blob detector, none of which desktop 0a exercises.
+
+So the two can disagree, and the direction of the disagreement is the diagnosis:
+- Desktop 0a passed and this fails: the conversion is fine and the fault is in the device path. Look at Task 7's decode parity first, then Task 13's Swift postprocessing against the shared vectors. Do not re-open the conversion.
+- Both fail: the conversion was the problem after all, and 0a's pass was measured on unrepresentative footage.
+
+A failure here stops Stage 1 just as 0a would, but it is a bug to find rather than a project-level verdict.
 
 - [ ] **Step 6: Commit**
 
