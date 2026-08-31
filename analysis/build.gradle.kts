@@ -27,6 +27,10 @@ kotlin {
             implementation(kotlin("test"))
             implementation(libs.kotest.assertions)
         }
+        // Corpus fixtures live beside the common tests that describe them,
+        // but only the JVM test target reads them off disk. Native has no
+        // classpath to read them from, so nativeTest stubs the loader out.
+        jvmTest { resources.srcDir("src/commonTest/resources") }
     }
 }
 
