@@ -22,6 +22,18 @@ rebased: an index in a fixture means the same thing it meant in the full
 capture, so a fixture is always a window onto a specific full corpus entry,
 never a renumbered clip.
 
+**`video.json` differs between the two.** The full capture's `video.json` is
+the entire `videos` table row, which carries production PII: `owner_id`,
+`title`, `player_labels` (real people's names), and `storage_path`. That is
+fine to keep locally - the full capture is never committed, see below - but
+`trim_corpus.py` projects `video.json` down to only `id` and
+`manual_court_keypoints` (the only field a fixture consumer reads today)
+before writing the trimmed, committed fixture. Do not hand-copy a full
+`video.json` into a fixture directory; always go through `trim_corpus.py`.
+
+Run both scripts from the repo root; their paths (`corpus/`,
+`analysis/src/commonTest/resources/corpus/`) are relative to it.
+
 ## How to capture
 
 Requires `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in the environment.

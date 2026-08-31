@@ -40,9 +40,22 @@ def main() -> int:
         if c["start_timestamp"] >= args.start and c["end_timestamp"] <= args.end
     ]
 
+    # Fixtures under this trimmed output get committed (see
+    # tools/corpus/README.md), but the full videos row captured by
+    # fetch_corpus.py carries production PII: owner_id, title, and
+    # player_labels (real people's names), plus storage_path. Project the
+    # row down to only what a fixture consumer actually reads today -
+    # manual_court_keypoints, for homography - plus id, before it lands in
+    # a committed fixture. Nothing else identifying goes into git history.
+    video = json.loads((src / "video.json").read_text())
+    video_fixture = {
+        "id": video.get("id"),
+        "manual_court_keypoints": video.get("manual_court_keypoints"),
+    }
+
     dst.mkdir(parents=True, exist_ok=True)
     (dst / "results.json").write_text(json.dumps(results))
-    (dst / "video.json").write_text((src / "video.json").read_text())
+    (dst / "video.json").write_text(json.dumps(video_fixture))
     (dst / "clips.json").write_text(json.dumps(clips))
     print(f"trimmed to {args.start}-{args.end}s: "
           f"{len(results['shuttle_positions'])} shuttle frames, "

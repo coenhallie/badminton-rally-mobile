@@ -25,9 +25,13 @@ def main() -> int:
 
     sb = create_client(url, key)
 
-    row = sb.table("videos").select("*").eq("id", args.video_id).single().execute().data
-    if not row:
-        print(f"no videos row for {args.video_id}", file=sys.stderr)
+    # postgrest's .single() raises (rather than returning an empty result) on
+    # zero matching rows, so the "no row" case surfaces as an exception here,
+    # not as a falsy .data.
+    try:
+        row = sb.table("videos").select("*").eq("id", args.video_id).single().execute().data
+    except Exception as e:
+        print(f"no videos row for {args.video_id}: {e}", file=sys.stderr)
         return 1
     if not row.get("results_storage_path"):
         print(f"{args.video_id} has no results_storage_path yet", file=sys.stderr)
@@ -48,6 +52,10 @@ def main() -> int:
     out = Path(args.out) / args.video_id
     out.mkdir(parents=True, exist_ok=True)
     (out / "results.json").write_text(json.dumps(results))
+    # Full videos row, PII and all (owner_id, title, player_labels,
+    # storage_path). Fine to keep locally - this directory is never
+    # committed (see tools/corpus/README.md) - but trim_corpus.py strips
+    # video.json down before writing a fixture that IS committed.
     (out / "video.json").write_text(json.dumps(row))
     (out / "clips.json").write_text(json.dumps(clips))
 
