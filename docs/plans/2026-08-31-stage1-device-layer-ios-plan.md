@@ -351,7 +351,7 @@ The rule, verbatim from §5.4: when a re-analysis moves a clip's bounds beyond a
 
 Returning null means the boundary did not move beyond epsilon and nothing should be written. `0.05` matches the neighbour-clamp guard already used in `refineRallies`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `ClipReanchoringTest` must prove:
 1. **A sub-epsilon move is a no-op:** a 0.01s shift returns null, so no transaction is opened and no rows are touched.
@@ -361,15 +361,15 @@ Returning null means the boundary did not move beyond epsilon and nothing should
 5. **An annotation past the new clip end is flagged the same way.**
 6. **`moved` and `flagged` partition the input** - assert their sizes sum to the input size, so nothing is dropped.
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `./gradlew :shared:jvmTest --tests "*ClipReanchoringTest*"`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Pure computation, no repository calls. The transaction that applies it belongs to Task 16; keeping the arithmetic separate is what makes these cases testable without Supabase.
 
-- [ ] **Step 4: Run and commit**
+- [x] **Step 4: Run and commit**
 
 ```bash
 git add shared/src/commonMain/kotlin/com/badmintontracker/shared/local/ClipReanchoring.kt shared/src/commonTest/kotlin/com/badmintontracker/shared/local/ClipReanchoringTest.kt
