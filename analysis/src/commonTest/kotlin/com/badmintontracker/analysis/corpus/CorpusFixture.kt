@@ -32,6 +32,12 @@ data class CorpusEntry(
     val cloudRallies: List<Rally>,
     val cloudClips: List<CloudClip>,
     val keypoints: CourtKeypoints?,
+    /**
+     * What badminton-tracker's own detectors produce for this fixture, stage
+     * by stage, as recorded by tools/corpus/make_stage_goldens.py. Empty when
+     * the fixture has no stages.json.
+     */
+    val stages: Map<String, List<Pair<Int, Int>>>,
 )
 
 /** Reads one fixture file, or null when the fixture is not present. */
@@ -110,6 +116,15 @@ fun loadCorpusEntryOrNull(name: String): CorpusEntry? {
             )
         },
         keypoints = keypointsRaw?.let { CourtKeypoints.fromMap(it) },
+        stages = readFixtureFileOrNull(name, "stages.json")
+            ?.let { Json.parseToJsonElement(it).jsonObject }
+            .orEmpty()
+            .mapValues { (_, v) ->
+                v.jsonArray.map { pair ->
+                    val a = pair.jsonArray
+                    a[0].jsonPrimitive.int to a[1].jsonPrimitive.int
+                }
+            },
     )
 }
 

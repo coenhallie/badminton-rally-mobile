@@ -119,12 +119,21 @@ class Phase1PipelineTest {
     // ---------------------------------------------------------------------
 
     @Test
-    fun matched_rallies_agree_with_the_cloud_exactly() = withCorpus("sample") { e ->
-        // Where the two agree on a rally, they agree on its bounds to the
-        // frame. That is the strong half of the result and the one worth
-        // guarding: a median delta of zero across 19 rallies says the ported
-        // shot detection, gradient detector, grouping and union reproduce the
-        // cloud's arithmetic rather than merely approximating it.
+    fun the_stored_rally_list_is_close_but_is_not_a_fidelity_check() = withCorpus("sample") { e ->
+        // Informational, deliberately. `results.json`'s rally list CANNOT be
+        // reproduced from a capture: it unions the gradient detector over the
+        // filtered track with the shot-gap detector over PHASE 1's
+        // skeleton_frames, and those are never persisted - Phase 2's full YOLO
+        // loop overwrites them (modal_supabase_processor.py:4642), and a
+        // phase1 capture has none. One input to the stored list is gone.
+        //
+        // Fidelity is checked by RallyStageParityTest, against the cloud's own
+        // detectors on identical inputs. What this records is how close the
+        // reconstruction lands anyway, and the shape of the difference: where
+        // the two agree on a rally they agree on its bounds to the frame,
+        // median start and end delta both 0.0s. The residual is the union
+        // merging rallies the stored list kept separate, which is the cloud's
+        // own union behaviour applied to a track it did not use.
         val report = compare(
             local = asResult(e, runOn(e).storedRallies),
             cloud = asResult(e, e.cloudRallies),
@@ -132,31 +141,6 @@ class Phase1PipelineTest {
         report.level2.matched shouldBe 19
         report.level2.medianStartDeltaSeconds shouldBe 0.0
         report.level2.medianEndDeltaSeconds shouldBe 0.0
-    }
-
-    @Test
-    fun the_rally_count_does_not_yet_match_the_cloud() = withCorpus("sample") { e ->
-        // NOT a passing comparison, and deliberately not written as one.
-        //
-        // The cloud finds 26 rallies here and this pipeline finds 20. Seven
-        // cloud rallies are unmatched, and the shape of the miss is welding:
-        // cloud rallies 2 through 5 arrive as a single local rally spanning
-        // frames 196 to 2510. One local rally, frames 5584 to 5663, matches
-        // nothing in the cloud.
-        //
-        // This is an OPEN DIVERGENCE, not an accepted one. It is pinned here
-        // so the numbers cannot drift unnoticed while it is investigated, and
-        // it is recorded in section 6.2 of the design as unexplained. When it
-        // is understood, this test either becomes an equality or the reason
-        // moves into the intentional-divergence register.
-        val report = compare(
-            local = asResult(e, runOn(e).storedRallies),
-            cloud = asResult(e, e.cloudRallies),
-        )
-        report.level2.cloudCount shouldBe 26
-        report.level2.localCount shouldBe 20
-        report.level2.unmatchedCloud.size shouldBe 7
-        report.level2.unmatchedLocal.size shouldBe 1
     }
 
     @Test
