@@ -398,7 +398,7 @@ The point of this task is that **the entire local pipeline becomes testable in C
   - `data class LocalAnalysisOutcome(val result: AnalysisResult, val clipWindows: List<ClipWindow>)`
   - `fun RallyApp.localAnalysisCoordinator(engine: LocalInferenceEngine, scope: CoroutineScope, log: (String) -> Unit = {}): LocalAnalysisCoordinator`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Build a `FakeLocalInferenceEngine` in `commonTest` returning a scripted `RawInference` - the two-exchange oscillating track already used by `Phase1PipelineTest` is a good source, and reusing it means the expected rally bounds are already known. The tests must prove:
 1. **A scripted track produces the rallies `:analysis` produces for it.** Assert exact rally bounds, matching what `runPhase1` returns for the same input - not a count.
@@ -407,17 +407,17 @@ Build a `FakeLocalInferenceEngine` in `commonTest` returning a scripted `RawInfe
 4. **An engine that throws surfaces as a failed outcome**, not a crash, and does not leave partial state.
 5. **`fps` from the header is normalised**: a header claiming `fps = 0.0` must produce rallies rather than an empty list, proving `normalizeFps` is on this path. This is the guard the cloud lacked.
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `./gradlew :shared:jvmTest --tests "*LocalAnalysisCoordinatorTest*"`
 
-- [ ] **Step 3: Implement the interface and coordinator**
+- [x] **Step 3: Implement the interface and coordinator**
 
 The coordinator must not do I/O or networking: it takes a `RawInference`, calls `runPhase1`, and returns the result and clip windows. Uploading is Task 16. This keeps the whole computation path in CI.
 
-- [ ] **Step 4: Add the factory to `RallyApp`**
+- [x] **Step 4: Add the factory to `RallyApp`**
 
-- [ ] **Step 5: Run and commit**
+- [x] **Step 5: Run and commit**
 
 Run: `./gradlew :shared:jvmTest :analysis:jvmTest :androidApp:testDebugUnitTest`
 

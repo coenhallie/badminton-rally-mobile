@@ -1,5 +1,7 @@
 package com.badmintontracker.shared
 
+import com.badmintontracker.shared.local.LocalAnalysisCoordinator
+import com.badmintontracker.shared.local.LocalInferenceEngine
 import com.badmintontracker.shared.localvideo.AnalyzeCoordinator
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
@@ -68,6 +70,21 @@ class RallyApp(
     // Matches scored on this phone. Local first, like the video registry above it:
     // a match is created and scored courtside, where there is usually no signal.
     val scoreLogs: ScoreLogsRepository = ScoreLogsRepository(client, settings, Clock.System::now)
+
+    /**
+     * Builds the on-device analyze pipeline. Both platforms call this rather
+     * than constructing a coordinator themselves, for the same reason as
+     * [analyzeCoordinator] below: the sequencing must not be able to differ
+     * per platform.
+     *
+     * The platform supplies only [engine] - decode and inference. Everything
+     * downstream of raw model output is shared code, which is what the
+     * section 5.1 boundary is for.
+     */
+    fun localAnalysisCoordinator(
+        engine: LocalInferenceEngine,
+        log: (String) -> Unit = {},
+    ): LocalAnalysisCoordinator = LocalAnalysisCoordinator(engine = engine, log = log)
 
     /**
      * Builds the analyze pipeline with the scoring link already wired in. Both
