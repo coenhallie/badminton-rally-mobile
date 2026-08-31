@@ -370,7 +370,16 @@ weights now carry a recorded SHA."
 
 ---
 
-## Task 3: Export TrackNet to ONNX and prove numerical parity
+## Task 3: Export TrackNet and InpaintNet to ONNX and prove numerical parity
+
+> **Amended 2026-08-31.** InpaintNet was added to this task. Production runs it
+> over the whole trajectory after TrackNet (`backend/tracknet/inference.py:170-173`)
+> to fill gaps, which **raises** shuttle coverage - and coverage is the quantity
+> the shot-gap detector's 25 percent visibility gate consumes. Omitting it would
+> systematically lower the coverage that decides whether a rally is accepted.
+> Export it the same way: `torch.onnx.export` at fp16, static shapes, with its own
+> parity check. It is a small 1D conv net (`model.py:153`), so the export is
+> cheaper than TrackNet's.
 
 Conversion fidelity on the desktop, before any device is involved. If the ONNX graph does not match PyTorch here, nothing downstream is worth measuring.
 
@@ -575,7 +584,19 @@ stay separate:
 
 **(a) The gate: conversion fidelity.** Run the same video through the **PyTorch**
 TrackNet and through the **ONNX fp16** model, applying byte-identical
-postprocessing to both, so the two sides differ only by the conversion. Report
+postprocessing to both, so the two sides differ only by the conversion.
+
+**Use production's own code as the PyTorch side.** Do not reimplement the
+postprocessing for this measurement. `TrackNetInference` is importable from the
+tracker repo, which this script already locates via `--tracker-repo`, and it
+carries the median-background computation (`inference.py:193-220`), the blob
+detection with its `max_area` filter and weighted centroid (`:477-505`), and the
+InpaintNet pass (`:170-173`). Subclass it and override only the model invocation
+so the ONNX side runs through the identical pipeline. A gate that compares two
+reimplementations measures the reimplementation; a gate that swaps one model
+inside production code measures the model. The current script approximates all
+three stages with a first-frame background and a plain argmax, and must be
+changed. Report
 per-frame visibility agreement, and the pixel-delta distribution over frames
 where both are visible. This is the pass/fail gate and it needs no cloud data at
 all. The exit code is driven by this section alone.

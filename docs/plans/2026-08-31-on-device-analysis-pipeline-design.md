@@ -297,6 +297,57 @@ the ordering.
 Sequential decode is not optional. Seeking per frame tens of thousands of times
 is pathologically slow on both platforms.
 
+**Shuttle postprocessing must reproduce production exactly, not approximate it.**
+Added 2026-08-31 after reading `backend/tracknet/inference.py` closely. The cloud's
+shuttle track is not a heatmap argmax. Three stages sit between the model and a
+coordinate, and an earlier draft of this design silently omitted all three:
+
+1. **Median background, not the first frame.** `bg_mode` is `concat`, so the model
+   takes a background plane as its extra three channels, and production computes
+   that as a pixel-wise **median over sampled frames**
+   (`inference.py:193-220`). A median removes everything that moves; a single
+   frame contains a player mid-swing. These are not interchangeable inputs.
+2. **Blob detection with an area filter and a weighted centroid, not argmax.**
+   `_heatmap_to_coord` (`inference.py:477-505`) thresholds at 0.5, runs connected
+   components, **rejects any blob larger than `max_area = 100`**, takes the
+   largest surviving blob, and returns its heatmap-weighted centroid. Three
+   behaviours argmax does not have: large spurious activations are rejected
+   rather than followed, the result is sub-pixel, and a frame whose only blobs
+   are oversized returns **not visible**, which argmax can never do.
+3. **InpaintNet trajectory gap-filling.** Production runs it over the whole
+   trajectory after TrackNet (`inference.py:170-173`). It **raises** shuttle
+   coverage by filling gaps, and coverage is the quantity the shot-gap detector's
+   25 percent visibility gate consumes. Omitting it does not merely change
+   positions, it systematically lowers the coverage that decides whether a rally
+   is accepted at all.
+
+All three are ported faithfully. InpaintNet is exported to ONNX alongside
+TrackNet and runs in the same pass.
+
+**Where they live.** Stages 1 and 2 stay in the platform layer, because they are
+tightly coupled to decoding and to the model output and would otherwise force
+per-frame heatmaps across the boundary. That is the one place this design accepts
+a two-language implementation, so it is bought with a shared golden vector: a
+committed fixture of model outputs and their expected coordinates that both the
+Swift and the Kotlin implementations must reproduce, plus a Python reference run
+from the production code itself. Stage 3 is trajectory-level rather than
+frame-level, so InpaintNet's input is small and its invocation belongs with the
+other model calls.
+
+**Decode and preprocessing are a fidelity surface too, and an unmeasured one.**
+Production decodes with OpenCV `VideoCapture`, resizes with `cv2.resize` to
+512 x 288 (default `INTER_LINEAR`), converts BGR to RGB, and scales by 1/255
+(`inference.py:472-474`). On device the decoder is `AVAssetReader` or
+`MediaCodec`, and the resize is whatever the platform's scaler does. Different
+interpolation, different colour conversion, and on some containers a different
+frame count, all feeding **every** model on **every** frame. This is upstream of
+the conversion question and is not covered by any gate in this plan.
+
+Pin it before the device layer is built: decode the same video both ways, and
+compare the resulting 512 x 288 RGB tensors directly. If they differ materially,
+match the platform scaler to `INTER_LINEAR` or resize on the CPU, rather than
+discovering the difference later as unexplained drift in shuttle positions.
+
 **Clip cutting.** `AVAssetWriter` on iOS, `MediaCodec` plus `MediaMuxer` on
 Android. Frame-accurate boundaries need a re-encode, not a stream copy, for the
 same reason the cloud re-encodes. Clip bounds are computed by `:analysis` from
@@ -359,6 +410,12 @@ videos without exporting anything.
 
 **Level 1, perception.** Did the models convert faithfully?
 
+These numbers are only interpretable *because* §5.4 reproduces production's
+postprocessing rather than approximating it. Against an argmax-and-first-frame
+approximation, a difference here would be dominated by the reimplementation and
+would say nothing about the conversion. §5.4's fidelity is what turns Level 1
+from noise into a measurement.
+
 - shuttle visibility rate, local versus cloud, as a percentage of frames. This is
   the ref §11.5 cliff metric and the single most important number in the exercise
 - shuttle position delta in pixels where both are visible
@@ -398,7 +455,13 @@ each entry is either excluded from the pass/fail judgement or annotated in the
 report. **Anything not on this list that differs is a bug.**
 
 1. **BoT-SORT dropped.** Identity runs on raw per-frame detections with the
-   `W_TRACK_ID` term removed and the other five weights unchanged (§3.2).
+   `W_TRACK_ID` term removed and the other five weights unchanged (§3.2). This is
+   the one divergence taken on judgement rather than on evidence, so it carries an
+   obligation the others do not: the harness must **quantify** what it costs, by
+   comparing per-player assignment against the cloud's on the same footage. If the
+   cost is non-zero, porting BoT-SORT into `:analysis` is additive, not a rewrite.
+   A divergence accepted for convenience and never measured is how fidelity is
+   lost quietly.
 2. **`_compute_analytics` aggregation dropped.** `speed_calc` is the only
    aggregation, resolving ref §8.10 rather than porting it.
 3. **Frame indexing done correctly.** No off-by-one between shuttle position and
