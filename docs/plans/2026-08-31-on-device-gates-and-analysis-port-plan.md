@@ -384,75 +384,45 @@ weights now carry a recorded SHA."
 Conversion fidelity on the desktop, before any device is involved. If the ONNX graph does not match PyTorch here, nothing downstream is worth measuring.
 
 **Files:**
-- Create: `tools/models/export_tracknet.py`
+- Create: `tools/models/export_tracknet.py` (exports both models)
 - Create: `tools/models/check_tracknet_parity.py`
+- Create: `tools/models/check_inpaintnet_parity.py`
 
 **Interfaces:**
 - Consumes: `tools/models/weights/tracknet.pt`, `inpaintnet.pt` from Task 2
-- Produces: `tools/models/onnx/tracknet.onnx` (fp16), and a parity report on stdout
+- Produces: `tools/models/onnx/tracknet.fp16.onnx` and
+  `tools/models/onnx/inpaintnet.fp16.onnx`, plus a parity report on stdout for
+  each. InpaintNet is exported with a **dynamic length axis**, because production
+  pads trajectory chunks to any multiple of 8 in [16, 256] (`inference.py:379`
+  breaks below 16, `:367` caps at 256, `:401` rounds to a multiple of 8). A static
+  export traced at 256 can bake `sizes` into its Resize nodes and then fail only
+  on a final short chunk, mid-gate, so the parity check sweeps the range rather
+  than testing the traced length alone.
 
 - [ ] **Step 1: Write the export script**
 
-```python
-#!/usr/bin/env python3
-"""TrackNetV3 to ONNX at fp16.
+Export **both** models to ONNX at fp16 from `tools/models/weights/`, reading
+`seq_len` and `bg_mode` out of the TrackNet checkpoint's `param_dict` rather than
+assuming them, and passing `weights_only=False` to `torch.load` for the reason
+recorded in Task 2.
 
-Input is (1, 27, 288, 512): seq_len=8 frames plus one background frame, three
-channels each, at the 512x288 the model was trained on. Output is
-(1, 8, 288, 512), one heatmap per input frame.
+TrackNet takes static shapes: `(1, in_dim, 288, 512)` where `in_dim` is
+`(seq_len + 1) * 3` under `bg_mode="concat"`, and returns `seq_len` heatmap
+planes. The mobile runtimes prefer static shapes and the sequence length is fixed
+by the checkpoint.
 
-Static shapes deliberately. The mobile runtimes prefer them, and the sequence
-length is fixed by the checkpoint anyway.
-"""
-import argparse, sys
-from pathlib import Path
+InpaintNet is the opposite case and this is the part worth getting right. Read
+`_run_inpaintnet` (`inference.py:338-430`) for its real input shape and dtype
+rather than guessing, and export it with a **dynamic length axis**. Production
+pads trajectory chunks to any multiple of 8 in [16, 256], so a static export
+traced at 256 can bake `sizes` into its `Resize` nodes; because the shape guards
+at `model.py:202,208,214` are traced away, such an export fails only on a final
+short chunk, part-way through a multi-minute gate run.
 
-import torch
+The implemented `tools/models/export_tracknet.py` is the source of truth for the
+details. This step specifies what must be exported and with which shape
+behaviour, not its line-by-line form.
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-
-
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--tracker-repo", required=True)
-    ap.add_argument("--out", default="tools/models/onnx/tracknet.onnx")
-    args = ap.parse_args()
-
-    sys.path.insert(0, str(Path(args.tracker_repo) / "backend"))
-    from tracknet.model import TrackNet
-
-    ckpt = torch.load("tools/models/weights/tracknet.pt", map_location="cpu")
-    params = ckpt.get("param_dict", {})
-    seq_len = params.get("seq_len", 8)
-    bg_mode = params.get("bg_mode", "concat")
-    in_dim = (seq_len + 1) * 3 if bg_mode == "concat" else seq_len * 3
-    print(f"seq_len={seq_len} bg_mode={bg_mode} in_dim={in_dim}")
-
-    model = TrackNet(in_dim=in_dim, out_dim=seq_len)
-    model.load_state_dict(ckpt["model"] if "model" in ckpt else ckpt)
-    model.eval()
-
-    dummy = torch.randn(1, in_dim, 288, 512)
-    out = Path(args.out)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    torch.onnx.export(
-        model, dummy, str(out),
-        input_names=["frames"], output_names=["heatmaps"],
-        opset_version=17, dynamic_axes=None,
-    )
-
-    # fp16 as a separate pass so the fp32 graph exists for the parity check.
-    import onnx
-    from onnxconverter_common import float16
-    m16 = float16.convert_float_to_float16(onnx.load(str(out)), keep_io_types=True)
-    onnx.save(m16, str(out.with_suffix(".fp16.onnx")))
-    print(f"wrote {out} and {out.with_suffix('.fp16.onnx')}")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
-```
 
 - [ ] **Step 2: Write the parity check**
 
@@ -575,7 +545,14 @@ asks: does the ONNX fp16 conversion preserve shuttle detection?
 
 **Interfaces:**
 - Consumes: `tools/models/onnx/tracknet.fp16.onnx`, `tools/models/weights/tracknet.pt`, a source video, and optionally a corpus entry from Task 1
-- Produces: a two-section report on stdout and `tools/models/reports/coverage-<name>.json`
+- Produces: a two-section report on stdout, and a JSON artifact under
+  `tools/models/reports/` named for the video **and the swap configuration**, so a
+  `--tracknet-only` isolation run cannot overwrite a deployed-config result. The
+  artifact carries a provenance block (video path, tracker-repo path and commit,
+  weights and ONNX paths, swap configuration) so a decision can be traced to its
+  inputs, plus `inpaintnet_shim_calls` - a deployed-config run that never invoked
+  the InpaintNet shim is not a pass, and both the exit code and the recorded
+  `gate_pass` say so.
 
 - [ ] **Step 1: Write the measurement script**
 
