@@ -7,3 +7,6 @@ actual fun readFixtureFileOrNull(name: String, file: String): String? {
 
 actual fun corpusIsRequired(): Boolean =
     System.getenv("ANALYSIS_REQUIRE_CORPUS") == "1"
+
+actual fun readResourceBytesOrNull(path: String): ByteArray? =
+    object {}.javaClass.getResourceAsStream(path)?.use { it.readBytes() }

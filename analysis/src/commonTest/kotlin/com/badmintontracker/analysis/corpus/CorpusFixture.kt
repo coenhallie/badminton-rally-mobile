@@ -46,6 +46,15 @@ data class CorpusEntry(
 expect fun readFixtureFileOrNull(name: String, file: String): String?
 
 /**
+ * Reads a test resource as bytes, or null when absent.
+ *
+ * Separate from the text reader because the shuttle vectors are float32
+ * heatmaps: decoding them as a string would corrupt every value that happens
+ * not to be valid UTF-8.
+ */
+expect fun readResourceBytesOrNull(path: String): ByteArray?
+
+/**
  * Whether a missing corpus should fail rather than skip.
  *
  * Off by default so the suite runs on a checkout with no captured corpus,

@@ -519,17 +519,17 @@ And the median background, from `_compute_median_background` at `inference.py:19
 7. An all-zero heatmap - not visible.
 8. A blob whose weighted centroid differs measurably from its geometric centroid, proving the weighting is applied.
 
-- [ ] **Step 1: Write the generator**
+- [x] **Step 1: Write the generator**
 
 `make_shuttle_vectors.py` imports `_heatmap_to_coord` from the production module - do not reimplement it - runs it over both real heatmaps captured from a TrackNet run and the synthetic cases above, and writes the three fixture files.
 
 Real heatmaps and synthetic cases both: the synthetic ones pin the branch behaviour precisely, the real ones prove the branches are reachable with actual model output.
 
-- [ ] **Step 2: Generate and commit the fixture**
+- [x] **Step 2: Generate and commit the fixture**
 
 Keep it small enough to commit. At 512x288 float32 a single heatmap is 590KB, so store the synthetic cases at a reduced size and no more than four real ones.
 
-- [ ] **Step 3: Record provenance**
+- [x] **Step 3: Record provenance**
 
 `README.md` beside the fixture states which video, which weights SHA from `tools/models/manifest.json`, and the exact command. A golden vector whose origin is unrecorded cannot be regenerated when a model changes, and becomes unfalsifiable.
 
@@ -561,7 +561,7 @@ The Kotlin half exists for the desktop comparator path and as the reference the 
   - `fun heatmapToCoord(heatmap: FloatArray, width: Int, height: Int, threshold: Float = 0.5f, maxArea: Int = 100): HeatmapCoord`
   - `fun medianBackground(frames: List<ByteArray>, pixelCount: Int): ByteArray`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Load the Task 8 fixture and assert every case matches to `1e-6` relative. Add, as ordinary unit tests that run without the fixture, the eight distinguishing cases from Task 8 constructed by hand - so the branch behaviour is covered in CI even before a real capture exists.
 
@@ -571,7 +571,7 @@ Connected components must be 8-connected: `cv2.connectedComponentsWithStats` def
 
 Run: `./gradlew :analysis:jvmTest --tests "*HeatmapPeakTest*"`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `medianBackground` must truncate, matching `.astype(np.uint8)` at `inference.py:219`. For an even sample count `np.median` averages the two middle values and the result can be fractional, so the truncation is observable. Include a test with an even number of frames whose median is fractional.
 
@@ -972,7 +972,7 @@ git commit -m "feat: device-side clip cutting with MediaCodec and MediaMuxer"
 - Create: `shared/src/commonTest/kotlin/com/badmintontracker/shared/local/LocalSyncPipelineTest.kt`
 - Modify: `shared/src/commonMain/kotlin/com/badmintontracker/shared/local/LocalAnalysisCoordinator.kt`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Against the existing fake Supabase client used by `AnalyzeCoordinatorTest`. Must prove:
 1. Clips upload to `clips`, thumbnails to `thumbnails`, `results.json` to `results`.

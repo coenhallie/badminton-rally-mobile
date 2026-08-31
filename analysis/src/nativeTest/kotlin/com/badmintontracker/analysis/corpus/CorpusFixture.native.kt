@@ -13,3 +13,5 @@ package com.badmintontracker.analysis.corpus
 actual fun readFixtureFileOrNull(name: String, file: String): String? = null
 
 actual fun corpusIsRequired(): Boolean = false
+
+actual fun readResourceBytesOrNull(path: String): ByteArray? = null
