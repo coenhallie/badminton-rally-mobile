@@ -27,3 +27,8 @@ iosApp/Config/Supabase.xcconfig
 .DS_Store
 .claude/
 supabase/.temp/
+
+# On-device model weights and conversion output (large binaries, reproduced
+# by tools/models/pull_weights.py and tools/models/export_tracknet.py)
+tools/models/weights/
+tools/models/onnx/
