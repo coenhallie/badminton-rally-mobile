@@ -342,10 +342,11 @@ step's output:
    All six graphs load and run under ONNX Runtime 1.19.2, and the
    CoreMLExecutionProvider accepts them, which is the relevant signal for iOS.
 
-   **93.1 MB of fp16 for all three is too much to bundle**, and Phase 1 needs
-   only the detector: 6.2 MB, which bundles comfortably. Pose is Phase 2 and
-   downloads from the `models` bucket per section 5.4, which this measurement
-   supports rather than contradicts.
+   These are three of the five models. **The Phase 1 bundle size is still
+   unknown**, because Phase 1 also needs TrackNet and InpaintNet and neither
+   has been exported - they are the two that require Modal. The
+   bundle-versus-download call in section 5.4 needs those numbers before it
+   can be made.
 
    Two things this run pinned that were previously assumptions:
 
@@ -418,9 +419,11 @@ run as part of this change:
   onnxconverter-common. `torch` 2.8.0, `ultralytics` 8.4.8, `numpy` 2.0.2 and
   `cv2` 4.13.0 were already present and are unchanged by the install.
   `export_tracknet.py` still imports `onnxconverter_common` for TrackNet and
-  InpaintNet - note that path is UNVERIFIED, since the converter turned out to
-  produce unloadable graphs for every YOLO model tried. Expect to need the
-  same treatment there.
+  InpaintNet, and that path should be treated as **expected to fail**, not
+  merely unverified: the converter produced an unloadable graph for every
+  model tried here, the failure was at a Resize node, and TrackNet upsamples
+  too. Check it first when Modal access exists; it probably needs the same
+  change away from the converter.
 - No source `.mp4` or corpus exists (Task 4 cannot measure)
 - No physical device is reachable, and no host app embedding ONNX Runtime
   exists (Task 5 cannot produce the on-device numbers that decide the

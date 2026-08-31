@@ -487,6 +487,16 @@ report. **Anything not on this list that differs is a bug.**
    the golden comparison says whether it moves any boundary. Revisit as soon as
    a corpus exists.
 
+5. **The fp16 conversion route in `export_tracknet.py` is expected to fail.**
+   Not a divergence yet, but the same class of problem and recorded here so it
+   is not rediscovered on a device. `onnxconverter_common.float16` produced a
+   graph ONNX Runtime refuses to load for every YOLO model tried on
+   2026-09-01, failing at a Resize node, and `keep_io_types`,
+   `disable_shape_infer` and an `op_block_list` all failed to avoid it.
+   `export_yolo.py` moved to Ultralytics' own `half=True` instead.
+   `export_tracknet.py` still uses the converter, and TrackNet upsamples, so
+   it is the first thing to check once the Modal weights exist.
+
 This register lives here and grows as more are found.
 
 ### 6.2 Resolved: the apparent rally welding was a comparison error
