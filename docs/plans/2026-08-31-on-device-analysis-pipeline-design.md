@@ -487,15 +487,28 @@ report. **Anything not on this list that differs is a bug.**
    the golden comparison says whether it moves any boundary. Revisit as soon as
    a corpus exists.
 
-5. **The fp16 conversion route in `export_tracknet.py` is expected to fail.**
-   Not a divergence yet, but the same class of problem and recorded here so it
-   is not rediscovered on a device. `onnxconverter_common.float16` produced a
-   graph ONNX Runtime refuses to load for every YOLO model tried on
-   2026-09-01, failing at a Resize node, and `keep_io_types`,
-   `disable_shape_infer` and an `op_block_list` all failed to avoid it.
-   `export_yolo.py` moved to Ultralytics' own `half=True` instead.
-   `export_tracknet.py` still uses the converter, and TrackNet upsamples, so
-   it is the first thing to check once the Modal weights exist.
+5. **`onnxconverter_common.float16` fails on the YOLO graphs but not on
+   TrackNet or InpaintNet.** Recorded because the boundary is not obvious.
+   On 2026-09-01 the converter produced graphs ONNX Runtime refuses to load
+   for every YOLO model, failing at a Resize node, and `keep_io_types`,
+   `disable_shape_infer` and an `op_block_list` all failed to avoid it;
+   `export_yolo.py` uses Ultralytics' own `half=True` instead. This was
+   predicted to break TrackNet too, since it upsamples. **It does not** -
+   TrackNet and InpaintNet convert through the same code and both load and
+   run. So `export_tracknet.py` is correct as written, and the failure is
+   specific to how the YOLO exports build their Resize nodes rather than to
+   the converter in general.
+
+6. **InpaintNet fp16 has a precision-sensitive case.** On the seeded synthetic
+   sweep the fp32 ONNX graph is exact at every length (0.000 px-equivalent),
+   while the fp16 graph shifts 0.074 px at length 16 and **5.713 px at length
+   128** - and 128 is production's chunk stride (`inference.py:368`), so that
+   length really occurs. At 512x288 that is roughly 21 px once scaled to
+   1080p. The input is synthetic, which the check's own docstring calls
+   inconclusive, so this is a flag rather than a verdict: watch it in the 0a
+   coverage numbers, where InpaintNet's real contribution is measurable, and
+   fall back to the fp32 InpaintNet if it shows there. It is 2.1MB against
+   1.1MB, so that fallback is nearly free.
 
 This register lives here and grows as more are found.
 
