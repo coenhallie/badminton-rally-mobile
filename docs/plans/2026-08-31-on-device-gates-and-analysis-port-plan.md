@@ -712,7 +712,7 @@ if __name__ == "__main__":
     raise SystemExit(main())
 ```
 
-- [ ] **Step 2: Run the export**
+- [x] **Step 2: Run the export**
 
 Run: `python tools/models/export_yolo.py`
 Expected: three files written, sizes printed. Record the byte sizes in the README; they decide bundle-versus-download (§5.4).
