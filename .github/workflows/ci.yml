@@ -16,7 +16,7 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
-      - run: ./gradlew :shared:jvmTest
+      - run: ./gradlew :shared:jvmTest :analysis:jvmTest
 
   ios-framework:
     runs-on: macos-14
