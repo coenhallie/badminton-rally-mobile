@@ -163,10 +163,8 @@ class FramePreprocessorTest {
 
         VideoFrameSource(vid!!).forEachFrame { index, _, image ->
             val expected = reference.frames[index] ?: return@forEachFrame
-            FramePreprocessor.toRgb(image, rgbFull)
-            FramePreprocessor.resize(
-                rgbFull, image.width, image.height, resized, reference.width, reference.height
-            )
+            // The fused path, which is what the runner uses.
+            FramePreprocessor.toRgbResized(image, resized, reference.width, reference.height)
             var sum = 0L
             var worst = 0
             for (i in resized.indices) {

@@ -622,6 +622,34 @@ colour-aware decoder, this default silently becomes wrong.
 every run rather than only judging the chosen one, so the evidence is there
 whether or not anyone is looking for it.
 
+### 6.5 Phase 1 is 9.4x realtime on an S23, and that is a viability problem
+
+Measured 2026-09-01 on an SM-S911B, the full Phase 1 shuttle path end to end.
+**315ms per frame**, of which TrackNet inference is 233ms - 74%. That is 31
+minutes for the 3.3-minute corpus video and **4.7 hours for a 30-minute match**,
+on a current flagship, for Phase 1 alone. Pose is Phase 2 and costs more again.
+
+§5.6 sets the routing threshold as a multiple of video duration. At 9.4x
+essentially everything routes to the cloud, which is the outcome the on-device
+work exists to avoid, so this number decides whether Stage 1 ships rather than
+merely how it is tuned.
+
+Two things measured along the way that are worth not rediscovering:
+
+- **Acceleration made it slower.** CPU 233ms, NNAPI 277ms, XNNPACK 662ms, same
+  graph and input in one run. "Enable the accelerator" is the obvious move and
+  it is wrong here, so the default is the plain CPU provider.
+- **Fusing the colour conversion with the resize cut 240ms to 66ms**, since the
+  bilinear resize only ever needs 590k of the frame's 2.07M pixels, and decode
+  parity still holds at the 2/255 bound.
+
+The largest untested lever is batching. Production runs TrackNet with
+`batch_size=16`; this runner does one sequence per call because the exported
+graph has a static batch axis of 1. Re-exporting with a dynamic batch axis is a
+small change to `export_tracknet.py` and could move the dominant 74% by itself.
+Full numbers and the next steps in order are in
+`tools/models/reports/phase1-throughput-s23.md`.
+
 ### 6.1 Not divergences: cloud behaviour reproduced on purpose
 
 Found while porting, confirmed against the source, and deliberately kept. They

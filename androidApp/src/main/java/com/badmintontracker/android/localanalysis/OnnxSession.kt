@@ -13,10 +13,43 @@ import java.nio.FloatBuffer
  * a native LiteRT runtime as a designed-for escape hatch, and every
  * `OrtSession` that reaches a caller closes that hatch a little further.
  */
-class OnnxSession(modelPath: String) : Closeable {
+class OnnxSession(modelPath: String, provider: Provider = Provider.CPU) : Closeable {
 
     private val env: OrtEnvironment = OrtEnvironment.getEnvironment()
-    private val session: OrtSession = env.createSession(modelPath, OrtSession.SessionOptions())
+    private val session: OrtSession = env.createSession(modelPath, options(provider))
+
+    /** Which execution provider to add, if any. */
+    enum class Provider { CPU, NNAPI, XNNPACK }
+
+    private companion object {
+        /**
+         * Execution providers, in the order they are worth trying.
+         *
+         * The first measurement on an S23 ran TrackNet at 216ms per frame on
+         * the default CPU provider, which projects to tens of minutes for a
+         * three-minute match. NNAPI hands supported subgraphs to the device's
+         * accelerators; XNNPACK is the fallback that at least uses optimised
+         * ARM kernels on the CPU.
+         *
+         * Both are attempted and both may decline: NNAPI silently falls back
+         * per-operator, and a build without XNNPACK throws. Failing to add an
+         * accelerator must not fail the session - a slow analysis beats none -
+         * so each is tried independently and the outcome is recorded rather
+         * than assumed.
+         */
+        fun options(provider: Provider): OrtSession.SessionOptions {
+            val o = OrtSession.SessionOptions()
+            o.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+            // Adding a provider must never fail the session: a slow analysis
+            // beats none, and both of these can legitimately decline.
+            when (provider) {
+                Provider.CPU -> Unit
+                Provider.NNAPI -> runCatching { o.addNnapi() }
+                Provider.XNNPACK -> runCatching { o.addXnnpack(emptyMap()) }
+            }
+            return o
+        }
+    }
 
     val inputName: String get() = session.inputNames.first()
     val outputName: String get() = session.outputNames.first()

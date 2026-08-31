@@ -83,8 +83,12 @@ class VideoFrameSource(private val file: File) {
      * timestamps too.
      *
      * The image is only valid for the duration of the call.
+     *
+     * [maxFrames] stops the pass early. Present for bounded measurement on a
+     * device, not for production use: a partial track would silently produce
+     * rallies for part of a match.
      */
-    fun forEachFrame(body: (Int, Double, android.media.Image) -> Unit) {
+    fun forEachFrame(maxFrames: Int = Int.MAX_VALUE, body: (Int, Double, android.media.Image) -> Unit) {
         val extractor = MediaExtractor()
         extractor.setDataSource(file.path)
         val track = (0 until extractor.trackCount).first { i ->
@@ -135,6 +139,7 @@ class VideoFrameSource(private val file: File) {
                     }
                     codec.releaseOutputBuffer(outIndex, false)
                     if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) sawOutputEos = true
+                    if (frameIndex >= maxFrames) sawOutputEos = true
                 }
             }
         } finally {
