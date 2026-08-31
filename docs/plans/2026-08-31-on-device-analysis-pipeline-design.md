@@ -548,6 +548,55 @@ to 0.4s, both fail it.
 cannot serve as a fidelity oracle no matter how authoritative it looks. Compare
 against the source implementation on inputs you control.
 
+### 6.3 InpaintNet contributes nothing on the footage measured so far
+
+The 0a gate was run on two real videos on 2026-09-01. TrackNet's conversion is
+excellent on both. **InpaintNet filled zero frames on both**, and the cause is
+not the ONNX conversion.
+
+| | 743d7fb1 (29.7fps) | 2eabfc01 (25fps) |
+|---|---|---|
+| frames | 5972 | 12032 |
+| visibility agreement, torch vs ONNX | 0.99983 | **1.0** |
+| p95 delta, 512x288 | 0.00012 px | 0.00017 px |
+| TrackNet coverage | 44.2% | 65.1% |
+| InpaintNet invocations | 46 | 94 |
+| **frames InpaintNet actually filled** | **0** | **0** |
+
+`inpainted_frames_torch` is empty too, so **production's own PyTorch path fills
+nothing either**. This is not a conversion artifact.
+
+Measured directly against the model rather than inferred. Feeding a real
+trajectory through InpaintNet and applying `_run_inpaintnet`'s own acceptance
+tests (`inference.py`), of 17,957 gap frames offered:
+
+- 17,310 rejected because `pred_x` or `pred_y` was at or below 0.01
+- 643 rejected as outside the unit square
+- **4 passed**
+
+The predictions are degenerate, pinned to the corners: median `pred_x` 0.0000,
+median `pred_y` 1.0000. Production's bounds and continuity checks are correctly
+discarding garbage.
+
+**What this changes.** §5.4 says InpaintNet "**raises** shuttle coverage by
+filling gaps" and that omitting it "systematically lowers the coverage that
+decides whether a rally is accepted at all". On this footage that is simply not
+true - it raises coverage by nothing. Coverage is 44% and 65%, far above the
+25% visibility gate, without any inpainting at all.
+
+**What it does not settle.** Two videos, one source. Whether InpaintNet is
+broken for everyone, broken for this camera setup, or fine on footage with
+different gap structure is not established. Do not drop it from the pipeline on
+this evidence; the cost of keeping it is 1.1MB and one pass over a trajectory.
+Do treat the §5.4 claim as unproven, and re-check on footage with sparser
+detections.
+
+**It also means the 0a gate cannot fully pass on this footage.** Its
+`inpaint_scoped` term needs at least one filled frame to measure anything, and
+correctly refuses to report a pass without one. That is the gate working: the
+two terms that had samples passed by wide margins, and the third is honestly
+reported as measuring nothing rather than quietly counted as a pass.
+
 ### 6.1 Not divergences: cloud behaviour reproduced on purpose
 
 Found while porting, confirmed against the source, and deliberately kept. They
