@@ -194,7 +194,7 @@ git commit -m "feat: depend :shared on :analysis and bridge the keypoint types"
 
 Coordinates are in **source-video pixels**, already scaled back from model input size the way `inference.py:154-155` does with `w_scale = orig_w / WIDTH` and `h_scale = orig_h / HEIGHT`. Putting model-space coordinates in this file would push a scaling responsibility across the boundary that §5.1 says belongs to the platform layer.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `RawInferenceCodecTest` must prove:
 1. **Round trip.** A `RawInference` with two frames - one carrying a shuttle and two boxes, one carrying neither - encodes and decodes to an equal value. Use distinct non-round values in every numeric field (for example `x = 123.45f`, `timestamp = 1.0 / 3.0`) so a field-order swap cannot pass.
@@ -203,21 +203,21 @@ Coordinates are in **source-video pixels**, already scaled back from model input
 4. **Absent shuttle survives.** A frame with `shuttle = null` decodes back to null, distinct from a frame with a shuttle whose `visible` is false. Those two mean different things: no model output at all, versus a model output that resolved to no blob.
 5. **A zero-person frame is one int32.** Assert the encoded size of a frame with no persons equals the header-independent size you compute by hand. This is the assertion that keeps Stage 3 from needing a format version bump.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `./gradlew :analysis:jvmTest --tests "*RawInferenceCodecTest*"`
 Expected: compilation failure.
 
-- [ ] **Step 3: Implement the codec**
+- [x] **Step 3: Implement the codec**
 
 Kotlin multiplatform has no `ByteBuffer`. Write the byte handling by hand over a `ByteArray`; both targets must produce identical bytes, so do not reach for a platform-specific buffer type through `expect`/`actual`.
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `./gradlew :analysis:jvmTest :analysis:iosSimulatorArm64Test`
 Expected: PASS on both. The iOS target matters here specifically: this is the format Swift will write.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add analysis/src/commonMain/kotlin/com/badmintontracker/analysis/raw analysis/src/commonTest/kotlin/com/badmintontracker/analysis/raw
