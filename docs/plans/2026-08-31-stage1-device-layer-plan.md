@@ -635,13 +635,13 @@ and numerically verified, and a source video is available.
   - `class OnnxSession(modelPath: String) : Closeable` with `fun run(inputs: Map<String, FloatArray>, shapes: Map<String, LongArray>): Map<String, FloatArray>`
   - `object ModelCatalog { fun path(model: Model): String; val version: String }`
 
-- [ ] **Step 1: Add the dependency**
+- [x] **Step 1: Add the dependency**
 
 `com.microsoft.onnxruntime:onnxruntime-android` in the version catalog, then
 `implementation(libs.onnxruntime.android)` in `androidApp`. Pin the version in
 the catalog like every other dependency here.
 
-- [ ] **Step 2: Decide bundle versus download, against the real numbers**
+- [x] **Step 2: Decide bundle versus download, against the real numbers**
 
 **Measured 2026-09-01.** The models cost 28.5MB in the APK, and Pose is
 absent because it is Phase 2. But the models are not the expensive part:
@@ -668,13 +668,13 @@ force a download either: the checkpoints are MIT including commercial use, per
 Put the three graphs in `src/main/assets/models/`. Record the resulting APK
 size change; 30MB of assets is not free and someone should see the number.
 
-- [ ] **Step 3: Wrap the session**
+- [x] **Step 3: Wrap the session**
 
 Thin: model loading from assets, input binding, output extraction. Section 8
 keeps native LiteRT as a designed-for escape hatch, so ONNX Runtime types must
 not leak into callers or that hatch closes.
 
-- [ ] **Step 4: Test on the device against a real graph**
+- [x] **Step 4: Test on the device against a real graph**
 
 An instrumented test that loads the bundled detector and runs one inference on
 a fixed input, asserting the output shape is `[1, 7, 8400]` - the shape the
@@ -686,7 +686,7 @@ YOLO26's score-indexed postprocessing out of range and kills the run with
 `GatherElements op: Out of range value in index tensor`. Use seeded noise, as
 `measure_pose_throughput.py` does.
 
-- [ ] **Step 5: Attribution**
+- [x] **Step 5: Attribution**
 
 MIT requires the notice to travel with redistributed copies, and bundling these
 weights is redistribution. Add an attribution entry carrying
@@ -716,7 +716,7 @@ Implements the correction recorded above: one bounded seek pre-pass of at most
   - `fun sampleFramesForBackground(uri: Uri, maxSamples: Int = 300): List<ByteArray>`
   - `fun forEachFrame(uri: Uri, body: (Int, Double, Image) -> Unit)`
 
-- [ ] **Step 1: Implement the sampling pre-pass**
+- [x] **Step 1: Implement the sampling pre-pass**
 
 `MediaMetadataRetriever` with `OPTION_CLOSEST_SYNC` is the wrong tool here: it
 snaps to keyframes, so the sampled set would be biased toward I-frames rather
@@ -729,14 +729,14 @@ min(total_frames, 300))` then unique (`inference.py:200-201`). `np.linspace`
 with `dtype=int` **truncates** rather than rounds; reproduce truncation. Getting
 this wrong changes the background, which changes every heatmap.
 
-- [ ] **Step 2: Implement the sequential pass**
+- [x] **Step 2: Implement the sequential pass**
 
 `MediaCodec` in asynchronous mode with `MediaExtractor`, one pass, no seeking.
 Timestamps come from the buffer's presentation time, per section 5.2 - not
 computed as `frame / fps`, because on variable-frame-rate sources those
 disagree and the cloud's own timestamps come from the container.
 
-- [ ] **Step 3: Test both against known numbers**
+- [x] **Step 3: Test both against known numbers**
 
 Push the corpus source video to the device. The desktop measurement recorded
 that this file decodes to **exactly 5972 frames**, matching both its container
