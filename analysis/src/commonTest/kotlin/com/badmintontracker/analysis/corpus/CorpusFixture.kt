@@ -38,6 +38,8 @@ data class CorpusEntry(
      * the fixture has no stages.json.
      */
     val stages: Map<String, List<Pair<Int, Int>>>,
+    /** Which badminton-tracker commit produced [stages]. Null when absent. */
+    val stagesTrackerCommit: String?,
 )
 
 /** Reads one fixture file, or null when the fixture is not present. */
@@ -59,6 +61,8 @@ fun loadCorpusEntryOrNull(name: String): CorpusEntry? {
     val videoText = readFixtureFileOrNull(name, "video.json") ?: return null
     val clipsText = readFixtureFileOrNull(name, "clips.json") ?: return null
 
+    val stagesJson = readFixtureFileOrNull(name, "stages.json")
+        ?.let { Json.parseToJsonElement(it).jsonObject }
     val results = Json.parseToJsonElement(resultsText).jsonObject
     val video = Json.parseToJsonElement(videoText).jsonObject
     val clips = Json.parseToJsonElement(clipsText).jsonArray
@@ -116,15 +120,15 @@ fun loadCorpusEntryOrNull(name: String): CorpusEntry? {
             )
         },
         keypoints = keypointsRaw?.let { CourtKeypoints.fromMap(it) },
-        stages = readFixtureFileOrNull(name, "stages.json")
-            ?.let { Json.parseToJsonElement(it).jsonObject }
-            .orEmpty()
+        stages = stagesJson?.get("stages")?.jsonObject.orEmpty()
             .mapValues { (_, v) ->
                 v.jsonArray.map { pair ->
                     val a = pair.jsonArray
                     a[0].jsonPrimitive.int to a[1].jsonPrimitive.int
                 }
             },
+        stagesTrackerCommit = stagesJson?.get("provenance")?.jsonObject
+            ?.get("tracker_commit")?.jsonPrimitive?.content,
     )
 }
 

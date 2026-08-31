@@ -20,6 +20,7 @@ Usage:
     python tools/corpus/make_stage_goldens.py sample [more fixtures...] [--tracker-repo=PATH]
 """
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -96,10 +97,44 @@ def main() -> int:
     if not names:
         print(__doc__, file=sys.stderr)
         return 2
+    # Which badminton-tracker produced these. Without it, re-running this
+    # script against a modified checkout silently re-baselines the goldens and
+    # the parity test still passes - the failure mode that makes a golden
+    # unfalsifiable rather than merely stale.
+    try:
+        sha = subprocess.run(
+            ["git", "-C", str(TRACKER), "rev-parse", "HEAD"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        # Scoped to backend/, which is what these goldens depend on. The
+        # whole-repo check was too broad: a modified node_modules lockfile
+        # cannot change a rally boundary, and refusing on it would push people
+        # toward passing a bypass flag, which defeats the guard entirely.
+        dirty = subprocess.run(
+            ["git", "-C", str(TRACKER), "status", "--porcelain", "--", "backend"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+    except Exception as e:
+        print(f"could not read badminton-tracker's git SHA: {e}", file=sys.stderr)
+        return 2
+    if dirty:
+        print("REFUSING: badminton-tracker/backend has uncommitted changes, so "
+              "these goldens could not be reproduced from any commit:\n"
+              f"{dirty}\nStash or commit there first.", file=sys.stderr)
+        return 2
+
     for name in names:
         stages = stages_for(name)
-        (FIXTURES / name / "stages.json").write_text(json.dumps(stages, indent=1))
+        payload = {
+            "provenance": {
+                "tracker_commit": sha,
+                "generated_by": "tools/corpus/make_stage_goldens.py",
+            },
+            "stages": stages,
+        }
+        (FIXTURES / name / "stages.json").write_text(json.dumps(payload, indent=1))
         print(f"{name}: " + "  ".join(f"{k}={len(v)}" for k, v in stages.items()))
+    print(f"\nbadminton-tracker commit: {sha}")
     return 0
 
 

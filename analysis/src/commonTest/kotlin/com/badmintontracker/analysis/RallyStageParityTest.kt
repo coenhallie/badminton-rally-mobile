@@ -66,7 +66,16 @@ class RallyStageParityTest {
 
     private fun check(name: String) = withCorpus(name) { e ->
         val expected = e.stages
-        (expected.isNotEmpty()) shouldBe true
+        // All five stages, not "some". A goldens file regenerated against a
+        // partial run would otherwise narrow what this checks without failing.
+        expected.keys shouldBe setOf(
+            "gradient", "raw_shot_gap", "filtered_shot_gap", "union", "refined",
+        )
+        // And it must say which badminton-tracker produced it. An
+        // unattributed golden cannot be told apart from one re-baselined
+        // against a modified checkout, which is the difference between a
+        // golden and a copy of the current output.
+        (e.stagesTrackerCommit?.length == 40) shouldBe true
         val actual = stages(e)
         // Every stage, compared as full bound lists rather than counts: two
         // detectors can agree on how many rallies there are and disagree about
