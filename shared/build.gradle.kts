@@ -27,6 +27,11 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
+            // api, not implementation: :shared's public surface hands
+            // :analysis types (Rally, ClipWindow) to both apps, and
+            // implementation would make them unusable from Swift and from
+            // androidApp.
+            api(project(":analysis"))
             implementation(project.dependencies.platform(libs.supabase.bom))
             implementation(libs.supabase.auth)
             implementation(libs.supabase.postgrest)

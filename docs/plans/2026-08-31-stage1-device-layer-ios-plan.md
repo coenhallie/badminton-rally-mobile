@@ -118,37 +118,37 @@ No device, no models, no corpus. Everything here can be finished and proven now.
 - Consumes: `com.badmintontracker.analysis.geometry.CourtKeypoints.fromMap(Map<String, List<Double>>): CourtKeypoints?` - already exists, returns null unless all twelve keys are present and each has at least two elements.
 - Produces: `fun com.badmintontracker.shared.model.CourtKeypoints.toAnalysis(): com.badmintontracker.analysis.geometry.CourtKeypoints`
 
-- [ ] **Step 1: Add the dependency**
+- [x] **Step 1: Add the dependency**
 
 In `shared/build.gradle.kts`, add `api(project(":analysis"))` to `commonMain.dependencies`. `api`, not `implementation`: `:shared`'s public surface will expose `:analysis` types (`Rally`, `ClipWindow`) to both apps, and `implementation` would make them unusable from Swift and from `androidApp`.
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 `CourtKeypointsBridgeTest` must prove three things:
 1. A wire keypoint set converts field-for-field, with no reordering. Assert on at least `topLeft`, `netRight` and `centerFar` individually, with distinct values per field, so a transposition cannot pass.
 2. `Float` to `Double` widening does not corrupt a value with a fractional part: use `960.5f` and assert `960.5`.
 3. The conversion is total - it cannot return null - because the wire type's twelve fields are non-nullable, unlike the map form `fromMap` guards.
 
-- [ ] **Step 3: Run the test to verify it fails**
+- [x] **Step 3: Run the test to verify it fails**
 
 Run: `./gradlew :shared:jvmTest --tests "*CourtKeypointsBridgeTest*"`
 Expected: compilation failure, `toAnalysis` unresolved.
 
-- [ ] **Step 4: Implement the bridge**
+- [x] **Step 4: Implement the bridge**
 
 One extension function. It must not go through `fromMap`: that exists for untrusted JSON where keys can be missing, and routing a type whose fields are already non-nullable through a nullable API would force a meaningless `!!` at every call site.
 
-- [ ] **Step 5: Run the tests**
+- [x] **Step 5: Run the tests**
 
 Run: `./gradlew :shared:jvmTest :analysis:jvmTest`
 Expected: PASS. Confirms the new module dependency has not broken `:shared`.
 
-- [ ] **Step 6: Confirm the dependency direction cannot invert**
+- [x] **Step 6: Confirm the dependency direction cannot invert**
 
 Run: `./gradlew :analysis:dependencies --configuration jvmCompileClasspath | grep -c "badminton-rally-mobile:shared"`
 Expected: `0`. If this is ever non-zero the §5.3 boundary has been lost.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add shared/build.gradle.kts shared/src/commonMain/kotlin/com/badmintontracker/shared/model/CourtKeypointsBridge.kt shared/src/commonTest/kotlin/com/badmintontracker/shared/model/CourtKeypointsBridgeTest.kt
