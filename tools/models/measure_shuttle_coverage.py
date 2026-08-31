@@ -143,11 +143,13 @@ weaker signal from later in the list:
       for a validated deployed-config pass.
   4 - CRASH: setup (importing TrackNetInference, building either tracker,
       opening either ONNX Runtime session - a missing/truncated .onnx file,
-      missing weights, or a bad --tracker-repo), either side of track_video
-      itself, or the gate's own term construction (a term declared without
-      a denominator floor - see _register_gate_term) raised something other
-      than the RuntimeError production uses to report an unusable input.
-      Distinct from 1 (FAIL)
+      missing weights, or a bad --tracker-repo), the gate's own term
+      construction (a term declared without a denominator floor - see
+      _register_gate_term), or the onnx side of track_video raised
+      anything at all, including a RuntimeError. Only the torch side of
+      track_video carves RuntimeError out of this (see exit 2 above): that
+      is production's own signal for an unusable input, so it is read as
+      UNMEASURABLE there instead of CRASH. Distinct from 1 (FAIL)
       because no divergence was actually measured - the conversion could
       not even be run, which is not the same claim as "ran and diverged".
       A report is written recording the crash and which phase raised,
@@ -256,7 +258,7 @@ class _InpaintCapture:
 
     WHY `after_visible - before_visible` IS THE INPAINTED SET, checked
     against the production source: _run_inpaintnet starts from
-    `inpainted_vis = vis.copy()` (inference.py:373), only ever writes
+    `inpainted_vis = vis.copy()` (inference.py:375), only ever writes
     `inpainted_vis[frame_idx] = 1.0` (:451) and never clears an entry, and
     only writes inpainted_xs/inpainted_ys under `vis[frame_idx] == 0`
     (:424), so it never rewrites an already-visible frame's coordinates.
@@ -848,7 +850,13 @@ def main() -> int:
     # a term that measured nothing - see the DENOMINATOR FLOORS block.
     print("  gate terms (verdict, and the sample size behind it):")
     for term, t in gate["gate_terms"].items():
-        floor = "" if t["n_measured"] >= t["n_required"] else "  <-- UNDER ITS FLOOR, measures nothing"
+        waived_because = t.get("floor_waived_because")
+        if waived_because:
+            floor = f"  <-- FLOOR WAIVED: {waived_because}"
+        elif t["n_measured"] < t["n_required"]:
+            floor = "  <-- UNDER ITS FLOOR, measures nothing"
+        else:
+            floor = ""
         bound = (f"<= {t['threshold_max']}" if "threshold_max" in t
                  else f">= {t['threshold_min']}")
         print(f"    {term:26} ok={str(t['ok']):5} value={t['value']} (need {bound})  "
