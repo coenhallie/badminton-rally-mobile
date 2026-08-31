@@ -242,7 +242,7 @@ The authoritative shape is what the worker serialises at `modal_supabase_process
   - `@Serializable data class AnalysisResult(...)` with `@SerialName` on every field matching the worker's snake_case keys exactly
   - `fun AnalysisResult.Companion.fromPhase1(output: Phase1Output, fps: Double, totalFrames: Int, durationSeconds: Double, filename: String, modelVersion: String): AnalysisResult`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `AnalysisResultTest` must prove:
 1. **Key names match the cloud byte for byte.** Serialise a small instance and assert the emitted JSON object keys are exactly `phase`, `pipeline_variant`, `rallies`, `shuttle_positions`, `fps`, `total_frames`, `video_metadata`. A camelCase leak here means the comparator diffs nothing and the web app reads nothing.
@@ -251,22 +251,22 @@ The authoritative shape is what the worker serialises at `modal_supabase_process
 4. **`skeleton_data` is absent by default**, per §5.5, and present when the A/B flag is set. Assert on key absence, not on a null value: the web app branches on the key.
 5. **`phase` is `"phase1"` and `pipeline_variant` is `"legacy"`**, per §8 - the `gb_fusion` variant is explicitly out of scope.
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `./gradlew :analysis:jvmTest --tests "*AnalysisResultTest*"`
 Expected: compilation failure.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `:analysis` already has `kotlinx.serialization.json` on `commonMain` and the plugin applied, so no build change is needed.
 
-- [ ] **Step 4: Add the reverse round trip - BLOCKED on a captured corpus**
+- [x] **Step 4: Add the reverse round trip - BLOCKED on a captured corpus**
 
 The tests above run the schema in the easy direction: this writer out, this reader back. The direction that actually bites is the other one, because the consumers are the web app and `fetch_corpus.py`, not this module. A field omitted from `AnalysisResult` round-trips perfectly through a writer that never emits it.
 
 So: parse a real captured `results.json` into `AnalysisResult`, re-serialise, and diff against the original JSON object keys. Any key present in the capture and absent from the re-serialisation is a field this type is missing. Gate it with `withCorpus()` so it skips loudly until a capture exists, and mark it in the commit as unrun.
 
-- [ ] **Step 5: Run and commit**
+- [x] **Step 5: Run and commit**
 
 Run: `./gradlew :analysis:jvmTest`
 
