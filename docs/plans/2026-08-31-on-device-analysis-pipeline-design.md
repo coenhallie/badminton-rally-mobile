@@ -632,15 +632,17 @@ across many videos are needed, that is a small tool over exported reports.
 
 **Stage 0** - the three gates in §7.
 
-**Stage 1: Phase 1 vertical slice, iOS first.** Capture the verification corpus,
+**Stage 1: Phase 1 vertical slice, Android first** (revised, see below; this
+paragraph originally read "iOS first"). Capture the verification corpus,
 which also closes ref §8.11. Port the `:analysis` subset Phase 1 needs: geometry and
 homography, shuttle track filtering, shot detection, both rally detectors,
 `refineRallies`, clip padding. Build the `RawInference` format, the single decode
 pass, TrackNet and the detector, device-side clip cutting, and the sync path.
 Comparator levels 1 to 3 scoped to Phase 1 metrics. Ends shippable: rally clips
 produced entirely on device, syncing to Supabase, with measured agreement against
-cloud. iOS first because its hardware range is narrower and the signal is
-cleaner.
+cloud. The original reasoning for iOS first was that its hardware range is
+narrower and the signal cleaner; that still holds in the abstract and is
+outweighed by the reasons below.
 
 **Stage 2: Phase 1 on iOS.** Only the platform layer is new. `:analysis` and the
 comparator are done and tested. This is the payoff for the §5.1 boundary.
