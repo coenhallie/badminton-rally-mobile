@@ -55,6 +55,7 @@ import com.badmintontracker.android.cliplist.MatchSummaryViewModel
 import com.badmintontracker.android.cliplist.MatchSummarySheet
 import com.badmintontracker.android.cliplist.formatDate
 import com.badmintontracker.android.cliplist.topRallyName
+import com.badmintontracker.android.localanalysis.BackgroundWorkAction
 import com.badmintontracker.android.scoring.AttachIntent
 import com.badmintontracker.android.share.ShareSheet
 import com.badmintontracker.android.ui.components.ShuttlButton
@@ -223,6 +224,9 @@ fun MatchScreen(
                     }
                 },
                 actions = {
+                    // First in the bar so it keeps its place as each screen's own
+                    // actions come and go.
+                    BackgroundWorkAction()
                     // The sort order only means something while rallies are on screen.
                     if (facet == Facet.Rallies) {
                         IconButton(onClick = { sortMenuOpen = true }) {

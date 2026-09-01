@@ -157,8 +157,20 @@ the background" reassurance. The label carries the distinction (§4.2).
  * see it. Reducing to this at the boundary is what lets the merge rules live in
  * commonMain and be tested there.
  */
-data class DeviceWork(val entryId: String, val fraction: Float?, val failed: Boolean)
+enum class DevicePhase { PREPARING, ANALYSING, CUTTING }
+
+data class DeviceWork(
+    val entryId: String,
+    val phase: DevicePhase,
+    val fraction: Float?,
+    val failed: Boolean,
+)
 ```
+
+The phase is carried rather than collapsed into one "analysing" because §2's
+principle is that the indicator says what is happening: copying a
+multi-gigabyte file and running inference over it are minutes apart in what the
+user should expect next.
 
 ### 4.2 `BackgroundWork`, what the indicator renders
 
@@ -194,10 +206,17 @@ Rules, in order:
    different stages produces a number that means nothing.
 4. **Label.** One item gets the specific phrasing that carries §2's
    distinction: `"Uploading 40%"` (foreground only), `"Processing in the
-   cloud"`, `"Analysing on device 12%"`. More than one gets
-   `"3 videos in progress"`.
+   cloud"`, `"Preparing video"`, `"Analysing on device 12%"`, `"Cutting
+   clips"`. More than one gets `"3 analyses in progress"`, counting analyses
+   rather than videos because running both pipelines over one video is the
+   comparison this app exists to make.
 5. **`hasFailure`** is `sessionFailures.isNotEmpty()`, never derived from
    `stage == FAILED` (§1.4).
+6. **Failures clear.** The caller drops an id when its entry leaves `FAILED`
+   (a retry) or stops existing (a removal), and a device failure clears when the
+   runner replaces that state. A set that only grows is the §1.4 bug one layer
+   up: retry, succeed, and a red dot would be left on five screens with nothing
+   to click.
 
 `sessionFailures` is owned by the caller and holds entry ids that moved into a
 failed state while this process has been running. It is deliberately not
@@ -316,13 +335,16 @@ is:
 - A `FAILED` entry alone does **not** set `hasFailure`; a `sessionFailures` id
   does. This is the §1.4 regression, and it is the test that would have caught
   the sticky badge.
+- Each `DevicePhase` produces its own label.
 - Device-only work with no cloud entries still produces a result.
 
 ### 8.2 Android
 
-- `BackgroundWorkViewModelTest`: an entry transitioning into `FAILED` while
+- `BackgroundWorkMonitorTest`: an entry transitioning into `FAILED` while
   collecting adds to `sessionFailures`; one already `FAILED` at first
-  collection does not.
+  collection does not; a retry, a removal, and a restarted device run each
+  clear it again. Verified by mutation: making the set accumulate-only fails
+  all three clearing tests.
 - **Owed, not written:** a Compose UI test that `BackgroundWorkAction` renders
   nothing for `null` and exposes the label as its content description. This
   project has no Compose test harness at all (no `ui-test-junit4` dependency and
@@ -347,3 +369,7 @@ superseded by this work:
   survives task removal (application scope, no `stopWithTask`, no
   `onTaskRemoved`); Samsung's kill behaviour is unconfirmed.
 - The wake-lock test re-run at its widened margin.
+- **This indicator has never been rendered.** The merge rules and the failure
+  rule are covered by 20 tests, but the composable has not been on a screen
+  once: no ring, no error dot, no bar layout and no TalkBack description has
+  been seen. A test count is not a substitute for looking at it.

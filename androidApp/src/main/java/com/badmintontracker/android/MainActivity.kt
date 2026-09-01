@@ -56,6 +56,7 @@ class MainActivity : ComponentActivity() {
                         localVideos = app.localVideos,
                         coordinator = app.analyzeCoordinator,
                         localAnalysis = app.localAnalysis,
+                        backgroundWork = app.backgroundWork,
                         localAnnotations = app.localAnnotations,
                     )
                 }

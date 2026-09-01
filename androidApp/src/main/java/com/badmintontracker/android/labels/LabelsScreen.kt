@@ -57,6 +57,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.badmintontracker.android.localanalysis.BackgroundWorkAction
 import com.badmintontracker.android.ui.components.FieldLabel
 import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlOutlinedTextField
@@ -95,6 +96,9 @@ fun LabelsScreen(vm: LabelsViewModel, onBack: () -> Unit) {
                     }
                 },
                 actions = {
+                    // First in the bar so it keeps its place as each screen's own
+                    // actions come and go.
+                    BackgroundWorkAction()
                     IconButton(onClick = vm::startCreating) {
                         Icon(Icons.Default.Add, contentDescription = "New label")
                     }

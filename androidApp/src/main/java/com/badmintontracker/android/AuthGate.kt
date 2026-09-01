@@ -1,5 +1,8 @@
 package com.badmintontracker.android
 
+import com.badmintontracker.android.localanalysis.BackgroundWorkMonitor
+import com.badmintontracker.android.localanalysis.LocalBackgroundWork
+import com.badmintontracker.android.localanalysis.LocalBackgroundWorkClick
 import com.badmintontracker.android.localanalysis.LocalAnalysisBanner
 import com.badmintontracker.android.localanalysis.LocalAnalysisRunner
 import com.badmintontracker.android.localanalysis.AnalysisTarget
@@ -10,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -68,6 +72,7 @@ fun AuthGate(
     localVideos: LocalVideoRepository,
     coordinator: AnalyzeCoordinator,
     localAnalysis: LocalAnalysisRunner,
+    backgroundWork: BackgroundWorkMonitor,
     localAnnotations: LocalAnnotationsRepository,
 ) {
     val session by rally.auth.sessionFlow.collectAsStateWithLifecycle(initialValue = null)
@@ -124,6 +129,26 @@ fun AuthGate(
                 onError = { intakeError = it },
             )
 
+            val work by backgroundWork.work.collectAsStateWithLifecycle()
+            // Provided around the NavHost so every destination's bar can show it
+            // without the state appearing in any screen's signature.
+            CompositionLocalProvider(
+                LocalBackgroundWork provides work,
+                // remembered: this local is static, so a new lambda identity
+                // would invalidate the whole NavHost subtree, and AuthGate
+                // recomposes on every progress tick because it reads `work`.
+                LocalBackgroundWorkClick provides remember(nav) {
+                    {
+                        // singleTop plus popUpTo: the indicator is reachable
+                        // from anywhere, so without both, tapping it repeatedly
+                        // would stack clip lists.
+                        nav.navigate(Route.ClipList) {
+                            popUpTo(Route.ClipList)
+                            launchSingleTop = true
+                        }
+                    }
+                },
+            ) {
             NavHost(navController = nav, startDestination = start) {
                 composable<Route.SignIn> {
                     val signInVm: SignInViewModel = viewModel(
@@ -436,6 +461,7 @@ fun AuthGate(
                         onBack = { nav.popBackStack() },
                     )
                 }
+            }
             }
         }
     }

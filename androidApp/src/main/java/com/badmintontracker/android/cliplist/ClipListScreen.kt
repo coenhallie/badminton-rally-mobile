@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.badmintontracker.android.BuildConfig
+import com.badmintontracker.android.localanalysis.BackgroundWorkAction
 import com.badmintontracker.android.localvideo.AnalyzeResultDialog
 import com.badmintontracker.android.localvideo.LocalVideoRow
 import com.badmintontracker.android.localvideo.MatchDetailsSheet
@@ -160,6 +161,9 @@ fun ClipListScreen(
                     )
                 },
                 actions = {
+                    // First in the bar so it keeps its place as each screen's own
+                    // actions come and go.
+                    BackgroundWorkAction()
                     IconButton(onClick = { addMenuOpen = true }) {
                         Icon(Icons.Default.Add, contentDescription = "Add")
                     }
