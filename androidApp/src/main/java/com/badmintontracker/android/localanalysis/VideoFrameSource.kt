@@ -25,12 +25,30 @@ import java.io.File
  */
 class VideoFrameSource(private val file: File) {
 
-    /** Total frames the container reports. */
-    fun frameCount(): Int = MediaMetadataRetriever().use { r ->
+    /** What the container says about the track, read once. */
+    data class Metadata(val frameCount: Int, val width: Int, val height: Int, val fps: Double)
+
+    fun metadata(): Metadata = MediaMetadataRetriever().use { r ->
         r.setDataSource(file.path)
-        r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_FRAME_COUNT)?.toInt()
+        fun meta(key: Int) = r.extractMetadata(key)
+        val frames = meta(MediaMetadataRetriever.METADATA_KEY_VIDEO_FRAME_COUNT)?.toInt()
             ?: error("no frame count in ${file.name}")
+        val durationMs = meta(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toDouble()
+        Metadata(
+            frameCount = frames,
+            width = meta(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toInt()
+                ?: error("no width in ${file.name}"),
+            height = meta(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toInt()
+                ?: error("no height in ${file.name}"),
+            // Frames over duration rather than CAPTURE_FRAMERATE, which is
+            // absent on most files and reports the recording rate rather than
+            // the playback rate when present.
+            fps = if (durationMs != null && durationMs > 0) frames * 1000.0 / durationMs else 0.0,
+        )
     }
+
+    /** Total frames the container reports. */
+    fun frameCount(): Int = metadata().frameCount
 
     /**
      * The frame indices production samples for its median background.
