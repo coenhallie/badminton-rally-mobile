@@ -1,6 +1,7 @@
 package com.badmintontracker.android.localanalysis
 
 import android.content.Context
+import com.badmintontracker.analysis.raw.RawBox
 import com.badmintontracker.analysis.raw.RawFrame
 import com.badmintontracker.analysis.raw.RawHeader
 import com.badmintontracker.analysis.raw.RawInference
@@ -19,14 +20,16 @@ import java.io.File
  * those live in `:analysis`, which this device calls directly because
  * `androidApp` is Kotlin.
  *
- * **Detections are not populated yet.** Section 5.2 gives `RawInference` a
- * place for the badminton detector's boxes, and Phase 1 in the cloud fuses
- * them with TrackNet's output to form the track its shot-gap detector reads.
- * This engine emits TrackNet only, so downstream the fusion track and the
- * TrackNet track are the same thing. That is a real divergence from the cloud
- * and is why rally counts from this engine should not yet be read as a parity
- * result. Adding [DetectorRunner] is additive: one more model in the same
- * decode pass, filling `boxes`.
+ * What it emits is section 5.2's contract exactly: the **unfiltered** TrackNet
+ * peak per frame, plus the detector's boxes. Not a filtered or fused track -
+ * the cloud derives two different tracks from these, its filtered track from
+ * raw TrackNet and its fusion track from TrackNet with YOLO as fallback, and
+ * collapsing them here would make one of the two rally detectors read the
+ * wrong input.
+ *
+ * Both models share one decode pass. Decode and colour conversion are about a
+ * third of the per-frame cost, so running the detector separately would pay
+ * them twice.
  */
 class AndroidLocalInferenceEngine(
     private val context: Context,
@@ -48,12 +51,19 @@ class AndroidLocalInferenceEngine(
         val source = VideoFrameSource(file)
         val meta = source.metadata()
 
-        val track = TrackNetRunner(context, source).track(
-            sourceWidth = meta.width,
-            sourceHeight = meta.height,
-            maxFrames = maxFrames,
-            onProgress = onProgress,
-        )
+        val detections = HashMap<Int, List<com.badmintontracker.analysis.shuttle.ShuttleDetection>>()
+        val track = DetectorRunner(context).use { detector ->
+            TrackNetRunner(context, source).track(
+                sourceWidth = meta.width,
+                sourceHeight = meta.height,
+                maxFrames = maxFrames,
+                onProgress = onProgress,
+                onFrame = { index, image ->
+                    val found = detector.detect(image)
+                    if (found.isNotEmpty()) detections[index] = found
+                },
+            )
+        }
         val frameCount = minOf(meta.frameCount, if (maxFrames == Int.MAX_VALUE) meta.frameCount else maxFrames)
 
         // Every decoded frame gets a record, present or absent. A sparse frame
@@ -67,7 +77,15 @@ class AndroidLocalInferenceEngine(
                 shuttle = s?.let {
                     RawShuttle(it.x.toFloat(), it.y.toFloat(), if (it.visible) 1f else 0f, it.visible)
                 },
-                boxes = emptyList(),
+                // class 2 is the shuttle, the only class the fusion reads.
+                boxes = detections[i].orEmpty().map {
+                    RawBox(
+                        classId = 2,
+                        confidence = it.confidence.toFloat(),
+                        x1 = it.x.toFloat(), y1 = it.y.toFloat(),
+                        x2 = it.x.toFloat(), y2 = it.y.toFloat(),
+                    )
+                },
                 persons = emptyList(),
             )
         }

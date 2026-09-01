@@ -253,6 +253,33 @@ object FramePreprocessor {
         }
     }
 
+    /**
+     * As [toRgbResized], but writing a smaller image into a larger canvas at
+     * an offset and leaving the rest untouched.
+     *
+     * This is the letterbox the detector needs: Ultralytics scales to fit and
+     * pads the short axis rather than stretching to a square, because the
+     * model was trained that way and stretching moves every box.
+     */
+    fun toRgbResizedInto(
+        image: Image,
+        canvas: ByteArray,
+        canvasSize: Int,
+        offsetX: Int,
+        offsetY: Int,
+        fitW: Int,
+        fitH: Int,
+        matrix: YuvMatrix = YuvMatrix.BT601_LIMITED,
+    ) {
+        val scaled = ByteArray(fitW * fitH * 3)
+        toRgbResized(image, scaled, fitW, fitH, matrix)
+        for (row in 0 until fitH) {
+            val src = row * fitW * 3
+            val dst = ((offsetY + row) * canvasSize + offsetX) * 3
+            scaled.copyInto(canvas, dst, src, src + fitW * 3)
+        }
+    }
+
     /** Interleaved RGB bytes to the CHW float tensor, scaled by 1/255. */
     fun toChwTensor(rgb: ByteArray, width: Int, height: Int, out: FloatArray) =
         toChwTensorAt(rgb, width, height, out, 0)

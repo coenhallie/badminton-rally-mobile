@@ -1,12 +1,15 @@
 package com.badmintontracker.shared.local
 
-import com.badmintontracker.analysis.Phase1Input
 import com.badmintontracker.analysis.raw.RawInference
 import com.badmintontracker.analysis.rally.ClipWindow
 import com.badmintontracker.analysis.result.AnalysisResult
 import com.badmintontracker.analysis.result.fromPhase1
-import com.badmintontracker.analysis.runPhase1
+import com.badmintontracker.analysis.runPhase1FromTracks
+import com.badmintontracker.analysis.shuttle.ShuttleDetection
 import com.badmintontracker.analysis.shuttle.ShuttleSample
+import com.badmintontracker.analysis.shuttle.buildFilteredTrack
+import com.badmintontracker.analysis.shuttle.buildFusionTrack
+import com.badmintontracker.analysis.normalizeFps
 import com.badmintontracker.shared.model.CourtKeypoints
 import com.badmintontracker.shared.model.toAnalysis
 
@@ -59,35 +62,70 @@ class LocalAnalysisCoordinator(
         videoPath: String,
     ): LocalAnalysisOutcome {
         val header = raw.header
-        val shuttle = raw.frames.associate { frame ->
+        val fps = normalizeFps(header.fps).fps
+        val corners = keypoints.toAnalysis().corners
+
+        // RawInference carries the UNFILTERED TrackNet peak, because the cloud
+        // derives two different tracks from it and they disagree about which
+        // frames carry a shuttle.
+        val trackNet = raw.frames.associate { frame ->
             frame.frame to (
                 frame.shuttle
                     ?.let { ShuttleSample(it.x.toDouble(), it.y.toDouble(), it.visible) }
                     ?: ShuttleSample.INVISIBLE
                 )
         }
+        val detections = raw.frames
+            .filter { it.boxes.isNotEmpty() }
+            .associate { frame ->
+                frame.frame to frame.boxes.map {
+                    ShuttleDetection(
+                        x = ((it.x1 + it.x2) / 2).toDouble(),
+                        y = ((it.y1 + it.y2) / 2).toDouble(),
+                        confidence = it.confidence.toDouble(),
+                    )
+                }
+            }
 
-        val output = runPhase1(
-            Phase1Input(
-                rawShuttle = shuttle,
-                fps = header.fps,
-                totalFrames = header.totalFrames,
-                videoWidth = header.videoWidth,
-                videoHeight = header.videoHeight,
-                // The container duration the cloud pads with is persisted
-                // nowhere, so totalFrames / fps is the closest available
-                // value. See Phase1PipelineTest for what that costs.
-                videoDuration = durationSeconds(header.totalFrames, header.fps),
-                keypoints = keypoints.toAnalysis(),
-            )
+        // The gradient detector reads the filtered track, built from raw
+        // TrackNet; the shot-gap detector reads the TrackNet/YOLO fusion.
+        // Feeding either one to both is the mistake this split exists to
+        // avoid - on a real capture the two differ by 4,355 frames against
+        // 3,015.
+        val filtered = buildFilteredTrack(
+            raw = trackNet,
+            fps = fps,
+            videoWidth = header.videoWidth,
+            videoHeight = header.videoHeight,
+            courtCorners = corners,
+        )
+        val fusion = buildFusionTrack(
+            trackNet = trackNet,
+            detections = detections,
+            fps = fps,
+            videoWidth = header.videoWidth,
+            videoHeight = header.videoHeight,
+            courtCorners = corners,
+            totalFrames = header.totalFrames,
+        )
+
+        val output = runPhase1FromTracks(
+            fusionTrack = fusion,
+            filteredTrack = filtered,
+            fps = fps,
+            totalFrames = header.totalFrames,
+            // The container duration the cloud pads with is persisted nowhere,
+            // so totalFrames / fps is the closest available value. See
+            // Phase1PipelineTest for what that costs.
+            videoDuration = durationSeconds(header.totalFrames, fps),
         )
 
         return LocalAnalysisOutcome(
             result = AnalysisResult.fromPhase1(
                 output = output,
-                fps = header.fps,
+                fps = fps,
                 totalFrames = header.totalFrames,
-                durationSeconds = durationSeconds(header.totalFrames, header.fps),
+                durationSeconds = durationSeconds(header.totalFrames, fps),
                 filename = videoPath.substringAfterLast('/'),
             ),
             clipWindows = output.clipWindows,

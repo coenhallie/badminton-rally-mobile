@@ -27,11 +27,13 @@ import platform.Foundation.NSUserDefaults
  * for a plain protocol. Nothing in the app calls anything on this page - `RallyApp`
  * wires the real repositories.
  *
- * Trivial stubs throughout: `MatchModelTests` (the only consumer) never triggers
- * the analyze pipeline, so nothing here needs to do more than satisfy the
- * constructors it depends on.
+ * Trivial stubs throughout, with one exception: [RecordingVideosRepository] below
+ * has to record and to fail, because `MatchModelTests` covers a removal whose
+ * server half is refused. Nothing else here needs to do more than satisfy the
+ * constructors it depends on - `MatchModelTests` never triggers the analyze
+ * pipeline itself.
  */
-private class NoopVideosRepository : VideosRepository {
+private open class NoopVideosRepository : VideosRepository {
     override suspend fun createVideo(
         videoId: String, filename: String, sizeBytes: Long, title: String?, description: String?,
     ): Result<Unit> = Result.success(Unit)
@@ -44,6 +46,26 @@ private class NoopVideosRepository : VideosRepository {
     ): Flow<UploadState> = emptyFlow()
     override suspend fun listMatchMetadata(): Result<List<MatchMetadata>> = Result.success(emptyList())
     override suspend fun deleteMatch(videoId: String): Result<Unit> = Result.success(Unit)
+}
+
+/**
+ * The one double here that does more than satisfy a constructor: it records what
+ * was deleted, and [failDeleteMatch] makes the server refuse, which is the branch
+ * that must abort a removal before it touches anything local.
+ */
+class RecordingVideosRepository internal constructor() : VideosRepository by NoopVideosRepository() {
+    var failDeleteMatch: Boolean = false
+
+    /** What [deleteMatch] was called with, in order. A read-only List, not the
+     *  MutableList behind it: Swift sees this one as a plain array. */
+    val deletedVideoIds: List<String> get() = calls.toList()
+
+    private val calls = mutableListOf<String>()
+
+    override suspend fun deleteMatch(videoId: String): Result<Unit> {
+        calls += videoId
+        return if (failDeleteMatch) Result.failure(IllegalStateException("refused")) else Result.success(Unit)
+    }
 }
 
 private class InMemoryClipsRepository : ClipsRepository {
@@ -74,6 +96,18 @@ fun testLocalVideoRepository(): LocalVideoRepository {
  */
 fun testClipsRepository(): ClipsRepository = InMemoryClipsRepository()
 
+/** A [VideosRepository] the iOS test bundle can build. See [RecordingVideosRepository]. */
+fun testVideosRepository(): RecordingVideosRepository = RecordingVideosRepository()
+
+/**
+ * A [LocalAnnotationsRepository] the iOS test bundle can build, scoped to its own
+ * defaults suite and cleared on every call - see this file's doc comment.
+ */
+fun testLocalAnnotationsRepository(): LocalAnnotationsRepository =
+    LocalAnnotationsRepository(
+        NSUserDefaultsSettings(NSUserDefaults(suiteName = TEST_LOCAL_ANNOTATIONS_SUITE)).also { it.clear() },
+    )
+
 /**
  * An [AnalyzeCoordinator] the iOS test bundle can build, wired to the fixed
  * [localVideos] and [clips] under test and to a no-op [VideosRepository] - see
@@ -86,7 +120,7 @@ fun testAnalyzeCoordinator(localVideos: LocalVideoRepository, clips: ClipsReposi
         clips = clips,
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
         openChannel = { _, _ -> ByteReadChannel(ByteArray(0)) },
-        localAnnotations = LocalAnnotationsRepository(NSUserDefaultsSettings(NSUserDefaults(suiteName = TEST_LOCAL_ANNOTATIONS_SUITE)).also { it.clear() }),
+        localAnnotations = testLocalAnnotationsRepository(),
     )
 
 private const val TEST_LOCAL_VIDEOS_SUITE = "com.badmintontracker.ios.tests.localvideos"

@@ -153,6 +153,10 @@ class ScoreLogsRepository internal constructor(
      * its own when a video is deleted (the ON DELETE SET NULL plus the
      * unbind_score_log_on_video_delete trigger), so that the phone does not go on
      * advertising clips for a video that is gone until the next sync.
+     *
+     * Its first-class caller is [removeMatchVideoOrMessage], the match page's
+     * "Remove video" / "Change video"; the match list's own delete path calls it
+     * too, to mirror the trigger for a match it is deleting outright.
      */
     fun detachVideo(id: String) =
         edit(id) { it.copy(videoId = null, status = ScoreLogStatus.UNBOUND) }
