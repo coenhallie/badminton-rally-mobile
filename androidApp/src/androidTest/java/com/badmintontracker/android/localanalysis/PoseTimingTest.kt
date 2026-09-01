@@ -55,9 +55,13 @@ class PoseTimingTest {
 
         val report = StringBuilder("pose throughput on this device").append(NL)
         listOfNotNull(big?.let { 960 to it }, small?.let { 640 to it }).forEach { (size, file) ->
-            report.append(measure(size, file, vid!!))
+            val one = measure(size, file, vid!!)
+            // Logged per size rather than once at the end: a run that is
+            // interrupted after the first size should still leave that
+            // size's numbers behind rather than nothing.
+            Log.i("PoseTiming", one)
+            report.append(one)
         }
-        Log.i("PoseTiming", report.toString())
         println(report)
     }
 
@@ -123,7 +127,70 @@ class PoseTimingTest {
         }
     }
 
+    /**
+     * Whether an accelerator moves pose at all.
+     *
+     * Worth its own run because it is the only lever that costs no accuracy:
+     * sampling rate, input size and model size all trade something, and an
+     * execution provider trades nothing. Acceleration gave nothing for TrackNet,
+     * but that is a small graph; pose is 43MB, and the arithmetic is far enough
+     * off that even a 3x win would change the design.
+     *
+     * Short and unbucketed on purpose: this is a first-order comparison to
+     * decide what deserves a full thermal run, not the number itself.
+     */
+    @Test
+    fun compare_execution_providers_at_640() {
+        val vid = video()
+        assumeTrue("SKIPPED: corpus video absent", vid != null)
+        val model = model("pose.640.fp16.onnx")
+        assumeTrue("SKIPPED: pose 640 absent", model != null)
+
+        val out = StringBuilder("pose 640 by execution provider").append(NL)
+        OnnxSession.Provider.entries.forEach { provider ->
+            val result = runCatching { providerMedian(provider, model!!, vid!!) }
+            out.append(
+                result.fold(
+                    { "  %-8s %8.1f ms/frame".format(provider, it) },
+                    { "  %-8s FAILED: %s".format(provider, it.message?.take(90)) },
+                ),
+            ).append(NL)
+        }
+        Log.i("PoseTiming", out.toString())
+        println(out)
+    }
+
+    private fun providerMedian(provider: OnnxSession.Provider, model: File, video: File): Double {
+        val size = 640
+        val session = OnnxSession(model.path, provider)
+        val input = FloatArray(3 * size * size)
+        val letterboxed = ByteArray(size * size * 3)
+        val samples = mutableListOf<Long>()
+        try {
+            VideoFrameSource(video).forEachFrame(PROVIDER_FRAMES) { _, _, image ->
+                val scale = min(size.toDouble() / image.width, size.toDouble() / image.height)
+                val fitW = (image.width * scale).toInt()
+                val fitH = (image.height * scale).toInt()
+                java.util.Arrays.fill(letterboxed, 114.toByte())
+                FramePreprocessor.toRgbResizedInto(
+                    image, letterboxed, size, (size - fitW) / 2, (size - fitH) / 2, fitW, fitH,
+                )
+                FramePreprocessor.toChwTensor(letterboxed, size, size, input)
+                val t0 = System.nanoTime()
+                session.run(input, longArrayOf(1, 3, size.toLong(), size.toLong()))
+                samples.add(System.nanoTime() - t0)
+            }
+        } finally {
+            session.close()
+        }
+        // Drop the first few: the first inference on a provider pays graph
+        // compilation and would be reported as its steady-state cost.
+        val warm = samples.drop(5)
+        return warm.sorted()[warm.size / 2] / 1_000_000.0
+    }
+
     private companion object {
+        const val PROVIDER_FRAMES = 25
         /** Enough to cross a minute boundary and show throttling, without a 20-minute test. */
         const val FRAMES = 400
 
