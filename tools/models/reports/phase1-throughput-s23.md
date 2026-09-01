@@ -76,15 +76,56 @@ per inference at batch 1, and an outright OOM at batch 4 on a 256MB heap.
 Copying into a preallocated array took TrackNet from 233ms to 161ms per frame,
 a 31% improvement, and it was inside the measurement the whole time.
 
-## Where to look next, in order of expected return
+## int8: tried, and it fails on accuracy - but the arithmetic matters more
 
-1. **int8 quantization.** Section 8 defers it until fp16 numbers exist to
-   compare against. They now do, on two videos, and the fp16 conversion is
-   near-exact, so the comparison this was waiting for is available.
-2. **A smaller input.** TrackNet runs at 512x288 because production does. What
-   accuracy costs what time has never been measured.
-3. **A different runtime.** Section 8 keeps native LiteRT as a designed-for
-   escape hatch "only justified if section 7's numbers demand it". These
-   numbers are the ones that would demand it.
+Section 8 deferred int8 "until fp16 numbers exist to compare against", calling
+it "the change that would trigger ref section 8.1's distance inflation". Those
+numbers exist now, so it was measured. Calibrated statically on 24 sequences of
+real frames spread across the video, using production's own preprocessing and
+median background.
 
-None of these closes a 7x gap on its own.
+| model | size | ms/frame (desktop) | peaks moved vs PyTorch |
+|---|---|---|---|
+| fp16 | 22.7 MB | 42.6 | **0 of 256** |
+| int8 | 11.4 MB | 29.8 | **133 of 256 (52%)**, max shift 279 px |
+| int8, output head left in float | 11.9 MB | 33.8 | **137 of 256 (54%)**, max shift 262 px |
+
+30% faster and unusable. Keeping the predictor convolution and the final
+up-block in float changed nothing, which says the loss is spread through the
+U-Net rather than concentrated in the output head, so a third variant was not
+attempted.
+
+**The more useful conclusion is that it would not have mattered.** At its
+measured 30% saving on the dominant stage, a perfectly accurate int8 gives:
+
+| | ms/frame | 3.3-min video | 30-min match | realtime |
+|---|---|---|---|---|
+| fp16, today | 235.1 | 23.4 min | 3.5 h | 7.1x |
+| int8, had it worked | 186.7 | 18.6 min | 2.8 h | 5.6x |
+
+A 1x-realtime pipeline needs **33.3 ms/frame**. TrackNet alone costs 161ms.
+The gap is not 30% wide, it is roughly 7x, and no combination of the levers on
+this list closes it:
+
+- **Acceleration**: measured, no gain (CPU 161, NNAPI 157, XNNPACK 440).
+- **Batching**: measured, no gain; the model is compute-bound.
+- **int8**: 30% at best, and it destroys the track.
+- **A smaller input**: unmeasured. 512x288 is production's choice. Halving each
+  dimension is a 4x reduction in convolution work, which is the only remaining
+  lever of the right order - and it changes what the model sees, so it needs an
+  accuracy measurement of its own against the coverage gate.
+- **A different runtime**: section 8 keeps native LiteRT as an escape hatch
+  "only justified if section 7's numbers demand it". These numbers demand at
+  least the experiment.
+
+## What this means for the design
+
+On-device Phase 1 does not currently pay for itself on a current flagship
+Android. Section 5.6's routing threshold is a multiple of video duration; at
+7.1x essentially every video routes to the cloud, which is the outcome the
+whole on-device effort exists to avoid.
+
+This does not invalidate the ported `:analysis` layer, which is
+platform-independent, verified stage by stage against the cloud's own
+detectors, and would be needed by any device-side pipeline. The problem is
+narrowly TrackNet inference throughput.

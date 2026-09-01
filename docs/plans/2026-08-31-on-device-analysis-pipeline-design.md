@@ -648,9 +648,25 @@ Two things measured along the way that are worth not rediscovering:
   bilinear resize only ever needs 590k of the frame's 2.07M pixels, and decode
   parity still holds at the 2/255 bound.
 
-The cheap levers are now spent. What remains - int8 quantization, a smaller
-input, or the native LiteRT runtime §8 keeps as an escape hatch - each need
-measurement and none closes a 7x gap alone. Full numbers in
+**int8 was then measured, and it fails twice over.** Statically calibrated on
+real frames it is 30% faster and moves 133 of 256 heatmap peaks, with a largest
+shift of 279px; leaving the output head in float changes nothing (137 of 256),
+so the loss is spread through the U-Net rather than sitting in the predictor.
+§8 predicted exactly this. More usefully, **a perfectly accurate int8 would not
+have helped**: 30% off the dominant stage gives 187ms/frame and 5.6x realtime,
+where 1x needs 33ms/frame and TrackNet alone costs 161ms.
+
+So acceleration, batching and quantization are all measured and all
+insufficient. The only remaining lever of the right order is **a smaller model
+input** - 512x288 is production's choice, and halving each dimension is a 4x
+reduction in convolution work - which changes what the model sees and so needs
+its own accuracy measurement against the coverage gate. Failing that, §8's
+native-runtime escape hatch is what these numbers demand.
+
+None of this touches the ported `:analysis` layer, which is
+platform-independent, verified stage by stage against the cloud's own
+detectors, and required by any device-side pipeline. The problem is narrowly
+TrackNet inference throughput. Full numbers in
 `tools/models/reports/phase1-throughput-s23.md`.
 
 ### 6.1 Not divergences: cloud behaviour reproduced on purpose
