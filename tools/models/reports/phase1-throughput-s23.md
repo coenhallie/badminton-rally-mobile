@@ -164,3 +164,28 @@ of duration**, because a 50fps clip costs twice a 25fps one of the same length.
 None of this touches the ported `:analysis` layer, which is
 platform-independent, verified stage by stage against the cloud's own
 detectors, and needed by any device-side pipeline.
+
+## End to end on the device, 2026-09-01
+
+The whole Stage 1 path ran on an SM-S911B: decode, TrackNet, ROI and
+static-cluster filtering, shot detection, both rally detectors, union,
+refinement, clip padding, and MediaCodec clip cutting.
+
+```
+frames=320  shuttleVisible=94 (29.4%)  rallies=1  clips=1
+```
+
+320 frames is 10.7 seconds of the corpus video, bounded so an instrumented run
+finishes. `RawInference` also round-tripped through its codec, so what the
+engine writes is what `:analysis` reads.
+
+The run took 12m22s for those 320 frames, far above the 235ms per frame the
+stage timings predict. The gap is the **median background pre-pass**: 300
+`getFrameAtIndex` seeks is a fixed cost regardless of how many frames are then
+analysed, so on a 320-frame run it dominates and on a full video it is
+amortised across thousands. It is not a new performance problem, but it does
+mean short runs cannot be used to estimate long ones.
+
+**What this does not yet prove.** The detector is not wired in, so the fusion
+track and the TrackNet track are the same and rally counts are not a parity
+result against the cloud. And clips land in app storage rather than Supabase.

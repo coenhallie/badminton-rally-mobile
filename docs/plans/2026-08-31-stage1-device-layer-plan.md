@@ -910,7 +910,7 @@ new shared code.
 output. Cheaper than the cross-language test the iOS plan needed, and it still
 catches a writer that produces something the reader cannot take.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add androidApp/src/main/java/com/badmintontracker/android/localanalysis androidApp/src/androidTest
@@ -936,7 +936,7 @@ the same reason the cloud re-encodes.
 Decode, re-encode, mux. A `MediaExtractor`-only stream copy cannot start on a
 non-keyframe, which is exactly what a rally boundary usually is.
 
-- [ ] **Step 2: Test boundary accuracy**
+- [x] **Step 2: Test boundary accuracy**
 
 Assert each output's duration is within one frame of `clipEnd - clipStart`, and
 that its first frame matches the source frame at `clipStart`. Duration alone
