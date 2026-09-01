@@ -625,29 +625,32 @@ whether or not anyone is looking for it.
 ### 6.5 Phase 1 is 9.4x realtime on an S23, and that is a viability problem
 
 Measured 2026-09-01 on an SM-S911B, the full Phase 1 shuttle path end to end.
-**315ms per frame**, of which TrackNet inference is 233ms - 74%. That is 31
-minutes for the 3.3-minute corpus video and **4.7 hours for a 30-minute match**,
+**235ms per frame**, of which TrackNet inference is 161ms - 69%. That is 23
+minutes for the 3.3-minute corpus video and **3.5 hours for a 30-minute match**,
 on a current flagship, for Phase 1 alone. Pose is Phase 2 and costs more again.
 
-§5.6 sets the routing threshold as a multiple of video duration. At 9.4x
+§5.6 sets the routing threshold as a multiple of video duration. At 7x
 essentially everything routes to the cloud, which is the outcome the on-device
 work exists to avoid, so this number decides whether Stage 1 ships rather than
 merely how it is tuned.
 
 Two things measured along the way that are worth not rediscovering:
 
-- **Acceleration made it slower.** CPU 233ms, NNAPI 277ms, XNNPACK 662ms, same
+- **Acceleration does not help.** CPU 161ms, NNAPI 157ms, XNNPACK 440ms, same
   graph and input in one run. "Enable the accelerator" is the obvious move and
-  it is wrong here, so the default is the plain CPU provider.
+  it buys nothing here, so the default is the plain CPU provider.
+- **Batching does nothing either.** Production runs `batch_size=16`, so this
+  looked like the largest lever; measured at batch 1, 2 and 4 on both a desktop
+  and the S23 it is flat, because the model is compute-bound rather than
+  launch-overhead-bound. The experiment still paid for itself by exposing a
+  boxing bug in the ONNX output path worth 31%.
 - **Fusing the colour conversion with the resize cut 240ms to 66ms**, since the
   bilinear resize only ever needs 590k of the frame's 2.07M pixels, and decode
   parity still holds at the 2/255 bound.
 
-The largest untested lever is batching. Production runs TrackNet with
-`batch_size=16`; this runner does one sequence per call because the exported
-graph has a static batch axis of 1. Re-exporting with a dynamic batch axis is a
-small change to `export_tracknet.py` and could move the dominant 74% by itself.
-Full numbers and the next steps in order are in
+The cheap levers are now spent. What remains - int8 quantization, a smaller
+input, or the native LiteRT runtime §8 keeps as an escape hatch - each need
+measurement and none closes a 7x gap alone. Full numbers in
 `tools/models/reports/phase1-throughput-s23.md`.
 
 ### 6.1 Not divergences: cloud behaviour reproduced on purpose

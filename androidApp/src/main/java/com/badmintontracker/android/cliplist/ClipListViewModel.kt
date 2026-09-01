@@ -210,12 +210,12 @@ class ClipListViewModel(
                 // sync and would go on advertising clips for a deleted video.
                 // Idempotent against the trigger, which has already done it.
                 //
-                // No UI reaches this as "remove the video, keep the match" today -
-                // the list's only delete gesture on a bound match (deleteBoundMatch)
-                // removes both the match and its clips together, and its confirm
-                // dialog says so. This call exists to mirror the trigger above, and
-                // to be the guard a future "remove video, keep match" affordance
-                // would need - see the 2026-08-28 design, §4.8.
+                // This path deletes the match outright; "remove the video, keep the
+                // match" is the match page's own gesture and runs the shared
+                // removeMatchVideoOrMessage instead. The call below is here to
+                // mirror the trigger above, so that a bound match deleted from
+                // the list does not leave a stale binding behind on this phone
+                // between the delete and the next sync.
                 scoreLogs.logs.value
                     .filter { it.videoId == videoId }
                     .forEach { scoreLogs.detachVideo(it.id) }

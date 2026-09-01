@@ -281,7 +281,10 @@ fun AuthGate(
                         key = args.scoreLogId,
                         factory = viewModelFactory {
                             initializer {
-                                MatchViewModel(rally.scoreLogs, localVideos, coordinator, rally.clips, args.scoreLogId)
+                                MatchViewModel(
+                                    rally.scoreLogs, localVideos, coordinator, rally.clips,
+                                    rally.videos, localAnnotations, args.scoreLogId,
+                                )
                             }
                         }
                     )

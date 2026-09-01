@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -31,6 +32,7 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -66,7 +68,9 @@ import com.badmintontracker.shared.repo.MediaRepository
 import com.badmintontracker.shared.repo.SharesRepository
 import com.badmintontracker.shared.scoring.AttachKind
 import com.badmintontracker.shared.scoring.AttachStatus
+import com.badmintontracker.shared.scoring.MatchVideoAction
 import com.badmintontracker.shared.scoring.exportMatchText
+import com.badmintontracker.shared.scoring.matchVideoPrompt
 import java.util.Locale
 
 /** Which half of a match page is on screen. Only meaningful when the match has both. */
@@ -112,6 +116,9 @@ fun MatchScreen(
     val summary by summaryVm?.summary?.collectAsStateWithLifecycle()
         ?: remember { mutableStateOf<MatchLabelSummary?>(null) }
     var summarySheetOpen by remember { mutableStateOf(false) }
+    // Which of the two video gestures is awaiting its confirm, or null. Both are
+    // irreversible, and both are behind the same dialog - see MatchVideoDialog.
+    var videoAction by remember { mutableStateOf<MatchVideoAction?>(null) }
     val context = LocalContext.current
 
     // A summary that goes away while its sheet is open must close the sheet, not
@@ -131,6 +138,14 @@ fun MatchScreen(
         val err = state.error ?: return@LaunchedEffect
         snackbarHostState.showSnackbar(err)
         vm.dismissError()
+    }
+
+    // Its own channel, not the clip store's: removing this match's video is the
+    // one thing this page does that can fail on its own.
+    LaunchedEffect(matchState.error) {
+        val err = matchState.error ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(err)
+        matchVm.dismissError()
     }
 
     // rememberSaveable, not remember: court marking's exit does a bare
@@ -269,6 +284,22 @@ fun MatchScreen(
                                     shareText(context, log.title, exportMatchText(log))
                                 },
                             )
+                            // Offered whenever this match has a video and nothing
+                            // is in flight for it - not only when the analysis
+                            // disappointed. A video that found no rallies is the
+                            // likeliest reason to want another one, but gating on
+                            // that would leave the "Finishing up…" dead end with
+                            // no action on it at all. See the 2026-08-29 design.
+                            if (matchState.canRemoveVideo) {
+                                DropdownMenuItem(
+                                    text = { Text("Change video") },
+                                    onClick = { overflowOpen = false; videoAction = MatchVideoAction.CHANGE },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Remove video") },
+                                    onClick = { overflowOpen = false; videoAction = MatchVideoAction.REMOVE },
+                                )
+                            }
                         }
                     }
                     ThemeToggleButton(
@@ -359,6 +390,22 @@ fun MatchScreen(
         }
     }
 
+    videoAction?.let { action ->
+        MatchVideoDialog(
+            action = action,
+            hasServerVideo = matchState.hasServerVideo,
+            onDismiss = { videoAction = null },
+            // Change is remove, then the picker this page already owns: once
+            // removal lands the match has no video in either sense, so nothing
+            // about the attach path changes. The source is chosen here rather
+            // than in a second dialog afterwards.
+            onConfirm = { intent ->
+                videoAction = null
+                matchVm.removeVideo(onRemoved = { intent?.let(onAddVideo) })
+            },
+        )
+    }
+
     if (sheetOpen && videoId != null) {
         ShareSheet(
             videoId = videoId,
@@ -383,6 +430,52 @@ fun MatchScreen(
             onDismiss = { summarySheetOpen = false },
         )
     }
+}
+
+/**
+ * The confirm for both video gestures. What it says is built in shared
+ * ([matchVideoPrompt]) rather than here, for the same reason [AttachStatus]'s
+ * text is: two platforms writing the same sentence are two chances to write it
+ * differently. It has to say the points survive, which is the opposite of the
+ * match list's bound-match confirm, so that wording could not be reused.
+ *
+ * [onConfirm] carries the source for a change (null for a plain removal), chosen
+ * on this dialog rather than in a second one after the video is already gone.
+ * The three-button shape - Cancel and Record sharing the dismiss slot - is the
+ * board's own "Add the video?" prompt, in `ScoringScreen.kt`.
+ */
+@Composable
+private fun MatchVideoDialog(
+    action: MatchVideoAction,
+    hasServerVideo: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: (AttachIntent?) -> Unit,
+) {
+    val prompt = matchVideoPrompt(action, hasServerVideo)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(prompt.title) },
+        text = { Text(prompt.body) },
+        confirmButton = {
+            when (action) {
+                MatchVideoAction.CHANGE ->
+                    TextButton(onClick = { onConfirm(AttachIntent.Import) }) { Text("Import video") }
+                MatchVideoAction.REMOVE ->
+                    TextButton(onClick = { onConfirm(null) }) { Text("Remove") }
+            }
+        },
+        // Cancel leftmost, then the two sources: commitment escalates left to
+        // right, so the way out of a destructive confirm is not sitting between
+        // two buttons that both go through with it.
+        dismissButton = {
+            Row {
+                TextButton(onClick = onDismiss) { Text("Cancel") }
+                if (action == MatchVideoAction.CHANGE) {
+                    TextButton(onClick = { onConfirm(AttachIntent.Record) }) { Text("Record") }
+                }
+            }
+        },
+    )
 }
 
 /**

@@ -78,10 +78,33 @@ class OnnxSession(modelPath: String, provider: Provider = Provider.CPU) : Closea
         }
     }
 
-    /** ONNX Runtime hands back nested arrays shaped like the tensor; flatten them. */
-    private fun flatten(value: Any?): FloatArray = when (value) {
-        is FloatArray -> value
-        is Array<*> -> value.flatMap { flatten(it).asIterable() }.toFloatArray()
+    /**
+     * ONNX Runtime hands back arrays nested to the tensor's rank; flatten them
+     * into one FloatArray without boxing.
+     *
+     * The obvious `flatMap { it.asIterable() }.toFloatArray()` boxes every
+     * element. TrackNet's output is 1.2M floats per sequence at batch 1, so
+     * that allocated 1.2M Float objects per inference; at batch 4 it exhausted
+     * a 256MB heap outright. Copying plane by plane into a preallocated array
+     * allocates once.
+     */
+    private fun flatten(value: Any?): FloatArray {
+        val out = FloatArray(countFloats(value))
+        var at = 0
+        fun copy(v: Any?) {
+            when (v) {
+                is FloatArray -> { v.copyInto(out, at); at += v.size }
+                is Array<*> -> v.forEach { copy(it) }
+                else -> error("unexpected ONNX output type ${v?.let { it::class.simpleName }}")
+            }
+        }
+        copy(value)
+        return out
+    }
+
+    private fun countFloats(value: Any?): Int = when (value) {
+        is FloatArray -> value.size
+        is Array<*> -> value.sumOf { countFloats(it) }
         else -> error("unexpected ONNX output type ${value?.let { it::class.simpleName }}")
     }
 

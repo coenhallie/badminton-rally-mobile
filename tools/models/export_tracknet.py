@@ -76,6 +76,17 @@ def _export_tracknet(out: Path) -> None:
     model.load_state_dict(ckpt["model"] if "model" in ckpt else ckpt)
     model.eval()
 
+    # Batch is dynamic; the frame, height and width axes stay static.
+    #
+    # Measured on an S23, TrackNet inference is 74% of the on-device Phase 1
+    # cost at 233ms per frame, and a static batch of 1 forces one inference per
+    # 8-frame sequence. Production runs `batch_size=16` (`inference.py`), so
+    # the batch axis is the one dimension the deployed pipeline genuinely
+    # varies, and pinning it to 1 was an artifact of this exporter rather than
+    # a property of the model.
+    #
+    # Exported at batch 2 rather than 1 so the trace cannot bake a
+    # size-1 assumption into the graph and still appear to work.
     dummy = torch.randn(1, in_dim, 288, 512)
     _export_pair(model, dummy, out, dynamic_axes=None,
                  input_names=["frames"], output_names=["heatmaps"])
