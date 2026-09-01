@@ -1,5 +1,6 @@
 package com.badmintontracker.android
 
+import com.badmintontracker.android.localanalysis.LocalAnalysisRunner
 import android.app.Application
 import android.net.Uri
 import android.util.Log
@@ -33,6 +34,7 @@ class RallyAndroidApp : Application(), SingletonImageLoader.Factory {
     lateinit var localVideos:        LocalVideoRepository       private set
     lateinit var localAnnotations:   LocalAnnotationsRepository private set
     lateinit var analyzeCoordinator: AnalyzeCoordinator         private set
+    lateinit var localAnalysis:      LocalAnalysisRunner        private set
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -56,5 +58,13 @@ class RallyAndroidApp : Application(), SingletonImageLoader.Factory {
             log = { Log.i("AnalyzeCoordinator", it) },
         )
         analyzeCoordinator.reattachToProcessing()
+
+        // The on-device sibling of analyzeCoordinator. Application-scoped
+        // for the same reason: an analysis outlives the screen that starts it.
+        localAnalysis = LocalAnalysisRunner(
+            context = this,
+            scope = appScope,
+            log = { Log.i("LocalAnalysis", it) },
+        )
     }
 }

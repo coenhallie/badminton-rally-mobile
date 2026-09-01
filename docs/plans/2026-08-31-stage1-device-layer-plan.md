@@ -888,7 +888,7 @@ git commit -m "feat: TrackNet, InpaintNet and detector runners on Android"
 - Create: `androidApp/src/main/java/com/badmintontracker/android/localanalysis/AndroidLocalInferenceEngine.kt`
 - Create: `androidApp/src/androidTest/java/com/badmintontracker/android/localanalysis/AndroidLocalInferenceEngineTest.kt`
 
-- [ ] **Step 1: Assemble the engine**
+- [x] **Step 1: Assemble the engine**
 
 Satisfies `LocalInferenceEngine` from Task 6: background pre-pass, sequential
 decode, per-frame TrackNet ring buffer and detector, trajectory InpaintNet,
@@ -897,14 +897,14 @@ coordinates scaled back to source pixels, emit `RawInference`.
 It computes no metric, assigns no `player_id`, decides no rally boundary -
 section 5.1. Those all live in `:analysis`, which this device can call directly.
 
-- [ ] **Step 2: Feed it through the coordinator built in Task 6**
+- [x] **Step 2: Feed it through the coordinator built in Task 6**
 
 `RallyApp.localAnalysisCoordinator(engine)`, the same factory the fake engine
 went through. If the real engine produces a `RawInference` the coordinator
 handles, the whole Part A computation path is now running on a phone with no
 new shared code.
 
-- [ ] **Step 3: Assert the round trip in memory**
+- [x] **Step 3: Assert the round trip in memory**
 
 `RawInferenceCodec.decode(RawInferenceCodec.encode(x)) == x` on real engine
 output. Cheaper than the cross-language test the iOS plan needed, and it still
@@ -931,7 +931,7 @@ the same reason the cloud re-encodes.
 **Interfaces:**
 - Produces: `suspend fun cut(source: Uri, windows: List<ClipWindow>, into: File): List<File>`
 
-- [ ] **Step 1: Implement with `MediaCodec` plus `MediaMuxer`**
+- [x] **Step 1: Implement with `MediaCodec` plus `MediaMuxer`**
 
 Decode, re-encode, mux. A `MediaExtractor`-only stream copy cannot start on a
 non-keyframe, which is exactly what a rally boundary usually is.
@@ -942,7 +942,7 @@ Assert each output's duration is within one frame of `clipEnd - clipStart`, and
 that its first frame matches the source frame at `clipStart`. Duration alone
 passes for a clip cut at the wrong offset.
 
-- [ ] **Step 3: Handle overlapping windows**
+- [x] **Step 3: Handle overlapping windows**
 
 `refineRallies` can emit overlapping rallies and padding preserves the overlap -
 recorded in design section 6.1 and pinned by

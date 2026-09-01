@@ -1,5 +1,6 @@
 package com.badmintontracker.android.localvideo.court
 
+import com.badmintontracker.android.localanalysis.AnalysisTarget
 import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
@@ -76,7 +77,7 @@ import kotlinx.coroutines.withContext
 @Composable
 fun CourtMarkingScreen(
     vm: CourtMarkingViewModel,
-    onStartAnalysis: (CourtKeypoints) -> Unit,
+    onStartAnalysis: (CourtKeypoints, AnalysisTarget) -> Unit,
     onBack: () -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -127,7 +128,7 @@ fun CourtMarkingScreen(
 private fun ColumnScope.MarkingContent(
     vm: CourtMarkingViewModel,
     marking: CourtMarkingState,
-    onStartAnalysis: (CourtKeypoints) -> Unit,
+    onStartAnalysis: (CourtKeypoints, AnalysisTarget) -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
 
@@ -167,15 +168,29 @@ private fun ColumnScope.MarkingContent(
         )
     }
     if (marking.isComplete) {
-        ShuttlButton(
-            text = "Start Analysis",
-            onClick = { onStartAnalysis(marking.toCourtKeypoints()) },
-            variant = ShuttlButtonVariant.Primary,
+        // Two buttons rather than one with a toggle: the point is to run the
+        // same video through both pipelines back to back and compare, and a
+        // toggle adds a step to every comparison.
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
                 .padding(bottom = 16.dp),
-        )
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            ShuttlButton(
+                text = AnalysisTarget.Cloud.label,
+                onClick = { onStartAnalysis(marking.toCourtKeypoints(), AnalysisTarget.Cloud) },
+                variant = ShuttlButtonVariant.Primary,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            ShuttlButton(
+                text = AnalysisTarget.Device.label,
+                onClick = { onStartAnalysis(marking.toCourtKeypoints(), AnalysisTarget.Device) },
+                variant = ShuttlButtonVariant.Secondary,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
     }
 }
 

@@ -1,5 +1,8 @@
 package com.badmintontracker.android
 
+import com.badmintontracker.android.localanalysis.LocalAnalysisBanner
+import com.badmintontracker.android.localanalysis.LocalAnalysisRunner
+import com.badmintontracker.android.localanalysis.AnalysisTarget
 import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -64,6 +67,7 @@ fun AuthGate(
     themePrefs: ThemePreferenceRepository,
     localVideos: LocalVideoRepository,
     coordinator: AnalyzeCoordinator,
+    localAnalysis: LocalAnalysisRunner,
     localAnnotations: LocalAnnotationsRepository,
 ) {
     val session by rally.auth.sessionFlow.collectAsStateWithLifecycle(initialValue = null)
@@ -149,6 +153,15 @@ fun AuthGate(
                         }
                     )
                     val localRows by localVm.rows.collectAsStateWithLifecycle()
+                    // A Column, not two siblings: a nav destination's content
+                    // is a single slot, and two composables placed straight
+                    // into it overlap rather than stack.
+                    //
+                    // Above the list rather than inside it: an on-device run
+                    // takes minutes and belongs where it is visible on return,
+                    // not attached to one row that may have scrolled away.
+                    Column(modifier = Modifier.fillMaxSize()) {
+                    LocalAnalysisBanner(localAnalysis)
                     ClipListScreen(
                         vm = clipListVm,
                         media = rally.media,
@@ -206,6 +219,7 @@ fun AuthGate(
                                 }
                         },
                     )
+                    }
                 }
                 composable<Route.NewMatch> {
                     val vm: NewMatchViewModel = viewModel(
@@ -391,8 +405,20 @@ fun AuthGate(
                     )
                     CourtMarkingScreen(
                         vm = vm,
-                        onStartAnalysis = { keypoints ->
-                            coordinator.startAnalysis(args.entryId, keypoints)
+                        onStartAnalysis = { keypoints, target ->
+                            when (target) {
+                                AnalysisTarget.Cloud ->
+                                    coordinator.startAnalysis(args.entryId, keypoints)
+                                AnalysisTarget.Device -> {
+                                    // The keypoints are persisted either way, so
+                                    // a device run can be followed by a cloud run
+                                    // over the same markings without re-marking.
+                                    localVideos.update(args.entryId) { it.copy(keypoints = keypoints) }
+                                    localVideos.get(args.entryId)?.uri?.let { uri ->
+                                        localAnalysis.start(args.entryId, uri, keypoints)
+                                    }
+                                }
+                            }
                             if (localVideos.get(args.entryId)?.scoreLogId != null) {
                                 // A single pop, not popBackStack(Route.Match(...)):
                                 // typed-route popping matches on the serialized
