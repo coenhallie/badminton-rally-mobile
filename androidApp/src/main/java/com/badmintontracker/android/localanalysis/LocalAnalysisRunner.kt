@@ -44,6 +44,16 @@ class LocalAnalysisRunner(
     private val scope: CoroutineScope,
     private val log: (String) -> Unit = {},
 ) {
+    /**
+     * Which analyses are in flight.
+     *
+     * Tracked separately from [states] because the state is what the UI reads
+     * and it moves through Preparing, Analysing and Cutting; "is anything
+     * running" is a different question and the service's lifetime depends on
+     * getting it right rather than on matching a particular state.
+     */
+    private val running = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+
     private val states = MutableStateFlow<Map<String, LocalAnalysisState>>(emptyMap())
     val state: StateFlow<Map<String, LocalAnalysisState>> = states
 
@@ -51,7 +61,11 @@ class LocalAnalysisRunner(
         states.value[entryId] ?: LocalAnalysisState.Idle
 
     fun start(entryId: String, videoUri: String, keypoints: CourtKeypoints) {
-        if (states.value[entryId] is LocalAnalysisState.Analysing) return
+        if (running.contains(entryId)) return
+        running.add(entryId)
+        // Held for as long as anything is in flight, and released in a finally
+        // so a crash cannot strand a wake lock until reboot.
+        LocalAnalysisService.start(context, "Preparing")
         scope.launch(Dispatchers.Default) {
             val started = System.currentTimeMillis()
             try {
@@ -62,6 +76,7 @@ class LocalAnalysisRunner(
                 val local = materialise(videoUri, entryId)
 
                 set(entryId, LocalAnalysisState.Analysing(0f))
+                LocalAnalysisService.start(context, "Analysing")
                 val outcome = LocalAnalysisCoordinator(
                     engine = AndroidLocalInferenceEngine(context),
                     log = log,
@@ -75,6 +90,7 @@ class LocalAnalysisRunner(
 
                 val windows = result.clipWindows
                 set(entryId, LocalAnalysisState.Cutting(0, windows.size))
+                LocalAnalysisService.start(context, "Cutting ${windows.size} clips")
                 val dir = File(context.filesDir, "local-clips/$entryId").apply { mkdirs() }
                 val clips = ClipCutter().cut(local, windows, dir)
 
@@ -92,6 +108,12 @@ class LocalAnalysisRunner(
             } catch (t: Throwable) {
                 set(entryId, LocalAnalysisState.Failed(t.message ?: t::class.simpleName ?: "failed"))
                 log("local analysis failed: $t")
+            } finally {
+                running.remove(entryId)
+                // Only when nothing is left: two videos analysed back to back
+                // share one service, and stopping on the first would drop the
+                // wake lock under the second.
+                if (running.isEmpty()) LocalAnalysisService.stop(context)
             }
         }
     }

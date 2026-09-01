@@ -3,6 +3,18 @@
 
     <uses-permission android:name="android.permission.INTERNET"/>
 
+    <!-- On-device analysis runs for minutes to over an hour. Without a
+         foreground service the CPU is throttled once the screen is off, Doze
+         suspends the work, and the process is a candidate for death under
+         memory pressure. dataSync is the type that fits: local processing of
+         the user's own file, started from a user action. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <!-- Android 13+ will not show the ongoing notification without this. The
+         service still runs if it is denied; only its notification is hidden. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
     <!-- allowBackup is off deliberately: shared_prefs/rally.xml holds the Supabase
          session (access + refresh token), and cloud backup / device-to-device transfer
          would copy a live refresh token off the device. Nothing else in that file
@@ -34,5 +46,11 @@
                 <data android:scheme="badmintontracker" android:host="login"/>
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".localanalysis.LocalAnalysisService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync"/>
+
     </application>
 </manifest>
