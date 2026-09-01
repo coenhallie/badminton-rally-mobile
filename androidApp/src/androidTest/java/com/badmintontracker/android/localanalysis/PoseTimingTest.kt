@@ -160,6 +160,66 @@ class PoseTimingTest {
         println(out)
     }
 
+    /**
+     * What each model size costs on this phone, at the accuracy-preferred 960.
+     *
+     * The companion measurement, compare_pose_accuracy.py, prices the same
+     * sizes in court centimetres. Neither number decides alone: a model that is
+     * four times faster and loses five centimetres is a good trade for a
+     * heatmap binned far coarser than that, and a bad one for peak-speed work.
+     */
+    @Test
+    fun compare_model_sizes_at_960() {
+        val vid = video()
+        assumeTrue("SKIPPED: corpus video absent", vid != null)
+        val candidates = listOfNotNull(
+            model("posen.960.fp16.onnx")?.let { "nano" to it },
+            model("poses.960.fp16.onnx")?.let { "small" to it },
+            model("pose.fp16.onnx")?.let { "medium" to it },
+        )
+        assumeTrue("SKIPPED: no pose models in /data/local/tmp", candidates.isNotEmpty())
+
+        val out = StringBuilder("pose 960 by model size (cool phone, unbucketed)").append(NL)
+        candidates.forEach { (label, file) ->
+            val ms = runCatching { sizeMedian(file, vid!!) }
+            out.append(
+                ms.fold(
+                    { "  %-7s %8.1f ms/frame".format(label, it) },
+                    { "  %-7s FAILED: %s".format(label, it.message?.take(90)) },
+                ),
+            ).append(NL)
+        }
+        Log.i("PoseTiming", out.toString())
+        println(out)
+    }
+
+    private fun sizeMedian(model: File, video: File): Double {
+        val size = 960
+        val session = OnnxSession(model.path)
+        val input = FloatArray(3 * size * size)
+        val letterboxed = ByteArray(size * size * 3)
+        val samples = mutableListOf<Long>()
+        try {
+            VideoFrameSource(video).forEachFrame(PROVIDER_FRAMES) { _, _, image ->
+                val scale = min(size.toDouble() / image.width, size.toDouble() / image.height)
+                val fitW = (image.width * scale).toInt()
+                val fitH = (image.height * scale).toInt()
+                java.util.Arrays.fill(letterboxed, 114.toByte())
+                FramePreprocessor.toRgbResizedInto(
+                    image, letterboxed, size, (size - fitW) / 2, (size - fitH) / 2, fitW, fitH,
+                )
+                FramePreprocessor.toChwTensor(letterboxed, size, size, input)
+                val t0 = System.nanoTime()
+                session.run(input, longArrayOf(1, 3, size.toLong(), size.toLong()))
+                samples.add(System.nanoTime() - t0)
+            }
+        } finally {
+            session.close()
+        }
+        val warm = samples.drop(5)
+        return warm.sorted()[warm.size / 2] / 1_000_000.0
+    }
+
     private fun providerMedian(provider: OnnxSession.Provider, model: File, video: File): Double {
         val size = 640
         val session = OnnxSession(model.path, provider)
