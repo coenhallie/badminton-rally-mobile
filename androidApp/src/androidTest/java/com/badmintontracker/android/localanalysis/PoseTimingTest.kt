@@ -173,15 +173,16 @@ class PoseTimingTest {
         val vid = video()
         assumeTrue("SKIPPED: corpus video absent", vid != null)
         val candidates = listOfNotNull(
-            model("posen.960.fp16.onnx")?.let { "nano" to it },
-            model("poses.960.fp16.onnx")?.let { "small" to it },
-            model("pose.fp16.onnx")?.let { "medium" to it },
+            model("posen.640.fp16.onnx")?.let { Triple("nano@640", it, 640) },
+            model("posen.960.fp16.onnx")?.let { Triple("nano@960", it, 960) },
+            model("poses.960.fp16.onnx")?.let { Triple("small@960", it, 960) },
+            model("pose.fp16.onnx")?.let { Triple("medium@960", it, 960) },
         )
         assumeTrue("SKIPPED: no pose models in /data/local/tmp", candidates.isNotEmpty())
 
         val out = StringBuilder("pose 960 by model size (cool phone, unbucketed)").append(NL)
-        candidates.forEach { (label, file) ->
-            val ms = runCatching { sizeMedian(file, vid!!) }
+        candidates.forEach { (label, file, size) ->
+            val ms = runCatching { sizeMedian(file, vid!!, size) }
             out.append(
                 ms.fold(
                     { "  %-7s %8.1f ms/frame".format(label, it) },
@@ -193,8 +194,7 @@ class PoseTimingTest {
         println(out)
     }
 
-    private fun sizeMedian(model: File, video: File): Double {
-        val size = 960
+    private fun sizeMedian(model: File, video: File, size: Int): Double {
         val session = OnnxSession(model.path)
         val input = FloatArray(3 * size * size)
         val letterboxed = ByteArray(size * size * 3)
