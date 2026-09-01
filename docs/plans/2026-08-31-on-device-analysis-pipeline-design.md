@@ -622,7 +622,7 @@ colour-aware decoder, this default silently becomes wrong.
 every run rather than only judging the chosen one, so the evidence is there
 whether or not anyone is looking for it.
 
-### 6.5 Phase 1 is 9.4x realtime on an S23, and that is a viability problem
+### 6.5 Phase 1 is 7x realtime on an S23, which real video lengths make workable
 
 Measured 2026-09-01 on an SM-S911B, the full Phase 1 shuttle path end to end.
 **235ms per frame**, of which TrackNet inference is 161ms - 69%. That is 23
@@ -656,12 +656,12 @@ so the loss is spread through the U-Net rather than sitting in the predictor.
 have helped**: 30% off the dominant stage gives 187ms/frame and 5.6x realtime,
 where 1x needs 33ms/frame and TrackNet alone costs 161ms.
 
-So acceleration, batching and quantization are all measured and all
-insufficient. The only remaining lever of the right order is **a smaller model
-input** - 512x288 is production's choice, and halving each dimension is a 4x
-reduction in convolution work - which changes what the model sees and so needs
-its own accuracy measurement against the coverage gate. Failing that, §8's
-native-runtime escape hatch is what these numbers demand.
+**Decision, 2026-09-01: accuracy is not traded for speed.** int8 is rejected on
+its accuracy alone, and the one remaining lever of the right order - a smaller
+model input - spends the same currency, so it is not being pursued. fp16 stays;
+it moves zero peaks over 256 real frames on two videos. Acceleration and
+batching were free to try and gave nothing, so the optimisation thread is
+closed rather than merely paused.
 
 None of this touches the ported `:analysis` layer, which is
 platform-independent, verified stage by stage against the cloud's own

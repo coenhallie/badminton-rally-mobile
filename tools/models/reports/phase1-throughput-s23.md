@@ -15,15 +15,42 @@ Measured 2026-09-01, SM-S911B (Snapdragon 8 Gen 2), Android 16, on the
 
 TrackNet is 69% of it. Everything else together is 73ms.
 
-## What that means
+## What that means, against the videos that actually exist
 
-- The 3.3-minute corpus video (5972 frames): **23 minutes**, about 7.0x realtime.
-- A 30-minute match at 30fps (54,000 frames): **3.5 hours**.
+An earlier version of this report called Phase 1 "not viable on device",
+reasoning from the 30-minute 30fps match section 5.6 uses as its example. That
+was the wrong denominator. Every video in the production `videos` table,
+2026-09-01:
 
-**Phase 1 is not viable on device at this speed**, on a current flagship, and
-this is Phase 1 alone - pose is Phase 2 and costs more again. Section 5.6's
-routing threshold is a multiple of video duration; at 9.4x nearly everything
-routes to the cloud, which is the outcome the on-device work exists to avoid.
+| | duration |
+|---|---|
+| median | **1.0 min** |
+| mean | 2.6 min |
+| longest | 8.0 min |
+
+There is no 30-minute video. At 235ms per frame:
+
+| duration | frames | on-device |
+|---|---|---|
+| 0.8 min | 1,350 | 5.3 min |
+| 1.0 min (median) | 1,800 | **7.1 min** |
+| 3.3 min | 5,972 | 23.4 min |
+| 6.3 min at 50fps | 18,969 | 74.3 min |
+| 8.0 min | 12,032 | 47.1 min |
+
+**So the median upload is about seven minutes of background processing**, which
+is a product decision rather than an impossibility. The tail is the problem:
+two 6.3-minute videos cost 74 minutes each, because they are 50fps and frame
+count, not duration, is what this pipeline pays for.
+
+That last point is worth stating plainly, since section 5.6 frames its
+threshold as "a multiple of video duration": **duration is the wrong unit.** A
+6.3-minute 50fps video has more frames than an 8-minute 25fps one and costs
+more to analyse. The routing threshold should be expressed in frames.
+
+Caveat on the sample: 11 videos with usable metadata, all from development and
+testing rather than from clients. It establishes that the 30-minute assumption
+was wrong, not what real usage looks like.
 
 ## Execution providers: acceleration made it worse
 
@@ -118,14 +145,22 @@ this list closes it:
   "only justified if section 7's numbers demand it". These numbers demand at
   least the experiment.
 
-## What this means for the design
+## Decision, 2026-09-01: accuracy over speed
 
-On-device Phase 1 does not currently pay for itself on a current flagship
-Android. Section 5.6's routing threshold is a multiple of video duration; at
-7.1x essentially every video routes to the cloud, which is the outcome the
-whole on-device effort exists to avoid.
+Recorded because it closes the optimisation thread rather than leaving it
+looking unfinished.
 
-This does not invalidate the ported `:analysis` layer, which is
+**No further speed work that costs accuracy.** int8 is measured, rejected, and
+should not be revisited on speed grounds: it moves half the heatmap peaks. The
+remaining lever of the right order was a smaller model input, which trades the
+same currency, so it is not being pursued either. fp16 stays - it moves zero
+peaks over 256 real frames on two videos.
+
+That leaves throughput where it is, and against real video lengths that is a
+defensible place for it to be. What it does change is the routing design:
+section 5.6 should express its threshold **in frames rather than in a multiple
+of duration**, because a 50fps clip costs twice a 25fps one of the same length.
+
+None of this touches the ported `:analysis` layer, which is
 platform-independent, verified stage by stage against the cloud's own
-detectors, and would be needed by any device-side pipeline. The problem is
-narrowly TrackNet inference throughput.
+detectors, and needed by any device-side pipeline.
