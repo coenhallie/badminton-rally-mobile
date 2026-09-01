@@ -10,6 +10,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -26,6 +29,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 @Composable
 fun LocalAnalysisBanner(runner: LocalAnalysisRunner, modifier: Modifier = Modifier) {
     val states by runner.state.collectAsStateWithLifecycle()
+    var playing by remember { mutableStateOf<ClipCutter.Clip?>(null) }
+
+    playing?.let { clip ->
+        LocalClipPlayerDialog(clip = clip, onDismiss = { playing = null })
+    }
+
     if (states.isEmpty()) return
 
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -53,11 +62,28 @@ fun LocalAnalysisBanner(runner: LocalAnalysisRunner, modifier: Modifier = Modifi
                             Text("Cutting clips ${state.done}/${state.total}")
                             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                         }
-                        is LocalAnalysisState.Done -> Text(
-                            "${state.rallies} rallies, ${state.clips.size} clips, " +
-                                "shuttle in ${state.shuttleVisible}/${state.totalFrames} frames, " +
-                                "${"%.0f".format(state.elapsedSeconds)}s",
-                        )
+                        is LocalAnalysisState.Done -> {
+                            Text(
+                                "${state.rallies} rallies, ${state.clips.size} clips, " +
+                                    "shuttle in ${state.shuttleVisible}/${state.totalFrames} frames, " +
+                                    "${"%.0f".format(state.elapsedSeconds)}s",
+                            )
+                            // The clips themselves, playable. Counts alone
+                            // cannot answer whether local cutting is as good
+                            // as the cloud's - that needs watching the two
+                            // side by side, which is the whole reason both
+                            // pipelines are offered.
+                            state.clips.forEach { clip ->
+                                TextButton(onClick = { playing = clip }) {
+                                    Text(
+                                        "Rally ${clip.index}  " +
+                                            "${"%.1f".format(clip.startSeconds)}s - " +
+                                            "${"%.1f".format(clip.endSeconds)}s  " +
+                                            "(${"%.1f".format(clip.endSeconds - clip.startSeconds)}s)",
+                                    )
+                                }
+                            }
+                        }
                         is LocalAnalysisState.Failed -> Text(
                             "Failed: ${state.message}",
                             maxLines = 3,
