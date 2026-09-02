@@ -3,6 +3,7 @@ package com.badmintontracker.android
 import com.badmintontracker.android.localanalysis.BackgroundWorkMonitor
 import com.badmintontracker.android.localanalysis.LocalBackgroundWork
 import com.badmintontracker.android.localanalysis.LocalBackgroundWorkClick
+import com.badmintontracker.shared.local.DeviceThroughputRepository
 import com.badmintontracker.android.localanalysis.LocalAnalysisBanner
 import com.badmintontracker.android.localanalysis.LocalAnalysisRunner
 import com.badmintontracker.android.localanalysis.AnalysisTarget
@@ -64,6 +65,17 @@ import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.RallyApp
 import com.badmintontracker.shared.scoring.ScoreLogStatus
 import io.github.jan.supabase.auth.status.SessionStatus
+import com.badmintontracker.android.localanalysis.LocalAnalysisState
+import com.badmintontracker.android.localanalysis.CourtHeatmapView
+import com.badmintontracker.android.localanalysis.BackgroundWorkAction
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.Icons
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.Scaffold
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.padding
 
 @Composable
 fun AuthGate(
@@ -73,6 +85,7 @@ fun AuthGate(
     coordinator: AnalyzeCoordinator,
     localAnalysis: LocalAnalysisRunner,
     backgroundWork: BackgroundWorkMonitor,
+    throughput: DeviceThroughputRepository,
     localAnnotations: LocalAnnotationsRepository,
 ) {
     val session by rally.auth.sessionFlow.collectAsStateWithLifecycle(initialValue = null)
@@ -415,6 +428,40 @@ fun AuthGate(
                         )
                     }
                 }
+                @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+                composable<Route.Heatmap> { entry ->
+                    val args = entry.toRoute<Route.Heatmap>()
+                    val done = localAnalysis.stateFor(args.entryId) as? LocalAnalysisState.Done
+                    Scaffold(
+                        topBar = {
+                            TopAppBar(
+                                title = { Text("PLAYER HEATMAP") },
+                                navigationIcon = {
+                                    IconButton(onClick = { nav.popBackStack() }) {
+                                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                                    }
+                                },
+                                actions = { BackgroundWorkAction() },
+                            )
+                        },
+                    ) { padding ->
+                        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+                            if (done == null) {
+                                // A run's state lives in memory, so it is gone
+                                // after a process death. Said plainly rather
+                                // than drawing an empty court, which would read
+                                // as a player who never moved.
+                                Text(
+                                    "This analysis is no longer loaded. Run it again to see the heatmap.",
+                                    modifier = Modifier.padding(16.dp),
+                                )
+                            } else {
+                                CourtHeatmapView(track = done.playerTrack, fps = done.fps)
+                            }
+                        }
+                    }
+                }
+
                 composable<Route.CourtMarking> { entry ->
                     val args = entry.toRoute<Route.CourtMarking>()
                     val appCtx = LocalContext.current.applicationContext
@@ -428,9 +475,11 @@ fun AuthGate(
                             }
                         }
                     )
+                    val deviceThroughput by throughput.throughput.collectAsStateWithLifecycle()
                     CourtMarkingScreen(
                         vm = vm,
-                        onStartAnalysis = { keypoints, target ->
+                        throughput = deviceThroughput,
+                        onStartAnalysis = { keypoints, target, metrics ->
                             when (target) {
                                 AnalysisTarget.Cloud ->
                                     coordinator.startAnalysis(args.entryId, keypoints)
@@ -440,7 +489,7 @@ fun AuthGate(
                                     // over the same markings without re-marking.
                                     localVideos.update(args.entryId) { it.copy(keypoints = keypoints) }
                                     localVideos.get(args.entryId)?.uri?.let { uri ->
-                                        localAnalysis.start(args.entryId, uri, keypoints)
+                                        localAnalysis.start(args.entryId, uri, keypoints, metrics)
                                     }
                                 }
                             }

@@ -23,6 +23,18 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.badmintontracker.shared.localvideo.BackgroundWork
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Column
 
 /**
  * Ambient background-work state, provided once around the NavHost.
@@ -40,10 +52,86 @@ val LocalBackgroundWork: ProvidableCompositionLocal<BackgroundWork?> =
 val LocalBackgroundWorkClick: ProvidableCompositionLocal<() -> Unit> =
     staticCompositionLocalOf { {} }
 
-/** The bar-facing form. Renders nothing unless something is running. */
+/**
+ * The bar-facing form. Renders nothing unless something is running.
+ *
+ * Tapping opens a sheet saying what each run is doing, rather than navigating.
+ * The stages differ in ways a ring cannot express - copying a video, building a
+ * background plate and running inference all look like the same spin - and
+ * "what is it doing" is the question the indicator provokes.
+ */
 @Composable
-fun BackgroundWorkAction() =
-    BackgroundWorkAction(LocalBackgroundWork.current, LocalBackgroundWorkClick.current)
+fun BackgroundWorkAction() {
+    val work = LocalBackgroundWork.current
+    // Read at composition, not inside the callback: a composition local cannot
+    // be read from a plain lambda.
+    val goToClips = LocalBackgroundWorkClick.current
+    var showDetail by remember { mutableStateOf(false) }
+
+    BackgroundWorkAction(work, onClick = { showDetail = true })
+
+    if (showDetail && work != null) {
+        BackgroundWorkSheet(
+            work = work,
+            onDismiss = { showDetail = false },
+            onOpenClips = {
+                showDetail = false
+                goToClips()
+            },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BackgroundWorkSheet(
+    work: BackgroundWork,
+    onDismiss: () -> Unit,
+    onOpenClips: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 32.dp)) {
+            Text("Working on", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.size(12.dp))
+
+            work.items.forEach { item ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
+                        val f = item.fraction
+                        if (f == null || f < MIN_DETERMINATE) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        } else {
+                            CircularProgressIndicator({ f }, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        }
+                    }
+                    Spacer(Modifier.size(16.dp))
+                    Text(item.label, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+
+            if (work.items.any { it.fraction == null }) {
+                // Named, because a spin with no number looks stuck otherwise:
+                // before inference can report a fraction the app copies the
+                // video out of the gallery and builds TrackNet's background
+                // plate by sampling the whole match, and neither has a
+                // percentage to give.
+                Spacer(Modifier.size(8.dp))
+                Text(
+                    "Preparing steps have no percentage: the video is copied and a " +
+                        "background image of the whole match is built before analysis starts.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            Spacer(Modifier.size(16.dp))
+            TextButton(onClick = onOpenClips) { Text("Go to matches") }
+        }
+    }
+}
 
 /**
  * The chrome indicator: what is running, on every screen that carries a bar.
@@ -75,15 +163,18 @@ fun BackgroundWorkAction(
             } else {
                 val ring = Modifier.size(RING)
                 val fraction = work.fraction
-                // Below a couple of percent a determinate ring is its own track
-                // and nothing else: it reads as an empty circle rather than as
-                // work in progress, which is exactly what a user sees in the
-                // first seconds after starting an analysis. Spin until there is
-                // an arc worth drawing.
+                // The threshold gates the ARC, not the number. Below a couple
+                // of percent a determinate ring is its own track and nothing
+                // else, so it spins; but a run that has started and is at 0% is
+                // a different thing from a run still copying its video, and
+                // hiding the number collapsed the two into one long silent
+                // spin. Whenever there is a fraction at all, it is shown.
                 if (fraction == null || fraction < MIN_DETERMINATE) {
                     CircularProgressIndicator(modifier = ring, strokeWidth = STROKE)
                 } else {
                     CircularProgressIndicator({ fraction }, modifier = ring, strokeWidth = STROKE)
+                }
+                if (fraction != null) {
                     // Inside the ring, so the number and the arc it belongs to
                     // are one object rather than two things to reconcile.
                     Text(

@@ -87,6 +87,10 @@ class BackgroundWorkMonitorTest {
             "a" to LocalAnalysisState.Done(
                 rallies = 3, shuttleVisible = 10, totalFrames = 100,
                 clips = emptyList(), elapsedSeconds = 1.0,
+                playerTrack = com.badmintontracker.analysis.player.PlayerTrack(
+                    samples = emptyList(), framesWithPose = 0, rejections = emptyMap(),
+                ),
+                fps = 30.0,
             ),
         )
         assertNull(f.monitor.work.value)

@@ -32,7 +32,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
  * it is visible from every screen rather than only this one.
  */
 @Composable
-fun LocalAnalysisBanner(runner: LocalAnalysisRunner, modifier: Modifier = Modifier) {
+fun LocalAnalysisBanner(
+    runner: LocalAnalysisRunner,
+    modifier: Modifier = Modifier,
+    onOpenHeatmap: (String) -> Unit = {},
+) {
     val states by runner.state.collectAsStateWithLifecycle()
     var playing by remember { mutableStateOf<ClipCutter.Clip?>(null) }
 
@@ -84,6 +88,14 @@ fun LocalAnalysisBanner(runner: LocalAnalysisRunner, modifier: Modifier = Modifi
                         )
                         // Filtered out above; the compiler still wants them.
                         else -> Unit
+                    }
+                    // Only when there is a track behind it: a button that opens
+                    // an empty court is worse than no button, because it reads
+                    // as the analysis having failed silently.
+                    if (state is LocalAnalysisState.Done && state.playerTrack.samples.isNotEmpty()) {
+                        TextButton(onClick = { onOpenHeatmap(entryId) }) {
+                            Text("Player heatmap (${state.playerTrack.samples.size} positions)")
+                        }
                     }
                     if (state is LocalAnalysisState.Done || state is LocalAnalysisState.Failed) {
                         TextButton(onClick = { runner.clear(entryId) }) { Text("Dismiss") }

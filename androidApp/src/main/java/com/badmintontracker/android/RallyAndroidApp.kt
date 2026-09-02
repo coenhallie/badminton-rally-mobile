@@ -2,6 +2,7 @@ package com.badmintontracker.android
 
 import com.badmintontracker.android.localanalysis.BackgroundWorkMonitor
 import com.badmintontracker.android.localanalysis.LocalAnalysisRunner
+import com.badmintontracker.shared.local.DeviceThroughputRepository
 import android.app.Application
 import android.net.Uri
 import android.util.Log
@@ -37,6 +38,7 @@ class RallyAndroidApp : Application(), SingletonImageLoader.Factory {
     lateinit var analyzeCoordinator: AnalyzeCoordinator         private set
     lateinit var localAnalysis:      LocalAnalysisRunner        private set
     lateinit var backgroundWork:     BackgroundWorkMonitor      private set
+    lateinit var throughput:         DeviceThroughputRepository private set
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -63,9 +65,11 @@ class RallyAndroidApp : Application(), SingletonImageLoader.Factory {
 
         // The on-device sibling of analyzeCoordinator. Application-scoped
         // for the same reason: an analysis outlives the screen that starts it.
+        throughput = DeviceThroughputRepository(settings)
         localAnalysis = LocalAnalysisRunner(
             context = this,
             scope = appScope,
+            throughput = throughput,
             log = { Log.i("LocalAnalysis", it) },
         )
 

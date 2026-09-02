@@ -57,6 +57,7 @@ class MainActivity : ComponentActivity() {
                         coordinator = app.analyzeCoordinator,
                         localAnalysis = app.localAnalysis,
                         backgroundWork = app.backgroundWork,
+                        throughput = app.throughput,
                         localAnnotations = app.localAnnotations,
                     )
                 }

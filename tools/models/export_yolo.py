@@ -36,6 +36,12 @@ OPSET = 17
 MODELS = [
     ("badminton", "badminton.pt", [640]),
     ("pose", "pose.pt", [960, 640]),
+    # The nano pose model, which is what the app SHIPS. Medium above stays
+    # exported because the accuracy comparison is measured against it, but at
+    # 1567ms a frame against nano's 230 it is not what runs on a phone.
+    # 960 only: at 640 the worst joint is the wrist, which is the fastest-moving
+    # joint on a racket arm and the one a coach looks at.
+    ("posen", "pose_nano.pt", [960]),
 ]
 
 

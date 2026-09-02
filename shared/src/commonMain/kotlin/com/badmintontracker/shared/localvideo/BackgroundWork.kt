@@ -26,6 +26,9 @@ data class DeviceWork(
  */
 enum class DevicePhase { PREPARING, ANALYSING, CUTTING }
 
+/** One thing that is running, as a person would describe it. */
+data class BackgroundWorkItem(val label: String, val fraction: Float?)
+
 /** What the chrome indicator renders. Absent, rather than idle, when nothing runs. */
 data class BackgroundWork(
     val activeCount: Int,
@@ -33,6 +36,16 @@ data class BackgroundWork(
     /** `null` renders indeterminate: either unknown, or several runs at once. */
     val fraction: Float?,
     val hasFailure: Boolean,
+    /**
+     * Every run, kept alongside the summary.
+     *
+     * The summary collapses to "2 analyses in progress", which is right for a
+     * 26dp ring and useless for answering "what is it doing". One long silent
+     * spin covers copying the video, building a background plate and running
+     * inference, and those are different enough that a user asking is owed the
+     * difference.
+     */
+    val items: List<BackgroundWorkItem> = emptyList(),
 )
 
 /**
@@ -63,35 +76,51 @@ fun backgroundWork(
     if (count == 0) {
         // A failure with nothing left running is still worth a badge; it is the
         // only trace the user gets if they were on another screen when it broke.
-        return if (hasFailure) BackgroundWork(0, "Analysis failed", null, true) else null
+        return if (hasFailure) {
+            BackgroundWork(
+                activeCount = 0,
+                label = "Analysis failed",
+                fraction = null,
+                hasFailure = true,
+                items = listOf(BackgroundWorkItem("Analysis failed", null)),
+            )
+        } else {
+            null
+        }
     }
 
-    if (count == 1) {
-        val single = cloud.firstOrNull()?.let { entry ->
+    val items = buildList {
+        cloud.forEach { entry ->
             val p = progress[entry.id]
             val fraction = p?.pipelineProgress ?: p?.uploadProgress
-            when (entry.stage) {
-                // Named apart because they are not the same promise: an upload
-                // stops when the app leaves the foreground, while Modal keeps
-                // going whatever the phone does.
-                AnalyzeStage.UPLOADING -> "Uploading" to fraction
-                else -> "Processing in the cloud" to fraction
+            // Named apart because they are not the same promise: an upload
+            // stops when the app leaves the foreground, while Modal keeps
+            // going whatever the phone does.
+            val base = when (entry.stage) {
+                AnalyzeStage.UPLOADING -> "Uploading"
+                else -> "Processing in the cloud"
             }
-        } ?: running.first().let { device ->
-            when (device.phase) {
+            add(BackgroundWorkItem(withPercent(base, fraction), fraction))
+        }
+        running.forEach { device ->
+            val base = when (device.phase) {
                 DevicePhase.PREPARING -> "Preparing video"
                 DevicePhase.ANALYSING -> "Analysing on device"
                 DevicePhase.CUTTING -> "Cutting clips"
-            } to device.fraction
+            }
+            add(BackgroundWorkItem(withPercent(base, device.fraction), device.fraction))
         }
+    }
 
-        return BackgroundWork(1, withPercent(single.first, single.second), single.second, hasFailure)
+    if (count == 1) {
+        val single = items.first()
+        return BackgroundWork(1, single.label, single.fraction, hasFailure, items)
     }
 
     // Not averaged: two runs at different stages produce a number that means
     // nothing. Counting analyses rather than videos, because running both
     // pipelines over one video is the comparison this app exists to make.
-    return BackgroundWork(count, "$count analyses in progress", null, hasFailure)
+    return BackgroundWork(count, "$count analyses in progress", null, hasFailure, items)
 }
 
 private fun withPercent(label: String, fraction: Float?): String =

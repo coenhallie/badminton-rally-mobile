@@ -67,6 +67,11 @@ import com.badmintontracker.shared.localvideo.court.CourtMarkingState
 import com.badmintontracker.shared.model.CourtKeypoints
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.badmintontracker.shared.local.DeviceThroughput
+import com.badmintontracker.shared.local.AnalysisMetric
+import com.badmintontracker.android.localanalysis.MetricSelector
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.listSaver
 
 /**
  * 12-point court calibration, behavior-identical to desktop CourtSetup.vue:
@@ -77,7 +82,8 @@ import kotlinx.coroutines.withContext
 @Composable
 fun CourtMarkingScreen(
     vm: CourtMarkingViewModel,
-    onStartAnalysis: (CourtKeypoints, AnalysisTarget) -> Unit,
+    throughput: DeviceThroughput,
+    onStartAnalysis: (CourtKeypoints, AnalysisTarget, Set<AnalysisMetric>) -> Unit,
     onBack: () -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -117,6 +123,7 @@ fun CourtMarkingScreen(
                 else -> MarkingContent(
                     vm = vm,
                     marking = marking,
+                    throughput = throughput,
                     onStartAnalysis = onStartAnalysis,
                 )
             }
@@ -128,9 +135,18 @@ fun CourtMarkingScreen(
 private fun ColumnScope.MarkingContent(
     vm: CourtMarkingViewModel,
     marking: CourtMarkingState,
-    onStartAnalysis: (CourtKeypoints, AnalysisTarget) -> Unit,
+    throughput: DeviceThroughput,
+    onStartAnalysis: (CourtKeypoints, AnalysisTarget, Set<AnalysisMetric>) -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    // Clips only by default: it is the one metric every user came for, and
+    // pose roughly doubles the wait, so it is opted into rather than out of.
+    var metrics by rememberSaveable(
+        saver = listSaver(
+            save = { it.value.map(AnalysisMetric::name) },
+            restore = { mutableStateOf(it.map(AnalysisMetric::valueOf).toSet()) },
+        ),
+    ) { mutableStateOf(setOf(AnalysisMetric.RALLY_CLIPS)) }
 
     // The frame flexes to whatever height is left after the pinned controls,
     // so it can never push them off screen (the original bug on portrait video).
@@ -178,16 +194,29 @@ private fun ColumnScope.MarkingContent(
                 .padding(bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            // Only for the device run: the cloud's cost is someone else's GPU
+            // and its worker decides its own stages, so a time estimate and a
+            // metric choice would both be fiction there.
+            MetricSelector(
+                frames = state.frameCount,
+                fps = state.fps,
+                selected = metrics,
+                throughput = throughput,
+                onToggle = { metric ->
+                    metrics = if (metric in metrics) metrics - metric else metrics + metric
+                },
+            )
             ShuttlButton(
                 text = AnalysisTarget.Cloud.label,
-                onClick = { onStartAnalysis(marking.toCourtKeypoints(), AnalysisTarget.Cloud) },
+                onClick = { onStartAnalysis(marking.toCourtKeypoints(), AnalysisTarget.Cloud, metrics) },
                 variant = ShuttlButtonVariant.Primary,
                 modifier = Modifier.fillMaxWidth(),
             )
             ShuttlButton(
                 text = AnalysisTarget.Device.label,
-                onClick = { onStartAnalysis(marking.toCourtKeypoints(), AnalysisTarget.Device) },
+                onClick = { onStartAnalysis(marking.toCourtKeypoints(), AnalysisTarget.Device, metrics) },
                 variant = ShuttlButtonVariant.Secondary,
+                enabled = metrics.isNotEmpty(),
                 modifier = Modifier.fillMaxWidth(),
             )
         }
@@ -465,8 +494,25 @@ suspend fun loadFirstFrame(context: Context, uri: Uri): CourtFrame =
             retriever.setDataSource(context, uri)
             val bmp = retriever.getFrameAtTime(100_000L, MediaMetadataRetriever.OPTION_CLOSEST)
                 ?: error("Couldn't extract video frame")
-            CourtFrame(bmp, bmp.width, bmp.height)
+            val fps = retriever
+                .extractMetadata(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)
+                ?.toDoubleOrNull()
+                ?.takeIf { it > 0 }
+                ?: DEFAULT_FPS
+            val durationMs = retriever
+                .extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                ?.toLongOrNull() ?: 0L
+            CourtFrame(
+                frame = bmp,
+                width = bmp.width,
+                height = bmp.height,
+                fps = fps,
+                frameCount = (durationMs / 1000.0 * fps).toInt(),
+            )
         } finally {
             retriever.release()
         }
     }
+
+/** Only when the container does not say; most do. */
+private const val DEFAULT_FPS = 30.0

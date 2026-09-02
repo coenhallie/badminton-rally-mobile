@@ -6,6 +6,7 @@ any one of them is visible in the manifest diff:
   - tracknet/inpaintnet: Modal volume badminton-tracker-models
   - badminton detector : copied from the badminton-tracker checkout
   - yolo26m-pose       : resolved by Ultralytics, which is why it needs pinning
+  - yolo26n-pose       : the model the app ships; same reason
 """
 import argparse, hashlib, json, shutil, subprocess, sys
 from datetime import datetime, timezone
@@ -75,6 +76,16 @@ def main() -> int:
     m = YOLO(str(pose_src))
     shutil.copy2(m.ckpt_path, WEIGHTS / "pose.pt")
     entries["pose"] = {"source": "ultralytics://yolo26m-pose.pt"}
+
+    # The nano pose model, which is the one the app SHIPS. Medium stays pinned
+    # above because the accuracy comparison measures against it, but at 1567ms
+    # a frame against nano's 230 it is not what runs on a phone. Both are
+    # recorded so the shipped weight has provenance and the reference it was
+    # judged against does not disappear.
+    nano_src = WEIGHTS / "yolo26n-pose.pt"
+    nano = YOLO(str(nano_src))
+    shutil.copy2(nano.ckpt_path, WEIGHTS / "pose_nano.pt")
+    entries["pose_nano"] = {"source": "ultralytics://yolo26n-pose.pt"}
 
     now = datetime.now(timezone.utc).isoformat()
     for name, meta in entries.items():

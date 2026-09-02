@@ -130,27 +130,31 @@ dependencies {
     testImplementation(libs.settings.test)
 }
 
-// The Phase 1 ONNX graphs ship as assets, but they are NOT in git: they are
-// 30MB of binary reproducible from the SHA-pinned weights in
+// The ONNX graphs ship as assets, but they are NOT in git: they are
+// 36MB of binary reproducible from the SHA-pinned weights in
 // tools/models/manifest.json via tools/models/export_yolo.py and
 // export_tracknet.py. Copying them in at build time keeps the repository free
 // of large derived artifacts without making the app fetch anything at runtime.
 //
-// Phase 1 only. Pose is 43.5MB and belongs to Phase 2, so it is deliberately
-// absent rather than bundled early.
-val phase1Models = listOf("tracknet.fp16.onnx", "inpaintnet.fp16.onnx", "badminton.fp16.onnx")
+// Pose ships as the NANO model at 6.3MB. The medium model the cloud uses is
+// 43.5MB, which is why pose was deliberately unbundled until now; nano is
+// smaller than the detector and measured at 230ms a frame against medium's
+// 1567, so it is both shippable and the only one that runs on a phone.
+val bundledModels = listOf(
+    "tracknet.fp16.onnx", "inpaintnet.fp16.onnx", "badminton.fp16.onnx", "posen.fp16.onnx",
+)
 val onnxSourceDir = rootProject.layout.projectDirectory.dir("tools/models/onnx")
 val onnxAssetsDir = layout.buildDirectory.dir("generated/onnxAssets")
 
 val copyOnnxModels by tasks.registering(Copy::class) {
-    description = "Stage the Phase 1 ONNX graphs as app assets."
-    from(onnxSourceDir) { include(phase1Models) }
+    description = "Stage the ONNX graphs as app assets."
+    from(onnxSourceDir) { include(bundledModels) }
     into(onnxAssetsDir.map { it.dir("models") })
     doFirst {
         // Fail with the command that fixes it. Without this the app builds
         // fine and dies at runtime on a missing asset, which is a far worse
         // place to learn the export was never run.
-        val missing = phase1Models.filterNot { onnxSourceDir.file(it).asFile.exists() }
+        val missing = bundledModels.filterNot { onnxSourceDir.file(it).asFile.exists() }
         if (missing.isNotEmpty()) {
             error(
                 "missing ONNX graphs in ${onnxSourceDir.asFile}: ${missing.joinToString()}\n" +

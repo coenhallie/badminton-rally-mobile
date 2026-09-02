@@ -48,6 +48,10 @@ class Phase2EndToEndTest {
 
     @Test
     fun a_video_becomes_a_shuttle_track_and_a_player_heatmap() {
+        // Overridable so a longer run can be asked for without editing a
+        // constant: -Pandroid.testInstrumentationRunnerArguments.frames=2000
+        val frames = InstrumentationRegistry.getArguments()
+            .getString("frames")?.toIntOrNull() ?: FRAMES
         val video = File("/data/local/tmp/corpus-743d7fb1.mp4").takeIf { it.isFile }
         val pose = File("/data/local/tmp/posen.960.fp16.onnx").takeIf { it.isFile }
         assumeTrue("SKIPPED: corpus video absent", video != null)
@@ -56,7 +60,7 @@ class Phase2EndToEndTest {
         val raw = runBlocking {
             AndroidLocalInferenceEngine(
                 context = context,
-                maxFrames = FRAMES,
+                maxFrames = frames,
                 poseModelPath = pose!!.path,
             ).run(video!!.path) {}
         }
@@ -84,12 +88,12 @@ class Phase2EndToEndTest {
         // replacing anything, and this is what would catch it if it had.
         assertTrue(
             "no shuttle track: pose broke the Phase 1 pass",
-            raw.frames.count { it.shuttle != null } > FRAMES / 4,
+            raw.frames.count { it.shuttle != null } > frames / 4,
         )
 
         assertTrue(
             "pose produced nothing through RawInference",
-            track.framesWithPose > FRAMES / 2,
+            track.framesWithPose > frames / 2,
         )
         assertTrue(
             "near player found in too few frames: ${track.samples.size} of ${track.framesWithPose}",
@@ -99,6 +103,21 @@ class Phase2EndToEndTest {
         // require the player to have actually moved across the court.
         assertTrue("the heatmap occupies no area: $cells cells", cells >= 1)
         assertTrue("occupancy accumulated no time", occupancy.totalSeconds > 0.0)
+
+        // The track in court metres, so the map can be rendered and looked at
+        // off-device. A heatmap is a shape, and no assertion here says whether
+        // the shape is a badminton player.
+        // The app's own external files dir, not /data/local/tmp: the app can
+        // READ from there, which is why the models load, but it cannot write
+        // there, and the difference only shows up at the end of a long run.
+        File(context.getExternalFilesDir(null), "player-track.csv").writeText(
+            buildString {
+                append("frame,court_x_m,court_y_m,on_ankles,fps=${raw.header.fps}").append('\n')
+                track.samples.forEach {
+                    append("${it.frame},${it.courtPosition.x},${it.courtPosition.y},${it.onAnkles}").append('\n')
+                }
+            },
+        )
     }
 
     private companion object {

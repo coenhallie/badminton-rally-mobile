@@ -27,6 +27,14 @@ sealed interface Route {
     @Serializable data class  ClipDetail(val clipId: String)  : Route
     @Serializable data class  LocalPlayer(val entryId: String)  : Route
     @Serializable data class  CourtMarking(val entryId: String) : Route
+
+    /**
+     * The court heatmap for one on-device run.
+     *
+     * Keyed by entry rather than carrying the track: a track is thousands of
+     * points and navigation arguments are serialized into the back stack.
+     */
+    @Serializable data class  Heatmap(val entryId: String) : Route
     @Serializable data object NewMatch : Route
     @Serializable data class  Scoring(val scoreLogId: String)    : Route
 }
