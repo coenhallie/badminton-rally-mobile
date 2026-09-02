@@ -23,6 +23,12 @@ private enum Facet {
     case rallies
 }
 
+/// A confirmed answer to the video confirm, distinct from "not answered yet":
+/// `intent` is nil for a plain removal, which is not the same as a Cancel.
+private struct ConfirmedVideoRemoval {
+    let intent: AttachIntent?
+}
+
 /// `navigationDestination(item:)` needs an Identifiable, and the summary sheet's
 /// "most labelled" row pushes a clip programmatically rather than through a
 /// NavigationLink.
@@ -93,6 +99,13 @@ struct MatchView: View {
     // on the view that is presenting a sheet can drop a push made mid-dismissal.
     @State private var pendingTopRallyClipId: String? = nil
     @State private var activeSheet: MatchSheet? = nil
+    // Which of the two video gestures is awaiting its confirm, or nil. Both are
+    // irreversible, and both go through the same alert.
+    @State private var videoAction: MatchVideoAction? = nil
+    // How the confirm above was answered, held until the alert has actually gone -
+    // see `confirmedVideoRemoval` and the onChange that acts on it. nil means it
+    // was cancelled, which is why the answer cannot just be the intent.
+    @State private var confirmedVideoRemoval: ConfirmedVideoRemoval? = nil
     // Held for the life of this view, not re-keyed on hasPoints/hasRallies: the
     // clip list briefly empties during a refresh, and re-keying on that would
     // silently snap a reader on the rallies facet back to Points mid-read.
@@ -206,6 +219,11 @@ struct MatchView: View {
             if let intakeError = intake.error {
                 ErrorBanner(message: intakeError)
             }
+            // Its own banner line, not the intake's: removing this match's video
+            // is the one thing this page does that can fail on its own.
+            if let removeError = matchModel.error {
+                ErrorBanner(message: removeError)
+            }
             Group {
                 if isMissing {
                     VStack {
@@ -307,6 +325,29 @@ struct MatchView: View {
                     if let intent { attachVideo(intent) }
                 }
             )
+        }
+        // `presenting:` rather than a bool and a separate payload: the alert's
+        // title, body and buttons all depend on which gesture raised it, and the
+        // four must not be able to disagree about that.
+        .alert(
+            videoPrompt?.title ?? "",
+            isPresented: Binding(get: { videoAction != nil }, set: { if !$0 { videoAction = nil } }),
+            presenting: videoAction
+        ) { action in
+            matchVideoAlertActions(action)
+        } message: { _ in
+            Text(videoPrompt?.body ?? "")
+        }
+        // The removal, and for a change the picker after it, run from here rather
+        // than from the alert's own button closures: a sheet raised while an alert
+        // is still tearing down is silently dropped, the same class of failure
+        // `MatchSheet` exists for, and `showImporter` is exactly that sheet.
+        // `videoAction` going nil is the alert's dismissal, and a Cancel leaves
+        // `confirmedVideoRemoval` nil, so this fires only on a real answer.
+        .onChange(of: videoAction) { _, current in
+            guard current == nil, let confirmed = confirmedVideoRemoval else { return }
+            confirmedVideoRemoval = nil
+            Task { await removeVideo(then: confirmed.intent) }
         }
         .sheet(isPresented: $showImporter) {
             VideoPicker(
@@ -434,6 +475,43 @@ struct MatchView: View {
         analyze.retry(entryId: entry.id)
     }
 
+    /// What the confirm says, built in shared
+    /// (`MatchVideoRemovalKt.matchVideoPrompt`) rather than here, for the same
+    /// reason `AttachStatus.text` is: two platforms writing the same sentence are
+    /// two chances to write it differently. It has to say the points survive,
+    /// which is the opposite of the match list's bound-match confirm, so that
+    /// wording could not be reused.
+    private var videoPrompt: MatchVideoPrompt? {
+        videoAction.map {
+            MatchVideoRemovalKt.matchVideoPrompt(action: $0, hasServerVideo: matchModel.hasServerVideo)
+        }
+    }
+
+    /// The source for a change is chosen on the confirm itself rather than in a
+    /// second alert after the video is already gone. Mirrors Android's
+    /// `MatchVideoDialog`.
+    @ViewBuilder
+    private func matchVideoAlertActions(_ action: MatchVideoAction) -> some View {
+        switch action {
+        case .change:
+            Button("Import video") { confirmedVideoRemoval = ConfirmedVideoRemoval(intent: .importVideo) }
+            Button("Record") { confirmedVideoRemoval = ConfirmedVideoRemoval(intent: .record) }
+            Button("Cancel", role: .cancel) {}
+        case .remove:
+            Button("Remove", role: .destructive) { confirmedVideoRemoval = ConfirmedVideoRemoval(intent: nil) }
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    /// Runs the removal and, for a change, hands straight over to the picker this
+    /// page already owns: once removal lands the match has no video in either
+    /// sense, so nothing about the attach path changes. Mirrors Android's
+    /// `MatchViewModel.removeVideo(onRemoved:)`.
+    private func removeVideo(then intent: AttachIntent?) async {
+        guard await matchModel.removeVideo() else { return }
+        if let intent { attachVideo(intent) }
+    }
+
     private var listBody: some View {
         List {
             if facet == .points, let log = matchModel.log {
@@ -494,15 +572,30 @@ struct MatchView: View {
                 .accessibilityLabel("Add video")
             }
         }
-        // A distinct glyph from the button above: a match with both a video and a
-        // log shows both at once, and two identical share icons side by side would
-        // be indistinguishable, especially under VoiceOver.
+        // One overflow, matching Android's own on this page, rather than a bare
+        // glyph per action: with sort, share and "Add video" already in the bar,
+        // three more discrete items would crowd it, and two of them would read as
+        // near-identical icons under VoiceOver.
         if let log = matchModel.log {
             ToolbarItem(placement: .topBarTrailing) {
-                ShareLink(item: ScoreTagSummaryKt.exportMatchText(log: log)) {
-                    Image(systemName: "doc.text")
+                Menu {
+                    ShareLink(item: ScoreTagSummaryKt.exportMatchText(log: log)) {
+                        Label("Export as text", systemImage: "doc.text")
+                    }
+                    // Offered whenever this match has a video and nothing is in
+                    // flight for it - not only when the analysis disappointed. A
+                    // video that found no rallies is the likeliest reason to want
+                    // another one, but gating on that would leave the "Finishing
+                    // up…" dead end with no action on it at all. See the
+                    // 2026-08-29 design.
+                    if matchModel.canRemoveVideo {
+                        Button("Change video") { videoAction = .change }
+                        Button("Remove video", role: .destructive) { videoAction = .remove }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
                 }
-                .accessibilityLabel("Export as text")
+                .accessibilityLabel("Match options")
             }
         }
     }

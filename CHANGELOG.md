@@ -10,6 +10,21 @@ The mobile app is versioned independently from the web app.
 ## [Unreleased]
 
 ### Added
+- Labels now carry a scope: Both, Scoreboard, or Clips, chosen on the Labels
+  screen. The courtside board draws only the labels scoped to it and wraps them
+  onto as many lines as they need instead of scrolling sideways, and the Note
+  button has moved down beside Undo where it no longer scrolls away. Existing
+  labels are all Both, so nothing moves until you say so.
+- A match's video can now be changed or removed from the match itself, on both
+  platforms. If the analysis finds no rallies - the likeliest way a first
+  attempt disappoints, since it depends on where the camera stood - the match
+  page's overflow now offers "Change video" and "Remove video" beside Retry.
+  Changing deletes the old video and takes you straight to the picker, and the
+  new one is analysed from scratch under the match's own name. Removing takes
+  the video, its rallies and any notes on them, and leaves the match, its points
+  and its tags exactly where they were; the confirm says so before anything
+  happens. Both are offered on any match that has a video, not only a failed
+  one, and both wait while an upload or a clipping run is still in flight.
 - A match scored on the phone can now take its video afterwards, on both
   platforms. Finish a match and you're asked whether to import or record its
   video; say "not now" and the offer is waiting on the match itself whenever
@@ -90,6 +105,9 @@ The mobile app is versioned independently from the web app.
   (marked "Analyzed") and loses them only when removed from the app.
 
 ### Changed
+- On iOS, labels are now created on the Labels screen only. The "+ New label"
+  shortcut inside the Add-note sheet is gone, which matches Android and means a
+  label's name, colour and scope are always chosen together in one place.
 - All user-facing copy now says "note(s)" instead of "annotation(s)" —
   one consistent term for the text coaches attach to rally moments.
 - Android: removing a video from "On this phone" (swipe or row menu) now asks

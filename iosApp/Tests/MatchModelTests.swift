@@ -37,11 +37,28 @@ final class MatchModelTests: XCTestCase {
     private func model(
         scoreLogs: ScoreLogsRepository,
         scoreLogId: String?,
-        localVideos: LocalVideoRepository = IosTestDoublesKt.testLocalVideoRepository()
+        localVideos: LocalVideoRepository = IosTestDoublesKt.testLocalVideoRepository(),
+        videos: RecordingVideosRepository = IosTestDoublesKt.testVideosRepository()
     ) -> MatchModel {
         let clips = IosTestDoublesKt.testClipsRepository()
         let analyze = IosTestDoublesKt.testAnalyzeCoordinator(localVideos: localVideos, clips: clips)
-        return MatchModel(scoreLogs: scoreLogs, localVideos: localVideos, analyze: analyze, clips: clips, scoreLogId: scoreLogId)
+        return MatchModel(
+            scoreLogs: scoreLogs, localVideos: localVideos, analyze: analyze, clips: clips,
+            videos: videos, localAnnotations: IosTestDoublesKt.testLocalAnnotationsRepository(),
+            scoreLogId: scoreLogId
+        )
+    }
+
+    private func entry(
+        scoreLogId: String, id: String = "e1", stage: AnalyzeStage = .local
+    ) -> LocalVideoEntry {
+        LocalVideoEntry(
+            id: id, uri: "content://x/\(id)", displayName: "m.mp4",
+            durationMs: 1000, sizeBytes: 10, addedAtEpochMs: 0,
+            title: nil, description: nil, keypoints: nil,
+            stage: stage, failedStep: nil, failureMessage: nil, resultSeen: false,
+            scoreLogId: scoreLogId
+        )
     }
 
     func testAMatchStillBeingScoredCannotTakeAVideoYet() {
@@ -71,8 +88,9 @@ final class MatchModelTests: XCTestCase {
     }
 
     func testAMatchThatAlreadyHasAVideoIsNotOfferedAnotherOne() {
-        // Replacing means removing the first, which is the delete gesture, not a
-        // second picker on the same page.
+        // One video per match: replacing it is "Change video", which removes the
+        // first and then reuses this same picker, rather than a second picker
+        // standing open beside the video already attached.
         let store = store()
         let log = newMatch(store)
         store.finish(id: log.id)
@@ -115,6 +133,94 @@ final class MatchModelTests: XCTestCase {
         ))
         let m = model(scoreLogs: store, scoreLogId: log.id, localVideos: videos)
         XCTAssertEqual(m.attach?.kind, .courtNotMarked)
+    }
+
+    func testAMatchWithNoVideoIsOfferedNeitherChangeNorRemove() {
+        let store = store()
+        let log = newMatch(store)
+        store.finish(id: log.id)
+        XCTAssertFalse(model(scoreLogs: store, scoreLogId: log.id).canRemoveVideo)
+    }
+
+    func testABoundMatchCanChangeOrRemoveItsVideo() {
+        let store = store()
+        let log = newMatch(store)
+        store.finish(id: log.id)
+        store.attachVideo(id: log.id, videoId: "vid-1")
+        let m = model(scoreLogs: store, scoreLogId: log.id)
+        XCTAssertTrue(m.canRemoveVideo)
+        XCTAssertTrue(m.hasServerVideo)
+        // Mutually exclusive with canAddVideo, on every surface.
+        XCTAssertFalse(m.canAddVideo)
+    }
+
+    func testAFailedVideoCanBeChangedOrRemoved() {
+        // The reported dead end: analysis found no rallies, and Retry over the
+        // same file is the only thing the page offered.
+        let store = store()
+        let log = newMatch(store)
+        store.finish(id: log.id)
+        store.attachVideo(id: log.id, videoId: "vid-1")
+        let videos = IosTestDoublesKt.testLocalVideoRepository()
+        videos.add(entry: entry(scoreLogId: log.id, id: "vid-1", stage: .failed))
+        XCTAssertTrue(model(scoreLogs: store, scoreLogId: log.id, localVideos: videos).canRemoveVideo)
+    }
+
+    func testAVideoStillUploadingCanBeNeitherChangedNorRemoved() {
+        let store = store()
+        let log = newMatch(store)
+        store.finish(id: log.id)
+        let videos = IosTestDoublesKt.testLocalVideoRepository()
+        videos.add(entry: entry(scoreLogId: log.id, stage: .uploading))
+        XCTAssertFalse(model(scoreLogs: store, scoreLogId: log.id, localVideos: videos).canRemoveVideo)
+    }
+
+    func testAVideoPickedButNotYetUploadedSaysThereAreNoRalliesToLose() {
+        let store = store()
+        let log = newMatch(store)
+        store.finish(id: log.id)
+        let videos = IosTestDoublesKt.testLocalVideoRepository()
+        videos.add(entry: entry(scoreLogId: log.id, stage: .local))
+        let m = model(scoreLogs: store, scoreLogId: log.id, localVideos: videos)
+        XCTAssertTrue(m.canRemoveVideo)
+        XCTAssertFalse(m.hasServerVideo)
+    }
+
+    func testRemovingAVideoLeavesTheMatchAndReopensAddVideo() async {
+        let store = store()
+        let log = newMatch(store)
+        store.finish(id: log.id)
+        store.attachVideo(id: log.id, videoId: "vid-1")
+        let entries = IosTestDoublesKt.testLocalVideoRepository()
+        entries.add(entry: entry(scoreLogId: log.id, id: "vid-1", stage: .failed))
+        let videos = IosTestDoublesKt.testVideosRepository()
+        let m = model(scoreLogs: store, scoreLogId: log.id, localVideos: entries, videos: videos)
+
+        let removed = await m.removeVideo()
+
+        XCTAssertTrue(removed)
+        XCTAssertEqual(videos.deletedVideoIds, ["vid-1"])
+        XCTAssertNil(m.log?.videoId)
+        XCTAssertFalse(m.canRemoveVideo)
+        // The whole point of "Change video": the attach path is open again with
+        // no second implementation of it.
+        XCTAssertTrue(m.canAddVideo)
+    }
+
+    func testAFailedRemovalSurfacesAMessageAndDoesNotHandOverToThePicker() async {
+        let store = store()
+        let log = newMatch(store)
+        store.finish(id: log.id)
+        store.attachVideo(id: log.id, videoId: "vid-1")
+        let videos = IosTestDoublesKt.testVideosRepository()
+        videos.failDeleteMatch = true
+        let m = model(scoreLogs: store, scoreLogId: log.id, videos: videos)
+
+        let removed = await m.removeVideo()
+
+        XCTAssertFalse(removed)
+        XCTAssertEqual(m.error, MatchVideoRemovalKt.MATCH_VIDEO_REMOVE_FAILED_MESSAGE)
+        XCTAssertEqual(m.log?.videoId, "vid-1")
     }
 
     func testADeletedMatchLeavesThePageInertRatherThanCrashing() async throws {
