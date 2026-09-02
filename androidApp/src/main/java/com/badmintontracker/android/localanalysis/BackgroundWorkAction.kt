@@ -7,6 +7,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.ProvidableCompositionLocal
@@ -69,10 +73,28 @@ fun BackgroundWorkAction(
                         .background(MaterialTheme.colorScheme.error),
                 )
             } else {
-                val ring = Modifier.size(20.dp)
-                when (val fraction = work.fraction) {
-                    null -> CircularProgressIndicator(modifier = ring, strokeWidth = 2.dp)
-                    else -> CircularProgressIndicator({ fraction }, modifier = ring, strokeWidth = 2.dp)
+                val ring = Modifier.size(RING)
+                val fraction = work.fraction
+                // Below a couple of percent a determinate ring is its own track
+                // and nothing else: it reads as an empty circle rather than as
+                // work in progress, which is exactly what a user sees in the
+                // first seconds after starting an analysis. Spin until there is
+                // an arc worth drawing.
+                if (fraction == null || fraction < MIN_DETERMINATE) {
+                    CircularProgressIndicator(modifier = ring, strokeWidth = STROKE)
+                } else {
+                    CircularProgressIndicator({ fraction }, modifier = ring, strokeWidth = STROKE)
+                    // Inside the ring, so the number and the arc it belongs to
+                    // are one object rather than two things to reconcile.
+                    Text(
+                        text = "${(fraction * 100).toInt()}",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Medium,
+                        ),
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                    )
                 }
                 if (work.hasFailure) {
                     Box(
@@ -85,3 +107,10 @@ fun BackgroundWorkAction(
         }
     }
 }
+
+/** Big enough to hold two digits legibly, small enough for an app bar action. */
+private val RING = 26.dp
+private val STROKE = 2.5.dp
+
+/** Under this the arc is invisible, so the ring spins instead of pretending. */
+private const val MIN_DETERMINATE = 0.02f

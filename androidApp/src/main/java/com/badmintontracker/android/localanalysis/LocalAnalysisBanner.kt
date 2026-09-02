@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Card
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -19,12 +18,18 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 /**
- * What the on-device pipeline is doing, and what it produced.
+ * What the on-device pipeline PRODUCED. Progress lives in the app bar.
  *
  * Exists so the two pipelines can be compared without a debugger attached: an
  * on-device run takes minutes, and "did it work" is otherwise only answerable
  * from logcat. Shows the numbers worth comparing against a cloud run of the
- * same video - rallies found, shuttle visibility, and how long it took.
+ * same video - rallies found, shuttle visibility, and how long it took - and
+ * the clips themselves, playable.
+ *
+ * It deliberately renders nothing while a run is in flight. A card that pushed
+ * the whole list down for the nine minutes an analysis takes cost more screen
+ * than the one number it carried, and that number is now in the app bar, where
+ * it is visible from every screen rather than only this one.
  */
 @Composable
 fun LocalAnalysisBanner(runner: LocalAnalysisRunner, modifier: Modifier = Modifier) {
@@ -35,10 +40,14 @@ fun LocalAnalysisBanner(runner: LocalAnalysisRunner, modifier: Modifier = Modifi
         LocalClipPlayerDialog(clip = clip, onDismiss = { playing = null })
     }
 
-    if (states.isEmpty()) return
+    // Finished or failed only: in-flight states are the app bar indicator's.
+    val settled = states.filterValues {
+        it is LocalAnalysisState.Done || it is LocalAnalysisState.Failed
+    }
+    if (settled.isEmpty()) return
 
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        states.forEach { (entryId, state) ->
+        settled.forEach { (entryId, state) ->
             Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                 Column(
                     modifier = Modifier.fillMaxWidth().padding(12.dp),
@@ -46,22 +55,6 @@ fun LocalAnalysisBanner(runner: LocalAnalysisRunner, modifier: Modifier = Modifi
                 ) {
                     Text("On-device analysis", style = androidx.compose.material3.MaterialTheme.typography.labelLarge)
                     when (state) {
-                        is LocalAnalysisState.Idle -> Text("Idle")
-                        is LocalAnalysisState.Preparing -> {
-                            Text(state.message)
-                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                        }
-                        is LocalAnalysisState.Analysing -> {
-                            Text("Analysing ${(state.fraction * 100).toInt()}%")
-                            LinearProgressIndicator(
-                                progress = { state.fraction },
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        }
-                        is LocalAnalysisState.Cutting -> {
-                            Text("Cutting clips ${state.done}/${state.total}")
-                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                        }
                         is LocalAnalysisState.Done -> {
                             Text(
                                 "${state.rallies} rallies, ${state.clips.size} clips, " +
@@ -89,6 +82,8 @@ fun LocalAnalysisBanner(runner: LocalAnalysisRunner, modifier: Modifier = Modifi
                             maxLines = 3,
                             overflow = TextOverflow.Ellipsis,
                         )
+                        // Filtered out above; the compiler still wants them.
+                        else -> Unit
                     }
                     if (state is LocalAnalysisState.Done || state is LocalAnalysisState.Failed) {
                         TextButton(onClick = { runner.clear(entryId) }) { Text("Dismiss") }
