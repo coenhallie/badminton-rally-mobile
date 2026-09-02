@@ -61,6 +61,11 @@ class LocalAnalysisRunner(
      */
     private val running = java.util.Collections.synchronizedSet(mutableSetOf<String>())
 
+    private val tracks = PlayerTrackStore(context.filesDir)
+
+    /** The track from an earlier run, for a screen opened after this one died. */
+    fun storedTrack(entryId: String): PlayerTrackStore.Stored? = tracks.load(entryId)
+
     private val states = MutableStateFlow<Map<String, LocalAnalysisState>>(emptyMap())
     val state: StateFlow<Map<String, LocalAnalysisState>> = states
 
@@ -125,6 +130,13 @@ class LocalAnalysisRunner(
                         poseMsPerFrame = if (wantsPose) perFrame * (1 - BASE_SHARE) else null,
                         cutMsPerClipSecond = null,
                     )
+                }
+
+                // Written before the clips are cut, which is minutes of work:
+                // a track that survived the analysis should not be lost to a
+                // failure in the step after it.
+                if (result.playerTrack.samples.isNotEmpty()) {
+                    tracks.save(entryId, result.playerTrack, result.result.fps)
                 }
 
                 val windows = if (AnalysisMetric.RALLY_CLIPS in metrics) result.clipWindows else emptyList()

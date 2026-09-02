@@ -199,7 +199,10 @@ fun AuthGate(
                     // takes minutes and belongs where it is visible on return,
                     // not attached to one row that may have scrolled away.
                     Column(modifier = Modifier.fillMaxSize()) {
-                    LocalAnalysisBanner(localAnalysis)
+                    LocalAnalysisBanner(
+                        runner = localAnalysis,
+                        onOpenHeatmap = { nav.navigate(Route.Heatmap(it)) },
+                    )
                     ClipListScreen(
                         vm = clipListVm,
                         media = rally.media,
@@ -208,6 +211,8 @@ fun AuthGate(
                         onMatchClick = { nav.navigate(Route.Match(videoId = it.videoId)) },
                         onScoreMatchClick = { nav.navigate(Route.Match(scoreLogId = it.scoreLogId)) },
                         onNewMatch = { nav.navigate(Route.NewMatch) },
+                        onOpenHeatmap = { nav.navigate(Route.Heatmap(it.id)) },
+                        hasHeatmap = { localAnalysis.storedTrack(it.id) != null },
                         localRows = localRows,
                         intakeError = intakeError,
                         onIntakeErrorShown = { intakeError = null },
@@ -431,7 +436,15 @@ fun AuthGate(
                 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
                 composable<Route.Heatmap> { entry ->
                     val args = entry.toRoute<Route.Heatmap>()
+                    // In memory if the run is still loaded, from disk otherwise.
+                    // A pose run costs half an hour, so losing its result to a
+                    // process death and asking for another one is not an option.
                     val done = localAnalysis.stateFor(args.entryId) as? LocalAnalysisState.Done
+                    val stored = remember(args.entryId) {
+                        if (done != null) null else localAnalysis.storedTrack(args.entryId)
+                    }
+                    val track = done?.playerTrack ?: stored?.track
+                    val trackFps = done?.fps ?: stored?.fps ?: 0.0
                     Scaffold(
                         topBar = {
                             TopAppBar(
@@ -446,7 +459,7 @@ fun AuthGate(
                         },
                     ) { padding ->
                         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-                            if (done == null) {
+                            if (track == null) {
                                 // A run's state lives in memory, so it is gone
                                 // after a process death. Said plainly rather
                                 // than drawing an empty court, which would read
@@ -456,7 +469,7 @@ fun AuthGate(
                                     modifier = Modifier.padding(16.dp),
                                 )
                             } else {
-                                CourtHeatmapView(track = done.playerTrack, fps = done.fps)
+                                CourtHeatmapView(track = track, fps = trackFps)
                             }
                         }
                     }

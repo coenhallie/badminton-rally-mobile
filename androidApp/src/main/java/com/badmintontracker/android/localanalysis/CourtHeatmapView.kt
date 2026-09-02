@@ -11,13 +11,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.unit.dp
 import com.badmintontracker.analysis.geometry.Court
 import com.badmintontracker.analysis.player.CourtOccupancy
 import com.badmintontracker.analysis.player.PlayerTrack
+import kotlin.math.sqrt
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.ImageBitmap
 
 /**
  * Where the player spent the match, drawn on the court rather than on the video.
@@ -44,6 +48,16 @@ fun CourtHeatmapView(
     }
     val grid = remember(occupancy) { occupancy.smoothed() }
     val peak = remember(grid) { grid.flatten().maxOrNull() ?: 0.0 }
+    // One pixel per cell, scaled up by the GPU rather than drawn as rectangles.
+    //
+    // Rectangles produced two artefacts that made a smooth field look like
+    // data it is not. Each cell was drawn a pixel oversized to avoid hairline
+    // gaps, so neighbours double-blended into a bright grid; and every cell
+    // with any value at all was floored to 15% opacity, which turned the
+    // Gaussian tail into a solid plateau with a hard rectangular edge, as if
+    // the player had stood everywhere inside it. Interpolating a bitmap has no
+    // seams to cover and lets the tail reach zero.
+    val image = remember(grid, peak) { heatImage(grid, peak) }
 
     Column(modifier) {
         if (track.samples.isEmpty()) {
@@ -64,24 +78,14 @@ fun CourtHeatmapView(
                 // than clamped onto the line.
                 .aspectRatio((Court.WIDTH_DOUBLES + 2 * MARGIN_M).toFloat() / (Court.LENGTH + 2 * MARGIN_M).toFloat()),
         ) {
-            val cellW = size.width / occupancy.columns
-            val cellH = size.height / occupancy.rows
-
-            if (peak > 0.0) {
-                grid.forEachIndexed { row, cells ->
-                    cells.forEachIndexed { column, seconds ->
-                        if (seconds <= 0.0) return@forEachIndexed
-                        // Square root rather than linear: occupancy is heavily
-                        // peaked around a base position, and a linear ramp
-                        // renders everywhere else as empty when it is not.
-                        val t = kotlin.math.sqrt(seconds / peak).toFloat()
-                        drawRect(
-                            color = lerp(COOL, HOT, t).copy(alpha = 0.15f + 0.85f * t),
-                            topLeft = Offset(column * cellW, row * cellH),
-                            size = Size(cellW + 1f, cellH + 1f),
-                        )
-                    }
-                }
+            if (image != null) {
+                drawImage(
+                    image = image,
+                    dstSize = IntSize(size.width.toInt(), size.height.toInt()),
+                    // Smooth, so a quarter-metre grid reads as a field rather
+                    // than as the blocks it is stored in.
+                    filterQuality = FilterQuality.High,
+                )
             }
             drawCourt(marginM = MARGIN_M)
         }
@@ -92,6 +96,38 @@ fun CourtHeatmapView(
             modifier = Modifier.padding(horizontal = 16.dp),
         )
     }
+}
+
+/**
+ * The occupancy field as one small image, one pixel per cell.
+ *
+ * Alpha rises with occupancy and reaches zero where there is none, so the edge
+ * of the data is where the player stopped going rather than where the grid
+ * happens to end.
+ */
+private fun heatImage(grid: List<List<Double>>, peak: Double): ImageBitmap? {
+    if (peak <= 0.0 || grid.isEmpty()) return null
+    val rows = grid.size
+    val columns = grid[0].size
+    val pixels = IntArray(rows * columns)
+    for (r in 0 until rows) {
+        for (c in 0 until columns) {
+            // Square root rather than linear: occupancy is heavily peaked
+            // around a base position, and a linear ramp renders everywhere
+            // else as empty when it is not.
+            val t = sqrt(grid[r][c] / peak).toFloat().coerceIn(0f, 1f)
+            val colour = lerp(COOL, HOT, t)
+            pixels[r * columns + c] = android.graphics.Color.argb(
+                (t * 255).toInt(),
+                (colour.red * 255).toInt(),
+                (colour.green * 255).toInt(),
+                (colour.blue * 255).toInt(),
+            )
+        }
+    }
+    return android.graphics.Bitmap
+        .createBitmap(pixels, columns, rows, android.graphics.Bitmap.Config.ARGB_8888)
+        .asImageBitmap()
 }
 
 /**

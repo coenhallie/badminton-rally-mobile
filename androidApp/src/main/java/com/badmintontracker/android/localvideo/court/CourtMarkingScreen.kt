@@ -72,6 +72,9 @@ import com.badmintontracker.shared.local.AnalysisMetric
 import com.badmintontracker.android.localanalysis.MetricSelector
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.heightIn
 
 /**
  * 12-point court calibration, behavior-identical to desktop CourtSetup.vue:
@@ -159,6 +162,20 @@ private fun ColumnScope.MarkingContent(
         FrameWithOverlay(vm = vm, marking = marking, frame = state.frame)
     }
 
+    // Everything between the frame and the action buttons scrolls, and the
+    // buttons themselves never do. All of this was unweighted, so it measured
+    // at whatever height it wanted and the frame absorbed the difference; once
+    // the metric selector was added the total exceeded the screen, the frame
+    // had already collapsed to nothing, and the second action button was
+    // clipped away under the navigation bar. Weighting this region against the
+    // frame means the two share what is left after the buttons are placed, so
+    // the buttons cannot be pushed off however long this list grows.
+    Column(
+        modifier = Modifier
+            .weight(GUIDANCE_WEIGHT)
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState()),
+    ) {
     InstructionRow(marking)
     SchematicCourtGuide(nextIndex = marking.nextIndex, placedCount = marking.points.size)
 
@@ -183,6 +200,8 @@ private fun ColumnScope.MarkingContent(
             modifier = Modifier.weight(1f),
         )
     }
+    }
+
     if (marking.isComplete) {
         // Two buttons rather than one with a toggle: the point is to run the
         // same video through both pipelines back to back and compare, and a
@@ -516,3 +535,11 @@ suspend fun loadFirstFrame(context: Context, uri: Uri): CourtFrame =
 
 /** Only when the container does not say; most do. */
 private const val DEFAULT_FPS = 30.0
+
+/**
+ * The guidance area splits the leftover space evenly with the frame.
+ *
+ * It scrolls, so it can afford to be the smaller of the two when it has to be;
+ * the frame cannot, and twelve landmarks are placed on it by finger.
+ */
+private const val GUIDANCE_WEIGHT = 1f
