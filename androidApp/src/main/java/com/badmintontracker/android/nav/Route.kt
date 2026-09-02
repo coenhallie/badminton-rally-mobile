@@ -35,6 +35,9 @@ sealed interface Route {
      * points and navigation arguments are serialized into the back stack.
      */
     @Serializable data class  Heatmap(val entryId: String) : Route
+
+    /** Clips a device run cut, which never leave the phone. */
+    @Serializable data class  LocalClips(val entryId: String) : Route
     @Serializable data object NewMatch : Route
     @Serializable data class  Scoring(val scoreLogId: String)    : Route
 }

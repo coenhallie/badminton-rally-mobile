@@ -66,6 +66,9 @@ class LocalAnalysisRunner(
     /** The track from an earlier run, for a screen opened after this one died. */
     fun storedTrack(entryId: String): PlayerTrackStore.Stored? = tracks.load(entryId)
 
+    /** The clips from an earlier run, for the same reason. */
+    fun storedClips(entryId: String): List<ClipCutter.Clip> = tracks.loadClips(entryId)
+
     private val states = MutableStateFlow<Map<String, LocalAnalysisState>>(emptyMap())
     val state: StateFlow<Map<String, LocalAnalysisState>> = states
 
@@ -144,6 +147,7 @@ class LocalAnalysisRunner(
                 if (windows.isNotEmpty()) LocalAnalysisService.start(context, "Cutting ${windows.size} clips")
                 val dir = File(context.filesDir, "local-clips/$entryId").apply { mkdirs() }
                 val clips = if (windows.isEmpty()) emptyList() else ClipCutter().cut(local, windows, dir)
+                tracks.saveClips(entryId, clips)
 
                 set(
                     entryId,

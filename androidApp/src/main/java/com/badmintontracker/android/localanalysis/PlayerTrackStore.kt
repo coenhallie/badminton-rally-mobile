@@ -61,6 +61,77 @@ class PlayerTrackStore(private val root: File) {
         }.getOrNull()
     }
 
+    /**
+     * The clips a run produced, so they outlive it too.
+     *
+     * Same reason as the track: cutting re-encodes and the files are tens of
+     * megabytes, and they were reachable only from the in-memory banner of the
+     * run that made them. A process death left them on disk with nothing in the
+     * app able to open them.
+     */
+    fun saveClips(entryId: String, clips: List<ClipCutter.Clip>) {
+        if (clips.isEmpty()) return
+        val file = clipIndexFor(entryId).apply { parentFile?.mkdirs() }
+        file.writeText(
+            buildString {
+                append(VERSION).append('\n')
+                clips.forEach {
+                    append(it.index).append(',')
+                        .append(it.startSeconds).append(',')
+                        .append(it.endSeconds).append(',')
+                        .append(it.file.name).append('\n')
+                }
+            },
+        )
+    }
+
+    fun loadClips(entryId: String): List<ClipCutter.Clip> {
+        val file = clipIndexFor(entryId)
+        // No index: recover whatever is on disk anyway. The clips are the
+        // expensive artifact - tens of megabytes and minutes of re-encoding -
+        // and refusing to list them because a small sidecar is missing would
+        // throw away the thing worth keeping to protect the bookkeeping.
+        if (!file.isFile) return scanClips(entryId)
+        return runCatching {
+            val lines = file.readLines()
+            if (lines.firstOrNull() != VERSION) return emptyList()
+            lines.drop(1).mapNotNull { line ->
+                if (line.isBlank()) return@mapNotNull null
+                val f = line.split(',')
+                val clip = File(file.parentFile, f[3])
+                // A clip whose file has gone is not a clip; listing it would
+                // offer a player that opens on nothing.
+                if (!clip.isFile) return@mapNotNull null
+                ClipCutter.Clip(
+                    index = f[0].toInt(),
+                    startSeconds = f[1].toDouble(),
+                    endSeconds = f[2].toDouble(),
+                    file = clip,
+                )
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    /**
+     * Clips found by filename, for runs made before the index existed.
+     *
+     * Their bounds are not recoverable from the file, so they are left at zero
+     * and the caller shows the rally number alone rather than a fabricated
+     * "0.0s - 0.0s".
+     */
+    private fun scanClips(entryId: String): List<ClipCutter.Clip> =
+        File(root, "local-clips/$entryId").listFiles()
+            ?.filter { it.isFile && it.name.startsWith("rally-") && it.extension == "mp4" }
+            ?.mapNotNull { f ->
+                val index = f.nameWithoutExtension.removePrefix("rally-").toIntOrNull()
+                    ?: return@mapNotNull null
+                ClipCutter.Clip(index = index, file = f, startSeconds = 0.0, endSeconds = 0.0)
+            }
+            ?.sortedBy { it.index }
+            .orEmpty()
+
+    private fun clipIndexFor(entryId: String) = File(root, "local-clips/$entryId/clips.index")
+
     private fun fileFor(entryId: String) = File(root, "$DIR/$entryId.track")
 
     data class Stored(val track: PlayerTrack, val fps: Double)

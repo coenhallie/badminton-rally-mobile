@@ -86,6 +86,8 @@ fun ClipListScreen(
     /** Opens a stored player heatmap; null hides the menu entry entirely. */
     onOpenHeatmap: ((com.badmintontracker.shared.localvideo.LocalVideoEntry) -> Unit)? = null,
     hasHeatmap: (com.badmintontracker.shared.localvideo.LocalVideoEntry) -> Boolean = { false },
+    onOpenLocalClips: ((com.badmintontracker.shared.localvideo.LocalVideoEntry) -> Unit)? = null,
+    localClipCount: (com.badmintontracker.shared.localvideo.LocalVideoEntry) -> Int = { 0 },
     localRows: List<LocalVideoRow> = emptyList(),
     intakeError: String? = null,
     onIntakeErrorShown: () -> Unit = {},
@@ -239,6 +241,8 @@ fun ClipListScreen(
                         onEditDetails = { detailsTarget = DetailsTarget(it, autoOpened = false) },
                         onOpenHeatmap = onOpenHeatmap,
                         hasHeatmap = hasHeatmap,
+                        onOpenLocalClips = onOpenLocalClips,
+                        localClipCount = localClipCount,
                     )
                     if (state.ownedRows.isNotEmpty()) {
                         item(key = "header-owned") { SectionHeader("My matches") }
