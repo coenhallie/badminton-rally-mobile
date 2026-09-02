@@ -6,6 +6,8 @@ import com.badmintontracker.analysis.raw.RawFrame
 import com.badmintontracker.analysis.raw.RawHeader
 import com.badmintontracker.analysis.raw.RawInference
 import com.badmintontracker.analysis.raw.RawInferenceCodec
+import com.badmintontracker.analysis.raw.RawKeypoint
+import com.badmintontracker.analysis.raw.RawPerson
 import com.badmintontracker.analysis.raw.RawShuttle
 import com.badmintontracker.shared.local.LocalInferenceEngine
 import kotlinx.coroutines.Dispatchers
@@ -27,9 +29,9 @@ import java.io.File
  * collapsing them here would make one of the two rally detectors read the
  * wrong input.
  *
- * Both models share one decode pass. Decode and colour conversion are about a
- * third of the per-frame cost, so running the detector separately would pay
- * them twice.
+ * All the models share one decode pass. Decode and colour conversion are about
+ * a third of the per-frame cost, so running any of them separately would pay
+ * that again.
  */
 class AndroidLocalInferenceEngine(
     private val context: Context,
@@ -39,6 +41,15 @@ class AndroidLocalInferenceEngine(
      * production must never set it.
      */
     private val maxFrames: Int = Int.MAX_VALUE,
+    /**
+     * Pose model path, or null for Phase 1 only.
+     *
+     * Opt-in rather than always-on because pose is not bundled yet and because
+     * it roughly triples the per-frame cost: 235ms for Phase 1 against about
+     * 230ms more for `yolo26n-pose` at 960. A caller that only wants rallies
+     * must not pay for a player track it will not read.
+     */
+    private val poseModelPath: String? = null,
 ) : LocalInferenceEngine {
 
     override suspend fun run(
@@ -52,17 +63,46 @@ class AndroidLocalInferenceEngine(
         val meta = source.metadata()
 
         val detections = HashMap<Int, List<com.badmintontracker.analysis.shuttle.ShuttleDetection>>()
-        val track = DetectorRunner(context).use { detector ->
-            TrackNetRunner(context, source).track(
-                sourceWidth = meta.width,
-                sourceHeight = meta.height,
-                maxFrames = maxFrames,
-                onProgress = onProgress,
-                onFrame = { index, image ->
-                    val found = detector.detect(image)
-                    if (found.isNotEmpty()) detections[index] = found
-                },
-            )
+        val people = HashMap<Int, List<RawPerson>>()
+        val pose = poseModelPath?.let { PoseRunner(it) }
+        val track = try {
+            DetectorRunner(context).use { detector ->
+                TrackNetRunner(context, source).track(
+                    sourceWidth = meta.width,
+                    sourceHeight = meta.height,
+                    maxFrames = maxFrames,
+                    onProgress = onProgress,
+                    onFrame = { index, image ->
+                        val found = detector.detect(image)
+                        if (found.isNotEmpty()) detections[index] = found
+                        // Same frame, same decode. Emitted raw: which person is
+                        // the near player, and where they stand on the court,
+                        // are :analysis decisions.
+                        pose?.detect(index, image)?.people?.let { found ->
+                            if (found.isNotEmpty()) {
+                                people[index] = found.map { person ->
+                                    RawPerson(
+                                        box = RawBox(
+                                            classId = 0,
+                                            confidence = person.boxConfidence,
+                                            x1 = 0f, y1 = 0f, x2 = 0f, y2 = 0f,
+                                        ),
+                                        keypoints = person.keypoints.mapIndexed { k, point ->
+                                            RawKeypoint(
+                                                point.x.toFloat(),
+                                                point.y.toFloat(),
+                                                person.keypointConfidence[k],
+                                            )
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    },
+                )
+            }
+        } finally {
+            pose?.close()
         }
         val frameCount = minOf(meta.frameCount, if (maxFrames == Int.MAX_VALUE) meta.frameCount else maxFrames)
 
@@ -86,7 +126,7 @@ class AndroidLocalInferenceEngine(
                         x2 = it.x.toFloat(), y2 = it.y.toFloat(),
                     )
                 },
-                persons = emptyList(),
+                persons = people[i].orEmpty(),
             )
         }
 
