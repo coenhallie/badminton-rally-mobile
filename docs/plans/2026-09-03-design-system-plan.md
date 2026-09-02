@@ -12,6 +12,13 @@
 
 ## Global Constraints
 
+- **Start from a clean working tree.** `git status --porcelain` must be empty
+  before Task 0. At the time this plan was written the tree carried in-flight
+  edits to `ClipListModel.swift`, `MatchModel.swift`, `MatchView.swift` and
+  `MatchModelTests.swift`; `MatchView.swift` is a file Task 7 also edits, so
+  those changes must be committed or stashed first or they end up inside a
+  commit that claims to be a colour swap. Every task stages explicit paths, never
+  a directory, for the same reason.
 - **Phase 1 changes token values only.** No screen layout moves. A file outside `ui/theme/` or `Sources/Theme/` is touched only to route a hardcoded colour or radius through a token, never to restructure it.
 - **`accent` is a fill colour, never a text colour.** Accent-coloured text uses `accentDark`.
 - **`textMuted` is for display sizes only** (24pt and above). Body-sized secondary text uses `textTertiary`.
@@ -134,6 +141,85 @@ xcodebuild test -project iosApp/iosApp.xcodeproj -scheme iosApp \
 `PointsFacet.swift`, `MatchView.swift`, `ClipListView.swift`, `LocalVideoSection.swift`,
 `AddAnnotationSheet.swift`, `PlaybackControlBar.swift`, `CourtMarkingView.swift`,
 `SchematicCourtGuide.swift` on iOS; `ShuttlColors.kt`'s `onPrimary` on Android.
+
+---
+
+## Task 0: Capture the "before" screenshots
+
+This runs first, from the current checkout, before any token changes. It cannot
+be deferred to the end and taken from a worktree at the merge base: a fresh
+worktree has no `local.properties` and no `Config/AppConfig.xcconfig` (both
+gitignored, only `local.properties.example` is committed), so it cannot build
+against Supabase, and the iOS simulator's session lives in the Keychain and needs
+a human to sign in. Every screen on the list below except Sign in is
+authenticated. Capturing now, from the already-built and already-signed-in app,
+avoids all of it.
+
+**Files:**
+- Create: `docs/screenshots/2026-09-03-design-system/before/<platform>-<screen>-<theme>.png`
+
+**Interfaces:**
+- Consumes: nothing.
+- Produces: the baseline Task 8 compares against, under exactly these filenames.
+
+- [ ] **Step 1: Confirm the tree is clean**
+
+```bash
+git status --porcelain
+```
+
+Expected: empty output. If not, stop and resolve it. See the Global Constraints
+note about the in-flight `MatchView.swift` edits.
+
+- [ ] **Step 2: Build and run both clients**
+
+```bash
+./gradlew :androidApp:assembleDebug
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+xattr -cr iosApp
+xcodebuild build -project iosApp/iosApp.xcodeproj -scheme iosApp \
+  -destination "platform=iOS Simulator,name=iPhone 17 Pro" \
+  -derivedDataPath iosApp/build/DerivedData CODE_SIGNING_ALLOWED=NO
+```
+
+Install both and sign in. If the iOS simulator session has lapsed, ask the user
+to sign in: the session is Keychain-only and cannot be scripted.
+
+- [ ] **Step 3: Capture every screen, in both themes**
+
+Sign in, Matches list (with a local video mid-analysis if one can be staged),
+Match page, Clip detail, Scoring board, New match, Labels, Court marking, Local
+player, Share sheet, and on Android the Heatmap screen.
+
+Flip the theme with the toggle in the top bar (Android) and the same preference
+on iOS, and capture each screen twice.
+
+```bash
+mkdir -p docs/screenshots/2026-09-03-design-system/before
+# Android
+adb exec-out screencap -p > docs/screenshots/2026-09-03-design-system/before/android-matches-dark.png
+# iOS
+xcrun simctl io booted screenshot \
+  docs/screenshots/2026-09-03-design-system/before/ios-matches-dark.png
+```
+
+Name every file `<platform>-<screen>-<theme>.png` with `platform` in
+`{ios, android}`, `theme` in `{light, dark}`, and `screen` in
+`{signin, matches, match, clipdetail, scoring, newmatch, labels, courtmarking,
+localplayer, share, heatmap}`. Task 8 captures the same names under `after/`, so
+a mismatched name means an unreviewable pair.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add docs/screenshots/2026-09-03-design-system/before
+git commit -m "docs: before screenshots for the design system swap
+
+Captured ahead of the token changes rather than reconstructed from the
+merge base afterwards: a fresh worktree has neither local.properties nor
+the xcconfig secrets, and the iOS simulator session is Keychain-only, so
+every authenticated screen would be unreachable there."
+```
 
 ---
 
@@ -1313,14 +1399,35 @@ final class ShuttlTypeTests: XCTestCase {
         XCTAssertEqual(ShuttlType.labelSmall.kerning, 0.55, accuracy: 0.001)
     }
 
-    func testEveryRoleUsesABundledArchivoWeight() {
-        let bundled: Set<ShuttlType.Weight> = [.regular, .medium, .semibold, .bold]
+    func testEveryRoleAsksForAFontThatIsActuallyInTheBundle() {
+        // Reads UIAppFonts rather than the Weight enum's own cases, which would
+        // be a tautology. This catches the real failure: a role naming a weight
+        // that was never added to project.yml.
+        let declared = Bundle.main.object(forInfoDictionaryKey: "UIAppFonts") as? [String] ?? []
+        XCTAssertFalse(declared.isEmpty, "UIAppFonts is missing from the built Info.plist")
+        let bundledNames = Set(declared.map { ($0 as NSString).deletingPathExtension })
         for role in ShuttlType.allRoles {
             XCTAssertTrue(
-                bundled.contains(role.weight),
-                "\(role.name) asks for a weight that is not bundled"
+                bundledNames.contains(role.weight.rawValue),
+                "\(role.name) asks for \(role.weight.rawValue), which is not in UIAppFonts"
             )
         }
+    }
+
+    func testLineHeightsMatchAndroid() {
+        // Stored on both platforms, so it is asserted on both. Android applies
+        // it as `lineHeight`; what iOS does with it is documented on
+        // `View.shuttlType(_:)`.
+        XCTAssertEqual(ShuttlType.display.lineHeightMultiple, 1.08, accuracy: 0.001)
+        XCTAssertEqual(ShuttlType.headlineLarge.lineHeightMultiple, 1.15, accuracy: 0.001)
+        XCTAssertEqual(ShuttlType.headlineMedium.lineHeightMultiple, 1.20, accuracy: 0.001)
+        XCTAssertEqual(ShuttlType.statNumber.lineHeightMultiple, 1.15, accuracy: 0.001)
+        XCTAssertEqual(ShuttlType.titleLarge.lineHeightMultiple, 1.30, accuracy: 0.001)
+        XCTAssertEqual(ShuttlType.titleMedium.lineHeightMultiple, 1.30, accuracy: 0.001)
+        XCTAssertEqual(ShuttlType.bodyLarge.lineHeightMultiple, 1.45, accuracy: 0.001)
+        XCTAssertEqual(ShuttlType.bodyMedium.lineHeightMultiple, 1.45, accuracy: 0.001)
+        XCTAssertEqual(ShuttlType.bodySmall.lineHeightMultiple, 1.40, accuracy: 0.001)
+        XCTAssertEqual(ShuttlType.labelSmall.lineHeightMultiple, 1.30, accuracy: 0.001)
     }
 }
 ```
@@ -1389,6 +1496,7 @@ Create `iosApp/Sources/Theme/ShuttlType.swift`:
 
 ```swift
 import SwiftUI
+import UIKit
 
 /// The type scale, in Archivo.
 ///
@@ -1418,6 +1526,17 @@ enum ShuttlType {
         /// Tracking in points, which is what `.kerning` takes.
         var kerning: CGFloat { size * trackingEm }
 
+        /// Extra leading in points, which is what `.lineSpacing` takes.
+        ///
+        /// Clamped at zero: `.lineSpacing` adds to the font's natural line
+        /// height and cannot subtract from it, so a target tighter than Archivo's
+        /// own leading is unreachable this way. See `View.shuttlType(_:)`.
+        var lineSpacing: CGFloat {
+            let natural = UIFont(name: weight.rawValue, size: size)?.lineHeight
+                ?? UIFont.systemFont(ofSize: size).lineHeight
+            return max(0, size * lineHeightMultiple - natural)
+        }
+
         /// The SwiftUI font. Falls back to the system font at the same size if
         /// Archivo is somehow missing, so a bundling mistake degrades rather
         /// than crashes. ArchivoFontTests is what catches it properly.
@@ -1444,11 +1563,22 @@ enum ShuttlType {
 }
 
 extension View {
-    /// Applies a role's font and its tracking together, which is the only
-    /// correct way to use one: the kerning is derived from the size, so setting
-    /// the font without it silently ships the wrong tracking.
+    /// Applies a role's font, tracking and leading together, which is the only
+    /// correct way to use one: kerning and leading are both derived from the
+    /// size, so setting the font alone silently ships the wrong metrics.
+    ///
+    /// Leading is approximate in one direction. SwiftUI's `.lineSpacing` is
+    /// ADDITIVE - it adds to the font's natural line height and cannot subtract
+    /// from it - so a role whose target sits below Archivo's natural leading
+    /// gets that natural leading instead, and reads slightly looser than the
+    /// design. Only the display role is affected. The hero is the one place
+    /// where that difference is visible, and phase 2 draws it as two separate
+    /// `Text` views in a `VStack` with explicit spacing, which sidesteps
+    /// leading entirely and hits 1.08 exactly.
     func shuttlType(_ role: ShuttlType.Role) -> some View {
-        self.font(role.font).kerning(role.kerning)
+        self.font(role.font)
+            .kerning(role.kerning)
+            .lineSpacing(role.lineSpacing)
     }
 }
 ```
@@ -1690,8 +1820,23 @@ failure means a wrong site was edited.
 
 - [ ] **Step 6: Commit**
 
+Add the nine files explicitly. **Not `git add iosApp/Sources`:** the working tree
+carries in-flight changes to `ClipListModel.swift`, `MatchModel.swift`,
+`MatchView.swift` and `MatchModelTests.swift` from before this branch, and
+`MatchView.swift` is a file this task also edits. A directory add would sweep
+three unrelated modifications into this commit.
+
 ```bash
-git add iosApp/Sources
+git add iosApp/Sources/Components/PrimaryButtonStyle.swift \
+        iosApp/Sources/Components/PlaybackControlBar.swift \
+        iosApp/Sources/ClipDetail/AddAnnotationSheet.swift \
+        iosApp/Sources/Match/PointsFacet.swift \
+        iosApp/Sources/Match/MatchView.swift \
+        iosApp/Sources/ClipList/ClipListView.swift \
+        iosApp/Sources/LocalVideo/LocalVideoSection.swift \
+        iosApp/Sources/CourtMarking/CourtMarkingView.swift \
+        iosApp/Sources/CourtMarking/SchematicCourtGuide.swift
+git diff --cached --stat   # confirm exactly nine files, no MatchModel or tests
 git commit -m "refactor(ios): accent-fill text goes through onAccent
 
 Eight sites painted text on an accent fill with a literal .black. They
@@ -1715,30 +1860,23 @@ The token swap is done. This task finds what it broke.
 - Consumes: everything from Tasks 1 to 7.
 - Produces: a screenshot set committed under `docs/screenshots/2026-09-03-design-system/`.
 
-- [ ] **Step 1: Capture the before set**
+- [ ] **Step 1: Capture the after set**
 
-Do this from the merge base, before any of this branch's commits, so the
-comparison is real:
+The same screens as Task 0, same themes, into
+`docs/screenshots/2026-09-03-design-system/after/` with byte-for-byte identical
+filenames. A name that does not match its `before/` counterpart is an
+unreviewable pair.
 
 ```bash
-git stash list   # confirm nothing is pending
-git worktree add /tmp/shuttl-before $(git merge-base HEAD main)
+mkdir -p docs/screenshots/2026-09-03-design-system/after
+ls docs/screenshots/2026-09-03-design-system/before | sort > /tmp/want.txt
+# after capturing, confirm the two sets line up:
+ls docs/screenshots/2026-09-03-design-system/after | sort | diff - /tmp/want.txt
 ```
 
-Build and run each client from that worktree and capture, in **both light and
-dark**:
+Expected: no diff output.
 
-Sign in, Matches list (with a local video mid-analysis if one can be staged),
-Match page, Clip detail, Scoring board, New match, Labels, Court marking,
-Local player, Share sheet, and on Android the Heatmap screen.
-
-Save as `docs/screenshots/2026-09-03-design-system/before/<platform>-<screen>-<theme>.png`.
-
-- [ ] **Step 2: Capture the after set**
-
-The same screens from the current branch, into `after/` with identical names.
-
-- [ ] **Step 3: Review every pair against this list**
+- [ ] **Step 2: Review every pair against this list**
 
 For each pair, check:
 
@@ -1757,7 +1895,7 @@ For each pair, check:
    from the database, not tokens. Confirm they still sit legibly on the new card
    surface.
 
-- [ ] **Step 4: Fix what the review found**
+- [ ] **Step 3: Fix what the review found**
 
 One commit per screen, each with its before and after attached in the message
 body by filename. Fix in place: adjust a padding, a line limit, a frame height.
@@ -1765,7 +1903,7 @@ body by filename. Fix in place: adjust a padding, a line limit, a frame height.
 look right, stop and write it down for the phase 2 review rather than inventing
 a layout with no mock behind it.
 
-- [ ] **Step 5: Run everything**
+- [ ] **Step 4: Run everything**
 
 ```bash
 ./gradlew :androidApp:testDebugUnitTest
@@ -1779,21 +1917,15 @@ xcodebuild test -project iosApp/iosApp.xcodeproj -scheme iosApp \
 
 Expected: PASS on all three.
 
-- [ ] **Step 6: Clean up the comparison worktree**
+- [ ] **Step 5: Commit the screenshots**
 
 ```bash
-git worktree remove /tmp/shuttl-before
-```
+git add docs/screenshots/2026-09-03-design-system/after
+git commit -m "docs: after screenshots for the design system swap
 
-- [ ] **Step 7: Commit the screenshots**
-
-```bash
-git add docs/screenshots/2026-09-03-design-system
-git commit -m "docs: before and after screenshots for the design system swap
-
-Every screen, both themes, both clients. These are the evidence for the
-phase 1 claim that no layout moved, and the baseline the phase 2 Home
-work gets compared against."
+Every screen, both themes, both clients, paired with the Task 0 baseline.
+These are the evidence for the phase 1 claim that no layout moved, and
+what the phase 2 Home work gets compared against."
 ```
 
 ---
@@ -1804,7 +1936,7 @@ work gets compared against."
 - [ ] `./gradlew :androidApp:assembleDebug` passes.
 - [ ] The iOS suite passes on the simulator.
 - [ ] `grep -rn "0x22C55E\|0x16A34A" iosApp/Sources | grep -v ShuttlPalette` is empty.
-- [ ] `grep -rn "foregroundStyle(\.black)" iosApp/Sources` returns only the two letterbox sites.
+- [ ] `grep -rn "foregroundStyle(\.black)\|foregroundStyle(Color\.black)" iosApp/Sources` is empty. The two remaining black literals are `.background(Color.black)` letterboxes in `LocalPlayerView.swift` and `ClipDetailView.swift`, which this pattern does not match and which stay as they are.
 - [ ] Every screen has a before and after screenshot in both themes on both platforms.
 - [ ] No file outside `ui/theme/`, `Sources/Theme/`, the font directories and the Task 7 call-site list has a layout change.
 - [ ] The stale "sharp corners everywhere" and "web tokens" comments are gone from both theme layers.
