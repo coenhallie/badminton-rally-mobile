@@ -1742,9 +1742,18 @@ silently.
 grep -rn "foregroundStyle(\.black)\|foregroundStyle(Color\.black)\|: \.black" iosApp/Sources
 ```
 
-Check each hit. A `.black` on an accent fill becomes `Shuttl.onAccent`. A
-`.black` over video (`LocalPlayerView.swift:64`, `ClipDetailView.swift:43`) is a
-letterbox, not a token, and stays as it is. Note which is which before editing.
+Check each hit. Three kinds come back and only the first is in scope:
+
+1. **On an accent fill** - becomes `Shuttl.onAccent`. These are the nine files in
+   the Files list.
+2. **On a white fill** - `ScoringView.swift`'s `servePill` is black text on
+   `Color.white`. Nothing to do with the accent. Leave it.
+3. **Behind video** - `LocalPlayerView.swift:64` and `ClipDetailView.swift:43`
+   are `.background(Color.black)` letterboxes. A letterbox is not a token. Leave
+   them.
+
+Note which is which before editing. Line numbers in the Files list are advisory;
+this grep is what is authoritative.
 
 - [ ] **Step 2: Replace the accent-fill sites**
 
@@ -1936,7 +1945,7 @@ what the phase 2 Home work gets compared against."
 - [ ] `./gradlew :androidApp:assembleDebug` passes.
 - [ ] The iOS suite passes on the simulator.
 - [ ] `grep -rn "0x22C55E\|0x16A34A" iosApp/Sources | grep -v ShuttlPalette` is empty.
-- [ ] `grep -rn "foregroundStyle(\.black)\|foregroundStyle(Color\.black)" iosApp/Sources` is empty. The two remaining black literals are `.background(Color.black)` letterboxes in `LocalPlayerView.swift` and `ClipDetailView.swift`, which this pattern does not match and which stay as they are.
+- [ ] `grep -rn "foregroundStyle(\.black)\|foregroundStyle(Color\.black)" iosApp/Sources` returns exactly one line: `ScoringView.swift`'s `servePill`, which is black on a white pill and has nothing to do with the accent. The `.background(Color.black)` letterboxes in `LocalPlayerView.swift` and `ClipDetailView.swift` do not match this pattern and also stay as they are.
 - [ ] Every screen has a before and after screenshot in both themes on both platforms.
 - [ ] No file outside `ui/theme/`, `Sources/Theme/`, the font directories and the Task 7 call-site list has a layout change.
 - [ ] The stale "sharp corners everywhere" and "web tokens" comments are gone from both theme layers.
