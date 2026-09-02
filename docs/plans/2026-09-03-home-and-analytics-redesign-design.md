@@ -145,8 +145,9 @@ accessible contrast; it is not a recolour.
 | `borderSecondary` | `#22262A` | `#CED3D0` | |
 | `textHeading` | `#F2F4F3` | `#0B0C0D` | |
 | `text` | `#F2F4F3` | `#16191A` | |
-| `textSecondary` | `#8D938F` | `#545C58` | 6.9:1 on light bg |
-| `textTertiary` | `#5D6462` | `#6E7672` | 4.7:1 on light bg |
+| `textSecondary` | `#8D938F` | `#545C58` | 5.7:1 worst case |
+| `textTertiary` | `#7F8682` | `#5F6763` | 4.8:1 worst case |
+| `textMuted` | `#5D6462` | `#878E8A` | 3.2:1. Display sizes only |
 | `accent` | `#3EE27C` | `#16A34A` | fill only |
 | `onAccent` | `#06210F` | `#04240F` | near-black on green, both themes |
 | `accentDark` | `#22C55E` | `#15803D` | accent as text, and pressed states |
@@ -154,8 +155,21 @@ accessible contrast; it is not a recolour.
 | `sideAway` | `#1E3A8A` | `#1D4ED8` | unchanged |
 | `error` / `warning` / `info` | unchanged | unchanged | |
 
-The accent is a fill colour, never a text colour. Accent-coloured text uses
-`accentDark`, which clears 4.5:1 in both themes; `accent` on light bg does not.
+Two rules fall out of the numbers, and both are enforced by test rather than by
+convention:
+
+- **The accent is a fill colour, never a text colour.** Accent-coloured text uses
+  `accentDark`, which clears 4.5:1 in both themes. `accent` on the light
+  background is 3.3:1 and does not.
+- **`textMuted` is for display sizes only.** The mock uses `#5D6462` for both the
+  40px hero and 12px row subtitles. At 3.2:1 it clears the 3:1 large-text
+  threshold and fails the 4.5:1 body threshold, so the two uses become two
+  tokens. `textMuted` keeps the mock's value for the hero; every body-sized
+  subtitle uses `textTertiary`, which is lightened until it clears 4.5:1 against
+  all three surfaces.
+
+Every other token pair clears 4.5:1 against `bg`, `bgSecondary` and
+`bgTertiary`, worst case included.
 
 ### Shape
 
@@ -217,7 +231,8 @@ four.
 
 Body: the hero sits at a fixed offset from the top, not centred, so the line
 does not shift as phrases of different lengths cycle through it. First line
-"Your game," in `textHeading`; second line is the ticker, in `textTertiary`.
+"Your game," in `textHeading`; second line is the ticker, in `textMuted`, which
+is the one place that token is allowed.
 
 Bottom, pinned: the primary pill button "Add new match" in `accent` with
 `onAccent` text and a plus glyph; below it the secondary pill "Analytics" in
