@@ -1,5 +1,7 @@
 package com.badmintontracker.shared.local
 
+import com.badmintontracker.analysis.player.PlayerTrack
+import com.badmintontracker.analysis.player.buildNearPlayerTrack
 import com.badmintontracker.analysis.raw.RawInference
 import com.badmintontracker.analysis.rally.ClipWindow
 import com.badmintontracker.analysis.result.AnalysisResult
@@ -16,6 +18,16 @@ import com.badmintontracker.shared.model.toAnalysis
 data class LocalAnalysisOutcome(
     val result: AnalysisResult,
     val clipWindows: List<ClipWindow>,
+    /**
+     * The near player's path, or an empty track when pose did not run.
+     *
+     * Empty rather than null: a Phase 1 run and a Phase 2 run that found
+     * nobody are different facts, and [PlayerTrack] already distinguishes them
+     * through framesWithPose and its rejection counts. A null would collapse
+     * the two into "no data" at exactly the point a coach asks why the heatmap
+     * is blank.
+     */
+    val playerTrack: PlayerTrack,
 )
 
 /**
@@ -120,7 +132,19 @@ class LocalAnalysisCoordinator(
             videoDuration = durationSeconds(header.totalFrames, fps),
         )
 
+        // Empty unless the engine was given a pose model, since Phase 1 frames
+        // carry no persons at all.
+        val playerTrack = buildNearPlayerTrack(raw, keypoints.toAnalysis())
+        if (playerTrack.framesWithPose > 0) {
+            log(
+                "near player: ${playerTrack.samples.size} samples over " +
+                    "${playerTrack.framesWithPose} pose frames, " +
+                    "${(playerTrack.ankleFraction * 100).toInt()}% on ankles",
+            )
+        }
+
         return LocalAnalysisOutcome(
+            playerTrack = playerTrack,
             result = AnalysisResult.fromPhase1(
                 output = output,
                 fps = fps,
