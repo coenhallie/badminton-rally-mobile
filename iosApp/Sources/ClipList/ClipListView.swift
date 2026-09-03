@@ -448,11 +448,16 @@ struct MatchesList: View {
                     // disabled child button falls through the same way inside a
                     // NavigationLink's label. The action already no-ops with no
                     // video, so leaving the button enabled and dimming it by hand
-                    // keeps the tap right where it lands - the tradeoff is that
-                    // VoiceOver no longer gets the formal "not enabled" trait the
-                    // way `.disabled` gave it for free; the descriptive label
-                    // below ("Add a video to share this match") is left to carry
-                    // that on its own.
+                    // keeps the tap right where it lands - the formal "not
+                    // enabled" trait `.disabled` would have given for free is
+                    // restored via `.accessibilityRepresentation` below, which
+                    // swaps in a `.disabled` proxy Button for what the
+                    // accessibility tree exposes only. That proxy has no effect
+                    // on hit testing, so the real Button above still swallows the
+                    // tap right where it lands instead of falling through.
+                    // (SwiftUI's `AccessibilityTraits` has no public "not
+                    // enabled" member to add directly - `.disabled` is the only
+                    // way to produce that trait, hence the proxy.)
                     Button {
                         if let video = content.video { shareTarget = video }
                     } label: {
@@ -461,9 +466,14 @@ struct MatchesList: View {
                     }
                     .frame(width: 44, height: 44)
                     .buttonStyle(.borderless)
-                    .accessibilityLabel(
-                        content.video != nil ? "Share match" : "Add a video to share this match"
-                    )
+                    .accessibilityRepresentation {
+                        Button(
+                            content.video != nil ? "Share match" : "Add a video to share this match"
+                        ) {
+                            if let video = content.video { shareTarget = video }
+                        }
+                        .disabled(content.video == nil)
+                    }
                 }
                 // NavigationLink drew this for free; a Button does not, so it is
                 // restored explicitly to keep the row reading as navigable.
