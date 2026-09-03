@@ -8,111 +8,84 @@ import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
-// Web tokens (badminton-tracker/src/app.css) → Compose colors.
-private val LightBg              = Color(0xFFFFFFFF)
-private val LightBgSecondary     = Color(0xFFF8F9FA)
-private val LightBgTertiary      = Color(0xFFF0F1F3)
-private val LightBgInput         = Color(0xFFF0F1F3)
-private val LightBorder          = Color(0xFFE0E0E0)
-private val LightBorderSecondary = Color(0xFFD0D0D0)
-private val LightTextHeading     = Color(0xFF0D0D0D)
-private val LightText            = Color(0xFF1A1A2E)
-private val LightTextSecondary   = Color(0xFF555555)
-private val LightTextTertiary    = Color(0xFF777777)
-private val LightAccent          = Color(0xFF16A34A)
-private val LightAccentDark      = Color(0xFF166534)
+// Design tokens -> Compose colors. See ShuttlPalette.kt for the raw values.
 
-private val DarkBg               = Color(0xFF0D0D0D)
-private val DarkBgSecondary      = Color(0xFF141414)
-private val DarkBgTertiary       = Color(0xFF1A1A1A)
-private val DarkBgInput          = Color(0xFF111111)
-private val DarkBorder           = Color(0xFF222222)
-private val DarkBorderSecondary  = Color(0xFF333333)
-private val DarkTextHeading      = Color(0xFFFFFFFF)
-private val DarkText             = Color(0xFFE2E8F0)
-private val DarkTextSecondary    = Color(0xFF888888)
-private val DarkTextTertiary     = Color(0xFF666666)
-private val DarkAccent           = Color(0xFF22C55E)
-private val DarkAccentDark       = Color(0xFF16A34A)
+private fun Long.toColor(): Color = Color(0xFF000000L or this)
 
-// The two sides of the scoreboard. Deliberately not the accent green and the info
-// blue: those are interface colours sized for a chip, and these are full-bleed
-// halves carrying white numerals, so they are picked for contrast against white
-// first and family resemblance second. Deeper in dark, where a lit-up half at
-// arm's length in a dim hall is the thing to avoid.
-private val LightSideHome = Color(0xFF15803D)
-private val LightSideAway = Color(0xFF1D4ED8)
-private val DarkSideHome  = Color(0xFF14532D)
-private val DarkSideAway  = Color(0xFF1E3A8A)
-
-private val Error   = Color(0xFFEF4444)
-private val Warning = Color(0xFFF59E0B)
-private val Info    = Color(0xFF3B82F6)
+private val ShuttlPalette.Tone.lightColor: Color get() = light.toColor()
+private val ShuttlPalette.Tone.darkColor: Color get() = dark.toColor()
 
 internal val ShuttlLightColorScheme = lightColorScheme(
-    primary          = LightAccent,
-    onPrimary        = Color.Black,
-    background       = LightBg,
-    onBackground     = LightTextHeading,
-    surface          = LightBg,
-    onSurface        = LightText,
-    surfaceVariant   = LightBgSecondary,
-    onSurfaceVariant = LightTextSecondary,
-    outline          = LightBorderSecondary,
-    outlineVariant   = LightBorder,
-    error            = Error,
+    primary          = ShuttlPalette.accent.lightColor,
+    onPrimary        = ShuttlPalette.onAccent.lightColor,
+    background       = ShuttlPalette.bg.lightColor,
+    onBackground     = ShuttlPalette.textHeading.lightColor,
+    surface          = ShuttlPalette.bg.lightColor,
+    onSurface        = ShuttlPalette.text.lightColor,
+    surfaceVariant   = ShuttlPalette.bgSecondary.lightColor,
+    onSurfaceVariant = ShuttlPalette.textSecondary.lightColor,
+    outline          = ShuttlPalette.borderSecondary.lightColor,
+    outlineVariant   = ShuttlPalette.border.lightColor,
+    error            = ShuttlPalette.error.lightColor,
     onError          = Color.White,
 )
 
 internal val ShuttlDarkColorScheme = darkColorScheme(
-    primary          = DarkAccent,
-    onPrimary        = Color.Black,
-    background       = DarkBg,
-    onBackground     = DarkTextHeading,
-    surface          = DarkBg,
-    onSurface        = DarkText,
-    surfaceVariant   = DarkBgSecondary,
-    onSurfaceVariant = DarkTextSecondary,
-    outline          = DarkBorderSecondary,
-    outlineVariant   = DarkBorder,
-    error            = Error,
+    primary          = ShuttlPalette.accent.darkColor,
+    onPrimary        = ShuttlPalette.onAccent.darkColor,
+    background       = ShuttlPalette.bg.darkColor,
+    onBackground     = ShuttlPalette.textHeading.darkColor,
+    surface          = ShuttlPalette.bg.darkColor,
+    onSurface        = ShuttlPalette.text.darkColor,
+    surfaceVariant   = ShuttlPalette.bgSecondary.darkColor,
+    onSurfaceVariant = ShuttlPalette.textSecondary.darkColor,
+    outline          = ShuttlPalette.borderSecondary.darkColor,
+    outlineVariant   = ShuttlPalette.border.darkColor,
+    error            = ShuttlPalette.error.darkColor,
     onError          = Color.White,
 )
 
 /** Extended palette beyond M3's ColorScheme. */
 @Immutable
 data class ShuttlExtendedColors(
-    val accentDark:      Color,
-    val bgInput:         Color,
-    val bgTertiary:      Color,
-    val textTertiary:    Color,
-    val warning:         Color,
-    val info:            Color,
+    val accentDark:   Color,
+    val onAccent:     Color,
+    val bgInput:      Color,
+    val bgTertiary:   Color,
+    val textTertiary: Color,
+    /** Display sizes only. See ShuttlPalette.textMuted. */
+    val textMuted:    Color,
+    val warning:      Color,
+    val info:         Color,
     /** The home half of the scoreboard. Identifies the side, never the end. */
-    val sideHome:        Color,
-    val sideAway:        Color,
+    val sideHome:     Color,
+    val sideAway:     Color,
 )
 
 internal val ShuttlLightExtended = ShuttlExtendedColors(
-    accentDark   = LightAccentDark,
-    bgInput      = LightBgInput,
-    bgTertiary   = LightBgTertiary,
-    textTertiary = LightTextTertiary,
-    warning      = Warning,
-    info         = Info,
-    sideHome     = LightSideHome,
-    sideAway     = LightSideAway,
+    accentDark   = ShuttlPalette.accentDark.lightColor,
+    onAccent     = ShuttlPalette.onAccent.lightColor,
+    bgInput      = ShuttlPalette.bgInput.lightColor,
+    bgTertiary   = ShuttlPalette.bgTertiary.lightColor,
+    textTertiary = ShuttlPalette.textTertiary.lightColor,
+    textMuted    = ShuttlPalette.textMuted.lightColor,
+    warning      = ShuttlPalette.warning.lightColor,
+    info         = ShuttlPalette.info.lightColor,
+    sideHome     = ShuttlPalette.sideHome.lightColor,
+    sideAway     = ShuttlPalette.sideAway.lightColor,
 )
 
 internal val ShuttlDarkExtended = ShuttlExtendedColors(
-    accentDark   = DarkAccentDark,
-    bgInput      = DarkBgInput,
-    bgTertiary   = DarkBgTertiary,
-    textTertiary = DarkTextTertiary,
-    warning      = Warning,
-    info         = Info,
-    sideHome     = DarkSideHome,
-    sideAway     = DarkSideAway,
+    accentDark   = ShuttlPalette.accentDark.darkColor,
+    onAccent     = ShuttlPalette.onAccent.darkColor,
+    bgInput      = ShuttlPalette.bgInput.darkColor,
+    bgTertiary   = ShuttlPalette.bgTertiary.darkColor,
+    textTertiary = ShuttlPalette.textTertiary.darkColor,
+    textMuted    = ShuttlPalette.textMuted.darkColor,
+    warning      = ShuttlPalette.warning.darkColor,
+    info         = ShuttlPalette.info.darkColor,
+    sideHome     = ShuttlPalette.sideHome.darkColor,
+    sideAway     = ShuttlPalette.sideAway.darkColor,
 )
 
 val LocalShuttlColors = staticCompositionLocalOf { ShuttlLightExtended }
