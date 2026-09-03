@@ -61,13 +61,13 @@ private fun ShuttlScale.Role.toTextStyle() = TextStyle(
 private val Default = Typography()
 
 /**
- * M3's default metrics with the family swapped to Archivo. Used for the seven
+ * M3's default metrics with the family swapped to Archivo. Used for the six
  * [Typography] slots the design mock does not specify a size for
- * (displayLarge/Medium/Small, headlineSmall, titleSmall, labelLarge,
- * labelMedium). Inventing sizes for them would be design work this task has
- * no mandate for; keeping M3's own metrics and only changing the typeface
- * still gets the whole app off the system font, which is what this task is
- * actually for.
+ * (displayLarge/Medium/Small, headlineSmall, titleSmall, labelLarge).
+ * Inventing sizes for them would be design work this task has no mandate
+ * for; keeping M3's own metrics and only changing the typeface still gets
+ * the whole app off the system font, which is what this task is actually
+ * for.
  */
 private fun TextStyle.archivo() = copy(fontFamily = Archivo)
 
@@ -85,7 +85,7 @@ internal val ShuttlTypography = Typography(
     bodyMedium     = ShuttlScale.bodyMedium.toTextStyle(),
     bodySmall      = ShuttlScale.bodySmall.toTextStyle(),
     labelLarge     = Default.labelLarge.archivo(),
-    labelMedium    = Default.labelMedium.archivo(),
+    labelMedium    = ShuttlScale.labelMedium.toTextStyle(),
     // Tiny uppercase tracked label. The uppercasing is the caller's job, the
     // tracking is this style's.
     labelSmall     = ShuttlScale.labelSmall.toTextStyle(),
@@ -94,13 +94,11 @@ internal val ShuttlTypography = Typography(
 /**
  * Roles M3's [Typography] has no slot for. Phase 2's hero uses [display];
  * phase 3's stat tiles use [statNumber]; the sign-in brand mark uses
- * [wordmark]. [labelMedium] mirrors iosApp's small-emphasis role for the
- * two platforms' scale tables to stay identical; nothing on Android reaches
- * for it yet since Task 2's conversion was iOS-only.
+ * [wordmark]. [labelMedium] has an M3 slot of its own now (see
+ * [ShuttlTypography]), so it is not duplicated here.
  */
 internal object ShuttlTypeExtras {
     val display     = ShuttlScale.display.toTextStyle()
     val statNumber  = ShuttlScale.statNumber.toTextStyle()
     val wordmark    = ShuttlScale.wordmark.toTextStyle()
-    val labelMedium = ShuttlScale.labelMedium.toTextStyle()
 }

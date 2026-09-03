@@ -115,6 +115,7 @@ class ShuttlTypeTest {
         DesignSlot("headlineMedium", ShuttlTypography.headlineMedium, ShuttlScale.headlineMedium),
         DesignSlot("titleLarge", ShuttlTypography.titleLarge, ShuttlScale.titleLarge),
         DesignSlot("titleMedium", ShuttlTypography.titleMedium, ShuttlScale.titleMedium),
+        DesignSlot("labelMedium", ShuttlTypography.labelMedium, ShuttlScale.labelMedium),
         DesignSlot("bodyLarge", ShuttlTypography.bodyLarge, ShuttlScale.bodyLarge),
         DesignSlot("bodyMedium", ShuttlTypography.bodyMedium, ShuttlScale.bodyMedium),
         DesignSlot("bodySmall", ShuttlTypography.bodySmall, ShuttlScale.bodySmall),
@@ -130,10 +131,10 @@ class ShuttlTypeTest {
         // built TextStyle for each design-owned slot must carry the size,
         // weight, line height and tracking its own ShuttlScale row specifies.
         //
-        // Deliberately excludes the seven undesigned slots (displayLarge/
-        // Medium/Small, headlineSmall, titleSmall, labelLarge, labelMedium):
-        // those keep M3's own metrics on purpose, and pinning their numbers
-        // here would freeze values this task does not own and did not choose.
+        // Deliberately excludes the six undesigned slots (displayLarge/
+        // Medium/Small, headlineSmall, titleSmall, labelLarge): those keep
+        // M3's own metrics on purpose, and pinning their numbers here would
+        // freeze values this task does not own and did not choose.
         for (slot in designSlots) {
             withClue(slot.name) {
                 slot.built.fontSize shouldBe slot.scale.sizeSp.sp
