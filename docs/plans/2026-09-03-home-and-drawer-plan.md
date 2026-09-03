@@ -508,9 +508,14 @@ import CoreGraphics
 final class DrawerDragMathTests: XCTestCase {
 
     func testWidthIsCappedOnLargeScreensAndProportionalOnSmall() {
-        // 393pt is the mock's canvas: 86% of it is under the 330 cap.
-        XCTAssertEqual(DrawerDragMath.width(forScreenWidth: 393), 393 * 0.86, accuracy: 0.01)
-        // A large screen takes the cap, so the drawer never becomes a full page.
+        // 393pt is the mock's canvas. 86% of it is 337.98, ABOVE the cap, so it
+        // takes 330 - which is exactly the drawer width the mock draws. The cap
+        // and the mock agree at the design's own size, which is the point of it.
+        XCTAssertEqual(DrawerDragMath.width(forScreenWidth: 393), 330, accuracy: 0.01)
+        // A small phone falls below the cap and scales instead, so the drawer
+        // never eats the whole screen on a 375pt device.
+        XCTAssertEqual(DrawerDragMath.width(forScreenWidth: 375), 375 * 0.86, accuracy: 0.01)
+        // A tablet takes the cap, so the drawer never becomes a full page.
         XCTAssertEqual(DrawerDragMath.width(forScreenWidth: 1024), 330, accuracy: 0.01)
     }
 
