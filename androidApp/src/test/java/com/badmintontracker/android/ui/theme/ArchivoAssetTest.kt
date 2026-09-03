@@ -14,6 +14,14 @@ import kotlin.test.Test
  * silently rendering in the system font. The wiring itself is covered by the
  * visual sweep in Task 9.
  *
+ * Filename legality (lowercase, digits, underscores only) is not checked
+ * here: AAPT already enforces that rule earlier in the build, at
+ * packageDebugResources, which runs before this test task and hard-fails the
+ * build on an illegal name. A JVM test for that condition can only be
+ * exercised by moving the offending file out of res/font altogether, which
+ * means it can never fail from the state it claims to guard against - so it
+ * was removed rather than kept as a check that always reports green.
+ *
  * Gradle runs unit tests with the module directory as the working directory.
  */
 class ArchivoAssetTest {
@@ -30,15 +38,5 @@ class ArchivoAssetTest {
         for (name in required) {
             File(fontDir, name).exists() shouldBe true
         }
-    }
-
-    @Test
-    fun font_resource_names_are_valid_android_resource_names() {
-        // A capital letter or a dash in res/font is a build failure with a
-        // message that does not mention the file, so catch it here instead.
-        val offenders = fontDir.listFiles().orEmpty()
-            .map { it.name }
-            .filter { !it.matches(Regex("[a-z0-9_]+\\.ttf")) }
-        offenders shouldBe emptyList()
     }
 }
