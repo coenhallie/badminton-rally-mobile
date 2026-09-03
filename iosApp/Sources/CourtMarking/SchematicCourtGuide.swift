@@ -49,7 +49,7 @@ struct SchematicCourtGuide: View {
         Canvas { context, size in
             let sx = size.width / Self.courtW
             let sy = size.height / Self.courtL
-            let line = Color(rgb: 0x22C55E)
+            let line = Shuttl.accent
             var outline = Path(); outline.addRect(CGRect(origin: .zero, size: size))
             context.stroke(outline, with: .color(line), lineWidth: 1)
             for y in [Self.courtL / 2, Self.courtL / 2 - Self.serviceLine, Self.courtL / 2 + Self.serviceLine] {

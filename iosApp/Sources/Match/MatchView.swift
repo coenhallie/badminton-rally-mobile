@@ -623,7 +623,7 @@ private struct AttachStatusBanner: View {
                 Button(action: onMarkCourt) {
                     Text("Mark court")
                         .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.black)
+                        .foregroundStyle(Shuttl.onAccent)
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)
                         .padding(.horizontal, 12)
@@ -635,7 +635,7 @@ private struct AttachStatusBanner: View {
                 Button(action: onRetry) {
                     Text("Retry")
                         .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.black)
+                        .foregroundStyle(Shuttl.onAccent)
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)
                         .padding(.horizontal, 12)

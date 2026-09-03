@@ -35,7 +35,7 @@ struct PointsFacet: View {
                     Button(action: onScore) {
                         Text(points.isEmpty ? "Score" : "Resume scoring")
                             .font(.headline)
-                            .foregroundStyle(Color.black)
+                            .foregroundStyle(Shuttl.onAccent)
                             .padding(.horizontal, 20)
                             .padding(.vertical, 10)
                             .background(Shuttl.accent)

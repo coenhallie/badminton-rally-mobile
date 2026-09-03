@@ -169,7 +169,7 @@ private struct PlaybackSettingsSheet: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .background(Capsule().fill(selected ? Shuttl.accent : Shuttl.bgTertiary))
-                .foregroundStyle(selected ? .black : Shuttl.text)
+                .foregroundStyle(selected ? Shuttl.onAccent : Shuttl.text)
         }
     }
 }

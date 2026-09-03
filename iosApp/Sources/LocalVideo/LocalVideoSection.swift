@@ -59,7 +59,7 @@ struct LocalVideoRowView: View {
                 if LocalVideoStatus.canAnalyze(stage: entry.stage) {
                     Button(LocalVideoStatus.analyzeButtonLabel(stage: entry.stage)) { onAnalyze() }
                         .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.black)
+                        .foregroundStyle(Shuttl.onAccent)
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)
                         .layoutPriority(1)

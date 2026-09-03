@@ -52,7 +52,7 @@ struct AddAnnotationSheet: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .background(Capsule().fill(isSelected ? Shuttl.accent : Shuttl.bgTertiary))
-                .foregroundStyle(isSelected ? .black : Shuttl.text)
+                .foregroundStyle(isSelected ? Shuttl.onAccent : Shuttl.text)
         }
     }
 }

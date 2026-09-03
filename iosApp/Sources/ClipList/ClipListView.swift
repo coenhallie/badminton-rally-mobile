@@ -546,7 +546,7 @@ struct ClipListView: View {
                     } label: {
                         Text("Mark court")
                             .font(.footnote.weight(.semibold))
-                            .foregroundStyle(.black)
+                            .foregroundStyle(Shuttl.onAccent)
                             .lineLimit(1)
                             .fixedSize(horizontal: true, vertical: false)
                             .padding(.horizontal, 12)
@@ -560,7 +560,7 @@ struct ClipListView: View {
                     } label: {
                         Text("Retry")
                             .font(.footnote.weight(.semibold))
-                            .foregroundStyle(.black)
+                            .foregroundStyle(Shuttl.onAccent)
                             .lineLimit(1)
                             .fixedSize(horizontal: true, vertical: false)
                             .padding(.horizontal, 12)
