@@ -1,107 +1,39 @@
 import SwiftUI
 import Shared
 
-/// The create-and-finish flow, end to end: first the board pushed straight
-/// from creating a new match (no match page underneath it yet), then - once
-/// it finishes - the match page it lands on. One binding carries both stages
-/// rather than two separate ones (an earlier version of this fix used two,
-/// `NewMatchScoringRoute` and `FinishedMatchRoute`): SwiftUI reliably replaces
-/// what an `item:`-bound destination shows when that SAME binding's value
-/// changes to a new one, but does not reliably settle a pop on one binding
-/// racing a push on a DIFFERENT binding shortly after - confirmed on-device,
-/// the destination came up with its content area permanently blank for the
-/// full length of a 30-second wait. Folding both stages into one binding turns
-/// "pop this, then push that" into a single reassignment, which is the
-/// transition SwiftUI does handle correctly (the same way `.sheet(item:)`
-/// swaps to a new item without needing to be dismissed and re-presented).
-/// See task-13-report.md's create-and-finish investigation for the evidence.
-private enum CreateFlowDestination: Hashable, Identifiable {
-    case scoring(scoreLogId: String)
-    case finished(scoreLogId: String, attach: AttachIntent?)
-
-    var id: String {
-        switch self {
-        case .scoring(let scoreLogId): return "scoring-\(scoreLogId)"
-        case .finished(let scoreLogId, _): return "finished-\(scoreLogId)"
-        }
-    }
-}
-
-struct ClipListView: View {
+/// The list of matches, now the drawer's content rather than the app's front
+/// door. Home owns every navigation destination this list used to register
+/// (including `CreateFlowDestination` - see `HomeView.swift`'s own copy of its
+/// doc comment) and hands this view closures instead: `onMatchTap`,
+/// `onCourtMarking` and `onLocalPlayer` report a tap upward so Home can drive
+/// its own `item:` bindings, the same shape `CreateFlowDestination` depends on.
+struct MatchesList: View {
     let rally: RallyApp
     let analyze: AnalyzeCoordinator
+    /// Owned by Home, not here: Home's "Add new match" sheet is what creates
+    /// entries now, and `intake.error`/`intake.lastAddedId` are surfaced and
+    /// consumed on Home's screen, not behind a closed drawer. This list only
+    /// ever calls `remove(entry:)`, which is stateless from its point of view.
+    let intake: LocalVideoIntake
+    let onMatchTap: (MatchRoute) -> Void
+    let onCourtMarking: (CourtMarkingRoute) -> Void
+    let onLocalPlayer: (LocalPlayerRoute) -> Void
+
     @State private var model: ClipListModel?
     @State private var shareTarget: MatchSummary? = nil
     @State private var confirmTarget: PendingMatchAction? = nil
-    @State private var intake: LocalVideoIntake
     @State private var thumbnails = LocalThumbnails()
-    @State private var showImporter = false
-    @State private var showRecorder = false
     @State private var progressById: [String: AnalyzeProgress] = [:]
     @State private var resultEntry: LocalVideoEntry? = nil
-    @State private var navigationTarget: CourtMarkingRoute? = nil
-    @State private var showLabels = false
     @State private var detailsTarget: MatchDetailsTarget? = nil
-    @State private var showNewMatch = false
     @State private var deleteScoreTarget: ScoreMatchCard? = nil
-    // The create-and-finish flow's single destination: the board while it is
-    // being scored, then the match page once it finishes. See
-    // `CreateFlowDestination`'s own doc comment.
-    @State private var createFlowTarget: CreateFlowDestination? = nil
-
-    init(rally: RallyApp, analyze: AnalyzeCoordinator) {
-        self.rally = rally
-        self.analyze = analyze
-        _intake = State(initialValue: LocalVideoIntake(rally: rally))
-    }
 
     var body: some View {
-        VStack(spacing: 0) {
-            if let intakeError = intake.error {
-                ErrorBanner(message: intakeError)
-            }
-            Group {
-                if let model {
-                    content(model)
-                } else {
-                    SplashView()
-                }
-            }
-        }
-        .navigationTitle("MATCHES")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button("New match") { showNewMatch = true }
-                    Button("Record video") {
-                        if CameraRecorder.isAvailable {
-                            showRecorder = true
-                        } else {
-                            intake.error = "Camera is not available on this device."
-                        }
-                    }
-                    Button("Import video") { showImporter = true }
-                } label: {
-                    Image(systemName: "plus")
-                }
-                .accessibilityLabel("Add")
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                if let model {
-                    Menu {
-                        // A NavigationLink here would not reliably push inside a
-                        // Menu, so this is a Button paired with the
-                        // .navigationDestination(isPresented:) below.
-                        Button("Labels") { showLabels = true }
-                        Button("Sign out") { Task { await model.signOut() } }
-                        Divider()
-                        Text(versionLabel())
-                    } label: {
-                        Image(systemName: "ellipsis")
-                    }
-                    .accessibilityLabel("Menu")
-                }
+        Group {
+            if let model {
+                content(model)
+            } else {
+                SplashView()
             }
         }
         .task {
@@ -143,39 +75,6 @@ struct ClipListView: View {
                 }
             )
         }
-        .onChange(of: intake.lastAddedId) { _, id in
-            // The entry is already persisted by the time this fires, so a skipped
-            // sheet never costs the video that was just imported or recorded.
-            guard let id else { return }
-            // Consumed unconditionally, before the lookup can fail: this fires only
-            // on a change of id, so a signal left standing is never re-delivered —
-            // it would wedge the auto-open for this import AND every one after it.
-            intake.lastAddedId = nil
-            // Read the registry, not `localEntries`: that mirror is filled by a
-            // separate `for await` over the entries flow and still lags the add
-            // that set this id, whereas get(id:) sees the value add() just wrote.
-            guard let entry = rally.localVideos.get(id: id) else { return }
-            // A video picked for a match already carries that match's name
-            // (MatchTarget's title rode along on the INSERT), and videos.title is
-            // insert-only, so there is nothing to ask here - MatchView owns that
-            // pick and sends it straight to court marking instead.
-            guard entry.scoreLogId == nil else { return }
-            detailsTarget = MatchDetailsTarget(entry: entry, autoOpened: true)
-        }
-        .sheet(isPresented: $showImporter) {
-            VideoPicker(
-                onPicked: { tempURL, suggestedName in
-                    Task { await intake.add(tempURL: tempURL, suggestedName: suggestedName, isRecording: false) }
-                },
-                onFailed: { intake.error = "Couldn't import the video. Please try again." }
-            )
-        }
-        .fullScreenCover(isPresented: $showRecorder) {
-            CameraRecorder { tempURL in
-                Task { await intake.add(tempURL: tempURL, suggestedName: nil, isRecording: true) }
-            }
-            .ignoresSafeArea()
-        }
         .alert(
             (resultEntry?.failureMessage ?? "").localizedCaseInsensitiveContains("no rallies")
                 ? "No rallies found" : "Analysis failed",
@@ -197,33 +96,13 @@ struct ClipListView: View {
         } message: { entry in
             Text(entry.failureMessage ?? "Unknown error")
         }
-        .navigationDestination(item: $navigationTarget) { route in
-            CourtMarkingView(rally: rally, analyze: analyze, entryId: route.entryId)
-        }
-        .navigationDestination(isPresented: $showLabels) {
-            LabelsView(rally: rally)
-        }
-    }
-
-    /// Lands on the match page rather than the list once the board is done,
-    /// because a match just created and scored in one sitting (New match ->
-    /// Scoring, no match page underneath it yet) has nothing to pop back to. The
-    /// chosen intent (if any) rides along so the match page can act on it once.
-    /// Reassigns the SAME `createFlowTarget` binding the board itself is
-    /// showing under, rather than popping it and pushing a separate one -
-    /// see `CreateFlowDestination`'s own doc comment. Mirrors `AuthGate.kt`'s
-    /// `Route.Scoring.onFinished`.
-    private func onScoringFinished(_ scoreLogId: String) -> (AttachIntent?) -> Void {
-        { intent in
-            createFlowTarget = .finished(scoreLogId: scoreLogId, attach: intent)
-        }
     }
 
     private func analyzeAction(_ entry: LocalVideoEntry) {
         if entry.stage == .failed && entry.keypoints != nil {
             analyze.retry(entryId: entry.id)
         } else {
-            navigationTarget = CourtMarkingRoute(entryId: entry.id)
+            onCourtMarking(CourtMarkingRoute(entryId: entry.id))
         }
     }
 
@@ -241,6 +120,7 @@ struct ClipListView: View {
                             entry: entry,
                             thumbnails: thumbnails,
                             progress: progressById[entry.id],
+                            onTap: { onLocalPlayer(LocalPlayerRoute(entryId: entry.id)) },
                             onAnalyze: { analyzeAction(entry) },
                             onRemove: {
                                 intake.remove(entry: entry)
@@ -384,46 +264,12 @@ struct ClipListView: View {
             Button("Cancel", role: .cancel) { confirmTarget = nil }
         }
         .refreshable { await model.refresh() }
-        .navigationDestination(for: MatchRoute.self) { route in
-            MatchView(rally: rally, analyze: analyze, route: route)
-        }
-        .navigationDestination(isPresented: $showNewMatch) {
-            NewMatchView(rally: rally) { id in
-                // Straight to the board, not back to the list and not to the
-                // record: creating a match courtside means being about to score it.
-                showNewMatch = false
-                createFlowTarget = .scoring(scoreLogId: id)
-            }
-        }
-        .navigationDestination(item: $createFlowTarget) { target in
-            // The only place this list itself pushes the board: straight from
-            // creating a match, with no match page underneath yet. Once one
-            // exists, `MatchView` owns pushing its own board - see its own
-            // `scoringTarget` and `ScoringView.matchPageAlreadyOpen`. Both
-            // stages of this flow share the one `item:` registration - see
-            // `CreateFlowDestination`'s own doc comment for why.
-            switch target {
-            case .scoring(let scoreLogId):
-                ScoringView(
-                    rally: rally,
-                    scoreLogId: scoreLogId,
-                    matchPageAlreadyOpen: false,
-                    onFinished: onScoringFinished(scoreLogId)
-                )
-            case .finished(let scoreLogId, let attach):
-                MatchView(
-                    rally: rally, analyze: analyze,
-                    route: MatchRoute(scoreLogId: scoreLogId, videoId: nil, attach: attach)
-                )
-            }
-        }
-        .navigationDestination(for: LocalPlayerRoute.self) { route in
-            LocalPlayerView(rally: rally, analyze: analyze, entryId: route.entryId)
-        }
     }
 
     private func row(_ match: MatchSummary, model: ClipListModel) -> some View {
-        NavigationLink(value: MatchRoute(scoreLogId: nil, videoId: match.videoId)) {
+        Button {
+            onMatchTap(MatchRoute(scoreLogId: nil, videoId: match.videoId))
+        } label: {
             HStack(spacing: 12) {
                 AsyncImage(url: model.thumbnailUrls[match.coverClipId]) { image in
                     image.resizable().aspectRatio(contentMode: .fill)
@@ -470,6 +316,7 @@ struct ClipListView: View {
                 }
             }
         }
+        .buttonStyle(.plain)
     }
 
     /// A match scored courtside, with whatever video it has acquired. Same 96x54
@@ -483,7 +330,9 @@ struct ClipListView: View {
         // UI-only need - the merge itself only cares about the attach status text.
         let entry = model.localEntries.first { $0.scoreLogId == card.scoreLogId }
 
-        NavigationLink(value: MatchRoute(scoreLogId: card.scoreLogId, videoId: card.videoId)) {
+        Button {
+            onMatchTap(MatchRoute(scoreLogId: card.scoreLogId, videoId: card.videoId))
+        } label: {
             HStack(spacing: 12) {
                 Group {
                     if let video = content.video, let url = model.thumbnailUrls[video.coverClipId] {
@@ -537,10 +386,10 @@ struct ClipListView: View {
                     // Padding/background live inside the label, not chained onto
                     // the Button, so the tappable area is exactly the visible
                     // pill - matching `chip` in PlaybackControlBar.swift. This row
-                    // is a NavigationLink's label; a dead zone here would silently
+                    // is a Button's label; a dead zone here would silently
                     // open the match instead of marking the court.
                     Button {
-                        if let entry { navigationTarget = CourtMarkingRoute(entryId: entry.id) }
+                        if let entry { onCourtMarking(CourtMarkingRoute(entryId: entry.id)) }
                     } label: {
                         Text("Mark court")
                             .shuttlType(ShuttlType.labelMedium)
@@ -594,6 +443,7 @@ struct ClipListView: View {
                 }
             }
         }
+        .buttonStyle(.plain)
     }
 }
 

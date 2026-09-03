@@ -48,9 +48,11 @@ final class ScoringBoardUITests: XCTestCase {
     /// Creates a singles match from the real form, the way a coach reaches the
     /// board. Deleted again at the end of the test so the account keeps nothing.
     private func createMatch(_ app: XCUIApplication) throws {
-        app.buttons["Add"].firstMatch.tap()
+        // "Add" was the list's own toolbar icon; Home replaced it with the
+        // "Add new match" pill, which opens the same three-row sheet.
+        app.buttons["Add new match"].firstMatch.tap()
         let newMatch = app.buttons["New match"].firstMatch
-        XCTAssertTrue(newMatch.waitForExistence(timeout: 5), "the add menu did not open")
+        XCTAssertTrue(newMatch.waitForExistence(timeout: 5), "the add sheet did not open")
         newMatch.tap()
 
         let title = app.textFields["Match name"].firstMatch
@@ -84,6 +86,9 @@ final class ScoringBoardUITests: XCTestCase {
     /// back to a clean device stays red for a reason that is not about the board.
     private func deleteMatch(_ app: XCUIApplication) throws {
         app.buttons["Back"].firstMatch.tap()
+        // Back lands on Home, not the list: the list is now behind the
+        // drawer, so it takes the hamburger to reach the row this test needs.
+        app.buttons["Open matches"].firstMatch.tap()
         let row = app.staticTexts[matchName].firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 5), "the match did not come back to the list")
 

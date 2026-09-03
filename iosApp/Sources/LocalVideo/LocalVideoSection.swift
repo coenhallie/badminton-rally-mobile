@@ -11,6 +11,12 @@ struct LocalVideoRowView: View {
     let entry: LocalVideoEntry
     let thumbnails: LocalThumbnails
     let progress: AnalyzeProgress?
+    /// Pushes `LocalPlayerRoute` on the host's behalf. A plain `Button` rather
+    /// than `NavigationLink(value:)`: the host owns the destination as an
+    /// `item:` binding now (Home owns every destination this row's list used
+    /// to carry), so the route is reported upward instead of resolved through
+    /// the navigation environment.
+    let onTap: () -> Void
     let onAnalyze: () -> Void
     let onRemove: () -> Void
     let onEditDetails: () -> Void
@@ -22,7 +28,7 @@ struct LocalVideoRowView: View {
     }
 
     var body: some View {
-        NavigationLink(value: LocalPlayerRoute(entryId: entry.id)) {
+        Button(action: onTap) {
             HStack(spacing: 12) {
                 Group {
                     if let image = thumbnails.images[entry.id] {
@@ -92,6 +98,7 @@ struct LocalVideoRowView: View {
                 }
             }
         }
+        .buttonStyle(.plain)
     }
 }
 
