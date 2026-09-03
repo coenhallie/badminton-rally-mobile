@@ -543,7 +543,7 @@ struct ClipListView: View {
                         if let entry { navigationTarget = CourtMarkingRoute(entryId: entry.id) }
                     } label: {
                         Text("Mark court")
-                            .shuttlType(ShuttlType.titleMedium)
+                            .shuttlType(ShuttlType.labelMedium)
                             .foregroundStyle(Shuttl.onAccent)
                             .lineLimit(1)
                             .fixedSize(horizontal: true, vertical: false)
@@ -558,7 +558,7 @@ struct ClipListView: View {
                         if let entry { analyze.retry(entryId: entry.id) }
                     } label: {
                         Text("Retry")
-                            .shuttlType(ShuttlType.titleMedium)
+                            .shuttlType(ShuttlType.labelMedium)
                             .foregroundStyle(Shuttl.onAccent)
                             .lineLimit(1)
                             .fixedSize(horizontal: true, vertical: false)

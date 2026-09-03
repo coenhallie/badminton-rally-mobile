@@ -113,7 +113,7 @@ struct LocalPlayerView: View {
                     Button(LocalVideoStatus.analyzeButtonLabel(stage: stage)) {
                         courtTarget = CourtMarkingRoute(entryId: entryId)
                     }
-                    .shuttlType(ShuttlType.titleMedium)
+                    .shuttlType(ShuttlType.labelMedium)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
                 }

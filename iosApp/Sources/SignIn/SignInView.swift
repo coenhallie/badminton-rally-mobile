@@ -73,7 +73,7 @@ struct SignInView: View {
 
     private var brand: some View {
         Text("SHUTTL.")
-            .shuttlType(ShuttlType.headlineLarge)
+            .shuttlType(ShuttlType.wordmark)
             .foregroundStyle(Shuttl.textHeading)
     }
 

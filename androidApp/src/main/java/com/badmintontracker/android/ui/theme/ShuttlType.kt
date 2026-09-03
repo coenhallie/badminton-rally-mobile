@@ -33,8 +33,10 @@ internal object ShuttlScale {
     val headlineLarge  = Role(28f, FontWeight.Medium, -0.030f, 1.15f)
     val headlineMedium = Role(22f, FontWeight.Medium, -0.020f, 1.20f)
     val statNumber     = Role(26f, FontWeight.Medium, -0.030f, 1.15f)
+    val wordmark       = Role(24f, FontWeight.Bold, -0.010f, 1.20f)
     val titleLarge     = Role(16f, FontWeight.SemiBold, -0.010f, 1.30f)
     val titleMedium    = Role(15f, FontWeight.SemiBold, -0.010f, 1.30f)
+    val labelMedium    = Role(13f, FontWeight.SemiBold, -0.010f, 1.30f)
     val bodyLarge      = Role(16f, FontWeight.Normal, 0f, 1.45f)
     val bodyMedium     = Role(14f, FontWeight.Normal, 0f, 1.45f)
     val bodySmall      = Role(12f, FontWeight.Normal, 0f, 1.40f)
@@ -90,10 +92,15 @@ internal val ShuttlTypography = Typography(
 )
 
 /**
- * The two roles M3's [Typography] has no slot for. Phase 2's hero uses
- * [display]; phase 3's stat tiles use [statNumber].
+ * Roles M3's [Typography] has no slot for. Phase 2's hero uses [display];
+ * phase 3's stat tiles use [statNumber]; the sign-in brand mark uses
+ * [wordmark]. [labelMedium] mirrors iosApp's small-emphasis role for the
+ * two platforms' scale tables to stay identical; nothing on Android reaches
+ * for it yet since Task 2's conversion was iOS-only.
  */
 internal object ShuttlTypeExtras {
-    val display    = ShuttlScale.display.toTextStyle()
-    val statNumber = ShuttlScale.statNumber.toTextStyle()
+    val display     = ShuttlScale.display.toTextStyle()
+    val statNumber  = ShuttlScale.statNumber.toTextStyle()
+    val wordmark    = ShuttlScale.wordmark.toTextStyle()
+    val labelMedium = ShuttlScale.labelMedium.toTextStyle()
 }

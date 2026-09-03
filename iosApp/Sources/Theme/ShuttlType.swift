@@ -52,16 +52,18 @@ enum ShuttlType {
     static let headlineLarge    = Role(name: "headlineLarge", size: 28, weight: .medium, trackingEm: -0.030, lineHeightMultiple: 1.15)
     static let headlineMedium   = Role(name: "headlineMedium", size: 22, weight: .medium, trackingEm: -0.020, lineHeightMultiple: 1.20)
     static let statNumber       = Role(name: "statNumber", size: 26, weight: .medium, trackingEm: -0.030, lineHeightMultiple: 1.15)
+    static let wordmark         = Role(name: "wordmark", size: 24, weight: .bold, trackingEm: -0.010, lineHeightMultiple: 1.20)
     static let titleLarge       = Role(name: "titleLarge", size: 16, weight: .semibold, trackingEm: -0.010, lineHeightMultiple: 1.30)
     static let titleMedium      = Role(name: "titleMedium", size: 15, weight: .semibold, trackingEm: -0.010, lineHeightMultiple: 1.30)
+    static let labelMedium      = Role(name: "labelMedium", size: 13, weight: .semibold, trackingEm: -0.010, lineHeightMultiple: 1.30)
     static let bodyLarge        = Role(name: "bodyLarge", size: 16, weight: .regular, trackingEm: 0, lineHeightMultiple: 1.45)
     static let bodyMedium       = Role(name: "bodyMedium", size: 14, weight: .regular, trackingEm: 0, lineHeightMultiple: 1.45)
     static let bodySmall        = Role(name: "bodySmall", size: 12, weight: .regular, trackingEm: 0, lineHeightMultiple: 1.40)
     static let labelSmall       = Role(name: "labelSmall", size: 11, weight: .medium, trackingEm: 0.050, lineHeightMultiple: 1.30)
 
     static let allRoles: [Role] = [
-        display, headlineLarge, headlineMedium, statNumber,
-        titleLarge, titleMedium, bodyLarge, bodyMedium, bodySmall, labelSmall,
+        display, headlineLarge, headlineMedium, statNumber, wordmark,
+        titleLarge, titleMedium, labelMedium, bodyLarge, bodyMedium, bodySmall, labelSmall,
     ]
 }
 

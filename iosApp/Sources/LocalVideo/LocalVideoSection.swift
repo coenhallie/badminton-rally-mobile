@@ -57,7 +57,7 @@ struct LocalVideoRowView: View {
                 Spacer()
                 if LocalVideoStatus.canAnalyze(stage: entry.stage) {
                     Button(LocalVideoStatus.analyzeButtonLabel(stage: entry.stage)) { onAnalyze() }
-                        .shuttlType(ShuttlType.titleMedium)
+                        .shuttlType(ShuttlType.labelMedium)
                         .foregroundStyle(Shuttl.onAccent)
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)

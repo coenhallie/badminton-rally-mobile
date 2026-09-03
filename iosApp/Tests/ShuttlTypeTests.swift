@@ -23,8 +23,10 @@ final class ShuttlTypeTests: XCTestCase {
             Expected(role: ShuttlType.headlineLarge, size: 28, weight: .medium, trackingEm: -0.030),
             Expected(role: ShuttlType.headlineMedium, size: 22, weight: .medium, trackingEm: -0.020),
             Expected(role: ShuttlType.statNumber, size: 26, weight: .medium, trackingEm: -0.030),
+            Expected(role: ShuttlType.wordmark, size: 24, weight: .bold, trackingEm: -0.010),
             Expected(role: ShuttlType.titleLarge, size: 16, weight: .semibold, trackingEm: -0.010),
             Expected(role: ShuttlType.titleMedium, size: 15, weight: .semibold, trackingEm: -0.010),
+            Expected(role: ShuttlType.labelMedium, size: 13, weight: .semibold, trackingEm: -0.010),
             Expected(role: ShuttlType.bodyLarge, size: 16, weight: .regular, trackingEm: 0),
             Expected(role: ShuttlType.bodyMedium, size: 14, weight: .regular, trackingEm: 0),
             Expected(role: ShuttlType.bodySmall, size: 12, weight: .regular, trackingEm: 0),
@@ -68,8 +70,10 @@ final class ShuttlTypeTests: XCTestCase {
         XCTAssertEqual(ShuttlType.headlineLarge.lineHeightMultiple, 1.15, accuracy: 0.001)
         XCTAssertEqual(ShuttlType.headlineMedium.lineHeightMultiple, 1.20, accuracy: 0.001)
         XCTAssertEqual(ShuttlType.statNumber.lineHeightMultiple, 1.15, accuracy: 0.001)
+        XCTAssertEqual(ShuttlType.wordmark.lineHeightMultiple, 1.20, accuracy: 0.001)
         XCTAssertEqual(ShuttlType.titleLarge.lineHeightMultiple, 1.30, accuracy: 0.001)
         XCTAssertEqual(ShuttlType.titleMedium.lineHeightMultiple, 1.30, accuracy: 0.001)
+        XCTAssertEqual(ShuttlType.labelMedium.lineHeightMultiple, 1.30, accuracy: 0.001)
         XCTAssertEqual(ShuttlType.bodyLarge.lineHeightMultiple, 1.45, accuracy: 0.001)
         XCTAssertEqual(ShuttlType.bodyMedium.lineHeightMultiple, 1.45, accuracy: 0.001)
         XCTAssertEqual(ShuttlType.bodySmall.lineHeightMultiple, 1.40, accuracy: 0.001)

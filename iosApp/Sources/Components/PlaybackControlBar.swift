@@ -124,7 +124,7 @@ private struct PlaybackSettingsSheet: View {
                 }
 
                 Text("Speed")
-                    .shuttlType(ShuttlType.titleMedium)
+                    .shuttlType(ShuttlType.labelMedium)
                     .foregroundStyle(Shuttl.textSecondary)
                 ChipFlow {
                     ForEach(speedOptions, id: \.self) { option in
@@ -136,7 +136,7 @@ private struct PlaybackSettingsSheet: View {
                 }
 
                 Text("Skip interval")
-                    .shuttlType(ShuttlType.titleMedium)
+                    .shuttlType(ShuttlType.labelMedium)
                     .foregroundStyle(Shuttl.textSecondary)
                 ChipFlow {
                     ForEach(skipOptions, id: \.self) { option in

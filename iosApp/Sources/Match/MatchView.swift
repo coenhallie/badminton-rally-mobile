@@ -622,7 +622,7 @@ private struct AttachStatusBanner: View {
             case .courtNotMarked:
                 Button(action: onMarkCourt) {
                     Text("Mark court")
-                        .shuttlType(ShuttlType.titleMedium)
+                        .shuttlType(ShuttlType.labelMedium)
                         .foregroundStyle(Shuttl.onAccent)
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)
@@ -635,7 +635,7 @@ private struct AttachStatusBanner: View {
             case .failed:
                 Button(action: onRetry) {
                     Text("Retry")
-                        .shuttlType(ShuttlType.titleMedium)
+                        .shuttlType(ShuttlType.labelMedium)
                         .foregroundStyle(Shuttl.onAccent)
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)
