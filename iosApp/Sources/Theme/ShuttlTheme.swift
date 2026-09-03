@@ -57,11 +57,10 @@ enum Shuttl {
     static let sideHome        = token(ShuttlPalette.sideHome)
     static let sideAway        = token(ShuttlPalette.sideAway)
 
-    /// Tiny uppercase tracked label - matches Android labelSmall (11sp, medium, 0.05em).
+    /// Tiny uppercase tracked label - matches Android labelSmall.
     static func sectionLabel(_ text: String) -> some View {
         Text(text.uppercased())
-            .font(.system(size: 11, weight: .medium))
-            .kerning(0.55)
+            .shuttlType(ShuttlType.labelSmall)
             .foregroundStyle(Shuttl.textSecondary)
     }
 }
