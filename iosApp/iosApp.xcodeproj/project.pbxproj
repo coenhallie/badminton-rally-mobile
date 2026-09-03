@@ -19,6 +19,8 @@
 		180BE08FA55055D020A3D2EF /* MatchSummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAD86CD770119F9EFBB7003E /* MatchSummaryView.swift */; };
 		18DFDCCFF6258C4B0568B3CA /* SmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18B28237BDD6785E014E9F62 /* SmokeTests.swift */; };
 		19083545671B6C7512BC48DC /* MatchModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A9896412F77DC2290D32532 /* MatchModelTests.swift */; };
+		73E29EAD2AD341A0A708AD93 /* ShuttlPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = A88A845768F14C1C8CB1B095 /* ShuttlPalette.swift */; };
+		A0F6B9FF509948BAB510549C /* ShuttlPaletteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 479C132F575E45F39309F9EB /* ShuttlPaletteTests.swift */; };
 		240133B2EF631DC8B1C2979F /* FrameStepMathTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A02D8B89ABF94AD30304E3A5 /* FrameStepMathTests.swift */; };
 		27D47564638D6299811A5A5B /* MatchGrouping.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94F21AB0AEE5F66047B679 /* MatchGrouping.swift */; };
 		2E71C6E8CEB45C9A1AF67518 /* FrameStepMath.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDDECE8F42B9ED83E1030453 /* FrameStepMath.swift */; };
@@ -95,6 +97,8 @@
 /* Begin PBXFileReference section */
 		0B444C4421DE7CF39AE7A4E5 /* LocalVideoCleanupWiringTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalVideoCleanupWiringTests.swift; sourceTree = "<group>"; };
 		0C55FBA93C98A27AC7EE21BE /* ShuttlTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShuttlTheme.swift; sourceTree = "<group>"; };
+		A88A845768F14C1C8CB1B095 /* ShuttlPalette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShuttlPalette.swift; sourceTree = "<group>"; };
+		479C132F575E45F39309F9EB /* ShuttlPaletteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShuttlPaletteTests.swift; sourceTree = "<group>"; };
 		0F86CA7E3C3A9EBC8035FF98 /* ScoreLogDeleteMessageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoreLogDeleteMessageTests.swift; sourceTree = "<group>"; };
 		12867F669C1B55659E89479D /* NewMatchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewMatchView.swift; sourceTree = "<group>"; };
 		13C657999F25FF0FA886E1CD /* CourtFrameLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CourtFrameLoader.swift; sourceTree = "<group>"; };
@@ -241,6 +245,7 @@
 				0F86CA7E3C3A9EBC8035FF98 /* ScoreLogDeleteMessageTests.swift */,
 				3FA21129D859F17CC0DF1D93 /* ScoringEngineTests.swift */,
 				1615D825C2BC6E47A61D8EF7 /* ScoringModelTests.swift */,
+				479C132F575E45F39309F9EB /* ShuttlPaletteTests.swift */,
 				18B28237BDD6785E014E9F62 /* SmokeTests.swift */,
 			);
 			path = Tests;
@@ -359,6 +364,7 @@
 		F382516A24A5D01B051FF4D9 /* Theme */ = {
 			isa = PBXGroup;
 			children = (
+				A88A845768F14C1C8CB1B095 /* ShuttlPalette.swift */,
 				0C55FBA93C98A27AC7EE21BE /* ShuttlTheme.swift */,
 			);
 			path = Theme;
@@ -556,6 +562,7 @@
 				0C13FDBF13DB762D4066A24C /* ScoringView.swift in Sources */,
 				D90B20576A674D829140588B /* ShareSheetView.swift in Sources */,
 				60AC11B9815BD71920288100 /* ShuttlCard.swift in Sources */,
+				73E29EAD2AD341A0A708AD93 /* ShuttlPalette.swift in Sources */,
 				EB93197882D94A5AF008CD13 /* ShuttlTheme.swift in Sources */,
 				8D09944EA6E8B198E3D0073C /* SignInView.swift in Sources */,
 				6B213FD25EAA52256950E095 /* SplashView.swift in Sources */,
@@ -581,6 +588,7 @@
 				3AD1A4C1F76FB329D882B424 /* ScoreLogDeleteMessageTests.swift in Sources */,
 				D9EB41855E4AB68302F63243 /* ScoringEngineTests.swift in Sources */,
 				08453E692196FA09AF4EDFBF /* ScoringModelTests.swift in Sources */,
+				A0F6B9FF509948BAB510549C /* ShuttlPaletteTests.swift in Sources */,
 				18DFDCCFF6258C4B0568B3CA /* SmokeTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
