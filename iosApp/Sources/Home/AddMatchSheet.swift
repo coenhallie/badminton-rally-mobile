@@ -20,9 +20,10 @@ struct AddMatchSheet: View {
             row("Import video", systemImage: "square.and.arrow.down", action: onImport)
         }
         .padding(.vertical, 8)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(Shuttl.bgSecondary)
         .presentationDetents([.height(220)])
         .presentationDragIndicator(.visible)
-        .background(Shuttl.bgSecondary)
     }
 
     private func row(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
