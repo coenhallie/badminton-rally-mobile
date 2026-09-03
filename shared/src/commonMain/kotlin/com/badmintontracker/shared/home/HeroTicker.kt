@@ -1,11 +1,12 @@
-package com.badmintontracker.android.home
+package com.badmintontracker.shared.home
 
 /**
  * The Home hero's copy and rotation.
  *
- * Separate from the composable so the phrases and the wrap-around can be
- * asserted without a running timer. Mirrors iosApp's HeroTicker.swift word for
- * word; the two test files check them against each other.
+ * Lives in :shared, not in either client, so there is exactly one definition
+ * of the phrases and the wrap-around: one definition beats two definitions
+ * plus a test hoping they agree. Separate from the view so both can be
+ * asserted without a running timer.
  */
 object HeroTicker {
     /** The fixed first line. Held here so both lines are edited in one file. */
