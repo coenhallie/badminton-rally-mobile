@@ -96,7 +96,7 @@ struct ClipListView: View {
                         Button("Labels") { showLabels = true }
                         Button("Sign out") { Task { await model.signOut() } }
                         Divider()
-                        Text(versionLabel)
+                        Text(versionLabel())
                     } label: {
                         Image(systemName: "ellipsis")
                     }
@@ -594,12 +594,6 @@ struct ClipListView: View {
                 }
             }
         }
-    }
-
-    private var versionLabel: String {
-        let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
-        let b = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
-        return "Version \(v) (\(b))"
     }
 }
 

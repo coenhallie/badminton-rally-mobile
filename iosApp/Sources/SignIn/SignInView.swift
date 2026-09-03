@@ -40,7 +40,7 @@ struct SignInView: View {
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 320)
                     Spacer().frame(height: 8)
-                    Text(versionLabel)
+                    Text(versionLabel())
                         .shuttlType(ShuttlType.bodySmall)
                         .foregroundStyle(Shuttl.textTertiary)
                 }
@@ -89,12 +89,6 @@ struct SignInView: View {
         SecureField(label, text: text)
             .padding(12)
             .background(Shuttl.bgInput)
-    }
-
-    private var versionLabel: String {
-        let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
-        let b = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
-        return "Version \(v) (\(b))"
     }
 
     private func submit() {
