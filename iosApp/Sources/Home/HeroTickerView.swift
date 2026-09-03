@@ -35,6 +35,10 @@ struct HeroTickerView: View {
         }
         .shuttlType(ShuttlType.display)
         .frame(maxWidth: .infinity, alignment: .leading)
+        // Two Texts read as two separate VoiceOver elements by default; combined
+        // into one so the hero is announced as a single sentence rather than two
+        // stops.
+        .accessibilityElement(children: .combine)
         .task(id: isPaused) { await run() }
     }
 

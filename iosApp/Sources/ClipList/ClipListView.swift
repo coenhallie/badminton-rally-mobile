@@ -314,7 +314,18 @@ struct MatchesList: View {
                     .frame(width: 44, height: 44)
                     .buttonStyle(.borderless)
                 }
+                // NavigationLink drew this for free; a Button does not, so it is
+                // restored explicitly to keep the row reading as navigable.
+                Image(systemName: "chevron.right")
+                    .shuttlType(ShuttlType.bodySmall)
+                    .foregroundStyle(Shuttl.textSecondary)
             }
+            // Without this, the Button's hit area is only its children's -
+            // the Spacer in the middle has none of its own - so the empty
+            // stretch between the text and the trailing control would go dead
+            // and silently stop opening the match. NavigationLink gave the
+            // whole row a hit area for free; a Button does not.
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -425,23 +436,47 @@ struct MatchesList: View {
                         .controlSize(.small)
                         .frame(width: 44, height: 44)
                 case nil:
-                    // Present but disabled, with the reason in its accessibility
-                    // label: match_shares is keyed on video_id, so a score-only
-                    // match cannot be shared. An explicit disabled state teaches
-                    // the rule.
+                    // Present but visually muted, with the reason in its
+                    // accessibility label: match_shares is keyed on video_id, so
+                    // a score-only match cannot be shared. Deliberately not
+                    // `.disabled(...)`: verified on-device (task-7 fix round) that
+                    // a `.disabled` Button nested inside this row's own Button
+                    // does not swallow its tap - it passes straight through to
+                    // the row underneath, silently opening the match instead of
+                    // doing nothing. Almost certainly pre-existing, not something
+                    // this row's NavigationLink -> Button conversion introduced: a
+                    // disabled child button falls through the same way inside a
+                    // NavigationLink's label. The action already no-ops with no
+                    // video, so leaving the button enabled and dimming it by hand
+                    // keeps the tap right where it lands - the tradeoff is that
+                    // VoiceOver no longer gets the formal "not enabled" trait the
+                    // way `.disabled` gave it for free; the descriptive label
+                    // below ("Add a video to share this match") is left to carry
+                    // that on its own.
                     Button {
                         if let video = content.video { shareTarget = video }
                     } label: {
                         Image(systemName: "square.and.arrow.up")
+                            .opacity(content.video != nil ? 1 : 0.35)
                     }
                     .frame(width: 44, height: 44)
                     .buttonStyle(.borderless)
-                    .disabled(content.video == nil)
                     .accessibilityLabel(
                         content.video != nil ? "Share match" : "Add a video to share this match"
                     )
                 }
+                // NavigationLink drew this for free; a Button does not, so it is
+                // restored explicitly to keep the row reading as navigable.
+                Image(systemName: "chevron.right")
+                    .shuttlType(ShuttlType.bodySmall)
+                    .foregroundStyle(Shuttl.textSecondary)
             }
+            // Without this, the Button's hit area is only its children's -
+            // the Spacer in the middle has none of its own - so the empty
+            // stretch between the text and the trailing control would go dead
+            // and silently stop opening the match. NavigationLink gave the
+            // whole row a hit area for free; a Button does not.
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }

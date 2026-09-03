@@ -187,6 +187,9 @@ struct HomeView: View {
             // on a change of id, so a signal left standing is never re-delivered —
             // it would wedge the auto-open for this import AND every one after it.
             intake.lastAddedId = nil
+            // Read the registry, not `localEntries`: that mirror is filled by a
+            // separate `for await` over the entries flow and still lags the add
+            // that set this id, whereas get(id:) sees the value add() just wrote.
             guard let entry = rally.localVideos.get(id: id) else { return }
             // A video picked for a match already carries that match's name
             // (MatchTarget's title rode along on the INSERT), and videos.title is
@@ -302,15 +305,22 @@ struct HomeView: View {
             .accessibilityLabel("Add new match")
 
             Button {
-                // Analytics ships in Phase 3 (docs/plans/2026-09-03-home-and-
-                // analytics-redesign-design.md). The pill is drawn per the mock
-                // now so the layout is settled ahead of time, but there is no
-                // destination to send it to yet, so the tap is a deliberate
-                // no-op until that phase lands.
+                // Unreachable: `.disabled(true)` below stops the tap before it
+                // gets here.
             } label: {
                 Text("Analytics")
             }
             .buttonStyle(HomePillButtonStyle(background: Shuttl.bgTertiary, foreground: Shuttl.text))
+            // Analytics ships in Phase 3 (docs/plans/2026-09-03-home-and-
+            // analytics-redesign-design.md). The pill is drawn per the mock now
+            // so the layout is settled ahead of time, but there is no
+            // destination to send it to yet. `.disabled(true)` alone would still
+            // LOOK enabled - `HomePillButtonStyle` only dimmed on `isPressed`, so
+            // the pill would visibly react to the tap and then do nothing, which
+            // reads as a hang rather than an unbuilt feature - so the style
+            // itself renders the disabled state (see its own `isEnabled` read).
+            .disabled(true)
+            .accessibilityHint("Coming soon")
 
             Button {
                 withAnimation(.snappy(duration: 0.24)) { drawerOpen = true }
@@ -344,14 +354,19 @@ struct HomeView: View {
 private struct HomePillButtonStyle: ButtonStyle {
     let background: Color
     let foreground: Color
+    // A custom ButtonStyle does not dim itself on `.disabled(true)` the way a
+    // system style does - `configuration` carries only `isPressed`, nothing
+    // about enablement - so a disabled pill needs to read this directly or it
+    // renders identically to an enabled one and just silently swallows taps.
+    @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .shuttlType(ShuttlType.titleLarge)
-            .foregroundStyle(foreground)
+            .foregroundStyle(foreground.opacity(isEnabled ? 1 : 0.4))
             .frame(maxWidth: .infinity)
             .frame(height: 60)
-            .background(background.opacity(configuration.isPressed ? 0.8 : 1))
+            .background(background.opacity(isEnabled ? (configuration.isPressed ? 0.8 : 1) : 0.4))
             .clipShape(Capsule())
     }
 }
