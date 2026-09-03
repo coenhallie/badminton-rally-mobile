@@ -31,10 +31,38 @@ enum DrawerDragMath {
         return translation >= openThreshold || velocity >= velocityThreshold
     }
 
+    /// Mirror of shouldOpen for the closing gesture, so the two feel the same
+    /// at their boundary. Guards on the closing direction (negative
+    /// translation) the way shouldOpen guards on translation > 0, then
+    /// compares against the negated thresholds with <=, not <: the inclusive
+    /// boundary is deliberate, so a drag of exactly -70 closes just as one of
+    /// exactly +70 opens, instead of the two gestures disagreeing at their edge.
+    static func shouldClose(translation: CGFloat, velocity: CGFloat) -> Bool {
+        guard translation < 0 else { return false }
+        return translation <= -openThreshold || velocity <= -velocityThreshold
+    }
+
     /// Where the panel sits, measured from fully hidden (-width) to open (0).
     static func offset(translation: CGFloat, width: CGFloat, isOpen: Bool) -> CGFloat {
         let base: CGFloat = isOpen ? 0 : -width
         return min(0, max(-width, base + translation))
+    }
+
+    /// Below this the scrim is close enough to invisible that it must stop
+    /// swallowing taps: a scrim nobody can see but that still intercepts
+    /// touches on the screen underneath reads as a broken app, not a closed
+    /// drawer.
+    static let minimumHitTestableScrimOpacity: Double = 0.05
+
+    /// Restricts a live drag translation to the closing direction while a
+    /// close-drag is in progress. A forward wiggle mid-drag would otherwise
+    /// leave dragTranslation positive; offset() already clamps that back to
+    /// zero for the visual output, but keeping the raw state itself
+    /// non-positive here means every other reader of dragTranslation (the
+    /// animation gate included) sees the same closing-only invariant rather
+    /// than relying on offset to paper over it downstream.
+    static func closingTranslation(_ translation: CGFloat) -> CGFloat {
+        min(0, translation)
     }
 
     /// Clamped at zero, and that lower clamp is load bearing: an offset

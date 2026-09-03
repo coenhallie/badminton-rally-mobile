@@ -30,7 +30,7 @@ struct MatchesDrawer<Content: View>: View {
             ZStack(alignment: .leading) {
                 Color.black.opacity(0.55 * scrim)
                     .ignoresSafeArea()
-                    .allowsHitTesting(scrim > 0.05)
+                    .allowsHitTesting(scrim > DrawerDragMath.minimumHitTestableScrimOpacity)
                     .onTapGesture { withAnimation(.snappy(duration: 0.24)) { isOpen = false } }
 
                 panel(width: width)
@@ -91,10 +91,11 @@ struct MatchesDrawer<Content: View>: View {
 
     private var closeDrag: some Gesture {
         DragGesture()
-            .onChanged { dragTranslation = min(0, $0.translation.width) }
+            .onChanged { dragTranslation = DrawerDragMath.closingTranslation($0.translation.width) }
             .onEnded { value in
-                let shouldClose = value.translation.width < -DrawerDragMath.openThreshold
-                    || value.velocity.width < -DrawerDragMath.velocityThreshold
+                let shouldClose = DrawerDragMath.shouldClose(
+                    translation: value.translation.width, velocity: value.velocity.width
+                )
                 dragTranslation = 0
                 withAnimation(.snappy(duration: 0.24)) { isOpen = !shouldClose }
             }

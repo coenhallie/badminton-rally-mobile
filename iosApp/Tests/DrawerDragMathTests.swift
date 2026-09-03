@@ -46,6 +46,32 @@ final class DrawerDragMathTests: XCTestCase {
         XCTAssertFalse(DrawerDragMath.shouldOpen(translation: -200, velocity: 900))
     }
 
+    func testClosesOnADeliberateDrag() {
+        XCTAssertTrue(DrawerDragMath.shouldClose(translation: -71, velocity: 0))
+        XCTAssertFalse(DrawerDragMath.shouldClose(translation: -69, velocity: 0))
+        // Pins the inclusive boundary itself, mirroring shouldOpen: exactly
+        // -70 must close just as exactly +70 opens.
+        XCTAssertTrue(DrawerDragMath.shouldClose(translation: -70, velocity: 0))
+    }
+
+    func testClosesOnAFastFlickThatDidNotTravelFar() {
+        // A flick is a real gesture: short travel, high speed, in the closing
+        // direction. Without this the drawer would refuse to close for anyone
+        // who swipes quickly.
+        XCTAssertTrue(DrawerDragMath.shouldClose(translation: -20, velocity: -900))
+        XCTAssertFalse(DrawerDragMath.shouldClose(translation: -20, velocity: -100))
+        // Pins the inclusive boundary itself: exactly -300 must close just as
+        // exactly +300 opens.
+        XCTAssertTrue(DrawerDragMath.shouldClose(translation: -20, velocity: -300))
+    }
+
+    func testAForwardDragNeverCloses() {
+        XCTAssertFalse(DrawerDragMath.shouldClose(translation: 200, velocity: 900))
+        // A forward translation must not close even when velocity alone would
+        // clear the flick threshold - the direction guard has to run first.
+        XCTAssertFalse(DrawerDragMath.shouldClose(translation: 200, velocity: -900))
+    }
+
     func testOffsetIsClampedToTheDrawerWidth() {
         let w: CGFloat = 330
         // Closed, mid drag: sits between fully hidden and fully open.
@@ -80,5 +106,14 @@ final class DrawerDragMathTests: XCTestCase {
         // negative zero, and 1 - (-0) is 1, so this would read as a fully
         // opaque scrim over a drawer with no width at all.
         XCTAssertEqual(DrawerDragMath.scrimOpacity(offset: 0, width: -5), 0, accuracy: 0.001)
+    }
+
+    func testClosingTranslationPassesThroughNegativeAndClampsPositive() {
+        // A closing drag reports a negative translation, which must pass
+        // through unchanged so the panel follows the finger.
+        XCTAssertEqual(DrawerDragMath.closingTranslation(-42), -42, accuracy: 0.01)
+        // A forward wiggle mid-close-drag must not push the state positive.
+        XCTAssertEqual(DrawerDragMath.closingTranslation(42), 0, accuracy: 0.01)
+        XCTAssertEqual(DrawerDragMath.closingTranslation(0), 0, accuracy: 0.01)
     }
 }
