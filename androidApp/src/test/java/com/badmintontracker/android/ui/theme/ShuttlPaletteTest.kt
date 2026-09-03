@@ -77,6 +77,20 @@ class ShuttlPaletteTest {
                 // textTertiary used at two sizes.
                 ratio.shouldBeLessThan(4.5)
             }
+
+            // This next assertion looks backwards - it asserts a FAILURE - but
+            // that is the honest constraint. textMuted was only ever measured
+            // against bg, its one intended consumer (phase 2's hero line). On
+            // bgTertiary it does not clear this same 3.0:1 large-text floor
+            // (2.920:1 light / 2.939:1 dark). Pinning that failure means if
+            // someone later "improves" textMuted until this goes green, they are
+            // forced to notice they have changed which surfaces it is valid on,
+            // rather than silently gaining a surface no one verified. Text on a
+            // raised surface must use textTertiary, not textMuted.
+            val raisedRatio = contrast(pick(ShuttlPalette.textMuted), pick(ShuttlPalette.bgTertiary))
+            withClue("$theme textMuted on bgTertiary now clears 3.0; textMuted may be safe on raised surfaces now, update the doc comment and this test to say so") {
+                raisedRatio.shouldBeLessThan(3.0)
+            }
         }
     }
 

@@ -24,6 +24,12 @@ enum ShuttlPalette {
     static let textTertiary:    Pair = (0x5F6763, 0x7F8682)
     /// The hero line, and nothing else. Below the 4.5:1 body threshold by
     /// design; see ShuttlPaletteTests.testMutedTextClearsLargeTextThresholdOnly.
+    ///
+    /// Verified only against `bg`, its one intended consumer: 3.351:1 light /
+    /// 3.230:1 dark. On `bgSecondary` it is 3.115:1 light / 3.048:1 dark, and
+    /// on `bgTertiary` it drops to 2.920:1 light / 2.939:1 dark, below the
+    /// 3.0:1 large-text floor it otherwise clears. Do not put it on a raised
+    /// surface; use `textTertiary` there instead.
     static let textMuted:       Pair = (0x878E8A, 0x5D6462)
     /// A fill colour. Accent-coloured TEXT uses `accentDark`.
     static let accent:          Pair = (0x16A34A, 0x3EE27C)

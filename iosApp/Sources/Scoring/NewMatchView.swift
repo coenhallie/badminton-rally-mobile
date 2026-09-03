@@ -75,7 +75,11 @@ struct NewMatchView: View {
             }
 
             if touched, let problem {
-                Section { Text(problem).foregroundStyle(.red).font(.footnote) }
+                Section {
+                    // Shuttl.error rather than a literal red: it is the same
+                    // token Android reaches for (colorScheme.error) for this line.
+                    Text(problem).foregroundStyle(Shuttl.error).font(.footnote)
+                }
             }
         }
         .navigationTitle("New match")

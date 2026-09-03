@@ -412,7 +412,16 @@ struct ScoringView: View {
                     // before Done is reachable - but it stays wired the same way
                     // Android's does, for the undo-then-refinish case the comment
                     // on `addVideoAsked` describes.
-                    Button("Done") { deliverFinish(nil) }.buttonStyle(.borderedProminent)
+                    Button(action: { deliverFinish(nil) }) {
+                        Text("Done")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(Shuttl.onAccent)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Shuttl.accent)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.borderless)
                 }
             }
             .padding(.horizontal, 12)

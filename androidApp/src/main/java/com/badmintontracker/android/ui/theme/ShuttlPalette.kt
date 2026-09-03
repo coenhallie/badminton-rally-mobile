@@ -28,6 +28,12 @@ internal object ShuttlPalette {
     /**
      * The hero line, and nothing else. Below the 4.5:1 body threshold by design;
      * see ShuttlPaletteTest.muted_text_clears_large_text_threshold_only.
+     *
+     * Verified only against [bg], its one intended consumer: 3.351:1 light /
+     * 3.230:1 dark. On [bgSecondary] it is 3.115:1 light / 3.048:1 dark, and
+     * on [bgTertiary] it drops to 2.920:1 light / 2.939:1 dark, below the
+     * 3.0:1 large-text floor it otherwise clears. Do not put it on a raised
+     * surface; use [textTertiary] there instead.
      */
     val textMuted       = Tone(0x878E8A, 0x5D6462)
 

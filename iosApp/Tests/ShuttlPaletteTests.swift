@@ -74,6 +74,18 @@ final class ShuttlPaletteTests: XCTestCase {
             // from textTertiary rather than the same grey used at two sizes.
             XCTAssertGreaterThanOrEqual(ratio, 3.0, "\(theme) textMuted fails large-text contrast")
             XCTAssertLessThan(ratio, 4.5, "\(theme) textMuted now clears the body threshold; fold it into textTertiary")
+
+            // This next assertion looks backwards - it asserts a FAILURE - but
+            // that is the honest constraint. textMuted was only ever measured
+            // against `bg`, its one intended consumer (phase 2's hero line). On
+            // `bgTertiary` it does not clear this same 3.0:1 large-text floor
+            // (2.920:1 light / 2.939:1 dark). Pinning that failure means if
+            // someone later "improves" textMuted until this goes green, they are
+            // forced to notice they have changed which surfaces it is valid on,
+            // rather than silently gaining a surface no one verified. Text on a
+            // raised surface must use textTertiary, not textMuted.
+            let raisedRatio = contrast(pick(ShuttlPalette.textMuted), pick(ShuttlPalette.bgTertiary))
+            XCTAssertLessThan(raisedRatio, 3.0, "\(theme) textMuted now clears bgTertiary; textMuted may be safe on raised surfaces now, update the doc comment and this test to say so")
         }
     }
 
