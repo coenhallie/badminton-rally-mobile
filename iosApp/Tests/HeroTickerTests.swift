@@ -32,7 +32,12 @@ final class HeroTickerTests: XCTestCase {
     func testOutOfRangeIndexDoesNotCrashOrEscape() {
         // Defensive: state restored from a stale value must not index out of
         // bounds. Any input lands back inside the array.
-        for i in [-5, 99, Int.max] {
+        //
+        // -2 is the value that discriminates. Without the clamp, (-2 + 1) % 4 is
+        // -1 under truncating remainder, which is outside the array, while -5,
+        // 99 and Int.max all happen to land back inside it and would let a
+        // missing clamp pass unnoticed.
+        for i in [-5, -2, 99, Int.max] {
             let n = HeroTicker.next(after: i)
             XCTAssertTrue(HeroTicker.phrases.indices.contains(n), "next(after: \(i)) escaped the array")
         }

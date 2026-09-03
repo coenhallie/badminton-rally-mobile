@@ -37,7 +37,11 @@ class HeroTickerTest {
 
     @Test
     fun out_of_range_index_does_not_escape() {
-        for (i in listOf(-5, 99, Int.MAX_VALUE)) {
+        // -2 is the value that discriminates. Without the clamp, (-2 + 1) % 4 is
+        // -1 under truncating remainder, which is outside the array, while -5,
+        // 99 and Int.MAX_VALUE all happen to land back inside it and would let
+        // a missing clamp pass unnoticed.
+        for (i in listOf(-5, -2, 99, Int.MAX_VALUE)) {
             HeroTicker.phrases.indices.contains(HeroTicker.next(i)) shouldBe true
         }
     }
