@@ -1,6 +1,8 @@
 package com.badmintontracker.android.ui.theme
 
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import io.kotest.assertions.withClue
 import io.kotest.matchers.floats.plusOrMinus
 import io.kotest.matchers.shouldBe
@@ -93,6 +95,49 @@ class ShuttlTypeTest {
         for ((name, style) in slots) {
             withClue(name) {
                 style.fontFamily shouldBe Archivo
+            }
+        }
+    }
+
+    private data class DesignSlot(
+        val name: String,
+        val built: TextStyle,
+        val scale: ShuttlScale.Role,
+    )
+
+    // Pairs each M3 slot the design scale owns with the ShuttlScale row it is
+    // supposed to be wired to. One line per slot, so a new design slot is one
+    // line to add.
+    private val designSlots = listOf(
+        DesignSlot("headlineLarge", ShuttlTypography.headlineLarge, ShuttlScale.headlineLarge),
+        DesignSlot("headlineMedium", ShuttlTypography.headlineMedium, ShuttlScale.headlineMedium),
+        DesignSlot("titleLarge", ShuttlTypography.titleLarge, ShuttlScale.titleLarge),
+        DesignSlot("titleMedium", ShuttlTypography.titleMedium, ShuttlScale.titleMedium),
+        DesignSlot("bodyLarge", ShuttlTypography.bodyLarge, ShuttlScale.bodyLarge),
+        DesignSlot("bodyMedium", ShuttlTypography.bodyMedium, ShuttlScale.bodyMedium),
+        DesignSlot("bodySmall", ShuttlTypography.bodySmall, ShuttlScale.bodySmall),
+        DesignSlot("labelSmall", ShuttlTypography.labelSmall, ShuttlScale.labelSmall),
+    )
+
+    @Test
+    fun design_slots_carry_their_scale_rows_metrics() {
+        // every_material_slot_is_archivo only checks fontFamily, so it would
+        // not catch a design slot wired to the wrong ShuttlScale row, or one
+        // quietly reverted to Default.<slot>.archivo() (which is also
+        // Archivo, just at M3's own size). This checks the wiring itself: the
+        // built TextStyle for each design-owned slot must carry the size,
+        // weight, line height and tracking its own ShuttlScale row specifies.
+        //
+        // Deliberately excludes the seven undesigned slots (displayLarge/
+        // Medium/Small, headlineSmall, titleSmall, labelLarge, labelMedium):
+        // those keep M3's own metrics on purpose, and pinning their numbers
+        // here would freeze values this task does not own and did not choose.
+        for (slot in designSlots) {
+            withClue(slot.name) {
+                slot.built.fontSize shouldBe slot.scale.sizeSp.sp
+                slot.built.fontWeight shouldBe slot.scale.weight
+                slot.built.lineHeight shouldBe (slot.scale.sizeSp * slot.scale.lineHeightMultiple).sp
+                slot.built.letterSpacing shouldBe slot.scale.trackingSp.sp
             }
         }
     }
