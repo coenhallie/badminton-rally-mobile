@@ -37,11 +37,14 @@ enum DrawerDragMath {
         return min(0, max(-width, base + translation))
     }
 
-    /// Clamped at both ends: an offset arriving from stale state must never
-    /// leave a fully opaque scrim over a closed drawer, which would swallow
-    /// every tap on the screen underneath with nothing visible to explain it.
+    /// Clamped at zero, and that lower clamp is load bearing: an offset
+    /// arriving from stale state must never leave a fully opaque scrim
+    /// sitting over a closed drawer, because that would swallow every tap on
+    /// the screen underneath with nothing visible on screen to explain it.
+    /// A degenerate width (zero or negative, as a layout can briefly report)
+    /// returns 0 rather than dividing, which is what the guard below is for.
     static func scrimOpacity(offset: CGFloat, width: CGFloat) -> Double {
         guard width > 0 else { return 0 }
-        return Double(min(1, max(0, 1 - abs(offset) / width)))
+        return Double(max(0, 1 - abs(offset) / width))
     }
 }

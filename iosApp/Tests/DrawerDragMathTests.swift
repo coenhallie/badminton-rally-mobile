@@ -24,6 +24,9 @@ final class DrawerDragMathTests: XCTestCase {
     func testOpensOnADeliberateDrag() {
         XCTAssertTrue(DrawerDragMath.shouldOpen(translation: 71, velocity: 0))
         XCTAssertFalse(DrawerDragMath.shouldOpen(translation: 69, velocity: 0))
+        // Pins the inclusive boundary itself, so a >= to > change on
+        // openThreshold is caught even though it would pass 69/71.
+        XCTAssertTrue(DrawerDragMath.shouldOpen(translation: 70, velocity: 0))
     }
 
     func testOpensOnAFastFlickThatDidNotTravelFar() {
@@ -31,6 +34,9 @@ final class DrawerDragMathTests: XCTestCase {
         // drawer would refuse to open for anyone who swipes quickly.
         XCTAssertTrue(DrawerDragMath.shouldOpen(translation: 20, velocity: 900))
         XCTAssertFalse(DrawerDragMath.shouldOpen(translation: 20, velocity: 100))
+        // Pins the inclusive boundary itself, so a >= to > change on
+        // velocityThreshold is caught even though it would pass 100/900.
+        XCTAssertTrue(DrawerDragMath.shouldOpen(translation: 20, velocity: 300))
     }
 
     func testABackwardDragNeverOpens() {
