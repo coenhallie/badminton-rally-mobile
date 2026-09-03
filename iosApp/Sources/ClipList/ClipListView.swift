@@ -552,6 +552,7 @@ struct ClipListView: View {
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
                             .background(Shuttl.accent)
+                            .clipShape(Capsule())
                     }
                     .buttonStyle(.borderless)
                 case .failed:
@@ -566,6 +567,7 @@ struct ClipListView: View {
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
                             .background(Shuttl.accent)
+                            .clipShape(Capsule())
                     }
                     .buttonStyle(.borderless)
                 case .uploading, .clipping, .finishingUp:

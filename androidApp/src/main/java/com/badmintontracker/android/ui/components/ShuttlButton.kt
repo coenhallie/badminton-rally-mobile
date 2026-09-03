@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -16,9 +17,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.badmintontracker.android.ui.theme.ShuttlRadius
 import com.badmintontracker.android.ui.theme.ShuttlTheme
 
 enum class ShuttlButtonVariant { Primary, Secondary }
@@ -35,15 +38,17 @@ fun ShuttlButton(
 ) {
     val isPrimary    = variant == ShuttlButtonVariant.Primary
     val bg           = if (isPrimary) MaterialTheme.colorScheme.primary else ShuttlTheme.extended.bgTertiary
-    val fg           = if (isPrimary) Color.Black else MaterialTheme.colorScheme.onSurface
+    val fg           = if (isPrimary) ShuttlTheme.extended.onAccent else MaterialTheme.colorScheme.onSurface
     val borderColor  = if (isPrimary) Color.Transparent else MaterialTheme.colorScheme.outline
     val effective    = enabled && !loading
+    val shape        = RoundedCornerShape(ShuttlRadius.pill)
 
     Row(
         modifier = modifier
             .alpha(if (effective) 1f else 0.5f)
-            .background(bg)
-            .border(width = if (isPrimary) 0.dp else 1.dp, color = borderColor)
+            .clip(shape)
+            .background(bg, shape)
+            .border(width = if (isPrimary) 0.dp else 1.dp, color = borderColor, shape = shape)
             .clickable(enabled = effective, onClick = onClick)
             .padding(
                 horizontal = if (compact) 12.dp else 24.dp,

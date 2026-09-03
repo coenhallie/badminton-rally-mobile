@@ -629,6 +629,7 @@ private struct AttachStatusBanner: View {
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
                         .background(Shuttl.accent)
+                        .clipShape(Capsule())
                 }
                 .buttonStyle(.borderless)
             case .failed:
@@ -641,6 +642,7 @@ private struct AttachStatusBanner: View {
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
                         .background(Shuttl.accent)
+                        .clipShape(Capsule())
                 }
                 .buttonStyle(.borderless)
             case .uploading, .clipping, .finishingUp:

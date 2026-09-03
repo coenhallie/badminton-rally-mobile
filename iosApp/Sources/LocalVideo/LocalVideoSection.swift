@@ -66,6 +66,7 @@ struct LocalVideoRowView: View {
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
                         .background(Shuttl.accent)
+                        .clipShape(Capsule())
                         .buttonStyle(.borderless)
                 } else if LocalVideoStatus.isRunning(stage: entry.stage) {
                     // Settled stages (e.g. ANALYZED) show neither button nor
