@@ -41,6 +41,15 @@ internal object ShuttlPalette {
      */
     val onAccent        = Tone(0x04240F, 0x06210F)
     val accentDark      = Tone(0x15803D, 0x22C55E)
+
+    /**
+     * The two sides of the scoreboard. Deliberately not the accent green and the
+     * info blue: those are interface colours sized for a chip, and these are
+     * full-bleed halves carrying white numerals, so they are picked for contrast
+     * against white first and family resemblance second. Deeper in dark, where a
+     * lit-up half at arm's length in a dim hall is the thing to avoid. Mirrors
+     * iosApp's ShuttlTheme.sideHome / sideAway.
+     */
     val sideHome        = Tone(0x15803D, 0x14532D)
     val sideAway        = Tone(0x1D4ED8, 0x1E3A8A)
     val error           = Tone(0xEF4444, 0xEF4444)
