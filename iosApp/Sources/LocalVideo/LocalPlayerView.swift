@@ -83,7 +83,7 @@ struct LocalPlayerView: View {
 
             if let description = (liveEntry ?? model.entry).description_ {
                 Text(description)
-                    .font(.subheadline)
+                    .shuttlType(ShuttlType.titleMedium)
                     .foregroundStyle(Shuttl.textSecondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 16)
@@ -95,7 +95,7 @@ struct LocalPlayerView: View {
                     annotationRow(annotation, model: model)
                 }
                 Text("Notes are saved on this phone and are removed if you remove the video from the app.")
-                    .font(.footnote)
+                    .shuttlType(ShuttlType.bodySmall)
                     .foregroundStyle(Shuttl.textTertiary)
             }
             .listStyle(.plain)
@@ -113,7 +113,7 @@ struct LocalPlayerView: View {
                     Button(LocalVideoStatus.analyzeButtonLabel(stage: stage)) {
                         courtTarget = CourtMarkingRoute(entryId: entryId)
                     }
-                    .font(.footnote.weight(.semibold))
+                    .shuttlType(ShuttlType.titleMedium)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
                 }
@@ -165,14 +165,14 @@ struct LocalPlayerView: View {
     private func annotationRow(_ annotation: LocalAnnotation, model: LocalPlayerModel) -> some View {
         HStack(spacing: 12) {
             Text(formatTimestamp(annotation.timestampSeconds))
-                .font(.footnote.monospacedDigit())
+                .shuttlType(ShuttlType.bodySmall, monospacedDigit: true)
                 .foregroundStyle(Shuttl.textSecondary)
             if let name = annotation.labelName {
                 LabelBadge(name: name, colorKey: annotation.labelColor)
             }
             if !annotation.body.isEmpty {
                 Text(annotation.body)
-                    .font(.subheadline)
+                    .shuttlType(ShuttlType.titleMedium)
                     .foregroundStyle(Shuttl.text)
             }
             Spacer()

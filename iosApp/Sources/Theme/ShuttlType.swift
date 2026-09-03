@@ -83,4 +83,12 @@ extension View {
             .kerning(role.kerning)
             .lineSpacing(role.lineSpacing)
     }
+
+    /// Same as `shuttlType(_:)`, with monospaced digits - for timers and counts
+    /// that must not shift width as their digits change.
+    func shuttlType(_ role: ShuttlType.Role, monospacedDigit: Bool) -> some View {
+        self.font(monospacedDigit ? role.font.monospacedDigit() : role.font)
+            .kerning(role.kerning)
+            .lineSpacing(role.lineSpacing)
+    }
 }

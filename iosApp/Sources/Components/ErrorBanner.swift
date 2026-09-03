@@ -5,7 +5,7 @@ struct ErrorBanner: View {
 
     var body: some View {
         Text(message)
-            .font(.footnote)
+            .shuttlType(ShuttlType.bodySmall)
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(12)

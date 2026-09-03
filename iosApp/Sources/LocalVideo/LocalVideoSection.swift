@@ -37,12 +37,11 @@ struct LocalVideoRowView: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(entry.title ?? entry.displayName)
-                        .font(.body.weight(.medium))
+                        .shuttlType(ShuttlType.titleMedium)
                         .foregroundStyle(Shuttl.text)
                         .lineLimit(1)
                     Text(subtitle)
-                        .font(.system(size: 11, weight: .medium))
-                        .kerning(0.55)
+                        .shuttlType(ShuttlType.labelSmall)
                         .foregroundStyle(Shuttl.textSecondary)
                         .lineLimit(2)
                     if let status = LocalVideoStatus.text(
@@ -51,14 +50,14 @@ struct LocalVideoRowView: View {
                         pipelineProgress: progress?.pipelineProgress?.floatValue
                     ) {
                         Text(status)
-                            .font(.footnote)
+                            .shuttlType(ShuttlType.bodySmall)
                             .foregroundStyle(Shuttl.textSecondary)
                     }
                 }
                 Spacer()
                 if LocalVideoStatus.canAnalyze(stage: entry.stage) {
                     Button(LocalVideoStatus.analyzeButtonLabel(stage: entry.stage)) { onAnalyze() }
-                        .font(.footnote.weight(.semibold))
+                        .shuttlType(ShuttlType.titleMedium)
                         .foregroundStyle(Shuttl.onAccent)
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)

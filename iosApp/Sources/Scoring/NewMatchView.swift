@@ -78,7 +78,7 @@ struct NewMatchView: View {
                 Section {
                     // Shuttl.error rather than a literal red: it is the same
                     // token Android reaches for (colorScheme.error) for this line.
-                    Text(problem).foregroundStyle(Shuttl.error).font(.footnote)
+                    Text(problem).foregroundStyle(Shuttl.error).shuttlType(ShuttlType.bodySmall)
                 }
             }
         }

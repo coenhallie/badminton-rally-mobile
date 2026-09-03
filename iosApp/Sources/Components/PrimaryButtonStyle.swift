@@ -3,7 +3,7 @@ import SwiftUI
 struct PrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.body.weight(.semibold))
+            .shuttlType(ShuttlType.titleLarge)
             .foregroundStyle(Shuttl.onAccent)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)

@@ -436,22 +436,21 @@ struct ClipListView: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(matchRowPrimary(match))
-                        .font(.body.weight(.medium))
+                        .shuttlType(ShuttlType.titleMedium)
                         .foregroundStyle(Shuttl.text)
                         .lineLimit(1)
                     Text(matchRowSecondary(match))
-                        .font(.system(size: 11, weight: .medium))
-                        .kerning(0.55)
+                        .shuttlType(ShuttlType.labelSmall)
                         .foregroundStyle(Shuttl.textSecondary)
                     if let description = match.description {
                         Text(description)
-                            .font(.footnote)
+                            .shuttlType(ShuttlType.bodySmall)
                             .foregroundStyle(Shuttl.textSecondary)
                             .lineLimit(2)
                     }
                     if let sharer = match.sharerEmail {
                         Text("Shared by \(sharer)")
-                            .font(.footnote)
+                            .shuttlType(ShuttlType.bodySmall)
                             .foregroundStyle(Shuttl.textSecondary)
                             .lineLimit(1)
                     }
@@ -512,20 +511,19 @@ struct ClipListView: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(card.title)
-                        .font(.body.weight(.medium))
+                        .shuttlType(ShuttlType.titleMedium)
                         .foregroundStyle(Shuttl.text)
                         .lineLimit(1)
                     Text("\(card.scoreLine.uppercased()) · \(formatMatchDate(millis: card.createdAtEpochMs).uppercased())")
-                        .font(.system(size: 11, weight: .medium))
-                        .kerning(0.55)
+                        .shuttlType(ShuttlType.labelSmall)
                         .foregroundStyle(Shuttl.textSecondary)
                     Text(card.playersLine)
-                        .font(.footnote)
+                        .shuttlType(ShuttlType.bodySmall)
                         .foregroundStyle(Shuttl.textSecondary)
                         .lineLimit(1)
                     if let attach = content.attach {
                         Text(attach.text)
-                            .font(.footnote)
+                            .shuttlType(ShuttlType.bodySmall)
                             // Shuttl.error rather than a literal red: it is the
                             // same token Android reaches for (colorScheme.error)
                             // for this line.
@@ -545,7 +543,7 @@ struct ClipListView: View {
                         if let entry { navigationTarget = CourtMarkingRoute(entryId: entry.id) }
                     } label: {
                         Text("Mark court")
-                            .font(.footnote.weight(.semibold))
+                            .shuttlType(ShuttlType.titleMedium)
                             .foregroundStyle(Shuttl.onAccent)
                             .lineLimit(1)
                             .fixedSize(horizontal: true, vertical: false)
@@ -560,7 +558,7 @@ struct ClipListView: View {
                         if let entry { analyze.retry(entryId: entry.id) }
                     } label: {
                         Text("Retry")
-                            .font(.footnote.weight(.semibold))
+                            .shuttlType(ShuttlType.titleMedium)
                             .foregroundStyle(Shuttl.onAccent)
                             .lineLimit(1)
                             .fixedSize(horizontal: true, vertical: false)

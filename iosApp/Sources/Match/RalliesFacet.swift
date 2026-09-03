@@ -23,7 +23,7 @@ struct RalliesFacet: View {
         }
         if let description {
             Text(description)
-                .font(.subheadline)
+                .shuttlType(ShuttlType.titleMedium)
                 .foregroundStyle(Shuttl.textSecondary)
         }
         if clips.isEmpty {
@@ -36,11 +36,10 @@ struct RalliesFacet: View {
             } label: {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(clipRowTitle(ClipInfo(clip), matchTitle: matchTitle))
-                        .font(.body.weight(.medium))
+                        .shuttlType(ShuttlType.titleMedium)
                         .foregroundStyle(Shuttl.text)
                     Text("\(clip.durationSeconds)S · \(clip.annotationCount) NOTES")
-                        .font(.system(size: 11, weight: .medium))
-                        .kerning(0.55)
+                        .shuttlType(ShuttlType.labelSmall)
                         .foregroundStyle(Shuttl.textSecondary)
                 }
             }
