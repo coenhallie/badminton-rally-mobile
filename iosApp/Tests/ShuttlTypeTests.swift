@@ -7,20 +7,35 @@ import XCTest
 /// styles are built from. That is the part that drifts between platforms.
 final class ShuttlTypeTests: XCTestCase {
     func testScaleMatchesTheDesign() {
-        XCTAssertEqual(ShuttlType.display.size, 40)
-        XCTAssertEqual(ShuttlType.display.weight, .medium)
-        XCTAssertEqual(ShuttlType.display.trackingEm, -0.035, accuracy: 0.0001)
+        // Every number, for every role, pinned against androidApp's
+        // ShuttlTypeTest.scale_matches_the_design. This is what makes the two
+        // platforms' scale tables checkable role by role - the reason the
+        // scale was split out of the built styles in the first place.
+        struct Expected {
+            let role: ShuttlType.Role
+            let size: CGFloat
+            let weight: ShuttlType.Weight
+            let trackingEm: CGFloat
+        }
 
-        XCTAssertEqual(ShuttlType.headlineLarge.size, 28)
-        XCTAssertEqual(ShuttlType.headlineMedium.size, 22)
-        XCTAssertEqual(ShuttlType.statNumber.size, 26)
-        XCTAssertEqual(ShuttlType.titleLarge.size, 16)
-        XCTAssertEqual(ShuttlType.titleMedium.size, 15)
-        XCTAssertEqual(ShuttlType.bodyLarge.size, 16)
-        XCTAssertEqual(ShuttlType.bodyMedium.size, 14)
-        XCTAssertEqual(ShuttlType.bodySmall.size, 12)
-        XCTAssertEqual(ShuttlType.labelSmall.size, 11)
-        XCTAssertEqual(ShuttlType.labelSmall.trackingEm, 0.05, accuracy: 0.0001)
+        let expectations: [Expected] = [
+            Expected(role: ShuttlType.display, size: 40, weight: .medium, trackingEm: -0.035),
+            Expected(role: ShuttlType.headlineLarge, size: 28, weight: .medium, trackingEm: -0.030),
+            Expected(role: ShuttlType.headlineMedium, size: 22, weight: .medium, trackingEm: -0.020),
+            Expected(role: ShuttlType.statNumber, size: 26, weight: .medium, trackingEm: -0.030),
+            Expected(role: ShuttlType.titleLarge, size: 16, weight: .semibold, trackingEm: -0.010),
+            Expected(role: ShuttlType.titleMedium, size: 15, weight: .semibold, trackingEm: -0.010),
+            Expected(role: ShuttlType.bodyLarge, size: 16, weight: .regular, trackingEm: 0),
+            Expected(role: ShuttlType.bodyMedium, size: 14, weight: .regular, trackingEm: 0),
+            Expected(role: ShuttlType.bodySmall, size: 12, weight: .regular, trackingEm: 0),
+            Expected(role: ShuttlType.labelSmall, size: 11, weight: .medium, trackingEm: 0.05),
+        ]
+
+        for e in expectations {
+            XCTAssertEqual(e.role.size, e.size, "\(e.role.name) size")
+            XCTAssertEqual(e.role.weight, e.weight, "\(e.role.name) weight")
+            XCTAssertEqual(e.role.trackingEm, e.trackingEm, accuracy: 0.0001, "\(e.role.name) trackingEm")
+        }
     }
 
     func testTrackingIsConvertedToPoints() {

@@ -56,14 +56,34 @@ private fun ShuttlScale.Role.toTextStyle() = TextStyle(
     letterSpacing = trackingSp.sp,
 )
 
+private val Default = Typography()
+
+/**
+ * M3's default metrics with the family swapped to Archivo. Used for the seven
+ * [Typography] slots the design mock does not specify a size for
+ * (displayLarge/Medium/Small, headlineSmall, titleSmall, labelLarge,
+ * labelMedium). Inventing sizes for them would be design work this task has
+ * no mandate for; keeping M3's own metrics and only changing the typeface
+ * still gets the whole app off the system font, which is what this task is
+ * actually for.
+ */
+private fun TextStyle.archivo() = copy(fontFamily = Archivo)
+
 internal val ShuttlTypography = Typography(
+    displayLarge   = Default.displayLarge.archivo(),
+    displayMedium  = Default.displayMedium.archivo(),
+    displaySmall   = Default.displaySmall.archivo(),
     headlineLarge  = ShuttlScale.headlineLarge.toTextStyle(),
     headlineMedium = ShuttlScale.headlineMedium.toTextStyle(),
+    headlineSmall  = Default.headlineSmall.archivo(),
     titleLarge     = ShuttlScale.titleLarge.toTextStyle(),
     titleMedium    = ShuttlScale.titleMedium.toTextStyle(),
+    titleSmall     = Default.titleSmall.archivo(),
     bodyLarge      = ShuttlScale.bodyLarge.toTextStyle(),
     bodyMedium     = ShuttlScale.bodyMedium.toTextStyle(),
     bodySmall      = ShuttlScale.bodySmall.toTextStyle(),
+    labelLarge     = Default.labelLarge.archivo(),
+    labelMedium    = Default.labelMedium.archivo(),
     // Tiny uppercase tracked label. The uppercasing is the caller's job, the
     // tracking is this style's.
     labelSmall     = ShuttlScale.labelSmall.toTextStyle(),
