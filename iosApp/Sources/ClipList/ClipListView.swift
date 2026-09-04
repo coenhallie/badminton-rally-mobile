@@ -281,10 +281,15 @@ struct MatchesList: View {
                 .task { await model.thumbnail(forCoverOf: match) }
 
                 VStack(alignment: .leading, spacing: 4) {
+                    // 2, not 1: the drawer is 330pt wide, narrower than the
+                    // full-screen list this row used to sit in, and the mock's
+                    // own "My matches" row (unlike "On this phone"'s explicit
+                    // nowrap+ellipsis) has no truncation styling - a title
+                    // that has room to wrap should, not clip.
                     Text(matchRowPrimary(match))
                         .shuttlType(ShuttlType.titleMedium)
                         .foregroundStyle(Shuttl.text)
-                        .lineLimit(1)
+                        .lineLimit(2)
                     Text(matchRowSecondary(match))
                         .shuttlType(ShuttlType.labelSmall)
                         .foregroundStyle(Shuttl.textSecondary)
@@ -370,10 +375,17 @@ struct MatchesList: View {
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
+                    // Same reasoning as row(_:model:) above: the drawer is
+                    // narrower than the full-screen list this row came from,
+                    // and the mock's "My matches" title has no truncation
+                    // styling, so a wrappable title should wrap rather than
+                    // clip. A single unbroken word longer than the row (e.g.
+                    // "LabelScopeCheck") still truncates - no line-break
+                    // opportunity exists for it at any width, mock included.
                     Text(card.title)
                         .shuttlType(ShuttlType.titleMedium)
                         .foregroundStyle(Shuttl.text)
-                        .lineLimit(1)
+                        .lineLimit(2)
                     Text("\(card.scoreLine.uppercased()) · \(formatMatchDate(millis: card.createdAtEpochMs).uppercased())")
                         .shuttlType(ShuttlType.labelSmall)
                         .foregroundStyle(Shuttl.textSecondary)
