@@ -328,11 +328,24 @@ struct HomeView: View {
                 Text("Swipe right for your matches")
                     .shuttlType(ShuttlType.bodyMedium)
                     .foregroundStyle(Shuttl.textSecondary)
+                    // The touch target must clear iOS's 44pt minimum. The
+                    // VStack's old `.padding(.bottom, 24)` moved in here so
+                    // the total space from this label's top to the screen
+                    // edge is unchanged - measured in the simulator, the
+                    // label plus that 24pt is still short of 44pt (Archivo's
+                    // natural line height at this size is ~14pt, not the
+                    // ~20pt `.lineSpacing` would suggest, since `.lineSpacing`
+                    // is inert on a single-line Text), so `frame(minHeight:)`
+                    // makes up the rest, top-aligned so the glyphs do not
+                    // move. `contentShape` extends the tap area to the full
+                    // enlarged frame instead of just the glyph bounds.
+                    .padding(.bottom, 24)
+                    .frame(minHeight: 44, alignment: .top)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         }
         .padding(.horizontal, 24)
-        .padding(.bottom, 24)
     }
 
     private var edgeOpenDrag: some Gesture {

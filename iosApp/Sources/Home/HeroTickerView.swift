@@ -47,6 +47,12 @@ struct HeroTickerView: View {
         // rewrites itself every 2.6 seconds is exactly the motion that setting
         // exists to switch off.
         guard !reduceMotion, !isPaused else { return }
+        // This task can be cancelled between `leaving = true` and
+        // `leaving = false` (the drawer opening mid-transition does exactly
+        // that). Without this reset, a cancellation caught there leaves the
+        // second line invisible until the next full dwell-and-transition
+        // cycle completes.
+        leaving = false
         while !Task.isCancelled {
             try? await Task.sleep(for: dwell)
             if Task.isCancelled { return }

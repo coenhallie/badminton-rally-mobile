@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -267,7 +268,7 @@ fun HomeScreen(
                 Spacer(Modifier.weight(1f))
 
                 Column(
-                    modifier = Modifier.padding(horizontal = 24.dp).padding(bottom = 24.dp),
+                    modifier = Modifier.padding(horizontal = 24.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     ShuttlButton(
@@ -332,10 +333,22 @@ fun HomeScreen(
                         "Your matches",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        // The touch target must clear Android's 48dp minimum.
+                        // Moving the Column's old `padding(bottom = 24.dp)`
+                        // in here (as top = 4.dp, bottom = 28.dp, replacing
+                        // the old vertical = 4.dp) keeps the total space from
+                        // this Text's top to the screen edge unchanged at
+                        // every font scale, so the pills above cannot shift.
+                        // `defaultMinSize` sits outside `padding` so it floors
+                        // the whole element, not just the bare text; at
+                        // default scale the padding alone already clears
+                        // 48dp, so this only engages if the type scale ever
+                        // shrinks below that.
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable(role = Role.Button) { scope.launch { drawerState.open() } }
-                            .padding(vertical = 4.dp),
+                            .defaultMinSize(minHeight = 48.dp)
+                            .padding(top = 4.dp, bottom = 28.dp),
                         textAlign = TextAlign.Center,
                     )
                 }
