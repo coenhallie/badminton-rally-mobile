@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -19,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.badmintontracker.android.ui.theme.ShuttlRadius
@@ -35,6 +37,10 @@ fun ShuttlButton(
     enabled:  Boolean = true,
     loading:  Boolean = false,
     compact:  Boolean = false,
+    // Defaults to none so every other call site in the app is unaffected.
+    // Mirrors iOS's HomeView.swift leading `Image(systemName: "plus")` on its
+    // own "Add new match" pill.
+    leadingIcon: ImageVector? = null,
 ) {
     val isPrimary    = variant == ShuttlButtonVariant.Primary
     val bg           = if (isPrimary) MaterialTheme.colorScheme.primary else ShuttlTheme.extended.bgTertiary
@@ -62,6 +68,17 @@ fun ShuttlButton(
                 color       = fg,
                 strokeWidth = 2.dp,
                 modifier    = Modifier.size(14.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+        } else if (leadingIcon != null) {
+            // Icon's own 24dp default reads oversized beside bodyLarge (16sp)
+            // text - iOS's plus glyph inherits titleLarge (16pt). Sized down
+            // to sit closer to the text's own cap height.
+            Icon(
+                imageVector = leadingIcon,
+                contentDescription = null,
+                tint = fg,
+                modifier = Modifier.size(18.dp),
             )
             Spacer(Modifier.width(8.dp))
         }

@@ -18,7 +18,13 @@ final class TypographyAdoptionTests: XCTestCase {
     private let allowed: Set<String> = [
         "CourtMarkingView.swift",     // sizes text inside a scaled Canvas
         "SchematicCourtGuide.swift",  // same
-        "ScoringView.swift",          // scoreboard numerals fill a half screen
+        // Only one call site in this file is actually exempt: the main score
+        // digit's size is computed from GeometryReader (`min(geo.size.height *
+        // 0.40, geo.size.width * 0.75)`), a runtime value no static type-scale
+        // role can express. Every other `.font(` call that used to live here
+        // was ordinary UI text on a numerals-shaped exemption and has been
+        // converted - see final-review.md's F-typescale.
+        "ScoringView.swift",
     ]
 
     private func sourceFiles() -> [URL] {

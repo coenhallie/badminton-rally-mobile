@@ -203,7 +203,11 @@ struct MatchesList: View {
                 } header: { Shuttl.sectionLabel("Shared with me") }
             }
             if standalone.isEmpty && model.ownedRows.isEmpty && model.shared.isEmpty && !model.isRefreshing {
-                Text("No matches yet. Score one or record a video with the + button above.")
+                // Names the actual control rather than "the + button above":
+                // that button lived in this screen's own toolbar, which no
+                // longer exists now that Home owns the bar and this list sits
+                // behind the drawer. Mirrors ClipListScreen.kt's own copy.
+                Text("No matches yet. Tap \"Add new match\" on Home to get started.")
                     .foregroundStyle(Shuttl.textSecondary)
             }
         }

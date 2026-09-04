@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.DrawerValue
@@ -40,6 +41,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -58,6 +62,7 @@ import com.badmintontracker.android.localanalysis.LocalAnalysisRunner
 import com.badmintontracker.android.localvideo.LocalVideoRow
 import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlButtonVariant
+import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.android.ui.theme.ShuttlTypeExtras
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.prefs.ThemeMode
@@ -162,13 +167,37 @@ fun HomeScreen(
         // why the hamburger is primary.
         gesturesEnabled = true,
         drawerContent = {
+            val borderColor = MaterialTheme.colorScheme.outlineVariant
             ModalDrawerSheet(
-                modifier = Modifier.width(drawerWidth),
-                // M3's own default resolves a surfaceContainer role this app's
-                // ColorScheme never sets, which falls back to Material's stock
-                // tinted grey - a platform colour, not a token. Pinned to `bg`
-                // explicitly instead.
-                drawerContainerColor = MaterialTheme.colorScheme.background,
+                modifier = Modifier
+                    .width(drawerWidth)
+                    // The mock draws this panel as bgInput with a 1px
+                    // border-coloured right edge, matching iOS's
+                    // MatchesDrawer (`.background(Shuttl.bgInput)` plus a
+                    // trailing `Shuttl.border` overlay). Drawn directly
+                    // rather than an outer Box overlay, so ModalDrawerSheet's
+                    // own height sizing is untouched.
+                    .drawWithContent {
+                        drawContent()
+                        val strokeWidth = 1.dp.toPx()
+                        drawLine(
+                            color = borderColor,
+                            start = Offset(size.width - strokeWidth / 2, 0f),
+                            end = Offset(size.width - strokeWidth / 2, size.height),
+                            strokeWidth = strokeWidth,
+                        )
+                    },
+                // M3's own default resolves a surfaceContainer role this
+                // app's ColorScheme never sets, which falls back to
+                // Material's stock tinted grey - a platform colour, not a
+                // token. Pinned to `bgInput` explicitly instead.
+                drawerContainerColor = ShuttlTheme.extended.bgInput,
+                // M3's default rounds the two trailing corners. The mock and
+                // iOS's own hand-built panel (a plain `Rectangle()` overlay)
+                // both draw a flat rectangle, and a rounded corner would also
+                // leave the straight border line above poking past the
+                // background's curved silhouette.
+                drawerShape = RectangleShape,
             ) {
                 MatchesDrawerContent(onLabels = onLabels, onSignOut = vm::signOut) {
                     ClipListScreen(
@@ -275,7 +304,13 @@ fun HomeScreen(
                         text = "Add new match",
                         onClick = { addSheetOpen = true },
                         variant = ShuttlButtonVariant.Primary,
-                        modifier = Modifier.fillMaxWidth(),
+                        leadingIcon = Icons.Default.Add,
+                        // 60dp is the design's one exact metric for these two
+                        // pills (see HomeView.swift's HomePillButtonStyle on
+                        // iOS). Set here at the call site rather than as
+                        // ShuttlButton's default height, which nine other
+                        // screens also rely on.
+                        modifier = Modifier.fillMaxWidth().height(60.dp),
                     )
                     // Analytics ships in Phase 3. Genuinely disabled, not just
                     // inert: an earlier iOS pass shipped this enabled-but-
@@ -317,7 +352,7 @@ fun HomeScreen(
                             onClick = {},
                             enabled = false,
                             variant = ShuttlButtonVariant.Secondary,
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().height(60.dp),
                         )
                     }
                     // "Your matches", not "Swipe right for your matches": on

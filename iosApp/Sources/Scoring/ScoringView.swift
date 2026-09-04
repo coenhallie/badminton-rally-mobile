@@ -192,14 +192,20 @@ struct ScoringView: View {
         let announcement = Self.announcement(log, match)
         HStack {
             Button { dismiss() } label: {
-                Image(systemName: "chevron.left").font(.body.weight(.semibold))
+                Image(systemName: "chevron.left").shuttlType(ShuttlType.titleLarge)
             }
             .foregroundStyle(Shuttl.text)
             .accessibilityLabel("Back")
 
             Spacer()
             Text(announcement ?? Self.runningSummary(log, match))
-                .font(.subheadline.weight(announcement != nil ? .bold : .regular))
+                // One role for both states, not a weight toggle: this line
+                // reflows every rally an announcement appears or clears, and
+                // a size change here (which a per-state role would need,
+                // since the scale has no single size at two weights) would
+                // make it visibly shift at arm's length. The colour switch
+                // below already carries the emphasis.
+                .shuttlType(ShuttlType.titleMedium)
                 .foregroundStyle(announcement != nil ? Shuttl.accent : Shuttl.textSecondary)
                 .lineLimit(1)
             Spacer()
@@ -210,7 +216,7 @@ struct ScoringView: View {
                 Button("Finish match") { confirming = .finish }
                     .disabled(match.isOver)
             } label: {
-                Image(systemName: "ellipsis").font(.body.weight(.semibold))
+                Image(systemName: "ellipsis").shuttlType(ShuttlType.titleLarge)
             }
             .foregroundStyle(Shuttl.text)
             .accessibilityLabel("Match options")
@@ -241,7 +247,7 @@ struct ScoringView: View {
 
             VStack(spacing: 6) {
                 Text(players.joined(separator: " / "))
-                    .font(.headline)
+                    .shuttlType(ShuttlType.titleLarge)
                     .foregroundStyle(.white)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
@@ -306,11 +312,11 @@ struct ScoringView: View {
         HStack(spacing: 5) {
             if let court {
                 Text(court == .right ? "R" : "L")
-                    .font(.caption2.weight(.bold))
+                    .shuttlType(ShuttlType.labelSmall)
                     .foregroundStyle(isServing ? Color.black.opacity(0.45) : Color.white.opacity(0.6))
             }
             Text(name)
-                .font(.subheadline)
+                .shuttlType(ShuttlType.bodyMedium)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .foregroundStyle(isServing ? Color.black : Color.white)
@@ -325,7 +331,7 @@ struct ScoringView: View {
     @ViewBuilder
     private func servePill(_ court: ServiceCourt?) -> some View {
         Text("SERVE" + (court == nil ? "" : (court == .right ? " R" : " L")))
-            .font(.footnote.weight(.bold))
+            .shuttlType(ShuttlType.labelMedium)
             .foregroundStyle(Color.black)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
@@ -336,7 +342,9 @@ struct ScoringView: View {
     @ViewBuilder
     private func gamesWonBox(_ games: Int) -> some View {
         Text("\(games)")
-            .font(.headline)
+            // Not the scoreboard exemption: this is a fixed 17pt digit in a
+            // fixed 40x34 box, not a size derived from the half it fills.
+            .shuttlType(ShuttlType.titleLarge)
             .foregroundStyle(.white)
             .frame(width: 40, height: 34)
             .background(Color.white.opacity(0.16))
@@ -356,7 +364,7 @@ struct ScoringView: View {
                         ? "No board labels - choose them on the labels screen."
                         : "No labels yet - add them on the labels screen."
                 )
-                .font(.footnote)
+                .shuttlType(ShuttlType.bodySmall)
                 .foregroundStyle(Shuttl.textSecondary)
                 .padding(.horizontal, 8)
             } else {
@@ -393,7 +401,7 @@ struct ScoringView: View {
                 Button("Undo") { model.undo() }
                     .disabled(!model.canUndo)
                 Text(Self.caption(match, model.pendingTagOrdinal))
-                    .font(.footnote)
+                    .shuttlType(ShuttlType.bodySmall)
                     .foregroundStyle(Shuttl.textSecondary)
                     .lineLimit(1)
                 Spacer()
@@ -414,7 +422,7 @@ struct ScoringView: View {
                     // on `addVideoAsked` describes.
                     Button(action: { deliverFinish(nil) }) {
                         Text("Done")
-                            .font(.body.weight(.semibold))
+                            .shuttlType(ShuttlType.titleLarge)
                             .foregroundStyle(Shuttl.onAccent)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
@@ -444,7 +452,12 @@ struct ScoringView: View {
 
         Button(action: action) {
             Text(selected ? "✓ \(label.name)" : label.name)
-                .font(.subheadline.weight(selected ? .bold : .regular))
+                // One role for both states, not a weight toggle: the chip's
+                // fixed horizontal padding would make it visibly change width
+                // on every tap if the role's size changed with it. The "✓"
+                // prefix and the container's colour/opacity already carry
+                // the selected state.
+                .shuttlType(ShuttlType.titleMedium)
                 // Greyed and inert until a rally exists to put it on, rather than
                 // hidden: the row has to occupy its space before the point is
                 // scored, or it would shove the board around every time one is.
