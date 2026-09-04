@@ -30,42 +30,81 @@ DUMP=$(mktemp); trap 'rm -f "$DUMP"' EXIT
 "$ADB" shell cat /sdcard/win.xml > "$DUMP" 2>/dev/null
 
 python3 - "$DUMP" "$TARGET" "$MATCH" "$FORCE" <<'PY'
-import re, sys, subprocess, os
+import sys, subprocess, os, re
+import xml.etree.ElementTree as ET
+
 dump, target, mode, force = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4] == "1"
-xml = open(dump, encoding="utf-8", errors="replace").read()
-nodes = []
-for m in re.finditer(r'<node[^>]*>', xml):
-    tag = m.group(0)
-    def attr(n):
-        g = re.search(rf'{n}="([^"]*)"', tag)
-        return g.group(1) if g else ""
-    label = attr("text") or attr("content-desc")
-    b = re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', tag)
-    if label and b:
-        x1, y1, x2, y2 = map(int, b.groups())
-        nodes.append((label, (x1 + x2) // 2, (y1 + y2) // 2, attr("clickable") == "true"))
+root = ET.parse(dump).getroot()
+
+# Parent map so a label can find the control that actually owns its tap.
+# Compose usually marks an ANCESTOR clickable, not the text node itself, so
+# demanding clickability on the matched node would refuse most real buttons.
+parent = {c: p for p in root.iter() for c in p}
+
+def bounds(n):
+    m = re.match(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]', n.get("bounds", ""))
+    if not m:
+        return None
+    x1, y1, x2, y2 = map(int, m.groups())
+    return (x1 + x2) // 2, (y1 + y2) // 2
+
+def label(n):
+    return n.get("text") or n.get("content-desc") or ""
+
+def tappable_ancestor(n):
+    """The node itself if clickable, else the nearest clickable ancestor."""
+    cur, hops = n, 0
+    while cur is not None and hops <= 6:
+        if cur.get("clickable") == "true" and bounds(cur):
+            return cur
+        cur = parent.get(cur)
+        hops += 1
+    return None
+
+labelled = [n for n in root.iter() if label(n) and bounds(n)]
 
 if mode == "list":
-    for label, cx, cy, click in nodes:
-        print(f"{'TAP' if click else '   '}  {label!r}  centre=({cx},{cy})")
+    for n in labelled:
+        t = tappable_ancestor(n)
+        cx, cy = bounds(t) if t is not None else bounds(n)
+        print(f"{'TAP' if t is not None else '   '}  {label(n)!r}  centre=({cx},{cy})")
     sys.exit(0)
 
-hits = [n for n in nodes if (n[0] == target if mode == "exact" else target.lower() in n[0].lower())]
-if not hits:
+matched = [n for n in labelled
+           if (label(n) == target if mode == "exact" else target.lower() in label(n).lower())]
+if not matched:
     print(f"NOT FOUND: {target!r}. Run with --list to see available labels.", file=sys.stderr)
     sys.exit(2)
+
+# Collapse to distinct tap points: a label and its clickable parent are one control.
+seen, hits = set(), []
+for n in matched:
+    t = tappable_ancestor(n)
+    if t is None:
+        continue
+    pt = bounds(t)
+    if pt not in seen:
+        seen.add(pt)
+        hits.append((label(n), pt))
+
+if not hits:
+    print(f"NOT TAPPABLE: {target!r} matched {len(matched)} node(s); none is clickable "
+          f"nor has a clickable ancestor within 6 levels.", file=sys.stderr)
+    sys.exit(5)
 if len(hits) > 1:
-    print(f"AMBIGUOUS: {len(hits)} matches for {target!r}:", file=sys.stderr)
-    for h in hits: print(f"  {h[0]!r} at ({h[1]},{h[2]})", file=sys.stderr)
+    print(f"AMBIGUOUS: {len(hits)} distinct tap targets for {target!r}:", file=sys.stderr)
+    for lb, pt in hits:
+        print(f"  {lb!r} at {pt}", file=sys.stderr)
     sys.exit(3)
 
-label, cx, cy, _ = hits[0]
-DESTRUCTIVE = r"sign\s*out|log\s*out|delete|remove|wipe|clear|erase"
-if re.search(DESTRUCTIVE, label, re.I) and not force:
-    print(f"REFUSED: {label!r} looks destructive. Pass --force-destructive if you truly mean it.", file=sys.stderr)
+lb, (cx, cy) = hits[0]
+DESTRUCTIVE = r"sign\s*out|log\s*out|delete|remove|wipe|clear|erase|trash|discard|leave|unshare|revoke|reset"
+if re.search(DESTRUCTIVE, lb, re.I) and not force:
+    print(f"REFUSED: {lb!r} looks destructive. Pass --force-destructive if you truly mean it.",
+          file=sys.stderr)
     sys.exit(4)
 
 adb = os.environ.get("ADB", os.path.expanduser("~/Library/Android/sdk/platform-tools/adb"))
 subprocess.run([adb, "shell", "input", "tap", str(cx), str(cy)], check=True)
-print(f"tapped {label!r} at device pixels ({cx},{cy})")
+print(f"tapped {lb!r} at device pixels ({cx},{cy})")
 PY
