@@ -16,7 +16,7 @@ struct SignInView: View {
                     brand
                     Spacer().frame(height: 8)
                     Text("Sign in to continue")
-                        .font(.footnote)
+                        .shuttlType(ShuttlType.bodySmall)
                         .foregroundStyle(Shuttl.textSecondary)
                     Spacer().frame(height: 24)
                     ShuttlCard {
@@ -35,13 +35,13 @@ struct SignInView: View {
                     }
                     Spacer().frame(height: 24)
                     Text("Registration is closed. Contact the admin if you need an account.")
-                        .font(.footnote)
+                        .shuttlType(ShuttlType.bodySmall)
                         .foregroundStyle(Shuttl.textTertiary)
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 320)
                     Spacer().frame(height: 8)
-                    Text(versionLabel)
-                        .font(.footnote)
+                    Text(versionLabel())
+                        .shuttlType(ShuttlType.bodySmall)
                         .foregroundStyle(Shuttl.textTertiary)
                 }
                 .frame(maxWidth: 400)
@@ -53,7 +53,7 @@ struct SignInView: View {
                 rally.themePrefs.toggle()
             } label: {
                 Image(systemName: themeMode == .dark ? "sun.max" : "moon")
-                    .font(.system(size: 15))
+                    .shuttlType(ShuttlType.titleMedium)
                     .foregroundStyle(Shuttl.text)
                     .frame(width: 36, height: 36)
                     .background(Shuttl.bgSecondary)
@@ -73,8 +73,7 @@ struct SignInView: View {
 
     private var brand: some View {
         Text("SHUTTL.")
-            .font(.system(size: 24, weight: .heavy))
-            .kerning(-0.24)
+            .shuttlType(ShuttlType.wordmark)
             .foregroundStyle(Shuttl.textHeading)
     }
 
@@ -90,12 +89,6 @@ struct SignInView: View {
         SecureField(label, text: text)
             .padding(12)
             .background(Shuttl.bgInput)
-    }
-
-    private var versionLabel: String {
-        let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
-        let b = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
-        return "Version \(v) (\(b))"
     }
 
     private func submit() {

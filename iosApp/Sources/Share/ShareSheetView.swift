@@ -12,7 +12,7 @@ struct ShareSheetView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Share match")
-                .font(.headline)
+                .shuttlType(ShuttlType.titleLarge)
             TextField("Email", text: $email)
                 .keyboardType(.emailAddress)
                 .textInputAutocapitalization(.never)
@@ -21,7 +21,7 @@ struct ShareSheetView: View {
                 .background(Shuttl.bgInput)
             if let error {
                 Text(error)
-                    .font(.footnote)
+                    .shuttlType(ShuttlType.bodySmall)
                     .foregroundStyle(Shuttl.error)
             }
             HStack {
@@ -35,7 +35,7 @@ struct ShareSheetView: View {
             Shuttl.sectionLabel("People with access")
             if recipients.isEmpty {
                 Text("No one yet.")
-                    .font(.subheadline)
+                    .shuttlType(ShuttlType.titleMedium)
                     .foregroundStyle(Shuttl.textSecondary)
             }
             ForEach(recipients, id: \.sharedWithUserId) { r in

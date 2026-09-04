@@ -9,7 +9,7 @@ targets:
   iosApp:
     type: application
     platform: iOS
-    sources: [Sources, Assets.xcassets]
+    sources: [Sources, Assets.xcassets, Resources]
     # Declared, not inherited: the session lives in the Keychain (see
     # resolveSessionStore). Without this entitlement every Keychain call returns
     # -34018 and the app silently falls back to plaintext NSUserDefaults.
@@ -33,6 +33,11 @@ targets:
         SUPABASE_URL: "$(SUPABASE_URL)"
         SUPABASE_ANON_KEY: "$(SUPABASE_ANON_KEY)"
         UILaunchScreen: {}
+        UIAppFonts:
+          - Archivo-Regular.ttf
+          - Archivo-Medium.ttf
+          - Archivo-SemiBold.ttf
+          - Archivo-Bold.ttf
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSCameraUsageDescription: Shuttl uses the camera to record match videos.
         NSMicrophoneUsageDescription: Shuttl records audio with your match videos.

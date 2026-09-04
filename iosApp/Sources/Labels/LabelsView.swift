@@ -119,7 +119,7 @@ private struct LabelRow: View {
                 // takes no lineLimit, stays inflexible and always gets its
                 // full intrinsic width first.
                 Text(label.name)
-                    .font(.body)
+                    .shuttlType(ShuttlType.bodyLarge)
                     .foregroundStyle(Shuttl.text)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -129,7 +129,7 @@ private struct LabelRow: View {
                 // column. Without it the split is invisible from the list.
                 if let caption = Self.scopeCaption(label.scope) {
                     Text(caption)
-                        .font(.caption2)
+                        .shuttlType(ShuttlType.bodySmall)
                         .foregroundStyle(Shuttl.textSecondary)
                 }
             }
@@ -203,7 +203,7 @@ private struct EditorFields: View {
             // half of the same label.
             VStack(alignment: .leading, spacing: 4) {
                 Text("Use")
-                    .font(.caption)
+                    .shuttlType(ShuttlType.bodySmall)
                     .foregroundStyle(Shuttl.textSecondary)
                     .textCase(.uppercase)
                 Picker("Use", selection: Binding(get: { selectedUsage }, set: onSelectUsage)) {

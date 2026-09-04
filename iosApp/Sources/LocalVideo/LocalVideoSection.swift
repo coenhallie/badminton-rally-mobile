@@ -11,6 +11,12 @@ struct LocalVideoRowView: View {
     let entry: LocalVideoEntry
     let thumbnails: LocalThumbnails
     let progress: AnalyzeProgress?
+    /// Pushes `LocalPlayerRoute` on the host's behalf. A plain `Button` rather
+    /// than `NavigationLink(value:)`: the host owns the destination as an
+    /// `item:` binding now (Home owns every destination this row's list used
+    /// to carry), so the route is reported upward instead of resolved through
+    /// the navigation environment.
+    let onTap: () -> Void
     let onAnalyze: () -> Void
     let onRemove: () -> Void
     let onEditDetails: () -> Void
@@ -22,7 +28,7 @@ struct LocalVideoRowView: View {
     }
 
     var body: some View {
-        NavigationLink(value: LocalPlayerRoute(entryId: entry.id)) {
+        Button(action: onTap) {
             HStack(spacing: 12) {
                 Group {
                     if let image = thumbnails.images[entry.id] {
@@ -37,12 +43,11 @@ struct LocalVideoRowView: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(entry.title ?? entry.displayName)
-                        .font(.body.weight(.medium))
+                        .shuttlType(ShuttlType.titleMedium)
                         .foregroundStyle(Shuttl.text)
                         .lineLimit(1)
                     Text(subtitle)
-                        .font(.system(size: 11, weight: .medium))
-                        .kerning(0.55)
+                        .shuttlType(ShuttlType.labelSmall)
                         .foregroundStyle(Shuttl.textSecondary)
                         .lineLimit(2)
                     if let status = LocalVideoStatus.text(
@@ -51,21 +56,22 @@ struct LocalVideoRowView: View {
                         pipelineProgress: progress?.pipelineProgress?.floatValue
                     ) {
                         Text(status)
-                            .font(.footnote)
+                            .shuttlType(ShuttlType.bodySmall)
                             .foregroundStyle(Shuttl.textSecondary)
                     }
                 }
                 Spacer()
                 if LocalVideoStatus.canAnalyze(stage: entry.stage) {
                     Button(LocalVideoStatus.analyzeButtonLabel(stage: entry.stage)) { onAnalyze() }
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.black)
+                        .shuttlType(ShuttlType.labelMedium)
+                        .foregroundStyle(Shuttl.onAccent)
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)
                         .layoutPriority(1)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
                         .background(Shuttl.accent)
+                        .clipShape(Capsule())
                         .buttonStyle(.borderless)
                 } else if LocalVideoStatus.isRunning(stage: entry.stage) {
                     // Settled stages (e.g. ANALYZED) show neither button nor
@@ -90,8 +96,20 @@ struct LocalVideoRowView: View {
                     .buttonStyle(.borderless)
                     .accessibilityLabel("Local video menu")
                 }
+                // NavigationLink drew this for free; a Button does not, so it is
+                // restored explicitly to keep the row reading as navigable.
+                Image(systemName: "chevron.right")
+                    .shuttlType(ShuttlType.bodySmall)
+                    .foregroundStyle(Shuttl.textSecondary)
             }
+            // Without this, the Button's hit area is only its children's -
+            // the Spacer in the middle has none of its own - so the empty
+            // stretch between the text and the trailing control would go dead
+            // and silently stop opening the video. NavigationLink gave the
+            // whole row a hit area for free; a Button does not.
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
     }
 }
 

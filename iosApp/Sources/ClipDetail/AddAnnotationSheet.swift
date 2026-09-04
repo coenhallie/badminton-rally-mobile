@@ -17,7 +17,7 @@ struct AddAnnotationSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Add note")
-                .font(.title2.weight(.semibold))
+                .shuttlType(ShuttlType.headlineMedium)
             ChipFlow(spacing: 8) {
                 ForEach(labels, id: \.id) { label in
                     chip(label)
@@ -48,11 +48,11 @@ struct AddAnnotationSheet: View {
             selected = isSelected ? nil : label   // tapping selected chip deselects
         } label: {
             Text(label.name)
-                .font(.footnote)
+                .shuttlType(ShuttlType.bodySmall)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .background(Capsule().fill(isSelected ? Shuttl.accent : Shuttl.bgTertiary))
-                .foregroundStyle(isSelected ? .black : Shuttl.text)
+                .foregroundStyle(isSelected ? Shuttl.onAccent : Shuttl.text)
         }
     }
 }

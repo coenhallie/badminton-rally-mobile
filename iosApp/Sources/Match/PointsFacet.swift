@@ -21,21 +21,21 @@ struct PointsFacet: View {
         Section {
             VStack(alignment: .leading, spacing: 4) {
                 Text(card?.scoreLine ?? "")
-                    .font(.system(size: 28, weight: .semibold))
+                    .shuttlType(ShuttlType.headlineMedium)
                     .foregroundStyle(Shuttl.text)
                 Text(card?.playersLine ?? "")
-                    .font(.body)
+                    .shuttlType(ShuttlType.bodyLarge)
                     .foregroundStyle(Shuttl.text)
                 Text("\(card?.statusLine ?? "") · \(rulesSummary(log.rules))")
-                    .font(.footnote)
+                    .shuttlType(ShuttlType.bodySmall)
                     .foregroundStyle(Shuttl.textSecondary)
                 // Absent rather than disabled on a finished match: there is
                 // nothing left to score, and undo lives on the board itself.
                 if log.status == .live {
                     Button(action: onScore) {
                         Text(points.isEmpty ? "Score" : "Resume scoring")
-                            .font(.headline)
-                            .foregroundStyle(Color.black)
+                            .shuttlType(ShuttlType.titleLarge)
+                            .foregroundStyle(Shuttl.onAccent)
                             .padding(.horizontal, 20)
                             .padding(.vertical, 10)
                             .background(Shuttl.accent)
@@ -56,14 +56,14 @@ struct PointsFacet: View {
                     Text(tally.taggedPointCount == 1
                          ? "1 rally tagged"
                          : "\(tally.taggedPointCount) rallies tagged")
-                        .font(.subheadline.weight(.semibold))
+                        .shuttlType(ShuttlType.titleMedium)
                         .foregroundStyle(Shuttl.text)
                     HStack(spacing: 12) {
                         ForEach(tally.labels, id: \.name) { label in
                             HStack(spacing: 4) {
                                 LabelBadge(name: label.name, colorKey: label.colorKey)
                                 Text("\(label.count)")
-                                    .font(.caption)
+                                    .shuttlType(ShuttlType.bodySmall)
                                     .foregroundStyle(Shuttl.textSecondary)
                             }
                         }
@@ -93,12 +93,12 @@ struct PointsFacet: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 12) {
                 Text("\(point.scoreAfter.home)-\(point.scoreAfter.away)")
-                    .font(.body.weight(.medium))
+                    .shuttlType(ShuttlType.titleMedium)
                     .foregroundStyle(Shuttl.text)
                 Text(point.wonBy == .home
                      ? ScoreMatchCardKt.sideLabel(players: log.homePlayers)
                      : ScoreMatchCardKt.sideLabel(players: log.awayPlayers))
-                    .font(.body)
+                    .shuttlType(ShuttlType.bodyLarge)
                     .foregroundStyle(Shuttl.textSecondary)
             }
             if !point.tags.isEmpty {
@@ -109,7 +109,7 @@ struct PointsFacet: View {
                 }
             }
             if let comment = point.comment, !comment.trimmingCharacters(in: .whitespaces).isEmpty {
-                Text(comment).font(.footnote).foregroundStyle(Shuttl.textSecondary)
+                Text(comment).shuttlType(ShuttlType.bodySmall).foregroundStyle(Shuttl.textSecondary)
             }
         }
         .padding(.vertical, 2)

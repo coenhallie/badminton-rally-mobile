@@ -97,10 +97,6 @@ final class ClipListModel {
         isRefreshing = false
     }
 
-    func signOut() async {
-        _ = try? await SwiftInteropKt.signOutOrMessage(rally.auth)
-    }
-
     func deleteMatch(videoId: String) async {
         if let message = try? await SwiftInteropKt.deleteMatchOrMessage(rally.videos, videoId: videoId) {
             error = message

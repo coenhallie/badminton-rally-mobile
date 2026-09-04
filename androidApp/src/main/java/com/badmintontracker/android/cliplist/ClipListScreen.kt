@@ -14,23 +14,17 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -47,8 +41,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
-import com.badmintontracker.android.BuildConfig
-import com.badmintontracker.android.localanalysis.BackgroundWorkAction
 import com.badmintontracker.android.localvideo.AnalyzeResultDialog
 import com.badmintontracker.android.localvideo.LocalVideoRow
 import com.badmintontracker.android.localvideo.MatchDetailsSheet
@@ -58,12 +50,10 @@ import com.badmintontracker.android.ui.components.ConfirmDialog
 import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlButtonVariant
 import com.badmintontracker.android.ui.components.SwipeToRemoveRow
-import com.badmintontracker.android.ui.components.ThemeToggleButton
 import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.model.RallyClip
-import com.badmintontracker.shared.prefs.ThemePreferenceRepository
 import com.badmintontracker.shared.repo.MediaRepository
 import com.badmintontracker.shared.repo.SharesRepository
 import com.badmintontracker.shared.scoring.AttachKind
@@ -79,18 +69,14 @@ fun ClipListScreen(
     vm: ClipListViewModel,
     media: MediaRepository,
     shares: SharesRepository,
-    themePrefs: ThemePreferenceRepository,
     onMatchClick: (MatchSummary) -> Unit,
     onScoreMatchClick: (ScoreMatchCard) -> Unit,
-    onNewMatch: () -> Unit,
     /** Opens a stored player heatmap; null hides the menu entry entirely. */
     onOpenHeatmap: ((com.badmintontracker.shared.localvideo.LocalVideoEntry) -> Unit)? = null,
     hasHeatmap: (com.badmintontracker.shared.localvideo.LocalVideoEntry) -> Boolean = { false },
     onOpenLocalClips: ((com.badmintontracker.shared.localvideo.LocalVideoEntry) -> Unit)? = null,
     localClipCount: (com.badmintontracker.shared.localvideo.LocalVideoEntry) -> Int = { 0 },
     localRows: List<LocalVideoRow> = emptyList(),
-    intakeError: String? = null,
-    onIntakeErrorShown: () -> Unit = {},
     onLocalClick: (LocalVideoEntry) -> Unit = {},
     onLocalAnalyze: (LocalVideoRow) -> Unit = {},
     onLocalRemove: (LocalVideoEntry) -> Unit = {},
@@ -99,14 +85,10 @@ fun ClipListScreen(
     /** Entry just imported or recorded: its details sheet opens once, unprompted. */
     autoDetailsEntryId: String? = null,
     onAutoDetailsShown: () -> Unit = {},
-    onRecord: () -> Unit = {},
-    onImport: () -> Unit = {},
-    onLabels: () -> Unit = {},
     onAttachedMarkCourt: (String) -> Unit = {},
     onAttachedRetry: (String) -> Unit = {},
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
-    val themeMode by themePrefs.mode.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     var sheetVideoId by remember { mutableStateOf<String?>(null) }
     var deleteTarget by remember { mutableStateOf<MatchSummary?>(null) }
@@ -135,12 +117,6 @@ fun ClipListScreen(
         vm.dismissError()
     }
 
-    LaunchedEffect(intakeError) {
-        val err = intakeError ?: return@LaunchedEffect
-        snackbarHostState.showSnackbar(err)
-        onIntakeErrorShown()
-    }
-
     // Auto-show the result modal once per failure. `resultSeen` is persisted on the
     // entry, so dismissing it survives navigation and relaunch; a later retry that
     // fails again resets the flag (in AnalyzeCoordinator.fail) and shows it anew.
@@ -153,82 +129,27 @@ fun ClipListScreen(
         }
     }
 
-    var menuOpen by remember { mutableStateOf(false) }
-    var addMenuOpen by remember { mutableStateOf(false) }
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        "MATCHES",
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 14.sp),
-                    )
-                },
-                actions = {
-                    // First in the bar so it keeps its place as each screen's own
-                    // actions come and go.
-                    BackgroundWorkAction()
-                    IconButton(onClick = { addMenuOpen = true }) {
-                        Icon(Icons.Default.Add, contentDescription = "Add")
-                    }
-                    DropdownMenu(expanded = addMenuOpen, onDismissRequest = { addMenuOpen = false }) {
-                        DropdownMenuItem(
-                            text = { Text("New match") },
-                            onClick = { addMenuOpen = false; onNewMatch() },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Record video") },
-                            onClick = { addMenuOpen = false; onRecord() },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Import video") },
-                            onClick = { addMenuOpen = false; onImport() },
-                        )
-                    }
-                    ThemeToggleButton(
-                        mode = themeMode,
-                        onToggle = themePrefs::toggle,
-                    )
-                    IconButton(onClick = { menuOpen = true }) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "Menu")
-                    }
-                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        DropdownMenuItem(
-                            text = { Text("Labels") },
-                            onClick = { menuOpen = false; onLabels() },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Sign out") },
-                            onClick = { menuOpen = false; vm.signOut() },
-                        )
-                        HorizontalDivider()
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    "Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                            },
-                            onClick = {},
-                            enabled = false,
-                        )
-                    }
-                },
-            )
-        },
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-    ) { padding ->
+    // No Scaffold: Home owns the bar now, and this content sits inside the
+    // drawer's slot rather than at the top of a screen. A plain Box in place
+    // of Scaffold keeps the one behaviour Scaffold was providing here -
+    // pinning the snackbar host to the bottom of this content - without
+    // dragging its bar/FAB/insets machinery along for a screen that has none
+    // of those anymore.
+    Box(Modifier.fillMaxSize()) {
         PullToRefreshBox(
             isRefreshing = state.isRefreshing,
             onRefresh = vm::refresh,
-            modifier = Modifier.padding(padding).fillMaxSize(),
+            modifier = Modifier.fillMaxSize(),
         ) {
             if (state.ownedRows.isEmpty() && state.sharedMatches.isEmpty() &&
                 standaloneRows.isEmpty() && !state.isRefreshing
             ) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No matches yet. Score one or record a video with the + button above.")
+                    // Names the actual control rather than "the + button above":
+                    // that button lived in this screen's own bar, which no longer
+                    // exists now that Home owns the bar and this list sits behind
+                    // the drawer.
+                    Text("No matches yet. Tap \"Add new match\" on Home to get started.")
                 }
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
@@ -302,6 +223,7 @@ fun ClipListScreen(
                 }
             }
         }
+        SnackbarHost(snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
     }
 
     sheetVideoId?.let { vid ->

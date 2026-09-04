@@ -20,10 +20,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.badmintontracker.android.BuildConfig
 import com.badmintontracker.shared.prefs.ThemePreferenceRepository
@@ -34,6 +32,7 @@ import com.badmintontracker.android.ui.components.ShuttlFieldType
 import com.badmintontracker.android.ui.components.ShuttlOutlinedTextField
 import com.badmintontracker.android.ui.components.ThemeToggleButton
 import com.badmintontracker.android.ui.theme.ShuttlTheme
+import com.badmintontracker.android.ui.theme.ShuttlTypeExtras
 
 @Composable
 fun SignInScreen(
@@ -137,9 +136,7 @@ fun SignInScreen(
 private fun Brand() {
     Text(
         "SHUTTL.",
-        color         = MaterialTheme.colorScheme.onBackground,
-        fontWeight    = FontWeight.ExtraBold,
-        fontSize      = 24.sp,
-        letterSpacing = (-0.24).sp,
+        color = MaterialTheme.colorScheme.onBackground,
+        style = ShuttlTypeExtras.wordmark,
     )
 }

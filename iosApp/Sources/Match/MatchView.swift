@@ -614,7 +614,7 @@ private struct AttachStatusBanner: View {
     var body: some View {
         HStack(spacing: 12) {
             Text(attach.text)
-                .font(.subheadline)
+                .shuttlType(ShuttlType.titleMedium)
                 .foregroundStyle(attach.kind == .failed ? Shuttl.error : Shuttl.textSecondary)
                 .lineLimit(2)
             Spacer()
@@ -622,25 +622,27 @@ private struct AttachStatusBanner: View {
             case .courtNotMarked:
                 Button(action: onMarkCourt) {
                     Text("Mark court")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.black)
+                        .shuttlType(ShuttlType.labelMedium)
+                        .foregroundStyle(Shuttl.onAccent)
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
                         .background(Shuttl.accent)
+                        .clipShape(Capsule())
                 }
                 .buttonStyle(.borderless)
             case .failed:
                 Button(action: onRetry) {
                     Text("Retry")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.black)
+                        .shuttlType(ShuttlType.labelMedium)
+                        .foregroundStyle(Shuttl.onAccent)
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
                         .background(Shuttl.accent)
+                        .clipShape(Capsule())
                 }
                 .buttonStyle(.borderless)
             case .uploading, .clipping, .finishingUp:

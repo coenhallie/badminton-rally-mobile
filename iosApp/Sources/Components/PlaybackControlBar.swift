@@ -117,14 +117,14 @@ private struct PlaybackSettingsSheet: View {
             VStack(alignment: .leading, spacing: 16) {
                 HStack {
                     Text("Playback")
-                        .font(.title2.weight(.semibold))
+                        .shuttlType(ShuttlType.headlineMedium)
                         .foregroundStyle(Shuttl.textHeading)
                     Spacer()
                     Button("Done") { dismiss() }
                 }
 
                 Text("Speed")
-                    .font(.footnote.weight(.semibold))
+                    .shuttlType(ShuttlType.labelMedium)
                     .foregroundStyle(Shuttl.textSecondary)
                 ChipFlow {
                     ForEach(speedOptions, id: \.self) { option in
@@ -136,7 +136,7 @@ private struct PlaybackSettingsSheet: View {
                 }
 
                 Text("Skip interval")
-                    .font(.footnote.weight(.semibold))
+                    .shuttlType(ShuttlType.labelMedium)
                     .foregroundStyle(Shuttl.textSecondary)
                 ChipFlow {
                     ForEach(skipOptions, id: \.self) { option in
@@ -165,11 +165,11 @@ private struct PlaybackSettingsSheet: View {
     private func chip(label: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
-                .font(.footnote)
+                .shuttlType(ShuttlType.bodySmall)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .background(Capsule().fill(selected ? Shuttl.accent : Shuttl.bgTertiary))
-                .foregroundStyle(selected ? .black : Shuttl.text)
+                .foregroundStyle(selected ? Shuttl.onAccent : Shuttl.text)
         }
     }
 }
