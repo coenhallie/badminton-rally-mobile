@@ -73,6 +73,7 @@ import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
+import com.badmintontracker.shared.localvideo.isAnalysisRunning
 import com.badmintontracker.shared.RallyApp
 import com.badmintontracker.shared.scoring.ScoreLogStatus
 import io.github.jan.supabase.auth.status.SessionStatus
@@ -306,13 +307,24 @@ fun AuthGate(
                     val liveAnalysisStates by localAnalysis.state.collectAsStateWithLifecycle()
 
                     val standaloneLocalRows = localRows.filter { it.entry.scoreLogId == null }
+                    // A run in progress ticks `liveAnalysisStates` several times a
+                    // second (LocalAnalysisRunner.start reports fractional
+                    // progress), and storedTrack() is a disk read of a track that
+                    // can hold thousands of points. Keyed on whether each entry has
+                    // *finished* (Done) rather than on the live states themselves,
+                    // so an in-flight fraction tick does not re-read every track on
+                    // this phone - only a run settling into Done does.
+                    val doneEntryIds = liveAnalysisStates.filterValues { it is LocalAnalysisState.Done }.keys
+                    val storedTrackIds = remember(localEntries, doneEntryIds) {
+                        localEntries.mapNotNull { it.id.takeIf { id -> localAnalysis.storedTrack(id) != null } }.toSet()
+                    }
                     val rows = buildAnalyticsRows(
                         standaloneLocalRows = standaloneLocalRows,
                         ownedRows = clipListState.ownedRows,
                         sharedMatches = clipListState.sharedMatches,
                         localEntries = localEntries,
                         liveAnalysisStates = liveAnalysisStates,
-                        localAnalysis = localAnalysis,
+                        storedTrackIds = storedTrackIds,
                     )
 
                     AnalyticsScreen(
@@ -648,14 +660,48 @@ private fun Splash() {
 }
 
 /**
+ * What an ANALYSABLE row's control should show, in place of a live "Analyse"
+ * button. Two independent pipelines can be running over the same video at
+ * once (see BackgroundWork.kt's own comment on why cloud and on-device
+ * failures are tracked apart) - the device run wins when both are non-idle,
+ * because that is the run this row's own button would start, but the cloud
+ * pipeline must not be left silent just because its button starts the other
+ * one: a coach watching this list must not see "Analyse" on a video that is,
+ * in fact, being analysed right now, in the cloud.
+ */
+private fun affordanceFor(entry: LocalVideoEntry, live: LocalAnalysisState): AnalyseAffordance = when (live) {
+    is LocalAnalysisState.Preparing -> AnalyseAffordance.InProgress("Preparing video")
+    is LocalAnalysisState.Analysing -> AnalyseAffordance.InProgress("Analysing on device")
+    is LocalAnalysisState.Cutting -> AnalyseAffordance.InProgress("Cutting clips")
+    is LocalAnalysisState.Failed -> AnalyseAffordance.Failed(live.message)
+    // No device run in flight or failed: fall back to the cloud pipeline's own
+    // liveness for this entry, using the same wording BackgroundWork.kt does.
+    is LocalAnalysisState.Idle, is LocalAnalysisState.Done -> when {
+        isAnalysisRunning(entry.stage) -> AnalyseAffordance.InProgress(
+            if (entry.stage == AnalyzeStage.UPLOADING) "Uploading" else "Processing in the cloud",
+        )
+        entry.stage == AnalyzeStage.FAILED -> AnalyseAffordance.Failed(entry.failureMessage ?: "Unknown error")
+        // A track only lands on disk when the run asked for pose (see
+        // LocalAnalysisRunner.start): a Done device run that did not is not a
+        // liveness problem, just a video still waiting for its first (pose)
+        // analysis - the same as one that was never touched.
+        else -> AnalyseAffordance.Ready
+    }
+}
+
+/**
  * Builds the Analytics list's rows, grouped like the drawer: local videos, then
  * owned matches, then shared. [analyticsRowState] alone decides READY /
- * ANALYSABLE / NOT_ON_DEVICE - this only gathers its two booleans per match and,
- * for an ANALYSABLE one, reads the on-device run's own liveness
- * ([liveAnalysisStates], sourced from [LocalAnalysisRunner.state]) so the row can
- * show progress or a failure instead of a live "Analyse" button. `hasStoredTrack`
- * alone cannot tell a run in flight, or one that just failed, from one never
- * attempted.
+ * ANALYSABLE / NOT_ON_DEVICE - this only gathers its two booleans per match
+ * and, for an ANALYSABLE one, reads both pipelines' own liveness via
+ * [affordanceFor] so the row can show progress or a failure instead of a live
+ * "Analyse" button. `hasStoredTrack` alone cannot tell a run in flight, or one
+ * that just failed, from one never attempted.
+ *
+ * [storedTrackIds] is a caller-computed set rather than a live disk read per
+ * row: [LocalAnalysisRunner.storedTrack] loads a track - thousands of points -
+ * off disk, and this function is called on every recomposition, including the
+ * several-times-a-second ones an in-flight analysis's progress causes.
  */
 private fun buildAnalyticsRows(
     standaloneLocalRows: List<LocalVideoRow>,
@@ -663,34 +709,25 @@ private fun buildAnalyticsRows(
     sharedMatches: List<MatchSummary>,
     localEntries: List<LocalVideoEntry>,
     liveAnalysisStates: Map<String, LocalAnalysisState>,
-    localAnalysis: LocalAnalysisRunner,
+    storedTrackIds: Set<String>,
 ): List<AnalyticsRow> {
-    fun affordanceFor(entryId: String?): AnalyseAffordance {
-        val live = entryId?.let { liveAnalysisStates[it] } ?: LocalAnalysisState.Idle
-        return when (live) {
-            is LocalAnalysisState.Idle -> AnalyseAffordance.Ready
-            is LocalAnalysisState.Preparing -> AnalyseAffordance.InProgress("Preparing video…")
-            is LocalAnalysisState.Analysing -> AnalyseAffordance.InProgress("Analysing on device…")
-            is LocalAnalysisState.Cutting -> AnalyseAffordance.InProgress("Cutting clips…")
-            // A track only lands on disk when the run asked for pose (see
-            // LocalAnalysisRunner.start): a Done run that did not is not a
-            // liveness problem, just a video still waiting for its first
-            // (pose) analysis - the same as one that was never touched.
-            is LocalAnalysisState.Done -> AnalyseAffordance.Ready
-            is LocalAnalysisState.Failed -> AnalyseAffordance.Failed(live.message)
-        }
-    }
-
     fun rowFor(key: String, entryId: String?, group: AnalyticsGroup, title: String, subtitle: String): AnalyticsRow {
-        val hasLocalEntry = entryId != null && localEntries.any { it.id == entryId }
-        val hasStoredTrack = entryId != null && localAnalysis.storedTrack(entryId) != null
-        val state = analyticsRowState(hasLocalEntry = hasLocalEntry, hasStoredTrack = hasStoredTrack)
-        val affordance = if (state == AnalyticsRowState.ANALYSABLE) affordanceFor(entryId) else AnalyseAffordance.Ready
+        val entry = entryId?.let { id -> localEntries.firstOrNull { it.id == id } }
+        val hasStoredTrack = entryId != null && entryId in storedTrackIds
+        val state = analyticsRowState(hasLocalEntry = entry != null, hasStoredTrack = hasStoredTrack)
+        // entry is never null here: ANALYSABLE requires hasLocalEntry, which is
+        // exactly `entry != null` above. The null check stays as a guard, not a
+        // second source of truth, so this cannot throw if that ever changes.
+        val affordance = if (state == AnalyticsRowState.ANALYSABLE && entry != null) {
+            affordanceFor(entry, liveAnalysisStates[entry.id] ?: LocalAnalysisState.Idle)
+        } else {
+            AnalyseAffordance.Ready
+        }
         return AnalyticsRow(
             key = key,
-            // Not on this phone and inert either way once hasLocalEntry is
-            // false, so there is nothing for a null id to navigate to.
-            entryId = entryId.takeIf { hasLocalEntry },
+            // Not on this phone and inert either way once there is no entry,
+            // so there is nothing for a null id to navigate to.
+            entryId = entry?.id,
             group = group,
             title = title,
             subtitle = subtitle,
