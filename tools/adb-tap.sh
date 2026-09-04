@@ -10,14 +10,23 @@
 #   tools/adb-tap.sh --contains "Analytics"
 #   tools/adb-tap.sh --list          # dump every tappable label, tap nothing
 #
+# For genuinely unlabelled surfaces - marking court corners on a video frame,
+# for example - tap a fraction INSIDE a labelled container. The coordinates
+# still come from the uiautomator dump's real device pixels, never from a
+# screenshot, so the arithmetic that caused four sign-outs stays impossible:
+#
+#   tools/adb-tap.sh --within "Court frame" --at 0.25,0.80
+#
 # Refuses to tap anything whose label matches a destructive pattern unless you
 # pass --force-destructive, which you should not.
 set -euo pipefail
 
 ADB="${ADB:-$HOME/Library/Android/sdk/platform-tools/adb}"
-MATCH="exact"; FORCE=0; TARGET=""
+MATCH="exact"; FORCE=0; TARGET=""; WITHIN=""; AT=""
 while [ $# -gt 0 ]; do
   case "$1" in
+    --within) WITHIN="$2"; shift 2 ;;
+    --at) AT="$2"; shift 2 ;;
     --contains) MATCH="contains"; shift ;;
     --force-destructive) FORCE=1; shift ;;
     --list) MATCH="list"; shift ;;
@@ -29,11 +38,12 @@ DUMP=$(mktemp); trap 'rm -f "$DUMP"' EXIT
 "$ADB" shell uiautomator dump /sdcard/win.xml >/dev/null 2>&1
 "$ADB" shell cat /sdcard/win.xml > "$DUMP" 2>/dev/null
 
-python3 - "$DUMP" "$TARGET" "$MATCH" "$FORCE" <<'PY'
+python3 - "$DUMP" "$TARGET" "$MATCH" "$FORCE" "$WITHIN" "$AT" <<'PY'
 import sys, subprocess, os, re
 import xml.etree.ElementTree as ET
 
 dump, target, mode, force = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4] == "1"
+within, at = (sys.argv[5] if len(sys.argv) > 5 else ""), (sys.argv[6] if len(sys.argv) > 6 else "")
 root = ET.parse(dump).getroot()
 
 # Parent map so a label can find the control that actually owns its tap.
@@ -62,6 +72,42 @@ def tappable_ancestor(n):
     return None
 
 labelled = [n for n in root.iter() if label(n) and bounds(n)]
+
+def raw_bounds(n):
+    m = re.match(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]', n.get("bounds", ""))
+    return tuple(map(int, m.groups())) if m else None
+
+if within:
+    # A fraction inside a labelled container. Used for surfaces that genuinely
+    # have no label of their own, such as marking corners on a video frame.
+    # The container is still found by label in the dump, so the numbers are real
+    # device pixels and never come from a scaled image.
+    if not at:
+        print("--within needs --at X,Y with fractions between 0 and 1", file=sys.stderr)
+        sys.exit(6)
+    try:
+        fx, fy = (float(v) for v in at.split(","))
+    except ValueError:
+        print(f"--at {at!r} is not two numbers separated by a comma", file=sys.stderr)
+        sys.exit(6)
+    if not (0.0 <= fx <= 1.0 and 0.0 <= fy <= 1.0):
+        print(f"--at {at!r} must be fractions between 0 and 1, not pixels", file=sys.stderr)
+        sys.exit(6)
+    hosts = [n for n in labelled if within.lower() in label(n).lower() and raw_bounds(n)]
+    if not hosts:
+        print(f"NOT FOUND: no container labelled like {within!r}. Try --list.", file=sys.stderr)
+        sys.exit(2)
+    if len({raw_bounds(h) for h in hosts}) > 1:
+        print(f"AMBIGUOUS: {len(hosts)} containers match {within!r}:", file=sys.stderr)
+        for h in hosts:
+            print(f"  {label(h)!r} bounds={raw_bounds(h)}", file=sys.stderr)
+        sys.exit(3)
+    x1, y1, x2, y2 = raw_bounds(hosts[0])
+    cx, cy = int(x1 + (x2 - x1) * fx), int(y1 + (y2 - y1) * fy)
+    adb = os.environ.get("ADB", os.path.expanduser("~/Library/Android/sdk/platform-tools/adb"))
+    subprocess.run([adb, "shell", "input", "tap", str(cx), str(cy)], check=True)
+    print(f"tapped {fx},{fy} within {label(hosts[0])!r} at device pixels ({cx},{cy})")
+    sys.exit(0)
 
 if mode == "list":
     for n in labelled:
