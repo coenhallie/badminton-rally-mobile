@@ -41,6 +41,10 @@ enum ShuttlPalette {
     static let sideHome:        Pair = (0x15803D, 0x14532D)
     static let sideAway:        Pair = (0x1D4ED8, 0x1E3A8A)
     static let error:           Pair = (0xEF4444, 0xEF4444)
+    /// What sits on top of an `error` fill, in both themes. `error` itself is
+    /// theme-invariant, so one near-black value clears 4.5:1 in both: 5.075:1.
+    /// White does not - 3.763:1 - which is the bug this token exists to fix.
+    static let onError:         Pair = (0x200808, 0x200808)
     static let warning:         Pair = (0xF59E0B, 0xF59E0B)
     static let info:            Pair = (0x3B82F6, 0x3B82F6)
 }

@@ -161,7 +161,7 @@ struct MatchesList: View {
                                     } label: {
                                         Label("Delete", systemImage: "trash")
                                     }
-                                    .tint(.red)
+                                    .tint(Shuttl.error)
                                 }
                         case .score(let content):
                             scoreRow(content, model: model)
@@ -181,7 +181,7 @@ struct MatchesList: View {
                                     } label: {
                                         Label("Delete", systemImage: "trash")
                                     }
-                                    .tint(.red)
+                                    .tint(Shuttl.error)
                                 }
                         }
                     }
@@ -197,7 +197,7 @@ struct MatchesList: View {
                                 } label: {
                                     Label("Remove", systemImage: "trash")
                                 }
-                                .tint(.red)
+                                .tint(Shuttl.error)
                             }
                     }
                 } header: { Shuttl.sectionLabel("Shared with me") }

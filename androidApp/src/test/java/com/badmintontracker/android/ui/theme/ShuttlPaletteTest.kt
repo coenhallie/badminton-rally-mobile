@@ -105,6 +105,16 @@ class ShuttlPaletteTest {
     }
 
     @Test
+    fun error_carries_on_error_text() {
+        for ((theme, pick) in themes) {
+            withClue("$theme onError on error") {
+                contrast(pick(ShuttlPalette.onError), pick(ShuttlPalette.error))
+                    .shouldBeGreaterThanOrEqual(4.5)
+            }
+        }
+    }
+
+    @Test
     fun accent_is_a_fill_colour_not_a_text_colour() {
         contrast(ShuttlPalette.accent.light, ShuttlPalette.bg.light).shouldBeLessThan(4.5)
         for ((theme, pick) in themes) {

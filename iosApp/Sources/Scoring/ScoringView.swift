@@ -318,7 +318,7 @@ struct ScoringView: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .background(isServing ? Color.white : Color.white.opacity(0.14))
-        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .clipShape(RoundedRectangle(cornerRadius: ShuttlRadius.extraSmall))
     }
 
     /// Singles has no player to mark, so the side itself carries the serve and its court.
@@ -330,7 +330,7 @@ struct ScoringView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .background(Color.white)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .clipShape(RoundedRectangle(cornerRadius: ShuttlRadius.extraSmall))
     }
 
     @ViewBuilder
@@ -340,7 +340,7 @@ struct ScoringView: View {
             .foregroundStyle(.white)
             .frame(width: 40, height: 34)
             .background(Color.white.opacity(0.16))
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .clipShape(RoundedRectangle(cornerRadius: ShuttlRadius.extraSmall))
     }
 
     /// The tag row and Undo. The row is on screen before the rally it will tag,

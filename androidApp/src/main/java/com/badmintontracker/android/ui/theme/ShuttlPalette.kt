@@ -59,6 +59,13 @@ internal object ShuttlPalette {
     val sideHome        = Tone(0x15803D, 0x14532D)
     val sideAway        = Tone(0x1D4ED8, 0x1E3A8A)
     val error           = Tone(0xEF4444, 0xEF4444)
+
+    /**
+     * What sits on top of an [error] fill, in both themes. [error] itself is
+     * theme-invariant, so one near-black value clears 4.5:1 in both: 5.075:1.
+     * White does not - 3.763:1 - which is the bug this token exists to fix.
+     */
+    val onError         = Tone(0x200808, 0x200808)
     val warning         = Tone(0xF59E0B, 0xF59E0B)
     val info            = Tone(0x3B82F6, 0x3B82F6)
 }

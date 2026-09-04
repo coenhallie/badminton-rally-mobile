@@ -98,6 +98,15 @@ final class ShuttlPaletteTests: XCTestCase {
         }
     }
 
+    func testErrorCarriesOnErrorText() {
+        eachTheme { theme, pick in
+            XCTAssertGreaterThanOrEqual(
+                contrast(pick(ShuttlPalette.onError), pick(ShuttlPalette.error)), 4.5,
+                "\(theme) onError is unreadable on the error fill"
+            )
+        }
+    }
+
     func testAccentIsAFillColourNotATextColour() {
         // The rule this encodes: accent-coloured TEXT uses accentDark. If someone
         // brightens the light accent until it passes as text, this fails and they

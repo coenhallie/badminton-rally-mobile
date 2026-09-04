@@ -45,6 +45,7 @@ enum Shuttl {
     static let onAccent        = token(ShuttlPalette.onAccent)
     static let accentDark      = token(ShuttlPalette.accentDark)
     static let error           = token(ShuttlPalette.error)
+    static let onError         = token(ShuttlPalette.onError)
     static let warning         = token(ShuttlPalette.warning)
     static let info            = token(ShuttlPalette.info)
 

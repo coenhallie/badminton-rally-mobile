@@ -184,7 +184,7 @@ struct HomeView: View {
             // sheet never costs the video that was just imported or recorded.
             guard let id else { return }
             // Consumed unconditionally, before the lookup can fail: this fires only
-            // on a change of id, so a signal left standing is never re-delivered —
+            // on a change of id, so a signal left standing is never re-delivered -
             // it would wedge the auto-open for this import AND every one after it.
             intake.lastAddedId = nil
             // Read the registry, not `localEntries`: that mirror is filled by a

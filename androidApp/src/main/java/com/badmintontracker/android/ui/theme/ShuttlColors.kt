@@ -27,7 +27,7 @@ internal val ShuttlLightColorScheme = lightColorScheme(
     outline          = ShuttlPalette.borderSecondary.lightColor,
     outlineVariant   = ShuttlPalette.border.lightColor,
     error            = ShuttlPalette.error.lightColor,
-    onError          = Color.White,
+    onError          = ShuttlPalette.onError.lightColor,
 )
 
 internal val ShuttlDarkColorScheme = darkColorScheme(
@@ -42,7 +42,7 @@ internal val ShuttlDarkColorScheme = darkColorScheme(
     outline          = ShuttlPalette.borderSecondary.darkColor,
     outlineVariant   = ShuttlPalette.border.darkColor,
     error            = ShuttlPalette.error.darkColor,
-    onError          = Color.White,
+    onError          = ShuttlPalette.onError.darkColor,
 )
 
 /** Extended palette beyond M3's ColorScheme. */

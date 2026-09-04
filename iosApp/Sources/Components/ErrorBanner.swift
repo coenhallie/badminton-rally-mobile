@@ -6,7 +6,7 @@ struct ErrorBanner: View {
     var body: some View {
         Text(message)
             .shuttlType(ShuttlType.bodySmall)
-            .foregroundStyle(.white)
+            .foregroundStyle(Shuttl.onError)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(12)
             .background(Shuttl.error)

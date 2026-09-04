@@ -52,6 +52,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.badmintontracker.android.ui.theme.ShuttlRadius
 import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.shared.model.AnnotationLabel
 import com.badmintontracker.shared.model.LabelColor
@@ -395,7 +396,7 @@ private fun PlayerChips(side: Side, players: List<String>, match: MatchState) {
 @Composable
 private fun PlayerChip(name: String, court: ServiceCourt?, isServing: Boolean) {
     Surface(
-        shape = RoundedCornerShape(6.dp),
+        shape = RoundedCornerShape(ShuttlRadius.extraSmall),
         color = if (isServing) Color.White else Color.White.copy(alpha = 0.14f),
     ) {
         Row(
@@ -425,7 +426,7 @@ private fun PlayerChip(name: String, court: ServiceCourt?, isServing: Boolean) {
 /** Singles has no player to mark, so the side itself carries the serve and its court. */
 @Composable
 private fun ServePill(court: ServiceCourt?, modifier: Modifier = Modifier) {
-    Surface(modifier = modifier, shape = RoundedCornerShape(6.dp), color = Color.White) {
+    Surface(modifier = modifier, shape = RoundedCornerShape(ShuttlRadius.extraSmall), color = Color.White) {
         Text(
             text = "SERVE" + when (court) {
                 ServiceCourt.RIGHT -> " R"
@@ -443,7 +444,7 @@ private fun ServePill(court: ServiceCourt?, modifier: Modifier = Modifier) {
 @Composable
 private fun GamesWonBox(games: Int) {
     Surface(
-        shape = RoundedCornerShape(6.dp),
+        shape = RoundedCornerShape(ShuttlRadius.extraSmall),
         color = Color.White.copy(alpha = 0.16f),
         modifier = Modifier.size(width = 40.dp, height = 34.dp),
     ) {

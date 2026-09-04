@@ -303,10 +303,11 @@ private fun FrameWithOverlay(
                     modifier = Modifier.fillMaxSize(),
                 )
             }
+            val markerLabelFontFamily = MaterialTheme.typography.labelSmall.fontFamily
             Canvas(modifier = Modifier.fillMaxSize()) {
                 drawCourtGuide()
                 drawCornerRectangle(marking)
-                drawPlacedPoints(marking, scale, density.density, textMeasurer)
+                drawPlacedPoints(marking, scale, density.density, textMeasurer, markerLabelFontFamily)
             }
         }
     }
@@ -400,6 +401,7 @@ private fun DrawScope.drawPlacedPoints(
     zoom: Float,
     density: Float,
     textMeasurer: androidx.compose.ui.text.TextMeasurer,
+    labelFontFamily: androidx.compose.ui.text.font.FontFamily?,
 ) {
     val toDisplay = displayFactor(marking)
     // Constant on-screen size regardless of pinch-zoom (markers are presentation only).
@@ -410,7 +412,17 @@ private fun DrawScope.drawPlacedPoints(
         drawCircle(Color.Black, radius, center, style = Stroke(width = 2f * density / zoom))
         val label = textMeasurer.measure(
             CourtMarkingSpec.shortLabels[i],
-            TextStyle(fontSize = (9f / zoom).sp, fontWeight = FontWeight.Bold, color = Color.Black),
+            // Only fontFamily is taken from the type scale: letterSpacing and
+            // lineHeight there are pinned to labelSmall's 11sp role, and this
+            // marker's fontSize tracks pinch-zoom, so inheriting them would pin
+            // spacing/line-height while the glyph shrinks and throw off the
+            // width/2, height/2 centering below.
+            TextStyle(
+                fontFamily = labelFontFamily,
+                fontSize = (9f / zoom).sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.Black,
+            ),
         )
         drawText(
             label,

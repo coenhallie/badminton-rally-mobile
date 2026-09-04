@@ -23,8 +23,13 @@ class ShuttlShapesTest {
     @Test
     fun material_shapes_are_no_longer_square() {
         // Guards the reversal itself: this scale replaced an all-0dp one, and a
-        // revert would silently un-round every card in the app.
-        ShuttlShapes.large shouldBe androidx.compose.foundation.shape.RoundedCornerShape(20.dp)
+        // revert would silently un-round every card in the app. Covers all five
+        // M3 slots, not just two - the other three could regress to 0.dp with
+        // neither this test nor radius_scale_matches_the_design noticing.
+        ShuttlShapes.extraSmall shouldBe androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+        ShuttlShapes.small shouldBe androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
         ShuttlShapes.medium shouldBe androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
+        ShuttlShapes.large shouldBe androidx.compose.foundation.shape.RoundedCornerShape(20.dp)
+        ShuttlShapes.extraLarge shouldBe androidx.compose.foundation.shape.RoundedCornerShape(28.dp)
     }
 }
