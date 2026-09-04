@@ -3,9 +3,9 @@ package com.badmintontracker.android.nav
 import kotlinx.serialization.Serializable
 
 sealed interface Route {
-    @Serializable data object SignIn   : Route
-    @Serializable data object ClipList : Route
-    @Serializable data object Labels   : Route
+    @Serializable data object SignIn : Route
+    @Serializable data object Home   : Route
+    @Serializable data object Labels : Route
 
     /**
      * One match, however it was made. At least one of the two ids is non-null: a

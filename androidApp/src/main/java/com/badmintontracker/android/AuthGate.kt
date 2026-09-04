@@ -4,7 +4,6 @@ import com.badmintontracker.android.localanalysis.BackgroundWorkMonitor
 import com.badmintontracker.android.localanalysis.LocalBackgroundWork
 import com.badmintontracker.android.localanalysis.LocalBackgroundWorkClick
 import com.badmintontracker.shared.local.DeviceThroughputRepository
-import com.badmintontracker.android.localanalysis.LocalAnalysisBanner
 import com.badmintontracker.android.localanalysis.LocalAnalysisRunner
 import com.badmintontracker.android.localanalysis.AnalysisTarget
 import android.net.Uri
@@ -33,9 +32,9 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.badmintontracker.android.clipdetail.ClipDetailScreen
 import com.badmintontracker.android.clipdetail.ClipDetailViewModel
-import com.badmintontracker.android.cliplist.ClipListScreen
 import com.badmintontracker.android.cliplist.ClipListViewModel
 import com.badmintontracker.android.cliplist.MatchSummaryViewModel
+import com.badmintontracker.android.home.HomeScreen
 import com.badmintontracker.android.match.MatchScreen
 import com.badmintontracker.android.match.MatchViewModel
 import com.badmintontracker.shared.prefs.ThemePreferenceRepository
@@ -97,7 +96,7 @@ fun AuthGate(
         null -> Splash()
         else -> {
             val nav = rememberNavController()
-            val start: Route = if (s is SessionStatus.Authenticated) Route.ClipList else Route.SignIn
+            val start: Route = if (s is SessionStatus.Authenticated) Route.Home else Route.SignIn
 
             LaunchedEffect(s) {
                 val onSignIn = nav.currentDestination?.route?.contains("SignIn") == true
@@ -112,7 +111,7 @@ fun AuthGate(
                     // Session arrived while on SignIn (e.g. a session restored via
                     // deep link, so SignInViewModel never sees the completed sign-in).
                     s is SessionStatus.Authenticated && onSignIn -> {
-                        nav.navigate(Route.ClipList) {
+                        nav.navigate(Route.Home) {
                             popUpTo(Route.SignIn) { inclusive = true }
                         }
                     }
@@ -123,6 +122,12 @@ fun AuthGate(
             // Persist first, then hand the id on so the details sheet can open over
             // an entry that already exists.
             var autoDetailsEntryId by remember { mutableStateOf<String?>(null) }
+            // Set by the background-work indicator (below) and consumed by
+            // HomeScreen once it has opened the drawer. Hoisted here, above the
+            // NavHost, because Home is the start destination and is never
+            // recreated for an authenticated session - the indicator's click
+            // handler needs a channel into an instance that already exists.
+            var pendingDrawerOpen by remember { mutableStateOf(false) }
             // Hoisted above the NavHost: both the list destination (record/import
             // with no match) and the match destination (record/import for this
             // match) drive the same picker, so there can only be one implementation
@@ -157,11 +162,14 @@ fun AuthGate(
                     {
                         // singleTop plus popUpTo: the indicator is reachable
                         // from anywhere, so without both, tapping it repeatedly
-                        // would stack clip lists.
-                        nav.navigate(Route.ClipList) {
-                            popUpTo(Route.ClipList)
+                        // would stack Home screens. The run it points at now
+                        // lives in the drawer's list, not on Home itself, so
+                        // arriving is not enough - the drawer must open too.
+                        nav.navigate(Route.Home) {
+                            popUpTo(Route.Home)
                             launchSingleTop = true
                         }
+                        pendingDrawerOpen = true
                     }
                 },
             ) {
@@ -176,13 +184,13 @@ fun AuthGate(
                         vm = signInVm,
                         themePrefs = themePrefs,
                         onSignedIn = {
-                            nav.navigate(Route.ClipList) {
+                            nav.navigate(Route.Home) {
                                 popUpTo(Route.SignIn) { inclusive = true }
                             }
                         },
                     )
                 }
-                composable<Route.ClipList> {
+                composable<Route.Home> {
                     val clipListVm: ClipListViewModel = viewModel(
                         factory = viewModelFactory {
                             initializer { ClipListViewModel(rally.clips, rally.auth, rally.shares, rally.videos, rally.scoreLogs, localVideos, coordinator, localAnnotations) }
@@ -194,23 +202,12 @@ fun AuthGate(
                         }
                     )
                     val localRows by localVm.rows.collectAsStateWithLifecycle()
-                    // A Column, not two siblings: a nav destination's content
-                    // is a single slot, and two composables placed straight
-                    // into it overlap rather than stack.
-                    //
-                    // Above the list rather than inside it: an on-device run
-                    // takes minutes and belongs where it is visible on return,
-                    // not attached to one row that may have scrolled away.
-                    Column(modifier = Modifier.fillMaxSize()) {
-                    LocalAnalysisBanner(
-                        runner = localAnalysis,
-                        onOpenHeatmap = { nav.navigate(Route.Heatmap(it)) },
-                    )
-                    ClipListScreen(
+                    HomeScreen(
                         vm = clipListVm,
                         media = rally.media,
                         shares = rally.shares,
                         themePrefs = themePrefs,
+                        localAnalysis = localAnalysis,
                         onMatchClick = { nav.navigate(Route.Match(videoId = it.videoId)) },
                         onScoreMatchClick = { nav.navigate(Route.Match(scoreLogId = it.scoreLogId)) },
                         onNewMatch = { nav.navigate(Route.NewMatch) },
@@ -266,8 +263,10 @@ fun AuthGate(
                                     }
                                 }
                         },
+                        onOpenHeatmapFromBanner = { nav.navigate(Route.Heatmap(it)) },
+                        openDrawerRequested = pendingDrawerOpen,
+                        onDrawerOpenConsumed = { pendingDrawerOpen = false },
                     )
-                    }
                 }
                 composable<Route.NewMatch> {
                     val vm: NewMatchViewModel = viewModel(
@@ -301,14 +300,14 @@ fun AuthGate(
                         // Lands on the match page rather than popping back, because
                         // a match just created and scored in one sitting (NewMatch
                         // -> Scoring, no Match page underneath yet) has nothing to
-                        // pop back to. Collapsing to ClipList first keeps a single
+                        // pop back to. Collapsing to Home first keeps a single
                         // Match entry on the stack either way. The chosen intent (if
                         // any) rides along so the match page can act on it once.
                         onFinished = { intent ->
                             nav.navigate(
                                 Route.Match(scoreLogId = args.scoreLogId, attach = intent?.name)
                             ) {
-                                popUpTo(Route.ClipList) { inclusive = false }
+                                popUpTo(Route.Home) { inclusive = false }
                             }
                         },
                     )
@@ -570,7 +569,7 @@ fun AuthGate(
                                 // Video-first can arrive here from LocalPlayer as
                                 // well as from the list, so this one still names its
                                 // destination.
-                                nav.popBackStack(Route.ClipList, inclusive = false)
+                                nav.popBackStack(Route.Home, inclusive = false)
                             }
                         },
                         onBack = { nav.popBackStack() },
