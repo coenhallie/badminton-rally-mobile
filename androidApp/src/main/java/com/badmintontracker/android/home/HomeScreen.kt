@@ -50,6 +50,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.badmintontracker.android.BuildConfig
@@ -172,7 +173,7 @@ fun HomeScreen(
                 modifier = Modifier
                     .width(drawerWidth)
                     // The mock draws this panel as bgInput with a 1px
-                    // border-coloured right edge, matching iOS's
+                    // border-coloured trailing edge, matching iOS's
                     // MatchesDrawer (`.background(Shuttl.bgInput)` plus a
                     // trailing `Shuttl.border` overlay). Drawn directly
                     // rather than an outer Box overlay, so ModalDrawerSheet's
@@ -180,10 +181,19 @@ fun HomeScreen(
                     .drawWithContent {
                         drawContent()
                         val strokeWidth = 1.dp.toPx()
+                        // The border sits on the drawer's trailing edge, away
+                        // from the hinge, not on a fixed physical side: in an
+                        // RTL locale the drawer slides in from the right, so
+                        // its trailing edge is on the left.
+                        val x = if (layoutDirection == LayoutDirection.Rtl) {
+                            strokeWidth / 2
+                        } else {
+                            size.width - strokeWidth / 2
+                        }
                         drawLine(
                             color = borderColor,
-                            start = Offset(size.width - strokeWidth / 2, 0f),
-                            end = Offset(size.width - strokeWidth / 2, size.height),
+                            start = Offset(x, 0f),
+                            end = Offset(x, size.height),
                             strokeWidth = strokeWidth,
                         )
                     },
