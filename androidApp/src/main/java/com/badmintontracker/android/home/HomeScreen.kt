@@ -3,7 +3,6 @@ package com.badmintontracker.android.home
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
@@ -46,9 +45,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.disabled
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -113,6 +109,7 @@ fun HomeScreen(
     onRecord: () -> Unit = {},
     onImport: () -> Unit = {},
     onLabels: () -> Unit = {},
+    onOpenAnalytics: () -> Unit = {},
     onAttachedMarkCourt: (String) -> Unit = {},
     onAttachedRetry: (String) -> Unit = {},
     onOpenHeatmapFromBanner: (String) -> Unit = {},
@@ -322,49 +319,16 @@ fun HomeScreen(
                         // screens also rely on.
                         modifier = Modifier.fillMaxWidth().height(60.dp),
                     )
-                    // Analytics ships in Phase 3. Genuinely disabled, not just
-                    // inert: an earlier iOS pass shipped this enabled-but-
-                    // no-op, and review rejected it - a pill that visibly
-                    // reacts to a tap and then does nothing reads as a hang,
-                    // not an unbuilt feature. ShuttlButton(enabled = false)
-                    // dims the whole pill itself (it does not rely on a
-                    // system style to do that).
-                    //
-                    // The outer Box with its own mergeDescendants(true) is
-                    // the documented Compose pattern for adding accessibility
-                    // properties to a pre-built clickable from the outside:
-                    // it makes THIS node the merge root, folding
-                    // ShuttlButton's own clickable(enabled = false) semantics
-                    // into it for TalkBack's merged tree. A plain (non-
-                    // merging) semantics() placed directly on ShuttlButton's
-                    // own modifier parameter was tried first and rejected:
-                    // dumping the raw accessibility tree with uiautomator
-                    // still showed it as a second node one level down,
-                    // carrying its own `enabled=true` that contradicted the
-                    // pill's actual disabled state - uiautomator surfaces
-                    // Compose's unmerged tree, the same one Compose's own
-                    // testing APIs call `useUnmergedTree`, so this is not
-                    // proof TalkBack itself would double-announce, but the
-                    // Box wrapper is the pattern Google documents for this
-                    // exact case and it does put `enabled=false` on the
-                    // node that owns the merge, which the first attempt did
-                    // not.
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .semantics(mergeDescendants = true) {
-                                disabled()
-                                contentDescription = "Analytics. Coming soon."
-                            },
-                    ) {
-                        ShuttlButton(
-                            text = "Analytics",
-                            onClick = {},
-                            enabled = false,
-                            variant = ShuttlButtonVariant.Secondary,
-                            modifier = Modifier.fillMaxWidth().height(60.dp),
-                        )
-                    }
+                    // Opens the coach's Analytics list (Route.Analytics): one row
+                    // per match, showing whether it already has a stored player
+                    // track, can be analysed on this phone, or was never on this
+                    // phone at all. See AnalyticsScreen for what each state renders.
+                    ShuttlButton(
+                        text = "Analytics",
+                        onClick = onOpenAnalytics,
+                        variant = ShuttlButtonVariant.Secondary,
+                        modifier = Modifier.fillMaxWidth().height(60.dp),
+                    )
                     // "Your matches", not "Swipe right for your matches": on
                     // gesture navigation the system owns the left edge, so an
                     // edge swipe loses to the back gesture and is unreliable

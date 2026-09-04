@@ -32,8 +32,17 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.badmintontracker.android.clipdetail.ClipDetailScreen
 import com.badmintontracker.android.clipdetail.ClipDetailViewModel
+import com.badmintontracker.android.analytics.AnalyseAffordance
+import com.badmintontracker.android.analytics.AnalyticsGroup
+import com.badmintontracker.android.analytics.AnalyticsRow
+import com.badmintontracker.android.analytics.AnalyticsScreen
 import com.badmintontracker.android.cliplist.ClipListViewModel
+import com.badmintontracker.android.cliplist.MatchRow
+import com.badmintontracker.android.cliplist.MatchSummary
 import com.badmintontracker.android.cliplist.MatchSummaryViewModel
+import com.badmintontracker.android.cliplist.formatDate
+import com.badmintontracker.android.cliplist.matchRowPrimary
+import com.badmintontracker.android.cliplist.matchRowSecondary
 import com.badmintontracker.android.home.HomeScreen
 import com.badmintontracker.android.match.MatchScreen
 import com.badmintontracker.android.match.MatchViewModel
@@ -56,6 +65,9 @@ import com.badmintontracker.android.scoring.ScoringScreen
 import com.badmintontracker.android.scoring.ScoringViewModel
 import com.badmintontracker.android.signin.SignInScreen
 import com.badmintontracker.android.signin.SignInViewModel
+import com.badmintontracker.android.localvideo.LocalVideoRow
+import com.badmintontracker.shared.analytics.AnalyticsRowState
+import com.badmintontracker.shared.analytics.analyticsRowState
 import com.badmintontracker.shared.localvideo.AnalyzeCoordinator
 import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
@@ -78,6 +90,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.TextButton
 import com.badmintontracker.android.localanalysis.LocalClipPlayerDialog
 import com.badmintontracker.android.localanalysis.ClipCutter
+import kotlinx.datetime.Instant
 
 @Composable
 fun AuthGate(
@@ -234,6 +247,7 @@ fun AuthGate(
                         onRecord = { intake.record(null) },
                         onImport = { intake.import(null) },
                         onLabels = { nav.navigate(Route.Labels) },
+                        onOpenAnalytics = { nav.navigate(Route.Analytics) },
                         onAttachedMarkCourt = { scoreLogId ->
                             localVideos.entries.value
                                 .firstOrNull { it.scoreLogId == scoreLogId }
@@ -266,6 +280,46 @@ fun AuthGate(
                         onOpenHeatmapFromBanner = { nav.navigate(Route.Heatmap(it)) },
                         openDrawerRequested = pendingDrawerOpen,
                         onDrawerOpenConsumed = { pendingDrawerOpen = false },
+                    )
+                }
+                composable<Route.Analytics> {
+                    // Built from the same view models Route.Home uses, not the
+                    // same instances - Navigation Compose scopes a viewModel() to
+                    // its own back stack entry, and every other route in this
+                    // graph that also wants ClipListViewModel's state (there are
+                    // none today, but the pattern is Route.Home's own) creates
+                    // its own instance from the same factory rather than reaching
+                    // across routes for one.
+                    val clipListVm: ClipListViewModel = viewModel(
+                        factory = viewModelFactory {
+                            initializer { ClipListViewModel(rally.clips, rally.auth, rally.shares, rally.videos, rally.scoreLogs, localVideos, coordinator, localAnnotations) }
+                        }
+                    )
+                    val localVm: LocalVideoListViewModel = viewModel(
+                        factory = viewModelFactory {
+                            initializer { LocalVideoListViewModel(localVideos, coordinator, localAnnotations) }
+                        }
+                    )
+                    val clipListState by clipListVm.state.collectAsStateWithLifecycle()
+                    val localRows by localVm.rows.collectAsStateWithLifecycle()
+                    val localEntries by localVideos.entries.collectAsStateWithLifecycle()
+                    val liveAnalysisStates by localAnalysis.state.collectAsStateWithLifecycle()
+
+                    val standaloneLocalRows = localRows.filter { it.entry.scoreLogId == null }
+                    val rows = buildAnalyticsRows(
+                        standaloneLocalRows = standaloneLocalRows,
+                        ownedRows = clipListState.ownedRows,
+                        sharedMatches = clipListState.sharedMatches,
+                        localEntries = localEntries,
+                        liveAnalysisStates = liveAnalysisStates,
+                        localAnalysis = localAnalysis,
+                    )
+
+                    AnalyticsScreen(
+                        rows = rows,
+                        onOpenDetail = { row -> row.entryId?.let { nav.navigate(Route.Heatmap(it)) } },
+                        onAnalyse = { row -> row.entryId?.let { nav.navigate(Route.CourtMarking(it)) } },
+                        onBack = { nav.popBackStack() },
                     )
                 }
                 composable<Route.NewMatch> {
@@ -591,4 +645,99 @@ private fun Splash() {
         Text("Rally Clips")
         CircularProgressIndicator()
     }
+}
+
+/**
+ * Builds the Analytics list's rows, grouped like the drawer: local videos, then
+ * owned matches, then shared. [analyticsRowState] alone decides READY /
+ * ANALYSABLE / NOT_ON_DEVICE - this only gathers its two booleans per match and,
+ * for an ANALYSABLE one, reads the on-device run's own liveness
+ * ([liveAnalysisStates], sourced from [LocalAnalysisRunner.state]) so the row can
+ * show progress or a failure instead of a live "Analyse" button. `hasStoredTrack`
+ * alone cannot tell a run in flight, or one that just failed, from one never
+ * attempted.
+ */
+private fun buildAnalyticsRows(
+    standaloneLocalRows: List<LocalVideoRow>,
+    ownedRows: List<MatchRow>,
+    sharedMatches: List<MatchSummary>,
+    localEntries: List<LocalVideoEntry>,
+    liveAnalysisStates: Map<String, LocalAnalysisState>,
+    localAnalysis: LocalAnalysisRunner,
+): List<AnalyticsRow> {
+    fun affordanceFor(entryId: String?): AnalyseAffordance {
+        val live = entryId?.let { liveAnalysisStates[it] } ?: LocalAnalysisState.Idle
+        return when (live) {
+            is LocalAnalysisState.Idle -> AnalyseAffordance.Ready
+            is LocalAnalysisState.Preparing -> AnalyseAffordance.InProgress("Preparing video…")
+            is LocalAnalysisState.Analysing -> AnalyseAffordance.InProgress("Analysing on device…")
+            is LocalAnalysisState.Cutting -> AnalyseAffordance.InProgress("Cutting clips…")
+            // A track only lands on disk when the run asked for pose (see
+            // LocalAnalysisRunner.start): a Done run that did not is not a
+            // liveness problem, just a video still waiting for its first
+            // (pose) analysis - the same as one that was never touched.
+            is LocalAnalysisState.Done -> AnalyseAffordance.Ready
+            is LocalAnalysisState.Failed -> AnalyseAffordance.Failed(live.message)
+        }
+    }
+
+    fun rowFor(key: String, entryId: String?, group: AnalyticsGroup, title: String, subtitle: String): AnalyticsRow {
+        val hasLocalEntry = entryId != null && localEntries.any { it.id == entryId }
+        val hasStoredTrack = entryId != null && localAnalysis.storedTrack(entryId) != null
+        val state = analyticsRowState(hasLocalEntry = hasLocalEntry, hasStoredTrack = hasStoredTrack)
+        val affordance = if (state == AnalyticsRowState.ANALYSABLE) affordanceFor(entryId) else AnalyseAffordance.Ready
+        return AnalyticsRow(
+            key = key,
+            // Not on this phone and inert either way once hasLocalEntry is
+            // false, so there is nothing for a null id to navigate to.
+            entryId = entryId.takeIf { hasLocalEntry },
+            group = group,
+            title = title,
+            subtitle = subtitle,
+            state = state,
+            affordance = affordance,
+        )
+    }
+
+    val localVideoRows = standaloneLocalRows.map { row ->
+        rowFor(
+            key = "local-${row.entry.id}",
+            entryId = row.entry.id,
+            group = AnalyticsGroup.LOCAL_VIDEOS,
+            title = row.primaryText,
+            subtitle = "${row.durationText} · " +
+                formatDate(Instant.fromEpochMilliseconds(row.entry.addedAtEpochMs)),
+        )
+    }
+
+    val ownedMatchRows = ownedRows.map { row ->
+        when (row) {
+            is MatchRow.Video -> rowFor(
+                key = row.key,
+                entryId = row.match.videoId,
+                group = AnalyticsGroup.OWNED_MATCHES,
+                title = matchRowPrimary(row.match),
+                subtitle = matchRowSecondary(row.match),
+            )
+            is MatchRow.Score -> rowFor(
+                key = row.key,
+                entryId = row.card.videoId,
+                group = AnalyticsGroup.OWNED_MATCHES,
+                title = row.card.title,
+                subtitle = row.card.playersLine,
+            )
+        }
+    }
+
+    val sharedRows = sharedMatches.map { match ->
+        rowFor(
+            key = "shared-${match.videoId}",
+            entryId = match.videoId,
+            group = AnalyticsGroup.SHARED,
+            title = matchRowPrimary(match),
+            subtitle = matchRowSecondary(match),
+        )
+    }
+
+    return localVideoRows + ownedMatchRows + sharedRows
 }

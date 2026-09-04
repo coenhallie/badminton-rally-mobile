@@ -7,6 +7,9 @@ sealed interface Route {
     @Serializable data object Home   : Route
     @Serializable data object Labels : Route
 
+    /** The coach's Analytics list: one row per match, grouped like the drawer. */
+    @Serializable data object Analytics : Route
+
     /**
      * One match, however it was made. At least one of the two ids is non-null: a
      * video-first or shared match has only a video, a scored match has a score log
