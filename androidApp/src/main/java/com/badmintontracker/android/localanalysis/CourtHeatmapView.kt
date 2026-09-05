@@ -58,6 +58,10 @@ fun CourtHeatmapView(
     // the player had stood everywhere inside it. Interpolating a bitmap has no
     // seams to cover and lets the tail reach zero.
     val image = remember(grid, peak) { heatImage(grid, peak) }
+    // Read here, not in drawCourt: a DrawScope is outside composition and cannot
+    // reach the theme. onSurfaceVariant carries the same weight in both themes,
+    // where a fixed white only ever worked on one of them.
+    val courtLine = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
 
     Column(modifier) {
         if (track.samples.isEmpty()) {
@@ -87,7 +91,7 @@ fun CourtHeatmapView(
                     filterQuality = FilterQuality.High,
                 )
             }
-            drawCourt(marginM = MARGIN_M)
+            drawCourt(marginM = MARGIN_M, line = courtLine)
         }
 
         Text(
@@ -136,14 +140,14 @@ private fun heatImage(grid: List<List<Double>>, peak: Double): ImageBitmap? {
  * Drawn from `Court`'s dimensions rather than hand-placed fractions, so the
  * lines and the data cannot drift apart.
  */
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawCourt(marginM: Double) {
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawCourt(marginM: Double, line: Color) {
     val totalW = Court.WIDTH_DOUBLES + 2 * marginM
     val totalH = Court.LENGTH + 2 * marginM
     fun x(m: Double) = ((m + marginM) / totalW * size.width).toFloat()
     fun y(m: Double) = ((m + marginM) / totalH * size.height).toFloat()
 
     fun line(x1: Double, y1: Double, x2: Double, y2: Double, width: Float = 1.5f) =
-        drawLine(LINE, Offset(x(x1), y(y1)), Offset(x(x2), y(y2)), strokeWidth = width)
+        drawLine(line, Offset(x(x1), y(y1)), Offset(x(x2), y(y2)), strokeWidth = width)
 
     // Outer doubles court.
     line(0.0, 0.0, Court.WIDTH_DOUBLES, 0.0)
@@ -191,4 +195,7 @@ private fun whyEmpty(track: PlayerTrack): String = when {
 private const val MARGIN_M = 2.0
 private val COOL = Color(0xFF2962FF)
 private val HOT = Color(0xFFFF6D00)
-private val LINE = Color(0x66FFFFFF)
+// The court lines were a fixed 40% white, which is invisible on a light
+// background: the heatmap floated with no court under it, which is exactly the
+// frame of reference this whole view exists to provide. Taken from the theme
+// instead, at the same weight in both.
