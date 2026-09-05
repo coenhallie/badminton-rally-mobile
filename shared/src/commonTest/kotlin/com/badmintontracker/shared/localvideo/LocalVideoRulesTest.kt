@@ -1,9 +1,32 @@
 package com.badmintontracker.shared.localvideo
 
+import com.badmintontracker.shared.model.CourtKeypoints
 import io.kotest.matchers.shouldBe
 import kotlin.test.Test
 
 class LocalVideoRulesTest {
+
+    // Values are irrelevant here: these rules only ever ask whether the court was
+    // marked, never where.
+    private val CORNERS = CourtKeypoints(
+        topLeft = listOf(0f, 0f), topRight = listOf(1f, 0f),
+        bottomRight = listOf(1f, 1f), bottomLeft = listOf(0f, 1f),
+        netLeft = listOf(0f, 0.5f), netRight = listOf(1f, 0.5f),
+        serviceLineNearLeft = listOf(0f, 0.7f), serviceLineNearRight = listOf(1f, 0.7f),
+        serviceLineFarLeft = listOf(0f, 0.3f), serviceLineFarRight = listOf(1f, 0.3f),
+        centerNear = listOf(0.5f, 0.7f), centerFar = listOf(0.5f, 0.3f),
+    )
+
+    private fun entry(stage: AnalyzeStage, keypoints: CourtKeypoints?) = LocalVideoEntry(
+        id = "e1",
+        uri = "content://v",
+        displayName = "v.mp4",
+        durationMs = 1_000,
+        sizeBytes = 1,
+        addedAtEpochMs = 0,
+        keypoints = keypoints,
+        stage = stage,
+    )
 
     @Test
     fun spinner_shows_only_while_the_pipeline_is_actively_running() {
@@ -39,5 +62,28 @@ class LocalVideoRulesTest {
         // yet, but one that failed later does, and the rule cannot tell them
         // apart from the stage alone.
         canEditLocalVideoDetails(AnalyzeStage.FAILED) shouldBe false
+    }
+
+    @Test
+    fun a_failed_run_that_still_has_its_court_resumes_instead_of_asking_again() {
+        canResumeFailedAnalysis(entry(AnalyzeStage.FAILED, CORNERS)) shouldBe true
+    }
+
+    @Test
+    fun a_failed_run_with_no_court_must_be_marked_again() {
+        // The guard the three call sites exist for. Resuming here would run a
+        // pipeline that does not know where the court is.
+        canResumeFailedAnalysis(entry(AnalyzeStage.FAILED, null)) shouldBe false
+    }
+
+    @Test
+    fun a_run_that_has_not_failed_is_never_resumed_however_complete_its_court_is() {
+        // Notably LOCAL: a device analysis leaves the stage at LOCAL when it
+        // fails, so its "Retry" must fall through to court marking, which is
+        // where LocalAnalysisRunner takes its keypoints from.
+        canResumeFailedAnalysis(entry(AnalyzeStage.LOCAL, CORNERS)) shouldBe false
+        canResumeFailedAnalysis(entry(AnalyzeStage.UPLOADING, CORNERS)) shouldBe false
+        canResumeFailedAnalysis(entry(AnalyzeStage.PROCESSING, CORNERS)) shouldBe false
+        canResumeFailedAnalysis(entry(AnalyzeStage.ANALYZED, CORNERS)) shouldBe false
     }
 }

@@ -60,6 +60,7 @@ import com.badmintontracker.android.signin.SignInScreen
 import com.badmintontracker.android.signin.SignInViewModel
 import com.badmintontracker.shared.localvideo.AnalyzeCoordinator
 import com.badmintontracker.shared.localvideo.AnalyzeStage
+import com.badmintontracker.shared.localvideo.canResumeFailedAnalysis
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.RallyApp
@@ -213,7 +214,7 @@ fun AuthGate(
                         onScoreMatchClick = { nav.navigate(Route.Match(scoreLogId = it.scoreLogId)) },
                         onNewMatch = { nav.navigate(Route.NewMatch) },
                         onOpenHeatmap = { nav.navigate(Route.Heatmap(it.id)) },
-                        hasHeatmap = { localAnalysis.storedTrack(it.id) != null },
+                        hasHeatmap = { localAnalysis.hasStoredTrack(it.id) },
                         onOpenLocalClips = { nav.navigate(Route.LocalClips(it.id)) },
                         localClipCount = { localAnalysis.storedClips(it.id).size },
                         localRows = localRows,
@@ -221,7 +222,7 @@ fun AuthGate(
                         onIntakeErrorShown = { intakeError = null },
                         onLocalClick = { nav.navigate(Route.LocalPlayer(it.id)) },
                         onLocalAnalyze = { row ->
-                            if (row.entry.stage == AnalyzeStage.FAILED && row.entry.keypoints != null) {
+                            if (canResumeFailedAnalysis(row.entry)) {
                                 localVm.retry(row.entry.id)   // resume; court points already saved
                             } else {
                                 nav.navigate(Route.CourtMarking(row.entry.id))
@@ -245,20 +246,13 @@ fun AuthGate(
                             localVideos.entries.value
                                 .firstOrNull { it.scoreLogId == scoreLogId }
                                 ?.let { entry ->
-                                    // Same guard as onLocalAnalyze: a FAILED entry with no
-                                    // saved court points has nothing to resume - retrying it
-                                    // directly just re-fails instantly with "No court points
-                                    // saved" (AnalyzeCoordinator.runPipeline). Send it back to
-                                    // court marking instead.
-                                    //
-                                    // The `else` below is defensive, not reachable today: keypoints
-                                    // are written by startAnalysis before the entry's first
-                                    // launchPipeline call, and fail() only ever runs from inside
-                                    // runPipeline after that, so a FAILED entry always already has
-                                    // keypoints. Do not simplify this guard away on that basis - it
-                                    // is what stops the ScoreMatchRow "Retry" button from lying if
-                                    // that invariant ever stops holding.
-                                    if (entry.stage == AnalyzeStage.FAILED && entry.keypoints != null) {
+                                    // A FAILED entry with no saved court points has nothing
+                                    // to resume: retrying it directly just re-fails instantly
+                                    // with "No court points saved"
+                                    // (AnalyzeCoordinator.runPipeline). See
+                                    // canResumeFailedAnalysis for why the `else` is defensive
+                                    // rather than dead.
+                                    if (canResumeFailedAnalysis(entry)) {
                                         localVm.retry(entry.id)
                                     } else {
                                         nav.navigate(Route.CourtMarking(entry.id))
@@ -337,7 +331,7 @@ fun AuthGate(
                                     // through to court marking, which is where a device re-run
                                     // has to start (LocalAnalysisRunner.start takes keypoints
                                     // from the screen, not from the entry).
-                                    if (entry.stage == AnalyzeStage.FAILED && entry.keypoints != null) {
+                                    if (canResumeFailedAnalysis(entry)) {
                                         localVm.retry(entry.id)
                                     } else {
                                         nav.navigate(Route.CourtMarking(entry.id))
@@ -468,7 +462,7 @@ fun AuthGate(
                             localVideos.entries.value
                                 .firstOrNull { it.scoreLogId == args.scoreLogId }
                                 ?.let { entry ->
-                                    if (entry.stage == AnalyzeStage.FAILED && entry.keypoints != null) {
+                                    if (canResumeFailedAnalysis(entry)) {
                                         coordinator.retry(entry.id)
                                     } else {
                                         nav.navigate(Route.CourtMarking(entry.id))
