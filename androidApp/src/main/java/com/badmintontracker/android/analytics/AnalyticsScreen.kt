@@ -83,10 +83,10 @@ data class AnalyticsRow(
  * the same place twice.
  *
  * [onOpenDetail] fires for a READY row (opens its heatmap); [onAnalyse] fires
- * for an ANALYSABLE row's button, whether it reads "Analyse" or "Retry" -
- * both send the coach to the same place, court marking, which is where a fresh
- * attempt and a retried one already converge (see AuthGate's CourtMarking
- * route). NOT_ON_DEVICE rows call neither.
+ * for an ANALYSABLE row's button whether it reads "Analyse" or "Retry", and the
+ * caller decides which of the two it is: a failed cloud run with its court
+ * points already saved resumes from the step that failed, and everything else
+ * goes to court marking. NOT_ON_DEVICE rows call neither.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

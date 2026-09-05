@@ -317,7 +317,30 @@ fun AuthGate(
                     AnalyticsScreen(
                         rows = rows,
                         onOpenDetail = { row -> row.entryId?.let { nav.navigate(Route.Heatmap(it)) } },
-                        onAnalyse = { row -> row.entryId?.let { nav.navigate(Route.CourtMarking(it)) } },
+                        onAnalyse = { row ->
+                            row.entryId
+                                ?.let { id -> localEntries.firstOrNull { it.id == id } }
+                                ?.let { entry ->
+                                    // The same guard as onLocalAnalyze, onAttachedRetry and
+                                    // MatchScreen's onRetry: a cloud run that failed at
+                                    // TRIGGER already has this video's four court corners
+                                    // saved, and sending the coach back to mark them again
+                                    // both wastes the marking and means the coordinator's
+                                    // resume-from-the-failed-step is never reached.
+                                    //
+                                    // It reads correctly for a device failure too, and not by
+                                    // accident: a device run never moves entry.stage, so a row
+                                    // showing "Retry" because LocalAnalysisState is Failed falls
+                                    // through to court marking, which is where a device re-run
+                                    // has to start (LocalAnalysisRunner.start takes keypoints
+                                    // from the screen, not from the entry).
+                                    if (entry.stage == AnalyzeStage.FAILED && entry.keypoints != null) {
+                                        localVm.retry(entry.id)
+                                    } else {
+                                        nav.navigate(Route.CourtMarking(entry.id))
+                                    }
+                                }
+                        },
                         onBack = { nav.popBackStack() },
                     )
                 }
