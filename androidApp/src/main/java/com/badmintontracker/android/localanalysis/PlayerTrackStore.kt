@@ -35,6 +35,28 @@ class PlayerTrackStore(private val root: File) {
         )
     }
 
+    /**
+     * Whether a track was ever written for [entryId], without reading it.
+     *
+     * [load] is the wrong way to ask: it reads every line of a file that runs to
+     * roughly a megabyte for a 30-minute match and turns each one into a
+     * [PlayerSample], so a list asking the question once per video pays for a
+     * full parse of every analysed video on the phone.
+     *
+     * Deliberately weaker than `load(id) != null`, which also rejects a file it
+     * cannot parse. A track truncated by a kill mid-write therefore reads as
+     * present, and the row that offers it stays offering it: the heatmap screen
+     * says "This analysis is no longer loaded. Run it again", which is honest
+     * about there being nothing to draw but describes process death rather than
+     * a bad file, and the Analytics row it came from offers no way to run it
+     * again. Recovery is through the drawer, whose Analyze button is gated on
+     * the stage rather than on the track. Accepted because a truncated file
+     * needs the process killed inside a single writeText of a track that was
+     * just held whole in memory; if it turns out to happen, the fix is for this
+     * to validate rather than for the callers to go back to parsing.
+     */
+    fun has(entryId: String): Boolean = fileFor(entryId).isFile
+
     /** Null when there is nothing stored, or when what is stored cannot be read. */
     fun load(entryId: String): Stored? {
         val file = fileFor(entryId)

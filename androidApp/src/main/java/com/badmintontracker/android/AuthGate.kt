@@ -32,6 +32,9 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.badmintontracker.android.clipdetail.ClipDetailScreen
 import com.badmintontracker.android.clipdetail.ClipDetailViewModel
+import com.badmintontracker.android.analytics.AnalyticsDetailScreen
+import com.badmintontracker.android.analytics.AnalyticsScreen
+import com.badmintontracker.android.analytics.buildAnalyticsRows
 import com.badmintontracker.android.cliplist.ClipListViewModel
 import com.badmintontracker.android.cliplist.MatchSummaryViewModel
 import com.badmintontracker.android.home.HomeScreen
@@ -58,14 +61,15 @@ import com.badmintontracker.android.signin.SignInScreen
 import com.badmintontracker.android.signin.SignInViewModel
 import com.badmintontracker.shared.localvideo.AnalyzeCoordinator
 import com.badmintontracker.shared.localvideo.AnalyzeStage
+import com.badmintontracker.shared.localvideo.canResumeFailedAnalysis
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
-import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.RallyApp
 import com.badmintontracker.shared.scoring.ScoreLogStatus
 import io.github.jan.supabase.auth.status.SessionStatus
 import com.badmintontracker.android.localanalysis.LocalAnalysisState
-import com.badmintontracker.android.localanalysis.CourtHeatmapView
+import com.badmintontracker.android.localanalysis.isDeviceRunInFlight
+import com.badmintontracker.android.localanalysis.HeatmapPanel
 import com.badmintontracker.android.localanalysis.BackgroundWorkAction
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.Icons
@@ -212,7 +216,7 @@ fun AuthGate(
                         onScoreMatchClick = { nav.navigate(Route.Match(scoreLogId = it.scoreLogId)) },
                         onNewMatch = { nav.navigate(Route.NewMatch) },
                         onOpenHeatmap = { nav.navigate(Route.Heatmap(it.id)) },
-                        hasHeatmap = { localAnalysis.storedTrack(it.id) != null },
+                        hasHeatmap = { localAnalysis.hasStoredTrack(it.id) },
                         onOpenLocalClips = { nav.navigate(Route.LocalClips(it.id)) },
                         localClipCount = { localAnalysis.storedClips(it.id).size },
                         localRows = localRows,
@@ -220,7 +224,7 @@ fun AuthGate(
                         onIntakeErrorShown = { intakeError = null },
                         onLocalClick = { nav.navigate(Route.LocalPlayer(it.id)) },
                         onLocalAnalyze = { row ->
-                            if (row.entry.stage == AnalyzeStage.FAILED && row.entry.keypoints != null) {
+                            if (canResumeFailedAnalysis(row.entry)) {
                                 localVm.retry(row.entry.id)   // resume; court points already saved
                             } else {
                                 nav.navigate(Route.CourtMarking(row.entry.id))
@@ -234,6 +238,7 @@ fun AuthGate(
                         onRecord = { intake.record(null) },
                         onImport = { intake.import(null) },
                         onLabels = { nav.navigate(Route.Labels) },
+                        onOpenAnalytics = { nav.navigate(Route.Analytics) },
                         onAttachedMarkCourt = { scoreLogId ->
                             localVideos.entries.value
                                 .firstOrNull { it.scoreLogId == scoreLogId }
@@ -243,20 +248,13 @@ fun AuthGate(
                             localVideos.entries.value
                                 .firstOrNull { it.scoreLogId == scoreLogId }
                                 ?.let { entry ->
-                                    // Same guard as onLocalAnalyze: a FAILED entry with no
-                                    // saved court points has nothing to resume - retrying it
-                                    // directly just re-fails instantly with "No court points
-                                    // saved" (AnalyzeCoordinator.runPipeline). Send it back to
-                                    // court marking instead.
-                                    //
-                                    // The `else` below is defensive, not reachable today: keypoints
-                                    // are written by startAnalysis before the entry's first
-                                    // launchPipeline call, and fail() only ever runs from inside
-                                    // runPipeline after that, so a FAILED entry always already has
-                                    // keypoints. Do not simplify this guard away on that basis - it
-                                    // is what stops the ScoreMatchRow "Retry" button from lying if
-                                    // that invariant ever stops holding.
-                                    if (entry.stage == AnalyzeStage.FAILED && entry.keypoints != null) {
+                                    // A FAILED entry with no saved court points has nothing
+                                    // to resume: retrying it directly just re-fails instantly
+                                    // with "No court points saved"
+                                    // (AnalyzeCoordinator.runPipeline). See
+                                    // canResumeFailedAnalysis for why the `else` is defensive
+                                    // rather than dead.
+                                    if (canResumeFailedAnalysis(entry)) {
                                         localVm.retry(entry.id)
                                     } else {
                                         nav.navigate(Route.CourtMarking(entry.id))
@@ -266,6 +264,83 @@ fun AuthGate(
                         onOpenHeatmapFromBanner = { nav.navigate(Route.Heatmap(it)) },
                         openDrawerRequested = pendingDrawerOpen,
                         onDrawerOpenConsumed = { pendingDrawerOpen = false },
+                    )
+                }
+                composable<Route.Analytics> {
+                    // Built from the same view models Route.Home uses, not the
+                    // same instances - Navigation Compose scopes a viewModel() to
+                    // its own back stack entry, and every other route in this
+                    // graph that also wants ClipListViewModel's state (there are
+                    // none today, but the pattern is Route.Home's own) creates
+                    // its own instance from the same factory rather than reaching
+                    // across routes for one.
+                    val clipListVm: ClipListViewModel = viewModel(
+                        factory = viewModelFactory {
+                            initializer { ClipListViewModel(rally.clips, rally.auth, rally.shares, rally.videos, rally.scoreLogs, localVideos, coordinator, localAnnotations) }
+                        }
+                    )
+                    val localVm: LocalVideoListViewModel = viewModel(
+                        factory = viewModelFactory {
+                            initializer { LocalVideoListViewModel(localVideos, coordinator, localAnnotations) }
+                        }
+                    )
+                    val clipListState by clipListVm.state.collectAsStateWithLifecycle()
+                    val localRows by localVm.rows.collectAsStateWithLifecycle()
+                    val localEntries by localVideos.entries.collectAsStateWithLifecycle()
+                    val liveAnalysisStates by localAnalysis.state.collectAsStateWithLifecycle()
+
+                    val standaloneLocalRows = localRows.filter { it.entry.scoreLogId == null }
+                    // Which videos have a track, asked the cheap way: hasStoredTrack
+                    // stats one file per entry and never parses one, so opening
+                    // Analytics with fifteen analysed videos on the phone costs
+                    // fifteen stats rather than fifteen full track reads.
+                    //
+                    // Still keyed on which runs have *finished* rather than on the
+                    // live states themselves: a run in progress ticks
+                    // `liveAnalysisStates` several times a second (start reports
+                    // fractional progress), and only a run settling into Done can
+                    // change the answer.
+                    val doneEntryIds = liveAnalysisStates.filterValues { it is LocalAnalysisState.Done }.keys
+                    val storedTrackIds = remember(localEntries, doneEntryIds) {
+                        localEntries.mapNotNull { it.id.takeIf { id -> localAnalysis.hasStoredTrack(id) } }.toSet()
+                    }
+                    val rows = buildAnalyticsRows(
+                        standaloneLocalRows = standaloneLocalRows,
+                        ownedRows = clipListState.ownedRows,
+                        sharedMatches = clipListState.sharedMatches,
+                        localEntries = localEntries,
+                        liveAnalysisStates = liveAnalysisStates,
+                        storedTrackIds = storedTrackIds,
+                    )
+
+                    AnalyticsScreen(
+                        rows = rows,
+                        onOpenDetail = { row -> row.entryId?.let { nav.navigate(Route.AnalyticsDetail(it)) } },
+                        onAnalyse = { row ->
+                            row.entryId
+                                ?.let { id -> localEntries.firstOrNull { it.id == id } }
+                                ?.let { entry ->
+                                    // The same guard as onLocalAnalyze, onAttachedRetry and
+                                    // MatchScreen's onRetry: a cloud run that failed at
+                                    // TRIGGER already has this video's four court corners
+                                    // saved, and sending the coach back to mark them again
+                                    // both wastes the marking and means the coordinator's
+                                    // resume-from-the-failed-step is never reached.
+                                    //
+                                    // It reads correctly for a device failure too, and not by
+                                    // accident: a device run never moves entry.stage, so a row
+                                    // showing "Retry" because LocalAnalysisState is Failed falls
+                                    // through to court marking, which is where a device re-run
+                                    // has to start (LocalAnalysisRunner.start takes keypoints
+                                    // from the screen, not from the entry).
+                                    if (canResumeFailedAnalysis(entry)) {
+                                        localVm.retry(entry.id)
+                                    } else {
+                                        nav.navigate(Route.CourtMarking(entry.id))
+                                    }
+                                }
+                        },
+                        onBack = { nav.popBackStack() },
                     )
                 }
                 composable<Route.NewMatch> {
@@ -389,7 +464,7 @@ fun AuthGate(
                             localVideos.entries.value
                                 .firstOrNull { it.scoreLogId == args.scoreLogId }
                                 ?.let { entry ->
-                                    if (entry.stage == AnalyzeStage.FAILED && entry.keypoints != null) {
+                                    if (canResumeFailedAnalysis(entry)) {
                                         coordinator.retry(entry.id)
                                     } else {
                                         nav.navigate(Route.CourtMarking(entry.id))
@@ -427,12 +502,26 @@ fun AuthGate(
                                 initializer { LocalPlayerViewModel(args.entryId, localAnnotations, rally.labels) }
                             }
                         )
+                        // The stage rules out a cloud run in flight, but a device run
+                        // never moves the stage, so it has to be asked separately or
+                        // this button sits there live over the run it already started.
+                        val deviceState by localAnalysis.state.collectAsStateWithLifecycle()
                         LocalPlayerScreen(
                             vm = playerVm,
                             entry = e,
-                            canAnalyze = e.stage == AnalyzeStage.LOCAL || e.stage == AnalyzeStage.FAILED,
+                            canAnalyze = (e.stage == AnalyzeStage.LOCAL || e.stage == AnalyzeStage.FAILED) &&
+                                !isDeviceRunInFlight(deviceState[e.id] ?: LocalAnalysisState.Idle),
                             playbackPrefs = rally.playbackPrefs,
-                            onAnalyze = { nav.navigate(Route.CourtMarking(e.id)) },
+                            // The same rule as every other Analyze affordance. Without it
+                            // the "Re-analyze" label here lies: it promises the resume that
+                            // analyzeButtonLabel documents, and delivers court marking.
+                            onAnalyze = {
+                                if (canResumeFailedAnalysis(e)) {
+                                    coordinator.retry(e.id)
+                                } else {
+                                    nav.navigate(Route.CourtMarking(e.id))
+                                }
+                            },
                             onBack = { nav.popBackStack() },
                         )
                     }
@@ -485,18 +574,16 @@ fun AuthGate(
                     }
                 }
 
+                // The heatmap on its own, which is what the analysis banner and
+                // the drawer's own heatmap affordance open. Kept alongside
+                // Route.AnalyticsDetail rather than folded into it: this is the
+                // destination a coach reaches straight from a finished run, and
+                // it is the only way back to a result that cost half an hour.
+                // Both render HeatmapPanel, so there is one resolution to keep
+                // right rather than two.
                 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
                 composable<Route.Heatmap> { entry ->
                     val args = entry.toRoute<Route.Heatmap>()
-                    // In memory if the run is still loaded, from disk otherwise.
-                    // A pose run costs half an hour, so losing its result to a
-                    // process death and asking for another one is not an option.
-                    val done = localAnalysis.stateFor(args.entryId) as? LocalAnalysisState.Done
-                    val stored = remember(args.entryId) {
-                        if (done != null) null else localAnalysis.storedTrack(args.entryId)
-                    }
-                    val track = done?.playerTrack ?: stored?.track
-                    val trackFps = done?.fps ?: stored?.fps ?: 0.0
                     Scaffold(
                         topBar = {
                             TopAppBar(
@@ -510,21 +597,21 @@ fun AuthGate(
                             )
                         },
                     ) { padding ->
-                        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-                            if (track == null) {
-                                // A run's state lives in memory, so it is gone
-                                // after a process death. Said plainly rather
-                                // than drawing an empty court, which would read
-                                // as a player who never moved.
-                                Text(
-                                    "This analysis is no longer loaded. Run it again to see the heatmap.",
-                                    modifier = Modifier.padding(16.dp),
-                                )
-                            } else {
-                                CourtHeatmapView(track = track, fps = trackFps)
-                            }
-                        }
+                        HeatmapPanel(
+                            entryId = args.entryId,
+                            runner = localAnalysis,
+                            modifier = Modifier.padding(padding),
+                        )
                     }
+                }
+
+                composable<Route.AnalyticsDetail> { entry ->
+                    val args = entry.toRoute<Route.AnalyticsDetail>()
+                    AnalyticsDetailScreen(
+                        entryId = args.entryId,
+                        localAnalysis = localAnalysis,
+                        onBack = { nav.popBackStack() },
+                    )
                 }
 
                 composable<Route.CourtMarking> { entry ->
@@ -558,19 +645,25 @@ fun AuthGate(
                                     }
                                 }
                             }
-                            if (localVideos.get(args.entryId)?.scoreLogId != null) {
-                                // A single pop, not popBackStack(Route.Match(...)):
-                                // typed-route popping matches on the serialized
-                                // route, and the instance on the stack carries the
-                                // `attach` argument this one would not. The match
-                                // page is directly below court marking anyway.
-                                nav.popBackStack()
-                            } else {
-                                // Video-first can arrive here from LocalPlayer as
-                                // well as from the list, so this one still names its
-                                // destination.
-                                nav.popBackStack(Route.Home, inclusive = false)
-                            }
+                            // A single pop, not popBackStack(Route.X, ...): typed-route
+                            // popping matches on the serialized route, and the Match
+                            // instance on the stack carries an `attach` argument this
+                            // one would not. Naming a destination is also wrong for a
+                            // video-first run now that there are three ways in - the
+                            // drawer, LocalPlayer and the Analytics list - and popping
+                            // to Home threw away whichever list the coach was working
+                            // through. Returning to the caller is the same answer for
+                            // both kinds of entry, so there is one branch fewer.
+                            //
+                            // Safe against a second run being started from the screen
+                            // the coach lands back on. Both pipelines refuse re-entry at
+                            // their own door: LocalAnalysisRunner.start returns for an
+                            // entry already in `running`, and AnalyzeCoordinator's
+                            // launchPipeline returns unless `active.add(entryId)` is the
+                            // first. The UPLOADING stage also hides the button, but it is
+                            // written inside the coroutine, so the set is the guard that
+                            // actually holds in the window right after the pop.
+                            nav.popBackStack()
                         },
                         onBack = { nav.popBackStack() },
                     )

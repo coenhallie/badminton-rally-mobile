@@ -35,6 +35,28 @@ fun canRemoveLocalVideo(stage: AnalyzeStage): Boolean = !isAnalysisRunning(stage
  */
 fun canEditLocalVideoDetails(stage: AnalyzeStage): Boolean = stage == AnalyzeStage.LOCAL
 
+/**
+ * Whether a failed run can be resumed from the step that failed instead of being
+ * restarted from court marking. AnalyzeCoordinator.retry picks up at [LocalVideoEntry.failedStep],
+ * and the keypoints are saved before the upload and survive a retry, so there is
+ * nothing left to ask the user for.
+ *
+ * The keypoints check is not redundant with the stage, and must not be simplified
+ * away on the argument that it is. Keypoints are written by startAnalysis before
+ * the entry's first launchPipeline call, and fail() only ever runs from inside
+ * runPipeline after that, so today a FAILED entry always already has them. This
+ * guard is what stops a "Retry" button from lying if that ordering ever changes:
+ * without it, retry would resume a run whose court is unknown.
+ *
+ * Note what this does NOT cover. A device run never moves the stage, so a row
+ * showing "Retry" because its on-device analysis failed returns false here and
+ * falls through to court marking, which is where a device re-run has to start -
+ * LocalAnalysisRunner.start takes keypoints from the screen, not from the entry.
+ * Both platforms must use this same rule.
+ */
+fun canResumeFailedAnalysis(entry: LocalVideoEntry): Boolean =
+    entry.stage == AnalyzeStage.FAILED && entry.keypoints != null
+
 @Serializable
 data class LocalVideoEntry(
     val id: String,              // client UUID; becomes videos.id on Analyze

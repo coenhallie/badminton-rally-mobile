@@ -21,11 +21,7 @@ struct LocalVideoRowView: View {
     let onRemove: () -> Void
     let onEditDetails: () -> Void
 
-    private var subtitle: String {
-        let duration = LocalVideoLogic.formatDuration(ms: entry.durationMs)
-        let date = formatMatchDate(millis: entry.addedAtEpochMs)
-        return "\(duration) · \(date)".uppercased()
-    }
+    private var subtitle: String { localVideoSubtitle(entry) }
 
     var body: some View {
         Button(action: onTap) {

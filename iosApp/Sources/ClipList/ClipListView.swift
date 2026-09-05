@@ -15,11 +15,18 @@ struct MatchesList: View {
     /// consumed on Home's screen, not behind a closed drawer. This list only
     /// ever calls `remove(entry:)`, which is stateless from its point of view.
     let intake: LocalVideoIntake
+    /// Owned by Home, like every destination this list used to register. It has
+    /// to be one instance for the whole app rather than one per screen: its own
+    /// `localEntries` is documented as "the single source of truth for every
+    /// video on this phone", and a second instance would make that false while
+    /// doubling four flow subscriptions and four network calls per refresh.
+    /// Analytics reads the same one. This view no longer builds it, so the splash
+    /// it used to show for the one frame before `.task` ran is gone with it.
+    let model: ClipListModel
     let onMatchTap: (MatchRoute) -> Void
     let onCourtMarking: (CourtMarkingRoute) -> Void
     let onLocalPlayer: (LocalPlayerRoute) -> Void
 
-    @State private var model: ClipListModel?
     @State private var shareTarget: MatchSummary? = nil
     @State private var confirmTarget: PendingMatchAction? = nil
     @State private var thumbnails = LocalThumbnails()
@@ -29,17 +36,8 @@ struct MatchesList: View {
     @State private var deleteScoreTarget: ScoreMatchCard? = nil
 
     var body: some View {
-        Group {
-            if let model {
-                content(model)
-            } else {
-                SplashView()
-            }
-        }
-        .task {
-            if model == nil { model = ClipListModel(rally: rally, analyze: analyze) }
-            await model?.start()
-        }
+        content(model)
+        .task { await model.start() }
         .task {
             // Drives only the auto-alert side effect. `model.localEntries` (fed by
             // its own subscription to this same flow) is the list's source of
@@ -56,7 +54,7 @@ struct MatchesList: View {
         }
         .task {
             for await map in analyze.progress {
-                progressById = (map as? [String: AnalyzeProgress]) ?? [:]
+                progressById = map
             }
         }
         .sheet(item: $shareTarget) { match in
@@ -99,10 +97,15 @@ struct MatchesList: View {
     }
 
     private func analyzeAction(_ entry: LocalVideoEntry) {
-        if entry.stage == .failed && entry.keypoints != nil {
-            analyze.retry(entryId: entry.id)
-        } else {
-            onCourtMarking(CourtMarkingRoute(entryId: entry.id))
+        // The shared rule, not a sixth hand-written copy. Android had four and
+        // the drift had already happened: its Analytics list shipped without the
+        // keypoints half and sent coaches back to re-mark a court that was
+        // already saved.
+        switch analyseAction(for: entry) {
+        case .resume(let entryId):
+            analyze.retry(entryId: entryId)
+        case .markCourt(let entryId):
+            onCourtMarking(CourtMarkingRoute(entryId: entryId))
         }
     }
 
@@ -161,6 +164,11 @@ struct MatchesList: View {
                                     } label: {
                                         Label("Delete", systemImage: "trash")
                                     }
+                                    // Swipe labels render white on the tint, and white on
+                                    // Shuttl.error is 3.76:1. onError is the pairing that
+                                    // exists for exactly this and gives 5.08:1, so it is
+                                    // stated rather than left to the system default.
+                                    .foregroundStyle(Shuttl.onError)
                                     .tint(Shuttl.error)
                                 }
                         case .score(let content):
@@ -181,6 +189,7 @@ struct MatchesList: View {
                                     } label: {
                                         Label("Delete", systemImage: "trash")
                                     }
+                                    .foregroundStyle(Shuttl.onError)
                                     .tint(Shuttl.error)
                                 }
                         }
@@ -197,6 +206,7 @@ struct MatchesList: View {
                                 } label: {
                                     Label("Remove", systemImage: "trash")
                                 }
+                                .foregroundStyle(Shuttl.onError)
                                 .tint(Shuttl.error)
                             }
                     }

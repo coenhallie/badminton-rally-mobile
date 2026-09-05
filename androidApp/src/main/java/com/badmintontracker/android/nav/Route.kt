@@ -7,6 +7,23 @@ sealed interface Route {
     @Serializable data object Home   : Route
     @Serializable data object Labels : Route
 
+    /** The coach's Analytics list: one row per match, grouped like the drawer. */
+    @Serializable data object Analytics : Route
+
+    /**
+     * What one analysed match has to show, reached from a READY row on the
+     * Analytics list. Keyed by entry for the same reason [Heatmap] is.
+     *
+     * Separate from [Heatmap] rather than replacing it. The two are near
+     * identical today - same content, different title - and the reason to keep
+     * both is not what they show but who reaches them: [Heatmap] is how the
+     * analysis banner and the drawer's menu item get to a finished run, and a
+     * pose run costs half an hour. Folding one into the other to tidy up is
+     * exactly how that path breaks unnoticed. Both draw with the same
+     * HeatmapPanel, so there is nothing to drift.
+     */
+    @Serializable data class AnalyticsDetail(val entryId: String) : Route
+
     /**
      * One match, however it was made. At least one of the two ids is non-null: a
      * video-first or shared match has only a video, a scored match has a score log

@@ -292,7 +292,9 @@ Both suites unchanged. On device, open a `READY` row and confirm the heatmap ren
 
 Same three states, same grouping, same legend as Android. On iOS `hasStoredTrack` is **always false** - there is no on-device analysis until Stage 2 of `docs/plans/2026-08-31-on-device-analysis-pipeline-design.md`. Do NOT special-case iOS in the view: pass `false` and let the shared classifier produce `NOT_ON_DEVICE`, so the day tracks exist the screen starts working with no UI change.
 
-Because every row will be `NOT_ON_DEVICE` today, the all-inert explanatory line from Task 2 is what a coach actually sees. Write it so it reads as "not yet on iPhone" rather than as a broken screen, and say in the report exactly what wording you used.
+CORRECTED 2026-09-05, before dispatch. This step used to assert that every row would be `NOT_ON_DEVICE` today. That is wrong: iOS has a full local video library and a working cloud analyse path (`AnalyzeCoordinator` via `createIosAnalyzeCoordinator`, `CourtMarkingView`), so a video imported on the iPhone is `hasLocalEntry = true` and the classifier returns `ANALYSABLE`, with a live Analyse button. Only READY is unreachable, because there is no track store on iOS - `grep -rl "PlayerTrack|heatmap" iosApp/Sources/` is empty.
+
+So the all-inert line applies only when there are no local videos. Write a legend that is true for what is on screen, and say in the report exactly what wording you used and which case you saw.
 
 - [ ] **Step 3: Verify, exercise, commit**
 
@@ -300,7 +302,13 @@ iOS suite 139 unchanged. Run `xcodegen generate` and confirm the new file's `.o`
 
 ---
 
-## Task 5: iOS Analytics detail
+## Task 5: iOS Analytics detail - CANCELLED 2026-09-05
+
+Not built, and the reason belongs with the plan rather than only in the ledger. Only READY rows are tappable, and iOS cannot produce READY until pipeline Stage 2 ships a track store, so this screen would have no entry point: unreachable by any user, covered by no test, and a puzzle for the next reader to work out. The justification below - that having the structure makes Stage 2 a data change rather than a screen build - fails in both directions, because Stage 2 has to bring a real heatmap renderer with it, and that IS a screen build.
+
+Revisit when Stage 2 lands. The original text follows, unchanged, so the reasoning can be picked up as written.
+
+## Task 5 (original text): iOS Analytics detail
 
 **Files:**
 - Create: `iosApp/Sources/Analytics/AnalyticsDetailView.swift`
@@ -323,7 +331,9 @@ Suite unchanged. Screenshot both themes. Say in the report whether the screen re
 
 - [ ] **Step 1: Capture the new screens**
 
-`<platform>-analytics-<theme>.png` and `<platform>-analyticsdetail-<theme>.png`, eight files, into `docs/screenshots/2026-09-03-design-system/after/`. These are additions with no baseline; note that they fall outside the 36-name parity check.
+`<platform>-analytics-<theme>.png` and `<platform>-analyticsdetail-<theme>.png` into `docs/screenshots/2026-09-03-design-system/after/`. These are additions with no baseline; note that they fall outside the 36-name parity check.
+
+SIX files, not eight: Task 5 was cancelled, so there is no `ios-analyticsdetail-*`.
 
 - [ ] **Step 2: Re-capture Home on both platforms**
 
@@ -337,11 +347,15 @@ Both platforms' Analytics screens should read as the same design. Check the thre
 
 ```bash
 grep -rn "borderedProminent\|\.tint(\|ButtonDefaults\|\.accentColor" iosApp/Sources androidApp/src/main
-grep -rn "ModalBottomSheet\|ModalNavigationDrawer" androidApp/src/main | grep -v "containerColor\|drawerContainerColor"
+tools/check-container-colors.sh
 grep -rn "0x22C55E\|0x16A34A\|0x3EE27C" iosApp/Sources androidApp/src/main | grep -v ShuttlPalette
 ```
 
-Each must return nothing, or a line you can justify. The second grep is new this phase: it catches a Material container whose colour was never set, which is how phase 2 shipped a purple-tinted sheet.
+Each must return nothing, or a line you can justify.
+
+The second grep is new this phase: it catches a Material container whose colour was never set, which is how phase 2 shipped a purple-tinted sheet. Its first form was a line-based grep, and it reported all seven sheets as violations even after they were fixed, because `containerColor` sits an unpredictable distance below the constructor behind the comment explaining it. A check that cries wolf on correct code gets ignored, so it is now a script that matches parentheses and reads the real argument list.
+
+Grep 1 returns known false positives: `SegmentedButtonDefaults.itemShape` matches the `ButtonDefaults` substring while setting a shape rather than a colour, and `.tint(Shuttl.error)` is a design token rather than a platform accent. Both are justified, not violations.
 
 - [ ] **Step 5: Fix in place, then commit**
 
@@ -349,12 +363,12 @@ A padding, a line limit, a frame height. **Do not redesign.** Anything larger go
 
 ## Definition of Done
 
-- [ ] `:shared:jvmTest` passes; count reconciled from 436.
-- [ ] Android `testDebugUnitTest` passes at 183; `assembleDebug` passes.
-- [ ] iOS suite passes at 136 + 3 = 139.
+- [ ] `:shared:jvmTest`, Android `testDebugUnitTest` and the iOS suite all pass, each reconciled against the CURRENT baseline recorded in the SDD ledger rather than against a number written here. Every task in this phase has added tests, so the figures this plan was drafted with (436 / 183 / 139) are historical, and treating them as targets would report a false failure.
+- [ ] `assembleDebug` passes.
 - [ ] `:shared:linkDebugFrameworkIosSimulatorArm64` succeeds.
+- [ ] `tools/adb-tap-test.sh` passes. Added this phase, after the tap tool shipped two safety holes.
 - [ ] The Analytics pill is enabled on both platforms and its "Coming soon" hint is gone.
-- [ ] `Route.Heatmap` still works from the analysis banner.
+- [ ] `Route.Heatmap` still works from the analysis banner AND from the drawer's "Player heatmap" menu item, both now sharing one body with the Analytics detail.
 - [ ] All three DoD greps return nothing unjustified.
 - [ ] Analytics and its detail are captured on both platforms in both themes.
 - [ ] No em dashes on added lines; no attribution trailers.

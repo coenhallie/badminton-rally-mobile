@@ -40,11 +40,21 @@ struct HomeView: View {
     @State private var drawerOpen = false
     @State private var showAddSheet = false
     @State private var showLabels = false
+    @State private var showAnalytics = false
     @State private var showNewMatch = false
     @State private var showRecorder = false
     @State private var showImporter = false
     @State private var themeMode: ThemeMode = .light
     @State private var intake: LocalVideoIntake
+    /// One model for the whole app, made here rather than inside the screens that
+    /// read it. Its `localEntries` is documented as the single source of truth
+    /// for every video on this phone, which a second instance would quietly make
+    /// false; and `start()` spawns `for await` loops that never return and hold
+    /// the model alive, so a model created inside a pushed view would leak one
+    /// full set of them on every push - and Analytics is a pushed view. Both the
+    /// drawer's list and Analytics call `start()`, which is idempotent, so the
+    /// loops are still started exactly once.
+    @State private var listModel: ClipListModel
     /// The auto-open case only: straight after a record/import that isn't for
     /// an existing match, so the coach can name it. The row menu's own "Edit
     /// details" keeps a separate, `MatchesList`-owned target for the same
@@ -73,6 +83,7 @@ struct HomeView: View {
         self.rally = rally
         self.analyze = analyze
         _intake = State(initialValue: LocalVideoIntake(rally: rally))
+        _listModel = State(initialValue: ClipListModel(rally: rally, analyze: analyze))
     }
 
     var body: some View {
@@ -84,6 +95,7 @@ struct HomeView: View {
                         rally: rally,
                         analyze: analyze,
                         intake: intake,
+                        model: listModel,
                         onMatchTap: { matchRoute = $0 },
                         onCourtMarking: { courtMarkingRoute = $0 },
                         onLocalPlayer: { localPlayerRoute = $0 }
@@ -96,6 +108,16 @@ struct HomeView: View {
             }
             .navigationDestination(isPresented: $showLabels) {
                 LabelsView(rally: rally)
+            }
+            .navigationDestination(isPresented: $showAnalytics) {
+                // Court marking is NOT registered alongside this one. Two
+                // destinations PRESENTING at one depth replace each other -
+                // declaring them side by side is fine, as the six neighbours
+                // here show - so the Analyze button's push lives inside
+                // AnalyticsListView, where it presents one level deeper. From
+                // here it would swap this screen out and then return the coach
+                // to Home instead of to his list.
+                AnalyticsListView(rally: rally, analyze: analyze, model: listModel)
             }
             .navigationDestination(item: $matchRoute) { route in
                 MatchView(rally: rally, analyze: analyze, route: route)
@@ -305,22 +327,11 @@ struct HomeView: View {
             .accessibilityLabel("Add new match")
 
             Button {
-                // Unreachable: `.disabled(true)` below stops the tap before it
-                // gets here.
+                showAnalytics = true
             } label: {
                 Text("Analytics")
             }
             .buttonStyle(HomePillButtonStyle(background: Shuttl.bgTertiary, foreground: Shuttl.text))
-            // Analytics ships in Phase 3 (docs/plans/2026-09-03-home-and-
-            // analytics-redesign-design.md). The pill is drawn per the mock now
-            // so the layout is settled ahead of time, but there is no
-            // destination to send it to yet. `.disabled(true)` alone would still
-            // LOOK enabled - `HomePillButtonStyle` only dimmed on `isPressed`, so
-            // the pill would visibly react to the tap and then do nothing, which
-            // reads as a hang rather than an unbuilt feature - so the style
-            // itself renders the disabled state (see its own `isEnabled` read).
-            .disabled(true)
-            .accessibilityHint("Coming soon")
 
             Button {
                 withAnimation(.snappy(duration: 0.24)) { drawerOpen = true }

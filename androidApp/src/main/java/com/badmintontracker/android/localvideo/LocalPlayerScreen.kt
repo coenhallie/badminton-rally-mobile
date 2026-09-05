@@ -32,6 +32,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import com.badmintontracker.android.localanalysis.BackgroundWorkAction
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -222,6 +223,10 @@ fun LocalPlayerScreen(
                                 modifier = Modifier.padding(end = 8.dp),
                             )
                         }
+                        // Starting a run from here returns to this screen, so this
+                        // is where the run has to be visible. Every other screen
+                        // that can start one already carries this.
+                        BackgroundWorkAction()
                     },
                 )
             }
