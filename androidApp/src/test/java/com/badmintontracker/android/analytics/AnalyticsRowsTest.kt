@@ -260,6 +260,31 @@ class AnalyticsRowsTest {
     }
 
     @Test
+    fun one_video_produces_one_row_even_once_the_cloud_has_clipped_it() {
+        // A video-first import that finished uploading is both a local video and
+        // an owned match, and its two rows carry the same entry id, the same
+        // state and the same "Analyse" button. Two identical buttons on one
+        // video is a list bug, not a second thing the coach can do.
+        val e = entry(id = "v1")
+        val out = rows(
+            standalone = listOf(localRow(e)),
+            owned = listOf(MatchRow.Video(videoMatch("v1"))),
+            entries = listOf(e),
+        )
+        out.map { it.key } shouldBe listOf("local-v1")
+        out.single().group shouldBe AnalyticsGroup.LOCAL_VIDEOS
+    }
+
+    @Test
+    fun two_matches_that_are_both_off_this_phone_keep_their_own_rows() {
+        // The dedupe collapses on entry id, and every NOT_ON_DEVICE row has a
+        // null one. Collapsing those together would hide every cloud match but
+        // the first.
+        val out = rows(shared = listOf(videoMatch("v1"), videoMatch("v2")))
+        out.map { it.key } shouldBe listOf("shared-v1", "shared-v2")
+    }
+
+    @Test
     fun a_ready_row_keeps_its_dot_while_a_second_run_is_in_flight() {
         // Deliberate: a READY row's first track still opens, so the row keeps
         // the affordance that works rather than swapping it for a spinner.
