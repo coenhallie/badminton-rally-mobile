@@ -43,7 +43,12 @@ fun ShareSheet(
     )
     val state by vm.state.collectAsStateWithLifecycle()
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        // Unset, this resolves M3's surfaceContainerLow, which ShuttlColors.kt
+        // never sets. See AddMatchSheet for the full reasoning.
+        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+    ) {
         Column(Modifier.padding(16.dp)) {
             Text("Share match", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(12.dp))

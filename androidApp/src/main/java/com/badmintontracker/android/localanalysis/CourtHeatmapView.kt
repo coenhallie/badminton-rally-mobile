@@ -201,5 +201,26 @@ private fun whyEmpty(track: PlayerTrack): String = when {
 }
 
 private const val MARGIN_M = 2.0
+
+/**
+ * DELIBERATELY raw hex, outside ShuttlPalette, and not a defect to "fix".
+ *
+ * These two are data, not chrome. They are the endpoints of a scale that
+ * encodes occupancy, so what has to stay readable is the GRADIENT BETWEEN
+ * them - a viewer reads "here more than there" - not either endpoint's
+ * contrast against the surface behind it. A theme-swapped ramp would change
+ * what a colour MEANS between light and dark, which is the one thing a scale
+ * may not do; the court lines under it are themed precisely because they are
+ * chrome and carry no value.
+ *
+ * The usual objection - that [COOL] is weak on a dark background - cannot
+ * arise: [heatImage] sets alpha to the same `t` that drives the lerp, so the
+ * cool end is drawn fully transparent and the colour is never shown at the
+ * strength where the contrast question would apply.
+ *
+ * Blue-to-orange rather than the more common green-to-red: it survives the
+ * two most common colour-vision deficiencies, and green is already the
+ * accent, which would read as an interface colour on top of a court.
+ */
 private val COOL = Color(0xFF2962FF)
 private val HOT = Color(0xFFFF6D00)

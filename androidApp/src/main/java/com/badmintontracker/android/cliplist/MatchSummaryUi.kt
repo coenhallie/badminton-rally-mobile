@@ -112,7 +112,12 @@ fun MatchSummarySheet(
     onTopRallyClick: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        // Unset, this resolves M3's surfaceContainerLow, which ShuttlColors.kt
+        // never sets. See AddMatchSheet for the full reasoning.
+        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+    ) {
         Column(
             Modifier
                 .verticalScroll(rememberScrollState())

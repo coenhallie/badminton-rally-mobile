@@ -54,7 +54,7 @@ struct MatchesList: View {
         }
         .task {
             for await map in analyze.progress {
-                progressById = (map as? [String: AnalyzeProgress]) ?? [:]
+                progressById = map
             }
         }
         .sheet(item: $shareTarget) { match in

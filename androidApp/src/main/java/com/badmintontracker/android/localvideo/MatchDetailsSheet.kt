@@ -33,7 +33,7 @@ import kotlinx.coroutines.launch
  *
  * Both values ride along on the videos INSERT and the database grants no UPDATE
  * on either column, so this sheet is only reachable while the entry is still
- * LOCAL — see canEditLocalVideoDetails.
+ * LOCAL - see canEditLocalVideoDetails.
  *
  * [autoOpened] only changes the dismiss label: straight after an import or a
  * recording the sheet is something to get past ("Skip"), while from the row menu
@@ -60,7 +60,13 @@ fun MatchDetailsSheet(
         }
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        // Unset, this resolves M3's surfaceContainerLow, which ShuttlColors.kt
+        // never sets. See AddMatchSheet for the full reasoning.
+        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
