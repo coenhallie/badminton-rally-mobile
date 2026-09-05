@@ -634,19 +634,21 @@ fun AuthGate(
                                     }
                                 }
                             }
-                            if (localVideos.get(args.entryId)?.scoreLogId != null) {
-                                // A single pop, not popBackStack(Route.Match(...)):
-                                // typed-route popping matches on the serialized
-                                // route, and the instance on the stack carries the
-                                // `attach` argument this one would not. The match
-                                // page is directly below court marking anyway.
-                                nav.popBackStack()
-                            } else {
-                                // Video-first can arrive here from LocalPlayer as
-                                // well as from the list, so this one still names its
-                                // destination.
-                                nav.popBackStack(Route.Home, inclusive = false)
-                            }
+                            // A single pop, not popBackStack(Route.X, ...): typed-route
+                            // popping matches on the serialized route, and the Match
+                            // instance on the stack carries an `attach` argument this
+                            // one would not. Naming a destination is also wrong for a
+                            // video-first run now that there are three ways in - the
+                            // drawer, LocalPlayer and the Analytics list - and popping
+                            // to Home threw away whichever list the coach was working
+                            // through. Returning to the caller is the same answer for
+                            // both kinds of entry, so there is one branch fewer.
+                            //
+                            // Safe against a second run being started from the screen
+                            // the coach lands back on: LocalAnalysisRunner.start returns
+                            // immediately for an entry already running, and the cloud
+                            // path moves the entry to UPLOADING, which hides the button.
+                            nav.popBackStack()
                         },
                         onBack = { nav.popBackStack() },
                     )
