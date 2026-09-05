@@ -113,7 +113,14 @@ internal fun buildAnalyticsRows(
             )
             is MatchRow.Score -> rowFor(
                 key = row.key,
-                entryId = row.card.videoId,
+                // The entry that claims this log, which is how the rest of the
+                // app pairs a scored match to its video (scoreLogAttachStatus
+                // in AttachStatus.kt, and both of AuthGate's attached-video
+                // lookups). Not `card.videoId`: that is written only by the
+                // CLOUD pipeline's CREATE_ROW hook, so a match scored courtside
+                // and filmed on this phone has none, and reading it would call
+                // a video sitting on the phone "Not on this phone" forever.
+                entryId = localEntries.firstOrNull { it.scoreLogId == row.card.scoreLogId }?.id,
                 group = AnalyticsGroup.OWNED_MATCHES,
                 title = row.card.title,
                 subtitle = row.card.playersLine,

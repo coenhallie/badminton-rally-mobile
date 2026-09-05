@@ -192,6 +192,32 @@ class AnalyticsRowsTest {
     // --- buildAnalyticsRows ---
 
     @Test
+    fun a_scored_match_finds_its_video_through_the_entry_that_claims_the_log() {
+        // The defect this guards: `card.videoId` is written only when the CLOUD
+        // pipeline creates the videos row, so a match scored courtside and
+        // filmed on this phone has none. Reading it would call a video sitting
+        // on the phone "Not on this phone", forever, unless the coach uploads.
+        val e = entry(id = "e1", scoreLogId = "log1")
+        val row = rows(
+            owned = listOf(MatchRow.Score(card = scoreCard(scoreLogId = "log1", videoId = null))),
+            entries = listOf(e),
+        ).single()
+        row.state shouldBe AnalyticsRowState.ANALYSABLE
+        row.entryId shouldBe "e1"
+    }
+
+    @Test
+    fun a_scored_match_with_a_stored_track_is_ready() {
+        val e = entry(id = "e1", scoreLogId = "log1")
+        val row = rows(
+            owned = listOf(MatchRow.Score(card = scoreCard(scoreLogId = "log1"))),
+            entries = listOf(e),
+            tracks = setOf("e1"),
+        ).single()
+        row.state shouldBe AnalyticsRowState.READY
+    }
+
+    @Test
     fun a_scored_match_whose_video_never_touched_this_phone_stays_inert() {
         val row = rows(
             owned = listOf(MatchRow.Score(card = scoreCard(scoreLogId = "log1"))),
@@ -199,6 +225,17 @@ class AnalyticsRowsTest {
         ).single()
         row.state shouldBe AnalyticsRowState.NOT_ON_DEVICE
         row.entryId shouldBe null
+    }
+
+    @Test
+    fun a_scored_match_row_reports_its_own_entrys_liveness() {
+        val e = entry(id = "e1", scoreLogId = "log1")
+        val row = rows(
+            owned = listOf(MatchRow.Score(card = scoreCard(scoreLogId = "log1"))),
+            entries = listOf(e),
+            live = mapOf("e1" to LocalAnalysisState.Analysing(0.2f)),
+        ).single()
+        row.affordance shouldBe AnalyseAffordance.InProgress("Analysing on device")
     }
 
     @Test
