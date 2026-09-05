@@ -70,6 +70,14 @@ internal fun buildAnalyticsRows(
         val entry = entryId?.let { id -> localEntries.firstOrNull { it.id == id } }
         val hasStoredTrack = entryId != null && entryId in storedTrackIds
         val state = analyticsRowState(hasLocalEntry = entry != null, hasStoredTrack = hasStoredTrack)
+        // Only an ANALYSABLE row reads liveness, and that is a decision rather
+        // than an oversight. A READY row whose second run is in flight keeps its
+        // dot and stays tappable, because the track the first run produced still
+        // opens - swapping the dot for a spinner would take away a working
+        // affordance to report a run whose result the row does not need yet.
+        // LocalVideoRowItem spins whenever isAnalysisRunning; it has no stored
+        // result to offer instead, so it has nothing to lose by doing that.
+        //
         // entry is never null here: ANALYSABLE requires hasLocalEntry, which is
         // exactly `entry != null` above. The null check stays as a guard, not a
         // second source of truth, so this cannot throw if that ever changes.

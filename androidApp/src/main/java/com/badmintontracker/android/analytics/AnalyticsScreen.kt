@@ -16,7 +16,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -259,12 +258,24 @@ private fun AnalyticsRowItem(
             Spacer(Modifier.width(8.dp))
             when (row.affordance) {
                 is AnalyseAffordance.InProgress ->
-                    // Same 48dp box and 16dp/2dp ring as ClipListScreen's own
-                    // in-flight rows (ScoreMatchRow, LocalVideoRowItem): one
-                    // visual language for "something is running" everywhere.
-                    Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                    }
+                    // The spinner goes inside the pill, using ShuttlButton's own
+                    // `loading`, rather than beside it. ScoreMatchRow boxes its
+                    // indicator to 48dp for a reason this row does not have
+                    // (ClipListScreen.kt:556-557: to match the IconButton it
+                    // swaps places with), and a bare indicator like
+                    // LocalVideoSection.kt:164 would collapse the slot to 16dp.
+                    // Either would swap a pill for something much narrower every
+                    // time a run starts. One control in all three states leaves
+                    // only the label's own width varying, which is what the
+                    // "Mark court" / "Retry" pair on a ScoreMatchRow already does.
+                    ShuttlButton(
+                        text = "Analyse",
+                        onClick = onAnalyse,
+                        variant = ShuttlButtonVariant.Primary,
+                        enabled = false,
+                        loading = true,
+                        compact = true,
+                    )
                 is AnalyseAffordance.Failed -> ShuttlButton(
                     text = "Retry",
                     onClick = onAnalyse,
