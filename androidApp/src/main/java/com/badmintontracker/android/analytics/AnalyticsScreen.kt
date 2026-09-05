@@ -57,10 +57,16 @@ sealed interface AnalyseAffordance {
     /** Nothing is running yet (or the last run finished with no track saved). */
     data object Ready : AnalyseAffordance
 
-    /** Preparing, Analysing or Cutting - the run that would fill this row's track. */
+    /**
+     * A run is under way. [phase] names it: Preparing, Analysing or Cutting for
+     * the device run, Uploading or Processing for the cloud one.
+     */
     data class InProgress(val phase: String) : AnalyseAffordance
 
-    /** The last on-device attempt for this row ended in a failure. */
+    /**
+     * The last attempt for this row ended in a failure, from either pipeline.
+     * [reason] is that pipeline's own message.
+     */
     data class Failed(val reason: String) : AnalyseAffordance
 }
 
@@ -266,8 +272,12 @@ private fun AnalyticsRowItem(
                     // LocalVideoSection.kt:164 would collapse the slot to 16dp.
                     // Either would swap a pill for something much narrower every
                     // time a run starts. One control in all three states leaves
-                    // only the label's own width varying, which is what the
-                    // "Mark court" / "Retry" pair on a ScoreMatchRow already does.
+                    // the slot a pill throughout; what still varies is the label
+                    // (as "Mark court" and "Retry" already do on a ScoreMatchRow)
+                    // plus the 14dp ring and its 8dp spacer while a run is in
+                    // flight. Exact parity would need a reserved width, and a
+                    // hardcoded one cannot be checked without a device and would
+                    // clip a one-line, no-wrap label at large font scales.
                     ShuttlButton(
                         text = "Analyse",
                         onClick = onAnalyse,
