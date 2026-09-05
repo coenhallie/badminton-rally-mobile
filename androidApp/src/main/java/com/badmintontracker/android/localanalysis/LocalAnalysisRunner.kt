@@ -66,6 +66,12 @@ class LocalAnalysisRunner(
     /** The track from an earlier run, for a screen opened after this one died. */
     fun storedTrack(entryId: String): PlayerTrackStore.Stored? = tracks.load(entryId)
 
+    /**
+     * Whether [storedTrack] has anything to return, without loading it. For a
+     * list deciding what each of its rows can do: see [PlayerTrackStore.has].
+     */
+    fun hasStoredTrack(entryId: String): Boolean = tracks.has(entryId)
+
     /** The clips from an earlier run, for the same reason. */
     fun storedClips(entryId: String): List<ClipCutter.Clip> = tracks.loadClips(entryId)
 

@@ -294,16 +294,19 @@ fun AuthGate(
                     val liveAnalysisStates by localAnalysis.state.collectAsStateWithLifecycle()
 
                     val standaloneLocalRows = localRows.filter { it.entry.scoreLogId == null }
-                    // A run in progress ticks `liveAnalysisStates` several times a
-                    // second (LocalAnalysisRunner.start reports fractional
-                    // progress), and storedTrack() is a disk read of a track that
-                    // can hold thousands of points. Keyed on whether each entry has
-                    // *finished* (Done) rather than on the live states themselves,
-                    // so an in-flight fraction tick does not re-read every track on
-                    // this phone - only a run settling into Done does.
+                    // Which videos have a track, asked the cheap way: hasStoredTrack
+                    // stats one file per entry and never parses one, so opening
+                    // Analytics with fifteen analysed videos on the phone costs
+                    // fifteen stats rather than fifteen full track reads.
+                    //
+                    // Still keyed on which runs have *finished* rather than on the
+                    // live states themselves: a run in progress ticks
+                    // `liveAnalysisStates` several times a second (start reports
+                    // fractional progress), and only a run settling into Done can
+                    // change the answer.
                     val doneEntryIds = liveAnalysisStates.filterValues { it is LocalAnalysisState.Done }.keys
                     val storedTrackIds = remember(localEntries, doneEntryIds) {
-                        localEntries.mapNotNull { it.id.takeIf { id -> localAnalysis.storedTrack(id) != null } }.toSet()
+                        localEntries.mapNotNull { it.id.takeIf { id -> localAnalysis.hasStoredTrack(id) } }.toSet()
                     }
                     val rows = buildAnalyticsRows(
                         standaloneLocalRows = standaloneLocalRows,

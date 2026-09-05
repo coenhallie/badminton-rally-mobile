@@ -35,6 +35,21 @@ class PlayerTrackStore(private val root: File) {
         )
     }
 
+    /**
+     * Whether a track was ever written for [entryId], without reading it.
+     *
+     * [load] is the wrong way to ask: it reads every line of a file that runs to
+     * roughly a megabyte for a 30-minute match and turns each one into a
+     * [PlayerSample], so a list asking the question once per video pays for a
+     * full parse of every analysed video on the phone.
+     *
+     * Deliberately weaker than `load(id) != null`, which also rejects a file it
+     * cannot parse. A stored track that has gone bad reads as present here, and
+     * the heatmap screen is the honest place to find that out - it already says
+     * so in words rather than drawing an empty court.
+     */
+    fun has(entryId: String): Boolean = fileFor(entryId).isFile
+
     /** Null when there is nothing stored, or when what is stored cannot be read. */
     fun load(entryId: String): Stored? {
         val file = fileFor(entryId)
