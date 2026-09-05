@@ -292,7 +292,9 @@ Both suites unchanged. On device, open a `READY` row and confirm the heatmap ren
 
 Same three states, same grouping, same legend as Android. On iOS `hasStoredTrack` is **always false** - there is no on-device analysis until Stage 2 of `docs/plans/2026-08-31-on-device-analysis-pipeline-design.md`. Do NOT special-case iOS in the view: pass `false` and let the shared classifier produce `NOT_ON_DEVICE`, so the day tracks exist the screen starts working with no UI change.
 
-Because every row will be `NOT_ON_DEVICE` today, the all-inert explanatory line from Task 2 is what a coach actually sees. Write it so it reads as "not yet on iPhone" rather than as a broken screen, and say in the report exactly what wording you used.
+CORRECTED 2026-09-05, before dispatch. This step used to assert that every row would be `NOT_ON_DEVICE` today. That is wrong: iOS has a full local video library and a working cloud analyse path (`AnalyzeCoordinator` via `createIosAnalyzeCoordinator`, `CourtMarkingView`), so a video imported on the iPhone is `hasLocalEntry = true` and the classifier returns `ANALYSABLE`, with a live Analyse button. Only READY is unreachable, because there is no track store on iOS - `grep -rl "PlayerTrack|heatmap" iosApp/Sources/` is empty.
+
+So the all-inert line applies only when there are no local videos. Write a legend that is true for what is on screen, and say in the report exactly what wording you used and which case you saw.
 
 - [ ] **Step 3: Verify, exercise, commit**
 
@@ -300,7 +302,13 @@ iOS suite 139 unchanged. Run `xcodegen generate` and confirm the new file's `.o`
 
 ---
 
-## Task 5: iOS Analytics detail
+## Task 5: iOS Analytics detail - CANCELLED 2026-09-05
+
+Not built, and the reason belongs with the plan rather than only in the ledger. Only READY rows are tappable, and iOS cannot produce READY until pipeline Stage 2 ships a track store, so this screen would have no entry point: unreachable by any user, covered by no test, and a puzzle for the next reader to work out. The justification below - that having the structure makes Stage 2 a data change rather than a screen build - fails in both directions, because Stage 2 has to bring a real heatmap renderer with it, and that IS a screen build.
+
+Revisit when Stage 2 lands. The original text follows, unchanged, so the reasoning can be picked up as written.
+
+## Task 5 (original text): iOS Analytics detail
 
 **Files:**
 - Create: `iosApp/Sources/Analytics/AnalyticsDetailView.swift`
