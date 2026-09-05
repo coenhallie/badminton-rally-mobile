@@ -298,4 +298,45 @@ class AnalyticsRowsTest {
         row.state shouldBe AnalyticsRowState.READY
         row.affordance shouldBe AnalyseAffordance.Ready
     }
+    @Test
+    fun a_list_with_a_live_button_and_no_dot_explains_the_button() {
+        // The defect this decision exists for. ANALYSABLE fails the all-inert
+        // test without contributing a dot, so the old two-way switch put
+        // "Analysed on this phone" and a green dot over a list whose only row
+        // said "Analyse" and drew no dot at all.
+        analyticsLegend(listOf(row(AnalyticsRowState.ANALYSABLE))) shouldBe
+            AnalyticsLegend.ANALYSE_BUTTON
+    }
+
+    @Test
+    fun a_dot_on_screen_outranks_a_button_on_screen() {
+        // A dot is a symbol and needs explaining; a button labelled "Analyse"
+        // already says what it does.
+        analyticsLegend(
+            listOf(row(AnalyticsRowState.ANALYSABLE), row(AnalyticsRowState.READY)),
+        ) shouldBe AnalyticsLegend.DOT
+    }
+
+    @Test
+    fun every_row_inert_gets_the_one_line_that_covers_them_all() {
+        analyticsLegend(
+            listOf(row(AnalyticsRowState.NOT_ON_DEVICE), row(AnalyticsRowState.NOT_ON_DEVICE)),
+        ) shouldBe AnalyticsLegend.NOTHING_ON_THIS_PHONE
+    }
+
+    @Test
+    fun an_empty_list_explains_nothing() {
+        // Not NOTHING_ON_THIS_PHONE: "none of these matches" needs some matches.
+        analyticsLegend(emptyList()) shouldBe AnalyticsLegend.SILENT
+    }
+
+    private fun row(state: AnalyticsRowState) = AnalyticsRow(
+        key = "k-${state.name}",
+        entryId = if (state == AnalyticsRowState.NOT_ON_DEVICE) null else "e-${state.name}",
+        group = AnalyticsGroup.LOCAL_VIDEOS,
+        title = "t",
+        subtitle = "s",
+        state = state,
+    )
+
 }

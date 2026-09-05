@@ -58,6 +58,30 @@ internal fun affordanceFor(entry: LocalVideoEntry, live: LocalAnalysisState): An
  * this function runs on every recomposition, including the several-times-a-
  * second ones an in-flight analysis's progress causes.
  */
+/**
+ * Which explanatory line sits above the list, if any.
+ *
+ * The screen used to switch two ways: all-inert, or the dot legend. That put
+ * "Analysed on this phone - tap to view" and a green dot above a list where the
+ * only row said "Analyse" and no dot was drawn anywhere, because ANALYSABLE
+ * fails the all-inert test without contributing a dot. A legend explaining a
+ * symbol that is not on screen is worse than no legend. Found on iOS, where
+ * every local video is ANALYSABLE and it was the ONLY thing a coach would see.
+ *
+ * A dot is a symbol and needs explaining; a button already says what it does,
+ * so the dot wins whenever both are present.
+ */
+internal enum class AnalyticsLegend { SILENT, NOTHING_ON_THIS_PHONE, DOT, ANALYSE_BUTTON }
+
+internal fun analyticsLegend(rows: List<AnalyticsRow>): AnalyticsLegend = when {
+    rows.isEmpty() -> AnalyticsLegend.SILENT
+    // Repeating "Not on this phone" down the whole list would say the same thing
+    // as many times as there are rows.
+    rows.all { it.state == AnalyticsRowState.NOT_ON_DEVICE } -> AnalyticsLegend.NOTHING_ON_THIS_PHONE
+    rows.any { it.state == AnalyticsRowState.READY } -> AnalyticsLegend.DOT
+    else -> AnalyticsLegend.ANALYSE_BUTTON
+}
+
 internal fun buildAnalyticsRows(
     standaloneLocalRows: List<LocalVideoRow>,
     ownedRows: List<MatchRow>,

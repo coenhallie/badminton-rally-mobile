@@ -97,10 +97,15 @@ struct MatchesList: View {
     }
 
     private func analyzeAction(_ entry: LocalVideoEntry) {
-        if entry.stage == .failed && entry.keypoints != nil {
-            analyze.retry(entryId: entry.id)
-        } else {
-            onCourtMarking(CourtMarkingRoute(entryId: entry.id))
+        // The shared rule, not a sixth hand-written copy. Android had four and
+        // the drift had already happened: its Analytics list shipped without the
+        // keypoints half and sent coaches back to re-mark a court that was
+        // already saved.
+        switch analyseAction(for: entry) {
+        case .resume(let entryId):
+            analyze.retry(entryId: entryId)
+        case .markCourt(let entryId):
+            onCourtMarking(CourtMarkingRoute(entryId: entryId))
         }
     }
 

@@ -105,7 +105,7 @@ fun AnalyticsScreen(
     // Every row inert for the same reason: nothing on this list has ever
     // touched this phone. Repeating "Not on this phone" down the whole list
     // would say the same thing as many times as there are rows.
-    val allNotOnDevice = rows.isNotEmpty() && rows.all { it.state == AnalyticsRowState.NOT_ON_DEVICE }
+    val legend = analyticsLegend(rows)
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -134,15 +134,22 @@ fun AnalyticsScreen(
 
         LazyColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
             item(key = "explainer") {
-                if (allNotOnDevice) {
-                    Text(
-                        "None of these matches are on this phone yet.",
+                when (legend) {
+                    AnalyticsLegend.SILENT -> Unit
+                    AnalyticsLegend.DOT -> DotLegend()
+                    AnalyticsLegend.NOTHING_ON_THIS_PHONE, AnalyticsLegend.ANALYSE_BUTTON -> Text(
+                        if (legend == AnalyticsLegend.NOTHING_ON_THIS_PHONE) {
+                            "None of these matches are on this phone yet."
+                        } else {
+                            // What the button actually does, said plainly, so a
+                            // screen called Analytics does not look like it is
+                            // about to draw a chart.
+                            "Analyse sends a video to the cloud and cuts it into rallies."
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = ShuttlTheme.extended.textTertiary,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                     )
-                } else {
-                    DotLegend()
                 }
             }
             AnalyticsGroup.entries.forEach { group ->
@@ -152,7 +159,7 @@ fun AnalyticsScreen(
                     items(groupRows, key = { it.key }) { row ->
                         AnalyticsRowItem(
                             row = row,
-                            showNotOnDeviceSubtitle = !allNotOnDevice,
+                            showNotOnDeviceSubtitle = legend != AnalyticsLegend.NOTHING_ON_THIS_PHONE,
                             onClick = { onOpenDetail(row) },
                             onAnalyse = { onAnalyse(row) },
                         )
