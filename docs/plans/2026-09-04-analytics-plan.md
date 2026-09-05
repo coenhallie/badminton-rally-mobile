@@ -347,11 +347,15 @@ Both platforms' Analytics screens should read as the same design. Check the thre
 
 ```bash
 grep -rn "borderedProminent\|\.tint(\|ButtonDefaults\|\.accentColor" iosApp/Sources androidApp/src/main
-grep -rn "ModalBottomSheet\|ModalNavigationDrawer" androidApp/src/main | grep -v "containerColor\|drawerContainerColor"
+tools/check-container-colors.sh
 grep -rn "0x22C55E\|0x16A34A\|0x3EE27C" iosApp/Sources androidApp/src/main | grep -v ShuttlPalette
 ```
 
-Each must return nothing, or a line you can justify. The second grep is new this phase: it catches a Material container whose colour was never set, which is how phase 2 shipped a purple-tinted sheet.
+Each must return nothing, or a line you can justify.
+
+The second grep is new this phase: it catches a Material container whose colour was never set, which is how phase 2 shipped a purple-tinted sheet. Its first form was a line-based grep, and it reported all seven sheets as violations even after they were fixed, because `containerColor` sits an unpredictable distance below the constructor behind the comment explaining it. A check that cries wolf on correct code gets ignored, so it is now a script that matches parentheses and reads the real argument list.
+
+Grep 1 returns known false positives: `SegmentedButtonDefaults.itemShape` matches the `ButtonDefaults` substring while setting a shape rather than a colour, and `.tint(Shuttl.error)` is a design token rather than a platform accent. Both are justified, not violations.
 
 - [ ] **Step 5: Fix in place, then commit**
 

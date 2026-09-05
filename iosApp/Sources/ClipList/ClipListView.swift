@@ -164,6 +164,11 @@ struct MatchesList: View {
                                     } label: {
                                         Label("Delete", systemImage: "trash")
                                     }
+                                    // Swipe labels render white on the tint, and white on
+                                    // Shuttl.error is 3.76:1. onError is the pairing that
+                                    // exists for exactly this and gives 5.08:1, so it is
+                                    // stated rather than left to the system default.
+                                    .foregroundStyle(Shuttl.onError)
                                     .tint(Shuttl.error)
                                 }
                         case .score(let content):
@@ -184,6 +189,7 @@ struct MatchesList: View {
                                     } label: {
                                         Label("Delete", systemImage: "trash")
                                     }
+                                    .foregroundStyle(Shuttl.onError)
                                     .tint(Shuttl.error)
                                 }
                         }
@@ -200,6 +206,7 @@ struct MatchesList: View {
                                 } label: {
                                     Label("Remove", systemImage: "trash")
                                 }
+                                .foregroundStyle(Shuttl.onError)
                                 .tint(Shuttl.error)
                             }
                     }
