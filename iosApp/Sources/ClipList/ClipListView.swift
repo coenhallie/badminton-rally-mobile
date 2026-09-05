@@ -15,11 +15,18 @@ struct MatchesList: View {
     /// consumed on Home's screen, not behind a closed drawer. This list only
     /// ever calls `remove(entry:)`, which is stateless from its point of view.
     let intake: LocalVideoIntake
+    /// Owned by Home, like every destination this list used to register. It has
+    /// to be one instance for the whole app rather than one per screen: its own
+    /// `localEntries` is documented as "the single source of truth for every
+    /// video on this phone", and a second instance would make that false while
+    /// doubling four flow subscriptions and four network calls per refresh.
+    /// Analytics reads the same one. This view no longer builds it, so the splash
+    /// it used to show for the one frame before `.task` ran is gone with it.
+    let model: ClipListModel
     let onMatchTap: (MatchRoute) -> Void
     let onCourtMarking: (CourtMarkingRoute) -> Void
     let onLocalPlayer: (LocalPlayerRoute) -> Void
 
-    @State private var model: ClipListModel?
     @State private var shareTarget: MatchSummary? = nil
     @State private var confirmTarget: PendingMatchAction? = nil
     @State private var thumbnails = LocalThumbnails()
@@ -29,17 +36,8 @@ struct MatchesList: View {
     @State private var deleteScoreTarget: ScoreMatchCard? = nil
 
     var body: some View {
-        Group {
-            if let model {
-                content(model)
-            } else {
-                SplashView()
-            }
-        }
-        .task {
-            if model == nil { model = ClipListModel(rally: rally, analyze: analyze) }
-            await model?.start()
-        }
+        content(model)
+        .task { await model.start() }
         .task {
             // Drives only the auto-alert side effect. `model.localEntries` (fed by
             // its own subscription to this same flow) is the list's source of
