@@ -53,7 +53,13 @@ expect "--within refuses a destructive container" \
   4 "looks destructive" -- --within "Sign out" --at 0.5,0.5
 expect "--within refuses a point that lands on a destructive control" \
   4 "is inside 'Sign out'" -- --within "Settings" --at 0.5,0.85
-expect "--within matches exactly, so 'Remove' does not silently mean 'Remove from app'" \
+# "Remove" trips the destructive guard before matching is even reached, so it
+# cannot show that matching is exact. "Court" can: it is a prefix of the only
+# container in the dump, so substring matching finds it and exact matching does
+# not. Reverting hosts to the substring form must turn this case red.
+expect "--within matches exactly, so a prefix is not silently accepted" \
+  2 "NOT FOUND" -- --within "Court" --at 0.5,0.5
+expect "--within refuses a destructive container before it even matches" \
   4 "looks destructive" -- --within "Remove" --at 0.5,0.5
 expect "--at without --within refuses instead of tapping the centre" \
   6 "needs --within" -- "Court frame" --at 0.25,0.80

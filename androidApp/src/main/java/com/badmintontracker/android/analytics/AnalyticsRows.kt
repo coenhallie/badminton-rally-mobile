@@ -153,8 +153,8 @@ internal fun buildAnalyticsRows(
     // are indistinguishable. The local row wins because it is the stable one: it
     // exists from import until the file leaves the phone, whereas the owned row
     // appears only once a cloud run finishes, so keeping that one instead would
-    // make the row jump sections mid-life. Rows with no entry keep their own
-    // key, so the cloud and shared matches - all of which have a null entryId -
-    // never collapse into each other.
+    // make the row jump sections mid-life. Rows with no entry fall back to their
+    // own key, and every NOT_ON_DEVICE row has a null entryId, so two matches
+    // that are merely both absent from this phone never collapse into each other.
     return (localVideoRows + ownedMatchRows + sharedRows).distinctBy { it.entryId ?: it.key }
 }

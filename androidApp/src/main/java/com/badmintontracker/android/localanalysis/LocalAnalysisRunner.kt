@@ -35,6 +35,31 @@ sealed interface LocalAnalysisState {
 }
 
 /**
+ * Whether an on-device run is currently working on this video.
+ *
+ * A device run never moves LocalVideoEntry.stage, so the stage-based rules in
+ * shared (isAnalysisRunning and friends) cannot see one. Any screen offering an
+ * "Analyze" button has to ask this as well, or it leaves a live-looking button
+ * over a run already in progress: pressing it walks the user through marking the
+ * court again and then start() returns immediately, because the entry is already
+ * in `running`. Twelve taps, no effect, no explanation.
+ *
+ * Written as an exhaustive `when` rather than a set membership test so that
+ * adding a state to LocalAnalysisState fails to compile here and in
+ * affordanceFor together, instead of quietly defaulting to "not running".
+ */
+internal fun isDeviceRunInFlight(state: LocalAnalysisState): Boolean = when (state) {
+    is LocalAnalysisState.Preparing,
+    is LocalAnalysisState.Analysing,
+    is LocalAnalysisState.Cutting -> true
+    // Failed and Done are outcomes, not work. Idle covers both "never started"
+    // and "finished and forgotten after a process death".
+    is LocalAnalysisState.Failed,
+    is LocalAnalysisState.Done,
+    LocalAnalysisState.Idle -> false
+}
+
+/**
  * Runs the on-device pipeline for one video and keeps its progress.
  *
  * Held by the application rather than a ViewModel because an analysis outlives

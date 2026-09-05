@@ -44,9 +44,16 @@ class PlayerTrackStore(private val root: File) {
      * full parse of every analysed video on the phone.
      *
      * Deliberately weaker than `load(id) != null`, which also rejects a file it
-     * cannot parse. A stored track that has gone bad reads as present here, and
-     * the heatmap screen is the honest place to find that out - it already says
-     * so in words rather than drawing an empty court.
+     * cannot parse. A track truncated by a kill mid-write therefore reads as
+     * present, and the row that offers it stays offering it: the heatmap screen
+     * says "This analysis is no longer loaded. Run it again", which is honest
+     * about there being nothing to draw but describes process death rather than
+     * a bad file, and the Analytics row it came from offers no way to run it
+     * again. Recovery is through the drawer, whose Analyze button is gated on
+     * the stage rather than on the track. Accepted because a truncated file
+     * needs the process killed inside a single writeText of a track that was
+     * just held whole in memory; if it turns out to happen, the fix is for this
+     * to validate rather than for the callers to go back to parsing.
      */
     fun has(entryId: String): Boolean = fileFor(entryId).isFile
 

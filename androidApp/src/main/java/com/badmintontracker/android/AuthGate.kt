@@ -67,6 +67,7 @@ import com.badmintontracker.shared.RallyApp
 import com.badmintontracker.shared.scoring.ScoreLogStatus
 import io.github.jan.supabase.auth.status.SessionStatus
 import com.badmintontracker.android.localanalysis.LocalAnalysisState
+import com.badmintontracker.android.localanalysis.isDeviceRunInFlight
 import com.badmintontracker.android.localanalysis.CourtHeatmapView
 import com.badmintontracker.android.localanalysis.BackgroundWorkAction
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -500,12 +501,26 @@ fun AuthGate(
                                 initializer { LocalPlayerViewModel(args.entryId, localAnnotations, rally.labels) }
                             }
                         )
+                        // The stage rules out a cloud run in flight, but a device run
+                        // never moves the stage, so it has to be asked separately or
+                        // this button sits there live over the run it already started.
+                        val deviceState by localAnalysis.state.collectAsStateWithLifecycle()
                         LocalPlayerScreen(
                             vm = playerVm,
                             entry = e,
-                            canAnalyze = e.stage == AnalyzeStage.LOCAL || e.stage == AnalyzeStage.FAILED,
+                            canAnalyze = (e.stage == AnalyzeStage.LOCAL || e.stage == AnalyzeStage.FAILED) &&
+                                !isDeviceRunInFlight(deviceState[e.id] ?: LocalAnalysisState.Idle),
                             playbackPrefs = rally.playbackPrefs,
-                            onAnalyze = { nav.navigate(Route.CourtMarking(e.id)) },
+                            // The same rule as every other Analyze affordance. Without it
+                            // the "Re-analyze" label here lies: it promises the resume that
+                            // analyzeButtonLabel documents, and delivers court marking.
+                            onAnalyze = {
+                                if (canResumeFailedAnalysis(e)) {
+                                    coordinator.retry(e.id)
+                                } else {
+                                    nav.navigate(Route.CourtMarking(e.id))
+                                }
+                            },
                             onBack = { nav.popBackStack() },
                         )
                     }

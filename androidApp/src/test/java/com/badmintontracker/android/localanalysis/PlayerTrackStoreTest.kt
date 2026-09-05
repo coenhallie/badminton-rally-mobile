@@ -7,6 +7,7 @@ import io.kotest.matchers.shouldBe
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.File
 
 /**
  * [PlayerTrackStore.has] answers "is there a track for this video" without
@@ -44,6 +45,23 @@ class PlayerTrackStoreTest {
         val s = store()
         s.save("e1", track, fps = 30.0)
         s.has("e2") shouldBe false
+    }
+
+    @Test
+    fun a_track_too_damaged_to_read_still_reports_present() {
+        // The one behaviour has() and load() disagree on, pinned deliberately so
+        // that the divergence its KDoc argues for is a tested claim rather than
+        // a comment. A row built on has() keeps offering a heatmap that cannot
+        // be drawn; the KDoc says what the user sees and why that was accepted.
+        val s = store()
+        s.save("e1", track, fps = 30.0)
+        // Found by walking rather than by rebuilding the store's path, so the
+        // test does not hardcode a layout it cannot see (the companion is private).
+        val onDisk = temp.root.walkTopDown().first { it.isFile && it.name.startsWith("e1") }
+        onDisk.writeText("this is not a track\n")
+
+        s.has("e1") shouldBe true
+        s.load("e1") shouldBe null
     }
 
     @Test
