@@ -46,19 +46,6 @@ internal fun affordanceFor(entry: LocalVideoEntry, live: LocalAnalysisState): An
 }
 
 /**
- * Builds the Analytics list's rows, grouped like the drawer: local videos, then
- * owned matches, then shared. [analyticsRowState] alone decides READY /
- * ANALYSABLE / NOT_ON_DEVICE - this only gathers its two booleans per match
- * and, for an ANALYSABLE one, reads both pipelines' own liveness via
- * [affordanceFor] so the row can show progress or a failure instead of a live
- * "Analyse" button. `hasStoredTrack` alone cannot tell a run in flight, or one
- * that just failed, from one never attempted.
- *
- * [storedTrackIds] is a caller-computed set rather than a per-row disk probe:
- * this function runs on every recomposition, including the several-times-a-
- * second ones an in-flight analysis's progress causes.
- */
-/**
  * Which explanatory line sits above the list, if any.
  *
  * The screen used to switch two ways: all-inert, or the dot legend. That put
@@ -71,7 +58,21 @@ internal fun affordanceFor(entry: LocalVideoEntry, live: LocalAnalysisState): An
  * A dot is a symbol and needs explaining; a button already says what it does,
  * so the dot wins whenever both are present.
  */
-internal enum class AnalyticsLegend { SILENT, NOTHING_ON_THIS_PHONE, DOT, ANALYSE_BUTTON }
+internal enum class AnalyticsLegend {
+    SILENT, NOTHING_ON_THIS_PHONE, DOT, ANALYSE_BUTTON;
+
+    /** Whether any row draws the availability dot the [DOT] line explains. */
+    val showsDot: Boolean get() = this == DOT
+
+    /**
+     * Whether an inert row spells out "Not on this phone" for itself.
+     *
+     * False only when the legend already said it once for the whole list. Kept
+     * here rather than in the view so the legend and the rows cannot disagree
+     * about which of them is doing the explaining.
+     */
+    val showsNotOnDeviceSubtitle: Boolean get() = this != NOTHING_ON_THIS_PHONE
+}
 
 internal fun analyticsLegend(rows: List<AnalyticsRow>): AnalyticsLegend = when {
     rows.isEmpty() -> AnalyticsLegend.SILENT
@@ -82,6 +83,19 @@ internal fun analyticsLegend(rows: List<AnalyticsRow>): AnalyticsLegend = when {
     else -> AnalyticsLegend.ANALYSE_BUTTON
 }
 
+/**
+ * Builds the Analytics list's rows, grouped like the drawer: local videos, then
+ * owned matches, then shared. [analyticsRowState] alone decides READY /
+ * ANALYSABLE / NOT_ON_DEVICE - this only gathers its two booleans per match
+ * and, for an ANALYSABLE one, reads both pipelines' own liveness via
+ * [affordanceFor] so the row can show progress or a failure instead of a live
+ * "Analyse" button. `hasStoredTrack` alone cannot tell a run in flight, or one
+ * that just failed, from one never attempted.
+ *
+ * [storedTrackIds] is a caller-computed set rather than a per-row disk probe:
+ * this function runs on every recomposition, including the several-times-a-
+ * second ones an in-flight analysis's progress causes.
+ */
 internal fun buildAnalyticsRows(
     standaloneLocalRows: List<LocalVideoRow>,
     ownedRows: List<MatchRow>,

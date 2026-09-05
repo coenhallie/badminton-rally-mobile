@@ -110,11 +110,13 @@ struct HomeView: View {
                 LabelsView(rally: rally)
             }
             .navigationDestination(isPresented: $showAnalytics) {
-                // Court marking is NOT registered alongside this one: two
-                // `navigationDestination` at the same depth of one stack replace
-                // each other, so the Analyze button's push has to be declared
-                // inside AnalyticsListView or it would swap this screen out and
-                // then return the coach to Home instead of to his list.
+                // Court marking is NOT registered alongside this one. Two
+                // destinations PRESENTING at one depth replace each other -
+                // declaring them side by side is fine, as the six neighbours
+                // here show - so the Analyze button's push lives inside
+                // AnalyticsListView, where it presents one level deeper. From
+                // here it would swap this screen out and then return the coach
+                // to Home instead of to his list.
                 AnalyticsListView(rally: rally, analyze: analyze, model: listModel)
             }
             .navigationDestination(item: $matchRoute) { route in

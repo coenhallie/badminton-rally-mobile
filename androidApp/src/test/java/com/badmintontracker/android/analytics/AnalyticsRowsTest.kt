@@ -330,6 +330,25 @@ class AnalyticsRowsTest {
         analyticsLegend(emptyList()) shouldBe AnalyticsLegend.SILENT
     }
 
+    @Test
+    fun the_legend_and_the_rows_never_both_explain_the_same_thing() {
+        // The one line above the list says "none of these are on this phone",
+        // so repeating it on every row would say it as many times as there are
+        // rows. Every other legend leaves the rows to speak for themselves.
+        AnalyticsLegend.NOTHING_ON_THIS_PHONE.showsNotOnDeviceSubtitle shouldBe false
+        AnalyticsLegend.DOT.showsNotOnDeviceSubtitle shouldBe true
+        AnalyticsLegend.ANALYSE_BUTTON.showsNotOnDeviceSubtitle shouldBe true
+        AnalyticsLegend.SILENT.showsNotOnDeviceSubtitle shouldBe true
+    }
+
+    @Test
+    fun only_the_dot_legend_claims_a_dot_is_on_screen() {
+        AnalyticsLegend.DOT.showsDot shouldBe true
+        AnalyticsLegend.ANALYSE_BUTTON.showsDot shouldBe false
+        AnalyticsLegend.NOTHING_ON_THIS_PHONE.showsDot shouldBe false
+        AnalyticsLegend.SILENT.showsDot shouldBe false
+    }
+
     private fun row(state: AnalyticsRowState) = AnalyticsRow(
         key = "k-${state.name}",
         entryId = if (state == AnalyticsRowState.NOT_ON_DEVICE) null else "e-${state.name}",

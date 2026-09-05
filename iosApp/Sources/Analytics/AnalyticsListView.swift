@@ -21,11 +21,15 @@ struct AnalyticsListView: View {
     let model: ClipListModel
 
     @State private var progressById: [String: AnalyzeProgress] = [:]
-    /// Registered on this view rather than on Home. Two
-    /// `navigationDestination(item:)` declared at the same depth of one stack
-    /// replace each other: court marking driven from Home's binding would swap
-    /// this screen out instead of stacking on it, and dismissing it would land
-    /// the coach back on Home rather than on the list he was working through.
+    /// Registered on this view rather than on Home, so court marking stacks ON
+    /// Analytics instead of replacing it.
+    ///
+    /// The rule is about PRESENTATION depth, not registration: Home declares
+    /// seven `navigationDestination`s side by side and they all work. What
+    /// cannot happen is two of them presenting at the same depth. Court marking
+    /// driven from Home's binding would present at the depth Analytics already
+    /// occupies, swapping it out and landing the coach back on Home rather than
+    /// on the list he was working through. Declared here it presents one deeper.
     /// Android settled the same question the same way.
     @State private var courtMarkingRoute: CourtMarkingRoute? = nil
 
@@ -53,12 +57,23 @@ struct AnalyticsListView: View {
         }
         .navigationTitle("ANALYTICS")
         .navigationBarTitleDisplayMode(.inline)
-        .task { await model.start() }
+        .task {
+            await model.start()
+            // Android builds a fresh ClipListViewModel per entry to
+            // Route.Analytics and its init refreshes, so opening Analytics there
+            // always pulls. Here start() is latched after the first call, so
+            // without this an entry made no network call at all: a cloud run that
+            // finished, or a match a colleague shared, while the app was
+            // backgrounded would simply not be on the list, and the only pull to
+            // refresh in the app is the drawer's.
+            await model.refresh()
+        }
         .task {
             for await map in analyze.progress {
                 progressById = map
             }
         }
+        .refreshable { await model.refresh() }
         .navigationDestination(item: $courtMarkingRoute) { route in
             CourtMarkingView(rally: rally, analyze: analyze, entryId: route.entryId)
         }
@@ -68,14 +83,14 @@ struct AnalyticsListView: View {
     private func list(rows: [AnalyticsRow], legend: AnalyticsLegend) -> some View {
         List {
             if let text = legend.text {
-                legendRow(text, showsDot: legend == .dot)
+                legendRow(text, showsDot: legend.showsDot)
             }
             ForEach(AnalyticsGroup.allCases, id: \.self) { group in
                 let groupRows = rows.filter { $0.group == group }
                 if !groupRows.isEmpty {
                     Section {
                         ForEach(groupRows) { row in
-                            rowView(row, showNotOnDeviceSubtitle: legend != .nothingOnThisPhone)
+                            rowView(row, showNotOnDeviceSubtitle: legend.showsNotOnDeviceSubtitle)
                                 .listRowBackground(Shuttl.bg)
                         }
                     } header: { Shuttl.sectionLabel(group.label) }
@@ -164,12 +179,25 @@ struct AnalyticsListView: View {
             // row does, and that row says "Retry" too.
             analysePill("Retry", row: row)
         case .inProgress:
-            // The pill gives way to a spinner while a run is in flight, which is
-            // what the drawer's own local video row does in the same situation.
+            // A spinner, as the drawer's local video row shows in the same
+            // situation - but not bare, as that row shows it. There the spinner
+            // is followed by a menu and a chevron that hold the width; here it is
+            // the last thing in the row, so a bare ~16pt indicator in place of a
+            // ~75pt pill would visibly pull the row's right edge inwards the
+            // moment a run starts. Reserving the pill's own minimum keeps the
+            // edge still. Android argues the same way in AnalyticsScreen.kt.
             ProgressView()
                 .controlSize(.small)
+                .frame(minWidth: analysePillMinWidth)
         }
     }
+
+    /// The width an in-flight spinner reserves so the row's trailing edge does not
+    /// move when a pill is replaced by one. Measured from the shorter of the two
+    /// labels ("Retry" at labelMedium) plus this pill's 12pt horizontal padding;
+    /// a longer label still grows the slot, which is the pre-existing behaviour
+    /// between "Analyze" and "Retry" and not something this reserves against.
+    private var analysePillMinWidth: CGFloat { 64 }
 
     /// Same pill as the drawer's local video row, down to the padding: the two
     /// screens list the same videos and their one action must not look like two.

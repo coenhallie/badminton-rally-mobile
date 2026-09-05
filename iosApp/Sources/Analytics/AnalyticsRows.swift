@@ -55,12 +55,16 @@ struct AnalyticsRow: Identifiable, Equatable {
 /// The one explanatory line above the list, chosen from the row states actually
 /// on screen rather than from the platform.
 ///
-/// Android picks between two: the all-inert line, or the dot legend. iOS needs a
-/// third, because its middle case is different. Every row being inert is a real
-/// case here (a coach whose matches were all filmed elsewhere), and so is a list
-/// of videos sitting on this phone with live "Analyze" buttons and no dot to
-/// explain, because no track store exists on iOS yet. Explaining a dot that
-/// cannot render would be the same defect as a comment outliving its code.
+/// Four cases. Android had two - all-inert, or the dot legend - which put a dot
+/// legend over a list with no dots the moment anything was ANALYSABLE. Every
+/// local video on iOS is ANALYSABLE, since no track store exists here yet, so
+/// that switch could not be copied; it turned out to be a live defect on Android
+/// as well, and this decision was ported back there.
+///
+/// Both of the middle cases are ordinary on iOS: a coach whose matches were all
+/// filmed elsewhere sees an inert list, and a coach with videos on the phone sees
+/// live "Analyze" buttons and no dot to explain. Explaining a dot that cannot
+/// render is the same defect as a comment outliving its code.
 enum AnalyticsLegend: Equatable {
     /// The list is empty; there is nothing to explain. Not spelled `none`: the
     /// moment anything holds an `AnalyticsLegend?`, `.none` binds to
@@ -72,6 +76,14 @@ enum AnalyticsLegend: Equatable {
     case dot
     /// No dots, but at least one live "Analyze" button.
     case analyseButton
+
+    /// Whether any row draws the availability dot the `.dot` line explains.
+    var showsDot: Bool { self == .dot }
+
+    /// Whether an inert row spells out "Not on this phone" for itself. False only
+    /// when the legend already said it once for the whole list, so the legend and
+    /// the rows cannot disagree about which of them is doing the explaining.
+    var showsNotOnDeviceSubtitle: Bool { self != .nothingOnThisPhone }
 
     var text: String? {
         switch self {
@@ -131,6 +143,19 @@ func analyseAction(for entry: LocalVideoEntry) -> AnalyseAction {
         : .markCourt(entryId: entry.id)
 }
 
+/// How a local video describes itself under its title: how long it runs and when
+/// it was added.
+///
+/// Shared with the drawer's own local video row rather than written out twice.
+/// The two screens list the same videos side by side in one tap, and a comment
+/// claiming they cannot describe a video two ways is worth less than a call that
+/// makes it so.
+func localVideoSubtitle(_ entry: LocalVideoEntry) -> String {
+    let duration = LocalVideoLogic.formatDuration(ms: entry.durationMs)
+    let date = formatMatchDate(millis: entry.addedAtEpochMs)
+    return "\(duration) · \(date)".uppercased()
+}
+
 /// Builds the Analytics list's rows, grouped like the drawer: local videos, then
 /// owned matches, then shared. `analyticsRowState` alone decides READY /
 /// ANALYSABLE / NOT_ON_DEVICE; this only gathers its two booleans per match and,
@@ -183,16 +208,12 @@ func buildAnalyticsRows(
     // A video picked for a match is that match's row, not a standalone one -
     // the same filter `MatchesList`'s own "On this phone" section applies.
     let localVideoRows = localEntries.filter { $0.scoreLogId == nil }.map { entry -> AnalyticsRow in
-        // Same two parts, same order and the same uppercasing as the drawer's own
-        // local video row, so one video does not describe itself two ways.
-        let duration = LocalVideoLogic.formatDuration(ms: entry.durationMs)
-        let date = formatMatchDate(millis: entry.addedAtEpochMs)
         return rowFor(
             key: "local-\(entry.id)",
             entryId: entry.id,
             group: .localVideos,
             title: entry.title ?? entry.displayName,
-            subtitle: "\(duration) · \(date)".uppercased()
+            subtitle: localVideoSubtitle(entry)
         )
     }
 

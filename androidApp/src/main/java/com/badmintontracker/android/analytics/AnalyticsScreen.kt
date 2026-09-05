@@ -102,9 +102,6 @@ fun AnalyticsScreen(
     onAnalyse: (AnalyticsRow) -> Unit,
     onBack: () -> Unit,
 ) {
-    // Every row inert for the same reason: nothing on this list has ever
-    // touched this phone. Repeating "Not on this phone" down the whole list
-    // would say the same thing as many times as there are rows.
     val legend = analyticsLegend(rows)
 
     Scaffold(
@@ -143,8 +140,13 @@ fun AnalyticsScreen(
                         } else {
                             // What the button actually does, said plainly, so a
                             // screen called Analytics does not look like it is
-                            // about to draw a chart.
-                            "Analyse sends a video to the cloud and cuts it into rallies."
+                            // about to draw a chart. Both targets named on
+                            // purpose: court marking offers cloud AND on device
+                            // (CourtMarkingScreen), and it is the on-device run
+                            // that writes the track a row needs to turn READY, so
+                            // copy naming only the cloud would steer a coach away
+                            // from the dot this same legend explains.
+                            "Analyse cuts a video into rallies, on this phone or in the cloud."
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = ShuttlTheme.extended.textTertiary,
@@ -159,7 +161,7 @@ fun AnalyticsScreen(
                     items(groupRows, key = { it.key }) { row ->
                         AnalyticsRowItem(
                             row = row,
-                            showNotOnDeviceSubtitle = legend != AnalyticsLegend.NOTHING_ON_THIS_PHONE,
+                            showNotOnDeviceSubtitle = legend.showsNotOnDeviceSubtitle,
                             onClick = { onOpenDetail(row) },
                             onAnalyse = { onAnalyse(row) },
                         )
