@@ -11,6 +11,17 @@ sealed interface Route {
     @Serializable data object Analytics : Route
 
     /**
+     * What one analysed match has to show, reached from a READY row on the
+     * Analytics list. Keyed by entry for the same reason [Heatmap] is.
+     *
+     * Separate from [Heatmap] rather than replacing it: that route is the
+     * analysis banner's own destination and shows the heatmap alone, while this
+     * one is the list's destination and carries the tab row. Both draw their
+     * content with the same HeatmapPanel.
+     */
+    @Serializable data class AnalyticsDetail(val entryId: String) : Route
+
+    /**
      * One match, however it was made. At least one of the two ids is non-null: a
      * video-first or shared match has only a video, a scored match has a score log
      * and gains a video later.

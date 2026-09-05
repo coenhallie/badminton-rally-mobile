@@ -32,6 +32,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.badmintontracker.android.clipdetail.ClipDetailScreen
 import com.badmintontracker.android.clipdetail.ClipDetailViewModel
+import com.badmintontracker.android.analytics.AnalyticsDetailScreen
 import com.badmintontracker.android.analytics.AnalyticsScreen
 import com.badmintontracker.android.analytics.buildAnalyticsRows
 import com.badmintontracker.android.cliplist.ClipListViewModel
@@ -68,7 +69,7 @@ import com.badmintontracker.shared.scoring.ScoreLogStatus
 import io.github.jan.supabase.auth.status.SessionStatus
 import com.badmintontracker.android.localanalysis.LocalAnalysisState
 import com.badmintontracker.android.localanalysis.isDeviceRunInFlight
-import com.badmintontracker.android.localanalysis.CourtHeatmapView
+import com.badmintontracker.android.localanalysis.HeatmapPanel
 import com.badmintontracker.android.localanalysis.BackgroundWorkAction
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.Icons
@@ -314,7 +315,7 @@ fun AuthGate(
 
                     AnalyticsScreen(
                         rows = rows,
-                        onOpenDetail = { row -> row.entryId?.let { nav.navigate(Route.Heatmap(it)) } },
+                        onOpenDetail = { row -> row.entryId?.let { nav.navigate(Route.AnalyticsDetail(it)) } },
                         onAnalyse = { row ->
                             row.entryId
                                 ?.let { id -> localEntries.firstOrNull { it.id == id } }
@@ -573,18 +574,16 @@ fun AuthGate(
                     }
                 }
 
+                // The heatmap on its own, which is what the analysis banner and
+                // the drawer's own heatmap affordance open. Kept alongside
+                // Route.AnalyticsDetail rather than folded into it: this is the
+                // destination a coach reaches straight from a finished run, and
+                // it is the only way back to a result that cost half an hour.
+                // Both render HeatmapPanel, so there is one resolution to keep
+                // right rather than two.
                 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
                 composable<Route.Heatmap> { entry ->
                     val args = entry.toRoute<Route.Heatmap>()
-                    // In memory if the run is still loaded, from disk otherwise.
-                    // A pose run costs half an hour, so losing its result to a
-                    // process death and asking for another one is not an option.
-                    val done = localAnalysis.stateFor(args.entryId) as? LocalAnalysisState.Done
-                    val stored = remember(args.entryId) {
-                        if (done != null) null else localAnalysis.storedTrack(args.entryId)
-                    }
-                    val track = done?.playerTrack ?: stored?.track
-                    val trackFps = done?.fps ?: stored?.fps ?: 0.0
                     Scaffold(
                         topBar = {
                             TopAppBar(
@@ -598,21 +597,21 @@ fun AuthGate(
                             )
                         },
                     ) { padding ->
-                        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-                            if (track == null) {
-                                // A run's state lives in memory, so it is gone
-                                // after a process death. Said plainly rather
-                                // than drawing an empty court, which would read
-                                // as a player who never moved.
-                                Text(
-                                    "This analysis is no longer loaded. Run it again to see the heatmap.",
-                                    modifier = Modifier.padding(16.dp),
-                                )
-                            } else {
-                                CourtHeatmapView(track = track, fps = trackFps)
-                            }
-                        }
+                        HeatmapPanel(
+                            entryId = args.entryId,
+                            runner = localAnalysis,
+                            modifier = Modifier.padding(padding),
+                        )
                     }
+                }
+
+                composable<Route.AnalyticsDetail> { entry ->
+                    val args = entry.toRoute<Route.AnalyticsDetail>()
+                    AnalyticsDetailScreen(
+                        entryId = args.entryId,
+                        localAnalysis = localAnalysis,
+                        onBack = { nav.popBackStack() },
+                    )
                 }
 
                 composable<Route.CourtMarking> { entry ->
