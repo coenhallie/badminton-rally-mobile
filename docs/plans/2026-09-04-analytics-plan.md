@@ -331,7 +331,9 @@ Suite unchanged. Screenshot both themes. Say in the report whether the screen re
 
 - [ ] **Step 1: Capture the new screens**
 
-`<platform>-analytics-<theme>.png` and `<platform>-analyticsdetail-<theme>.png`, eight files, into `docs/screenshots/2026-09-03-design-system/after/`. These are additions with no baseline; note that they fall outside the 36-name parity check.
+`<platform>-analytics-<theme>.png` and `<platform>-analyticsdetail-<theme>.png` into `docs/screenshots/2026-09-03-design-system/after/`. These are additions with no baseline; note that they fall outside the 36-name parity check.
+
+SIX files, not eight: Task 5 was cancelled, so there is no `ios-analyticsdetail-*`.
 
 - [ ] **Step 2: Re-capture Home on both platforms**
 
@@ -357,12 +359,12 @@ A padding, a line limit, a frame height. **Do not redesign.** Anything larger go
 
 ## Definition of Done
 
-- [ ] `:shared:jvmTest` passes; count reconciled from 436.
-- [ ] Android `testDebugUnitTest` passes at 183; `assembleDebug` passes.
-- [ ] iOS suite passes at 136 + 3 = 139.
+- [ ] `:shared:jvmTest`, Android `testDebugUnitTest` and the iOS suite all pass, each reconciled against the CURRENT baseline recorded in the SDD ledger rather than against a number written here. Every task in this phase has added tests, so the figures this plan was drafted with (436 / 183 / 139) are historical, and treating them as targets would report a false failure.
+- [ ] `assembleDebug` passes.
 - [ ] `:shared:linkDebugFrameworkIosSimulatorArm64` succeeds.
+- [ ] `tools/adb-tap-test.sh` passes. Added this phase, after the tap tool shipped two safety holes.
 - [ ] The Analytics pill is enabled on both platforms and its "Coming soon" hint is gone.
-- [ ] `Route.Heatmap` still works from the analysis banner.
+- [ ] `Route.Heatmap` still works from the analysis banner AND from the drawer's "Player heatmap" menu item, both now sharing one body with the Analytics detail.
 - [ ] All three DoD greps return nothing unjustified.
 - [ ] Analytics and its detail are captured on both platforms in both themes.
 - [ ] No em dashes on added lines; no attribution trailers.
