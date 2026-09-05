@@ -1,5 +1,7 @@
 package com.badmintontracker.android.localanalysis
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -11,18 +13,27 @@ import androidx.compose.ui.unit.dp
 import com.badmintontracker.analysis.player.PlayerTrack
 
 /** A track to draw and the frame rate it was sampled at, which must travel together. */
-data class HeatmapSource(val track: PlayerTrack, val fps: Double)
+internal data class HeatmapSource(val track: PlayerTrack, val fps: Double)
 
 /**
  * Which track a heatmap should draw: the one still in memory, the one on disk, or
  * neither.
  *
  * A finished run is preferred, but only when it actually carries samples. A run
- * that asked for no pose metric completes with an EMPTY PlayerTrack
- * (LocalAnalysisRunner only saves one when `samples.isNotEmpty()`), so preferring
- * it blindly draws an empty court over a perfectly good stored track - which is
- * precisely the "player who never moved" the panel's message exists to avoid. A
- * coach who runs pose once and a cheaper metric afterwards hits exactly that.
+ * that asked for no pose metric completes with an EMPTY PlayerTrack, and
+ * LocalAnalysisRunner only writes one to disk when `samples.isNotEmpty()`, so
+ * preferring the in-memory run blindly replaced a perfectly good stored heatmap
+ * with CourtHeatmapView's "No pose data for this video. It was analysed for
+ * rallies only." Court marking seeds its metrics to RALLY_CLIPS alone, so a
+ * pose-less run is the DEFAULT: "pose last week, clips today, open the heatmap"
+ * is an ordinary coach path, not a corner.
+ *
+ * Second, quieter consequence, kept deliberately. An empty track also means a
+ * pose run that found nobody on the near court, and such a run saves nothing. So
+ * a coach who waits on that run now sees the PREVIOUS run's heatmap and summary
+ * rather than "The player was not found...". The alternative is discarding a good
+ * heatmap because a later run failed, which is worse; the run's own outcome is
+ * reported where runs are reported, not here.
  *
  * Returning the pair is the point: the fps belongs to the track it was measured
  * with, and picking each independently paired them by coincidence.
@@ -63,7 +74,11 @@ fun HeatmapPanel(
     val stored = remember(entryId) { runner.storedTrack(entryId) }
     val source = heatmapSource(done, stored)
 
-    Column(modifier = modifier.fillMaxSize()) {
+    // Scrolls because the court is 1.7x taller than it is wide: in landscape, or
+    // portrait at a large font scale, it overflows and takes the summary line -
+    // which is how much of the map to trust - off the bottom with it. Fixed here
+    // rather than on either host so both get it.
+    Column(modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         if (source == null) {
             // A run's state lives in memory, so it is gone after a process death.
             // Said plainly rather than drawing an empty court, which would read as

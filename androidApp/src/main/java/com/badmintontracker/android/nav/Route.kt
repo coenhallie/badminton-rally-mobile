@@ -14,10 +14,13 @@ sealed interface Route {
      * What one analysed match has to show, reached from a READY row on the
      * Analytics list. Keyed by entry for the same reason [Heatmap] is.
      *
-     * Separate from [Heatmap] rather than replacing it: that route is the
-     * analysis banner's own destination and shows the heatmap alone, while this
-     * one is the list's destination and carries the tab row. Both draw their
-     * content with the same HeatmapPanel.
+     * Separate from [Heatmap] rather than replacing it. The two are near
+     * identical today - same content, different title - and the reason to keep
+     * both is not what they show but who reaches them: [Heatmap] is how the
+     * analysis banner and the drawer's menu item get to a finished run, and a
+     * pose run costs half an hour. Folding one into the other to tidy up is
+     * exactly how that path breaks unnoticed. Both draw with the same
+     * HeatmapPanel, so there is nothing to drift.
      */
     @Serializable data class AnalyticsDetail(val entryId: String) : Route
 

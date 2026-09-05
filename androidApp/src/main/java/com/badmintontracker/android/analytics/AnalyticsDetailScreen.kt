@@ -58,10 +58,13 @@ fun AnalyticsDetailScreen(
         },
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            // Styled as the list's SectionHeader, not as a title: a coach arrives
+            // here in one tap from that list, and two treatments of the same thing
+            // across those two screens reads as two different kinds of heading.
             Text(
-                "Heatmap",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface,
+                "HEATMAP",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
             )
             HeatmapPanel(entryId = entryId, runner = localAnalysis)

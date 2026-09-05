@@ -17,22 +17,27 @@ class HeatmapSourceTest {
 
     @Test
     fun a_run_that_asked_for_no_pose_falls_through_to_the_stored_track() {
-        // The defect this function exists for. A pose-less run completes with an
-        // empty PlayerTrack, so preferring it would draw an empty court over a
-        // track that is sitting on disk - a coach who runs pose once and a
-        // cheaper metric afterwards would lose the heatmap they already paid for.
+        // The defect this function exists for, and the test that pins the fps
+        // pairing, since it is the only one where both sources exist and their
+        // frame rates disagree. A pose-less run completes with an empty
+        // PlayerTrack, so preferring it replaced a stored heatmap with "No pose
+        // data for this video" - and court marking defaults to rallies only, so
+        // a pose-less run is the ordinary case, not a corner.
         val s = heatmapSource(done(PlayerTrack(emptyList(), 0, emptyMap())), stored(sat, fps = 60.0))
         s?.track shouldBe sat
         s?.fps shouldBe 60.0
     }
 
     @Test
-    fun the_fps_always_belongs_to_the_track_that_was_chosen() {
-        // Picking track and fps independently paired them by coincidence. A
-        // 60fps stored track drawn at the in-memory run's 30fps would halve
-        // every dwell time on the court.
-        heatmapSource(done(walked), null)?.fps shouldBe 30.0
-        heatmapSource(null, stored(sat, fps = 60.0))?.fps shouldBe 60.0
+    fun each_source_can_be_drawn_on_its_own() {
+        // Renamed after a review proved the old name was a lie: this was called
+        // "the fps always belongs to the track that was chosen" and could not
+        // fail for that, because each case here has exactly one non-null source,
+        // so every independent-pairing implementation passes it. The fps pairing
+        // is pinned by the test above, where both sources exist and disagree.
+        // What this does uniquely cover is the in-memory-only path.
+        heatmapSource(done(walked), null)?.track shouldBe walked
+        heatmapSource(null, stored(sat, fps = 60.0))?.track shouldBe sat
     }
 
     @Test
