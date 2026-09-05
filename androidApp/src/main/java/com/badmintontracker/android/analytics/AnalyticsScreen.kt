@@ -87,7 +87,8 @@ data class AnalyticsRow(
  * grouping (local videos, owned matches, shared), so the same match shows up in
  * the same place twice.
  *
- * [onOpenDetail] fires for a READY row (opens its heatmap); [onAnalyse] fires
+ * [onOpenDetail] fires for a READY row (opens its analysis, whose one tab today
+ * is the heatmap); [onAnalyse] fires
  * for an ANALYSABLE row's button whether it reads "Analyse" or "Retry", and the
  * caller decides which of the two it is: a failed cloud run with its court
  * points already saved resumes from the step that failed, and everything else
