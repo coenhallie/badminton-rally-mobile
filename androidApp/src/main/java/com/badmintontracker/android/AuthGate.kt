@@ -648,9 +648,13 @@ fun AuthGate(
                             // both kinds of entry, so there is one branch fewer.
                             //
                             // Safe against a second run being started from the screen
-                            // the coach lands back on: LocalAnalysisRunner.start returns
-                            // immediately for an entry already running, and the cloud
-                            // path moves the entry to UPLOADING, which hides the button.
+                            // the coach lands back on. Both pipelines refuse re-entry at
+                            // their own door: LocalAnalysisRunner.start returns for an
+                            // entry already in `running`, and AnalyzeCoordinator's
+                            // launchPipeline returns unless `active.add(entryId)` is the
+                            // first. The UPLOADING stage also hides the button, but it is
+                            // written inside the coroutine, so the set is the guard that
+                            // actually holds in the window right after the pop.
                             nav.popBackStack()
                         },
                         onBack = { nav.popBackStack() },
