@@ -32,17 +32,10 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.badmintontracker.android.clipdetail.ClipDetailScreen
 import com.badmintontracker.android.clipdetail.ClipDetailViewModel
-import com.badmintontracker.android.analytics.AnalyseAffordance
-import com.badmintontracker.android.analytics.AnalyticsGroup
-import com.badmintontracker.android.analytics.AnalyticsRow
 import com.badmintontracker.android.analytics.AnalyticsScreen
+import com.badmintontracker.android.analytics.buildAnalyticsRows
 import com.badmintontracker.android.cliplist.ClipListViewModel
-import com.badmintontracker.android.cliplist.MatchRow
-import com.badmintontracker.android.cliplist.MatchSummary
 import com.badmintontracker.android.cliplist.MatchSummaryViewModel
-import com.badmintontracker.android.cliplist.formatDate
-import com.badmintontracker.android.cliplist.matchRowPrimary
-import com.badmintontracker.android.cliplist.matchRowSecondary
 import com.badmintontracker.android.home.HomeScreen
 import com.badmintontracker.android.match.MatchScreen
 import com.badmintontracker.android.match.MatchViewModel
@@ -65,15 +58,10 @@ import com.badmintontracker.android.scoring.ScoringScreen
 import com.badmintontracker.android.scoring.ScoringViewModel
 import com.badmintontracker.android.signin.SignInScreen
 import com.badmintontracker.android.signin.SignInViewModel
-import com.badmintontracker.android.localvideo.LocalVideoRow
-import com.badmintontracker.shared.analytics.AnalyticsRowState
-import com.badmintontracker.shared.analytics.analyticsRowState
 import com.badmintontracker.shared.localvideo.AnalyzeCoordinator
 import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
-import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
-import com.badmintontracker.shared.localvideo.isAnalysisRunning
 import com.badmintontracker.shared.RallyApp
 import com.badmintontracker.shared.scoring.ScoreLogStatus
 import io.github.jan.supabase.auth.status.SessionStatus
@@ -91,7 +79,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.TextButton
 import com.badmintontracker.android.localanalysis.LocalClipPlayerDialog
 import com.badmintontracker.android.localanalysis.ClipCutter
-import kotlinx.datetime.Instant
 
 @Composable
 fun AuthGate(
@@ -657,124 +644,4 @@ private fun Splash() {
         Text("Rally Clips")
         CircularProgressIndicator()
     }
-}
-
-/**
- * What an ANALYSABLE row's control should show, in place of a live "Analyse"
- * button. Two independent pipelines can be running over the same video at
- * once (see BackgroundWork.kt's own comment on why cloud and on-device
- * failures are tracked apart) - the device run wins when both are non-idle,
- * because that is the run this row's own button would start, but the cloud
- * pipeline must not be left silent just because its button starts the other
- * one: a coach watching this list must not see "Analyse" on a video that is,
- * in fact, being analysed right now, in the cloud.
- */
-private fun affordanceFor(entry: LocalVideoEntry, live: LocalAnalysisState): AnalyseAffordance = when (live) {
-    is LocalAnalysisState.Preparing -> AnalyseAffordance.InProgress("Preparing video")
-    is LocalAnalysisState.Analysing -> AnalyseAffordance.InProgress("Analysing on device")
-    is LocalAnalysisState.Cutting -> AnalyseAffordance.InProgress("Cutting clips")
-    is LocalAnalysisState.Failed -> AnalyseAffordance.Failed(live.message)
-    // No device run in flight or failed: fall back to the cloud pipeline's own
-    // liveness for this entry, using the same wording BackgroundWork.kt does.
-    is LocalAnalysisState.Idle, is LocalAnalysisState.Done -> when {
-        isAnalysisRunning(entry.stage) -> AnalyseAffordance.InProgress(
-            if (entry.stage == AnalyzeStage.UPLOADING) "Uploading" else "Processing in the cloud",
-        )
-        entry.stage == AnalyzeStage.FAILED -> AnalyseAffordance.Failed(entry.failureMessage ?: "Unknown error")
-        // A track only lands on disk when the run asked for pose (see
-        // LocalAnalysisRunner.start): a Done device run that did not is not a
-        // liveness problem, just a video still waiting for its first (pose)
-        // analysis - the same as one that was never touched.
-        else -> AnalyseAffordance.Ready
-    }
-}
-
-/**
- * Builds the Analytics list's rows, grouped like the drawer: local videos, then
- * owned matches, then shared. [analyticsRowState] alone decides READY /
- * ANALYSABLE / NOT_ON_DEVICE - this only gathers its two booleans per match
- * and, for an ANALYSABLE one, reads both pipelines' own liveness via
- * [affordanceFor] so the row can show progress or a failure instead of a live
- * "Analyse" button. `hasStoredTrack` alone cannot tell a run in flight, or one
- * that just failed, from one never attempted.
- *
- * [storedTrackIds] is a caller-computed set rather than a live disk read per
- * row: [LocalAnalysisRunner.storedTrack] loads a track - thousands of points -
- * off disk, and this function is called on every recomposition, including the
- * several-times-a-second ones an in-flight analysis's progress causes.
- */
-private fun buildAnalyticsRows(
-    standaloneLocalRows: List<LocalVideoRow>,
-    ownedRows: List<MatchRow>,
-    sharedMatches: List<MatchSummary>,
-    localEntries: List<LocalVideoEntry>,
-    liveAnalysisStates: Map<String, LocalAnalysisState>,
-    storedTrackIds: Set<String>,
-): List<AnalyticsRow> {
-    fun rowFor(key: String, entryId: String?, group: AnalyticsGroup, title: String, subtitle: String): AnalyticsRow {
-        val entry = entryId?.let { id -> localEntries.firstOrNull { it.id == id } }
-        val hasStoredTrack = entryId != null && entryId in storedTrackIds
-        val state = analyticsRowState(hasLocalEntry = entry != null, hasStoredTrack = hasStoredTrack)
-        // entry is never null here: ANALYSABLE requires hasLocalEntry, which is
-        // exactly `entry != null` above. The null check stays as a guard, not a
-        // second source of truth, so this cannot throw if that ever changes.
-        val affordance = if (state == AnalyticsRowState.ANALYSABLE && entry != null) {
-            affordanceFor(entry, liveAnalysisStates[entry.id] ?: LocalAnalysisState.Idle)
-        } else {
-            AnalyseAffordance.Ready
-        }
-        return AnalyticsRow(
-            key = key,
-            // Not on this phone and inert either way once there is no entry,
-            // so there is nothing for a null id to navigate to.
-            entryId = entry?.id,
-            group = group,
-            title = title,
-            subtitle = subtitle,
-            state = state,
-            affordance = affordance,
-        )
-    }
-
-    val localVideoRows = standaloneLocalRows.map { row ->
-        rowFor(
-            key = "local-${row.entry.id}",
-            entryId = row.entry.id,
-            group = AnalyticsGroup.LOCAL_VIDEOS,
-            title = row.primaryText,
-            subtitle = "${row.durationText} · " +
-                formatDate(Instant.fromEpochMilliseconds(row.entry.addedAtEpochMs)),
-        )
-    }
-
-    val ownedMatchRows = ownedRows.map { row ->
-        when (row) {
-            is MatchRow.Video -> rowFor(
-                key = row.key,
-                entryId = row.match.videoId,
-                group = AnalyticsGroup.OWNED_MATCHES,
-                title = matchRowPrimary(row.match),
-                subtitle = matchRowSecondary(row.match),
-            )
-            is MatchRow.Score -> rowFor(
-                key = row.key,
-                entryId = row.card.videoId,
-                group = AnalyticsGroup.OWNED_MATCHES,
-                title = row.card.title,
-                subtitle = row.card.playersLine,
-            )
-        }
-    }
-
-    val sharedRows = sharedMatches.map { match ->
-        rowFor(
-            key = "shared-${match.videoId}",
-            entryId = match.videoId,
-            group = AnalyticsGroup.SHARED,
-            title = matchRowPrimary(match),
-            subtitle = matchRowSecondary(match),
-        )
-    }
-
-    return localVideoRows + ownedMatchRows + sharedRows
 }

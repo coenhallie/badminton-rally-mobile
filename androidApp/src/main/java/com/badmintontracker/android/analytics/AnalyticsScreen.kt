@@ -46,9 +46,13 @@ enum class AnalyticsGroup(val label: String) {
 
 /**
  * What an `ANALYSABLE` row's control should show, in place of a live "Analyse"
- * button, when the on-device run that would produce its track is not idle.
- * See [com.badmintontracker.android.localanalysis.LocalAnalysisState]: this is
- * that state, reduced to what one row needs to render.
+ * button, when one of the two pipelines is already busy with its video.
+ *
+ * Three cases rather than either pipeline's own state: the on-device run
+ * ([com.badmintontracker.android.localanalysis.LocalAnalysisState]) and the
+ * cloud one ([com.badmintontracker.shared.localvideo.AnalyzeStage]) both feed
+ * it, and a row has one control to show for both. See [affordanceFor] for which
+ * of the two speaks.
  */
 sealed interface AnalyseAffordance {
     /** Nothing is running yet (or the last run finished with no track saved). */
