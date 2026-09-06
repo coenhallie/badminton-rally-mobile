@@ -146,24 +146,48 @@ val bundledModels = listOf(
 val onnxSourceDir = rootProject.layout.projectDirectory.dir("tools/models/onnx")
 val onnxAssetsDir = layout.buildDirectory.dir("generated/onnxAssets")
 
-val copyOnnxModels by tasks.registering(Copy::class) {
-    description = "Stage the ONNX graphs as app assets."
-    from(onnxSourceDir) { include(bundledModels) }
-    into(onnxAssetsDir.map { it.dir("models") })
-    doFirst {
-        // Fail with the command that fixes it. Without this the app builds
-        // fine and dies at runtime on a missing asset, which is a far worse
-        // place to learn the export was never run.
-        val missing = bundledModels.filterNot { onnxSourceDir.file(it).asFile.exists() }
-        if (missing.isNotEmpty()) {
-            error(
-                "missing ONNX graphs in ${onnxSourceDir.asFile}: ${missing.joinToString()}\n" +
-                    "Run: python tools/models/pull_weights.py --tracker-repo ../badminton-tracker\n" +
-                    "then: python tools/models/export_tracknet.py --tracker-repo ../badminton-tracker\n" +
-                    "then: python tools/models/export_yolo.py"
-            )
+// Fail with the command that fixes it. Without this the app builds fine and
+// dies at runtime on a missing asset, which is a far worse place to learn the
+// export was never run.
+//
+// This lives in its own task rather than in copyOnnxModels.doFirst, where it
+// used to live and where it did nothing. A Copy task whose source matches no
+// file at all is skipped as NO-SOURCE, and a skipped task runs none of its
+// actions - so on any checkout without tools/models/onnx, which is every CI
+// runner because the directory is gitignored, the guard was skipped and the APK
+// was packaged with no models in it. That is the exact failure the guard exists
+// to prevent. A task with no inputs is never NO-SOURCE and always runs.
+//
+// -PonnxModelsOptional=true downgrades the failure to a warning, for builds that
+// only need to prove the code compiles and packages. CI's assemble job passes it
+// because it cannot export the graphs: that needs the Modal weights and torch.
+// An APK built that way will not analyse anything, so do not pass it for a build
+// anyone intends to install.
+val verifyOnnxModels by tasks.registering {
+    description = "Fail when the ONNX graphs the app bundles have not been exported."
+    val source = onnxSourceDir
+    val optional = providers.gradleProperty("onnxModelsOptional")
+        .map { it.toBoolean() }.getOrElse(false)
+    doLast {
+        val missing = bundledModels.filterNot { source.file(it).asFile.exists() }
+        if (missing.isEmpty()) return@doLast
+        val problem = "missing ONNX graphs in ${source.asFile}: ${missing.joinToString()}\n" +
+            "Run: python tools/models/pull_weights.py --tracker-repo ../badminton-tracker\n" +
+            "then: python tools/models/export_tracknet.py --tracker-repo ../badminton-tracker\n" +
+            "then: python tools/models/export_yolo.py"
+        if (optional) {
+            logger.warn("WARNING: $problem\nBuilding anyway: -PonnxModelsOptional=true was set.")
+        } else {
+            error(problem)
         }
     }
+}
+
+val copyOnnxModels by tasks.registering(Copy::class) {
+    description = "Stage the ONNX graphs as app assets."
+    dependsOn(verifyOnnxModels)
+    from(onnxSourceDir) { include(bundledModels) }
+    into(onnxAssetsDir.map { it.dir("models") })
 }
 
 android.sourceSets.getByName("main").assets.srcDir(onnxAssetsDir)

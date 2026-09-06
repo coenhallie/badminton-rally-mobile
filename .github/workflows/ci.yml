@@ -49,7 +49,11 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
-      - run: ./gradlew :androidApp:assembleDebug
+      # The bundled ONNX graphs are gitignored derived artifacts, and exporting
+      # them needs the Modal weights and torch, neither of which is available
+      # here. This job proves the app compiles and packages; the APK it produces
+      # has no models in it and cannot analyse a video.
+      - run: ./gradlew :androidApp:assembleDebug -PonnxModelsOptional=true
 
   ios-app:
     # macos-15+: the committed pbxproj uses project format 77, unreadable by
