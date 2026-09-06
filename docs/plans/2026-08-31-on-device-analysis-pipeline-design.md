@@ -399,17 +399,31 @@ cloud needs the pixels.
 
 ### 5.6 Capability routing
 
-A device allowlist would rot immediately. Instead, on first analysis the app runs
-a calibration pass - a fixed frame count through the pose model at real
-resolution - and projects full-video wall clock. Above a threshold expressed as a
-multiple of video duration, that video routes to the existing `process-video` and
-`start-analytics` edge functions. The result caches per device and per model
-version.
+A device allowlist would rot immediately. Instead the app learns what the phone
+in hand manages and projects full-video wall clock from that. Routing also fires
+unconditionally when models fail to load or the runtime is unavailable, so a
+conversion problem degrades to cloud rather than to a broken screen.
 
-The threshold cannot be set from source and comes from §7's stage 0b. Routing
-also fires unconditionally when models fail to load or the runtime is
-unavailable, so a conversion problem degrades to cloud rather than to a broken
-screen.
+**Two things in the original text were superseded by what shipped and by stage
+0b's numbers. Both are corrected here rather than left to mislead.**
+
+*Not a calibration pass; a running estimate.* This section specified a fixed
+frame count through the pose model on first analysis. `DeviceThroughputRepository`
+does something better: it seeds from real S23 numbers, then every completed run
+reports what it achieved and the estimate converges on the device in hand,
+smoothed so one hot or one idle run moves it rather than becoming it. That costs
+the user nothing up front, and unlike a one-shot calibration it keeps tracking a
+phone whose thermal behaviour changes.
+
+*The threshold's unit is frames, not duration.* This section framed it as a
+multiple of video **duration**. `reports/phase1-throughput-s23.md` shows why that
+is wrong: this pipeline pays per frame, so a 6.3-minute 50fps video has more
+frames than an 8-minute 25fps one and costs more to analyse - 74 minutes against
+47. Expressed in duration the threshold routes those two the wrong way round.
+
+The threshold's value still comes from §7's stage 0b, and stage 0b is still open:
+an S23 and a MacBook are measured, the oldest supported device is not, and one
+flagship does not bound a routing decision.
 
 ### 5.7 The A/B harness
 

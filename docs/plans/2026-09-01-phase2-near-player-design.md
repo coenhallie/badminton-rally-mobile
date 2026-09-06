@@ -1,7 +1,7 @@
 # Design: Phase 2 on device, near player only
 
 **Date:** 2026-09-01
-**Status:** Proposal, in implementation
+**Status:** Implemented 2026-09-02 on Android. `CourtOccupancy`, `NearPlayer`, `PlayerTrack` and `Skeleton` are in `:analysis`; `CourtHeatmapView` and `SkeletonOverlay` are in the Android layer. Not built for iOS, which has no local analysis layer at all.
 **Implements:** Stage 3 of `2026-08-31-on-device-analysis-pipeline-design.md`
 **Reference:** `2026-08-31-web-analysis-pipeline-reference.md`
 

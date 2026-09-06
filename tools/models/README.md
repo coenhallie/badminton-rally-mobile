@@ -3,9 +3,12 @@
 Scripts for the Stage 0 on-device ML gates: acquire and pin the source
 weights, convert TrackNet and InpaintNet to ONNX, prove numerical parity,
 measure shuttle coverage against real footage, and measure sustained pose
-throughput. This directory only contains tooling; none of the acquisition,
-conversion, or measurement steps below have been run yet in this environment
-(see "Blocked on").
+throughput.
+
+Most of these have now been run; each step below records its own result, and
+"Blocked on" at the end lists what is still missing. The one that matters is
+step 4, the 0a gate: it has run against both corpus videos and **has not
+passed**, for a reason that is not about the ONNX conversion. See that section.
 
 Run every script below from the repo root; their paths
 (`tools/models/weights/`, `tools/models/onnx/`, `tools/models/reports/`) are
@@ -272,8 +275,55 @@ step's output:
    report rather than continuing to later tasks; the design's assumption
    that the on-device conversion preserves the PyTorch model's behavior
    would not hold, and the remaining plan should not be executed until
-   that is resolved. This has not been run yet in this environment; no
-   result is recorded.
+   that is resolved.
+
+   **Run 2026-09-01 against both corpus videos. The gate did not pass, and
+   the reason is not the conversion.** Reports are
+   `reports/coverage-2eabfc01-...-full.json` and
+   `reports/coverage-743d7fb1-...-full.json`, both `gate_pass: false`, both
+   exit 3, both `underfloor_gate_terms: ["inpaint_scoped"]`.
+
+   | term | 2eabfc01 | 743d7fb1 |
+   |---|---|---|
+   | visibility agreement | 1.0 over 12,032 frames | 0.9998 over 5,972 |
+   | p95 delta at 512x288 | 0.00017px over 7,828 | 0.00012px over 2,640 |
+   | InpaintNet-scoped | no sample | no sample |
+
+   The two terms that measured are not merely inside their thresholds, they
+   are three to four orders of magnitude inside them. On the evidence
+   available, **TrackNet's ONNX conversion is sound**.
+
+   The third term measured nothing, and the exit-3 advice below - pick a clip
+   with a real detection gap - **does not apply here, and following it would
+   waste a long CPU run.** The reports rule it out: `inpaintnet_shim_calls` is
+   94 and 46, so gaps existed and the model ran dozens of times on each video
+   (743d7fb1 alone has 530 gaps in the cloud's own trajectory, median length
+   2, longest 443). What is empty is not the gap set but the *accepted* set:
+   `inpainted_frames_torch` and `inpainted_frames_onnx` are both `[]`.
+
+   `inpainted_frames_torch` is the important one. `_InpaintCapture` wraps the
+   torch tracker, and only the ONNX tracker has its models swapped, so that
+   field is the real PyTorch pipeline's own output. It says that **production's
+   own InpaintNet, running the cloud's exact code on real footage, filled zero
+   frames on both videos** - every candidate rejected by production's bounds
+   and continuity checks at `inference.py:424-446`.
+
+   So the term is not measuring the conversion on this corpus; it is measuring
+   a property of the pipeline, and no choice of clip changes that. Two things
+   follow, and neither is "run it again":
+
+   - **The InpaintNet conversion is still unverified**, and the Android device
+     layer ships on it. That is the open risk.
+   - **The term is looking in the wrong place.** It compares which frames each
+     side's InpaintNet got *accepted*, which production can zero out on both
+     sides at once. What the conversion actually affects is the model's raw
+     output, and that is non-empty whenever the model is called. A term
+     comparing torch against ONNX InpaintNet output over the real trajectory,
+     before production's acceptance filter, would be measurable here and would
+     test what this gate exists to test.
+
+   Until one of those is resolved, treat the 0a gate as passed for TrackNet
+   and open for InpaintNet, rather than as a single verdict.
 
    **Exit codes** (also documented in the script's module docstring),
    checked worst-first so a real failure is never masked by a weaker
@@ -441,19 +491,27 @@ run as part of this change:
   frame count and `results.json` `total_frames` all agree exactly at 5972,
   and its fps matches to full precision - one decode risk section 5.4 flags
   that does not materialise here.
-- No physical device is reachable, and no host app embedding ONNX Runtime
-  exists (Task 5 cannot produce the on-device numbers that decide the
-  section 5.6 routing threshold)
+- ~~No physical device is reachable~~ **An S23 was reached 2026-09-01**;
+  `reports/decode-parity-s23.md` and `reports/phase1-throughput-s23.md` are
+  its output. What is still missing for the section 5.6 routing threshold is
+  the *other* end of the range: the oldest device intended for support. One
+  flagship does not bound a routing decision.
 
-Everything in this directory is the tooling those steps need once a human
-supplies the missing credentials, CLI, packages, source footage and device.
-No weights have been pulled, no `manifest.json` or vendored TrackNetV3
-licence exists yet, no ONNX export has been produced, and no parity,
-coverage or throughput numbers have been recorded.
+What is genuinely still open:
 
-**Steps 5 and 6 have now been run** against real weights, on desktop. The
-badminton detector came from the `badminton-tracker` checkout and the pose
-model from Ultralytics, neither of which needs Modal; only TrackNet and
-InpaintNet do. `manifest.json` is still absent because `pull_weights.py`
-cannot complete without the Modal pulls, so **these exports are not yet
-pinned** - re-running may not reproduce them byte for byte.
+- **The 0a gate has not passed** (step 4). Not for want of running it, and not
+  for want of a better clip - see that section for why, and for the two things
+  that would actually resolve it.
+- **The corpus cannot extend that gate.** Three corpora were captured but only
+  two carry a `source.mp4`; `0a654e34` has `results.json` and `clips.json`
+  only, so it cannot be gated. Two videos is the whole sample.
+- **The exports are not pinned to their sources by a full clean run.**
+  `manifest.json` exists and records all five weights with SHA-256, but it was
+  written across several partial runs rather than one `pull_weights.py`
+  completion, so re-running is not guaranteed to reproduce the ONNX graphs
+  byte for byte.
+
+Everything else this section used to list as blocked has since been done: the
+weights are pulled and pinned, the TrackNetV3 licence is vendored at
+`licenses/TrackNetV3-LICENSE.txt`, all five ONNX graphs are exported, and
+parity, coverage and throughput numbers are recorded in `reports/`.
