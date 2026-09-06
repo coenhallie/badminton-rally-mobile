@@ -22,6 +22,7 @@ with L as a dynamic axis instead.
 import argparse, sys
 from pathlib import Path
 
+import numpy as np
 import torch
 
 
@@ -59,10 +60,51 @@ def _export_pair(model, dummy, out: Path, dynamic_axes=None, input_names=None, o
         out.unlink(missing_ok=True)
         fp16_out.unlink(missing_ok=True)
         raise
+
+    # Smoke the fp16 graph before anyone can bundle it. This converter is the
+    # one that produced an InpaintNet fp16 graph returning NaN on roughly a
+    # third of chunks at production's length, which shipped in the Android app
+    # because nothing between "onnx.save" and "assets/models" ever ran it. A
+    # graph that emits NaN on plain in-range input is broken no matter how
+    # representative the input is, and this is the cheapest place to find out.
+    #
+    # The fp16 file is deleted and the fp32 one kept, deliberately breaking
+    # the both-or-neither rule above. That rule exists so a stale fp32 cannot
+    # masquerade as current; deleting a graph this run just proved defective,
+    # loudly, is not that failure. Callers see it in the return value.
+    if not _fp16_is_finite(fp16_out, dummy):
+        fp16_out.unlink(missing_ok=True)
+        print(f"wrote {out}", file=sys.stderr)
+        print(f"REFUSED to write {fp16_out}: the fp16 conversion returns non-finite "
+              f"output on in-range input. The fp32 graph is kept and is the one to "
+              f"bundle. Do not work around this by re-running; the converter is at "
+              f"fault (it fails at Resize nodes, and both these models upsample).",
+              file=sys.stderr)
+        return False
     print(f"wrote {out} and {fp16_out}")
+    return True
 
 
-def _export_tracknet(out: Path) -> None:
+def _fp16_is_finite(fp16_out: Path, dummy) -> bool:
+    """True when the fp16 graph returns finite output on in-range input.
+
+    Uses the same dummy the export was traced with, plus uniform random input
+    of that shape: the traced dummy alone can be all-zeros or otherwise
+    degenerate and exercise none of the range where fp16 overflows.
+    """
+    import onnxruntime as ort
+    sess = ort.InferenceSession(str(fp16_out), providers=["CPUExecutionProvider"])
+    name = sess.get_inputs()[0].name
+    base = dummy.detach().cpu().numpy().astype(np.float32)
+    rng = np.random.default_rng(0)
+    probes = [base] + [rng.random(base.shape, dtype=np.float32) for _ in range(4)]
+    for probe in probes:
+        if not np.isfinite(sess.run(None, {name: probe})[0]).all():
+            return False
+    return True
+
+
+def _export_tracknet(out: Path) -> bool:
     from tracknet.model import TrackNet
 
     ckpt = _load_checkpoint("tools/models/weights/tracknet.pt")
@@ -88,11 +130,11 @@ def _export_tracknet(out: Path) -> None:
     # Exported at batch 2 rather than 1 so the trace cannot bake a
     # size-1 assumption into the graph and still appear to work.
     dummy = torch.randn(1, in_dim, 288, 512)
-    _export_pair(model, dummy, out, dynamic_axes=None,
-                 input_names=["frames"], output_names=["heatmaps"])
+    return _export_pair(model, dummy, out, dynamic_axes=None,
+                        input_names=["frames"], output_names=["heatmaps"])
 
 
-def _export_inpaintnet(out: Path) -> None:
+def _export_inpaintnet(out: Path) -> bool:
     from tracknet.model import InpaintNet
 
     ckpt = _load_checkpoint("tools/models/weights/inpaintnet.pt")
@@ -130,9 +172,9 @@ def _export_inpaintnet(out: Path) -> None:
     # pinned to it - see the module docstring for why a static length would
     # be wrong here, unlike for TrackNet.
     dummy = torch.randn(1, 3, 256)
-    _export_pair(model, dummy, out,
-                 dynamic_axes={"trajectory": {2: "length"}, "prediction": {2: "length"}},
-                 input_names=["trajectory"], output_names=["prediction"])
+    return _export_pair(model, dummy, out,
+                        dynamic_axes={"trajectory": {2: "length"}, "prediction": {2: "length"}},
+                        input_names=["trajectory"], output_names=["prediction"])
 
 
 def main() -> int:
@@ -144,8 +186,16 @@ def main() -> int:
 
     sys.path.insert(0, str(Path(args.tracker_repo) / "backend"))
 
-    _export_tracknet(Path(args.out))
-    _export_inpaintnet(Path(args.inpaintnet_out))
+    # Both run even if the first refuses its fp16 graph: they are independent
+    # models, and a caller wants to know about both in one go rather than
+    # discovering the second only after fixing the first.
+    ok_tracknet = _export_tracknet(Path(args.out))
+    ok_inpaintnet = _export_inpaintnet(Path(args.inpaintnet_out))
+    if not (ok_tracknet and ok_inpaintnet):
+        bad = [n for n, ok in (("tracknet", ok_tracknet), ("inpaintnet", ok_inpaintnet)) if not ok]
+        print(f"fp16 conversion refused for: {', '.join(bad)}. The fp32 graphs were "
+              f"written and are the ones to bundle.", file=sys.stderr)
+        return 1
     return 0
 
 

@@ -35,6 +35,19 @@ def peaks(hm: np.ndarray) -> list:
 
 
 def compare(hm_ref: np.ndarray, hm_got: np.ndarray):
+    """Peak agreement between two heatmap batches, plus non-finite counts.
+
+    The non-finite counts are not decoration. This comparison is built on
+    argmax, and argmax over a heatmap that is entirely NaN returns an index
+    anyway - the same index on both sides - so a graph whose output has
+    collapsed to NaN reports zero peaks moved and a largest shift of 0, which
+    reads as perfect parity. The caller has to be able to reject that, and it
+    cannot see it from the peak numbers alone.
+
+    That is not hypothetical for this converter: the fp16 InpaintNet graph
+    from the same onnxconverter-common path returns NaN on roughly a third of
+    chunks at production's length.
+    """
     moved, total, max_shift = 0, 0, 0
     for (rx, ry), (gx, gy) in zip(peaks(hm_ref), peaks(hm_got)):
         total += 1
@@ -42,7 +55,9 @@ def compare(hm_ref: np.ndarray, hm_got: np.ndarray):
         if shift:
             moved += 1
             max_shift = max(max_shift, shift)
-    return moved, total, max_shift
+    nonfinite_ref = int((~np.isfinite(hm_ref)).sum())
+    nonfinite_got = int((~np.isfinite(hm_got)).sum())
+    return moved, total, max_shift, nonfinite_ref, nonfinite_got
 
 
 def main() -> int:
@@ -60,6 +75,7 @@ def main() -> int:
     sess = ort.InferenceSession(args.onnx, providers=["CPUExecutionProvider"])
 
     moved, total, max_shift = 0, 0, 0
+    nonfinite_ref, nonfinite_got = 0, 0
 
     if args.video:
         try:
@@ -75,10 +91,12 @@ def main() -> int:
                     break
                 hm_ref = common.run_torch(model, stack)
                 hm_got = common.run_onnx(sess, stack)
-                m, t, s = compare(hm_ref, hm_got)
+                m, t, s, nf_ref, nf_got = compare(hm_ref, hm_got)
                 moved += m
                 total += t
                 max_shift = max(max_shift, s)
+                nonfinite_ref += nf_ref
+                nonfinite_got += nf_got
                 n_batches += 1
         finally:
             cap.release()
@@ -92,16 +110,37 @@ def main() -> int:
             x = rng.random((1, in_dim, 288, 512), dtype=np.float32)
             hm_ref = common.run_torch(model, x)
             hm_got = common.run_onnx(sess, x)
-            m, t, s = compare(hm_ref, hm_got)
+            m, t, s, nf_ref, nf_got = compare(hm_ref, hm_got)
             moved += m
             total += t
             max_shift = max(max_shift, s)
+            nonfinite_ref += nf_ref
+            nonfinite_got += nf_got
         source = "synthetic noise (fallback, no --video given)"
 
     print(f"input source      : {source}")
     print(f"heatmaps compared : {total}")
     print(f"peaks moved       : {moved} ({100 * moved / max(total, 1):.2f}%)")
     print(f"largest shift     : {max_shift} px (at 512x288)")
+    print(f"non-finite outputs: torch {nonfinite_ref}, onnx {nonfinite_got}")
+
+    # Checked BEFORE the peak bound, and independently of --video, because a
+    # non-finite heatmap makes the peak numbers meaningless rather than good:
+    # argmax over an all-NaN heatmap still returns an index, the same one on
+    # both sides, so this run would otherwise print "0 peaks moved" and pass.
+    # Unlike the peak bound, this needs no real video to be trustworthy - a
+    # graph that emits NaN on any input at all is broken, and noise is a
+    # perfectly good input for asking that question.
+    if nonfinite_got:
+        print(f"PARITY FAILED - the ONNX graph returned {nonfinite_got} non-finite output "
+              f"values. Peak agreement is not meaningful across a NaN heatmap and is not "
+              f"reported as a pass here. Do not bundle this graph.")
+        return 1
+    if nonfinite_ref:
+        print(f"UNMEASURABLE - the torch reference itself returned {nonfinite_ref} "
+              f"non-finite values, so there is nothing to compare the export against.",
+              file=sys.stderr)
+        return 2
 
     # A peak that moves by 1px at 512x288 is well inside the noise the static
     # cluster filter already tolerates. Anything larger changes shuttle
