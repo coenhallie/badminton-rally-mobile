@@ -11,6 +11,7 @@ import io.github.jan.supabase.auth.user.UserSession
 import io.github.jan.supabase.storage.resumable.Fingerprint
 import io.github.jan.supabase.storage.resumable.MemoryResumableCache
 import io.github.jan.supabase.storage.resumable.ResumableCacheEntry
+import io.kotest.assertions.withClue
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -147,7 +148,22 @@ class VideosRepositoryUploadTest {
         )
         val repo = VideosRepositoryImpl(client)
         val states = repo.uploadVideo(VIDEO_ID, BYTES.size.toLong()) { ByteReadChannel(BYTES) }.toList()
-        states.last() shouldBe UploadState.Done
+        // The clue is here because this test has failed once on CI, on the iOS
+        // target only, reporting nothing but "AssertionFailedError at null:-1".
+        // It has NOT been reproduced: 5 local runs idle and 3 under CPU load all
+        // passed, the jvm target runs this same commonTest assertion and has never
+        // failed it, and a re-run of the very same CI commit went green. The cause
+        // is unknown, so nothing here is patched around it.
+        //
+        // What the clue buys: uploadVideo funnels every throwable into
+        // UploadState.Failed(message) through its trailing catch, and this mock's
+        // else branch throws IllegalStateException("Unexpected request: ..."). If
+        // an unexpected request is what happens on the failing runs, that message
+        // names the method and URL. Printing the whole list also separates "ended
+        // on Failed" from "never emitted Done at all".
+        withClue("upload states were: $states") {
+            states.last() shouldBe UploadState.Done
+        }
     }
 
     @Test
