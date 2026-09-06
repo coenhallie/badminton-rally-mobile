@@ -141,7 +141,9 @@ dependencies {
 // smaller than the detector and measured at 230ms a frame against medium's
 // 1567, so it is both shippable and the only one that runs on a phone.
 val bundledModels = listOf(
-    "tracknet.fp16.onnx", "inpaintnet.fp16.onnx", "badminton.fp16.onnx", "posen.fp16.onnx",
+    // inpaintnet is fp32 on purpose; see ModelCatalog.INPAINTNET for why the
+    // fp16 graph of this one model cannot be shipped.
+    "tracknet.fp16.onnx", "inpaintnet.onnx", "badminton.fp16.onnx", "posen.fp16.onnx",
 )
 val onnxSourceDir = rootProject.layout.projectDirectory.dir("tools/models/onnx")
 val onnxAssetsDir = layout.buildDirectory.dir("generated/onnxAssets")
@@ -183,7 +185,12 @@ val verifyOnnxModels by tasks.registering {
     }
 }
 
-val copyOnnxModels by tasks.registering(Copy::class) {
+// Sync, not Copy: a Copy leaves whatever is already in the destination alone,
+// so renaming a bundled graph left the old file staged and the APK carried
+// both. That was not hypothetical - switching InpaintNet from the fp16 file to
+// the fp32 one kept shipping the broken fp16 graph beside the good one. Sync
+// makes the assets directory match this list exactly.
+val copyOnnxModels by tasks.registering(Sync::class) {
     description = "Stage the ONNX graphs as app assets."
     dependsOn(verifyOnnxModels)
     from(onnxSourceDir) { include(bundledModels) }

@@ -16,7 +16,8 @@
     TrackNet's conversion alone). This needs no cloud data at all, and it
     alone drives GATE PASS/FAIL and the exit code.
 
-    The gate has THREE terms, not two: whole-video visibility agreement,
+    The gate has FOUR terms. Three of them are whole-video visibility
+    agreement,
     whole-video p95 position delta, and a third term scoped to exactly the
     frames either side's InpaintNet pass filled (see _InpaintCapture and the
     "InpaintNet gate term" comment in main()). The first two are both
@@ -29,6 +30,22 @@
     length and clears it at another. The third term exists specifically
     because the first two cannot be trusted to catch an InpaintNet-only
     defect.
+
+    The FOURTH term, inpaint_raw, exists because the third one cannot be
+    trusted either, for a reason only real footage revealed. inpaint_scoped
+    looks at frames production ACCEPTED, and production applies its own
+    bounds and continuity checks to every candidate (inference.py:424-446)
+    on the torch side too. On both corpus videos it rejected every candidate
+    on BOTH sides, leaving that term with an empty sample and the gate with
+    no evidence at all about InpaintNet. A term the pipeline can zero out on
+    both sides at once is not measuring the conversion, and no choice of
+    clip fixes it. inpaint_raw compares the model's raw OUTPUT instead, torch
+    against ONNX on identical inputs (see _RawInpaintTap), which is non-empty
+    whenever the model is called. On its first run against real footage it
+    failed at 96px against a 2px threshold, on a clip where inpaint_scoped
+    measured nothing. Both terms are kept: only inpaint_scoped can catch a
+    divergence that changes WHICH frames production accepts, which is what
+    the pipeline downstream actually consumes.
 
     HONEST CAVEAT ON WHAT THIS DOES NOT PROVE: this script forces
     device="cpu" so it can run anywhere, which means the PyTorch reference
@@ -84,9 +101,9 @@ all. See EXIT CODES below for how this script tells you when that happened.
 
 EXIT CODES, checked worst-first so a real failure can never be masked by a
 weaker signal from later in the list:
-  0 - GATE PASS. Measured clean on all three gate terms (visibility
+  0 - GATE PASS. Measured clean on all four gate terms (visibility
       agreement, whole-video p95 delta, and the InpaintNet-scoped term -
-      see the "THREE terms, not two" note above), each computed over a
+      see the "FOUR terms" note above), each computed over a
       NON-EMPTY sample. Under the deployed configuration (both models
       swapped) that last part is the substantive claim: at least one frame
       was actually filled by one side's InpaintNet pass, torch and ONNX
@@ -124,7 +141,7 @@ weaker signal from later in the list:
       in underfloor_gate_terms in the JSON report. Today inpaint_scoped is
       the only term that can reach this branch, so in practice this still
       means INPAINTNET UNEXERCISED: the gate would otherwise have been a
-      clean PASS on all three terms, but both models were swapped (the
+      clean PASS on all four terms, but both models were swapped (the
       default, deployed configuration) and NEITHER SIDE's InpaintNet pass
       filled a single frame on this video. The InpaintNet-scoped term was
       therefore computed over an EMPTY sample, and this run holds no
@@ -234,6 +251,114 @@ class _OnnxModelShim:
         outs = [self.sess.run(None, {self.input_name: arr[i:i + 1]})[0] for i in range(arr.shape[0])]
         out = np.concatenate(outs, axis=0)
         return torch.from_numpy(out).to(dtype=x.dtype, device=x.device)
+
+
+class _RawInpaintTap:
+    """Records every (input, output) pair the real torch InpaintNet produces.
+
+    This exists because the inpaint_scoped term can measure nothing on real
+    footage. That term looks at frames production ACCEPTED, and production
+    applies its own bounds and continuity checks to every candidate
+    (inference.py:424-446) on the torch side too. On both corpus videos it
+    rejected all of them on both sides: inpaintnet_shim_calls 94 and 46,
+    inpainted_frames_torch and _onnx both empty. A term that can be zeroed
+    out by the pipeline on both sides at once is not measuring the
+    conversion, and no choice of clip changes that.
+
+    What the conversion actually changes is the model's OUTPUT, which exists
+    on every call whether or not production goes on to accept it. Taping the
+    torch side's calls here lets the identical inputs be replayed through the
+    ONNX graph afterwards, so the comparison isolates one variable: same
+    input, one implementation difference.
+
+    Replay rather than a comparison of the two sides' in-run outputs, which
+    is the obvious cheaper thing and is wrong. The ONNX side's InpaintNet is
+    fed a trajectory built by the ONNX TrackNet, so its input differs from
+    the torch side's; comparing those outputs folds TrackNet's drift into a
+    number that is supposed to be about InpaintNet.
+
+    Wraps the model attribute, not the method: track_video's only contact
+    with the model is `self.inpaintnet(inp_tensor)` (inference.py:416), and
+    _run_inpaintnet's `self.inpaintnet is None` check (:346) still sees a
+    non-None object. Installed after _build_tracker has finished loading and
+    moving the module, the same point at which _OnnxModelShim is assigned.
+    """
+
+    def __init__(self, tracker):
+        self._model = tracker.inpaintnet
+        # (input (1,3,L), output (1,2,L)), both float32. L is at most 256
+        # (chunk_size, inference.py:367) and calls number in the dozens, so
+        # holding these is kilobytes, not a memory concern.
+        self.calls = []
+        tracker.inpaintnet = self
+
+    def __call__(self, x: "torch.Tensor") -> "torch.Tensor":
+        out = self._model(x)
+        self.calls.append((
+            x.detach().cpu().numpy().astype(np.float32),
+            out.detach().cpu().float().numpy(),
+        ))
+        return out
+
+
+def _replay_inpaint_through_onnx(taped, sess, model_w, model_h):
+    """Replay taped torch InpaintNet inputs through ONNX; return (max_px, n).
+
+    Compares only the positions where the input's visibility channel is 0.
+    That channel is index 2 of the (1, 3, L) input (inference.py:408), and
+    production reads the prediction only at `vis[frame_idx] == 0`
+    (inference.py:422), so those are the positions the conversion can
+    actually influence downstream.
+
+    Those positions also include each chunk's zero padding, up to 7 entries
+    per call (padded to the next multiple of 8, inference.py:401), which the
+    tensor alone cannot tell apart from a real gap. Including them is the
+    conservative direction: it can only add compared positions, never hide a
+    divergence, in the same spirit as this script comparing fp32 against
+    fp16 where production compares fp16 against fp16.
+
+    MAX, not p95 or mean, for the reason the sibling term uses it: the whole
+    failure mode being guarded against is a small number of wrong-but-
+    in-range predictions, which any aggregate over a long tail discards.
+    """
+    input_name = sess.get_inputs()[0].name
+    max_delta_px = None
+    n_compared = 0
+    nonfinite_consumed = 0
+    nonfinite_any = 0
+    for inp, torch_out in taped:
+        onnx_out = sess.run(None, {input_name: inp})[0]
+        # Counted over the WHOLE output, not just the gap positions below.
+        # Production only ever reads the prediction at a gap, so a NaN
+        # elsewhere in the tensor changes nothing on this particular input -
+        # but whether a NaN lands on a consumed position is a property of the
+        # input, not of the graph, and the graph is what is under test. On
+        # 200 realistic multi-gap trajectories at production's chunk length,
+        # the fp16 InpaintNet graph produced a NaN somewhere in 36% of them
+        # and on a consumed position in 11.5%. A graph that does that is
+        # defective whichever positions this run happened to route it to.
+        nonfinite_any += int((~np.isfinite(onnx_out)).sum())
+        gaps = inp[0, 2, :] == 0.0
+        if not gaps.any():
+            continue
+        dx = np.abs(torch_out[0, 0, gaps] - onnx_out[0, 0, gaps]) * model_w
+        dy = np.abs(torch_out[0, 1, gaps] - onnx_out[0, 1, gaps]) * model_h
+        diff = np.maximum(dx, dy)
+        # A non-finite delta must fail decisively, and cannot go through
+        # Python's max(): max(2.0, nan) is 2.0 while max(nan, 2.0) is nan, so
+        # a NaN would survive or vanish depending on the order the chunks
+        # happen to arrive in.
+        bad = int((~np.isfinite(diff)).sum())
+        nonfinite_consumed += bad
+        worst = float("inf") if bad else float(np.max(diff))
+        max_delta_px = worst if max_delta_px is None else max(max_delta_px, worst)
+        n_compared += int(gaps.sum())
+    return {
+        "max_delta_px": max_delta_px,
+        "n_compared": n_compared,
+        "nonfinite_consumed": nonfinite_consumed,
+        "nonfinite_any": nonfinite_any,
+    }
 
 
 class _InpaintCapture:
@@ -504,6 +629,10 @@ def main() -> int:
         # its model attribute (swapped below) differs.
         torch_inpaint = _InpaintCapture(torch_tracker)
         onnx_inpaint = _InpaintCapture(onnx_tracker)
+        # Taps the torch side only. Its inputs are replayed through the ONNX
+        # graph after both runs, which is what isolates the conversion; see
+        # _RawInpaintTap.
+        raw_inpaint_tap = _RawInpaintTap(torch_tracker)
         tracknet_shim = _OnnxModelShim(args.onnx)
         onnx_tracker.tracknet = tracknet_shim
         inpaintnet_shim = None
@@ -605,6 +734,21 @@ def main() -> int:
     # delta is the only statistic that cannot look past a single
     # wrong-but-in-range inpainted frame the way an aggregate over the
     # whole video can.
+    # The raw-output term, which measures the same conversion where the
+    # accepted-frame term below cannot. Uses the shim's own session rather
+    # than opening a second one, but calls sess.run directly rather than the
+    # shim, so inpaintnet_shim_calls stays a count of IN-RUN invocations and
+    # is not inflated by replay.
+    raw = {"max_delta_px": None, "n_compared": 0,
+           "nonfinite_consumed": 0, "nonfinite_any": 0}
+    if inpaintnet_shim is not None:
+        try:
+            raw = _replay_inpaint_through_onnx(
+                raw_inpaint_tap.calls, inpaintnet_shim.sess, MODEL_W, MODEL_H)
+        except Exception as e:
+            _write_crash("inpaintnet raw replay", e)
+            return 4
+
     torch_inpainted = sorted(torch_inpaint.inpainted_frames or set())
     onnx_inpainted = sorted(onnx_inpaint.inpainted_frames or set())
     inpaint_union = sorted(set(torch_inpainted) | set(onnx_inpainted))
@@ -675,6 +819,15 @@ def main() -> int:
         "inpaint_union_size": len(inpaint_union),
         "inpaint_sets_match": inpaint_sets_match,
         "max_inpaint_delta_px_at_512x288": max_inpaint_delta_px,
+        "raw_inpaint_calls_taped": len(raw_inpaint_tap.calls),
+        "raw_inpaint_positions_compared": raw["n_compared"],
+        # Counted and reported separately because "the ONNX graph returned a
+        # NaN" and "the ONNX graph returned a number 3px away" are different
+        # defects with the same verdict, and a reader should not have to infer
+        # which one an infinite delta means.
+        "raw_inpaint_nonfinite_consumed": raw["nonfinite_consumed"],
+        "raw_inpaint_nonfinite_anywhere": raw["nonfinite_any"],
+        "max_raw_inpaint_delta_px_at_512x288": raw["max_delta_px"],
     }
 
     # --- DENOMINATOR FLOORS ---------------------------------------------
@@ -758,6 +911,37 @@ def main() -> int:
                 "reach. The term still runs and can still fail, catching a TrackNet drift that "
                 "changes which frames get inpainted."),
             sample="frames either side's InpaintNet pass actually filled")
+        # The term that stays measurable when the one above does not. Both
+        # are kept: this one is the sharper instrument for the conversion,
+        # but only the one above can catch a divergence that changes WHICH
+        # frames production accepts, which is what the pipeline downstream
+        # actually consumes. Neither subsumes the other.
+        _register_gate_term(
+            gate_terms, "inpaint_raw",
+            # Vacuously ok when nothing was measured, exactly as inpaint_scoped
+            # is over an empty union, and for the same reason: an unmeasured
+            # term must reach the operator through its FLOOR, as "this measured
+            # nothing" (exit 3), not through `ok` as "this failed" (exit 1).
+            # Writing `is not None and <=` here instead would also fail the gate
+            # outright under --tracknet-only, where the term is waived and there
+            # is nothing for it to have measured.
+            ok=((raw["max_delta_px"] is None
+                 or raw["max_delta_px"] <= GATE_DELTA_PX_MAX)
+                and raw["nonfinite_any"] == 0),
+            value=raw["max_delta_px"],
+            threshold_max=GATE_DELTA_PX_MAX,
+            calls_taped=len(raw_inpaint_tap.calls),
+            nonfinite_consumed=raw["nonfinite_consumed"],
+            nonfinite_anywhere=raw["nonfinite_any"],
+            n_measured=raw["n_compared"],
+            n_required=0 if inpaintnet_shim is None else 1,
+            floor_waived_because=(
+                None if inpaintnet_shim is not None else
+                "--tracknet-only: no ONNX InpaintNet is under test, so there is no conversion "
+                "for this term to measure. Unlike inpaint_scoped it cannot run at all here, "
+                "because it has no ONNX graph to replay the taped inputs through."),
+            sample="gap positions in every chunk the torch InpaintNet was called on, "
+                   "replayed through the ONNX graph")
     except Exception as e:
         # A misdeclared gate term is a programming error, but it must not
         # reach the operator as a bare traceback and a Python exit status of
