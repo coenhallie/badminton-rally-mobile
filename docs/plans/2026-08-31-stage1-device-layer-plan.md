@@ -36,15 +36,17 @@
 
 Part A has none and can start immediately.
 
-Part B and Part C are blocked on the same environment gaps that stop Stage 0, recorded in `tools/models/README.md`:
+**All five of these were closed on 2026-09-01, after this plan was written.** The list is kept because the reasoning below still refers to it, but nothing here blocks Part B or Part C any more: Supabase credentials and three corpora were obtained (two with a `source.mp4`), the Modal CLI pulled TrackNet and InpaintNet, `onnx` / `onnxruntime` / `onnxconverter-common` were installed, and an S23 was reached. `tools/models/README.md` records each. The historical list:
 
-- No Supabase credentials (no corpus, no reference `results.json`)
-- Modal CLI absent (TrackNet and InpaintNet weights cannot be pulled)
-- `onnx`, `onnxruntime`, `onnxconverter-common` absent (no ONNX export). `torch`, `ultralytics`, `numpy` and `cv2` **are** present.
-- No source `.mp4`
-- No physical device
+- ~~No Supabase credentials (no corpus, no reference `results.json`)~~
+- ~~Modal CLI absent (TrackNet and InpaintNet weights cannot be pulled)~~
+- ~~`onnx`, `onnxruntime`, `onnxconverter-common` absent (no ONNX export)~~. `torch`, `ultralytics`, `numpy` and `cv2` **are** present.
+- ~~No source `.mp4`~~
+- ~~No physical device~~
 
 **Part C additionally requires the 0a gate to have passed.** If TrackNet shuttle coverage does not survive ONNX conversion, the device layer has nothing to build on. Do not start Task 10 until Task 4 of the predecessor plan has a recorded pass.
+
+**This precondition was not met, and Part C was built anyway.** Recording that rather than leaving it implied: the gate ran on 2026-09-01 against both corpus videos and returned `gate_pass: false` both times, on exit 3. Its TrackNet terms passed by three to four orders of magnitude, which is the half this precondition was written about - "if TrackNet shuttle coverage does not survive ONNX conversion" - so proceeding was defensible. Its InpaintNet term measured nothing, and `tools/models/README.md` step 4 explains why no clip choice fixes that. The open risk is therefore narrower than this precondition implies but it is real: the Android device layer runs an InpaintNet conversion that nothing has verified.
 
 ---
 
