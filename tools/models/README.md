@@ -173,7 +173,7 @@ step's output:
    both ONNX paths, `swapped`, `batch_size`, and `max_bg_samples` - enough
    to trace the artifact back to exactly what produced it.
 
-   - **(a) THE GATE - conversion fidelity.** Has THREE terms, not two.
+   - **(a) THE GATE - conversion fidelity.** Has FOUR terms.
      Reports per-frame visibility agreement and the pixel delta (converted
      back to the 512x288 model space) on frames both sides consider
      visible - but those two are both whole-video, frame-denominated
@@ -197,7 +197,7 @@ step's output:
      optional for this part) and is what the script's exit code is based
      on.
 
-     **Every one of the three terms is satisfiable by an empty sample**,
+     **Every one of the four terms is satisfiable by an empty sample**,
      and forgetting that is the single root cause of four separate review
      findings on this script. An agreement ratio over zero frames is 1.0;
      a p95 over zero deltas is undefined; set equality over two empty sets
@@ -314,16 +314,44 @@ step's output:
 
    - **The InpaintNet conversion is still unverified**, and the Android device
      layer ships on it. That is the open risk.
-   - **The term is looking in the wrong place.** It compares which frames each
+   - **The term was looking in the wrong place.** It compares which frames each
      side's InpaintNet got *accepted*, which production can zero out on both
      sides at once. What the conversion actually affects is the model's raw
-     output, and that is non-empty whenever the model is called. A term
-     comparing torch against ONNX InpaintNet output over the real trajectory,
-     before production's acceptance filter, would be measurable here and would
-     test what this gate exists to test.
+     output, which is non-empty whenever the model is called.
 
-   Until one of those is resolved, treat the 0a gate as passed for TrackNet
-   and open for InpaintNet, rather than as a single verdict.
+   **That fourth term now exists (`inpaint_raw`), and it found a real defect
+   on its first run.** It tapes the torch side's InpaintNet inputs and
+   outputs, replays the identical inputs through the ONNX graph, and compares
+   at the positions production reads. On a 596-frame clip where
+   `inpaint_scoped` measured nothing at all, `inpaint_raw` compared 649
+   positions and returned **96.6px at 512x288 against a 2px threshold**.
+
+   **The fp16 InpaintNet conversion is broken, and the fp32 export is fine.**
+   Measured against the real PyTorch module on trajectories shaped like
+   production's chunks:
+
+   | comparison | max delta, px at 512x288 |
+   |---|---|
+   | torch vs `inpaintnet.onnx` (fp32) | 0.05 at L=64, 0.00 at L=128 and 256 |
+   | torch vs `inpaintnet.fp16.onnx` | 75.9 at L=64, **NaN** at L=256 |
+
+   The fp16 graph also returns NaN outright: on 200 realistic multi-gap
+   trajectories at L=256, production's own chunk size, 36% of chunks contained
+   a NaN somewhere and 11.5% put one on a position production reads. NaN
+   silently fails production's `pred > 0.01` bound, so the model degrades to
+   "fills nothing" rather than to anything visible.
+
+   This is the failure mode already predicted in "Blocked on" for this
+   converter: `onnxconverter-common` fails at Resize nodes, and InpaintNet
+   upsamples. It was predicted for TrackNet and turned out to be true of
+   InpaintNet.
+
+   **The Android app has been switched to `inpaintnet.onnx`**, the fp32 graph,
+   which costs 1MB. `export_tracknet.py` still writes the fp16 file; it should
+   not be bundled until its conversion is fixed and this gate passes on it.
+
+   So: **0a is passed for TrackNet, and open for InpaintNet** until a run of
+   the fixed configuration records a clean `inpaint_raw`.
 
    **Exit codes** (also documented in the script's module docstring),
    checked worst-first so a real failure is never masked by a weaker
@@ -331,10 +359,10 @@ step's output:
 
    | Code | Meaning |
    | --- | --- |
-   | 0 | GATE PASS - all three gate terms measured clean **over a non-empty sample each**. Under the deployed configuration (both models swapped) that last part is the substantive claim: at least one frame was actually filled by one side's InpaintNet pass, torch and ONNX filled exactly the same frames, and their coordinates matched. A nonzero InpaintNet call count is **not** what exit 0 asserts and never was sufficient to assert it - production rejects inpaint candidates on the torch side too (`inference.py:424`, `:425`, `:429-446`), so InpaintNet can run on both sides and change nothing on either, which is evidence of nothing. That case is exit 3 |
+   | 0 | GATE PASS - all four gate terms measured clean **over a non-empty sample each**. Under the deployed configuration (both models swapped) that last part is the substantive claim: at least one frame was actually filled by one side's InpaintNet pass, torch and ONNX filled exactly the same frames, and their coordinates matched. A nonzero InpaintNet call count is **not** what exit 0 asserts and never was sufficient to assert it - production rejects inpaint candidates on the torch side too (`inference.py:424`, `:425`, `:429-446`), so InpaintNet can run on both sides and change nothing on either, which is evidence of nothing. That case is exit 3 |
    | 1 | GATE FAIL - visibility agreement, whole-video p95 delta, or the InpaintNet-scoped term missed threshold, on the gate's own measured terms. Takes priority over 3: a catastrophic ONNX collapse can itself be severe enough to also leave the InpaintNet-scoped term with an empty sample, and that must be reported as FAIL, not steered toward "pick a better clip" |
    | 2 | UNMEASURABLE - video would not open, decoded no frames, the shuttle was visible too rarely in the torch reference to measure anything (`GATE_MIN_VISIBLE_FRACTION = 0.05`, i.e. below 5%), or argparse itself rejected the command line (its own usage-error exit code, unrelated to and unchanged by this script). A torch-internal `RuntimeError` from the reference `track_video` also lands here rather than at 4: production raises `RuntimeError` only for an unusable input (`inference.py:134`, `:146`, `:244`), so the script reads it that way. Both codes are non-pass and both print the message, so the mislabel cannot become a false GO |
-   | 3 | A GATE TERM MEASURED NOTHING - every term that had a sample passed, but at least one stood on a sample below its own denominator floor, so its verdict rests on nothing; the terms are listed in `underfloor_gate_terms`. Today `inpaint_scoped` is the only term that can reach this branch, so in practice this still means INPAINTNET UNEXERCISED: the gate would otherwise have been a clean PASS on all three terms, but both models were swapped (the default) and **neither side's InpaintNet pass filled a single frame** on this video, so the InpaintNet-scoped term was computed over an empty sample and the run holds no evidence at all about InpaintNet's ONNX output despite the label. Covers both ways that happens: the model never being called (`inference.py:363`, `:388-390`) and the model being called on both sides with every candidate rejected by production's own bounds and continuity checks (`:424-446`) - `inpaintnet_shim_calls` in the JSON distinguishes them. `gate_pass` in the JSON is forced `false`; re-run against a clip with a real detection gap that InpaintNet can actually bridge |
+   | 3 | A GATE TERM MEASURED NOTHING - every term that had a sample passed, but at least one stood on a sample below its own denominator floor, so its verdict rests on nothing; the terms are listed in `underfloor_gate_terms`. Today `inpaint_scoped` is the only term that can reach this branch, so in practice this still means INPAINTNET UNEXERCISED: the gate would otherwise have been a clean PASS on all three terms, but both models were swapped (the default) and **neither side's InpaintNet pass filled a single frame** on this video, so the InpaintNet-scoped term was computed over an empty sample and the run holds no evidence at all about InpaintNet's ONNX output despite the label. Covers both ways that happens: the model never being called (`inference.py:363`, `:388-390`) and the model being called on both sides with every candidate rejected by production's own bounds and continuity checks (`:424-446`) - `inpaintnet_shim_calls` in the JSON distinguishes them. `gate_pass` in the JSON is forced `false`. **Do not reflexively re-run against another clip.** When `inpaintnet_shim_calls` is nonzero the gaps were there and the model ran, and production simply rejected every candidate on both sides - which is what happened on both corpus videos, and no clip fixes it. Read `inpaint_raw` instead: it measures the same conversion from the model's raw output and stays measurable exactly when this term does not |
    | 4 | CRASH - setup (importing `TrackNetInference`, building either tracker, opening either ONNX Runtime session), the gate's own term construction (a term declared without a denominator floor, see `_register_gate_term`), or the onnx side of `track_video`, raised anything at all, including a `RuntimeError`. Only the torch side of `track_video` carves `RuntimeError` out of this (see exit 2 above), reading it as production's own signal for an unusable input rather than as a crash. Distinct from FAIL: no divergence was measured, the conversion could not even be run. Written to a separate `coverage-<name>-<config>-crashed.json`, never to the plain `coverage-<name>-<config>.json` path, so a crashed re-run cannot overwrite a prior successful run's report. The report's `crash_phase` says which of `setup`, `torch track_video`, `onnx track_video`, or `gate term construction` died |
 
    The report's `gate` object also records `tracknet_shim_calls` and

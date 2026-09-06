@@ -19,7 +19,22 @@ import java.io.File
  */
 enum class Model(val asset: String) {
     TRACKNET("models/tracknet.fp16.onnx"),
-    INPAINTNET("models/inpaintnet.fp16.onnx"),
+    /**
+     * fp32, deliberately, while every other graph here is fp16.
+     *
+     * The fp16 conversion of this model is broken. Measured against the real
+     * PyTorch module on trajectories shaped like production's chunks, the fp32
+     * graph is within 0.05px at 512x288 and the fp16 graph is out by up to 76px
+     * and returns NaN outright on a third of chunks at the 256 length
+     * production actually uses. The 0a gate's new inpaint_raw term is what
+     * caught it; see tools/models/README.md step 4.
+     *
+     * That matches the warning already recorded for the converter this graph
+     * came from: onnxconverter-common fails at Resize nodes, and InpaintNet
+     * upsamples. Costs 1MB over the fp16 file, which is the whole price of the
+     * fix. Do not "restore consistency" by switching this back.
+     */
+    INPAINTNET("models/inpaintnet.onnx"),
     DETECTOR("models/badminton.fp16.onnx"),
 
     /**
