@@ -81,7 +81,16 @@ class RallyApp(
             // repositories that must not know about each other, and this is where
             // the app graph already joins them.
             orphanedLocalVideoIds(localVideos.entries.value, knownScoreLogIds)
-                .forEach { id -> localVideos.update(id) { it.copy(scoreLogId = null) } }
+                .forEach { id ->
+                    // resultSeen too, and this is not tidiness. Both platforms
+                    // raise the "no rallies found" dialog for the first standalone
+                    // entry that is FAILED and unseen, so detaching an old orphan
+                    // makes it eligible and it interrupts the next launch with the
+                    // outcome of a run inside a match that no longer exists. Seen
+                    // on a real device the first time this shipped. The failure is
+                    // not hidden: the row itself still shows it, with Retry.
+                    localVideos.update(id) { it.copy(scoreLogId = null, resultSeen = true) }
+                }
         },
     )
 

@@ -89,7 +89,18 @@ final class ScoringBoardUITests: XCTestCase {
         // Back lands on Home, not the list: the list is now behind the
         // drawer, so it takes the hamburger to reach the row this test needs.
         app.buttons["Open matches"].firstMatch.tap()
+        // Scrolled to, not assumed on screen. The drawer lists videos on this
+        // phone above matches, and a SwiftUI List is lazy, so a row below the
+        // fold is not in the accessibility tree at all. This test used to pass
+        // only because the device happened to hold one local video; it fails on
+        // any account with enough of them, which is a property of the account
+        // rather than of the board this test is about.
         let row = app.staticTexts[matchName].firstMatch
+        var scrolls = 0
+        while !row.exists && scrolls < 10 {
+            app.swipeUp()
+            scrolls += 1
+        }
         XCTAssertTrue(row.waitForExistence(timeout: 5), "the match did not come back to the list")
 
         while app.staticTexts[matchName].firstMatch.exists {
