@@ -48,6 +48,17 @@ final class ScoringBoardUITests: XCTestCase {
     /// Creates a singles match from the real form, the way a coach reaches the
     /// board. Deleted again at the end of the test so the account keeps nothing.
     private func createMatch(_ app: XCUIApplication) throws {
+        // Signing in needs real credentials, so a signed-out simulator skips
+        // rather than reporting a failure that says nothing about the board.
+        // The same guard LabelSwatchGridUITests uses, and for the same reason.
+        //
+        // Gated on the drawer control rather than on the pill this test goes on
+        // to tap: those are both on Home, so either would prove the app is
+        // signed in, but skipping on the pill's own absence would turn renaming
+        // or losing it into a silent skip instead of the failure it should be.
+        guard app.buttons["Menu"].firstMatch.waitForExistence(timeout: 15) else {
+            throw XCTSkip("not signed in on this simulator - cannot reach the board")
+        }
         // "Add" was the list's own toolbar icon; Home replaced it with the
         // "Add new match" pill, which opens the same three-row sheet.
         app.buttons["Add new match"].firstMatch.tap()
