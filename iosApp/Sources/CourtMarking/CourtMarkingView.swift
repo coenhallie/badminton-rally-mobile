@@ -180,8 +180,8 @@ struct CourtMarkingView: View {
     }
 
     private func drawCourtGuide(context: inout GraphicsContext, size: CGSize) {
-        let guideGreen = Color(red: 0x22/255, green: 0xC5/255, blue: 0x5E/255).opacity(0.2)
-        let connectGreen = Color(red: 0x22/255, green: 0xC5/255, blue: 0x5E/255).opacity(0.6)
+        let guideGreen = Shuttl.accent.opacity(0.2)
+        let connectGreen = Shuttl.accent.opacity(0.6)
         let margin: CGFloat = 0.15
         let x1 = size.width * margin, x2 = size.width * (1 - margin)
         let y1 = size.height * margin, y2 = size.height * (1 - margin)
@@ -214,7 +214,7 @@ struct CourtMarkingView: View {
             if i == 0 { path.move(to: dp) } else { path.addLine(to: dp) }
         }
         path.closeSubpath()
-        context.stroke(path, with: .color(Color(rgb: 0x22C55E).opacity(0.6)), style: StrokeStyle(lineWidth: 2, dash: [8, 4]))
+        context.stroke(path, with: .color(Shuttl.accent.opacity(0.6)), style: StrokeStyle(lineWidth: 2, dash: [8, 4]))
     }
 
     private func drawPlacedPoints(context: inout GraphicsContext, size: CGSize, marking: CourtMarkingState) {

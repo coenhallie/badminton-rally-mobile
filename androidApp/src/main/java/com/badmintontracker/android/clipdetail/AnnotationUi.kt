@@ -103,7 +103,13 @@ internal fun AddAnnotationSheet(
         }
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        // Unset, this resolves M3's surfaceContainerLow, which ShuttlColors.kt
+        // never sets. See AddMatchSheet for the full reasoning.
+        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()

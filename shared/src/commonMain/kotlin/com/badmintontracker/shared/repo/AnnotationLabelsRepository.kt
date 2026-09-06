@@ -2,6 +2,7 @@ package com.badmintontracker.shared.repo
 
 import com.badmintontracker.shared.model.AnnotationLabel
 import com.badmintontracker.shared.model.LabelColor
+import com.badmintontracker.shared.model.LabelUsage
 import com.russhwolf.settings.Settings
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
@@ -12,9 +13,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.plus
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -22,11 +27,24 @@ import kotlinx.serialization.json.Json
 interface AnnotationLabelsRepository {
     /** Last known list, creation order. Survives a cold start offline. */
     val labels: StateFlow<List<AnnotationLabel>>
+
+    /**
+     * The subset the courtside board may tag a rally with, and the subset the
+     * clip and local-video note pickers offer.
+     *
+     * Derived here rather than exported as a predicate for each screen to apply:
+     * six surfaces want a subset, and six copies of the same filter is six
+     * chances for two of them to disagree about what "on the board" means.
+     */
+    val scoreboardLabels: StateFlow<List<AnnotationLabel>>
+    val clipLabels: StateFlow<List<AnnotationLabel>>
+
     suspend fun refresh(): Result<Unit>
-    /** [color] null picks a swatch automatically; the inline picker path passes null. */
-    suspend fun create(name: String, color: LabelColor?): Result<AnnotationLabel>
+    /** [color] null picks a swatch automatically. */
+    suspend fun create(name: String, color: LabelColor?, usage: LabelUsage): Result<AnnotationLabel>
     suspend fun rename(id: String, name: String): Result<Unit>
     suspend fun recolor(id: String, color: LabelColor): Result<Unit>
+    suspend fun setUsage(id: String, usage: LabelUsage): Result<Unit>
     suspend fun delete(id: String): Result<Unit>
 }
 
@@ -49,20 +67,70 @@ class AnnotationLabelsRepositoryImpl internal constructor(
 
     private val json = Json { ignoreUnknownKeys = true }
 
+    /**
+     * A background scope this repository owns for three jobs: [cacheReconciliation]
+     * below, plus the eager sharing coroutines behind [scoreboardLabels] and
+     * [clipLabels]. It is not threaded in from RallyApp because nothing in this
+     * codebase's app graph yet owns an app-lifetime scope with a teardown hook,
+     * and this repository is a singleton that lives as long as the process - a
+     * coroutine with no natural end is not a leak on an object with that
+     * lifetime. Introducing a shared app-scope contract (who cancels it, when)
+     * for this one caller would be speculative infrastructure the rest of the
+     * graph does not need yet.
+     *
+     * [cacheReconciliation] runs once and completes; the two sharing coroutines
+     * never do - [SharingStarted.Eagerly] keeps each subscribed to [state] for
+     * as long as this object exists, which is the whole point of them (see
+     * [scoreboardLabels]'s comment). All three are fine to leave running forever
+     * for the same reason: nothing here is holding a resource that needs
+     * releasing, and the object's own lifetime is "forever" already.
+     *
+     * Declared above [state] because [scoreboardLabels] and [clipLabels] need it
+     * to eagerly start their own derivation: property initializers run in
+     * declaration order, so a [scope] declared below them would still be
+     * uninitialized when their `stateIn` call reads it.
+     */
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
     private val state = MutableStateFlow(loadCache())
     override val labels: StateFlow<List<AnnotationLabel>> = state.asStateFlow()
 
     /**
-     * A background scope this repository owns for exactly one job: see
-     * [cacheReconciliation] below. It is not threaded in from RallyApp because
-     * nothing in this codebase's app graph yet owns an app-lifetime scope with a
-     * teardown hook, and this repository is a singleton that lives as long as the
-     * process - a coroutine that runs once, completes, and never needs cancelling
-     * is not a leak on an object with that lifetime. Introducing a shared
-     * app-scope contract (who cancels it, when) for this one caller would be
-     * speculative infrastructure the rest of the graph does not need yet.
+     * Eagerly started on the scope this class already owns, for the same reason
+     * the board's own state is eager: the value has to be correct the instant a
+     * screen reads it, and there is nothing to defer - it is a filter over a
+     * list already in memory. See [scope]'s comment for why a coroutine that
+     * never completes is acceptable on this object.
+     *
+     * Shared on `scope + Dispatchers.Unconfined`, not bare [scope] (which is
+     * [Dispatchers.Default], a real thread pool): [SharingStarted.Eagerly]
+     * only guarantees the sharing coroutine is *launched* during property
+     * init, not that it has run. On a dispatcher that has to hop onto a pool
+     * thread, `state.value = next` in [publish] would be visible here only
+     * after that hop is scheduled - an async window a synchronous `.value`
+     * read right after a mutation could lose. Unconfined runs the collector
+     * inline on whichever thread resumes it, so the initial subscription
+     * happens synchronously during construction (reading [state]'s current
+     * value, which is already initialized above), and every later `publish`
+     * pushes straight through the `map` filter on the calling thread before
+     * that call returns - which is what makes the "correct the instant a
+     * screen reads it" guarantee actually true, not just true at startup.
      */
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    override val scoreboardLabels: StateFlow<List<AnnotationLabel>> =
+        state.map { all -> all.filter { it.scope.onScoreboard } }
+            .stateIn(
+                scope + Dispatchers.Unconfined,
+                SharingStarted.Eagerly,
+                state.value.filter { it.scope.onScoreboard },
+            )
+
+    override val clipLabels: StateFlow<List<AnnotationLabel>> =
+        state.map { all -> all.filter { it.scope.onClips } }
+            .stateIn(
+                scope + Dispatchers.Unconfined,
+                SharingStarted.Eagerly,
+                state.value.filter { it.scope.onClips },
+            )
 
     /**
      * supabase-kt restores a persisted session asynchronously: right after a
@@ -90,9 +158,11 @@ class AnnotationLabelsRepositoryImpl internal constructor(
     @Serializable private data class NewLabelRow(
         val name: String,
         @SerialName("color_key") val colorKey: String,
+        val usage: String,
     )
     @Serializable private data class NamePatch(val name: String)
     @Serializable private data class ColorPatch(@SerialName("color_key") val colorKey: String)
+    @Serializable private data class UsagePatch(val usage: String)
 
     /**
      * The cache envelope, scoped to whoever was signed in when it was written.
@@ -113,13 +183,17 @@ class AnnotationLabelsRepositoryImpl internal constructor(
         publish(rows)
     }
 
-    override suspend fun create(name: String, color: LabelColor?): Result<AnnotationLabel> {
+    override suspend fun create(
+        name: String,
+        color: LabelColor?,
+        usage: LabelUsage,
+    ): Result<AnnotationLabel> {
         val trimmed = name.trim()
         validate(trimmed)?.let { return Result.failure(it) }
         val swatch = color ?: nextUnusedColor(state.value.map { it.colorKey })
         return runCatching {
             val row = client.postgrest.from(TABLE)
-                .insert(NewLabelRow(trimmed, swatch.key)) { select() }
+                .insert(NewLabelRow(trimmed, swatch.key, usage.key)) { select() }
                 .decodeSingle<AnnotationLabel>()
             publish(state.value + row)
             row
@@ -138,6 +212,11 @@ class AnnotationLabelsRepositoryImpl internal constructor(
     override suspend fun recolor(id: String, color: LabelColor): Result<Unit> = runCatching {
         client.postgrest.from(TABLE).update(ColorPatch(color.key)) { filter { eq("id", id) } }
         publish(state.value.map { if (it.id == id) it.copy(colorKey = color.key) else it })
+    }
+
+    override suspend fun setUsage(id: String, usage: LabelUsage): Result<Unit> = runCatching {
+        client.postgrest.from(TABLE).update(UsagePatch(usage.key)) { filter { eq("id", id) } }
+        publish(state.value.map { if (it.id == id) it.copy(usage = usage.key) else it })
     }
 
     override suspend fun delete(id: String): Result<Unit> = runCatching {

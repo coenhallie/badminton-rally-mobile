@@ -55,6 +55,17 @@ fun LazyListScope.localVideoSection(
     onAnalyzeClick: (LocalVideoRow) -> Unit,
     onRemoveRequest: (LocalVideoEntry) -> Unit,
     onEditDetails: (LocalVideoEntry) -> Unit,
+    /**
+     * Null when this video has no stored player track.
+     *
+     * The heatmap used to be reachable only from the banner of the run that
+     * produced it, so it vanished with the process even though the track was on
+     * disk - half an hour of analysis with no way back to it.
+     */
+    onOpenHeatmap: ((LocalVideoEntry) -> Unit)? = null,
+    hasHeatmap: (LocalVideoEntry) -> Boolean = { false },
+    onOpenLocalClips: ((LocalVideoEntry) -> Unit)? = null,
+    localClipCount: (LocalVideoEntry) -> Int = { 0 },
 ) {
     if (rows.isEmpty()) return
     item(key = "header-local") { header("On this phone") }
@@ -66,6 +77,10 @@ fun LazyListScope.localVideoSection(
                 onAnalyze = { onAnalyzeClick(row) },
                 onRemove = { onRemoveRequest(row.entry) },
                 onEditDetails = { onEditDetails(row.entry) },
+                onOpenHeatmap = onOpenHeatmap?.takeIf { hasHeatmap(row.entry) }
+                    ?.let { open -> { open(row.entry) } },
+                localClips = localClipCount(row.entry).takeIf { it > 0 },
+                onOpenLocalClips = onOpenLocalClips?.let { open -> { open(row.entry) } },
             )
         }
         if (row.canRemove) {
@@ -91,6 +106,9 @@ private fun LocalVideoRowItem(
     onAnalyze: () -> Unit,
     onRemove: () -> Unit,
     onEditDetails: () -> Unit,
+    onOpenHeatmap: (() -> Unit)? = null,
+    localClips: Int? = null,
+    onOpenLocalClips: (() -> Unit)? = null,
 ) {
     val entry = row.entry
     var menuOpen by remember { mutableStateOf(false) }
@@ -158,6 +176,18 @@ private fun LocalVideoRowItem(
                     Icon(Icons.Default.MoreVert, contentDescription = "Local video menu")
                 }
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    if (localClips != null && onOpenLocalClips != null) {
+                        DropdownMenuItem(
+                            text = { Text("Clips on this phone ($localClips)") },
+                            onClick = { menuOpen = false; onOpenLocalClips() },
+                        )
+                    }
+                    if (onOpenHeatmap != null) {
+                        DropdownMenuItem(
+                            text = { Text("Player heatmap") },
+                            onClick = { menuOpen = false; onOpenHeatmap() },
+                        )
+                    }
                     if (row.canEditDetails) {
                         DropdownMenuItem(
                             text = { Text("Edit details") },

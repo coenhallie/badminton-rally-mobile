@@ -51,8 +51,10 @@ final class LabelsModel: ObservableObject {
     /// `DraftLabelEditor` can roll its commit guard back on failure instead
     /// of treating a rejected create as if it had gone through.
     @discardableResult
-    func create(_ name: String, color: LabelColor) async -> Bool {
-        guard let outcome = try? await SwiftInteropKt.createLabelForSwift(rally.labels, name: name, color: color) else {
+    func create(_ name: String, color: LabelColor, usage: LabelUsage) async -> Bool {
+        guard let outcome = try? await SwiftInteropKt.createLabelForSwift(
+            rally.labels, name: name, color: color, usage: usage
+        ) else {
             errorMessage = "Couldn't add label"
             return false
         }
@@ -62,6 +64,10 @@ final class LabelsModel: ObservableObject {
             return true
         }
         return false
+    }
+
+    func setUsage(_ id: String, to usage: LabelUsage) async {
+        errorMessage = try? await SwiftInteropKt.setLabelUsageOrMessage(rally.labels, id: id, usage: usage)
     }
 
     /// Returns whether the rename succeeded, so the editor can roll its local

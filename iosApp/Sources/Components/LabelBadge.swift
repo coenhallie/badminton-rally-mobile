@@ -21,7 +21,7 @@ struct LabelBadge: View {
         // androidApp's LabelBadge: the invariant lives here, not at each call site.
         if !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             Text(name)
-                .font(.system(size: 11, weight: .medium))
+                .shuttlType(ShuttlType.labelSmall)
                 .foregroundStyle(onContainer)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)

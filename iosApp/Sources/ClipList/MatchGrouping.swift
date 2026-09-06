@@ -82,6 +82,77 @@ enum MatchGrouping {
     }
 }
 
+/// A scored match plus whatever video it has acquired. Port of Android's
+/// `MatchRow.Score`.
+struct ScoreRowContent: Identifiable {
+    let card: ScoreMatchCard
+    /// Non-nil once the pipeline has produced clips for this match's video.
+    let video: MatchSummary?
+    /// Non-nil while a video is attached but not yet clipped.
+    let attach: AttachStatus?
+
+    var id: String { card.scoreLogId }
+}
+
+/// One row of the match list, which since live scoring holds two kinds of thing: a
+/// match cut from a video, and a match scored courtside that may never have one.
+/// Port of Android's `MatchRow`.
+enum MatchRow: Identifiable {
+    case video(MatchSummary)
+    case score(ScoreRowContent)
+
+    /// Prefixed: both ids are UUIDs from the same generator and would otherwise collide.
+    var id: String {
+        switch self {
+        case .video(let match):   return "video-\(match.videoId)"
+        case .score(let content): return "score-\(content.card.scoreLogId)"
+        }
+    }
+
+    var sortAtEpochMs: Int64 {
+        switch self {
+        case .video(let match):   return match.latestCreatedAtMillis
+        case .score(let content): return content.card.createdAtEpochMs
+        }
+    }
+}
+
+/// Interleaves the two kinds into one newest-first list, folding a video match into
+/// the score match that claims it. Score logs are owner-only by RLS, so this only
+/// ever builds the owned section.
+///
+/// Sorting a bound row on the score log's createdAt rather than its clips' is
+/// deliberate: the match was created before the video existed and must not jump
+/// down the list when the clips arrive.
+///
+/// The tie-break on `id` is not decoration, and it must match Android's exactly:
+/// the same account on two phones has to produce the same order.
+/// Port of Android's `mergeMatchRows`.
+func mergeMatchRows(
+    videoMatches: [MatchSummary],
+    scoreMatches: [ScoreMatchCard],
+    attachByScoreLogId: [String: AttachStatus]
+) -> [MatchRow] {
+    // uniquingKeysWith rather than uniqueKeysWithValues: a duplicate videoId is
+    // unreachable today, but Kotlin's associateBy silently last-wins on one, and
+    // this must not trap where Android would not.
+    let videoById = Dictionary(videoMatches.map { ($0.videoId, $0) }, uniquingKeysWith: { _, last in last })
+    let claimed = Set(scoreMatches.compactMap(\.videoId))
+    let scoreRows = scoreMatches.map { card in
+        MatchRow.score(ScoreRowContent(
+            card: card,
+            video: card.videoId.flatMap { videoById[$0] },
+            attach: attachByScoreLogId[card.scoreLogId]
+        ))
+    }
+    let videoRows = videoMatches.filter { !claimed.contains($0.videoId) }.map(MatchRow.video)
+    return (videoRows + scoreRows).sorted {
+        $0.sortAtEpochMs != $1.sortAtEpochMs
+            ? $0.sortAtEpochMs > $1.sortAtEpochMs
+            : $0.id < $1.id
+    }
+}
+
 private let matchDateFormatter: DateFormatter = {
     let f = DateFormatter()
     f.locale = Locale(identifier: "en_US_POSIX")

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
@@ -27,6 +28,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -49,14 +53,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.badmintontracker.android.localanalysis.BackgroundWorkAction
+import com.badmintontracker.android.ui.components.FieldLabel
 import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlOutlinedTextField
 import com.badmintontracker.android.ui.components.SwipeToRemoveRow
 import com.badmintontracker.shared.model.AnnotationLabel
 import com.badmintontracker.shared.model.LabelColor
+import com.badmintontracker.shared.model.LabelUsage
 import com.badmintontracker.shared.repo.AnnotationLabelsRepositoryImpl
 import kotlinx.coroutines.launch
 
@@ -88,6 +96,9 @@ fun LabelsScreen(vm: LabelsViewModel, onBack: () -> Unit) {
                     }
                 },
                 actions = {
+                    // First in the bar so it keeps its place as each screen's own
+                    // actions come and go.
+                    BackgroundWorkAction()
                     IconButton(onClick = vm::startCreating) {
                         Icon(Icons.Default.Add, contentDescription = "New label")
                     }
@@ -163,6 +174,7 @@ fun LabelsScreen(vm: LabelsViewModel, onBack: () -> Unit) {
                                 onToggle = { vm.expand(label.id) },
                                 onRename = { vm.rename(label.id, it) },
                                 onRecolor = { vm.recolor(label.id, it) },
+                                onSetUsage = { vm.setUsage(label.id, it) },
                             )
                         }
                     }
@@ -200,6 +212,7 @@ private fun LabelRow(
     onToggle: () -> Unit,
     onRename: (String) -> Unit,
     onRecolor: (LabelColor) -> Unit,
+    onSetUsage: (LabelUsage) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -222,11 +235,37 @@ private fun LabelRow(
                     .background(dotColor, CircleShape),
             )
             Spacer(Modifier.width(12.dp))
+            // The name is the sole weighted child so it absorbs all of the row's slack
+            // instead of splitting it with a second weighted spacer. The scope caption's
+            // width must stay intrinsic (it is a fixed short word, not something that
+            // should stretch or move), so the name yields space to it rather than the
+            // other way around: a long name ellipsizes, a short one lets the caption
+            // sit flush against the row's trailing edge every time.
             Text(
                 label.name,
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onBackground,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
             )
+
+            // Only on rows that are not `both`, so the common case stays quiet
+            // and the caption reads as an exception rather than as a column.
+            // Without it the split is invisible from the list, and "which labels
+            // are on my board?" means opening every row in turn.
+            val scopeCaption = when (label.scope) {
+                LabelUsage.BOTH -> null
+                LabelUsage.SCOREBOARD -> "BOARD"
+                LabelUsage.CLIPS -> "CLIPS"
+            }
+            if (scopeCaption != null) {
+                Text(
+                    text = scopeCaption,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
 
         if (expanded) {
@@ -257,19 +296,21 @@ private fun LabelRow(
                 palette = palette,
                 selectedColorKey = label.colorKey,
                 onSelectColor = onRecolor,
+                selectedUsage = label.scope,
+                onSelectUsage = onSetUsage,
             )
         }
     }
 }
 
 /**
- * The name field and swatch grid shared by an expanded [LabelRow] and by
- * [DraftLabelRow] - the same in-place editor either way. What differs between
- * the two callers is only the wiring around it: an existing row persists a
- * rename or a recolour immediately, since the label already exists; the
- * not-yet-created draft can only hold its typed name and chosen colour
- * locally until both are submitted together as one [LabelsViewModel.create]
- * call.
+ * The name field, scope picker, and swatch grid shared by an expanded
+ * [LabelRow] and by [DraftLabelRow] - the same in-place editor either way.
+ * What differs between the two callers is only the wiring around it: an
+ * existing row persists a rename, a scope change, or a recolour immediately,
+ * since the label already exists; the not-yet-created draft can only hold
+ * its typed name, chosen scope, and chosen colour locally until all three
+ * are submitted together as one [LabelsViewModel.create] call.
  */
 @Composable
 private fun LabelEditorFields(
@@ -280,6 +321,8 @@ private fun LabelEditorFields(
     palette: List<LabelColor>,
     selectedColorKey: String?,
     onSelectColor: (LabelColor) -> Unit,
+    selectedUsage: LabelUsage,
+    onSelectUsage: (LabelUsage) -> Unit,
     focusRequester: FocusRequester? = null,
 ) {
     Column(
@@ -298,7 +341,46 @@ private fun LabelEditorFields(
                 .let { if (focusRequester != null) it.focusRequester(focusRequester) else it }
                 .onFocusChanged(onFocusChanged),
         )
+        UsagePicker(selected = selectedUsage, onSelect = onSelectUsage)
         SwatchGrid(palette = palette, selectedKey = selectedColorKey, onSelect = onSelectColor)
+    }
+}
+
+/**
+ * Where this label may be offered. Same control the new-match screen uses for
+ * singles/doubles, so it reads as one app rather than as a settings row.
+ *
+ * "Both / Scoreboard / Clips" reads as ambiguous with nothing above it to say what
+ * is being chosen, so the design calls for a "Use" caption here - the same quiet
+ * FieldLabel the "Name" field above uses, not a shout. The contentDescription on
+ * the row itself carries that same name to accessibility services: without it a
+ * screen reader lands on "Both, Scoreboard, Clips" with no indication of what the
+ * three options mean, since the visible caption above is a separate text node a
+ * user could easily swipe past without connecting it to the control below.
+ */
+@Composable
+private fun UsagePicker(selected: LabelUsage, onSelect: (LabelUsage) -> Unit) {
+    val options = listOf(
+        LabelUsage.BOTH to "Both",
+        LabelUsage.SCOREBOARD to "Scoreboard",
+        LabelUsage.CLIPS to "Clips",
+    )
+    Column {
+        FieldLabel("Use")
+        Spacer(Modifier.height(6.dp))
+        SingleChoiceSegmentedButtonRow(
+            Modifier
+                .fillMaxWidth()
+                .semantics { contentDescription = "Use" },
+        ) {
+            options.forEachIndexed { index, (usage, text) ->
+                SegmentedButton(
+                    selected = selected == usage,
+                    onClick = { onSelect(usage) },
+                    shape = SegmentedButtonDefaults.itemShape(index, options.size),
+                ) { Text(text) }
+            }
+        }
     }
 }
 
@@ -405,9 +487,10 @@ internal class CommitGuard {
  * already uses for name-only creation elsewhere (the Add-note sheet's inline
  * picker, Task 10), so an unchanged default still behaves exactly as before.
  *
- * Name and colour are held locally, not persisted, until the name field
- * commits: there is no id yet to rename or recolour against, so unlike an
- * expanded [LabelRow] this row cannot write through on every swatch tap.
+ * Name, scope, and colour are held locally, not persisted, until the name
+ * field commits: there is no id yet to rename, re-scope, or recolour
+ * against, so unlike an expanded [LabelRow] this row cannot write through on
+ * every scope or swatch tap.
  * Once [onCreate] succeeds, [LabelsViewModel.create] moves the expansion
  * target to the new label's own id, and this composable stops being shown -
  * the *same* [LabelEditorFields] then keeps rendering, bound to the real row.
@@ -416,7 +499,7 @@ internal class CommitGuard {
 private fun DraftLabelRow(
     palette: List<LabelColor>,
     existingColorKeys: List<String>,
-    onCreate: suspend (String, LabelColor) -> Boolean,
+    onCreate: suspend (String, LabelColor, LabelUsage) -> Boolean,
 ) {
     var name by remember { mutableStateOf("") }
     // Keyed on existingColorKeys: the row can open before the label list has
@@ -427,6 +510,7 @@ private fun DraftLabelRow(
     var selectedColor by remember(existingColorKeys) {
         mutableStateOf(AnnotationLabelsRepositoryImpl.nextUnusedColor(existingColorKeys))
     }
+    var selectedUsage by remember { mutableStateOf(LabelUsage.BOTH) }
     val commitGuard = remember { CommitGuard() }
     val focusRequester = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
@@ -441,12 +525,13 @@ private fun DraftLabelRow(
         // a separate flag for "has this row ever been focused".
         if (!commitGuard.begin(trimmed)) return
         scope.launch {
-            val succeeded = onCreate(trimmed, selectedColor)
+            val succeeded = onCreate(trimmed, selectedColor, selectedUsage)
             // A failed create leaves this row mounted (LabelsViewModel.create
             // only changes the expansion target on success) with its typed
-            // name and chosen colour untouched, so rolling the guard back
-            // here is what lets the user's corrected retry actually fire
-            // instead of looking like a repeat of the commit that failed.
+            // name, chosen scope, and chosen colour untouched, so rolling
+            // the guard back here is what lets the user's corrected retry
+            // actually fire instead of looking like a repeat of the commit
+            // that failed.
             if (!succeeded) commitGuard.failed(previous)
         }
     }
@@ -464,5 +549,7 @@ private fun DraftLabelRow(
         palette = palette,
         selectedColorKey = selectedColor.key,
         onSelectColor = { selectedColor = it },
+        selectedUsage = selectedUsage,
+        onSelectUsage = { selectedUsage = it },
     )
 }

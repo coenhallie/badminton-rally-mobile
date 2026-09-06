@@ -5,8 +5,8 @@ struct ErrorBanner: View {
 
     var body: some View {
         Text(message)
-            .font(.footnote)
-            .foregroundStyle(.white)
+            .shuttlType(ShuttlType.bodySmall)
+            .foregroundStyle(Shuttl.onError)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(12)
             .background(Shuttl.error)

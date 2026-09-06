@@ -27,8 +27,10 @@ class LocalPlayerViewModel(
         .map { it[videoId].orEmpty() }
         .stateIn(viewModelScope, SharingStarted.Eagerly, annotations.annotationsFor(videoId))
 
-    val labelOptions: StateFlow<List<AnnotationLabel>> = labels.labels
-        .stateIn(viewModelScope, SharingStarted.Eagerly, labels.labels.value)
+    // Clip-scoped subset: a label made purely for the courtside board has no
+    // business cluttering the note picker here.
+    val labelOptions: StateFlow<List<AnnotationLabel>> = labels.clipLabels
+        .stateIn(viewModelScope, SharingStarted.Eagerly, labels.clipLabels.value)
 
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()

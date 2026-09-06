@@ -1,0 +1,79 @@
+{
+ "provenance": {
+  "tracker_commit": "da46dbde8b5055f7861ddf79b9daa85dc39e39cd",
+  "function": "tracknet.inference.TrackNetInference._heatmap_to_coord",
+  "generated_by": "tools/models/make_shuttle_vectors.py"
+ },
+ "cases": [
+  {
+   "index": 0,
+   "name": "single_clean_blob",
+   "visible": true,
+   "x": 20.000002101006913,
+   "y": 15.000001575755183
+  },
+  {
+   "index": 1,
+   "name": "blob_area_exactly_100_is_kept",
+   "visible": true,
+   "x": 14.499999615881178,
+   "y": 14.499999615881178
+  },
+  {
+   "index": 2,
+   "name": "blob_area_101_is_rejected",
+   "visible": false,
+   "x": 0.0,
+   "y": 0.0
+  },
+  {
+   "index": 3,
+   "name": "only_oversized_blob_is_not_visible",
+   "visible": false,
+   "x": 0.0,
+   "y": 0.0
+  },
+  {
+   "index": 4,
+   "name": "small_blob_beats_an_oversized_one",
+   "visible": true,
+   "x": 50.000007641622496,
+   "y": 35.00000534913575
+  },
+  {
+   "index": 5,
+   "name": "larger_of_two_valid_blobs_wins",
+   "visible": true,
+   "x": 44.99999647237835,
+   "y": 34.99999725629427
+  },
+  {
+   "index": 6,
+   "name": "empty_heatmap_is_not_visible",
+   "visible": false,
+   "x": 0.0,
+   "y": 0.0
+  },
+  {
+   "index": 7,
+   "name": "weighted_centroid_differs_from_geometric",
+   "visible": true,
+   "x": 22.235294720705816,
+   "y": 22.00000061708338
+  },
+  {
+   "index": 8,
+   "name": "threshold_is_exactly_half",
+   "visible": true,
+   "x": 39.99999280788716,
+   "y": 29.99999460591537
+  },
+  {
+   "index": 9,
+   "name": "diagonal_touch_is_one_blob_under_8_connectivity",
+   "visible": false,
+   "x": 0.0,
+   "y": 0.0
+  }
+ ]
+}

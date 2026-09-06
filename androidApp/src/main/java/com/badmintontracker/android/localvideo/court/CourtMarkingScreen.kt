@@ -1,5 +1,6 @@
 package com.badmintontracker.android.localvideo.court
 
+import com.badmintontracker.android.localanalysis.AnalysisTarget
 import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
@@ -66,6 +67,14 @@ import com.badmintontracker.shared.localvideo.court.CourtMarkingState
 import com.badmintontracker.shared.model.CourtKeypoints
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.badmintontracker.shared.local.DeviceThroughput
+import com.badmintontracker.shared.local.AnalysisMetric
+import com.badmintontracker.android.localanalysis.MetricSelector
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.heightIn
 
 /**
  * 12-point court calibration, behavior-identical to desktop CourtSetup.vue:
@@ -76,7 +85,8 @@ import kotlinx.coroutines.withContext
 @Composable
 fun CourtMarkingScreen(
     vm: CourtMarkingViewModel,
-    onStartAnalysis: (CourtKeypoints) -> Unit,
+    throughput: DeviceThroughput,
+    onStartAnalysis: (CourtKeypoints, AnalysisTarget, Set<AnalysisMetric>) -> Unit,
     onBack: () -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -116,6 +126,7 @@ fun CourtMarkingScreen(
                 else -> MarkingContent(
                     vm = vm,
                     marking = marking,
+                    throughput = throughput,
                     onStartAnalysis = onStartAnalysis,
                 )
             }
@@ -127,9 +138,18 @@ fun CourtMarkingScreen(
 private fun ColumnScope.MarkingContent(
     vm: CourtMarkingViewModel,
     marking: CourtMarkingState,
-    onStartAnalysis: (CourtKeypoints) -> Unit,
+    throughput: DeviceThroughput,
+    onStartAnalysis: (CourtKeypoints, AnalysisTarget, Set<AnalysisMetric>) -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    // Clips only by default: it is the one metric every user came for, and
+    // pose roughly doubles the wait, so it is opted into rather than out of.
+    var metrics by rememberSaveable(
+        saver = listSaver(
+            save = { it.value.map(AnalysisMetric::name) },
+            restore = { mutableStateOf(it.map(AnalysisMetric::valueOf).toSet()) },
+        ),
+    ) { mutableStateOf(setOf(AnalysisMetric.RALLY_CLIPS)) }
 
     // The frame flexes to whatever height is left after the pinned controls,
     // so it can never push them off screen (the original bug on portrait video).
@@ -142,6 +162,20 @@ private fun ColumnScope.MarkingContent(
         FrameWithOverlay(vm = vm, marking = marking, frame = state.frame)
     }
 
+    // Everything between the frame and the action buttons scrolls, and the
+    // buttons themselves never do. All of this was unweighted, so it measured
+    // at whatever height it wanted and the frame absorbed the difference; once
+    // the metric selector was added the total exceeded the screen, the frame
+    // had already collapsed to nothing, and the second action button was
+    // clipped away under the navigation bar. Weighting this region against the
+    // frame means the two share what is left after the buttons are placed, so
+    // the buttons cannot be pushed off however long this list grows.
+    Column(
+        modifier = Modifier
+            .weight(GUIDANCE_WEIGHT)
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState()),
+    ) {
     InstructionRow(marking)
     SchematicCourtGuide(nextIndex = marking.nextIndex, placedCount = marking.points.size)
 
@@ -166,16 +200,45 @@ private fun ColumnScope.MarkingContent(
             modifier = Modifier.weight(1f),
         )
     }
+    }
+
     if (marking.isComplete) {
-        ShuttlButton(
-            text = "Start Analysis",
-            onClick = { onStartAnalysis(marking.toCourtKeypoints()) },
-            variant = ShuttlButtonVariant.Primary,
+        // Two buttons rather than one with a toggle: the point is to run the
+        // same video through both pipelines back to back and compare, and a
+        // toggle adds a step to every comparison.
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
                 .padding(bottom = 16.dp),
-        )
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            // Only for the device run: the cloud's cost is someone else's GPU
+            // and its worker decides its own stages, so a time estimate and a
+            // metric choice would both be fiction there.
+            MetricSelector(
+                frames = state.frameCount,
+                fps = state.fps,
+                selected = metrics,
+                throughput = throughput,
+                onToggle = { metric ->
+                    metrics = if (metric in metrics) metrics - metric else metrics + metric
+                },
+            )
+            ShuttlButton(
+                text = AnalysisTarget.Cloud.label,
+                onClick = { onStartAnalysis(marking.toCourtKeypoints(), AnalysisTarget.Cloud, metrics) },
+                variant = ShuttlButtonVariant.Primary,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            ShuttlButton(
+                text = AnalysisTarget.Device.label,
+                onClick = { onStartAnalysis(marking.toCourtKeypoints(), AnalysisTarget.Device, metrics) },
+                variant = ShuttlButtonVariant.Secondary,
+                enabled = metrics.isNotEmpty(),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
     }
 }
 
@@ -240,10 +303,11 @@ private fun FrameWithOverlay(
                     modifier = Modifier.fillMaxSize(),
                 )
             }
+            val markerLabelFontFamily = MaterialTheme.typography.labelSmall.fontFamily
             Canvas(modifier = Modifier.fillMaxSize()) {
                 drawCourtGuide()
                 drawCornerRectangle(marking)
-                drawPlacedPoints(marking, scale, density.density, textMeasurer)
+                drawPlacedPoints(marking, scale, density.density, textMeasurer, markerLabelFontFamily)
             }
         }
     }
@@ -337,6 +401,7 @@ private fun DrawScope.drawPlacedPoints(
     zoom: Float,
     density: Float,
     textMeasurer: androidx.compose.ui.text.TextMeasurer,
+    labelFontFamily: androidx.compose.ui.text.font.FontFamily?,
 ) {
     val toDisplay = displayFactor(marking)
     // Constant on-screen size regardless of pinch-zoom (markers are presentation only).
@@ -347,7 +412,17 @@ private fun DrawScope.drawPlacedPoints(
         drawCircle(Color.Black, radius, center, style = Stroke(width = 2f * density / zoom))
         val label = textMeasurer.measure(
             CourtMarkingSpec.shortLabels[i],
-            TextStyle(fontSize = (9f / zoom).sp, fontWeight = FontWeight.Bold, color = Color.Black),
+            // Only fontFamily is taken from the type scale: letterSpacing and
+            // lineHeight there are pinned to labelSmall's 11sp role, and this
+            // marker's fontSize tracks pinch-zoom, so inheriting them would pin
+            // spacing/line-height while the glyph shrinks and throw off the
+            // width/2, height/2 centering below.
+            TextStyle(
+                fontFamily = labelFontFamily,
+                fontSize = (9f / zoom).sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.Black,
+            ),
         )
         drawText(
             label,
@@ -450,8 +525,33 @@ suspend fun loadFirstFrame(context: Context, uri: Uri): CourtFrame =
             retriever.setDataSource(context, uri)
             val bmp = retriever.getFrameAtTime(100_000L, MediaMetadataRetriever.OPTION_CLOSEST)
                 ?: error("Couldn't extract video frame")
-            CourtFrame(bmp, bmp.width, bmp.height)
+            val fps = retriever
+                .extractMetadata(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)
+                ?.toDoubleOrNull()
+                ?.takeIf { it > 0 }
+                ?: DEFAULT_FPS
+            val durationMs = retriever
+                .extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                ?.toLongOrNull() ?: 0L
+            CourtFrame(
+                frame = bmp,
+                width = bmp.width,
+                height = bmp.height,
+                fps = fps,
+                frameCount = (durationMs / 1000.0 * fps).toInt(),
+            )
         } finally {
             retriever.release()
         }
     }
+
+/** Only when the container does not say; most do. */
+private const val DEFAULT_FPS = 30.0
+
+/**
+ * The guidance area splits the leftover space evenly with the frame.
+ *
+ * It scrolls, so it can afford to be the smaller of the two when it has to be;
+ * the frame cannot, and twelve landmarks are placed on it by finger.
+ */
+private const val GUIDANCE_WEIGHT = 1f

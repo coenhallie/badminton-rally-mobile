@@ -35,30 +35,19 @@ final class LocalPlayerModel {
         }
     }
 
-    /// Streams the signed-in user's labels for the picker and the badge lookup.
-    /// Runs for the lifetime of the screen; `rally.labels` is a singleton, so
-    /// this just mirrors its current value.
+    /// Streams the clip-scoped subset of labels for the picker and the badge
+    /// lookup. Runs for the lifetime of the screen; `rally.labels` is a
+    /// singleton, so this just mirrors its current value.
     func observeLabels() async {
-        for await ls in rally.labels.labels {
+        for await ls in rally.labels.clipLabels {
             labels = ls
         }
     }
 
     /// Kicks a real load off the network so a stale or empty cache catches up.
-    /// Errors are swallowed here: the cached/streamed value above still renders,
-    /// and a `createLabel` failure surfaces its own message.
+    /// Errors are swallowed here: the cached/streamed value above still renders.
     func refreshLabels() async {
         _ = try? await rally.labels.refreshLabelsOrMessage()
-    }
-
-    func createLabel(_ name: String) async {
-        guard let outcome = try? await SwiftInteropKt.createLabelForSwift(rally.labels, name: name) else {
-            actionError = "Couldn't add label"
-            return
-        }
-        // Assigning unconditionally (rather than only on non-nil) clears a
-        // stale banner from an earlier failure once this one succeeds.
-        actionError = outcome.errorMessage
     }
 
     func currentTimestampSeconds() -> Float {

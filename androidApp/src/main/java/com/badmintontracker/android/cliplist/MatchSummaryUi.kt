@@ -80,8 +80,13 @@ fun MatchLabelStrip(
     }
 }
 
+/**
+ * One label and how many times it was used. Internal rather than private because
+ * the courtside tally on the match page renders the same thing, and the two
+ * summaries have to read as the same thing.
+ */
 @Composable
-private fun LabelCountChip(label: LabelCount) {
+internal fun LabelCountChip(label: LabelCount) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -107,7 +112,12 @@ fun MatchSummarySheet(
     onTopRallyClick: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        // Unset, this resolves M3's surfaceContainerLow, which ShuttlColors.kt
+        // never sets. See AddMatchSheet for the full reasoning.
+        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+    ) {
         Column(
             Modifier
                 .verticalScroll(rememberScrollState())

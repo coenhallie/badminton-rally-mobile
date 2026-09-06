@@ -5,6 +5,7 @@ import com.badmintontracker.android.testing.FakeAnnotationLabelsRepository
 import com.badmintontracker.shared.localvideo.LocalAnnotation
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.model.AnnotationLabel
+import com.badmintontracker.shared.model.LabelUsage
 import com.russhwolf.settings.MapSettings
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.Dispatchers
@@ -90,6 +91,17 @@ class LocalPlayerViewModelTest {
     @Test
     fun labelOptions_reflects_the_label_repository() = runTest {
         val vm = vm(FakeAnnotationLabelsRepository(listOf(netKill)))
+        vm.labelOptions.value shouldBe listOf(netKill)
+    }
+
+    @Test
+    fun labelOptions_excludes_a_label_scoped_only_to_the_scoreboard() = runTest {
+        val boardOnly = AnnotationLabel(
+            id = "l9", name = "Serve", colorKey = "blue",
+            createdAt = Instant.parse("2026-08-24T12:00:00Z"),
+            usage = LabelUsage.SCOREBOARD.key,
+        )
+        val vm = vm(FakeAnnotationLabelsRepository(listOf(netKill, boardOnly)))
         vm.labelOptions.value shouldBe listOf(netKill)
     }
 

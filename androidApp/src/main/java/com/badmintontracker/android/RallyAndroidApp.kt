@@ -1,5 +1,8 @@
 package com.badmintontracker.android
 
+import com.badmintontracker.android.localanalysis.BackgroundWorkMonitor
+import com.badmintontracker.android.localanalysis.LocalAnalysisRunner
+import com.badmintontracker.shared.local.DeviceThroughputRepository
 import android.app.Application
 import android.net.Uri
 import android.util.Log
@@ -33,6 +36,9 @@ class RallyAndroidApp : Application(), SingletonImageLoader.Factory {
     lateinit var localVideos:        LocalVideoRepository       private set
     lateinit var localAnnotations:   LocalAnnotationsRepository private set
     lateinit var analyzeCoordinator: AnalyzeCoordinator         private set
+    lateinit var localAnalysis:      LocalAnalysisRunner        private set
+    lateinit var backgroundWork:     BackgroundWorkMonitor      private set
+    lateinit var throughput:         DeviceThroughputRepository private set
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -43,13 +49,10 @@ class RallyAndroidApp : Application(), SingletonImageLoader.Factory {
         themePrefs  = rally.themePrefs
         localVideos = rally.localVideos
         localAnnotations = rally.localAnnotations
-        analyzeCoordinator = AnalyzeCoordinator(
-            localVideos = localVideos,
-            videos = rally.videos,
-            clips = rally.clips,
+        analyzeCoordinator = rally.analyzeCoordinator(
             scope = appScope,
             openChannel = { uri, offset ->
-                // Throwing here surfaces as FAILED(UPLOAD) with this message — the
+                // Throwing here surfaces as FAILED(UPLOAD) with this message - the
                 // "file missing / permission revoked" state.
                 val stream = runCatching { contentResolver.openInputStream(Uri.parse(uri)) }.getOrNull()
                     ?: error("Video file is missing or access was revoked")
@@ -57,8 +60,26 @@ class RallyAndroidApp : Application(), SingletonImageLoader.Factory {
                 stream.toByteReadChannel()
             },
             log = { Log.i("AnalyzeCoordinator", it) },
-            localAnnotations = localAnnotations,
         )
         analyzeCoordinator.reattachToProcessing()
+
+        // The on-device sibling of analyzeCoordinator. Application-scoped
+        // for the same reason: an analysis outlives the screen that starts it.
+        throughput = DeviceThroughputRepository(settings)
+        localAnalysis = LocalAnalysisRunner(
+            context = this,
+            scope = appScope,
+            throughput = throughput,
+            log = { Log.i("LocalAnalysis", it) },
+        )
+
+        // Last: it reads the two coordinators above, so it cannot be built
+        // before them.
+        backgroundWork = BackgroundWorkMonitor(
+            entries = localVideos.entries,
+            progress = analyzeCoordinator.progress,
+            device = localAnalysis.state,
+            scope = appScope,
+        )
     }
 }

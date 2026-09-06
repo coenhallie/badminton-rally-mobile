@@ -20,12 +20,12 @@ struct MatchLabelStripView: View {
             }
             if overflow > 0 {
                 Text("+\(overflow)")
-                    .font(.system(size: 11, weight: .medium))
+                    .shuttlType(ShuttlType.labelSmall)
                     .foregroundStyle(Shuttl.textSecondary)
             }
             Spacer()
             Image(systemName: "chevron.right")
-                .font(.footnote)
+                .shuttlType(ShuttlType.bodySmall)
                 .foregroundStyle(Shuttl.textSecondary)
         }
         .contentShape(Rectangle())
@@ -44,7 +44,7 @@ private struct LabelCountChip: View {
                 colorKey: label.colorKey
             )
             Text("\(label.count)")
-                .font(.system(size: 11, weight: .medium).monospacedDigit())
+                .shuttlType(ShuttlType.labelSmall, monospacedDigit: true)
                 .foregroundStyle(Shuttl.textSecondary)
         }
     }
@@ -71,11 +71,11 @@ struct MatchSummarySheet: View {
                     } label: {
                         HStack {
                             Text("Most labelled · \(name) · \(labelledNotes(top.labelCount))")
-                                .font(.subheadline)
+                                .shuttlType(ShuttlType.titleMedium)
                                 .foregroundStyle(Shuttl.text)
                             Spacer()
                             Image(systemName: "chevron.right")
-                                .font(.footnote)
+                                .shuttlType(ShuttlType.bodySmall)
                                 .foregroundStyle(Shuttl.textSecondary)
                         }
                     }
@@ -102,7 +102,7 @@ private struct LabelShareRow: View {
                 LabelBadge(name: label.name, colorKey: label.colorKey)
                 Spacer()
                 Text("\(label.count)   \(label.sharePercent)%")
-                    .font(.system(size: 12, weight: .medium).monospacedDigit())
+                    .shuttlType(ShuttlType.labelSmall, monospacedDigit: true)
                     .foregroundStyle(Shuttl.textSecondary)
             }
             GeometryReader { geo in

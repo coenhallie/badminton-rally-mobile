@@ -23,7 +23,7 @@ struct TransportButton: View {
 
     var body: some View {
         Text(text)
-            .font(.body.weight(.semibold))
+            .shuttlType(ShuttlType.titleLarge)
             .foregroundStyle(Shuttl.text)
             .lineLimit(1)
             .minimumScaleFactor(0.7)

@@ -1,0 +1,69 @@
+{
+  "provenance": {
+    "video": "/Users/coenhallie/shuttl-corpus/2eabfc01-7ba6-4d0c-a481-0f7591a0851c/source.mp4",
+    "tracker_repo": "../badminton-tracker",
+    "tracker_repo_commit": "da46dbde8b5055f7861ddf79b9daa85dc39e39cd",
+    "tracknet_weights": "tools/models/weights/tracknet.pt",
+    "inpaintnet_weights": "tools/models/weights/inpaintnet.pt",
+    "tracknet_onnx": "tools/models/onnx/tracknet.fp16.onnx",
+    "inpaintnet_onnx": "tools/models/onnx/inpaintnet.fp16.onnx",
+    "swapped": "TrackNet + InpaintNet (deployed config)",
+    "batch_size": 16,
+    "max_bg_samples": 300
+  },
+  "gate": {
+    "frames": 12032,
+    "visibility_agreement": 1.0,
+    "both_visible": 7828,
+    "torch_visible_fraction": 0.6505984042553191,
+    "median_delta_px_at_512x288": 6.103515625e-05,
+    "p95_delta_px_at_512x288": 0.0001678466796875,
+    "tracknet_shim_calls": 94,
+    "inpaintnet_shim_calls": 94,
+    "inpainted_frames_torch": [],
+    "inpainted_frames_onnx": [],
+    "inpaint_union_size": 0,
+    "inpaint_sets_match": true,
+    "max_inpaint_delta_px_at_512x288": null,
+    "gate_terms": {
+      "visibility_agreement": {
+        "ok": true,
+        "value": 1.0,
+        "threshold_min": 0.99,
+        "n_measured": 12032,
+        "n_required": 1,
+        "sample": "frames present in both the torch and the ONNX run"
+      },
+      "p95_delta_px_at_512x288": {
+        "ok": true,
+        "value": 0.0001678466796875,
+        "threshold_max": 2.0,
+        "n_measured": 7828,
+        "n_required": 1,
+        "sample": "frames both sides call the shuttle visible"
+      },
+      "inpaint_scoped": {
+        "ok": true,
+        "value": null,
+        "threshold_max": 2.0,
+        "sets_match": true,
+        "n_measured": 0,
+        "n_required": 1,
+        "sample": "frames either side's InpaintNet pass actually filled"
+      }
+    }
+  },
+  "gate_measurable": true,
+  "gate_pass": false,
+  "underfloor_gate_terms": [
+    "inpaint_scoped"
+  ],
+  "inpaintnet_unexercised": true,
+  "informational": {
+    "note": "NOT a gate: local now runs the same production pipeline as the cloud (median background, blob detection, InpaintNet gap-fill, scaling to native resolution) via TrackNetInference.track_video, so this is no longer comparing raw model output to a filtered track. What remains is the cloud's court-ROI polygon rejection, static-cluster suppression, and minimum-movement suppression (_build_shuttle_positions_dict, modal_supabase_processor.py:4073) applied on top of its own track_video output, plus the ONNX conversion and any decode differences. A divergence here is still expected, for a narrower set of reasons than before, and must not be used as a pass/fail signal.",
+    "frames_compared": 12032,
+    "both_visible": 2995,
+    "median_delta_px": 0.02088578106370503,
+    "p95_delta_px": 0.8973621029337479
+  }
+}

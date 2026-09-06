@@ -38,7 +38,9 @@ struct LabelsView: View {
                     if model.expanded == .new {
                         DraftLabelEditor(
                             existingColorKeys: model.labels.map(\.colorKey),
-                            onCreate: { name, color in await model.create(name, color: color) }
+                            onCreate: { name, color, usage in
+                                await model.create(name, color: color, usage: usage)
+                            }
                         )
                     }
                     ForEach(model.labels, id: \.id) { label in
@@ -47,7 +49,8 @@ struct LabelsView: View {
                             expanded: model.expanded == .existing(label.id),
                             onToggle: { model.expand(label.id) },
                             onRename: { name in await model.rename(label.id, to: name) },
-                            onRecolor: { color in Task { await model.recolor(label.id, to: color) } }
+                            onRecolor: { color in Task { await model.recolor(label.id, to: color) } },
+                            onSetUsage: { usage in Task { await model.setUsage(label.id, to: usage) } }
                         )
                         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                             Button(role: .destructive) {
@@ -103,22 +106,39 @@ private struct LabelRow: View {
     let onToggle: () -> Void
     let onRename: (String) async -> Bool
     let onRecolor: (LabelColor) -> Void
+    let onSetUsage: (LabelUsage) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 12) {
                 swatchDot(for: LabelColor.companion.from(key: label.colorKey))
+                // A long name must yield to the trailing caption rather than
+                // push it off the row or clip it. lineLimit(1) makes this
+                // Text flexible in HStack's layout pass - it can shrink down
+                // to its truncated minimum - while the caption below, which
+                // takes no lineLimit, stays inflexible and always gets its
+                // full intrinsic width first.
                 Text(label.name)
-                    .font(.body)
+                    .shuttlType(ShuttlType.bodyLarge)
                     .foregroundStyle(Shuttl.text)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                 Spacer()
+                // Only on rows that are not `both`, so the common case stays
+                // quiet and the caption reads as an exception rather than as a
+                // column. Without it the split is invisible from the list.
+                if let caption = Self.scopeCaption(label.scope) {
+                    Text(caption)
+                        .shuttlType(ShuttlType.bodySmall)
+                        .foregroundStyle(Shuttl.textSecondary)
+                }
             }
             .padding(.vertical, 10)
             .contentShape(Rectangle())
             .onTapGesture(perform: onToggle)
 
             if expanded {
-                LabelEditor(label: label, onRename: onRename, onRecolor: onRecolor)
+                LabelEditor(label: label, onRename: onRename, onRecolor: onRecolor, onSetUsage: onSetUsage)
             }
         }
     }
@@ -127,6 +147,15 @@ private struct LabelRow: View {
         Circle()
             .fill(swatch.map { Color(rgb: UInt32($0.background & 0xFFFFFF)) } ?? Shuttl.bgTertiary)
             .frame(width: 12, height: 12)
+    }
+
+    private static func scopeCaption(_ scope: LabelUsage) -> String? {
+        switch scope {
+        case .both: return nil
+        case .scoreboard: return "BOARD"
+        case .clips: return "CLIPS"
+        default: return nil
+        }
     }
 }
 
@@ -142,6 +171,8 @@ private struct EditorFields: View {
     @Binding var name: String
     let selectedKey: String?
     let onSelectColor: (LabelColor) -> Void
+    let selectedUsage: LabelUsage
+    let onSelectUsage: (LabelUsage) -> Void
     let onCommit: () -> Void
 
     @FocusState private var focused: Bool
@@ -162,6 +193,26 @@ private struct EditorFields: View {
                         onCommit()
                     }
                 }
+            // Where this label may be offered. Same control the new-match
+            // screen uses for singles/doubles, so it reads as one app - but
+            // that screen draws its Picker label through a Form Section
+            // header, and this editor is not in a Form, so `Picker("Use", ...)`
+            // alone renders no visible label under `.pickerStyle(.segmented)`.
+            // The caption below fills that gap; VoiceOver already reads "Use"
+            // from the Picker itself regardless, so this is purely the sighted
+            // half of the same label.
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Use")
+                    .shuttlType(ShuttlType.bodySmall)
+                    .foregroundStyle(Shuttl.textSecondary)
+                    .textCase(.uppercase)
+                Picker("Use", selection: Binding(get: { selectedUsage }, set: onSelectUsage)) {
+                    Text("Both").tag(LabelUsage.both)
+                    Text("Scoreboard").tag(LabelUsage.scoreboard)
+                    Text("Clips").tag(LabelUsage.clips)
+                }
+                .pickerStyle(.segmented)
+            }
             SwatchGrid(selectedKey: selectedKey, onSelect: onSelectColor)
         }
         .padding(.bottom, 12)
@@ -179,20 +230,34 @@ private struct LabelEditor: View {
     let label: AnnotationLabel
     let onRename: (String) async -> Bool
     let onRecolor: (LabelColor) -> Void
+    let onSetUsage: (LabelUsage) -> Void
 
     @State private var name: String
     @State private var commitGuard: CommitGuard
 
-    init(label: AnnotationLabel, onRename: @escaping (String) async -> Bool, onRecolor: @escaping (LabelColor) -> Void) {
+    init(
+        label: AnnotationLabel,
+        onRename: @escaping (String) async -> Bool,
+        onRecolor: @escaping (LabelColor) -> Void,
+        onSetUsage: @escaping (LabelUsage) -> Void
+    ) {
         self.label = label
         self.onRename = onRename
         self.onRecolor = onRecolor
+        self.onSetUsage = onSetUsage
         _name = State(initialValue: label.name)
         _commitGuard = State(initialValue: CommitGuard(lastCommitted: label.name))
     }
 
     var body: some View {
-        EditorFields(name: $name, selectedKey: label.colorKey, onSelectColor: onRecolor, onCommit: commit)
+        EditorFields(
+            name: $name,
+            selectedKey: label.colorKey,
+            onSelectColor: onRecolor,
+            selectedUsage: label.scope,
+            onSelectUsage: onSetUsage,
+            onCommit: commit
+        )
     }
 
     private func commit() {
@@ -278,17 +343,25 @@ private struct SwatchGrid: View {
 /// dispatches instead of being silently treated as a no-op.
 private struct DraftLabelEditor: View {
     let existingColorKeys: [String]
-    let onCreate: (String, LabelColor) async -> Bool
+    let onCreate: (String, LabelColor, LabelUsage) async -> Bool
 
     @State private var name = ""
     @State private var selected: LabelColor = LabelColor.green
+    @State private var usage: LabelUsage = .both
     @State private var commitGuard = CommitGuard()
 
     var body: some View {
-        EditorFields(name: $name, selectedKey: selected.key, onSelectColor: { selected = $0 }, onCommit: commit)
-            .task(id: existingColorKeys) {
-                selected = AnnotationLabelsRepositoryImpl.companion.nextUnusedColor(takenKeys: existingColorKeys)
-            }
+        EditorFields(
+            name: $name,
+            selectedKey: selected.key,
+            onSelectColor: { selected = $0 },
+            selectedUsage: usage,
+            onSelectUsage: { usage = $0 },
+            onCommit: commit
+        )
+        .task(id: existingColorKeys) {
+            selected = AnnotationLabelsRepositoryImpl.companion.nextUnusedColor(takenKeys: existingColorKeys)
+        }
     }
 
     private func commit() {
@@ -296,7 +369,7 @@ private struct DraftLabelEditor: View {
         let previous = commitGuard.lastCommitted
         guard commitGuard.begin(trimmed) else { return }
         Task {
-            let succeeded = await onCreate(trimmed, selected)
+            let succeeded = await onCreate(trimmed, selected, usage)
             if !succeeded { commitGuard.failed(previous: previous) }
         }
     }

@@ -20,30 +20,48 @@ extension Color {
     }
 }
 
-/// Ports of androidApp ui/theme/ShuttlColors.kt (web tokens). Sharp corners everywhere
-/// (ShuttlShapes.kt is all 0dp) except pill badges/chips.
+/// The design tokens, resolved for the current interface style.
+///
+/// Values live in `ShuttlPalette`; this is the SwiftUI-facing view of them.
+/// Ported from androidApp's ui/theme/ShuttlColors.kt, which mirrors this file
+/// token for token. Radii live in `ShuttlRadius`, type in `ShuttlType`.
 enum Shuttl {
-    static let bg              = Color(light: 0xFFFFFF, dark: 0x0D0D0D)
-    static let bgSecondary     = Color(light: 0xF8F9FA, dark: 0x141414)
-    static let bgTertiary      = Color(light: 0xF0F1F3, dark: 0x1A1A1A)
-    static let bgInput         = Color(light: 0xF0F1F3, dark: 0x111111)
-    static let border          = Color(light: 0xE0E0E0, dark: 0x222222)
-    static let borderSecondary = Color(light: 0xD0D0D0, dark: 0x333333)
-    static let textHeading     = Color(light: 0x0D0D0D, dark: 0xFFFFFF)
-    static let text            = Color(light: 0x1A1A2E, dark: 0xE2E8F0)
-    static let textSecondary   = Color(light: 0x555555, dark: 0x888888)
-    static let textTertiary    = Color(light: 0x777777, dark: 0x666666)
-    static let accent          = Color(light: 0x16A34A, dark: 0x22C55E)
-    static let accentDark      = Color(light: 0x166534, dark: 0x16A34A)
-    static let error           = Color(rgb: 0xEF4444)
-    static let warning         = Color(rgb: 0xF59E0B)
-    static let info            = Color(rgb: 0x3B82F6)
+    private static func token(_ pair: ShuttlPalette.Pair) -> Color {
+        Color(light: pair.light, dark: pair.dark)
+    }
 
-    /// Tiny uppercase tracked label — matches Android labelSmall (11sp, medium, 0.05em).
+    static let bg              = token(ShuttlPalette.bg)
+    static let bgSecondary     = token(ShuttlPalette.bgSecondary)
+    static let bgTertiary      = token(ShuttlPalette.bgTertiary)
+    static let bgInput         = token(ShuttlPalette.bgInput)
+    static let border          = token(ShuttlPalette.border)
+    static let borderSecondary = token(ShuttlPalette.borderSecondary)
+    static let textHeading     = token(ShuttlPalette.textHeading)
+    static let text            = token(ShuttlPalette.text)
+    static let textSecondary   = token(ShuttlPalette.textSecondary)
+    static let textTertiary    = token(ShuttlPalette.textTertiary)
+    static let textMuted       = token(ShuttlPalette.textMuted)
+    static let accent          = token(ShuttlPalette.accent)
+    static let onAccent        = token(ShuttlPalette.onAccent)
+    static let accentDark      = token(ShuttlPalette.accentDark)
+    static let error           = token(ShuttlPalette.error)
+    static let onError         = token(ShuttlPalette.onError)
+    static let warning         = token(ShuttlPalette.warning)
+    static let info            = token(ShuttlPalette.info)
+
+    // The two sides of the scoreboard. Deliberately not the accent green and the
+    // info blue: those are interface colours sized for a chip, and these are
+    // full-bleed halves carrying white numerals, so they are picked for contrast
+    // against white first and family resemblance second. Deeper in dark, where a
+    // lit-up half at arm's length in a dim hall is the thing to avoid. Mirrors
+    // androidApp's ShuttlExtendedColors.sideHome / sideAway.
+    static let sideHome        = token(ShuttlPalette.sideHome)
+    static let sideAway        = token(ShuttlPalette.sideAway)
+
+    /// Tiny uppercase tracked label - matches Android labelSmall.
     static func sectionLabel(_ text: String) -> some View {
         Text(text.uppercased())
-            .font(.system(size: 11, weight: .medium))
-            .kerning(0.55)
+            .shuttlType(ShuttlType.labelSmall)
             .foregroundStyle(Shuttl.textSecondary)
     }
 }

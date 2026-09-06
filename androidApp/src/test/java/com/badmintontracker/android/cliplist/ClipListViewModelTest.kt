@@ -1,14 +1,25 @@
 package com.badmintontracker.android.cliplist
 
+import com.badmintontracker.shared.scoring.ScoreLogsRepository
+import com.russhwolf.settings.MapSettings
 import app.cash.turbine.test
 import com.badmintontracker.android.testing.FakeAuthRepository
 import com.badmintontracker.android.testing.FakeClipsRepository
 import com.badmintontracker.android.testing.FakeSharesRepository
 import com.badmintontracker.android.testing.FakeVideosRepository
+import com.badmintontracker.shared.localvideo.AnalyzeCoordinator
+import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
+import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.model.RallyClip
+import com.badmintontracker.shared.repo.AuthRepository
+import com.badmintontracker.shared.repo.ClipsRepository
 import com.badmintontracker.shared.repo.ReceivedShare
+import com.badmintontracker.shared.repo.SharesRepository
+import com.badmintontracker.shared.repo.VideosRepository
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
+import io.ktor.utils.io.ByteReadChannel
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -21,7 +32,40 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 
 class ClipListViewModelTest {
+
+    /** No matches scored on this phone; the list under test is the video half. */
+    private fun emptyScoreLogs() = ScoreLogsRepository(
+        MapSettings(), now = { Instant.fromEpochMilliseconds(0) }, ownerId = { "user-self" },
+    )
     private val dispatcher = StandardTestDispatcher()
+
+    /**
+     * Nothing under test here exercises the attach pipeline, so a real
+     * LocalVideoRepository with no entries and a coordinator wired to fakes is
+     * enough to satisfy the constructor and produce an always-empty attach map.
+     */
+    private fun localVideos() = LocalVideoRepository(MapSettings())
+    private fun coordinator(localVideos: LocalVideoRepository) = AnalyzeCoordinator(
+        localVideos, FakeVideosRepository(), FakeClipsRepository(),
+        CoroutineScope(dispatcher),
+        openChannel = { _, _ -> ByteReadChannel(ByteArray(0)) },
+        localAnnotations = LocalAnnotationsRepository(MapSettings()),
+    )
+
+    /** Builds the two new attach-pipeline inputs alongside the view model under test. */
+    private fun newViewModel(
+        clips: ClipsRepository,
+        auth: AuthRepository,
+        shares: SharesRepository,
+        videos: VideosRepository,
+        scoreLogs: ScoreLogsRepository,
+    ): ClipListViewModel {
+        val lv = localVideos()
+        return ClipListViewModel(
+            clips, auth, shares, videos, scoreLogs, lv, coordinator(lv),
+            LocalAnnotationsRepository(MapSettings()),
+        )
+    }
 
     @BeforeTest fun setMain() = Dispatchers.setMain(dispatcher)
     @AfterTest  fun resetMain() = Dispatchers.resetMain()
@@ -42,7 +86,7 @@ class ClipListViewModelTest {
     @Test
     fun init_triggers_refresh() = runTest {
         val clips = FakeClipsRepository()
-        ClipListViewModel(clips, FakeAuthRepository(), FakeSharesRepository(), FakeVideosRepository())
+        newViewModel(clips, FakeAuthRepository(), FakeSharesRepository(), FakeVideosRepository(), emptyScoreLogs())
         advanceUntilIdle()
         clips.refreshCalls shouldHaveSize 1
     }
@@ -50,7 +94,7 @@ class ClipListViewModelTest {
     @Test
     fun state_reflects_observed_clips() = runTest {
         val clips = FakeClipsRepository().apply { this.clips.value = listOf(clip("a"), clip("b")) }
-        val vm = ClipListViewModel(clips, FakeAuthRepository(), FakeSharesRepository(), FakeVideosRepository())
+        val vm = newViewModel(clips, FakeAuthRepository(), FakeSharesRepository(), FakeVideosRepository(), emptyScoreLogs())
         vm.state.test {
             var s = awaitItem()
             while (s.clips.isEmpty()) s = awaitItem()
@@ -69,7 +113,7 @@ class ClipListViewModelTest {
             )
         }
         val auth = FakeAuthRepository().apply { currentUserIdValue = "user-self" }
-        val vm = ClipListViewModel(clips, auth, FakeSharesRepository(), FakeVideosRepository())
+        val vm = newViewModel(clips, auth, FakeSharesRepository(), FakeVideosRepository(), emptyScoreLogs())
         vm.state.test {
             var s = awaitItem()
             while (s.ownedMatches.isEmpty() && s.sharedMatches.isEmpty()) s = awaitItem()
@@ -84,7 +128,7 @@ class ClipListViewModelTest {
     @Test
     fun refresh_failure_surfaces_in_error() = runTest {
         val clips = FakeClipsRepository().apply { refreshError = IllegalStateException("net down") }
-        val vm = ClipListViewModel(clips, FakeAuthRepository(), FakeSharesRepository(), FakeVideosRepository())
+        val vm = newViewModel(clips, FakeAuthRepository(), FakeSharesRepository(), FakeVideosRepository(), emptyScoreLogs())
         vm.state.test {
             var s = awaitItem()
             while (s.error == null) s = awaitItem()
@@ -111,7 +155,7 @@ class ClipListViewModelTest {
                 ),
             )
         }
-        val vm = ClipListViewModel(clips, auth, shares, FakeVideosRepository())
+        val vm = newViewModel(clips, auth, shares, FakeVideosRepository(), emptyScoreLogs())
         vm.state.test {
             var s = awaitItem()
             while (s.sharedMatches.isEmpty() || s.ownedMatches.isEmpty() || s.sharedMatches.first().sharerEmail == null) {
@@ -132,7 +176,7 @@ class ClipListViewModelTest {
         val shares = FakeSharesRepository().apply {
             listReceivedError = IllegalStateException("shares fetch failed")
         }
-        val vm = ClipListViewModel(clips, auth, shares, FakeVideosRepository())
+        val vm = newViewModel(clips, auth, shares, FakeVideosRepository(), emptyScoreLogs())
         vm.state.test {
             var s = awaitItem()
             while (s.sharedMatches.isEmpty()) s = awaitItem()
@@ -147,7 +191,7 @@ class ClipListViewModelTest {
         val clips = FakeClipsRepository().apply { this.clips.value = listOf(ownedClip("a", "v-own")) }
         val auth = FakeAuthRepository().apply { currentUserIdValue = "user-self" }
         val videos = FakeVideosRepository()
-        val vm = ClipListViewModel(clips, auth, FakeSharesRepository(), videos)
+        val vm = newViewModel(clips, auth, FakeSharesRepository(), videos, emptyScoreLogs())
         vm.state.test {
             var s = awaitItem()
             while (s.ownedMatches.isEmpty()) s = awaitItem()
@@ -166,7 +210,7 @@ class ClipListViewModelTest {
         val videos = FakeVideosRepository().apply {
             nextDeleteMatchResult = Result.failure(IllegalStateException("boom"))
         }
-        val vm = ClipListViewModel(clips, auth, FakeSharesRepository(), videos)
+        val vm = newViewModel(clips, auth, FakeSharesRepository(), videos, emptyScoreLogs())
         vm.state.test {
             var s = awaitItem()
             while (s.ownedMatches.isEmpty()) s = awaitItem()
@@ -183,7 +227,7 @@ class ClipListViewModelTest {
         val clips = FakeClipsRepository().apply { this.clips.value = listOf(sharedClip("b", "v-shared")) }
         val auth = FakeAuthRepository().apply { currentUserIdValue = "user-self" }
         val shares = FakeSharesRepository()
-        val vm = ClipListViewModel(clips, auth, shares, FakeVideosRepository())
+        val vm = newViewModel(clips, auth, shares, FakeVideosRepository(), emptyScoreLogs())
         vm.state.test {
             var s = awaitItem()
             while (s.sharedMatches.isEmpty()) s = awaitItem()
@@ -201,7 +245,7 @@ class ClipListViewModelTest {
         val shares = FakeSharesRepository().apply {
             nextLeaveShareResult = Result.failure(IllegalStateException("boom"))
         }
-        val vm = ClipListViewModel(clips, auth, shares, FakeVideosRepository())
+        val vm = newViewModel(clips, auth, shares, FakeVideosRepository(), emptyScoreLogs())
         vm.state.test {
             var s = awaitItem()
             while (s.sharedMatches.isEmpty()) s = awaitItem()
@@ -222,7 +266,7 @@ class ClipListViewModelTest {
             )
         }
         val auth = FakeAuthRepository().apply { currentUserIdValue = "user-self" }
-        val vm = ClipListViewModel(clips, auth, FakeSharesRepository(), FakeVideosRepository())
+        val vm = newViewModel(clips, auth, FakeSharesRepository(), FakeVideosRepository(), emptyScoreLogs())
         vm.state.test {
             var s = awaitItem()
             while (s.ownedMatches.isEmpty()) s = awaitItem()
@@ -237,7 +281,7 @@ class ClipListViewModelTest {
             this.clips.value = listOf(ownedClip("a", "v-own"), ownedClip("b", "v-own"))
         }
         val auth = FakeAuthRepository().apply { currentUserIdValue = "user-self" }
-        val vm = ClipListViewModel(clips, auth, FakeSharesRepository(), FakeVideosRepository())
+        val vm = newViewModel(clips, auth, FakeSharesRepository(), FakeVideosRepository(), emptyScoreLogs())
         vm.state.test {
             var s = awaitItem()
             while (s.ownedMatches.isEmpty()) s = awaitItem()
@@ -257,7 +301,7 @@ class ClipListViewModelTest {
             )
         }
         val auth = FakeAuthRepository().apply { currentUserIdValue = "user-self" }
-        val vm = ClipListViewModel(clips, auth, FakeSharesRepository(), FakeVideosRepository())
+        val vm = newViewModel(clips, auth, FakeSharesRepository(), FakeVideosRepository(), emptyScoreLogs())
         vm.state.test {
             var s = awaitItem()
             while (s.ownedMatches.isEmpty()) s = awaitItem()

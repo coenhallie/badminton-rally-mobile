@@ -59,7 +59,7 @@ struct ClipDetailView: View {
 
             HStack {
                 Text(model.displayTitle ?? "")
-                    .font(.title3.weight(.semibold))
+                    .shuttlType(ShuttlType.headlineMedium)
                     .foregroundStyle(Shuttl.textHeading)
                 Spacer()
                 if model.isOwner {
@@ -86,10 +86,6 @@ struct ClipDetailView: View {
         .sheet(isPresented: $showAddSheet) {
             AddAnnotationSheet(
                 labels: model.labels,
-                canCreateLabel: true,
-                onCreateLabel: { name in
-                    Task { await model.createLabel(name) }
-                },
                 onAdd: { label, body in
                     Task { await model.add(label: label, body: body) }
                 }
@@ -113,14 +109,14 @@ struct ClipDetailView: View {
     private func annotationRow(_ annotation: RallyAnnotation, model: ClipDetailModel) -> some View {
         HStack(spacing: 12) {
             Text(formatTimestamp(annotation.timestampSeconds))
-                .font(.footnote.monospacedDigit())
+                .shuttlType(ShuttlType.bodySmall, monospacedDigit: true)
                 .foregroundStyle(Shuttl.textSecondary)
             if let name = annotation.labelName {
                 LabelBadge(name: name, colorKey: annotation.labelColor)
             }
             if !annotation.body.isEmpty {
                 Text(annotation.body)
-                    .font(.subheadline)
+                    .shuttlType(ShuttlType.titleMedium)
                     .foregroundStyle(Shuttl.text)
             }
             Spacer()
