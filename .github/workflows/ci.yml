@@ -27,7 +27,11 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
-      - run: ./gradlew :shared:linkDebugFrameworkIosSimulatorArm64 :analysis:compileTestKotlinIosSimulatorArm64
+      # iosSimulatorArm64Test runs :shared's commonTest on the iOS target, which
+      # nothing here used to do: the job linked the framework and compiled
+      # :analysis' iOS tests without running either module's. That left iOS-only
+      # failures invisible, and there was one.
+      - run: ./gradlew :shared:linkDebugFrameworkIosSimulatorArm64 :shared:iosSimulatorArm64Test :analysis:iosSimulatorArm64Test
 
   android-tests:
     runs-on: ubuntu-latest

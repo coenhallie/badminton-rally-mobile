@@ -15,14 +15,27 @@ import kotlin.test.Test
 
 class AuthRepositoryTest {
     @Test
-    fun fresh_client_starts_in_NotAuthenticated() = runTest {
+    fun fresh_client_settles_in_NotAuthenticated() = runTest {
         val client = TestSupabase.client { _ ->
             respond("", HttpStatusCode.OK)
         }
         val repo = AuthRepositoryImpl(client)
         repo.sessionFlow.test {
-            val first = awaitItem()
-            first.shouldBeInstanceOf<SessionStatus.NotAuthenticated>()
+            // Initializing is a real state of supabase-kt's sessionStatus, not
+            // noise: the client sits in it while it looks for a stored session,
+            // and how long that takes is a platform question. Asserting on the
+            // first emission made this pass on the JVM, where the lookup had
+            // already finished, and fail on iOS, where it had not - a result
+            // about scheduling rather than about auth.
+            //
+            // Waiting for the status to settle is the claim actually worth
+            // holding: a client with nothing stored ends up NotAuthenticated. A
+            // client that never leaves Initializing still fails here, on
+            // awaitItem's timeout, so this does not weaken into "eventually
+            // anything".
+            var status = awaitItem()
+            while (status is SessionStatus.Initializing) status = awaitItem()
+            status.shouldBeInstanceOf<SessionStatus.NotAuthenticated>()
             cancelAndIgnoreRemainingEvents()
         }
     }

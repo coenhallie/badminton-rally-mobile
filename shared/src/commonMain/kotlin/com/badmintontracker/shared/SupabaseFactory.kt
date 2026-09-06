@@ -3,6 +3,7 @@ package com.badmintontracker.shared
 import com.russhwolf.settings.Settings
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.Auth
+import io.github.jan.supabase.auth.SettingsCodeVerifierCache
 import io.github.jan.supabase.auth.SettingsSessionManager
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.functions.Functions
@@ -32,6 +33,14 @@ fun buildSupabaseClient(
         scheme = config.deeplinkScheme
         host   = config.deeplinkHost
         sessionManager = SettingsSessionManager(sessionSettings)
+        // The PKCE verifier is auth material with the same lifetime as the
+        // session, so it belongs beside it rather than wherever the platform
+        // default puts it - on iOS that means the Keychain-backed store the
+        // session already uses. It also completes this factory's promise: every
+        // other store here is injected, and the default cache is the one thing
+        // that still reached for platform storage on its own, eagerly, whether
+        // or not a PKCE flow was ever used. Only signInWith(Email) is, today.
+        codeVerifierCache = SettingsCodeVerifierCache(sessionSettings)
     }
     install(Postgrest)
     install(Storage) {

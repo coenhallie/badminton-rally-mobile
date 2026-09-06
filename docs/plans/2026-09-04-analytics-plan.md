@@ -363,7 +363,7 @@ A padding, a line limit, a frame height. **Do not redesign.** Anything larger go
 
 ## Definition of Done
 
-- [ ] `:shared:jvmTest`, Android `testDebugUnitTest` and the iOS suite all pass, each reconciled against the CURRENT baseline recorded in the SDD ledger rather than against a number written here. Every task in this phase has added tests, so the figures this plan was drafted with (436 / 183 / 139) are historical, and treating them as targets would report a false failure.
+- [ ] `:shared:jvmTest`, `:androidApp:testDebugUnitTest` and the iOS suite all pass, each reconciled against the CURRENT baseline recorded in the SDD ledger rather than against a number written here. Every task in this phase has added tests, so the figures this plan was drafted with (436 / 183 / 139) are historical, and treating them as targets would report a false failure.
 - [ ] `assembleDebug` passes.
 - [ ] `:shared:linkDebugFrameworkIosSimulatorArm64` succeeds.
 - [ ] `tools/adb-tap-test.sh` passes. Added this phase, after the tap tool shipped two safety holes.
