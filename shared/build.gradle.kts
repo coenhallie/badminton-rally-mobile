@@ -12,6 +12,23 @@ kotlin {
     androidTarget {
         @OptIn(ExperimentalKotlinGradlePluginApi::class)
         compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
+
+        // No unit-test compilation for the Android target. This module has no
+        // androidUnitTest source set, so the task androidTarget() would create
+        // runs commonTest a third time, after jvmTest and iosSimulatorArm64Test
+        // have already run it - and against the same code, since the only
+        // androidMain actual is SyncLock, which is byte-identical to the jvm
+        // one. It is duplicate coverage, not extra coverage.
+        //
+        // It also cannot pass. These tests build a Supabase client, and
+        // supabase-kt's Auth calls setupPlatform on install, which on Android
+        // registers lifecycle callbacks on Dispatchers.Main. A plain JVM unit
+        // test has no Looper, so every test touching the client fails on a
+        // missing main dispatcher. Making it pass would mean Robolectric, a new
+        // dependency for tests that already run twice.
+        //
+        // Adding an androidUnitTest source set is the signal to delete this: at
+        // that point the target would be testing something jvmTest cannot.
     }
     jvm()
     iosX64()
@@ -73,4 +90,13 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+}
+
+// See the note in androidTarget above: the Android unit-test variants run
+// commonTest a third time, against a byte-identical actual, on a JVM with no
+// Looper for supabase-kt's Auth to register lifecycle callbacks on. Turned off
+// here rather than left failing, so ./gradlew test in this module reports only
+// suites that mean something.
+androidComponents {
+    beforeVariants(selector().all()) { it.enableUnitTest = false }
 }

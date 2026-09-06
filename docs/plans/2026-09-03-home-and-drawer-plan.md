@@ -1344,7 +1344,7 @@ A padding, a line limit, a frame height. **Do not redesign a screen.** Anything 
 
 ## Definition of Done
 
-- [ ] Android `testDebugUnitTest` passes; count reconciled from 182.
+- [ ] `:androidApp:testDebugUnitTest` passes; count reconciled from 182.
 - [ ] iOS suite passes; count reconciled from 122 unit + 3 UI.
 - [ ] `assembleDebug` passes.
 - [ ] The create-and-finish flow works on an iOS device, verified by hand, with no blank destination after a thirty second wait.
