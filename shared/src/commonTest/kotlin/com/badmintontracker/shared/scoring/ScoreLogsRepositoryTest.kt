@@ -252,6 +252,9 @@ class ScoreLogsRepositoryTest {
     private class FakeScoreLogsServer {
         var rows: String = "[]"
         var failWith: HttpStatusCode? = null
+        /** False to accept a write and still not return the row, which is what an
+         *  unacknowledged match looks like from the client's side. */
+        var echoPosts: Boolean = true
         val requests = mutableListOf<Pair<String, String>>()
 
         fun client() = TestSupabase.client { request ->
@@ -261,7 +264,10 @@ class ScoreLogsRepositoryTest {
             when {
                 failure != null -> jsonResponse("""{"message":"nope"}""", status = failure)
                 request.method == HttpMethod.Get -> jsonResponse(rows)
-                request.method == HttpMethod.Post -> { rows = body; jsonResponse("[]") }
+                request.method == HttpMethod.Post -> {
+                    if (echoPosts) rows = body
+                    jsonResponse("[]")
+                }
                 else -> jsonResponse("[]")
             }
         }
@@ -271,6 +277,45 @@ class ScoreLogsRepositoryTest {
 
     private fun syncingRepo(server: FakeScoreLogsServer, settings: MapSettings = MapSettings()) =
         ScoreLogsRepository(server.client(), settings, now = { t0 }, ownerId = { "owner-1" })
+
+    private fun syncingRepo(
+        server: FakeScoreLogsServer,
+        onSynced: (Set<String>) -> Unit,
+    ) = ScoreLogsRepository(
+        server.client(), MapSettings(), now = { t0 }, ownerId = { "owner-1" }, onSynced = onSynced,
+    )
+
+    @Test
+    fun the_synced_set_names_every_match_this_account_has() = runTest {
+        val server = FakeScoreLogsServer()
+        var seen: Set<String>? = null
+        val repo = syncingRepo(server) { seen = it }
+        val created = repo.newMatch()
+
+        repo.sync().isSuccess shouldBe true
+
+        seen shouldBe setOf(created.id)
+    }
+
+    @Test
+    fun a_match_the_server_has_not_acknowledged_is_not_reported_as_gone() = runTest {
+        // The dangerous case, and the reason the set is read AFTER persist rather
+        // than from the server response. A consumer treats absence as deletion:
+        // RallyApp detaches any local video whose match is not in this set. If a
+        // match created courtside and not yet acknowledged were missing from it, a
+        // coach would come back from a bad signal to find his video unbound from
+        // the match he filmed it for.
+        val server = FakeScoreLogsServer()
+        var seen: Set<String>? = null
+        val repo = syncingRepo(server) { seen = it }
+        val created = repo.newMatch()
+        server.echoPosts = false
+
+        repo.sync().isSuccess shouldBe true
+
+        seen shouldBe setOf(created.id)
+    }
+
 
     @Test
     fun syncing_pushes_local_matches_and_then_stops_pushing_them() = runTest {

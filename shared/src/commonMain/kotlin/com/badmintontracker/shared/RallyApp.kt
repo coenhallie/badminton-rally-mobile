@@ -6,6 +6,7 @@ import com.badmintontracker.shared.localvideo.AnalyzeCoordinator
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
+import com.badmintontracker.shared.localvideo.orphanedLocalVideoIds
 import com.badmintontracker.shared.prefs.PlaybackPreferenceRepository
 import com.badmintontracker.shared.prefs.ThemePreferenceRepository
 import com.badmintontracker.shared.repo.AnnotationLabelsRepository
@@ -69,7 +70,29 @@ class RallyApp(
 
     // Matches scored on this phone. Local first, like the video registry above it:
     // a match is created and scored courtside, where there is usually no signal.
-    val scoreLogs: ScoreLogsRepository = ScoreLogsRepository(client, settings, Clock.System::now)
+    val scoreLogs: ScoreLogsRepository = ScoreLogsRepository(
+        client, settings, Clock.System::now,
+        onSynced = { knownScoreLogIds ->
+            // A video whose match is gone is invisible: every "on this phone" list
+            // filters to entries with no scoreLogId, and there is no match row left
+            // to show it under. Detaching gives it back to the local video list.
+            //
+            // Wired here for the same reason onVideoRowReady below is: these are two
+            // repositories that must not know about each other, and this is where
+            // the app graph already joins them.
+            orphanedLocalVideoIds(localVideos.entries.value, knownScoreLogIds)
+                .forEach { id ->
+                    // resultSeen too, and this is not tidiness. Both platforms
+                    // raise the "no rallies found" dialog for the first standalone
+                    // entry that is FAILED and unseen, so detaching an old orphan
+                    // makes it eligible and it interrupts the next launch with the
+                    // outcome of a run inside a match that no longer exists. Seen
+                    // on a real device the first time this shipped. The failure is
+                    // not hidden: the row itself still shows it, with Retry.
+                    localVideos.update(id) { it.copy(scoreLogId = null, resultSeen = true) }
+                }
+        },
+    )
 
     /**
      * Builds the on-device analyze pipeline. Both platforms call this rather

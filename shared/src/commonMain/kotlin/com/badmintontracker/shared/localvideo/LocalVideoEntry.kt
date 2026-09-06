@@ -54,6 +54,41 @@ fun canEditLocalVideoDetails(stage: AnalyzeStage): Boolean = stage == AnalyzeSta
  * LocalAnalysisRunner.start takes keypoints from the screen, not from the entry.
  * Both platforms must use this same rule.
  */
+/**
+ * Videos whose match no longer exists, and which should therefore go back to being
+ * standalone local videos.
+ *
+ * An entry holds [LocalVideoEntry.scoreLogId] to say which match it was filmed for,
+ * and every list filters "on this phone" down to entries with none. So an entry
+ * pointing at a match that is gone appears NOWHERE: not under its match, which does
+ * not exist, and not under local videos, which the filter excludes it from. It
+ * cannot be opened, analysed, or removed. Measured on one real device: ten of
+ * eleven videos were in this state.
+ *
+ * Deleting a match through the app already avoids this by removing the video with
+ * it (see the Android and iOS delete paths, which say so). This is for every other
+ * way a match can go: deleted on another device, or a log this account can no
+ * longer see. Those never run that code.
+ *
+ * [knownScoreLogIds] MUST be authoritative, which in practice means straight out of
+ * a successful sync. It is not enough for a log to be missing from whatever is
+ * currently in memory: ScoreLogsRepository starts empty on a cold start, because
+ * its cache is owner-scoped and supabase-kt has not restored the session yet, so
+ * asking this question at render time would detach every attached video for the
+ * length of that window and then reattach it.
+ *
+ * Detaching an entry mid-pipeline is deliberate rather than guarded against. The
+ * run is keyed by entry id, so it is unaffected, and clearing the binding is what
+ * stops AnalyzeCoordinator's onVideoRowReady from attaching the finished video to
+ * a match that no longer exists.
+ */
+fun orphanedLocalVideoIds(
+    entries: List<LocalVideoEntry>,
+    knownScoreLogIds: Set<String>,
+): List<String> = entries
+    .filter { it.scoreLogId != null && it.scoreLogId !in knownScoreLogIds }
+    .map { it.id }
+
 fun canResumeFailedAnalysis(entry: LocalVideoEntry): Boolean =
     entry.stage == AnalyzeStage.FAILED && entry.keypoints != null
 
