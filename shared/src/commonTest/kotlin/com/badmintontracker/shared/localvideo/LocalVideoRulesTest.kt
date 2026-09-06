@@ -86,4 +86,37 @@ class LocalVideoRulesTest {
         canResumeFailedAnalysis(entry(AnalyzeStage.PROCESSING, CORNERS)) shouldBe false
         canResumeFailedAnalysis(entry(AnalyzeStage.ANALYZED, CORNERS)) shouldBe false
     }
+    @Test
+    fun a_video_whose_match_is_gone_is_handed_back_to_the_local_list() {
+        // The whole defect in one case. Nothing lists this video: "on this phone"
+        // filters to entries with no scoreLogId, and the match it names does not
+        // exist to show it under. Ten of eleven videos on one real device.
+        val orphan = entry(AnalyzeStage.LOCAL, null).copy(id = "v1", scoreLogId = "gone")
+        orphanedLocalVideoIds(listOf(orphan), knownScoreLogIds = setOf("still-here")) shouldBe
+            listOf("v1")
+    }
+
+    @Test
+    fun a_video_whose_match_still_exists_is_left_alone() {
+        val bound = entry(AnalyzeStage.LOCAL, null).copy(id = "v1", scoreLogId = "log1")
+        orphanedLocalVideoIds(listOf(bound), knownScoreLogIds = setOf("log1")) shouldBe emptyList()
+    }
+
+    @Test
+    fun a_video_that_never_belonged_to_a_match_is_not_an_orphan() {
+        // Already standalone and already visible. Returning it would make the
+        // reconciliation write on every sync forever.
+        val free = entry(AnalyzeStage.LOCAL, null).copy(id = "v1", scoreLogId = null)
+        orphanedLocalVideoIds(listOf(free), knownScoreLogIds = emptySet()) shouldBe emptyList()
+    }
+
+    @Test
+    fun an_upload_in_flight_is_still_detached_from_a_match_that_is_gone() {
+        // Deliberate, and the opposite of canRemoveLocalVideo's rule. The run is
+        // keyed by entry id so it is unharmed, and clearing the binding is what
+        // stops the finished upload attaching itself to a deleted match.
+        val running = entry(AnalyzeStage.UPLOADING, CORNERS).copy(id = "v1", scoreLogId = "gone")
+        orphanedLocalVideoIds(listOf(running), knownScoreLogIds = emptySet()) shouldBe listOf("v1")
+    }
+
 }

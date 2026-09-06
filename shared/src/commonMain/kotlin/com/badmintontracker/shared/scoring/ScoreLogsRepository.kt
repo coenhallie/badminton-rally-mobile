@@ -46,14 +46,29 @@ class ScoreLogsRepository internal constructor(
      * readable at all.
      */
     private val ownerId: () -> String?,
+    /**
+     * Called after every successful [sync] with the ids of every match this account
+     * has, so a caller can reconcile things that point at matches by id.
+     *
+     * Here rather than at a render site because this is the only moment the set is
+     * AUTHORITATIVE: [sync] pulls every row for the owner with no limit and no
+     * paging, and already drops local logs the server no longer returns. In memory
+     * the set is empty for the whole of a cold start's session restore, so a
+     * consumer that asked then would conclude everything had been deleted.
+     */
+    private val onSynced: (Set<String>) -> Unit = {},
 ) {
 
     /**
      * The only constructor visible outside this module, and the only one the
      * exported Swift surface sees.
      */
-    constructor(client: SupabaseClient, settings: Settings, now: () -> Instant) :
-        this(client, settings, now, { client.auth.currentUserOrNull()?.id })
+    constructor(
+        client: SupabaseClient,
+        settings: Settings,
+        now: () -> Instant,
+        onSynced: (Set<String>) -> Unit = {},
+    ) : this(client, settings, now, { client.auth.currentUserOrNull()?.id }, onSynced)
 
     /**
      * A store that never syncs. [sync] and [delete] return a failed Result; every
@@ -269,6 +284,9 @@ class ScoreLogsRepository internal constructor(
                 val unacknowledged = stored.filter { it.dirty && it.log.id !in remoteIds }
                 persist(merged + unacknowledged)
             }
+            // After persist, never before: a consumer acting on this set must not be
+            // able to observe one that this repository has not committed to yet.
+            onSynced(stored.map { it.log.id }.toSet())
         }
     }
 
