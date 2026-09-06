@@ -173,7 +173,7 @@ weaker signal from later in the list:
       under its own "-crashed" filename so it can never overwrite a prior
       successful run's report for the same video and configuration.
 """
-import argparse, json, subprocess, sys
+import argparse, json, math, subprocess, sys
 from pathlib import Path
 
 import cv2
@@ -761,7 +761,14 @@ def main() -> int:
     # belt-and-braces against that invariant, not load-bearing for it.
     inpaint_deltas = [_delta_model_px(f) for f in inpaint_union
                        if torch_positions[f]["visible"] and onnx_positions[f]["visible"]]
-    max_inpaint_delta_px = max(inpaint_deltas) if inpaint_deltas else None
+    # Non-finite-safe for the same reason inpaint_raw is: Python's max()
+    # returns whichever operand it compared first when one is NaN, so a NaN
+    # delta here would survive or vanish depending on frame order. inf fails
+    # the threshold either way, which is the verdict a NaN deserves.
+    max_inpaint_delta_px = (
+        None if not inpaint_deltas
+        else float("inf") if not all(math.isfinite(d) for d in inpaint_deltas)
+        else max(inpaint_deltas))
     if not inpaint_union:
         # EMPTY SAMPLE. Nothing was inpainted on either side, so there is
         # nothing here to measure a defect on. `True` here is NOT a claim

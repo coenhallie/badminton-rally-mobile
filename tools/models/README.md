@@ -128,11 +128,29 @@ step's output:
      real input is a trajectory already produced by running TrackNet plus
      blob detection over a real video, so a "real" mode here would depend
      on the very TrackNet ONNX conversion the sibling script exists to
-     gate. This script's result is therefore **always PARITY
+     gate. A small finite difference is therefore reported as **PARITY
      INCONCLUSIVE** (exit 0), for the same reason `check_tracknet_parity.py`
      treats its synthetic fallback as inconclusive: InpaintNet also ends in
      a sigmoid, so synthetic input is not representative of the correlated,
      mostly-in-range trajectories it actually sees.
+
+     **It used to report that for every result, and that was too permissive.**
+     Two things now fail it, because neither is a question about the input:
+
+     - **Non-finite output** (exit 1). No threshold makes a NaN acceptable,
+       and production reads the prediction straight into a `pred > 0.01`
+       bound (`inference.py:424`) that a NaN fails silently, so the model
+       degrades to "fills nothing" with no error anywhere.
+     - **A shift above 2px** (exit 1). The control settles that this is not
+       an input-representativeness question: on the *identical* synthetic
+       trajectories the fp32 graph's worst shift is 0.047px and the fp16
+       graph's is 123.838px. Both graphs saw the same inputs, so the inputs
+       cannot explain a factor of 2600.
+
+     The script also used to swallow NaN outright. `max(0.0, nan)` is `0.0`
+     in Python, because the comparison is False, so a graph returning NaN
+     reported a largest shift of `0.000` and read as perfect parity. That is
+     what it did for the fp16 InpaintNet graph.
 
      **Sweeps multiple trajectory lengths by default** (`--lengths`,
      default `16,24,32,64,128,136,192,248,256`), not just the 256 the

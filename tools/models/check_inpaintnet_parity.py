@@ -80,11 +80,26 @@ def _synthetic_trajectory(rng, length: int) -> np.ndarray:
 
 
 def _shift_px(pred_ref: np.ndarray, pred_got: np.ndarray) -> float:
-    """Max pixel-equivalent distance between two (1, 2, L) predictions."""
+    """Max pixel-equivalent distance between two (1, 2, L) predictions.
+
+    Returns inf, never NaN, when either side is non-finite. A NaN returned
+    here would be swallowed by the caller's max(): max(0.0, nan) is 0.0
+    because the comparison is False, so a graph emitting NaN reported a
+    largest shift of 0.000 and read as perfect parity. That is exactly what
+    this script did for the fp16 InpaintNet graph, which returns NaN on
+    roughly a third of chunks at production's length.
+    """
     dx = (pred_ref[0, 0] - pred_got[0, 0]) * MODEL_W
     dy = (pred_ref[0, 1] - pred_got[0, 1]) * MODEL_H
     dist = np.sqrt(dx * dx + dy * dy)
+    if not np.isfinite(dist).all():
+        return float("inf")
     return float(dist.max())
+
+
+def _nonfinite_count(pred: np.ndarray) -> int:
+    """How many entries of a prediction are NaN or infinite."""
+    return int((~np.isfinite(pred)).sum())
 
 
 # Production's real range: chunks under 16 frames are dropped (inference.py:379),
@@ -94,6 +109,9 @@ def _shift_px(pred_ref: np.ndarray, pred_got: np.ndarray) -> float:
 # a `sizes` constant into the Resize nodes instead of emitting `scales` - see
 # the module docstring - since 256 is what export_tracknet.py traces at.
 DEFAULT_LENGTHS = "16,24,32,64,128,136,192,248,256"
+
+# See the ceiling comment in main() for why this exists and why it is 2.0.
+FAIL_PX = 2.0
 
 
 def main() -> int:
@@ -122,20 +140,73 @@ def main() -> int:
     print("input source      : synthetic trajectory (no real-input mode; see module docstring)")
     print(f"trials per length  : {args.trials}")
     overall_max_shift = 0.0
+    nonfinite_lengths = {}
     for length in lengths:
         max_shift = 0.0
+        nonfinite = 0
         for _ in range(args.trials):
             inp = _synthetic_trajectory(rng, length)
             with torch.no_grad():
                 pred_ref = model(torch.from_numpy(inp)).numpy()
             pred_got = sess.run(None, {input_name: inp})[0]
+            # Counted on the ONNX side specifically. The reference is the
+            # torch module; if IT goes non-finite the export is not what is
+            # wrong, and saying so is more useful than one merged number.
+            nonfinite += _nonfinite_count(pred_got)
             max_shift = max(max_shift, _shift_px(pred_ref, pred_got))
         overall_max_shift = max(overall_max_shift, max_shift)
-        print(f"  length={length:4d}      : largest shift {max_shift:.3f} px-equivalent (at 512x288)")
+        if nonfinite:
+            nonfinite_lengths[length] = nonfinite
+        note = f"  <-- {nonfinite} NON-FINITE output values" if nonfinite else ""
+        shown = "inf" if max_shift == float("inf") else f"{max_shift:.3f}"
+        print(f"  length={length:4d}      : largest shift {shown} px-equivalent (at 512x288){note}")
 
-    print(f"largest shift (any length): {overall_max_shift:.3f} px-equivalent (at 512x288)")
+    shown = "inf" if overall_max_shift == float("inf") else f"{overall_max_shift:.3f}"
+    print(f"largest shift (any length): {shown} px-equivalent (at 512x288)")
+
+    # A NON-FINITE output is the one result this script may call a failure.
+    # Everything else here stays INCONCLUSIVE for the reason in the module
+    # docstring - synthetic trajectories are not representative of what this
+    # model sees, so a difference of a few pixels says more about the input
+    # than about the export. A NaN says nothing about the input at all. It is
+    # not a rounding difference, no threshold makes it acceptable, and
+    # production reads the result straight into a bound check (pred > 0.01 at
+    # inference.py:424) that a NaN fails silently, so the model degrades to
+    # "fills nothing" with no error anywhere.
+    if nonfinite_lengths:
+        detail = ", ".join(f"length {k}: {v} values" for k, v in sorted(nonfinite_lengths.items()))
+        print(f"PARITY FAILED - the ONNX graph returned non-finite output ({detail}). "
+              f"This is a defect in the conversion, not an artefact of synthetic input. "
+              f"Do not bundle this graph.")
+        return 1
+
+    # A CEILING, above which "inconclusive" is no longer honest.
+    #
+    # The module docstring argues every finite result here is inconclusive
+    # because synthetic trajectories are not representative of what this model
+    # sees. That is right for small differences and wrong for large ones, and
+    # the control run settles it: on the IDENTICAL synthetic inputs, the fp32
+    # graph's worst shift is 0.047px while the fp16 graph's is 123.838px. The
+    # inputs cannot be responsible for a factor of 2600 when both graphs are
+    # fed the same ones. What differs is the conversion.
+    #
+    # 2px matches GATE_DELTA_PX_MAX in measure_shuttle_coverage.py, and sits
+    # 40x above the fp32 control's worst result and 60x below the fp16 graph's,
+    # so it separates the two without sitting near either. fp16 carries about
+    # three decimal digits, so a well-conditioned conversion should land near
+    # 0.5px at this width; anything past 2px is instability, not rounding.
+    if overall_max_shift > FAIL_PX:
+        print(f"PARITY FAILED - largest shift {shown}px exceeds {FAIL_PX}px. On synthetic "
+              f"input a difference this large cannot come from the input being "
+              f"unrepresentative: both graphs saw the same trajectories. Re-run with "
+              f"--onnx pointing at the fp32 graph to confirm the export itself is sound "
+              f"and the fp16 conversion is what is broken.")
+        return 1
+
     print("PARITY INCONCLUSIVE (synthetic input only; there is no --video-equivalent "
-          "real mode for InpaintNet, see module docstring for why)")
+          "real mode for InpaintNet, see module docstring for why). A finite number under "
+          "the ceiling is not a pass: the verdict on this conversion comes from the "
+          "inpaint_raw term of measure_shuttle_coverage.py, on real trajectories.")
     return 0
 
 
