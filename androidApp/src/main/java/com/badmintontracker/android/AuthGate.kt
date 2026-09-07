@@ -612,6 +612,7 @@ fun AuthGate(
                         localAnalysis = localAnalysis,
                         localVideos = localVideos,
                         playbackPrefs = rally.playbackPrefs,
+                        racketArmPrefs = rally.racketArmPrefs,
                         onBack = { nav.popBackStack() },
                     )
                 }

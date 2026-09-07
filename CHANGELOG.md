@@ -10,6 +10,14 @@ The mobile app is versioned independently from the web app.
 ## [Unreleased]
 
 ### Added
+- The skeleton view now measures the near player frame by frame: stance width
+  and distance behind the service line in metres (from the court marks), and
+  elbow, arm, knee and trunk-lean angles as seen by the camera. Tap a tile to
+  draw that angle on the skeleton and graph it over the two seconds around the
+  playhead; tap the graph to seek. Tell it which arm holds the racket and the
+  other arm's tiles step aside. A value the model is not sure of shows as a
+  dash rather than a guess. Skeletons analysed before this version show the
+  angles but need a re-run for the metres.
 - The Analytics detail can now show the near player's skeleton over the video
   it was measured on (Android, on-device analysis). Run an analysis with
   "Skeleton playback" ticked, open the match from Analytics, and switch between

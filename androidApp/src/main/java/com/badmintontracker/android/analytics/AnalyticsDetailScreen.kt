@@ -30,6 +30,7 @@ import com.badmintontracker.android.localanalysis.LocalAnalysisRunner
 import com.badmintontracker.android.localanalysis.SkeletonPanel
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.prefs.PlaybackPreferenceRepository
+import com.badmintontracker.shared.prefs.RacketArmPreferenceRepository
 
 /** Which renderer the detail is showing. Only offered when both exist. */
 internal enum class AnalyticsPanel { Heatmap, Skeleton }
@@ -57,6 +58,7 @@ fun AnalyticsDetailScreen(
     localAnalysis: LocalAnalysisRunner,
     localVideos: LocalVideoRepository,
     playbackPrefs: PlaybackPreferenceRepository,
+    racketArmPrefs: RacketArmPreferenceRepository,
     onBack: () -> Unit,
 ) {
     val hasSkeleton = remember(entryId) { localAnalysis.hasStoredSkeleton(entryId) }
@@ -109,6 +111,7 @@ fun AnalyticsDetailScreen(
                     videoUri = videoUri,
                     runner = localAnalysis,
                     prefs = playbackPrefs,
+                    racketArmPrefs = racketArmPrefs,
                 )
             }
         }

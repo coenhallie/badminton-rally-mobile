@@ -20,6 +20,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
@@ -33,12 +34,19 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.ui.PlayerView
+import com.badmintontracker.analysis.geometry.Matrix3x3
+import com.badmintontracker.analysis.geometry.homography
+import com.badmintontracker.analysis.geometry.maxResidualM
+import com.badmintontracker.analysis.player.MetricKind
+import com.badmintontracker.analysis.player.NearPlayerSelector
 import com.badmintontracker.analysis.player.nearestPose
+import com.badmintontracker.analysis.player.poseMetrics
 import com.badmintontracker.analysis.player.poseToleranceS
 import com.badmintontracker.android.R
 import com.badmintontracker.android.clipdetail.FrameStepBar
 import com.badmintontracker.android.clipdetail.PlaybackControlBar
 import com.badmintontracker.shared.prefs.PlaybackPreferenceRepository
+import com.badmintontracker.shared.prefs.RacketArmPreferenceRepository
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -46,7 +54,13 @@ import kotlinx.coroutines.withContext
 /** Whether the stored skeleton has been read from disk yet. */
 private sealed interface SkeletonLoad {
     data object Loading : SkeletonLoad
-    data class Loaded(val stored: SkeletonStore.Stored?) : SkeletonLoad
+    data class Loaded(
+        val stored: SkeletonStore.Stored?,
+        /** The resolved court fit from the file's marks; null for a v1 file or marks that do not fit. */
+        val homography: Matrix3x3?,
+        /** One entry per pose, in pose order, for the graph. */
+        val series: List<MetricSample>,
+    ) : SkeletonLoad
 }
 
 /**
@@ -57,6 +71,13 @@ private sealed interface SkeletonLoad {
  * one line rather than drawn around, because a skeleton over the wrong frames
  * looks like tracking that is broken, and a coach cannot tell that from
  * tracking that is bad.
+ *
+ * Under the video sit the strip and the graph: one tile per measurement of
+ * the frame on screen, and the selected tile's kind drawn on the skeleton as
+ * an arc and plotted over the two seconds around the playhead. Nothing here
+ * is stored - every number is computed from the poses in the file at view
+ * time, so a metric added later needs no re-run, and the two court-plane
+ * tiles appear only when the file carries marks that fit.
  */
 @Composable
 fun SkeletonPanel(
@@ -64,14 +85,31 @@ fun SkeletonPanel(
     videoUri: String?,
     runner: LocalAnalysisRunner,
     prefs: PlaybackPreferenceRepository,
+    racketArmPrefs: RacketArmPreferenceRepository,
     modifier: Modifier = Modifier,
 ) {
     // SkeletonStore.load parses the whole file, and its own KDoc prices a
     // 30-minute match at 11MB of poses - reading and decoding that on the
     // composition thread would jank the screen open. Loaded off the main
     // thread instead, with a one-line placeholder while it runs.
+    // The metrics for every pose are computed here too, off the main thread
+    // and once per file: the graph needs the whole series, and a court fit
+    // whose marks miss by more than the selector's own gate is dropped rather
+    // than turned into a stance in metres that is metres wrong.
     val load by produceState<SkeletonLoad>(initialValue = SkeletonLoad.Loading, key1 = entryId) {
-        value = SkeletonLoad.Loaded(withContext(Dispatchers.IO) { runner.storedSkeleton(entryId) })
+        value = withContext(Dispatchers.IO) {
+            val stored = runner.storedSkeleton(entryId)
+            val homography = stored?.marks?.let { marks ->
+                marks.homography()?.takeIf { h ->
+                    val residual = marks.maxResidualM(h)
+                    residual != null && residual <= NearPlayerSelector.MAX_COURT_RESIDUAL_M
+                }
+            }
+            val series = stored?.poses?.map {
+                MetricSample(it.timestamp, poseMetrics(it.keypoints, it.confidence, homography))
+            } ?: emptyList()
+            SkeletonLoad.Loaded(stored, homography, series)
+        }
     }
     val source = remember(entryId, videoUri) { videoUri?.let { runner.analysedSource(entryId, it) } }
 
@@ -88,7 +126,15 @@ fun SkeletonPanel(
                     "The video this skeleton was measured on is no longer on this phone.",
                     modifier = Modifier.padding(16.dp),
                 )
-                else -> SkeletonPlayer(source, l.stored, prefs)
+                else -> SkeletonPlayer(
+                    source = source,
+                    stored = l.stored,
+                    homography = l.homography,
+                    series = l.series,
+                    prefs = prefs,
+                    racketArmPrefs = racketArmPrefs,
+                    entryId = entryId,
+                )
             }
         }
     }
@@ -108,7 +154,11 @@ fun SkeletonPanel(
 private fun SkeletonPlayer(
     source: File,
     stored: SkeletonStore.Stored,
+    homography: Matrix3x3?,
+    series: List<MetricSample>,
     prefs: PlaybackPreferenceRepository,
+    racketArmPrefs: RacketArmPreferenceRepository,
+    entryId: String,
 ) {
     if (stored.videoWidth <= 0 || stored.videoHeight <= 0) {
         // Guards aspectRatio() below, which throws on a non-positive ratio.
@@ -161,6 +211,17 @@ private fun SkeletonPlayer(
     val tolerance = remember(stored.fps) { poseToleranceS(stored.fps) }
     val pose = remember(positionMs, stored) { nearestPose(stored.poses, positionMs / 1000.0, tolerance) }
 
+    val hasCourt = homography != null
+    var racketArm by remember(entryId) { mutableStateOf(racketArmPrefs.racketArm(entryId)) }
+    var selected by rememberSaveable(entryId) {
+        mutableStateOf(if (hasCourt) MetricKind.STANCE else MetricKind.ELBOW_RIGHT)
+    }
+    val visible = visibleKinds(hasCourt, racketArm)
+    // A choice that the racket-arm control just hid falls back to the first tile,
+    // so the graph and the arc never show a kind with no tile on screen.
+    if (selected !in visible) selected = visible.first()
+    val metrics = remember(pose, homography) { pose?.let { poseMetrics(it.keypoints, it.confidence, homography) } }
+
     val error = playbackError
     if (error != null) {
         // In place of the video box: the overlay is inside it and so never
@@ -201,16 +262,47 @@ private fun SkeletonPlayer(
                     videoWidth = stored.videoWidth,
                     videoHeight = stored.videoHeight,
                     modifier = Modifier.fillMaxSize(),
+                    highlight = selected.highlight(),
                 )
             }
         }
+        MetricsStrip(
+            metrics = metrics,
+            hasCourt = hasCourt,
+            racketArm = racketArm,
+            onRacketArm = { arm ->
+                racketArm = arm
+                racketArmPrefs.setRacketArm(entryId, arm)
+            },
+            selected = selected,
+            onSelect = { selected = it },
+        )
     }
     PlaybackControlBar(player = player, prefs = prefs)
     FrameStepBar(player = player)
     if (error == null) {
+        MetricGraph(
+            series = series,
+            kind = selected,
+            positionS = positionMs / 1000.0,
+            fps = stored.fps,
+            onSeek = { seconds ->
+                if (player.isPlaying) player.pause()
+                player.seekTo(
+                    (seconds * 1000).toLong()
+                        .coerceIn(0L, player.duration.takeIf { it > 0 } ?: Long.MAX_VALUE),
+                )
+            },
+        )
+        // The court line is part of the summary because a file written before
+        // the marks were stored is missing two tiles, and a coach should not
+        // have to guess why.
+        val court =
+            if (hasCourt) " · court marks in file"
+            else " · no court marks: stance and position need a re-run"
         Text(
             "Skeleton in ${stored.poses.size} frames" +
-                (pose?.let { " · frame ${it.frame}" } ?: " · no skeleton at this frame"),
+                (pose?.let { " · frame ${it.frame}" } ?: " · no skeleton at this frame") + court,
             style = MaterialTheme.typography.labelSmall,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
         )
