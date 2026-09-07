@@ -68,6 +68,24 @@ class Phase2EndToEndTest {
             ).run(video!!.path) {}
         }
 
+        // The timestamps are the container's, not i / fps. On this constant-rate
+        // corpus the two agree to well under a frame, but the container's
+        // values carry sub-millisecond precision and i / fps does not: a frame
+        // whose timestamp equals its index over fps to the last bit was made
+        // up rather than read.
+        val fps = raw.header.fps
+        assertTrue("first frame at 0s", raw.frames.first().timestamp == 0.0)
+        assertTrue(
+            "timestamps must be non-decreasing",
+            raw.frames.zipWithNext().all { (a, b) -> b.timestamp >= a.timestamp },
+        )
+        val fabricated = raw.frames.drop(1).count { it.timestamp == it.frame / fps }
+        assertTrue("$fabricated of ${raw.frames.size} timestamps are exactly frame / fps", fabricated < raw.frames.size / 2)
+        assertTrue(
+            "timestamps must be within a frame of frame / fps on a constant-rate source",
+            raw.frames.all { kotlin.math.abs(it.timestamp - it.frame / fps) < 1.0 / fps },
+        )
+
         val track = buildNearPlayerTrack(raw, keypoints)
         val occupancy = CourtOccupancy()
         occupancy.addAll(track.samples, raw.header.fps)

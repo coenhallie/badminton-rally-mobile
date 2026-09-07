@@ -47,13 +47,14 @@ class TrackNetRunner(
         maxFrames: Int = Int.MAX_VALUE,
         onProgress: (Float) -> Unit = {},
         /**
-         * Called for every decoded frame, before it is consumed.
+         * Called for every decoded frame, before it is consumed, with its
+         * container presentation time in seconds and the image.
          *
          * The detector runs here rather than in its own pass: decode and the
          * colour conversion are 30% of the per-frame cost, and paying them
          * twice to run a second model on the same pixels would be careless.
          */
-        onFrame: (Int, android.media.Image) -> Unit = { _, _ -> },
+        onFrame: (Int, Double, android.media.Image) -> Unit = { _, _, _ -> },
     ): Map<Int, ShuttleSample> {
         val background = computeBackground()
         val session = OnnxSession(ModelCatalog.path(context, Model.TRACKNET))
@@ -96,8 +97,8 @@ class TrackNetRunner(
         }
 
         session.use {
-            source.forEachFrame(maxFrames) { index, _, image ->
-                onFrame(index, image)
+            source.forEachFrame(maxFrames) { index, seconds, image ->
+                onFrame(index, seconds, image)
                 FramePreprocessor.toRgbResized(image, resized, WIDTH, HEIGHT)
                 // Background occupies planes 0..2, so frame i starts at
                 // (1 + i) * 3. Ordering matters: production concatenates

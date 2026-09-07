@@ -64,6 +64,11 @@ class AndroidLocalInferenceEngine(
 
         val detections = HashMap<Int, List<com.badmintontracker.analysis.shuttle.ShuttleDetection>>()
         val people = HashMap<Int, List<RawPerson>>()
+        // The container's presentation time per frame. RawFrame.timestamp used
+        // to be i / fps, which VideoFrameSource's own KDoc says is wrong on a
+        // variable-frame-rate source; a skeleton drawn over playback is where
+        // that would show.
+        val timestamps = HashMap<Int, Double>()
         val pose = poseModelPath?.let { PoseRunner(it) }
         val track = try {
             DetectorRunner(context).use { detector ->
@@ -72,7 +77,8 @@ class AndroidLocalInferenceEngine(
                     sourceHeight = meta.height,
                     maxFrames = maxFrames,
                     onProgress = onProgress,
-                    onFrame = { index, image ->
+                    onFrame = { index, seconds, image ->
+                        timestamps[index] = seconds
                         val found = detector.detect(image)
                         if (found.isNotEmpty()) detections[index] = found
                         // Same frame, same decode. Emitted raw: which person is
@@ -113,7 +119,7 @@ class AndroidLocalInferenceEngine(
             val s = track[i]
             RawFrame(
                 frame = i,
-                timestamp = if (meta.fps > 0) i / meta.fps else 0.0,
+                timestamp = timestamps[i] ?: if (meta.fps > 0) i / meta.fps else 0.0,
                 shuttle = s?.let {
                     RawShuttle(it.x.toFloat(), it.y.toFloat(), if (it.visible) 1f else 0f, it.visible)
                 },
