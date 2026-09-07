@@ -1,13 +1,18 @@
 package com.badmintontracker.shared.local
 
+import com.badmintontracker.analysis.raw.RawBox
 import com.badmintontracker.analysis.raw.RawFrame
 import com.badmintontracker.analysis.raw.RawHeader
 import com.badmintontracker.analysis.raw.RawInference
+import com.badmintontracker.analysis.raw.RawKeypoint
+import com.badmintontracker.analysis.raw.RawPerson
 import com.badmintontracker.analysis.raw.RawShuttle
 import com.badmintontracker.shared.model.CourtKeypoints
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class LocalAnalysisCoordinatorTest {
 
@@ -65,6 +70,32 @@ class LocalAnalysisCoordinatorTest {
     }
 
     private fun coordinator(engine: LocalInferenceEngine) = LocalAnalysisCoordinator(engine)
+
+    private fun withPerson(raw: RawInference, frame: Int): RawInference {
+        val kps = MutableList(17) { RawKeypoint(950f, 700f, 0.9f) }
+        kps[15] = RawKeypoint(940f, 800f, 0.9f)
+        kps[16] = RawKeypoint(960f, 800f, 0.9f)
+        val person = RawPerson(RawBox(0, 0.9f, 0f, 0f, 1f, 1f), kps)
+        return raw.copy(frames = raw.frames.map { if (it.frame == frame) it.copy(persons = listOf(person)) else it })
+    }
+
+    @Test
+    fun poses_and_the_video_size_come_through_the_outcome() = runTest {
+        val outcome = coordinator(FakeEngine(withPerson(twoExchanges(), frame = 7)))
+            .analyze("/tmp/m.mp4", keypoints) {}
+            .getOrThrow()
+        assertEquals(listOf(7), outcome.poses.map { it.frame })
+        assertEquals(7 / 30.0, outcome.poses.single().timestamp)
+        assertEquals(listOf(7), outcome.playerTrack.samples.map { it.frame })
+        assertEquals(1920, outcome.videoWidth)
+        assertEquals(1080, outcome.videoHeight)
+    }
+
+    @Test
+    fun a_pose_less_run_has_no_poses() = runTest {
+        val outcome = coordinator(FakeEngine(twoExchanges())).analyze("/tmp/m.mp4", keypoints) {}.getOrThrow()
+        assertTrue(outcome.poses.isEmpty())
+    }
 
     @Test
     fun a_scripted_track_produces_the_rallies_analysis_produces_for_it() = runTest {

@@ -1,8 +1,9 @@
 package com.badmintontracker.shared.local
 
+import com.badmintontracker.analysis.player.PlayerPose
 import com.badmintontracker.analysis.player.PlayerTrack
 import com.badmintontracker.analysis.player.RejectionReason
-import com.badmintontracker.analysis.player.buildNearPlayerTrack
+import com.badmintontracker.analysis.player.selectNearPlayer
 import com.badmintontracker.analysis.raw.RawInference
 import com.badmintontracker.analysis.rally.ClipWindow
 import com.badmintontracker.analysis.result.AnalysisResult
@@ -29,6 +30,15 @@ data class LocalAnalysisOutcome(
      * is blank.
      */
     val playerTrack: PlayerTrack,
+    /**
+     * The same player's joints, one per sample, in source pixels. Always
+     * computed: the selection produces them for free. Whether they are KEPT
+     * is the runner's decision, from the metrics the coach asked for.
+     */
+    val poses: List<PlayerPose>,
+    /** What [poses] are measured in, so a renderer can fit them to a display box. */
+    val videoWidth: Int,
+    val videoHeight: Int,
 )
 
 /**
@@ -135,7 +145,8 @@ class LocalAnalysisCoordinator(
 
         // Empty unless the engine was given a pose model, since Phase 1 frames
         // carry no persons at all.
-        val playerTrack = buildNearPlayerTrack(raw, keypoints.toAnalysis())
+        val selection = selectNearPlayer(raw, keypoints.toAnalysis())
+        val playerTrack = selection.track
         if (playerTrack.rejections.containsKey(RejectionReason.BAD_COURT)) {
             log("near player: the court marks do not fit a court; no positions taken")
         } else if (playerTrack.framesWithPose > 0) {
@@ -147,6 +158,9 @@ class LocalAnalysisCoordinator(
 
         return LocalAnalysisOutcome(
             playerTrack = playerTrack,
+            poses = selection.poses,
+            videoWidth = header.videoWidth,
+            videoHeight = header.videoHeight,
             result = AnalysisResult.fromPhase1(
                 output = output,
                 fps = fps,
