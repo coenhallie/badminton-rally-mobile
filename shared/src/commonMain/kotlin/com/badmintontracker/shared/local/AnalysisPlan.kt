@@ -18,7 +18,7 @@ enum class AnalysisMetric {
     /** Where the near player moved: the court heatmap. Needs pose. */
     PLAYER_MOVEMENT,
 
-    /** Keep every joint for overlay playback. Needs pose, and far more storage. */
+    /** Keep every joint of the near player for overlay playback. Needs pose, and about 11MB per 30 minutes of video. */
     SKELETON_PLAYBACK,
     ;
 

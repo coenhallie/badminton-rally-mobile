@@ -1,7 +1,7 @@
 # Design: the skeleton view
 
 **Date:** 2026-09-07
-**Status:** Approved 2026-09-07; plan at `2026-09-07-skeleton-view-plan.md`
+**Status:** Implemented 2026-09-07 on Android; see the Android screenshots in docs/screenshots/android-analytics-skeleton-*.png
 **Follows:** `2026-09-01-phase2-near-player-design.md` (which built the pose
 pass and `SkeletonOverlay` but gave the overlay no host),
 `2026-09-04-analytics-plan.md` (which cancelled the tab row until "the second

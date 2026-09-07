@@ -10,6 +10,12 @@ The mobile app is versioned independently from the web app.
 ## [Unreleased]
 
 ### Added
+- The Analytics detail can now show the near player's skeleton over the video
+  it was measured on (Android, on-device analysis). Run an analysis with
+  "Skeleton playback" ticked, open the match from Analytics, and switch between
+  Heatmap and Skeleton. Step frame by frame to the moment of contact; the
+  joints follow the frame exactly, and a frame where the player was not found
+  shows no skeleton rather than a guess.
 - Labels now carry a scope: Both, Scoreboard, or Clips, chosen on the Labels
   screen. The courtside board draws only the labels scoped to it and wraps them
   onto as many lines as they need instead of scrolling sideways, and the Note
