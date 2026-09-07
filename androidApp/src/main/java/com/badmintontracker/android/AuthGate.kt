@@ -610,6 +610,8 @@ fun AuthGate(
                     AnalyticsDetailScreen(
                         entryId = args.entryId,
                         localAnalysis = localAnalysis,
+                        localVideos = localVideos,
+                        playbackPrefs = rally.playbackPrefs,
                         onBack = { nav.popBackStack() },
                     )
                 }
