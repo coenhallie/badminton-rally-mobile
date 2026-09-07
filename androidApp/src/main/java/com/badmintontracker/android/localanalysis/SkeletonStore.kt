@@ -127,6 +127,10 @@ class SkeletonStore(private val root: File) {
             var marks: CourtKeypoints? = null
             if (version == VERSION) {
                 val hasMarks = buffer.getInt()
+                // Refused rather than guessed at, as a bad magic or an unknown
+                // version is: this store writes only 0 or 1, so anything else
+                // is not a file it wrote.
+                if (hasMarks != 0 && hasMarks != 1) return null
                 // Guarded before the reads, not after: a file cut inside the
                 // marks would otherwise throw out of runCatching, which reads
                 // as "no skeleton" for the wrong reason and hides where the

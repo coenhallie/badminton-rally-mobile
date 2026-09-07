@@ -196,6 +196,20 @@ class SkeletonStoreTest {
     }
 
     @Test
+    fun a_marks_flag_this_store_never_writes_is_refused() {
+        val s = store()
+        s.save("e1", listOf(pose(0)), 30.0, 1920, 1080, marks)
+        val file = java.io.File(temp.root, "skeletons/e1.skel")
+        val bytes = file.readBytes()
+        val flag = java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        // The flag sits after magic, version, fps, width and height: 4+4+8+4+4.
+        flag.getInt(24) shouldBe 1
+        flag.putInt(24, 7)
+        file.writeBytes(bytes)
+        s.load("e1") shouldBe null
+    }
+
+    @Test
     fun delete_on_a_never_saved_entry_does_not_throw() {
         store().delete("e1")
     }
