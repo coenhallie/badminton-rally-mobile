@@ -23,6 +23,11 @@ import java.nio.ByteOrder
  * playback matches on; the video size is what the joints are measured in.
  * Both travel with the poses because a renderer that took either from
  * somewhere else would be pairing them by coincidence.
+ *
+ * Save writes a complete file atomically: bytes are written to a temporary
+ * sibling file, then renamed into place. A partial write never becomes visible,
+ * so [has] reading the header alone is sound for files this store wrote. Files
+ * truncated by external corruption still load as null.
  */
 class SkeletonStore(private val root: File) {
 
@@ -50,7 +55,10 @@ class SkeletonStore(private val root: File) {
             }
         }
         val file = fileFor(entryId).apply { parentFile?.mkdirs() }
-        file.writeBytes(buffer.array())
+        val tmp = File(file.parentFile, file.name + ".tmp")
+        tmp.writeBytes(buffer.array())
+        file.delete()
+        tmp.renameTo(file)
     }
 
     /** Whether a skeleton this version can draw exists for [entryId], from the header alone. */

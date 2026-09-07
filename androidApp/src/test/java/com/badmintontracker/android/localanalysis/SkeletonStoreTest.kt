@@ -79,6 +79,10 @@ class SkeletonStoreTest {
         onDisk.writeBytes(bytes.copyOf(bytes.size - 10))
         // A skeleton with a pose missing its last joints is not a skeleton.
         s.load("e1") shouldBe null
+        // has() returns true here because the header is intact, but load() returns null:
+        // the one case they disagree. This cannot arise from this store's own writes,
+        // since atomicity means the file is never truncated in place.
+        s.has("e1") shouldBe true
     }
 
     @Test
@@ -86,5 +90,14 @@ class SkeletonStoreTest {
         val s = store()
         s.save("e1", emptyList(), 30.0, 1280, 720)
         s.has("e1") shouldBe false
+    }
+
+    @Test
+    fun save_writes_atomically_with_no_tmp_leftover() {
+        val s = store()
+        s.save("e1", listOf(pose(0)), 30.0, 1280, 720)
+        val skeleton = temp.root.resolve("skeletons")
+        skeleton.isDirectory shouldBe true
+        skeleton.listFiles()!!.map { it.name } shouldBe listOf("e1.skel")
     }
 }
