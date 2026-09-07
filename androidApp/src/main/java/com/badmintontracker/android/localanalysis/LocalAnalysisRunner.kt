@@ -196,14 +196,19 @@ class LocalAnalysisRunner(
                     tracks.save(entryId, result.playerTrack, result.result.fps)
                 }
 
-                // Kept only when asked for: the metric selector prices the
-                // skeleton as storage, and a coach who declined it should not
-                // pay it. Written here, before the clips, for the same reason
-                // the track is. If this throws, the outer catch turns it into
-                // Failed: a skeleton the coach asked for that could not be
-                // written is a failed run, not a silent omission.
+                // Kept only when asked for, and a run that did not ask for it
+                // removes the previous one: a completed run is the new truth
+                // for its entry, as it already is for the track above, so what
+                // the detail offers always belongs to the latest run and a
+                // coach who declined it stops paying for it. Written here,
+                // before the clips, for the same reason the track is. If the
+                // save throws, the outer catch turns it into Failed: a skeleton
+                // the coach asked for that could not be written is a failed
+                // run, not a silent omission.
                 if (AnalysisMetric.SKELETON_PLAYBACK in metrics && result.poses.isNotEmpty()) {
                     skeletons.save(entryId, result.poses, result.result.fps, result.videoWidth, result.videoHeight)
+                } else {
+                    skeletons.delete(entryId)
                 }
 
                 val windows = if (AnalysisMetric.RALLY_CLIPS in metrics) result.clipWindows else emptyList()

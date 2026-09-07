@@ -131,4 +131,18 @@ class SkeletonStoreTest {
         temp.root.resolve("skeletons").listFiles()!!.map { it.name } shouldBe listOf("e1.skel")
         temp.root.resolve("skeletons").listFiles()!!.any { it.name.endsWith(".tmp") } shouldBe false
     }
+
+    @Test
+    fun delete_after_save_leaves_has_false_and_load_null() {
+        val s = store()
+        s.save("e1", listOf(pose(0)), 30.0, 1280, 720)
+        s.delete("e1")
+        s.has("e1") shouldBe false
+        s.load("e1") shouldBe null
+    }
+
+    @Test
+    fun delete_on_a_never_saved_entry_does_not_throw() {
+        store().delete("e1")
+    }
 }

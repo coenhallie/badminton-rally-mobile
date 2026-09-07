@@ -112,6 +112,19 @@ class SkeletonStore(private val root: File) {
         }.getOrNull()
     }
 
+    /**
+     * Removes any skeleton stored for [entryId], final file and a leftover temp
+     * file alike. Called by the runner when a completed run did not ask for a
+     * skeleton, so an earlier run's poses cannot outlive the run that made them
+     * and be offered against a track that has since moved on. A no-op when
+     * neither file exists.
+     */
+    fun delete(entryId: String) {
+        val file = fileFor(entryId)
+        file.delete()
+        File(file.parentFile, file.name + ".tmp").delete()
+    }
+
     private fun fileFor(entryId: String) = File(root, "skeletons/$entryId.skel")
 
     private companion object {
