@@ -22,8 +22,7 @@ class TrackNetRunnerTest {
 
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
 
-    private fun video(): File? =
-        File("/data/local/tmp/corpus-743d7fb1.mp4").takeIf { it.isFile && it.canRead() }
+    private fun video(): File? = stagedCorpusVideo(context)
 
     @Test
     fun the_device_produces_a_shuttle_track() {

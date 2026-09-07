@@ -29,8 +29,7 @@ class LocalPipelineEndToEndTest {
 
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
 
-    private fun video(): File? =
-        File("/data/local/tmp/corpus-743d7fb1.mp4").takeIf { it.isFile && it.canRead() }
+    private fun video(): File? = stagedCorpusVideo(context)
 
     /** The corpus video's own court markings, as the cloud used them. */
     private val keypoints = CourtKeypoints(

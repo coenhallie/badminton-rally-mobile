@@ -196,19 +196,21 @@ class LocalAnalysisRunner(
                     tracks.save(entryId, result.playerTrack, result.result.fps)
                 }
 
-                // Kept only when asked for, and a run that did not ask for it
-                // removes the previous one: a completed run is the new truth
-                // for its entry, as it already is for the track above, so what
-                // the detail offers always belongs to the latest run and a
-                // coach who declined it stops paying for it. Written here,
+                // Kept only for the latest run that asked for it: a run that
+                // did not ask for a skeleton, or asked but found nobody,
+                // removes the previous one, so what the detail offers always
+                // belongs to the latest run and a coach who declined it stops
+                // paying for it. Unlike the track above, which overwrites but
+                // never deletes, a skeleton this run does not want is deleted
+                // outright - see skeletonAction's KDoc for why. Written here,
                 // before the clips, for the same reason the track is. If the
                 // save throws, the outer catch turns it into Failed: a skeleton
                 // the coach asked for that could not be written is a failed
                 // run, not a silent omission.
-                if (AnalysisMetric.SKELETON_PLAYBACK in metrics && result.poses.isNotEmpty()) {
-                    skeletons.save(entryId, result.poses, result.result.fps, result.videoWidth, result.videoHeight)
-                } else {
-                    skeletons.delete(entryId)
+                when (skeletonAction(metrics, result.poses)) {
+                    SkeletonAction.SAVE ->
+                        skeletons.save(entryId, result.poses, result.result.fps, result.videoWidth, result.videoHeight)
+                    SkeletonAction.DELETE -> skeletons.delete(entryId)
                 }
 
                 val windows = if (AnalysisMetric.RALLY_CLIPS in metrics) result.clipWindows else emptyList()

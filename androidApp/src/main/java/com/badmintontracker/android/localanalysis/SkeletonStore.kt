@@ -93,6 +93,11 @@ class SkeletonStore(private val root: File) {
             val width = buffer.getInt()
             val height = buffer.getInt()
             val count = buffer.getInt()
+            // Guarded before the multiply below: a negative or absurdly large
+            // count - corruption, not a file this store wrote - would
+            // otherwise overflow count * POSE_BYTES and could pass the
+            // remaining-bytes check that follows on the wrapped value.
+            if (count < 0 || count > buffer.remaining() / POSE_BYTES) return null
             // Length checked before parsing: a file killed mid-write ends in
             // a partial pose, and a skeleton missing its last joints is not one.
             if (buffer.remaining() != count * POSE_BYTES) return null
@@ -118,11 +123,19 @@ class SkeletonStore(private val root: File) {
      * skeleton, so an earlier run's poses cannot outlive the run that made them
      * and be offered against a track that has since moved on. A no-op when
      * neither file exists.
+     *
+     * `File.delete()`'s return value is checked against whether the file is
+     * still there afterwards: a stale skeleton that silently failed to delete
+     * would keep answering [has] and [load] as if this call had succeeded.
      */
     fun delete(entryId: String) {
         val file = fileFor(entryId)
-        file.delete()
-        File(file.parentFile, file.name + ".tmp").delete()
+        val tmp = File(file.parentFile, file.name + ".tmp")
+        val fileDeleted = file.delete()
+        val tmpDeleted = tmp.delete()
+        if ((!fileDeleted && file.exists()) || (!tmpDeleted && tmp.exists())) {
+            throw java.io.IOException("Failed to delete skeleton at ${file.absolutePath}")
+        }
     }
 
     private fun fileFor(entryId: String) = File(root, "skeletons/$entryId.skel")

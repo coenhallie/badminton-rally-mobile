@@ -51,9 +51,7 @@ class VideoFrameSource(private val file: File) {
         val extractor = MediaExtractor()
         try {
             extractor.setDataSource(file.path)
-            val track = (0 until extractor.trackCount).first { i ->
-                extractor.getTrackFormat(i).getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true
-            }
+            val track = videoTrack(extractor)
             val format = extractor.getTrackFormat(track)
             val width = if (format.containsKey(MediaFormat.KEY_WIDTH)) {
                 format.getInteger(MediaFormat.KEY_WIDTH)
@@ -99,10 +97,7 @@ class VideoFrameSource(private val file: File) {
         val extractor = MediaExtractor()
         try {
             extractor.setDataSource(file.path)
-            val track = (0 until extractor.trackCount).first { i ->
-                extractor.getTrackFormat(i).getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true
-            }
-            extractor.selectTrack(track)
+            extractor.selectTrack(videoTrack(extractor))
             return countSamplesOn(extractor)
         } finally {
             extractor.release()
@@ -112,12 +107,21 @@ class VideoFrameSource(private val file: File) {
     /** Walks an already-selected track to the end, counting samples. Decodes nothing. */
     private fun countSamplesOn(extractor: MediaExtractor): Int {
         var count = 0
-        while (extractor.sampleTime >= 0) {
+        // sampleTrackIndex is -1 once there is no current sample - the
+        // container's own end-of-stream signal, read explicitly rather than
+        // inferring it from sampleTime also being -1 there.
+        while (extractor.sampleTrackIndex >= 0) {
             count++
             if (!extractor.advance()) break
         }
         return count
     }
+
+    /** The index of the first video track, or a clear error naming the file. */
+    private fun videoTrack(extractor: MediaExtractor): Int =
+        (0 until extractor.trackCount).firstOrNull { i ->
+            extractor.getTrackFormat(i).getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true
+        } ?: error("no video track in ${file.name}")
 
     /**
      * The frame indices production samples for its median background.
@@ -200,9 +204,7 @@ class VideoFrameSource(private val file: File) {
     fun forEachFrame(maxFrames: Int = Int.MAX_VALUE, body: (Int, Double, android.media.Image) -> Unit) {
         val extractor = MediaExtractor()
         extractor.setDataSource(file.path)
-        val track = (0 until extractor.trackCount).first { i ->
-            extractor.getTrackFormat(i).getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true
-        }
+        val track = videoTrack(extractor)
         extractor.selectTrack(track)
         val format = extractor.getTrackFormat(track)
         val codec = MediaCodec.createDecoderByType(format.getString(MediaFormat.KEY_MIME)!!)

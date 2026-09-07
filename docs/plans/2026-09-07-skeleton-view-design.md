@@ -286,6 +286,13 @@ opens the detail, and the detail decides what it can show.
   metric selector already prices it.
 - **A scrubber over the poses or a timeline of contacts.** Product work with
   its own design.
+- **Rotated (portrait) sources.** The pipeline has no rotation concept:
+  keypoints and the stored width and height are in coded (unrotated) space,
+  while the player applies the container's own rotation, so a 90 or 270
+  degree source would draw the skeleton off the body. Court footage is
+  landscape, so this has not come up. A guard would be to read the
+  container's rotation and not offer the Skeleton segment when it is
+  non-zero.
 
 ---
 
