@@ -34,7 +34,7 @@ class PoseParityDumpTest {
     fun dump_raw_pose_output_for_the_first_frames() {
         val frames = InstrumentationRegistry.getArguments()
             .getString("frames")?.toIntOrNull() ?: FRAMES
-        val video = File("/data/local/tmp/corpus-743d7fb1.mp4").takeIf { it.isFile }
+        val video = stagedCorpusVideo(context)
         val model = File("/data/local/tmp/posen.960.fp16.onnx").takeIf { it.isFile }
         assumeTrue("SKIPPED: corpus video absent", video != null)
         assumeTrue("SKIPPED: pose model absent from /data/local/tmp", model != null)

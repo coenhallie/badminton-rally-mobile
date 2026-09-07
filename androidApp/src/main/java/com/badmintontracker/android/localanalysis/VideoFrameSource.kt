@@ -28,27 +28,96 @@ class VideoFrameSource(private val file: File) {
     /** What the container says about the track, read once. */
     data class Metadata(val frameCount: Int, val width: Int, val height: Int, val fps: Double)
 
-    fun metadata(): Metadata = MediaMetadataRetriever().use { r ->
-        r.setDataSource(file.path)
-        fun meta(key: Int) = r.extractMetadata(key)
-        val frames = meta(MediaMetadataRetriever.METADATA_KEY_VIDEO_FRAME_COUNT)?.toInt()
-            ?: error("no frame count in ${file.name}")
-        val durationMs = meta(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toDouble()
-        Metadata(
-            frameCount = frames,
-            width = meta(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toInt()
-                ?: error("no width in ${file.name}"),
-            height = meta(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toInt()
-                ?: error("no height in ${file.name}"),
-            // Frames over duration rather than CAPTURE_FRAMERATE, which is
-            // absent on most files and reports the recording rate rather than
-            // the playback rate when present.
-            fps = if (durationMs != null && durationMs > 0) frames * 1000.0 / durationMs else 0.0,
-        )
+    /**
+     * Reads the track format directly from [MediaExtractor] rather than
+     * [MediaMetadataRetriever].
+     *
+     * [MediaExtractor] is what [countSamples] and [forEachFrame] actually use
+     * to read and decode this file, so what this method reports and what
+     * gets decoded agree by construction - there is only one code path
+     * parsing the container, not two that could quietly disagree.
+     * [MediaMetadataRetriever] is a second, separate path: it can delegate
+     * to an out-of-process service (`mediaserver` / `mediaprovider_app`) to
+     * open the file rather than reading it in the calling process, and on
+     * the arm64 emulator that service is denied read access (by SELinux) to
+     * files staged under /data/local/tmp. That is not a frame-count-only
+     * gap: every key the retriever reports for such a file comes back null,
+     * width and height included, regardless of whether it is given a path
+     * or an already-open file descriptor. The extractor has no such
+     * dependency: it is this app's own process reading a file its own
+     * process opened.
+     */
+    fun metadata(): Metadata {
+        val extractor = MediaExtractor()
+        try {
+            extractor.setDataSource(file.path)
+            val track = (0 until extractor.trackCount).first { i ->
+                extractor.getTrackFormat(i).getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true
+            }
+            val format = extractor.getTrackFormat(track)
+            val width = if (format.containsKey(MediaFormat.KEY_WIDTH)) {
+                format.getInteger(MediaFormat.KEY_WIDTH)
+            } else {
+                error("no width in ${file.name}")
+            }
+            val height = if (format.containsKey(MediaFormat.KEY_HEIGHT)) {
+                format.getInteger(MediaFormat.KEY_HEIGHT)
+            } else {
+                error("no height in ${file.name}")
+            }
+            val durationMs = if (format.containsKey(MediaFormat.KEY_DURATION)) {
+                format.getLong(MediaFormat.KEY_DURATION) / 1000.0
+            } else {
+                null
+            }
+            extractor.selectTrack(track)
+            val frames = countSamplesOn(extractor)
+            return Metadata(
+                frameCount = frames,
+                width = width,
+                height = height,
+                // Frames over duration rather than CAPTURE_FRAMERATE, which is
+                // absent on most files and reports the recording rate rather than
+                // the playback rate when present.
+                fps = if (durationMs != null && durationMs > 0) frames * 1000.0 / durationMs else 0.0,
+            )
+        } finally {
+            extractor.release()
+        }
     }
 
     /** Total frames the container reports. */
     fun frameCount(): Int = metadata().frameCount
+
+    /**
+     * The number of samples on the video track, by walking the container.
+     *
+     * One sample is one encoded frame for every codec this app decodes, so
+     * this is the frame count. It decodes nothing.
+     */
+    fun countSamples(): Int {
+        val extractor = MediaExtractor()
+        try {
+            extractor.setDataSource(file.path)
+            val track = (0 until extractor.trackCount).first { i ->
+                extractor.getTrackFormat(i).getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true
+            }
+            extractor.selectTrack(track)
+            return countSamplesOn(extractor)
+        } finally {
+            extractor.release()
+        }
+    }
+
+    /** Walks an already-selected track to the end, counting samples. Decodes nothing. */
+    private fun countSamplesOn(extractor: MediaExtractor): Int {
+        var count = 0
+        while (extractor.sampleTime >= 0) {
+            count++
+            if (!extractor.advance()) break
+        }
+        return count
+    }
 
     /**
      * The frame indices production samples for its median background.
@@ -67,7 +136,7 @@ class VideoFrameSource(private val file: File) {
     }
 
     /**
-     * Decode the sampled frames for the median background.
+     * Decode the sampled frames for the median background, one at a time.
      *
      * Frame-indexed rather than time-indexed on purpose. Production seeks by
      * frame (`cap.set(CAP_PROP_POS_FRAMES, idx)`), and on a
@@ -78,16 +147,38 @@ class VideoFrameSource(private val file: File) {
      * have no implementation here yet - a real gap to close before release,
      * not something to paper over with a time-based approximation that would
      * silently sample different frames.
+     *
+     * Streamed through [transform] rather than collected into a `List<Bitmap>`
+     * first: 300 decoded 1920x1080 bitmaps held at once is about 2.5 GB, which
+     * kills the process on a 2 GB device - and would on a 4 GB one too - well
+     * before anything gets to resize them down to what the model actually
+     * needs. This decodes one frame, hands it to [transform], recycles it,
+     * and only then decodes the next, so peak memory is one source-resolution
+     * bitmap plus whatever [transform] keeps, which in practice is a much
+     * smaller resized frame. Same indices, same frames, same output per
+     * frame as before; only what is held in memory at once changes.
+     *
+     * The frame count driving [backgroundSampleIndices] comes from
+     * [metadata], not from asking the retriever directly: the retriever's own
+     * `METADATA_KEY_VIDEO_FRAME_COUNT` is exactly the field [metadata] no
+     * longer trusts.
      */
-    fun sampleFramesForBackground(maxSamples: Int = 300): List<Bitmap> {
+    fun <T> sampleFramesForBackground(maxSamples: Int = 300, transform: (Bitmap) -> T): List<T> {
         check(android.os.Build.VERSION.SDK_INT >= 28) {
             "frame-indexed sampling needs API 28; API 26-27 has no implementation yet"
         }
+        val total = metadata().frameCount
         return MediaMetadataRetriever().use { r ->
             r.setDataSource(file.path)
-            val total = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_FRAME_COUNT)
-                ?.toInt() ?: error("no frame count")
-            backgroundSampleIndices(total, maxSamples).mapNotNull { r.getFrameAtIndex(it) }
+            backgroundSampleIndices(total, maxSamples).mapNotNull { index ->
+                r.getFrameAtIndex(index)?.let { bitmap ->
+                    try {
+                        transform(bitmap)
+                    } finally {
+                        bitmap.recycle()
+                    }
+                }
+            }
         }
     }
 

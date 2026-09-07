@@ -55,7 +55,7 @@ class Phase2EndToEndTest {
         // constant: -Pandroid.testInstrumentationRunnerArguments.frames=2000
         val frames = InstrumentationRegistry.getArguments()
             .getString("frames")?.toIntOrNull() ?: FRAMES
-        val video = File("/data/local/tmp/corpus-743d7fb1.mp4").takeIf { it.isFile }
+        val video = stagedCorpusVideo(context)
         val pose = File("/data/local/tmp/posen.960.fp16.onnx").takeIf { it.isFile }
         assumeTrue("SKIPPED: corpus video absent", video != null)
         assumeTrue("SKIPPED: pose model absent from /data/local/tmp", pose != null)
@@ -68,11 +68,17 @@ class Phase2EndToEndTest {
             ).run(video!!.path) {}
         }
 
-        // The timestamps are the container's, not i / fps. On this constant-rate
-        // corpus the two agree to well under a frame, but the container's
-        // values carry sub-millisecond precision and i / fps does not: a frame
-        // whose timestamp equals its index over fps to the last bit was made
-        // up rather than read.
+        // The timestamps are the container's, not i / fps. The corpus is
+        // variable frame rate (ffprobe: r_frame_rate 179/6 = 29.83 nominal,
+        // avg_frame_rate 29.7357, which is also the cloud's results.json
+        // fps), so exact per-frame agreement between the container's
+        // timestamp and i / avg_fps is exactly what must NOT be asserted:
+        // over 150 frames the two drift more than a frame apart, which is
+        // the real variation carrying the container's timestamps exists to
+        // preserve rather than paper over. What the container's values must
+        // still be, though: non-decreasing, made of plausible frame-to-frame
+        // gaps rather than fabricated ones, and consistent on average with
+        // the frame rate over the whole run.
         val fps = raw.header.fps
         assertTrue("first frame at 0s", raw.frames.first().timestamp == 0.0)
         assertTrue(
@@ -82,8 +88,13 @@ class Phase2EndToEndTest {
         val fabricated = raw.frames.drop(1).count { it.timestamp == it.frame / fps }
         assertTrue("$fabricated of ${raw.frames.size} timestamps are exactly frame / fps", fabricated < raw.frames.size / 2)
         assertTrue(
-            "timestamps must be within a frame of frame / fps on a constant-rate source",
-            raw.frames.all { kotlin.math.abs(it.timestamp - it.frame / fps) < 1.0 / fps },
+            "a timestamp gap is not a plausible frame interval",
+            raw.frames.zipWithNext().all { (a, b) -> (b.timestamp - a.timestamp) in 0.0..(3.0 / fps) },
+        )
+        assertTrue(
+            "the timestamps' span disagrees with the frame rate by more than 10%",
+            kotlin.math.abs(raw.frames.last().timestamp - (raw.frames.size - 1) / fps) <
+                0.1 * raw.frames.size / fps,
         )
 
         val track = buildNearPlayerTrack(raw, keypoints)

@@ -8,6 +8,7 @@ import com.badmintontracker.analysis.player.CourtOccupancy
 import com.badmintontracker.analysis.player.NearPlayerSelector
 import com.badmintontracker.analysis.player.PlayerSample
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -51,8 +52,9 @@ class PoseRunnerTest {
         centerFar = Point(966.1, 736.3),
     )
 
-    private fun video(): File? =
-        File("/data/local/tmp/corpus-743d7fb1.mp4").takeIf { it.isFile && it.canRead() }
+    private val context = InstrumentationRegistry.getInstrumentation().targetContext
+
+    private fun video(): File? = stagedCorpusVideo(context)
 
     private fun model(): File? =
         File("/data/local/tmp/posen.960.fp16.onnx").takeIf { it.isFile && it.canRead() }

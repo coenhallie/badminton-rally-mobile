@@ -124,9 +124,17 @@ class TrackNetRunner(
      * rounding, both matching `_compute_median_background`. Getting either
      * wrong changes which frames form the background, which changes the
      * background, which changes every heatmap.
+     *
+     * The per-bitmap work (unpack pixels, repack to RGB, resize down to
+     * [WIDTH] x [HEIGHT]) runs inside [VideoFrameSource.sampleFramesForBackground]'s
+     * `transform`, so what this holds across all 300 samples is 300 resized
+     * `WIDTH x HEIGHT x 3` byte arrays - about 130 MB - rather than 300
+     * source-resolution bitmaps, which for a 1920x1080 source is about 2.5
+     * GB and killed the process on a 2 GB device. The source recycles each
+     * bitmap once `transform` returns, so there is no recycle call here.
      */
     private fun computeBackground(): FloatArray {
-        val frames = source.sampleFramesForBackground().map { bitmap ->
+        val frames = source.sampleFramesForBackground { bitmap ->
             val rgb = ByteArray(bitmap.width * bitmap.height * 3)
             val pixels = IntArray(bitmap.width * bitmap.height)
             bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
@@ -138,7 +146,6 @@ class TrackNetRunner(
             }
             val out = ByteArray(PLANE * 3)
             FramePreprocessor.resize(rgb, bitmap.width, bitmap.height, out, WIDTH, HEIGHT)
-            bitmap.recycle()
             out
         }
         require(frames.isNotEmpty()) { "no frames sampled for the background" }
