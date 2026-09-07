@@ -1,5 +1,6 @@
 package com.badmintontracker.android.localanalysis
 
+import android.view.LayoutInflater
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +31,7 @@ import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.ui.PlayerView
 import com.badmintontracker.analysis.player.nearestPose
 import com.badmintontracker.analysis.player.poseToleranceS
+import com.badmintontracker.android.R
 import com.badmintontracker.android.clipdetail.FrameStepBar
 import com.badmintontracker.android.clipdetail.PlaybackControlBar
 import com.badmintontracker.shared.prefs.PlaybackPreferenceRepository
@@ -116,7 +118,14 @@ private fun SkeletonPlayer(
     ) {
         AndroidView(
             factory = { c ->
-                PlayerView(c).apply {
+                // The layout, not PlayerView(c): it asks for a texture surface, and
+                // only a texture surface lets Compose animate and scroll over the
+                // video. A SurfaceView renders in its own window, so it survives the
+                // exit animation for a frame on top of the next screen (715e22b),
+                // and this one is inside a scroller as well.
+                val view = LayoutInflater.from(c)
+                    .inflate(R.layout.clip_player_view, null) as PlayerView
+                view.apply {
                     this.player = player
                     // The bars below own transport; a controller over the
                     // skeleton would sit exactly where the joints are.
