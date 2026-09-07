@@ -8,6 +8,7 @@ import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.localvideo.orphanedLocalVideoIds
 import com.badmintontracker.shared.prefs.PlaybackPreferenceRepository
+import com.badmintontracker.shared.prefs.RacketArmPreferenceRepository
 import com.badmintontracker.shared.prefs.ThemePreferenceRepository
 import com.badmintontracker.shared.repo.AnnotationLabelsRepository
 import com.badmintontracker.shared.repo.AnnotationLabelsRepositoryImpl
@@ -67,6 +68,7 @@ class RallyApp(
     val localAnnotations: LocalAnnotationsRepository   = LocalAnnotationsRepository(settings)
     val themePrefs:       ThemePreferenceRepository    = ThemePreferenceRepository(settings)
     val playbackPrefs:    PlaybackPreferenceRepository = PlaybackPreferenceRepository(settings)
+    val racketArmPrefs:   RacketArmPreferenceRepository = RacketArmPreferenceRepository(settings)
 
     // Matches scored on this phone. Local first, like the video registry above it:
     // a match is created and scored courtside, where there is usually no signal.
