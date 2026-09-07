@@ -91,6 +91,12 @@ kotlin {
     }
 }
 
+composeCompiler {
+    // See the file itself: :analysis has no Compose compiler, so its types are
+    // inferred unstable and a composable taking one cannot skip.
+    stabilityConfigurationFiles.add(layout.projectDirectory.file("compose_stability.conf"))
+}
+
 dependencies {
     implementation(project(":shared"))
     implementation(libs.onnxruntime.android)

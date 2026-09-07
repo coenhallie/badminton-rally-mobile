@@ -51,13 +51,25 @@ import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+/**
+ * What the file's court marks came to.
+ *
+ * [NONE] and [BAD] both leave the two court-plane tiles off the strip, but they
+ * are different problems with different fixes - a re-run for marks that were
+ * never stored, a re-marking for marks that do not fit - so the summary line
+ * tells them apart rather than sending a coach to re-run a court it will
+ * reject again.
+ */
+private enum class CourtFit { NONE, BAD, OK }
+
 /** Whether the stored skeleton has been read from disk yet. */
 private sealed interface SkeletonLoad {
     data object Loading : SkeletonLoad
     data class Loaded(
         val stored: SkeletonStore.Stored?,
-        /** The resolved court fit from the file's marks; null for a v1 file or marks that do not fit. */
+        /** The resolved court fit from the file's marks; non-null only when [courtFit] is OK. */
         val homography: Matrix3x3?,
+        val courtFit: CourtFit,
         /** One entry per pose, in pose order, for the graph. */
         val series: List<MetricSample>,
     ) : SkeletonLoad
@@ -74,10 +86,10 @@ private sealed interface SkeletonLoad {
  *
  * Under the video sit the strip and the graph: one tile per measurement of
  * the frame on screen, and the selected tile's kind drawn on the skeleton as
- * an arc and plotted over the two seconds around the playhead. Nothing here
- * is stored - every number is computed from the poses in the file at view
- * time, so a metric added later needs no re-run, and the two court-plane
- * tiles appear only when the file carries marks that fit.
+ * an arc and plotted over the two seconds either side of the playhead.
+ * Nothing here is stored - every number is computed from the poses in the file
+ * at view time, so a metric added later needs no re-run, and the two
+ * court-plane tiles appear only when the file carries marks that fit.
  */
 @Composable
 fun SkeletonPanel(
@@ -99,16 +111,22 @@ fun SkeletonPanel(
     val load by produceState<SkeletonLoad>(initialValue = SkeletonLoad.Loading, key1 = entryId) {
         value = withContext(Dispatchers.IO) {
             val stored = runner.storedSkeleton(entryId)
-            val homography = stored?.marks?.let { marks ->
-                marks.homography()?.takeIf { h ->
-                    val residual = marks.maxResidualM(h)
+            val marks = stored?.marks
+            val homography = marks?.let { m ->
+                m.homography()?.takeIf { h ->
+                    val residual = m.maxResidualM(h)
                     residual != null && residual <= NearPlayerSelector.MAX_COURT_RESIDUAL_M
                 }
+            }
+            val courtFit = when {
+                marks == null -> CourtFit.NONE
+                homography == null -> CourtFit.BAD
+                else -> CourtFit.OK
             }
             val series = stored?.poses?.map {
                 MetricSample(it.timestamp, poseMetrics(it.keypoints, it.confidence, homography))
             } ?: emptyList()
-            SkeletonLoad.Loaded(stored, homography, series)
+            SkeletonLoad.Loaded(stored, homography, courtFit, series)
         }
     }
     val source = remember(entryId, videoUri) { videoUri?.let { runner.analysedSource(entryId, it) } }
@@ -130,6 +148,7 @@ fun SkeletonPanel(
                     source = source,
                     stored = l.stored,
                     homography = l.homography,
+                    courtFit = l.courtFit,
                     series = l.series,
                     prefs = prefs,
                     racketArmPrefs = racketArmPrefs,
@@ -155,6 +174,7 @@ private fun SkeletonPlayer(
     source: File,
     stored: SkeletonStore.Stored,
     homography: Matrix3x3?,
+    courtFit: CourtFit,
     series: List<MetricSample>,
     prefs: PlaybackPreferenceRepository,
     racketArmPrefs: RacketArmPreferenceRepository,
@@ -213,13 +233,15 @@ private fun SkeletonPlayer(
 
     val hasCourt = homography != null
     var racketArm by remember(entryId) { mutableStateOf(racketArmPrefs.racketArm(entryId)) }
-    var selected by rememberSaveable(entryId) {
+    var chosen by rememberSaveable(entryId) {
         mutableStateOf(if (hasCourt) MetricKind.STANCE else MetricKind.ELBOW_RIGHT)
     }
     val visible = visibleKinds(hasCourt, racketArm)
-    // A choice that the racket-arm control just hid falls back to the first tile,
-    // so the graph and the arc never show a kind with no tile on screen.
-    if (selected !in visible) selected = visible.first()
+    // The coach's choice held to the tiles on screen: the racket-arm control can
+    // hide the chosen kind, and the graph and the arc must never show a kind with
+    // no tile. Derived, not written back, so composition stays a read; the choice
+    // itself is kept, so putting the arm back brings the tile back selected.
+    val selected = if (chosen in visible) chosen else visible.first()
     val metrics = remember(pose, homography) { pose?.let { poseMetrics(it.keypoints, it.confidence, homography) } }
 
     val error = playbackError
@@ -275,7 +297,7 @@ private fun SkeletonPlayer(
                 racketArmPrefs.setRacketArm(entryId, arm)
             },
             selected = selected,
-            onSelect = { selected = it },
+            onSelect = { chosen = it },
         )
     }
     PlaybackControlBar(player = player, prefs = prefs)
@@ -294,12 +316,14 @@ private fun SkeletonPlayer(
                 )
             },
         )
-        // The court line is part of the summary because a file written before
-        // the marks were stored is missing two tiles, and a coach should not
-        // have to guess why.
-        val court =
-            if (hasCourt) " · court marks in file"
-            else " · no court marks: stance and position need a re-run"
+        // The court line is part of the summary because a file whose marks are
+        // missing or do not fit is missing two tiles, and a coach should not
+        // have to guess why, nor which of the two fixes to reach for.
+        val court = when (courtFit) {
+            CourtFit.OK -> " · court marks in file"
+            CourtFit.NONE -> " · no court marks: stance and position need a re-run"
+            CourtFit.BAD -> " · court marks do not fit: mark the court again for stance and position"
+        }
         Text(
             "Skeleton in ${stored.poses.size} frames" +
                 (pose?.let { " · frame ${it.frame}" } ?: " · no skeleton at this frame") + court,
