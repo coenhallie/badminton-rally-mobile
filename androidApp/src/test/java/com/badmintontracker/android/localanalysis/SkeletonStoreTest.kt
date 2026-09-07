@@ -100,4 +100,35 @@ class SkeletonStoreTest {
         skeleton.isDirectory shouldBe true
         skeleton.listFiles()!!.map { it.name } shouldBe listOf("e1.skel")
     }
+
+    @Test
+    fun saving_twice_for_the_same_entry_replaces_the_file() {
+        val s = store()
+        s.save("e1", listOf(pose(0), pose(1)), 30.0, 1280, 720)
+        s.save("e1", listOf(pose(2), pose(3), pose(4)), 60.0, 640, 480)
+        val skeleton = temp.root.resolve("skeletons")
+        skeleton.listFiles()!!.map { it.name } shouldBe listOf("e1.skel")
+        val loaded = s.load("e1")!!
+        loaded.fps shouldBe 60.0
+        loaded.videoWidth shouldBe 640
+        loaded.videoHeight shouldBe 480
+        loaded.poses.map { it.frame } shouldBe listOf(2, 3, 4)
+    }
+
+    @Test
+    fun save_throws_and_cleans_up_on_rename_failure() {
+        val s = store()
+        val skeleton = temp.root.resolve("skeletons")
+        skeleton.mkdirs()
+        val blockingDir = skeleton.resolve("e1.skel")
+        blockingDir.mkdir()
+        try {
+            s.save("e1", listOf(pose(0)), 30.0, 1280, 720)
+            throw AssertionError("Expected IOException")
+        } catch (e: java.io.IOException) {
+            // Expected
+        }
+        temp.root.resolve("skeletons").listFiles()!!.map { it.name } shouldBe listOf("e1.skel")
+        temp.root.resolve("skeletons").listFiles()!!.any { it.name.endsWith(".tmp") } shouldBe false
+    }
 }

@@ -56,9 +56,15 @@ class SkeletonStore(private val root: File) {
         }
         val file = fileFor(entryId).apply { parentFile?.mkdirs() }
         val tmp = File(file.parentFile, file.name + ".tmp")
-        tmp.writeBytes(buffer.array())
-        file.delete()
-        tmp.renameTo(file)
+        try {
+            tmp.writeBytes(buffer.array())
+            if (!tmp.renameTo(file)) {
+                throw java.io.IOException("Failed to rename ${tmp.absolutePath} to ${file.absolutePath}")
+            }
+        } catch (e: Exception) {
+            tmp.delete()
+            throw e
+        }
     }
 
     /** Whether a skeleton this version can draw exists for [entryId], from the header alone. */
