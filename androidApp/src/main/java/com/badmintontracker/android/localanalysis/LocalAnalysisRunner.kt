@@ -100,6 +100,29 @@ class LocalAnalysisRunner(
     /** The clips from an earlier run, for the same reason. */
     fun storedClips(entryId: String): List<ClipCutter.Clip> = tracks.loadClips(entryId)
 
+    private val skeletons = SkeletonStore(context.filesDir)
+
+    /** A skeleton from an earlier run, for the same reason as [storedTrack]. */
+    fun storedSkeleton(entryId: String): SkeletonStore.Stored? = skeletons.load(entryId)
+
+    /** Header-only, for a screen deciding whether it has a second renderer to offer. */
+    fun hasStoredSkeleton(entryId: String): Boolean = skeletons.has(entryId)
+
+    /**
+     * The file the analysis actually decoded, if it is still there.
+     *
+     * A skeleton is indexed by the frames of THIS file. The entry's own URI may
+     * be a content grant that has since been revoked, and a copy made by
+     * another app may be re-encoded; neither shares the analysed frames. Null
+     * when the copy was never made or has been cleaned up, in which case the
+     * skeleton has no video to sit on and the panel says so.
+     */
+    fun analysedSource(entryId: String, videoUri: String): File? {
+        val direct = File(videoUri.removePrefix("file://"))
+        if (direct.isFile && direct.canRead()) return direct
+        return File(context.filesDir, "local-sources/$entryId.mp4").takeIf { it.isFile && it.length() > 0 }
+    }
+
     private val states = MutableStateFlow<Map<String, LocalAnalysisState>>(emptyMap())
     val state: StateFlow<Map<String, LocalAnalysisState>> = states
 
@@ -171,6 +194,16 @@ class LocalAnalysisRunner(
                 // failure in the step after it.
                 if (result.playerTrack.samples.isNotEmpty()) {
                     tracks.save(entryId, result.playerTrack, result.result.fps)
+                }
+
+                // Kept only when asked for: the metric selector prices the
+                // skeleton as storage, and a coach who declined it should not
+                // pay it. Written here, before the clips, for the same reason
+                // the track is. If this throws, the outer catch turns it into
+                // Failed: a skeleton the coach asked for that could not be
+                // written is a failed run, not a silent omission.
+                if (AnalysisMetric.SKELETON_PLAYBACK in metrics && result.poses.isNotEmpty()) {
+                    skeletons.save(entryId, result.poses, result.result.fps, result.videoWidth, result.videoHeight)
                 }
 
                 val windows = if (AnalysisMetric.RALLY_CLIPS in metrics) result.clipWindows else emptyList()
