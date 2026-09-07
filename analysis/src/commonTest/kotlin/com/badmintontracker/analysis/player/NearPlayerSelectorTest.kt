@@ -173,6 +173,41 @@ class NearPlayerSelectorTest {
         assertNull(broken.select(PoseFrame(1, listOf(person(966.0, 900.0)))).sample)
     }
 
+    private fun withTorsoPx(base: PosePerson, torsoPx: Double, shoulderConfidence: Float = 0.9f): PosePerson {
+        val kps = base.keypoints.toMutableList()
+        val conf = base.keypointConfidence.toMutableList()
+        val hipY = kps[Coco.LEFT_HIP].y
+        kps[Coco.LEFT_SHOULDER] = Point(kps[Coco.LEFT_HIP].x, hipY - torsoPx)
+        kps[Coco.RIGHT_SHOULDER] = Point(kps[Coco.RIGHT_HIP].x, hipY - torsoPx)
+        conf[Coco.LEFT_SHOULDER] = shoulderConfidence
+        conf[Coco.RIGHT_SHOULDER] = shoulderConfidence
+        return PosePerson(base.boxConfidence, kps, conf)
+    }
+
+    @Test
+    fun a_torso_of_ordinary_length_passes_the_scale_gate() {
+        // 0.5m at the near baseline, where 6.1m is 1219px: about 100px.
+        val result = selector().select(PoseFrame(0, listOf(withTorsoPx(person(970.0, 990.0), 100.0))))
+        assertNotNull(result.sample)
+        assertNull(result.rejection)
+    }
+
+    @Test
+    fun a_torso_that_measures_over_a_metre_is_a_close_up_not_a_player() {
+        // 250px at the near baseline is 1.25m: a broadcast close-up from another camera.
+        val result = selector().select(PoseFrame(0, listOf(withTorsoPx(person(970.0, 990.0), 250.0))))
+        assertNull(result.sample)
+        assertEquals(RejectionReason.WRONG_SCALE, result.rejection)
+    }
+
+    @Test
+    fun unconfident_shoulders_do_not_trigger_the_scale_gate() {
+        val result = selector().select(
+            PoseFrame(0, listOf(withTorsoPx(person(970.0, 990.0), 250.0, shoulderConfidence = 0.2f))),
+        )
+        assertNotNull(result.sample, "a torso that cannot be measured is not a reason to reject")
+    }
+
     private companion object {
         /** Half of Court.LENGTH; the near half is the larger y in court space here. */
         const val Court_HALF = 6.7

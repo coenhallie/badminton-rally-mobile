@@ -61,6 +61,21 @@ fun Matrix3x3.apply(x: Double, y: Double): Point? {
 }
 
 /**
+ * Court metres per source pixel along the image x axis at [p], by finite
+ * difference; null when either side of [p] projects to infinity.
+ *
+ * The horizontal scale on the floor at a point. It is the scale of anything
+ * at the same depth that lies across the image, which a shoulder line and,
+ * up to foreshortening, a torso do. It is not a vertical scale: a camera
+ * tilted down sees vertical lengths shorter by the cosine of the tilt.
+ */
+fun Matrix3x3.metresPerPixelAt(p: Point, stepPx: Double = 4.0): Double? {
+    val a = apply(p.x - stepPx, p.y) ?: return null
+    val b = apply(p.x + stepPx, p.y) ?: return null
+    return sqrt((b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y)) / (2 * stepPx)
+}
+
+/**
  * Video pixels to court metres, using all 12 keypoints for a better fit.
  *
  * The service-line and centre pairs are matched to the court by where their

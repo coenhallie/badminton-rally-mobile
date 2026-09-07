@@ -200,6 +200,17 @@ class HomographyTest {
         if (bad < 1.0) throw AssertionError("swapped corners fit to $bad m, expected metres")
     }
 
+    @Test
+    fun metres_per_pixel_shrinks_with_distance_from_the_camera() {
+        val h = corpus743d7fb1.homography()!!
+        // Near baseline centre and far baseline centre, in pixels.
+        val near = h.metresPerPixelAt(Point(970.0, 1000.0))!!
+        val far = h.metresPerPixelAt(Point(963.0, 483.0))!!
+        // 6.1m across 1219px at the near baseline, across 628px at the far one.
+        if (near < 0.0045 || near > 0.0055) throw AssertionError("near scale $near m/px")
+        if (far < 0.0090 || far > 0.0105) throw AssertionError("far scale $far m/px")
+    }
+
 }
 
 private infix fun Double.shouldBeLessThan(other: Double) {
