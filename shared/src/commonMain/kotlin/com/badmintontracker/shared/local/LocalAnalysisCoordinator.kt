@@ -1,6 +1,7 @@
 package com.badmintontracker.shared.local
 
 import com.badmintontracker.analysis.player.PlayerTrack
+import com.badmintontracker.analysis.player.RejectionReason
 import com.badmintontracker.analysis.player.buildNearPlayerTrack
 import com.badmintontracker.analysis.raw.RawInference
 import com.badmintontracker.analysis.rally.ClipWindow
@@ -135,11 +136,12 @@ class LocalAnalysisCoordinator(
         // Empty unless the engine was given a pose model, since Phase 1 frames
         // carry no persons at all.
         val playerTrack = buildNearPlayerTrack(raw, keypoints.toAnalysis())
-        if (playerTrack.framesWithPose > 0) {
+        if (playerTrack.rejections.containsKey(RejectionReason.BAD_COURT)) {
+            log("near player: the court marks do not fit a court; no positions taken")
+        } else if (playerTrack.framesWithPose > 0) {
             log(
                 "near player: ${playerTrack.samples.size} samples over " +
-                    "${playerTrack.framesWithPose} pose frames, " +
-                    "${(playerTrack.ankleFraction * 100).toInt()}% on ankles",
+                    "${playerTrack.framesWithPose} pose frames",
             )
         }
 

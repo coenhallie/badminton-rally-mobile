@@ -28,34 +28,39 @@ class PlayerTrackStore(private val root: File) {
                 track.samples.forEach {
                     append(it.frame).append(',')
                         .append(it.courtPosition.x).append(',')
-                        .append(it.courtPosition.y).append(',')
-                        .append(if (it.onAnkles) 1 else 0).append('\n')
+                        .append(it.courtPosition.y).append('\n')
                 }
             },
         )
     }
 
     /**
-     * Whether a track was ever written for [entryId], without reading it.
+     * Whether a track this version of the app can draw exists for [entryId],
+     * without reading it.
      *
      * [load] is the wrong way to ask: it reads every line of a file that runs to
      * roughly a megabyte for a 30-minute match and turns each one into a
      * [PlayerSample], so a list asking the question once per video pays for a
-     * full parse of every analysed video on the phone.
+     * full parse of every analysed video on the phone. Reading the header line
+     * costs one small read and answers the question that matters: is this a
+     * track the current format can load. A file from an older format is not,
+     * and must not be offered - the v1 tracks were built on a homography that
+     * could be metres off and on hip positions two to three metres off, and a
+     * row offering one would offer a heatmap that is wrong rather than merely
+     * unloadable. Recovery is through the drawer, whose Analyze button is
+     * gated on the stage rather than on the track.
      *
-     * Deliberately weaker than `load(id) != null`, which also rejects a file it
-     * cannot parse. A track truncated by a kill mid-write therefore reads as
-     * present, and the row that offers it stays offering it: the heatmap screen
-     * says "This analysis is no longer loaded. Run it again", which is honest
-     * about there being nothing to draw but describes process death rather than
-     * a bad file, and the Analytics row it came from offers no way to run it
-     * again. Recovery is through the drawer, whose Analyze button is gated on
-     * the stage rather than on the track. Accepted because a truncated file
-     * needs the process killed inside a single writeText of a track that was
-     * just held whole in memory; if it turns out to happen, the fix is for this
-     * to validate rather than for the callers to go back to parsing.
+     * Still weaker than `load(id) != null` for a file truncated after its
+     * header, which would need the process killed inside a single writeText
+     * of a track that was just held whole in memory. Accepted.
      */
-    fun has(entryId: String): Boolean = fileFor(entryId).isFile
+    fun has(entryId: String): Boolean {
+        val file = fileFor(entryId)
+        if (!file.isFile) return false
+        return runCatching {
+            file.bufferedReader().use { it.readLine() }?.split(' ')?.firstOrNull() == VERSION
+        }.getOrDefault(false)
+    }
 
     /** Null when there is nothing stored, or when what is stored cannot be read. */
     fun load(entryId: String): Stored? {
@@ -73,12 +78,11 @@ class PlayerTrackStore(private val root: File) {
                 PlayerSample(
                     frame = f[0].toInt(),
                     courtPosition = Point(f[1].toDouble(), f[2].toDouble()),
-                    onAnkles = f[3] == "1",
                 )
             }
             // Rejections are not stored: they explain a thin track while it is
-            // being produced, and the counts that matter afterwards - coverage
-            // and the ankle share - are recoverable from the samples.
+            // being produced, and the count that matters afterwards, coverage,
+            // is recoverable from the samples.
             Stored(PlayerTrack(samples, framesWithPose, emptyMap()), fps)
         }.getOrNull()
     }
@@ -162,6 +166,11 @@ class PlayerTrackStore(private val root: File) {
         const val DIR = "player-tracks"
 
         /** Bumped if the columns change, so an old file is ignored rather than misread. */
-        const val VERSION = "v1"
+        /**
+         * v2 dropped the per-sample ankle flag: every sample is an ankle
+         * sample now. v1 files are refused rather than migrated, on purpose -
+         * see [has].
+         */
+        const val VERSION = "v2"
     }
 }

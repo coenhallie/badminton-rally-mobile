@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import com.badmintontracker.analysis.geometry.Court
 import com.badmintontracker.analysis.player.CourtOccupancy
 import com.badmintontracker.analysis.player.PlayerTrack
+import com.badmintontracker.analysis.player.RejectionReason
 import kotlin.math.sqrt
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.graphics.asImageBitmap
@@ -182,18 +183,20 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawCourt(marginM: 
 /**
  * Says how much of the map to trust, rather than only how much there is.
  *
- * The ankle percentage is here because it changes what the picture means: a hip
- * sits about a metre above the court plane and projects long, so a track built
- * largely on hips is pushed away from the camera.
+ * Coverage is the whole quality story: every sample stands on the ankles, so a
+ * frame without confident ankles contributes nothing rather than a guess, and
+ * the share of frames that produced a position is what the picture rests on.
  */
 private fun summary(track: PlayerTrack, occupancy: CourtOccupancy): String {
     val minutes = occupancy.totalSeconds / 60.0
     val coverage = (track.coverage * 100).toInt()
-    val ankles = (track.ankleFraction * 100).toInt()
-    return "%.1f min tracked · found in %d%% of frames · %d%% on ankles".format(minutes, coverage, ankles)
+    return "%.1f min tracked · player found in %d%% of frames".format(minutes, coverage)
 }
 
 private fun whyEmpty(track: PlayerTrack): String = when {
+    track.rejections.containsKey(RejectionReason.BAD_COURT) ->
+        "The court marks do not fit a badminton court, so positions cannot be trusted. " +
+            "Mark the court again and re-run the analysis."
     track.framesWithPose == 0 ->
         "No pose data for this video. It was analysed for rallies only."
     else ->

@@ -121,6 +121,20 @@ The mobile app is versioned independently from the web app.
   supported method.
 
 ### Fixed
+- The court heatmap (Android, on-device analysis) is drawn from positions that
+  are now measured to be right. Three things were wrong: the court map read
+  "near" service line as the far end of the frame, so a court marked the
+  natural way round was off by more than a metre everywhere; a player whose
+  ankles were hidden was placed at their hips, which lands two to three metres
+  up the court, on about a fifth of frames; and a player who left the court
+  kept banking time at the spot they left from. The map now decides which
+  service line is which from where you tapped, uses only frames where both
+  ankles are seen, and stops crediting a lost player after half a second.
+  Heatmaps analysed before this change are no longer offered; run the analysis
+  again to get an accurate one. The summary under the map now reads "player
+  found in N% of frames", which is the whole of what it rests on. If the court
+  marks cannot be made to fit a badminton court, the map says so instead of
+  drawing.
 - A match ended early through "Finish match" no longer describes itself as
   still being scored, on its own page and in the match list.
 - Matches scored on the phone no longer disappear from the match list after

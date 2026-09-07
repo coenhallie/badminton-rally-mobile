@@ -118,6 +118,88 @@ class HomographyTest {
         )
         h.apply(5.0, 5.0).shouldBeNull()
     }
+    // The three corpus videos' marks as the cloud stored them, rounded to the
+    // pixel. Three different readings of "near": 0a654e34 has it at the top of
+    // the frame, 2eabfc01 at the camera, and 743d7fb1 one way for the service
+    // lines and the other for the centre points. Fitted to the position table
+    // as written, the second and third had every corner 1.1 to 1.6m off.
+    private val corpus0a654e34 = CourtKeypoints(
+        topLeft = Point(382.0, 247.0), topRight = Point(816.0, 251.0),
+        bottomRight = Point(1252.0, 763.0), bottomLeft = Point(3.0, 760.0),
+        netLeft = Point(267.0, 372.0), netRight = Point(934.0, 370.0),
+        serviceLineNearLeft = Point(324.0, 326.0), serviceLineNearRight = Point(888.0, 325.0),
+        serviceLineFarLeft = Point(224.0, 448.0), serviceLineFarRight = Point(995.0, 459.0),
+        centerNear = Point(614.0, 325.0), centerFar = Point(621.0, 450.0),
+    )
+    private val corpus2eabfc01 = CourtKeypoints(
+        topLeft = Point(511.0, 400.0), topRight = Point(1256.0, 409.0),
+        bottomRight = Point(1431.0, 950.0), bottomLeft = Point(4.0, 934.0),
+        netLeft = Point(332.0, 573.0), netRight = Point(1317.0, 581.0),
+        serviceLineNearLeft = Point(258.0, 656.0), serviceLineNearRight = Point(1337.0, 669.0),
+        serviceLineFarLeft = Point(399.0, 516.0), serviceLineFarRight = Point(1294.0, 523.0),
+        centerNear = Point(801.0, 665.0), centerFar = Point(845.0, 517.0),
+    )
+    private val corpus743d7fb1 = CourtKeypoints(
+        topLeft = Point(650.0, 485.0), topRight = Point(1277.0, 481.0),
+        bottomRight = Point(1579.0, 999.0), bottomLeft = Point(360.0, 1004.0),
+        netLeft = Point(550.0, 664.0), netRight = Point(1382.0, 666.0),
+        serviceLineNearLeft = Point(505.0, 744.0), serviceLineNearRight = Point(1422.0, 738.0),
+        serviceLineFarLeft = Point(588.0, 595.0), serviceLineFarRight = Point(1339.0, 595.0),
+        centerNear = Point(966.0, 593.0), centerFar = Point(966.0, 736.0),
+    )
+
+    @Test
+    fun every_corpus_marking_fits_whichever_way_near_was_read() {
+        listOf("0a654e34" to corpus0a654e34, "2eabfc01" to corpus2eabfc01, "743d7fb1" to corpus743d7fb1)
+            .forEach { (name, marks) ->
+                val h = marks.homography() ?: throw AssertionError("$name: no homography")
+                val residual = marks.maxResidualM(h) ?: throw AssertionError("$name: a mark projected to infinity")
+                // Well-placed marks fit to 0.37m at worst; the selector's gate is 1.0m.
+                if (residual > 0.4) throw AssertionError("$name: worst residual $residual m")
+            }
+    }
+
+    @Test
+    fun marks_that_agree_with_the_table_give_exactly_the_table_fit() {
+        // 0a654e34 is labelled the way COURT_KEYPOINT_POSITIONS reads, so the
+        // resolved positions are the table itself and the matrix is byte for
+        // byte what the TypeScript reference computes. Resolution changes
+        // nothing for input that did not need it.
+        val marks = corpus0a654e34
+        marks.courtPositions() shouldBe COURT_KEYPOINT_POSITIONS
+        marks.homography() shouldBe calculateHomography(marks.pixels(), COURT_KEYPOINT_POSITIONS)
+    }
+
+    @Test
+    fun a_pair_marked_at_the_camera_takes_the_bottom_half_positions() {
+        val positions = corpus2eabfc01.courtPositions()
+        // "near" service line pixels sit below the net, so they get the
+        // far-from-top positions, and vice versa.
+        positions[6] shouldBe COURT_KEYPOINT_POSITIONS[8]
+        positions[8] shouldBe COURT_KEYPOINT_POSITIONS[6]
+        positions[10] shouldBe COURT_KEYPOINT_POSITIONS[11]
+        positions[11] shouldBe COURT_KEYPOINT_POSITIONS[10]
+        // The corners and net are never touched.
+        positions.take(6) shouldBe COURT_KEYPOINT_POSITIONS.take(6)
+    }
+
+    @Test
+    fun a_pair_on_the_same_side_of_the_net_is_used_as_labelled() {
+        // Nothing to resolve it by, so the labels stand and the residual says
+        // what that costs; the selector's gate is what acts on it.
+        val bothBelow = corpus0a654e34.copy(serviceLineNearLeft = Point(224.0, 470.0))
+        bothBelow.courtPositions() shouldBe COURT_KEYPOINT_POSITIONS
+    }
+
+    @Test
+    fun the_residual_reports_a_mis_ordered_corner_in_metres() {
+        val good = corpus743d7fb1.maxResidualM(corpus743d7fb1.homography()!!)!!
+        val swapped = corpus743d7fb1.copy(topLeft = corpus743d7fb1.topRight, topRight = corpus743d7fb1.topLeft)
+        val bad = swapped.maxResidualM(swapped.homography()!!)!!
+        good shouldBeLessThan 0.4
+        if (bad < 1.0) throw AssertionError("swapped corners fit to $bad m, expected metres")
+    }
+
 }
 
 private infix fun Double.shouldBeLessThan(other: Double) {

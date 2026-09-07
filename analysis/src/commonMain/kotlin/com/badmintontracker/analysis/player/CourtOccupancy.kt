@@ -48,12 +48,18 @@ class CourtOccupancy(
 
     fun addAll(samples: List<PlayerSample>, fps: Double) {
         if (fps <= 0.0) return
-        // Each sample covers the gap to the next one, so a track with holes in
-        // it does not credit the frames it never saw. The last sample gets one
+        // Each sample covers the gap to the next one, capped. Up to the cap,
+        // this is what makes the map independent of sampling rate: a player
+        // seen every sixth frame gets the same seconds as one seen every
+        // frame. Past the cap the player was lost, not standing still, and
+        // crediting a long absence to the last known position paints a bright
+        // spot exactly where the tracking failed - between rallies, at the
+        // shuttle tube, off the edge of the frame. The last sample gets one
         // frame, which is all that is known about it.
+        val maxFrames = max(1.0, MAX_GAP_S * fps)
         samples.forEachIndexed { i, sample ->
             val next = samples.getOrNull(i + 1)
-            val frames = if (next == null) 1 else max(1, next.frame - sample.frame)
+            val frames = if (next == null) 1.0 else min(maxFrames, max(1, next.frame - sample.frame).toDouble())
             add(sample.courtPosition, frames / fps)
         }
     }
@@ -114,5 +120,14 @@ class CourtOccupancy(
 
         /** Roughly a stride, which is the scale a coach reads a heatmap at. */
         const val DEFAULT_SIGMA_M = 0.5
+
+        /**
+         * The longest gap a sample may be credited with, in seconds.
+         *
+         * Long enough that sampling at a few frames a second still yields the
+         * same map as every frame; short enough that a player who leaves the
+         * near court for ten seconds banks half a second there, not ten.
+         */
+        const val MAX_GAP_S = 0.5
     }
 }

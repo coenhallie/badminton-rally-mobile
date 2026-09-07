@@ -6,6 +6,7 @@ import com.badmintontracker.analysis.geometry.Matrix3x3
 import com.badmintontracker.analysis.geometry.Point
 import com.badmintontracker.analysis.geometry.apply
 import com.badmintontracker.analysis.geometry.homography
+import com.badmintontracker.analysis.geometry.maxResidualM
 import com.badmintontracker.analysis.geometry.validNetLine
 
 /** COCO-17 indices, the layout every YOLO pose model emits. */
@@ -26,23 +27,26 @@ data class PosePerson(
 
 data class PoseFrame(val frame: Int, val people: List<PosePerson>)
 
-/** One accepted position, in court metres. */
+/**
+ * One accepted position, in court metres.
+ *
+ * Always the ankle midpoint. There used to be a hip fallback here, flagged so
+ * quality reporting could see how much of a track stood on it; it was measured
+ * on 2026-09-07 and removed. See [NearPlayerSelector.groundPoint].
+ */
 data class PlayerSample(
     val frame: Int,
     val courtPosition: Point,
-    /**
-     * Whether this came from the ankles or fell back to the hips.
-     *
-     * Carried rather than discarded because a hip sits about a metre above the
-     * court plane and therefore projects long. The error it introduces is
-     * larger than the gap between any two pose model sizes, so quality
-     * reporting needs to be able to see how much of a track is built on it.
-     */
-    val onAnkles: Boolean,
 )
 
-/** Why a frame produced no sample, kept so a thin track can be explained. */
-enum class RejectionReason { NO_PEOPLE, NO_GROUND_POINT, WRONG_SIDE, OFF_COURT }
+/**
+ * Why a frame produced no sample, kept so a thin track can be explained.
+ *
+ * Ordered by how far through the gates a person got, because [NearPlayerSelector]
+ * reports the furthest gate reached. [BAD_COURT] is outside that order: it is
+ * about the marks, not about any person, and applies to every frame at once.
+ */
+enum class RejectionReason { NO_PEOPLE, NO_GROUND_POINT, WRONG_SIDE, OFF_COURT, BAD_COURT }
 
 /**
  * Picks the player nearest the camera out of one frame of pose detections.
@@ -76,10 +80,25 @@ class NearPlayerSelector(
     val netLineUsable: Boolean =
         validNetLine(keypoints.netLeft, keypoints.netRight, frameWidth, frameHeight)
 
-    val usable: Boolean get() = homography != null && netLineUsable
+    /**
+     * How badly the marks fit a court, in metres; null when there is no fit.
+     *
+     * Well-placed marks on the three corpus videos fit to between 0.17m and
+     * 0.37m at the worst point. A corner clicked in the wrong order or a
+     * service line marked on the wrong side of the net shows up as metres,
+     * and a homography built on it puts the player metres from where they
+     * stand while every downstream count looks healthy.
+     */
+    val courtFitResidualM: Double? = homography?.let { keypoints.maxResidualM(it) }
+
+    /** False when the marks cannot be trusted; see [courtFitResidualM]. */
+    val courtUsable: Boolean =
+        courtFitResidualM != null && courtFitResidualM <= MAX_COURT_RESIDUAL_M
+
+    val usable: Boolean get() = courtUsable && netLineUsable
 
     fun select(frame: PoseFrame): Result {
-        if (homography == null || !netLineUsable) return Result(null, RejectionReason.NO_PEOPLE)
+        if (homography == null || !usable) return Result(null, RejectionReason.BAD_COURT)
         if (frame.people.isEmpty()) return Result(null, RejectionReason.NO_PEOPLE)
 
         var best: PlayerSample? = null
@@ -88,43 +107,58 @@ class NearPlayerSelector(
 
         for (person in frame.people) {
             val ground = groundPoint(person) ?: continue
-            if (isFarSide(ground.first)) {
+            if (isFarSide(ground)) {
                 reason = worse(reason, RejectionReason.WRONG_SIDE)
                 continue
             }
             // Nullable: the projection has no answer for a point on the
             // horizon line, where the perspective divisor vanishes.
-            val court = homography.apply(ground.first.x, ground.first.y)
+            val court = homography.apply(ground.x, ground.y)
             if (court == null || !onCourt(court)) {
                 reason = worse(reason, RejectionReason.OFF_COURT)
                 continue
             }
             if (person.boxConfidence > bestConfidence) {
                 bestConfidence = person.boxConfidence
-                best = PlayerSample(frame.frame, court, ground.second)
+                best = PlayerSample(frame.frame, court)
             }
         }
         return Result(best, if (best == null) reason else null)
     }
 
     /**
-     * The point on the court plane this person is standing on.
+     * The point on the court plane this person is standing on: the ankle
+     * midpoint, or nothing.
      *
-     * Ankles first because the homography maps the ground; the hips are a
-     * documented fallback rather than an equal alternative.
+     * The homography maps the ground plane, so only a point on the ground
+     * projects correctly. The hips used to stand in when the ankles were not
+     * confident, on the belief that they sit "about a metre" above the court
+     * and project a little long. Measured against confident ankles on the two
+     * corpus videos with the deployed nano model (2026-09-07, 150 frames each,
+     * near player, court centimetres):
+     *
+     * | fallback                    | median   | p90      |
+     * |-----------------------------|----------|----------|
+     * | hip midpoint                | 173-291  | 343-346  |
+     * | box bottom centre           | 53-81    | 92-107   |
+     * | hip + 1.3 x torso vector    | 24-37    | 58-102   |
+     *
+     * against an ankle precision of about 9cm. The hip is not a metre off, it
+     * is two to three, and 22% of on-court detections had no confident ankles,
+     * so a fifth of the map was being drawn three metres from the player. The
+     * two better estimates are still an order of magnitude worse than an
+     * ankle, and they were measured on frames where the ankles were visible,
+     * which are exactly not the lunges and net-dives where a fallback would
+     * be used. A missing sample costs coverage, which the summary reports; a
+     * wrong one costs the map its meaning.
      */
-    private fun groundPoint(person: PosePerson): Pair<Point, Boolean>? {
+    private fun groundPoint(person: PosePerson): Point? {
         if (person.keypoints.size < Coco.COUNT || person.keypointConfidence.size < Coco.COUNT) return null
-        fun midpoint(a: Int, b: Int): Point? {
-            if (person.keypointConfidence[a] < minKeypointConfidence) return null
-            if (person.keypointConfidence[b] < minKeypointConfidence) return null
-            val p = person.keypoints[a]
-            val q = person.keypoints[b]
-            return Point((p.x + q.x) / 2.0, (p.y + q.y) / 2.0)
-        }
-        midpoint(Coco.LEFT_ANKLE, Coco.RIGHT_ANKLE)?.let { return it to true }
-        midpoint(Coco.LEFT_HIP, Coco.RIGHT_HIP)?.let { return it to false }
-        return null
+        if (person.keypointConfidence[Coco.LEFT_ANKLE] < minKeypointConfidence) return null
+        if (person.keypointConfidence[Coco.RIGHT_ANKLE] < minKeypointConfidence) return null
+        val p = person.keypoints[Coco.LEFT_ANKLE]
+        val q = person.keypoints[Coco.RIGHT_ANKLE]
+        return Point((p.x + q.x) / 2.0, (p.y + q.y) / 2.0)
     }
 
     /**
@@ -165,5 +199,16 @@ class NearPlayerSelector(
          * officials and the next court over do not come this close.
          */
         const val OUT_OF_COURT_MARGIN_M = 2.0
+
+        /**
+         * The worst reprojection residual a set of court marks may have and
+         * still be used, in metres.
+         *
+         * Well-placed marks fit to 0.37m at worst on the corpus; a swapped
+         * pair or a mis-ordered corner fits to 3.5m. One metre sits between
+         * the two with room on both sides, and is also the scale at which a
+         * heatmap stops meaning anything: a coach reads it at a stride.
+         */
+        const val MAX_COURT_RESIDUAL_M = 1.0
     }
 }

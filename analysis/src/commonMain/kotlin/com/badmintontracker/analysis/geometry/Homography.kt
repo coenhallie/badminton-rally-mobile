@@ -60,15 +60,102 @@ fun Matrix3x3.apply(x: Double, y: Double): Point? {
     )
 }
 
-/** Video pixels to court metres, using all 12 keypoints for a better fit. */
-fun CourtKeypoints.homography(): Matrix3x3? {
-    val src = listOf(
-        topLeft, topRight, bottomRight, bottomLeft, netLeft, netRight,
-        serviceLineNearLeft, serviceLineNearRight,
-        serviceLineFarLeft, serviceLineFarRight, centerNear, centerFar,
-    )
-    return calculateHomography(src, COURT_KEYPOINT_POSITIONS)
+/**
+ * Video pixels to court metres, using all 12 keypoints for a better fit.
+ *
+ * The service-line and centre pairs are matched to the court by where their
+ * pixels sit, not by the "near" and "far" in their names. See [courtPositions].
+ */
+fun CourtKeypoints.homography(): Matrix3x3? = calculateHomography(pixels(), courtPositions())
+
+/** The 12 marked pixels, in [COURT_KEYPOINT_POSITIONS] order. */
+fun CourtKeypoints.pixels(): List<Point> = listOf(
+    topLeft, topRight, bottomRight, bottomLeft, netLeft, netRight,
+    serviceLineNearLeft, serviceLineNearRight,
+    serviceLineFarLeft, serviceLineFarRight, centerNear, centerFar,
+)
+
+/**
+ * The court position of each marked pixel, in [pixels] order.
+ *
+ * [COURT_KEYPOINT_POSITIONS] puts the "near" service line and centre point on
+ * the top-of-frame half of the court, 1.98m short of the net, and the "far"
+ * ones on the bottom half. The marking screens on both the web app and this
+ * app label those points only "Service Near-Left", "Center-Near" and so on,
+ * and a person marking a court reads "near" as near the camera at least as
+ * often as near the top. Of the three corpus videos, one was marked top-as-near,
+ * one bottom-as-near and one with the service lines one way and the centre
+ * points the other, and the stored labels carry no hint which. Fitting the
+ * table as written to the two mismarked videos gave residuals of 3.5m at the
+ * swapped points and 1.1 to 1.6m at every corner: the whole map off by more
+ * than a metre, from four points that were placed perfectly well.
+ *
+ * So the label decides nothing here. Each pair is resolved by which side of
+ * the marked net line its pixels fall on: the one above the net takes the
+ * top-half position and the other the bottom-half one. Pixels that agree with
+ * the table give exactly the table, so the parity with the TypeScript reference
+ * is unchanged for correctly labelled input. A pair whose two pixels fall on
+ * the same side of the net cannot be resolved and is used as labelled; the
+ * residual that leaves is what [maxResidualM] exists to report.
+ */
+fun CourtKeypoints.courtPositions(): List<Point> {
+    val positions = COURT_KEYPOINT_POSITIONS.toMutableList()
+    fun resolve(nearIndex: Int, farIndex: Int) {
+        val near = pixels()[nearIndex]
+        val far = pixels()[farIndex]
+        val nearAbove = near.y < netYAt(near.x)
+        val farAbove = far.y < netYAt(far.x)
+        if (nearAbove == farAbove) return
+        if (!nearAbove) {
+            positions[nearIndex] = COURT_KEYPOINT_POSITIONS[farIndex]
+            positions[farIndex] = COURT_KEYPOINT_POSITIONS[nearIndex]
+        }
+    }
+    resolve(SERVICE_NEAR_LEFT, SERVICE_FAR_LEFT)
+    resolve(SERVICE_NEAR_RIGHT, SERVICE_FAR_RIGHT)
+    resolve(CENTER_NEAR, CENTER_FAR)
+    return positions
 }
+
+/**
+ * The net's y at this x, interpolated between the two marked net points.
+ *
+ * The same rule the near-player selector uses to decide sides, and for the
+ * same reason: on an angled camera a pixel midline puts play near the net on
+ * the wrong side.
+ */
+internal fun CourtKeypoints.netYAt(x: Double): Double {
+    val span = netRight.x - netLeft.x
+    if (span == 0.0) return (netLeft.y + netRight.y) / 2.0
+    val t = (x - netLeft.x) / span
+    return netLeft.y + t * (netRight.y - netLeft.y)
+}
+
+/**
+ * How badly the marks fit a court, as the largest distance in metres between
+ * where a marked pixel lands under [h] and where its court position says it
+ * should. Null if any pixel projects to infinity.
+ *
+ * Well-placed marks on the corpus videos fit to 0.37m at worst. A pair of
+ * points swapped, a corner clicked in the wrong order, or a service line marked
+ * on the wrong side of the net shows up here as metres.
+ */
+fun CourtKeypoints.maxResidualM(h: Matrix3x3): Double? {
+    var worst = 0.0
+    pixels().zip(courtPositions()).forEach { (pixel, court) ->
+        val got = h.apply(pixel.x, pixel.y) ?: return null
+        val d = sqrt((got.x - court.x) * (got.x - court.x) + (got.y - court.y) * (got.y - court.y))
+        if (d > worst) worst = d
+    }
+    return worst
+}
+
+private const val SERVICE_NEAR_LEFT = 6
+private const val SERVICE_NEAR_RIGHT = 7
+private const val SERVICE_FAR_LEFT = 8
+private const val SERVICE_FAR_RIGHT = 9
+private const val CENTER_NEAR = 10
+private const val CENTER_FAR = 11
 
 private fun normalizePoints(points: List<Point>): Pair<List<Point>, Matrix3x3>? {
     val n = points.size

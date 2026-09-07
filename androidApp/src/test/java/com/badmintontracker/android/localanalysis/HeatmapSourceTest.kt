@@ -52,12 +52,12 @@ class HeatmapSourceTest {
     }
 
     private val walked = PlayerTrack(
-        samples = listOf(PlayerSample(frame = 0, courtPosition = Point(1.0, 2.0), onAnkles = true)),
+        samples = listOf(PlayerSample(frame = 0, courtPosition = Point(1.0, 2.0))),
         framesWithPose = 1,
         rejections = emptyMap(),
     )
     private val sat = PlayerTrack(
-        samples = listOf(PlayerSample(frame = 5, courtPosition = Point(3.0, 4.0), onAnkles = false)),
+        samples = listOf(PlayerSample(frame = 5, courtPosition = Point(3.0, 4.0))),
         framesWithPose = 1,
         rejections = emptyMap(),
     )

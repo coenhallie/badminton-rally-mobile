@@ -18,19 +18,14 @@ data class PlayerTrack(
     val framesWithPose: Int,
     val rejections: Map<RejectionReason, Int>,
 ) {
-    /** Fraction of pose frames that produced a position. */
-    val coverage: Double get() = if (framesWithPose == 0) 0.0 else samples.size.toDouble() / framesWithPose
-
     /**
-     * Fraction of samples standing on ankles rather than hips.
+     * Fraction of pose frames that produced a position.
      *
-     * Worth reading before the heatmap is believed: a hip is about a metre
-     * above the court plane and projects long, so a track built mostly on hips
-     * is biased away from the camera by more than the gap between any two pose
-     * model sizes.
+     * Worth reading before the heatmap is believed. Every sample stands on
+     * the ankles, so coverage is the whole of the quality story: a frame with
+     * no confident ankles contributes nothing rather than a guess.
      */
-    val ankleFraction: Double
-        get() = if (samples.isEmpty()) 0.0 else samples.count { it.onAnkles }.toDouble() / samples.size
+    val coverage: Double get() = if (framesWithPose == 0) 0.0 else samples.size.toDouble() / framesWithPose
 }
 
 private fun RawPerson.toPosePerson(): PosePerson = PosePerson(
@@ -55,7 +50,7 @@ fun buildNearPlayerTrack(raw: RawInference, keypoints: CourtKeypoints): PlayerTr
     // one with the reason counted keeps that distinguishable from a match where
     // the player was simply never found.
     if (!selector.usable) {
-        return PlayerTrack(emptyList(), 0, mapOf(RejectionReason.NO_PEOPLE to raw.frames.size))
+        return PlayerTrack(emptyList(), 0, mapOf(RejectionReason.BAD_COURT to raw.frames.size))
     }
 
     val samples = ArrayList<PlayerSample>()

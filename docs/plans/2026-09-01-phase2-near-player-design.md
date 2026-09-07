@@ -2,6 +2,7 @@
 
 **Date:** 2026-09-01
 **Status:** Implemented 2026-09-02 on Android. `CourtOccupancy`, `NearPlayer`, `PlayerTrack` and `Skeleton` are in `:analysis`; `CourtHeatmapView` and `SkeletonOverlay` are in the Android layer. Not built for iOS, which has no local analysis layer at all.
+**Revised 2026-09-07:** three accuracy defects measured and fixed, see `tools/models/reports/heatmap-accuracy-2026-09-07.md`. The 12-point homography now resolves the service-line and centre pairs by pixel rather than by label (§4.2 gate 3 was fitting mislabelled marks on two of three corpus videos); the hip fallback in §4.2 gate 1 is gone, since a hip projects two to three metres off, not one; and §4.3's time weighting caps the gap a sample may be credited with. §6's "hip-fallback problem" is therefore closed by removal rather than by cropping.
 **Implements:** Stage 3 of `2026-08-31-on-device-analysis-pipeline-design.md`
 **Reference:** `2026-08-31-web-analysis-pipeline-reference.md`
 

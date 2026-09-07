@@ -32,20 +32,23 @@ class PoseRunnerTest {
 
     private val NL = System.lineSeparator()
 
-    // The marked court for the corpus video this test runs on.
+    // The marked court for the corpus video this test runs on, as the cloud stored it.
     private val keypoints = CourtKeypoints(
-        topLeft = Point(649.5065789473684, 484.8241206030151),
-        topRight = Point(1277.3026315789473, 481.2060301507538),
-        bottomRight = Point(1579.4407894736842, 1004.0201005025126),
-        bottomLeft = Point(360.0328947368421, 1004.0201005025126),
-        netLeft = Point(550.0, 663.9195979899498),
-        netRight = Point(1382.2368421052631, 665.7286432160804),
-        serviceLineNearLeft = Point(430.0, 880.0),
-        serviceLineNearRight = Point(1500.0, 880.0),
-        serviceLineFarLeft = Point(690.0, 520.0),
-        serviceLineFarRight = Point(1240.0, 518.0),
-        centerNear = Point(966.1184210526316, 593.3668341708543),
-        centerFar = Point(966.1184210526316, 736.2814070351759),
+        topLeft = Point(649.5, 484.8),
+        topRight = Point(1277.3, 481.2),
+        bottomRight = Point(1579.4, 998.6),
+        bottomLeft = Point(360.0, 1004.0),
+        netLeft = Point(550.0, 663.9),
+        netRight = Point(1382.2, 665.7),
+        // Marked with "near" meaning near the camera for the service lines and
+        // near the top for the centre points, as the cloud stored them. The
+        // fit resolves each pair by pixel, so both readings are fine.
+        serviceLineNearLeft = Point(504.8, 743.5),
+        serviceLineNearRight = Point(1422.0, 738.1),
+        serviceLineFarLeft = Point(588.0, 595.2),
+        serviceLineFarRight = Point(1338.8, 595.2),
+        centerNear = Point(966.1, 593.4),
+        centerFar = Point(966.1, 736.3),
     )
 
     private fun video(): File? =
@@ -77,7 +80,6 @@ class PoseRunnerTest {
             }
         }
 
-        val onAnkles = samples.count { it.onAnkles }
         val occupancy = CourtOccupancy()
         occupancy.addAll(samples, metadata.fps)
 
@@ -86,7 +88,6 @@ class PoseRunnerTest {
             buildString {
                 append("frames $frames, people $peopleSeen, near-player samples ${samples.size}").append(NL)
                 append("  coverage      ${100 * samples.size / frames}%").append(NL)
-                append("  on ankles     ${if (samples.isEmpty()) 0 else 100 * onAnkles / samples.size}%").append(NL)
                 append("  occupancy     ${occupancy.totalSeconds} s over ${occupancy.grid().flatten().count { it > 0 }} cells")
             },
         )

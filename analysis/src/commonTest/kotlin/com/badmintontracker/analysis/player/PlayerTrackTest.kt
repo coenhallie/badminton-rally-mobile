@@ -15,18 +15,21 @@ import kotlin.test.assertTrue
 class PlayerTrackTest {
 
     private val keypoints = CourtKeypoints(
-        topLeft = Point(650.0, 485.0),
-        topRight = Point(1277.0, 481.0),
-        bottomRight = Point(1579.0, 1004.0),
+        topLeft = Point(649.5, 484.8),
+        topRight = Point(1277.3, 481.2),
+        bottomRight = Point(1579.4, 998.6),
         bottomLeft = Point(360.0, 1004.0),
-        netLeft = Point(550.0, 664.0),
-        netRight = Point(1382.0, 666.0),
-        serviceLineNearLeft = Point(430.0, 880.0),
-        serviceLineNearRight = Point(1500.0, 880.0),
-        serviceLineFarLeft = Point(690.0, 520.0),
-        serviceLineFarRight = Point(1240.0, 518.0),
-        centerNear = Point(966.0, 593.0),
-        centerFar = Point(966.0, 736.0),
+        netLeft = Point(550.0, 663.9),
+        netRight = Point(1382.2, 665.7),
+        // Marked with "near" meaning near the camera for the service lines and
+        // near the top for the centre points, as the cloud stored them. The
+        // fit resolves each pair by pixel, so both readings are fine.
+        serviceLineNearLeft = Point(504.8, 743.5),
+        serviceLineNearRight = Point(1422.0, 738.1),
+        serviceLineFarLeft = Point(588.0, 595.2),
+        serviceLineFarRight = Point(1338.8, 595.2),
+        centerNear = Point(966.1, 593.4),
+        centerFar = Point(966.1, 736.3),
     )
 
     private fun header() = RawHeader(1, 30.0, 100, 1920, 1080, "test")
@@ -50,7 +53,6 @@ class PlayerTrackTest {
         assertEquals(10, track.samples.size)
         assertEquals(10, track.framesWithPose)
         assertEquals(1.0, track.coverage)
-        assertEquals(1.0, track.ankleFraction)
     }
 
     @Test
@@ -101,7 +103,7 @@ class PlayerTrackTest {
         assertTrue(track.samples.isEmpty())
         assertEquals(0, track.framesWithPose)
         assertEquals(0.0, track.coverage)
-        assertEquals(5, track.rejections[RejectionReason.NO_PEOPLE])
+        assertEquals(5, track.rejections[RejectionReason.BAD_COURT])
     }
 
     @Test

@@ -11,21 +11,25 @@ import kotlin.test.assertTrue
 
 class NearPlayerSelectorTest {
 
-    // A plausible 1920x1080 broadcast-style view: the far baseline is narrower
-    // than the near one, which is what makes the homography do real work.
+    // The corpus video 743d7fb1's own marks, 1920x1080: the far baseline is
+    // narrower than the near one, which is what makes the homography do real
+    // work, and the marks are the ones the on-device tests run against.
     private val keypoints = CourtKeypoints(
-        topLeft = Point(650.0, 485.0),
-        topRight = Point(1277.0, 481.0),
-        bottomRight = Point(1579.0, 1004.0),
+        topLeft = Point(649.5, 484.8),
+        topRight = Point(1277.3, 481.2),
+        bottomRight = Point(1579.4, 998.6),
         bottomLeft = Point(360.0, 1004.0),
-        netLeft = Point(550.0, 664.0),
-        netRight = Point(1382.0, 666.0),
-        serviceLineNearLeft = Point(430.0, 880.0),
-        serviceLineNearRight = Point(1500.0, 880.0),
-        serviceLineFarLeft = Point(690.0, 520.0),
-        serviceLineFarRight = Point(1240.0, 518.0),
-        centerNear = Point(966.0, 593.0),
-        centerFar = Point(966.0, 736.0),
+        netLeft = Point(550.0, 663.9),
+        netRight = Point(1382.2, 665.7),
+        // Marked with "near" meaning near the camera for the service lines and
+        // near the top for the centre points, as the cloud stored them. The
+        // fit resolves each pair by pixel, so both readings are fine.
+        serviceLineNearLeft = Point(504.8, 743.5),
+        serviceLineNearRight = Point(1422.0, 738.1),
+        serviceLineFarLeft = Point(588.0, 595.2),
+        serviceLineFarRight = Point(1338.8, 595.2),
+        centerNear = Point(966.1, 593.4),
+        centerFar = Point(966.1, 736.3),
     )
 
     private fun selector() = NearPlayerSelector(keypoints, 1920.0, 1080.0)
@@ -62,7 +66,6 @@ class NearPlayerSelectorTest {
         val result = selector().select(PoseFrame(7, listOf(person(966.0, 900.0))))
         val sample = assertNotNull(result.sample)
         assertEquals(7, sample.frame)
-        assertTrue(sample.onAnkles)
         // Near half of a 13.4m court, roughly on the centre line.
         assertTrue(sample.courtPosition.y > Court_HALF, "expected the near half, got ${sample.courtPosition}")
         assertTrue(sample.courtPosition.x in 1.0..5.0, "expected mid-width, got ${sample.courtPosition}")
@@ -89,15 +92,44 @@ class NearPlayerSelectorTest {
     }
 
     @Test
-    fun the_hips_stand_in_when_the_ankles_are_not_confident() {
+    fun confident_hips_without_ankles_yield_nothing() {
+        // The hips used to stand in here. Measured, a hip midpoint projects two
+        // to three metres from the ankles on real footage, and no estimate
+        // built on it gets within an order of magnitude of an ankle. A frame
+        // without ankles is a gap in coverage, never a guess.
         val result = selector().select(
             PoseFrame(1, listOf(person(966.0, 900.0, ankleConfidence = 0.1f))),
         )
-        val sample = assertNotNull(result.sample)
-        // Flagged, because a hip is about a metre above the court plane and
-        // projects long; a track built mostly on hips is worse than its count
-        // of samples suggests.
-        assertFalse(sample.onAnkles)
+        assertNull(result.sample)
+        assertEquals(RejectionReason.NO_GROUND_POINT, result.rejection)
+    }
+
+    @Test
+    fun marks_that_do_not_fit_a_court_disable_selection() {
+        // Two corners clicked in the wrong order. Every keypoint is still a
+        // real pixel and a homography still comes out of the solver; it is
+        // just one that puts the player metres from where they stand. The
+        // residual is what notices.
+        val scrambled = NearPlayerSelector(
+            keypoints.copy(topLeft = keypoints.bottomRight, bottomRight = keypoints.topLeft),
+            1920.0,
+            1080.0,
+        )
+        assertTrue(scrambled.courtFitResidualM!! > NearPlayerSelector.MAX_COURT_RESIDUAL_M)
+        assertFalse(scrambled.courtUsable)
+        assertFalse(scrambled.usable)
+        val result = scrambled.select(PoseFrame(1, listOf(person(966.0, 900.0))))
+        assertNull(result.sample)
+        assertEquals(RejectionReason.BAD_COURT, result.rejection)
+    }
+
+    @Test
+    fun the_real_marks_fit_the_court_closely() {
+        // The fixture is a real marking with the service lines labelled one
+        // way round and the centre points the other. Resolved by pixel, it
+        // fits to well under the gate; as labelled it fit to 3.7m.
+        val residual = selector().courtFitResidualM!!
+        assertTrue(residual < 0.4, "residual $residual m")
     }
 
     @Test
