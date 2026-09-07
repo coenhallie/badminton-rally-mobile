@@ -7,6 +7,7 @@ import com.badmintontracker.shared.local.AnalysisMetric
 import com.badmintontracker.shared.local.DeviceThroughputRepository
 import com.badmintontracker.shared.local.LocalAnalysisCoordinator
 import com.badmintontracker.shared.model.CourtKeypoints
+import com.badmintontracker.shared.model.toAnalysis
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -209,7 +210,10 @@ class LocalAnalysisRunner(
                 // run, not a silent omission.
                 when (skeletonAction(metrics, result.poses)) {
                     SkeletonAction.SAVE ->
-                        skeletons.save(entryId, result.poses, result.result.fps, result.videoWidth, result.videoHeight)
+                        skeletons.save(
+                            entryId, result.poses, result.result.fps,
+                            result.videoWidth, result.videoHeight, keypoints.toAnalysis(),
+                        )
                     SkeletonAction.DELETE -> skeletons.delete(entryId)
                 }
 
