@@ -3,6 +3,12 @@ package com.badmintontracker.analysis.player
 import com.badmintontracker.analysis.corpus.readResourceBytesOrNull
 import com.badmintontracker.analysis.geometry.CourtKeypoints
 import com.badmintontracker.analysis.geometry.Point
+import com.badmintontracker.analysis.raw.RawBox
+import com.badmintontracker.analysis.raw.RawFrame
+import com.badmintontracker.analysis.raw.RawHeader
+import com.badmintontracker.analysis.raw.RawInference
+import com.badmintontracker.analysis.raw.RawKeypoint
+import com.badmintontracker.analysis.raw.RawPerson
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
@@ -84,5 +90,45 @@ class DevicePoseDumpTest {
         val occupancy = CourtOccupancy()
         occupancy.addAll(samples, fps = 25.0)
         assertTrue(occupancy.totalSeconds > 0.0)
+    }
+
+    @Test
+    fun the_device_output_yields_a_pose_for_every_sample() {
+        val frames = frames() ?: return
+        val raw = RawInference(
+            header = RawHeader(1, 25.0, frames.size, 1920, 1080, "device"),
+            frames = frames.map { f ->
+                RawFrame(
+                    frame = f.frame,
+                    timestamp = f.frame / 25.0,
+                    shuttle = null,
+                    boxes = emptyList(),
+                    persons = f.people.map { p ->
+                        RawPerson(
+                            box = RawBox(0, p.boxConfidence, 0f, 0f, 0f, 0f),
+                            keypoints = p.keypoints.mapIndexed { k, pt ->
+                                RawKeypoint(
+                                    pt.x.toFloat(), pt.y.toFloat(), p.keypointConfidence[k],
+                                )
+                            },
+                        )
+                    },
+                )
+            },
+        )
+        val selection = selectNearPlayer(raw, keypoints)
+        assertTrue(selection.track.samples.isNotEmpty())
+        assertTrue(
+            selection.poses.map { it.frame } == selection.track.samples.map { it.frame },
+            "poses and samples must be at the same frames",
+        )
+        assertTrue(selection.poses.all { it.keypoints.size == Coco.COUNT && it.confidence.size == Coco.COUNT })
+        // The ankles that produced the position are confident in every pose.
+        assertTrue(
+            selection.poses.all {
+                it.confidence[Coco.LEFT_ANKLE] >= NearPlayerSelector.MIN_KEYPOINT_CONFIDENCE &&
+                    it.confidence[Coco.RIGHT_ANKLE] >= NearPlayerSelector.MIN_KEYPOINT_CONFIDENCE
+            },
+        )
     }
 }

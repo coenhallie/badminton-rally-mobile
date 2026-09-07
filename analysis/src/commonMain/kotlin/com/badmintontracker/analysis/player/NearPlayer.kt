@@ -103,6 +103,7 @@ class NearPlayerSelector(
 
         var best: PlayerSample? = null
         var bestConfidence = Float.NEGATIVE_INFINITY
+        var bestPerson: PosePerson? = null
         var reason = RejectionReason.NO_GROUND_POINT
 
         for (person in frame.people) {
@@ -121,9 +122,10 @@ class NearPlayerSelector(
             if (person.boxConfidence > bestConfidence) {
                 bestConfidence = person.boxConfidence
                 best = PlayerSample(frame.frame, court)
+                bestPerson = person
             }
         }
-        return Result(best, if (best == null) reason else null)
+        return Result(best, if (best == null) reason else null, bestPerson)
     }
 
     /**
@@ -186,7 +188,16 @@ class NearPlayerSelector(
     private fun worse(current: RejectionReason, candidate: RejectionReason): RejectionReason =
         if (candidate.ordinal > current.ordinal) candidate else current
 
-    data class Result(val sample: PlayerSample?, val rejection: RejectionReason?)
+    /**
+     * [person] is the detection [sample] was taken from, so a caller that
+     * wants the joints as well as the court position gets the same person
+     * the heatmap got, by construction rather than by a second pass.
+     */
+    data class Result(
+        val sample: PlayerSample?,
+        val rejection: RejectionReason?,
+        val person: PosePerson? = null,
+    )
 
     companion object {
         /** Ultralytics' own keypoint visibility threshold. */
