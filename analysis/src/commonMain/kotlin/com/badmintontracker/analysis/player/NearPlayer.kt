@@ -11,8 +11,17 @@ import com.badmintontracker.analysis.geometry.validNetLine
 
 /** COCO-17 indices, the layout every YOLO pose model emits. */
 object Coco {
+    const val NOSE = 0
+    const val LEFT_SHOULDER = 5
+    const val RIGHT_SHOULDER = 6
+    const val LEFT_ELBOW = 7
+    const val RIGHT_ELBOW = 8
+    const val LEFT_WRIST = 9
+    const val RIGHT_WRIST = 10
     const val LEFT_HIP = 11
     const val RIGHT_HIP = 12
+    const val LEFT_KNEE = 13
+    const val RIGHT_KNEE = 14
     const val LEFT_ANKLE = 15
     const val RIGHT_ANKLE = 16
     const val COUNT = 17
