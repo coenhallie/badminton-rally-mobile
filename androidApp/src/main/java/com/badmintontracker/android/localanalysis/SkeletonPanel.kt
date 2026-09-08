@@ -308,6 +308,7 @@ private fun SkeletonPlayer(
             kind = selected,
             positionS = positionMs / 1000.0,
             fps = stored.fps,
+            durationS = player.duration.takeIf { it > 0 }?.let { it / 1000.0 } ?: Double.POSITIVE_INFINITY,
             onSeek = { seconds ->
                 if (player.isPlaying) player.pause()
                 player.seekTo(

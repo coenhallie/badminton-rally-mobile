@@ -205,6 +205,27 @@ class NearPlayerSelector(
      * upper bound is the whole test. Shoulders or hips below the confidence
      * threshold, or a scale the homography cannot give, pass: an unmeasurable
      * torso is not evidence.
+     *
+     * What it does not catch, said plainly, because the bound sits above the
+     * bottom of the close-up range rather than below it:
+     *
+     *  - A close-up reading between 0.8 and 0.9m passes. 2eabfc01's intro
+     *    animation reads 0.8 to 0.95m across its frames, so some of them get
+     *    through. The bound is set where a real player never reaches, not
+     *    where every close-up starts, because rejecting real frames costs the
+     *    map coverage it cannot get back.
+     *  - A cut to a different wide camera, where the figure is at a plausible
+     *    scale. Nothing about the size gives it away; only the marks would,
+     *    and they describe one camera.
+     *  - A close-up whose shoulders or hips are below the confidence
+     *    threshold. It is unmeasurable, so it passes by the rule above.
+     *
+     * And what it rejects that is real: a jump. Metres per pixel grows with
+     * distance from the camera, so ankles off the floor project further up the
+     * court than the player stands, at a larger scale, and the same torso
+     * measures longer. An airborne frame can therefore fail the gate. The
+     * heatmap does not mind, because that frame's ground point was wrong for
+     * exactly the same reason.
      */
     private fun plausibleScale(person: PosePerson, ground: Point): Boolean {
         val c = person.keypointConfidence
@@ -280,7 +301,15 @@ class NearPlayerSelector(
          */
         const val MAX_COURT_RESIDUAL_M = 1.0
 
-        /** The longest a torso can measure on the court scale and still be a player at that depth, metres. */
+        /**
+         * The longest a torso can measure on the court scale and still be a
+         * player at that depth, metres.
+         *
+         * Above the 0.8m no real corpus frame reached, so it never rejects a
+         * player standing on the court, and below the bulk of the close-up
+         * range. It is not a clean separator: a close-up reading 0.8 to 0.9m
+         * passes, and a jump can measure past it. See [plausibleScale].
+         */
         const val MAX_TORSO_M = 0.9
     }
 }

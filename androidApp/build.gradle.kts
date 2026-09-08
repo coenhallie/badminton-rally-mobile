@@ -92,8 +92,9 @@ kotlin {
 }
 
 composeCompiler {
-    // See the file itself: :analysis has no Compose compiler, so its types are
-    // inferred unstable and a composable taking one cannot skip.
+    // See the file itself: :analysis has no Compose compiler, so its types
+    // are inferred unstable and are compared by instance identity, which the
+    // once-per-display-frame position poll defeats.
     stabilityConfigurationFiles.add(layout.projectDirectory.file("compose_stability.conf"))
 }
 

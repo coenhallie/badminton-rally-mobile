@@ -33,7 +33,14 @@ data class PoseMetrics(
      * toward the baseline. Null on the far half: it is the near player's number.
      */
     val behindServiceLineM: Double?,
-    /** Ankle midpoint's signed distance from the centre line, metres, positive to the frame's right. */
+    /**
+     * Ankle midpoint's signed distance from the centre line, metres, positive
+     * to the frame's right.
+     *
+     * No tile shows this yet. It is kept because the 2026-09-07 research lists
+     * it among the tier A court-plane measurements, so it is the next tile to
+     * add, and because callers reading [PoseMetrics] directly can use it now.
+     */
     val fromCentreLineM: Double?,
     /** Angle at the elbow between shoulder and wrist; 180 is a straight arm. */
     val elbowLeftDeg: Double?,

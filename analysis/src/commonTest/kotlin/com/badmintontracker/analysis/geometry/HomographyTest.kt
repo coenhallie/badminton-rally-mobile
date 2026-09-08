@@ -201,7 +201,7 @@ class HomographyTest {
     }
 
     @Test
-    fun metres_per_pixel_shrinks_with_distance_from_the_camera() {
+    fun metres_per_pixel_grow_with_distance_from_the_camera() {
         val h = corpus743d7fb1.homography()!!
         // Near baseline centre and far baseline centre, in pixels.
         val near = h.metresPerPixelAt(Point(970.0, 1000.0))!!

@@ -98,8 +98,9 @@ class SkeletonStore(private val root: File) {
     /** Whether a skeleton this version can draw exists for [entryId], from the header alone. */
     fun has(entryId: String): Boolean {
         val file = fileFor(entryId)
-        // The v1 floor, not the v2 one: a whole v1 file is shorter than a v2
-        // header, and this reads only the first eight bytes either way.
+        // The v1 floor, not the v2 one: this reads only the first eight
+        // bytes, so the shorter of the two headers is the right floor for
+        // both versions. A v2 file clears it comfortably.
         if (!file.isFile || file.length() < HEADER_BYTES_V1) return false
         return runCatching {
             val head = ByteArray(8)

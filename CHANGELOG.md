@@ -135,6 +135,14 @@ The mobile app is versioned independently from the web app.
   supported method.
 
 ### Fixed
+- The court heatmap (Android, on-device analysis) no longer takes a broadcast
+  close-up for a position on the court. When a video cuts to a camera the court
+  marks do not describe, the person filling the frame used to land somewhere on
+  the map as though they were standing there. A figure whose torso measures
+  longer than 0.9 m on the court's own scale is now left out of the map: no
+  player standing where that figure appears to stand could be that size.
+  Footage from a phone on a tripod is unaffected, since nothing in it ever
+  measures that large.
 - The court heatmap (Android, on-device analysis) is drawn from positions that
   are now measured to be right. Three things were wrong: the court map read
   "near" service line as the far end of the frame, so a court marked the

@@ -110,6 +110,11 @@ internal fun graphSegments(
  * values, no smoothing, a gap wherever the joint was absent for more than two
  * frames, a fixed vertical range per kind so the shape does not rescale
  * under the eye. The playhead sits at the centre; tapping or dragging seeks.
+ *
+ * [durationS] is the clip's length in seconds, or [Double.POSITIVE_INFINITY]
+ * while the player does not know it yet. A drag clamps to it, so dragging past
+ * an end does not bank travel that has to be given back before the playhead
+ * moves again.
  */
 @Composable
 fun MetricGraph(
@@ -117,6 +122,7 @@ fun MetricGraph(
     kind: MetricKind,
     positionS: Double,
     fps: Double,
+    durationS: Double,
     onSeek: (Double) -> Unit,
     modifier: Modifier = Modifier,
     windowS: Double = 2.0,
@@ -140,6 +146,9 @@ fun MetricGraph(
     // finger. Read through a state handle and keep the blocks long-lived.
     val currentPositionS by rememberUpdatedState(positionS)
     val currentOnSeek by rememberUpdatedState(onSeek)
+    // Read through a handle for the same reason: the duration is unknown on
+    // the first composition of a clip and arrives later.
+    val currentDurationS by rememberUpdatedState(durationS)
 
     Canvas(
         modifier = modifier
@@ -152,11 +161,16 @@ fun MetricGraph(
                 }
             }
             .pointerInput(windowS) {
+                // The anchor is clamped, not just the seek: an unclamped anchor
+                // would keep accumulating past the clip's end and the drag back
+                // would spend its first centimetres undoing that instead of
+                // moving the playhead.
                 var anchorS = currentPositionS
                 detectHorizontalDragGestures(
                     onDragStart = { anchorS = currentPositionS },
                     onHorizontalDrag = { change, _ ->
-                        anchorS += -(change.positionChange().x / size.width) * 2 * windowS
+                        anchorS = (anchorS - (change.positionChange().x / size.width) * 2 * windowS)
+                            .coerceIn(0.0, maxOf(0.0, currentDurationS))
                         currentOnSeek(anchorS)
                     },
                 )
