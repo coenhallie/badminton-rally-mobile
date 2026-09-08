@@ -6,6 +6,7 @@ import android.media.MediaCodecInfo
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
+import com.badmintontracker.analysis.shuttle.backgroundSampleIndices
 import java.io.File
 
 /**
@@ -122,22 +123,6 @@ class VideoFrameSource(private val file: File) {
         (0 until extractor.trackCount).firstOrNull { i ->
             extractor.getTrackFormat(i).getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true
         } ?: error("no video track in ${file.name}")
-
-    /**
-     * The frame indices production samples for its median background.
-     *
-     * `np.linspace(0, total - 1, min(total, max), dtype=int)` then `np.unique`
-     * (inference.py:200-201). `dtype=int` on linspace TRUNCATES rather than
-     * rounds, so this truncates: rounding would shift which frames form the
-     * background, which changes the background, which changes every heatmap.
-     */
-    fun backgroundSampleIndices(totalFrames: Int, maxSamples: Int = 300): List<Int> {
-        val count = minOf(totalFrames, maxSamples)
-        if (count <= 0) return emptyList()
-        if (count == 1) return listOf(0)
-        val step = (totalFrames - 1).toDouble() / (count - 1).toDouble()
-        return (0 until count).map { (it * step).toInt() }.distinct()
-    }
 
     /**
      * Decode the sampled frames for the median background, one at a time.

@@ -73,27 +73,6 @@ class VideoFrameSourceTest {
     }
 
     @Test
-    fun background_sample_indices_truncate_the_way_numpy_linspace_does() {
-        // np.linspace(0, 5971, 300, dtype=int) truncates rather than rounds.
-        // Checked against the same arithmetic production performs, not against
-        // this implementation: step is 5971/299, so index 1 is 19.97 -> 19,
-        // and rounding would make it 20 and sample a different frame.
-        val src = VideoFrameSource(File("unused"))
-        val idx = src.backgroundSampleIndices(totalFrames = 5972, maxSamples = 300)
-        assertEquals(300, idx.size)
-        assertEquals(0, idx.first())
-        assertEquals(19, idx[1])
-        assertEquals(5971, idx.last())
-        assertTrue("indices must be strictly increasing", idx.zipWithNext().all { it.first < it.second })
-    }
-
-    @Test
-    fun a_short_video_samples_every_frame_without_duplicates() {
-        val src = VideoFrameSource(File("unused"))
-        assertEquals((0 until 10).toList(), src.backgroundSampleIndices(10, 300))
-    }
-
-    @Test
     fun the_sequential_pass_decodes_every_frame_in_order() {
         val src = VideoFrameSource(requireVideo())
         var count = 0

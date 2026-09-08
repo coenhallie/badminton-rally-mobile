@@ -35,3 +35,28 @@ fun medianBackground(frames: List<ByteArray>): ByteArray {
     }
     return out
 }
+
+/**
+ * The frame indices production samples for its median background.
+ *
+ * `np.linspace(0, total - 1, min(total, max_bg_samples), dtype=int)` then
+ * `np.unique` (`inference.py:200-201`). `dtype=int` on linspace **truncates**
+ * rather than rounds, so this truncates: rounding would shift which frames form
+ * the background, which changes the background, which changes every heatmap.
+ *
+ * Here rather than in either app's decode layer, which is where it started.
+ * This is production-parity arithmetic, not decoding: it belongs with
+ * [medianBackground], which consumes what it selects, it can be tested without
+ * a device, and it has to be the same arithmetic on both phones or the two
+ * platforms compute their backgrounds from different frames.
+ */
+fun backgroundSampleIndices(totalFrames: Int, maxSamples: Int = MAX_BACKGROUND_SAMPLES): List<Int> {
+    val count = minOf(totalFrames, maxSamples)
+    if (count <= 0) return emptyList()
+    if (count == 1) return listOf(0)
+    val step = (totalFrames - 1).toDouble() / (count - 1).toDouble()
+    return (0 until count).map { (it * step).toInt() }.distinct()
+}
+
+/** `max_bg_samples: int = 300` (`inference.py:111`). */
+const val MAX_BACKGROUND_SAMPLES = 300
