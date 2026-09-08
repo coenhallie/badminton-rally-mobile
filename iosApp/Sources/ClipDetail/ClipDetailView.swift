@@ -35,12 +35,16 @@ struct ClipDetailView: View {
     @ViewBuilder
     private func content(_ model: ClipDetailModel) -> some View {
         VStack(spacing: 0) {
-            // 60% of the screen for the video so rallies can be evaluated closely;
-            // the annotation list scrolls in whatever space remains.
-            PlayerSurface(player: model.player)
-                .frame(maxWidth: .infinity)
-                .containerRelativeFrame(.vertical) { height, _ in height * 0.6 }
-                .background(Color.black)
+            // The card takes the video's own ratio rather than a share of the
+            // screen: the mock sizes it that way, and the 60% slab this replaced
+            // letterboxed a 16:9 clip with black above and below it.
+            ShuttlPlayer(
+                player: model.player,
+                prefs: rally.playbackPrefs,
+                step: { model.stepFrames($0) }
+            )
+            .padding(.top, 8)
+            .padding(.bottom, 8)
 
             if let error = model.error {
                 VStack(spacing: 8) {
@@ -50,11 +54,6 @@ struct ClipDetailView: View {
                         .frame(maxWidth: 160)
                 }
                 .padding(16)
-            }
-
-            if let player = model.player {
-                PlaybackControlBar(player: player, prefs: rally.playbackPrefs)
-                FrameStepBar(player: player, step: { model.stepFrames($0) })
             }
 
             HStack {

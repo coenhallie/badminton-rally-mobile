@@ -250,11 +250,12 @@ struct MatchView: View {
                             // control shows what is actually on screen, but a later
                             // fallback (rallies emptying mid-refresh) must not overwrite
                             // what the user picked - see `chosenFacet`'s own comment.
-                            Picker("Facet", selection: Binding(get: { facet }, set: { chosenFacet = $0 })) {
-                                Text("Points").tag(Facet.points)
-                                Text("Rallies").tag(Facet.rallies)
-                            }
-                            .pickerStyle(.segmented)
+                            ShuttlPillTabs(
+                                labels: ["Points", "Rallies"],
+                                selectedIndex: facet == .points ? 0 : 1,
+                                onSelect: { chosenFacet = $0 == 0 ? .points : .rallies },
+                                accessibilityLabel: "Facet"
+                            )
                             .padding(.horizontal)
                             .padding(.vertical, 8)
                         }

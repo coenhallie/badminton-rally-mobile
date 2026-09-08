@@ -264,7 +264,7 @@ internal fun whyEmpty(track: PlayerTrack): String = when {
         "The court marks do not fit a badminton court, so positions cannot be trusted. " +
             "Mark the court again and re-run the analysis."
     track.framesWithPose == 0 ->
-        "No pose data for this video. It was analysed for rallies only."
+        "No pose data for this video. It was analyzed for rallies only."
     else ->
         "The player was not found on the near court in any of ${track.framesWithPose} frames."
 }

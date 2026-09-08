@@ -194,7 +194,22 @@ struct HomeView: View {
             }
             .ignoresSafeArea()
         }
-        .sheet(item: $detailsTarget) { target in
+        .sheet(item: $detailsTarget, onDismiss: {
+            // However the sheet went away - saved, skipped, or swiped down -
+            // the video it named is a row in the drawer's list, which is
+            // closed. Without this the coach lands back on a Home screen that
+            // looks exactly as it did before he picked the file. This binding
+            // is the auto-open case only (see its declaration), so the row
+            // menu's own "Edit details", which already happens with the drawer
+            // open, does not come through here. Entries are stored newest
+            // first, so the new row is the top of "On this phone" with nothing
+            // to scroll to.
+            //
+            // Mirrors HomeScreen.kt's `onAutoDetailsClosed`. The two are one
+            // rule written twice, with nothing shared to hold them together,
+            // so a change here is a change there.
+            withAnimation(.snappy(duration: 0.24)) { drawerOpen = true }
+        }) { target in
             MatchDetailsSheet(
                 entry: target.entry,
                 autoOpened: target.autoOpened,

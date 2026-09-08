@@ -3,8 +3,6 @@ package com.badmintontracker.android.localanalysis
 import com.badmintontracker.shared.localvideo.AnalyzeProgress
 import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.BackgroundWork
-import com.badmintontracker.shared.localvideo.DevicePhase
-import com.badmintontracker.shared.localvideo.DeviceWork
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.backgroundWork
 import kotlinx.coroutines.CoroutineScope
@@ -85,25 +83,11 @@ class BackgroundWorkMonitor(
         device,
         sessionFailures,
     ) { current, progressMap, deviceMap, failures ->
-        backgroundWork(current, progressMap, deviceMap.mapNotNull(::toDeviceWork), failures)
+        backgroundWork(
+            current,
+            progressMap,
+            deviceMap.mapNotNull { (id, state) -> toDeviceWork(id, state) },
+            failures,
+        )
     }.stateIn(scope, SharingStarted.Eagerly, null)
 }
-
-/**
- * Only states that mean work is happening become [DeviceWork]; `Idle` and
- * `Done` stay in the runner's map after a run and must not keep the indicator
- * lit.
- *
- * `Cutting` reports no fraction on purpose. Its `done/total` counts clips, not
- * frames, so rendering it as the analysis percentage would show the bar
- * restarting near the end of a run.
- */
-private fun toDeviceWork(entry: Map.Entry<String, LocalAnalysisState>): DeviceWork? =
-    when (val s = entry.value) {
-        is LocalAnalysisState.Idle -> null
-        is LocalAnalysisState.Done -> null
-        is LocalAnalysisState.Preparing -> DeviceWork(entry.key, DevicePhase.PREPARING, null, false)
-        is LocalAnalysisState.Analysing -> DeviceWork(entry.key, DevicePhase.ANALYSING, s.fraction, false)
-        is LocalAnalysisState.Cutting -> DeviceWork(entry.key, DevicePhase.CUTTING, null, false)
-        is LocalAnalysisState.Failed -> DeviceWork(entry.key, DevicePhase.ANALYSING, null, failed = true)
-    }

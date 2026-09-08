@@ -119,8 +119,17 @@ struct MatchesList: View {
         // phone" would be the same match twice.
         let standalone = model.localEntries.filter { $0.scoreLogId == nil }
         return List {
+            // The labels are rows INSIDE their section, not `Section(header:)`.
+            // A plain list pins a header to the top and scrolls the rows under
+            // it, which put a blurred card behind "On this phone". Dropping the
+            // sections entirely fixed that but left the list opening scrolled to
+            // its bottom - both verified on the simulator. Keeping the sections
+            // and demoting the labels to ordinary rows gets both: the labels
+            // scroll with the content, and the list opens at the top.
             if !standalone.isEmpty {
                 Section {
+                    DrawerSectionLabel("On this phone")
+                        .drawerListRow(top: DrawerList.firstSectionGap)
                     ForEach(standalone) { entry in
                         LocalVideoRowView(
                             entry: entry,
@@ -136,6 +145,7 @@ struct MatchesList: View {
                                 detailsTarget = MatchDetailsTarget(entry: entry, autoOpened: false)
                             }
                         )
+                        .drawerListRow()
                         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                             // Hidden mid-pipeline: removing would delete the file
                             // under the active upload and swallow the run's outcome.
@@ -149,18 +159,21 @@ struct MatchesList: View {
                             }
                         }
                     }
-                } header: { Shuttl.sectionLabel("On this phone") }
+                }
             }
             if let error = model.error {
                 ErrorBanner(message: error)
-                    .listRowInsets(EdgeInsets())
+                    .drawerListRow()
             }
             if !model.ownedRows.isEmpty {
                 Section {
+                    DrawerSectionLabel("My matches")
+                        .drawerListRow(top: DrawerList.sectionGap)
                     ForEach(model.ownedRows) { listRow in
                         switch listRow {
                         case .video(let match):
                             row(match, model: model)
+                                .drawerListRow()
                                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                     Button {
                                         confirmTarget = PendingMatchAction(match: match, kind: .deleteMatch)
@@ -176,6 +189,7 @@ struct MatchesList: View {
                                 }
                         case .score(let content):
                             scoreRow(content, model: model)
+                                .drawerListRow()
                                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                     Button {
                                         // A row with clips deletes two things, not one: the
@@ -197,12 +211,15 @@ struct MatchesList: View {
                                 }
                         }
                     }
-                } header: { Shuttl.sectionLabel("My matches") }
+                }
             }
             if !model.shared.isEmpty {
                 Section {
+                    DrawerSectionLabel("Shared with me")
+                        .drawerListRow(top: DrawerList.sectionGap)
                     ForEach(model.shared, id: \.videoId) { match in
                         row(match, model: model)
+                            .drawerListRow()
                             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                 Button {
                                     confirmTarget = PendingMatchAction(match: match, kind: .leaveShare)
@@ -213,10 +230,21 @@ struct MatchesList: View {
                                 .tint(Shuttl.error)
                             }
                     }
-                } header: { Shuttl.sectionLabel("Shared with me") }
+                }
             }
         }
         .listStyle(.plain)
+        // The drawer's panel is what should show between the inset rows, not
+        // the material `List` paints over it.
+        .scrollContentBackground(.hidden)
+        // The gap between two groups is the label's own `sectionGap`; a
+        // section's default spacing would add a second one on top of it.
+        .listSectionSpacing(0)
+        // A `List` floors every row at ~44pt. A 12pt section label is well under
+        // that, so the floor was padding it out and putting 29pt between a label
+        // and its first card where the mock has 10. The cards clear the floor on
+        // their own, so nothing else changes.
+        .environment(\.defaultMinListRowHeight, 0)
         // Over the list rather than in it: a row cannot centre itself in the
         // panel, and the list underneath keeps `.refreshable` working.
         .overlay {
@@ -299,33 +327,28 @@ struct MatchesList: View {
         .refreshable { await model.refresh() }
     }
 
+    /// An owned or shared match.
+    ///
+    /// No thumbnail and no chevron: the mock gives the drawer exactly one raised
+    /// surface, on "On this phone", and draws these as a quiet text list. In a
+    /// 330pt panel that is also what makes the title readable - a 64pt cover
+    /// plus its gap left a match name about 126pt wide, which ellipsised
+    /// "Vitidsarn vs Axelsen" after a word and a half. Mirrors
+    /// ClipListScreen.kt's VideoMatchRow.
     private func row(_ match: MatchSummary, model: ClipListModel) -> some View {
         Button {
             onMatchTap(MatchRoute(scoreLogId: nil, videoId: match.videoId))
         } label: {
-            HStack(spacing: 12) {
-                AsyncImage(url: model.thumbnailUrls[match.coverClipId]) { image in
-                    image.resizable().aspectRatio(contentMode: .fill)
-                } placeholder: {
-                    Shuttl.bgTertiary
-                }
-                .frame(width: 96, height: 54)
-                .clipped()
-                .task { await model.thumbnail(forCoverOf: match) }
-
-                VStack(alignment: .leading, spacing: 4) {
-                    // 2, not 1: the drawer is 330pt wide, narrower than the
-                    // full-screen list this row used to sit in, and the mock's
-                    // own "My matches" row (unlike "On this phone"'s explicit
-                    // nowrap+ellipsis) has no truncation styling - a title
-                    // that has room to wrap should, not clip.
+            HStack(spacing: DrawerList.gap) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(matchRowPrimary(match))
                         .shuttlType(ShuttlType.titleMedium)
                         .foregroundStyle(Shuttl.text)
-                        .lineLimit(2)
+                        .lineLimit(1)
                     Text(matchRowSecondary(match))
-                        .shuttlType(ShuttlType.labelSmall)
+                        .shuttlType(ShuttlType.bodySmall)
                         .foregroundStyle(Shuttl.textSecondary)
+                        .lineLimit(1)
                     if let description = match.description {
                         Text(description)
                             .shuttlType(ShuttlType.bodySmall)
@@ -339,38 +362,32 @@ struct MatchesList: View {
                             .lineLimit(1)
                     }
                 }
-                Spacer()
+                Spacer(minLength: 0)
                 if match.isOwned {
                     Button {
                         shareTarget = match
                     } label: {
                         Image(systemName: "square.and.arrow.up")
+                            .foregroundStyle(Shuttl.textSecondary)
                     }
                     // Same 44x44 as the score row's trailing controls: the two row
                     // kinds sit adjacent in one list, so their trailing footprints
                     // must match or the boundary between them reads as a seam.
-                    .frame(width: 44, height: 44)
+                    // Trailing-aligned so the glyph lands the row's own 16pt from
+                    // the edge instead of the box's 22pt.
+                    .frame(width: 44, height: 44, alignment: .trailing)
                     .buttonStyle(.borderless)
                 }
-                // NavigationLink drew this for free; a Button does not, so it is
-                // restored explicitly to keep the row reading as navigable.
-                Image(systemName: "chevron.right")
-                    .shuttlType(ShuttlType.bodySmall)
-                    .foregroundStyle(Shuttl.textSecondary)
             }
-            // Without this, the Button's hit area is only its children's -
-            // the Spacer in the middle has none of its own - so the empty
-            // stretch between the text and the trailing control would go dead
-            // and silently stop opening the match. NavigationLink gave the
-            // whole row a hit area for free; a Button does not.
-            .contentShape(Rectangle())
+            .drawerRowBody()
         }
         .buttonStyle(.plain)
     }
 
-    /// A match scored courtside, with whatever video it has acquired. Same 96x54
-    /// leading slot, same 12pt spacing and the same three text lines as
-    /// `row(_:model:)`: a row a few points shorter than its neighbour reads as a bug.
+    /// A match scored courtside, with whatever video it has acquired. Same
+    /// insets, the same text lines and the same trailing footprint as
+    /// `row(_:model:)`: a row a few points shorter than its neighbour reads as a
+    /// bug.
     @ViewBuilder
     private func scoreRow(_ content: ScoreRowContent, model: ClipListModel) -> some View {
         let card = content.card
@@ -382,46 +399,16 @@ struct MatchesList: View {
         Button {
             onMatchTap(MatchRoute(scoreLogId: card.scoreLogId, videoId: card.videoId))
         } label: {
-            HStack(spacing: 12) {
-                Group {
-                    if let video = content.video, let url = model.thumbnailUrls[video.coverClipId] {
-                        AsyncImage(url: url) { image in
-                            image.resizable().aspectRatio(contentMode: .fill)
-                        } placeholder: {
-                            Shuttl.bgTertiary
-                        }
-                    } else {
-                        ZStack {
-                            Shuttl.bgTertiary
-                            Image(systemName: "list.number")
-                                .foregroundStyle(Shuttl.textSecondary)
-                        }
-                    }
-                }
-                .frame(width: 96, height: 54)
-                .clipped()
-                // Keyed on the video id, not a plain `.task`: a row visible while
-                // its clips are still arriving must re-fetch once `content.video`
-                // goes from nil to non-nil, not just once on first appearance.
-                .task(id: content.video?.videoId) {
-                    if let video = content.video { await model.thumbnail(forCoverOf: video) }
-                }
-
-                VStack(alignment: .leading, spacing: 4) {
-                    // Same reasoning as row(_:model:) above: the drawer is
-                    // narrower than the full-screen list this row came from,
-                    // and the mock's "My matches" title has no truncation
-                    // styling, so a wrappable title should wrap rather than
-                    // clip. A single unbroken word longer than the row (e.g.
-                    // "LabelScopeCheck") still truncates - no line-break
-                    // opportunity exists for it at any width, mock included.
+            HStack(spacing: DrawerList.gap) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(card.title)
                         .shuttlType(ShuttlType.titleMedium)
                         .foregroundStyle(Shuttl.text)
-                        .lineLimit(2)
-                    Text("\(card.scoreLine.uppercased()) · \(formatMatchDate(millis: card.createdAtEpochMs).uppercased())")
-                        .shuttlType(ShuttlType.labelSmall)
+                        .lineLimit(1)
+                    Text("\(card.scoreLine) · \(formatMatchDate(millis: card.createdAtEpochMs))")
+                        .shuttlType(ShuttlType.bodySmall)
                         .foregroundStyle(Shuttl.textSecondary)
+                        .lineLimit(1)
                     Text(card.playersLine)
                         .shuttlType(ShuttlType.bodySmall)
                         .foregroundStyle(Shuttl.textSecondary)
@@ -436,12 +423,12 @@ struct MatchesList: View {
                             .lineLimit(2)
                     }
                 }
-                Spacer()
+                Spacer(minLength: 0)
                 switch content.attach?.kind {
                 case .courtNotMarked:
                     // Padding/background live inside the label, not chained onto
                     // the Button, so the tappable area is exactly the visible
-                    // pill - matching `chip` in PlaybackControlBar.swift. This row
+                    // pill - matching `chip` in PlaybackSettingsSheet.swift. This row
                     // is a Button's label; a dead zone here would silently
                     // open the match instead of marking the court.
                     Button {
@@ -474,12 +461,7 @@ struct MatchesList: View {
                     }
                     .buttonStyle(.borderless)
                 case .uploading, .clipping, .finishingUp:
-                    // Boxed to the same 44x44 footprint as the share button
-                    // below, so the trailing slot doesn't shift width the
-                    // moment the pipeline finishes and the row flips to nil.
-                    ProgressView()
-                        .controlSize(.small)
-                        .frame(width: 44, height: 44)
+                    ProgressView().controlSize(.small)
                 case nil:
                     // Present but visually muted, with the reason in its
                     // accessibility label: match_shares is keyed on video_id, so
@@ -507,9 +489,10 @@ struct MatchesList: View {
                         if let video = content.video { shareTarget = video }
                     } label: {
                         Image(systemName: "square.and.arrow.up")
+                            .foregroundStyle(Shuttl.textSecondary)
                             .opacity(content.video != nil ? 1 : 0.35)
                     }
-                    .frame(width: 44, height: 44)
+                    .frame(width: 44, height: 44, alignment: .trailing)
                     .buttonStyle(.borderless)
                     .accessibilityRepresentation {
                         Button(
@@ -520,20 +503,31 @@ struct MatchesList: View {
                         .disabled(content.video == nil)
                     }
                 }
-                // NavigationLink drew this for free; a Button does not, so it is
-                // restored explicitly to keep the row reading as navigable.
-                Image(systemName: "chevron.right")
-                    .shuttlType(ShuttlType.bodySmall)
-                    .foregroundStyle(Shuttl.textSecondary)
             }
-            // Without this, the Button's hit area is only its children's -
-            // the Spacer in the middle has none of its own - so the empty
-            // stretch between the text and the trailing control would go dead
-            // and silently stop opening the match. NavigationLink gave the
-            // whole row a hit area for free; a Button does not.
-            .contentShape(Rectangle())
+            .drawerRowBody()
         }
         .buttonStyle(.plain)
+    }
+}
+
+private extension View {
+    /// A match row's inset box: quieter than the "On this phone" card above it,
+    /// and deliberately so. The mock gives the drawer exactly one raised
+    /// surface, on the section that leads somewhere new; these rows are
+    /// transparent, and the rounded shape is what a swipe reveal and a press
+    /// highlight are clipped to.
+    ///
+    /// Without `contentShape` the Button's hit area is only its children's - the
+    /// Spacer in the middle has none of its own - so the empty stretch between
+    /// the text and the trailing control would go dead and silently stop opening
+    /// the match. NavigationLink gave the whole row a hit area for free; a
+    /// Button does not.
+    func drawerRowBody() -> some View {
+        self
+            .padding(.horizontal, DrawerList.rowPaddingH)
+            .padding(.vertical, DrawerList.rowPaddingV)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(RoundedRectangle(cornerRadius: ShuttlRadius.medium))
     }
 }
 

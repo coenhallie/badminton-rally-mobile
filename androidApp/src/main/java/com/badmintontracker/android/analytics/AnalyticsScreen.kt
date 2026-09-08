@@ -40,7 +40,6 @@ import com.badmintontracker.android.ui.icons.ShuttlIcons
 import com.badmintontracker.android.ui.theme.ShuttlRadius
 import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.shared.analytics.AnalyticsRowState
-import java.util.Locale
 
 /** Which of the drawer's own sections a row belongs to, in display order. */
 enum class AnalyticsGroup(val label: String) {
@@ -50,7 +49,7 @@ enum class AnalyticsGroup(val label: String) {
 }
 
 /**
- * What an `ANALYSABLE` row's control should show, in place of a live "Analyse"
+ * What an `ANALYSABLE` row's control should show, in place of a live "Analyze"
  * button, when one of the two pipelines is already busy with its video.
  *
  * Three cases rather than either pipeline's own state: the on-device run
@@ -64,8 +63,10 @@ sealed interface AnalyseAffordance {
     data object Ready : AnalyseAffordance
 
     /**
-     * A run is under way. [phase] names it: Preparing, Analysing or Cutting for
-     * the device run, Uploading or Processing for the cloud one.
+     * A run is under way. [phase] is the shared label for that stage, so this
+     * row and the drawer's row for the same video say the same words:
+     * `deviceWorkLabel` for the device run, `cloudAnalysisStatus` for the cloud
+     * one.
      */
     data class InProgress(val phase: String) : AnalyseAffordance
 
@@ -95,7 +96,7 @@ data class AnalyticsRow(
  *
  * [onOpenDetail] fires for a READY row, opening its analysis, which shows the
  * heatmap; [onAnalyse] fires for an ANALYSABLE row's button whether it reads
- * "Analyse" or "Retry", and the caller decides which of the two it is: a failed
+ * "Analyze" or "Retry", and the caller decides which of the two it is: a failed
  * cloud run with its court points already saved resumes from the step that
  * failed, and everything else goes to court marking. NOT_ON_DEVICE rows call
  * neither.
@@ -131,7 +132,7 @@ fun AnalyticsScreen(
                 ShuttlEmptyState(
                     icon = ShuttlIcons.ChartColumn,
                     title = "No matches yet",
-                    body = "Add a match on Home and it will be listed here, ready to analyse.",
+                    body = "Add a match on Home and it will be listed here, ready to analyze.",
                 )
             }
             return@Scaffold
@@ -167,7 +168,7 @@ fun AnalyticsScreen(
                             // that writes the track a row needs to turn READY, so
                             // copy naming only the cloud would steer a coach away
                             // from the dot this same legend explains.
-                            "Analyse cuts a video into rallies, on this phone or in the cloud."
+                            "Analyze cuts a video into rallies, on this phone or in the cloud."
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = ShuttlTheme.extended.textTertiary,
@@ -209,18 +210,31 @@ private fun DotLegend() {
         )
         Spacer(Modifier.width(8.dp))
         Text(
-            "Analysed on this phone - tap to view",
+            "Analyzed on this phone - tap to view",
             style = MaterialTheme.typography.bodySmall,
             color = ShuttlTheme.extended.textTertiary,
         )
     }
 }
 
+/**
+ * A section's label: 12sp, secondary, sentence case - the same label the
+ * drawer's own sections carry ([com.badmintontracker.android.cliplist.DrawerSectionLabel]).
+ *
+ * It used to be the uppercase tracked `labelSmall` this app's older lists draw.
+ * The mock has "On this phone" and "My matches" as plain 12px secondary text and
+ * carries no uppercase anywhere, so that was a Material holdover from before the
+ * redesign - and it had followed this layout across to iPhone as well.
+ *
+ * Not DrawerSectionLabel itself: that bakes in the drawer's own 4dp label gap,
+ * and this screen states its spacing here. The two want one shared component;
+ * see the note in DrawerList.kt.
+ */
 @Composable
 private fun SectionHeader(text: String) {
     Text(
-        text = text.uppercase(Locale.ROOT),
-        style = MaterialTheme.typography.labelSmall,
+        text = text,
+        style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(start = GUTTER, end = GUTTER, top = 18.dp, bottom = 10.dp),
     )
@@ -228,7 +242,7 @@ private fun SectionHeader(text: String) {
 
 /**
  * One match, on the mock's card: title over subtitle, and on the right the
- * availability dot for a READY row, the Analyse pill for an ANALYSABLE one,
+ * availability dot for a READY row, the Analyze pill for an ANALYSABLE one,
  * nothing for a match that is not on this phone.
  */
 @Composable
@@ -320,7 +334,7 @@ private fun AnalyticsRowItem(
                     // hardcoded one cannot be checked without a device and would
                     // clip a one-line, no-wrap label at large font scales.
                     ShuttlButton(
-                        text = "Analyse",
+                        text = "Analyze",
                         onClick = onAnalyse,
                         variant = ShuttlButtonVariant.Primary,
                         enabled = false,
@@ -334,7 +348,7 @@ private fun AnalyticsRowItem(
                     compact = true,
                 )
                 AnalyseAffordance.Ready -> ShuttlButton(
-                    text = "Analyse",
+                    text = "Analyze",
                     onClick = onAnalyse,
                     variant = ShuttlButtonVariant.Primary,
                     compact = true,

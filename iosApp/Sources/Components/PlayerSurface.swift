@@ -3,14 +3,19 @@ import SwiftUI
 
 /// The video surface for both player screens.
 ///
-/// SwiftUI's `VideoPlayer` hosts an `AVPlayerViewController` carrying AVKit's
-/// default playback-speed menu (0.5x, 1x, 1.25x, 1.5x, 2x) and exposes no way to
-/// clear it. That menu would disagree with `PlaybackControlBar` the moment
-/// either one is used - and it offers rates the preference does not - so we host
-/// the controller directly and empty `speeds`, AVKit's documented way to drop
-/// the control. Everything else is left at the defaults `VideoPlayer` used.
+/// AVKit's own controls are off entirely. `ShuttlVideoCard` draws the timecode
+/// chip, the speed chip and the scrub bar, and `ShuttlTransportBar` under the
+/// card owns playback; AVKit's play button and time bar would sit on top of both.
+/// The iOS counterpart of Android's `useController = false`.
 ///
-/// The iOS counterpart of Android's `withoutMedia3SpeedMenu()`.
+/// `speeds` is emptied as well, and not redundantly: the playback-speed menu is
+/// reached from the controller's own overflow, which `showsPlaybackControls =
+/// false` hides but does not disable for a hardware or accessibility path - and
+/// it offers rates the shared preference does not.
+///
+/// `videoGravity` is left at `.resizeAspect`: the card imposes the aspect ratio,
+/// so the layer letterboxes inside a box that already matches it, and a portrait
+/// video pillarboxes in its square card rather than being cropped.
 struct PlayerSurface: UIViewControllerRepresentable {
     /// Optional to match the `VideoPlayer(player:)` signature this replaces:
     /// ClipDetailView has no player until the clip URL is signed.
@@ -19,6 +24,7 @@ struct PlayerSurface: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let controller = AVPlayerViewController()
         controller.player = player
+        controller.showsPlaybackControls = false
         controller.speeds = []
         return controller
     }
@@ -27,7 +33,8 @@ struct PlayerSurface: UIViewControllerRepresentable {
         if controller.player !== player {
             controller.player = player
         }
-        // Re-asserted because AVKit repopulates `speeds` when the item changes.
+        // Both re-asserted because AVKit restores them when the item changes.
+        controller.showsPlaybackControls = false
         controller.speeds = []
     }
 }

@@ -92,7 +92,10 @@ final class MatchGroupingTests: XCTestCase {
     func testNamedMatchKeepsTheDateBesideTheRallyCount() {
         XCTAssertEqual(
             matchRowSecondary(summary(title: "Thu League vs Marco")),
-            "12 RALLIES \u{00B7} JUL 25, 2026"
+            // Sentence case: the drawer's redesign carries no uppercase, and
+            // Analytics applies its own `.uppercased()` at the call site in
+            // AnalyticsRows.swift, which AnalyticsRowsTests still pins.
+            "12 rallies \u{00B7} Jul 25, 2026"
         )
     }
 
@@ -101,11 +104,11 @@ final class MatchGroupingTests: XCTestCase {
     }
 
     func testUnnamedMatchSecondaryStaysRallyCountOnly() {
-        XCTAssertEqual(matchRowSecondary(summary(title: nil)), "12 RALLIES")
+        XCTAssertEqual(matchRowSecondary(summary(title: nil)), "12 rallies")
     }
 
     func testSingleRallyIsNotPluralised() {
-        XCTAssertEqual(matchRowSecondary(summary(title: nil, rallyCount: 1)), "1 RALLY")
+        XCTAssertEqual(matchRowSecondary(summary(title: nil, rallyCount: 1)), "1 rally")
     }
 
     // MARK: - Rally row labels (mirrors Android MatchRowLabelsTest)

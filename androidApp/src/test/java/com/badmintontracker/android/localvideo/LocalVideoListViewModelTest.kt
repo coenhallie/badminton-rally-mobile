@@ -1,5 +1,7 @@
 package com.badmintontracker.android.localvideo
 
+import com.badmintontracker.analysis.player.PlayerTrack
+import com.badmintontracker.android.localanalysis.LocalAnalysisState
 import com.badmintontracker.android.testing.FakeClipsRepository
 import com.badmintontracker.android.testing.FakeVideosRepository
 import com.badmintontracker.shared.localvideo.AnalyzeCoordinator
@@ -14,6 +16,7 @@ import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -27,6 +30,10 @@ class LocalVideoListViewModelTest {
 
     @BeforeTest fun setup() { Dispatchers.setMain(UnconfinedTestDispatcher()) }
     @AfterTest fun teardown() { Dispatchers.resetMain() }
+
+    /** No on-device run in flight, which is what every stage-driven case wants. */
+    private fun device(vararg states: Pair<String, LocalAnalysisState>) =
+        MutableStateFlow(states.toMap())
 
     private fun coordinator(localVideos: LocalVideoRepository, localAnnotations: LocalAnnotationsRepository) =
         AnalyzeCoordinator(
@@ -53,7 +60,9 @@ class LocalVideoListViewModelTest {
                 stage = AnalyzeStage.FAILED, failedStep = AnalyzeStep.UPLOAD, failureMessage = "network",
             ),
         )
-        val vm = LocalVideoListViewModel(localVideos, coordinator(localVideos, localAnnotations), localAnnotations)
+        val vm = LocalVideoListViewModel(
+            localVideos, coordinator(localVideos, localAnnotations), localAnnotations, device(),
+        )
         val rows = vm.rows.value
         rows.map { it.entry.id } shouldBe listOf("b", "a")
         rows[0].statusText shouldBe null            // FAILED surfaces via dialog, not card text
@@ -75,7 +84,9 @@ class LocalVideoListViewModelTest {
                 durationMs = 0, sizeBytes = 1, addedAtEpochMs = 0, stage = AnalyzeStage.UPLOADING,
             ),
         )
-        val vm = LocalVideoListViewModel(localVideos, coordinator(localVideos, localAnnotations), localAnnotations)
+        val vm = LocalVideoListViewModel(
+            localVideos, coordinator(localVideos, localAnnotations), localAnnotations, device(),
+        )
         vm.rows.value.single().statusText shouldBe "Uploading…"
         vm.rows.value.single().canAnalyze shouldBe false
     }
@@ -96,7 +107,7 @@ class LocalVideoListViewModelTest {
                 durationMs = 1000, sizeBytes = 1, addedAtEpochMs = 0, stage = AnalyzeStage.ANALYZED,
             ),
         )
-        val vm = LocalVideoListViewModel(localVideos, coordinator, localAnnotations)
+        val vm = LocalVideoListViewModel(localVideos, coordinator, localAnnotations, device())
         val row = vm.rows.value.single()
         row.statusText shouldBe "Analyzed"
         row.canAnalyze shouldBe false
@@ -114,7 +125,9 @@ class LocalVideoListViewModelTest {
                 ),
             )
         }
-        val vm = LocalVideoListViewModel(localVideos, coordinator(localVideos, localAnnotations), localAnnotations)
+        val vm = LocalVideoListViewModel(
+            localVideos, coordinator(localVideos, localAnnotations), localAnnotations, device(),
+        )
 
         val editableStages = vm.rows.value.filter { it.canEditDetails }.map { it.entry.stage }
 
@@ -138,7 +151,9 @@ class LocalVideoListViewModelTest {
                 durationMs = 1000, sizeBytes = 1, addedAtEpochMs = 0,
             ),
         )
-        val vm = LocalVideoListViewModel(localVideos, coordinator(localVideos, localAnnotations), localAnnotations)
+        val vm = LocalVideoListViewModel(
+            localVideos, coordinator(localVideos, localAnnotations), localAnnotations, device(),
+        )
 
         val byId = vm.rows.value.associateBy { it.entry.id }
         byId.getValue("named").primaryText shouldBe "Thu League vs Marco"
@@ -155,7 +170,9 @@ class LocalVideoListViewModelTest {
                 durationMs = 1000, sizeBytes = 1, addedAtEpochMs = 0,
             ),
         )
-        val vm = LocalVideoListViewModel(localVideos, coordinator(localVideos, localAnnotations), localAnnotations)
+        val vm = LocalVideoListViewModel(
+            localVideos, coordinator(localVideos, localAnnotations), localAnnotations, device(),
+        )
 
         vm.setDetails("a", "  Thu League vs Marco  ", "   ")
 
@@ -163,4 +180,166 @@ class LocalVideoListViewModelTest {
         // Blank stays null: "" would be rejected by videos_title_length_check on insert.
         localVideos.get("a")?.description shouldBe null
     }
+
+    // --- the on-device pipeline, which never moves the entry's stage ---
+
+    @Test
+    fun a_device_run_in_flight_replaces_the_analyze_button_with_its_own_progress() = runTest {
+        val localVideos = LocalVideoRepository(MapSettings())
+        val localAnnotations = LocalAnnotationsRepository(MapSettings())
+        localVideos.add(
+            LocalVideoEntry(
+                id = "a", uri = "content://a", displayName = "m.mp4",
+                durationMs = 1000, sizeBytes = 1, addedAtEpochMs = 0,
+            ),
+        )
+        val vm = LocalVideoListViewModel(
+            localVideos,
+            coordinator(localVideos, localAnnotations),
+            localAnnotations,
+            device("a" to LocalAnalysisState.Analysing(0.42f)),
+        )
+
+        val row = vm.rows.value.single()
+        // The stage is still LOCAL - that is exactly the trap this closes.
+        row.entry.stage shouldBe AnalyzeStage.LOCAL
+        // No percentage: the drawer's column is too narrow to hold both, and
+        // appending one truncated it straight back off.
+        row.statusText shouldBe "Analyzing on device…"
+        row.canAnalyze shouldBe false
+        row.isBusy shouldBe true
+        // The run is decoding the file; deleting it now would pull it out from
+        // under the run, so the swipe and the menu item both go away.
+        row.canRemove shouldBe false
+    }
+
+    @Test
+    fun each_device_phase_says_what_it_is_doing() = runTest {
+        val localAnnotations = LocalAnnotationsRepository(MapSettings())
+        listOf(
+            LocalAnalysisState.Preparing("Copying video") to "Preparing video…",
+            LocalAnalysisState.Analysing(0f) to "Analyzing on device…",
+            LocalAnalysisState.Cutting(done = 2, total = 9) to "Cutting clips…",
+        ).forEach { (state, expected) ->
+            val repo = LocalVideoRepository(MapSettings())
+            repo.add(
+                LocalVideoEntry(
+                    id = "a", uri = "content://a", displayName = "m.mp4",
+                    durationMs = 1000, sizeBytes = 1, addedAtEpochMs = 0,
+                ),
+            )
+            val vm = LocalVideoListViewModel(
+                repo, coordinator(repo, localAnnotations), localAnnotations, device("a" to state),
+            )
+            vm.rows.value.single().statusText shouldBe expected
+        }
+    }
+
+    @Test
+    fun cutting_clips_still_counts_as_busy() = runTest {
+        val localVideos = LocalVideoRepository(MapSettings())
+        val localAnnotations = LocalAnnotationsRepository(MapSettings())
+        localVideos.add(
+            LocalVideoEntry(
+                id = "a", uri = "content://a", displayName = "m.mp4",
+                durationMs = 1000, sizeBytes = 1, addedAtEpochMs = 0,
+            ),
+        )
+        val vm = LocalVideoListViewModel(
+            localVideos,
+            coordinator(localVideos, localAnnotations),
+            localAnnotations,
+            device("a" to LocalAnalysisState.Cutting(done = 2, total = 9)),
+        )
+
+        // The last phase of a run is still a run: the button stays away and the
+        // row keeps spinning until the clips are on disk.
+        vm.rows.value.single().isBusy shouldBe true
+        vm.rows.value.single().canAnalyze shouldBe false
+    }
+
+    @Test
+    fun a_failed_device_run_says_so_on_the_row_and_offers_analyze_again() = runTest {
+        val localVideos = LocalVideoRepository(MapSettings())
+        val localAnnotations = LocalAnnotationsRepository(MapSettings())
+        localVideos.add(
+            LocalVideoEntry(
+                id = "a", uri = "content://a", displayName = "m.mp4",
+                durationMs = 1000, sizeBytes = 1, addedAtEpochMs = 0,
+            ),
+        )
+        val vm = LocalVideoListViewModel(
+            localVideos,
+            coordinator(localVideos, localAnnotations),
+            localAnnotations,
+            device("a" to LocalAnalysisState.Failed("no court found")),
+        )
+
+        val row = vm.rows.value.single()
+        // The result dialog is gated on stage == FAILED, which a device run
+        // never reaches, so the row has to carry the failure itself.
+        row.statusText shouldBe "Analysis failed: no court found"
+        row.canAnalyze shouldBe true
+        row.isBusy shouldBe false
+    }
+
+    @Test
+    fun a_finished_device_run_leaves_the_row_alone() = runTest {
+        val localVideos = LocalVideoRepository(MapSettings())
+        val localAnnotations = LocalAnnotationsRepository(MapSettings())
+        localVideos.add(
+            LocalVideoEntry(
+                id = "a", uri = "content://a", displayName = "m.mp4",
+                durationMs = 1000, sizeBytes = 1, addedAtEpochMs = 0,
+            ),
+        )
+        val vm = LocalVideoListViewModel(
+            localVideos,
+            coordinator(localVideos, localAnnotations),
+            localAnnotations,
+            device("a" to doneState()),
+        )
+
+        // Done stays in the runner's map for the rest of the process. The row
+        // goes back to offering another run - what the last one produced is
+        // reachable from the overflow menu (clips, heatmap), not from a status
+        // line that would then never clear.
+        val row = vm.rows.value.single()
+        row.statusText shouldBe null
+        row.canAnalyze shouldBe true
+        row.isBusy shouldBe false
+        row.canRemove shouldBe true
+    }
+
+    @Test
+    fun a_device_run_speaks_over_a_cloud_upload_on_the_same_video() = runTest {
+        val localVideos = LocalVideoRepository(MapSettings())
+        val localAnnotations = LocalAnnotationsRepository(MapSettings())
+        localVideos.add(
+            LocalVideoEntry(
+                id = "a", uri = "content://a", displayName = "m.mp4",
+                durationMs = 1000, sizeBytes = 1, addedAtEpochMs = 0, stage = AnalyzeStage.UPLOADING,
+            ),
+        )
+        val vm = LocalVideoListViewModel(
+            localVideos,
+            coordinator(localVideos, localAnnotations),
+            localAnnotations,
+            device("a" to LocalAnalysisState.Analysing(0.1f)),
+        )
+
+        // Both pipelines are busy; the row's own button starts the device one,
+        // so that is the run it accounts for. Same precedence as affordanceFor.
+        vm.rows.value.single().statusText shouldBe "Analyzing on device…"
+    }
+
+    private fun doneState() = LocalAnalysisState.Done(
+        rallies = 3,
+        shuttleVisible = 100,
+        totalFrames = 200,
+        clips = emptyList(),
+        elapsedSeconds = 12.0,
+        playerTrack = PlayerTrack(samples = emptyList(), framesWithPose = 0, rejections = emptyMap()),
+        fps = 30.0,
+    )
 }

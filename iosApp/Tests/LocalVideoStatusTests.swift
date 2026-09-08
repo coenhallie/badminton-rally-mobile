@@ -3,36 +3,40 @@ import XCTest
 @testable import iosApp
 
 final class LocalVideoStatusTests: XCTestCase {
+    private func progress(upload: KotlinFloat? = nil, pipeline: KotlinFloat? = nil) -> AnalyzeProgress {
+        AnalyzeProgress(entryId: "e1", uploadProgress: upload, pipelineProgress: pipeline)
+    }
+
     func testLocalAndFailedShowNothing() {
-        XCTAssertNil(LocalVideoStatus.text(stage: .local, uploadProgress: nil, pipelineProgress: nil))
-        XCTAssertNil(LocalVideoStatus.text(stage: .failed, uploadProgress: nil, pipelineProgress: nil))
+        XCTAssertNil(LocalVideoStatus.text(stage: .local, progress: nil))
+        XCTAssertNil(LocalVideoStatus.text(stage: .failed, progress: nil))
     }
 
     func testUploadingWithAndWithoutProgress() {
         XCTAssertEqual(
-            LocalVideoStatus.text(stage: .uploading, uploadProgress: 0.42, pipelineProgress: nil),
+            LocalVideoStatus.text(stage: .uploading, progress: progress(upload: 0.42)),
             "Uploading 42%…"
         )
         XCTAssertEqual(
-            LocalVideoStatus.text(stage: .uploading, uploadProgress: nil, pipelineProgress: nil),
+            LocalVideoStatus.text(stage: .uploading, progress: nil),
             "Uploading…"
         )
     }
 
     func testProcessingWithAndWithoutProgress() {
         XCTAssertEqual(
-            LocalVideoStatus.text(stage: .processing, uploadProgress: nil, pipelineProgress: 0.8),
+            LocalVideoStatus.text(stage: .processing, progress: progress(pipeline: 0.8)),
             "Analyzing 80%…"
         )
         XCTAssertEqual(
-            LocalVideoStatus.text(stage: .processing, uploadProgress: nil, pipelineProgress: nil),
+            LocalVideoStatus.text(stage: .processing, progress: nil),
             "Analyzing…"
         )
     }
 
     func testAnalyzed() {
         XCTAssertEqual(
-            LocalVideoStatus.text(stage: .analyzed, uploadProgress: nil, pipelineProgress: nil),
+            LocalVideoStatus.text(stage: .analyzed, progress: nil),
             "Analyzed"
         )
     }

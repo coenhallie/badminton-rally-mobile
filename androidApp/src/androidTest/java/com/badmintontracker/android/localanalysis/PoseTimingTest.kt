@@ -122,7 +122,7 @@ class PoseTimingTest {
             listOf("median 1.0 min" to 1.0, "mean 2.6 min" to 2.6, "longest 8.0 min" to 8.0).forEach { (label, mins) ->
                 // 30fps assumed; a 50fps video of the same length costs 1.67x this.
                 val minutes = (perFrame + PHASE1_MS) * mins * 60 * 30 / 60_000.0
-                append("      %-16s -> %.0f min to analyse".format(label, minutes)).append(NL)
+                append("      %-16s -> %.0f min to analyze".format(label, minutes)).append(NL)
             }
         }
     }

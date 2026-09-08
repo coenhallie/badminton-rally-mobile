@@ -6,6 +6,8 @@ import com.badmintontracker.analysis.player.PlayerTrack
 import com.badmintontracker.shared.local.AnalysisMetric
 import com.badmintontracker.shared.local.DeviceThroughputRepository
 import com.badmintontracker.shared.local.LocalAnalysisCoordinator
+import com.badmintontracker.shared.localvideo.DevicePhase
+import com.badmintontracker.shared.localvideo.DeviceWork
 import com.badmintontracker.shared.model.CourtKeypoints
 import com.badmintontracker.shared.model.toAnalysis
 import kotlinx.coroutines.CoroutineScope
@@ -58,6 +60,28 @@ internal fun isDeviceRunInFlight(state: LocalAnalysisState): Boolean = when (sta
     is LocalAnalysisState.Failed,
     is LocalAnalysisState.Done,
     LocalAnalysisState.Idle -> false
+}
+
+/**
+ * This state as the shared code's own model of a run, or null when nothing is
+ * happening: `Idle` and `Done` both stay in the runner's map after a run and
+ * must not keep an indicator lit or a row spinning.
+ *
+ * The one reduction from the device pipeline's state to [DeviceWork], so the
+ * chrome indicator and a list row cannot disagree about what a run is doing or
+ * what it is called (shared `deviceWorkLabel` turns one into words).
+ *
+ * `Cutting` reports no fraction on purpose. Its `done/total` counts clips, not
+ * frames, so rendering it as the analysis percentage would show the bar
+ * restarting near the end of a run.
+ */
+internal fun toDeviceWork(entryId: String, state: LocalAnalysisState): DeviceWork? = when (state) {
+    is LocalAnalysisState.Idle -> null
+    is LocalAnalysisState.Done -> null
+    is LocalAnalysisState.Preparing -> DeviceWork(entryId, DevicePhase.PREPARING, null, false)
+    is LocalAnalysisState.Analysing -> DeviceWork(entryId, DevicePhase.ANALYSING, state.fraction, false)
+    is LocalAnalysisState.Cutting -> DeviceWork(entryId, DevicePhase.CUTTING, null, false)
+    is LocalAnalysisState.Failed -> DeviceWork(entryId, DevicePhase.ANALYSING, null, failed = true)
 }
 
 /**
@@ -151,7 +175,7 @@ class LocalAnalysisRunner(
                 val local = materialise(videoUri, entryId)
 
                 set(entryId, LocalAnalysisState.Analysing(0f))
-                LocalAnalysisService.start(context, "Analysing")
+                LocalAnalysisService.start(context, "Analyzing")
                 val wantsPose = metrics.any { it.needsPose }
                 val inferenceStarted = System.currentTimeMillis()
                 val outcome = LocalAnalysisCoordinator(

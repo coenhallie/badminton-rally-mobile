@@ -47,7 +47,13 @@ struct MatchesDrawer<Content: View>: View {
             footer
         }
         .frame(width: width)
-        .background(Shuttl.bgInput)
+        // `bg`, not the `bgInput` this used to be. The mock's panel is one step
+        // below its cards, and bgInput is byte identical to bgTertiary in the
+        // light theme (both 0xEDF0EE), so a bgTertiary card on a bgInput panel
+        // is invisible in light. `bg` is the light theme's white, which the
+        // cards then sit on the way they do in the dark mock. Mirrored by
+        // HomeScreen.kt's own drawerContainerColor.
+        .background(Shuttl.bg)
         .overlay(alignment: .trailing) { Rectangle().fill(Shuttl.border).frame(width: 1) }
         .ignoresSafeArea(edges: .bottom)
     }
@@ -64,28 +70,31 @@ struct MatchesDrawer<Content: View>: View {
             }
             .accessibilityLabel("Close matches")
         }
-        .padding(.horizontal, 24)
-        .padding(.top, 26)
-        .padding(.bottom, 16)
+        .padding(.leading, 24)
+        .padding(.trailing, 20)
+        .padding(.top, 22)
         .contentShape(Rectangle())
         .gesture(closeDrag)
     }
 
     private var footer: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 2) {
             Divider().overlay(Shuttl.border)
+                .padding(.bottom, 10)
             Button("Labels", action: onLabels)
                 .shuttlType(ShuttlType.bodyMedium)
                 .foregroundStyle(Shuttl.text)
-                .padding(.horizontal, 24).padding(.vertical, 14)
+                .padding(.horizontal, 24).padding(.vertical, 13)
             Button("Sign out", action: onSignOut)
                 .shuttlType(ShuttlType.bodyMedium)
                 .foregroundStyle(Shuttl.text)
-                .padding(.horizontal, 24).padding(.vertical, 14)
+                .padding(.horizontal, 24).padding(.vertical, 13)
             Text(versionLabel())
                 .shuttlType(ShuttlType.bodySmall)
                 .foregroundStyle(Shuttl.textTertiary)
-                .padding(.horizontal, 24).padding(.bottom, 20)
+                .padding(.horizontal, 24)
+                .padding(.top, 6)
+                .padding(.bottom, 26)
         }
     }
 

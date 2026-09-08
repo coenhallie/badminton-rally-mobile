@@ -4,7 +4,7 @@ import SwiftUI
 /// Android's `FlowRow` does. A plain `HStack` fits six skip intervals at the
 /// default text size and nothing like it at accessibility sizes.
 ///
-/// Lives here rather than inside `PlaybackControlBar` because the courtside
+/// Lives here rather than inside `PlaybackSettingsSheet` because the courtside
 /// board needs the same behaviour, and a second copy of a wrapping layout in
 /// the same target is worse than one shared one.
 struct ChipFlow: Layout {

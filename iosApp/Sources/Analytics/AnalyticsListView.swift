@@ -49,14 +49,14 @@ struct AnalyticsListView: View {
                 ShuttlEmptyState(
                     systemImage: "chart.bar",
                     title: "No matches yet",
-                    message: "Add a match on Home and it will be listed here, ready to analyse."
+                    message: "Add a match on Home and it will be listed here, ready to analyze."
                 ) { EmptyView() }
                 .background(Shuttl.bg)
             } else {
                 list(rows: rows, legend: legend)
             }
         }
-        .navigationTitle("ANALYTICS")
+        .navigationTitle("Analytics")
         .navigationBarTitleDisplayMode(.inline)
         .task {
             await model.start()
@@ -83,62 +83,110 @@ struct AnalyticsListView: View {
     @ViewBuilder
     private func list(rows: [AnalyticsRow], legend: AnalyticsLegend) -> some View {
         List {
+            // The mock's headline over the list, then the one line saying what
+            // the rows offer.
+            Text("Pick a match")
+                .shuttlType(ShuttlType.headlineLarge)
+                .foregroundStyle(Shuttl.textHeading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .analyticsListRow(top: AnalyticsList.headlineTop)
+
             if let text = legend.text {
                 legendRow(text, showsDot: legend.showsDot)
+                    .analyticsListRow(top: AnalyticsList.legendGap, bottom: AnalyticsList.legendGap)
             }
+
             ForEach(AnalyticsGroup.allCases, id: \.self) { group in
                 let groupRows = rows.filter { $0.group == group }
                 if !groupRows.isEmpty {
-                    Section {
-                        ForEach(groupRows) { row in
-                            rowView(row, showNotOnDeviceSubtitle: legend.showsNotOnDeviceSubtitle)
-                                .listRowBackground(Shuttl.bg)
-                        }
-                    } header: { Shuttl.sectionLabel(group.label) }
+                    // Sentence case at bodySmall, the same label the drawer's
+                    // own sections carry (`DrawerSectionLabel`) - NOT
+                    // `Shuttl.sectionLabel`, the uppercase tracked `labelSmall`
+                    // this screen used to draw. The mock has "On this phone" and
+                    // "My matches" as plain 12px secondary text and carries no
+                    // uppercase anywhere; the uppercase was a Material holdover
+                    // from before the redesign, and it followed the layout
+                    // across to iPhone where it never belonged at all.
+                    //
+                    // A plain row carrying its own top inset, NOT a `Section`
+                    // header: `.plain` pins a header to the top of the viewport
+                    // while its own rows scroll away underneath it, and the
+                    // mock's labels scroll with their rows.
+                    Text(group.label)
+                        .shuttlType(ShuttlType.bodySmall)
+                        .foregroundStyle(Shuttl.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .analyticsListRow(
+                            top: AnalyticsList.sectionTop,
+                            bottom: AnalyticsList.sectionBottom
+                        )
+                    ForEach(groupRows) { row in
+                        rowView(row, showNotOnDeviceSubtitle: legend.showsNotOnDeviceSubtitle)
+                            .analyticsListRow(bottom: AnalyticsList.cardGap)
+                    }
                 }
             }
         }
         .listStyle(.plain)
+        // Every gap on this screen is stated in `analyticsListRow`, so the row
+        // heights have to come from the content alone. `List`'s own 44pt floor
+        // would sit under the two short rows - the legend line and a section
+        // label - and quietly add height that no number here asks for, which is
+        // exactly how a ported layout ends up looser than the one it copies.
+        .environment(\.defaultMinListRowHeight, 0)
         // The list paints its own surface, so the token has to be asked for
-        // twice: once for the scroll view behind the rows and once per row.
+        // twice: once for the scroll view behind the rows and once per row
+        // (`analyticsListRow` clears the row fill so the card is what shows).
         .scrollContentBackground(.hidden)
         .background(Shuttl.bg)
+        // The gutter again at the foot, so the last card does not sit against
+        // the home indicator. Android's LazyColumn spends its contentPadding
+        // the same way.
+        .contentMargins(.bottom, AnalyticsList.gutter, for: .scrollContent)
     }
 
     @ViewBuilder
     private func legendRow(_ text: String, showsDot: Bool) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: AnalyticsList.dotGap) {
             if showsDot {
-                Circle().fill(Shuttl.accent).frame(width: 8, height: 8)
+                Circle()
+                    .fill(Shuttl.accent)
+                    .frame(width: AnalyticsList.dot, height: AnalyticsList.dot)
             }
             Text(text)
                 .shuttlType(ShuttlType.bodySmall)
                 .foregroundStyle(Shuttl.textTertiary)
         }
-        .listRowBackground(Shuttl.bg)
-        .listRowSeparator(.hidden)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    /// One match on the mock's card: title over subtitle, and on the right the
+    /// availability dot for a ready row, the Analyze pill for an analysable one,
+    /// nothing for a match that is not on this phone.
+    ///
+    /// The card does not respond to a tap, and that is this platform's own
+    /// state rather than a missing modifier: only a ready row opens anything on
+    /// Android, and iOS cannot produce ready until a track store lands. See the
+    /// note on `AnalyticsListView` itself.
     @ViewBuilder
     private func rowView(_ row: AnalyticsRow, showNotOnDeviceSubtitle: Bool) -> some View {
-        HStack(spacing: 12) {
-            // The slot is reserved in every row, dot or no dot, so the titles of
-            // a mixed list line up with each other rather than stepping in and
-            // out by 20pt.
-            Circle()
-                .fill(Shuttl.accent)
-                .frame(width: 8, height: 8)
-                .opacity(row.state == .ready ? 1 : 0)
-
-            VStack(alignment: .leading, spacing: 4) {
+        HStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 0) {
                 Text(row.title)
-                    .shuttlType(ShuttlType.titleMedium)
-                    .foregroundStyle(Shuttl.text)
+                    .shuttlType(ShuttlType.titleLarge)
+                    .foregroundStyle(Shuttl.textHeading)
                     .lineLimit(1)
+                // bodySmall, not the labelSmall this row used before the
+                // redesign, while the string stays uppercased at the call site
+                // in AnalyticsRows.swift. That pairing looks like a mistake and
+                // is not: it is Android's own, and labelSmall's +0.05em tracking
+                // on an already-uppercase line reads as a caption rather than as
+                // a subtitle.
                 Text(row.subtitle)
-                    .shuttlType(ShuttlType.labelSmall)
-                    .foregroundStyle(Shuttl.textSecondary)
+                    .shuttlType(ShuttlType.bodySmall)
+                    .foregroundStyle(Shuttl.textTertiary)
                     .lineLimit(1)
+                    .padding(.top, AnalyticsList.subtitleGap)
                 if row.state == .notOnDevice && showNotOnDeviceSubtitle {
                     Text("Not on this phone")
                         .shuttlType(ShuttlType.bodySmall)
@@ -159,61 +207,85 @@ struct AnalyticsListView: View {
                         .lineLimit(2)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            Spacer()
-
+            // On the right, as Android has it. The old flat list reserved a slot
+            // on the LEFT so titles lined up across a mixed list; a card starts
+            // its content at the same x whatever the row carries, so there is
+            // nothing left to reserve against.
+            if row.state == .ready {
+                Circle()
+                    .fill(Shuttl.accent)
+                    .frame(width: AnalyticsList.dot, height: AnalyticsList.dot)
+                    .padding(.leading, AnalyticsList.trailingGap)
+            }
             if row.state == .analysable {
                 trailingControl(row)
+                    .padding(.leading, AnalyticsList.trailingGap)
             }
         }
-        .padding(.vertical, 6)
+        .padding(.horizontal, AnalyticsList.cardPaddingH)
+        .padding(.vertical, AnalyticsList.cardPaddingV)
+        .background(
+            Shuttl.bgSecondary,
+            in: RoundedRectangle(cornerRadius: ShuttlRadius.large)
+        )
     }
 
     @ViewBuilder
     private func trailingControl(_ row: AnalyticsRow) -> some View {
         switch row.affordance {
         case .ready:
-            analysePill("Analyze", row: row)
+            analysePill("Analyze", row: row, loading: false)
         case .failed:
             // "Retry", not the drawer's "Re-analyze": this row already carries
             // the failure reason on the line above, exactly as a scored match's
             // row does, and that row says "Retry" too.
-            analysePill("Retry", row: row)
+            analysePill("Retry", row: row, loading: false)
         case .inProgress:
-            // A spinner, as the drawer's local video row shows in the same
-            // situation - but not bare, as that row shows it. There the spinner
-            // is followed by a menu and a chevron that hold the width; here it is
-            // the last thing in the row, so a bare ~16pt indicator in place of a
-            // ~75pt pill would visibly pull the row's right edge inwards the
-            // moment a run starts. Reserving the pill's own minimum keeps the
-            // edge still. Android argues the same way in AnalyticsScreen.kt.
-            ProgressView()
-                .controlSize(.small)
-                .frame(minWidth: analysePillMinWidth)
+            // The spinner goes INSIDE the pill, as Android's ShuttlButton draws
+            // it, rather than replacing the pill with a bare indicator. A bare
+            // one collapsed the slot from a pill to about 16pt and pulled the
+            // row's trailing edge inwards the moment a run started; the label
+            // stays put and the ring plus its gap is all that is added.
+            analysePill("Analyze", row: row, loading: true)
         }
     }
 
-    /// The width an in-flight spinner reserves so the row's trailing edge does not
-    /// move when a pill is replaced by one. Measured from the shorter of the two
-    /// labels ("Retry" at labelMedium) plus this pill's 12pt horizontal padding;
-    /// a longer label still grows the slot, which is the pre-existing behaviour
-    /// between "Analyze" and "Retry" and not something this reserves against.
-    private var analysePillMinWidth: CGFloat { 64 }
-
-    /// Same pill as the drawer's local video row, down to the padding: the two
-    /// screens list the same videos and their one action must not look like two.
-    private func analysePill(_ label: String, row: AnalyticsRow) -> some View {
-        Button(label) { analyse(row) }
-            .shuttlType(ShuttlType.labelMedium)
-            .foregroundStyle(Shuttl.onAccent)
-            .lineLimit(1)
+    /// The same pill the drawer's local video row uses, down to the padding: the
+    /// two screens list the same videos and their one action must not look like
+    /// two.
+    private func analysePill(_ label: String, row: AnalyticsRow, loading: Bool) -> some View {
+        Button {
+            analyse(row)
+        } label: {
+            HStack(spacing: AnalyticsList.dotGap) {
+                if loading {
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .controlSize(.mini)
+                        .tint(Shuttl.onAccent)
+                        .frame(width: AnalyticsList.spinner, height: AnalyticsList.spinner)
+                }
+                Text(label)
+                    .shuttlType(ShuttlType.labelMedium)
+                    .foregroundStyle(Shuttl.onAccent)
+                    .lineLimit(1)
+            }
             .fixedSize(horizontal: true, vertical: false)
-            .layoutPriority(1)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .background(Shuttl.accent)
             .clipShape(Capsule())
-            .buttonStyle(.borderless)
+            // Android dims the whole control while it is inert, rather than the
+            // label alone.
+            .opacity(loading ? 0.5 : 1)
+        }
+        // Borderless, or the List makes the whole card tappable and every tap
+        // anywhere on the row starts an analysis.
+        .buttonStyle(.borderless)
+        .disabled(loading)
+        .layoutPriority(1)
     }
 
     private func analyse(_ row: AnalyticsRow) {
@@ -225,5 +297,60 @@ struct AnalyticsListView: View {
         case .markCourt(let id):
             courtMarkingRoute = CourtMarkingRoute(entryId: id)
         }
+    }
+}
+
+/// The Analytics list's own metrics, from the `Rally Analysis` mock.
+///
+/// Deliberately NOT `DrawerList`'s, even though the drawer lists the same videos
+/// one tap away and both are inset cards in a `List`. Those rows carry a
+/// thumbnail and sit tighter (16 by 14, a 6 gap); an Analytics row is text and
+/// one control at a larger size, and the mock gives it its own numbers. What the
+/// two screens share is the technique, not the scale.
+///
+/// Mirrors androidApp's AnalyticsScreen.kt number for number.
+private enum AnalyticsList {
+    /// The page gutter the mock lays every card in.
+    static let gutter: CGFloat = 24
+    static let cardPaddingH: CGFloat = 20
+    static let cardPaddingV: CGFloat = 18
+    /// Between two cards.
+    static let cardGap: CGFloat = 8
+    static let headlineTop: CGFloat = 16
+    /// Above and below the one explanatory line.
+    static let legendGap: CGFloat = 10
+    static let sectionTop: CGFloat = 18
+    static let sectionBottom: CGFloat = 10
+    /// A row's title to its subtitle.
+    static let subtitleGap: CGFloat = 4
+    static let dot: CGFloat = 8
+    /// The dot to the line it explains, and the pill's ring to its label.
+    static let dotGap: CGFloat = 8
+    /// A row's text to the dot or pill on its right.
+    static let trailingGap: CGFloat = 16
+    /// Android sizes its in-pill ring at 14dp; `.mini` alone is close but not
+    /// fixed, and a ring that changes size with the control metrics would change
+    /// the pill's height with it.
+    static let spinner: CGFloat = 14
+}
+
+private extension View {
+    /// Strips the styling `List` gives a row so the mock's inset card can be
+    /// drawn in its place: no separator, no system fill over the page's own
+    /// background, and the gutter and gaps stated as insets rather than as one
+    /// uniform spacing between rows - this list wants different gaps above a
+    /// section label, above the headline and between two cards.
+    ///
+    /// The same technique `DrawerList.drawerListRow` uses, with this screen's
+    /// own numbers.
+    func analyticsListRow(top: CGFloat = 0, bottom: CGFloat = 0) -> some View {
+        listRowInsets(EdgeInsets(
+            top: top,
+            leading: AnalyticsList.gutter,
+            bottom: bottom,
+            trailing: AnalyticsList.gutter
+        ))
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
     }
 }

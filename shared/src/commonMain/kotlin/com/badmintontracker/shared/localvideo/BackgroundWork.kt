@@ -20,7 +20,7 @@ data class DeviceWork(
 /**
  * Which part of an on-device run is happening.
  *
- * Named rather than collapsed into one "analysing" because the indicator's job
+ * Named rather than collapsed into one "analyzing" because the indicator's job
  * is to say what is happening: copying a multi-gigabyte video and running
  * inference over it are minutes apart in what the user should expect next.
  */
@@ -103,12 +103,7 @@ fun backgroundWork(
             add(BackgroundWorkItem(withPercent(base, fraction), fraction))
         }
         running.forEach { device ->
-            val base = when (device.phase) {
-                DevicePhase.PREPARING -> "Preparing video"
-                DevicePhase.ANALYSING -> "Analysing on device"
-                DevicePhase.CUTTING -> "Cutting clips"
-            }
-            add(BackgroundWorkItem(withPercent(base, device.fraction), device.fraction))
+            add(BackgroundWorkItem(deviceWorkLabel(device.phase, device.fraction), device.fraction))
         }
     }
 
@@ -122,6 +117,22 @@ fun backgroundWork(
     // pipelines over one video is the comparison this app exists to make.
     return BackgroundWork(count, "$count analyses in progress", null, hasFailure, items)
 }
+
+/**
+ * How an on-device run reads to a person, as one line.
+ *
+ * Public because the chrome indicator is not the only thing that has to say
+ * this: a list row over a video being analysed has to say the same words, and
+ * saying them twice is how the two drift apart.
+ */
+fun deviceWorkLabel(phase: DevicePhase, fraction: Float?): String = withPercent(
+    when (phase) {
+        DevicePhase.PREPARING -> "Preparing video"
+        DevicePhase.ANALYSING -> "Analyzing on device"
+        DevicePhase.CUTTING -> "Cutting clips"
+    },
+    fraction,
+)
 
 private fun withPercent(label: String, fraction: Float?): String =
     if (fraction == null || fraction.isNaN()) label

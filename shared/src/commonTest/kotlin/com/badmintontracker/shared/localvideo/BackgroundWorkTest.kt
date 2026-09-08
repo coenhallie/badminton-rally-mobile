@@ -70,20 +70,20 @@ class BackgroundWorkTest {
     @Test
     fun a_device_run_is_named_apart_from_a_cloud_one() {
         val w = work(device = listOf(DeviceWork("a", DevicePhase.ANALYSING, fraction = 0.12f, failed = false)))
-        assertEquals("Analysing on device 12%", w?.label)
+        assertEquals("Analyzing on device 12%", w?.label)
         assertEquals(0.12f, w?.fraction)
     }
 
     @Test
     fun each_device_phase_says_what_it_is_doing() {
         // Copying a multi-gigabyte file and running inference over it are
-        // minutes apart in what the user should expect next, so "Analysing"
+        // minutes apart in what the user should expect next, so "Analyzing"
         // during the copy is a wrong answer rather than a vague one.
         fun label(phase: DevicePhase) =
             work(device = listOf(DeviceWork("a", phase, fraction = null, failed = false)))?.label
 
         assertEquals("Preparing video", label(DevicePhase.PREPARING))
-        assertEquals("Analysing on device", label(DevicePhase.ANALYSING))
+        assertEquals("Analyzing on device", label(DevicePhase.ANALYSING))
         assertEquals("Cutting clips", label(DevicePhase.CUTTING))
     }
 

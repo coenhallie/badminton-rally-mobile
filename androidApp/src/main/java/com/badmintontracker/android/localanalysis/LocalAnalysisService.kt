@@ -52,7 +52,7 @@ class LocalAnalysisService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val text = intent?.getStringExtra(EXTRA_TEXT) ?: "Analysing on device"
+        val text = intent?.getStringExtra(EXTRA_TEXT) ?: "Analyzing on device"
         startForeground(NOTIFICATION_ID, notification(text), foregroundType())
 
         lockTimeoutMillis = intent?.getLongExtra(EXTRA_TIMEOUT, LOCK_TIMEOUT_MILLIS)
@@ -110,11 +110,11 @@ class LocalAnalysisService : Service() {
         ) {
             manager.createNotificationChannel(
                 NotificationChannel(CHANNEL, "On-device analysis", NotificationManager.IMPORTANCE_LOW)
-                    .apply { description = "Shown while a video is being analysed on this phone." },
+                    .apply { description = "Shown while a video is being analyzed on this phone." },
             )
         }
         return NotificationCompat.Builder(this, CHANNEL)
-            .setContentTitle("Analysing on device")
+            .setContentTitle("Analyzing on device")
             .setContentText(text)
             .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setOngoing(true)

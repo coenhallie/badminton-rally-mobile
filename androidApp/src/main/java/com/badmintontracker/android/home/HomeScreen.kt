@@ -59,12 +59,10 @@ import com.badmintontracker.android.localanalysis.LocalAnalysisRunner
 import com.badmintontracker.android.localvideo.LocalVideoRow
 import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlButtonVariant
-import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.android.ui.theme.ShuttlTypeExtras
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.prefs.ThemeMode
 import com.badmintontracker.shared.prefs.ThemePreferenceRepository
-import com.badmintontracker.shared.repo.MediaRepository
 import com.badmintontracker.shared.repo.SharesRepository
 import com.badmintontracker.shared.scoring.ScoreMatchCard
 import kotlinx.coroutines.launch
@@ -85,7 +83,6 @@ import kotlinx.coroutines.launch
 @Composable
 fun HomeScreen(
     vm: ClipListViewModel,
-    media: MediaRepository,
     shares: SharesRepository,
     themePrefs: ThemePreferenceRepository,
     localAnalysis: LocalAnalysisRunner,
@@ -197,8 +194,19 @@ fun HomeScreen(
                 // M3's own default resolves a surfaceContainer role this
                 // app's ColorScheme never sets, which falls back to
                 // Material's stock tinted grey - a platform colour, not a
-                // token. Pinned to `bgInput` explicitly instead.
-                drawerContainerColor = ShuttlTheme.extended.bgInput,
+                // token. Pinned explicitly instead.
+                //
+                // `background`, not the `bgInput` this used to be. The mock's
+                // panel is one step below its cards, and bgInput is byte
+                // identical to bgTertiary in the light theme (both 0xEDF0EE),
+                // so a bgTertiary card on a bgInput panel is invisible in
+                // light. `background` is the light theme's white, which the
+                // cards then sit on the way they do in the dark mock. It also
+                // makes SwipeToRemoveRow's opaque backing correct rather than
+                // accidental: it defaults to `background`, so on the old panel
+                // every swipeable row painted a white strip on a grey panel in
+                // the light theme.
+                drawerContainerColor = MaterialTheme.colorScheme.background,
                 // M3's default rounds the two trailing corners. The mock and
                 // iOS's own hand-built panel (a plain `Rectangle()` overlay)
                 // both draw a flat rectangle, and a rounded corner would also
@@ -206,10 +214,13 @@ fun HomeScreen(
                 // background's curved silhouette.
                 drawerShape = RectangleShape,
             ) {
-                MatchesDrawerContent(onLabels = onLabels, onSignOut = vm::signOut) {
+                MatchesDrawerContent(
+                    onClose = { scope.launch { drawerState.close() } },
+                    onLabels = onLabels,
+                    onSignOut = vm::signOut,
+                ) {
                     ClipListScreen(
                         vm = vm,
-                        media = media,
                         shares = shares,
                         onMatchClick = onMatchClick,
                         onScoreMatchClick = onScoreMatchClick,
@@ -225,6 +236,19 @@ fun HomeScreen(
                         onLocalDetailsSaved = onLocalDetailsSaved,
                         autoDetailsEntryId = autoDetailsEntryId,
                         onAutoDetailsShown = onAutoDetailsShown,
+                        // The details sheet for a just-imported video opens over
+                        // a closed drawer, so dismissing it used to drop the
+                        // coach back on a Home screen that looked exactly as it
+                        // did before he picked the file. Opening the drawer as
+                        // the sheet goes away puts the new video on screen -
+                        // stored newest first, so it is the top row of "On this
+                        // phone" with nothing to scroll to.
+                        //
+                        // Mirrored by HomeView.swift's `.sheet(item: $detailsTarget,
+                        // onDismiss:)`. The two are one rule written twice, with
+                        // nothing shared to hold them together, so a change here
+                        // is a change there.
+                        onAutoDetailsClosed = { scope.launch { drawerState.open() } },
                         onAttachedMarkCourt = onAttachedMarkCourt,
                         onAttachedRetry = onAttachedRetry,
                         // The sheet is Home's, composed outside the drawer, so it

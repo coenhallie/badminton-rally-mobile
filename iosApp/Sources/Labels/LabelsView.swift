@@ -200,25 +200,20 @@ private struct EditorFields: View {
                         onCommit()
                     }
                 }
-            // Where this label may be offered. Same control the new-match
-            // screen uses for singles/doubles, so it reads as one app - but
-            // that screen draws its Picker label through a Form Section
-            // header, and this editor is not in a Form, so `Picker("Use", ...)`
-            // alone renders no visible label under `.pickerStyle(.segmented)`.
-            // The caption below fills that gap; VoiceOver already reads "Use"
-            // from the Picker itself regardless, so this is purely the sighted
-            // half of the same label.
-            VStack(alignment: .leading, spacing: 4) {
+            // Where this label may be offered. The pills carry no label of their
+            // own, so the caption above names them for sighted users and
+            // `accessibilityLabel` does the same for VoiceOver - the `Picker`
+            // this replaced supplied both from one string.
+            VStack(alignment: .leading, spacing: 6) {
                 Text("Use")
                     .shuttlType(ShuttlType.bodySmall)
                     .foregroundStyle(Shuttl.textSecondary)
-                    .textCase(.uppercase)
-                Picker("Use", selection: Binding(get: { selectedUsage }, set: onSelectUsage)) {
-                    Text("Both").tag(LabelUsage.both)
-                    Text("Scoreboard").tag(LabelUsage.scoreboard)
-                    Text("Clips").tag(LabelUsage.clips)
-                }
-                .pickerStyle(.segmented)
+                ShuttlPillTabs(
+                    labels: LabelUsageTabs.labels,
+                    selectedIndex: LabelUsageTabs.index(of: selectedUsage),
+                    onSelect: { onSelectUsage(LabelUsageTabs.usage(at: $0)) },
+                    accessibilityLabel: "Use"
+                )
             }
             SwatchGrid(selectedKey: selectedKey, onSelect: onSelectColor)
         }
@@ -379,5 +374,24 @@ private struct DraftLabelEditor: View {
             let succeeded = await onCreate(trimmed, selected, usage)
             if !succeeded { commitGuard.failed(previous: previous) }
         }
+    }
+}
+
+
+/// The three usages as tab labels, in one place so the label list and the index
+/// mapping cannot disagree. Android keeps the same pairing inline in its own
+/// `UsagePicker`.
+private enum LabelUsageTabs {
+    static let options: [(LabelUsage, String)] = [
+        (.both, "Both"),
+        (.scoreboard, "Scoreboard"),
+        (.clips, "Clips"),
+    ]
+    static var labels: [String] { options.map(\.1) }
+    static func index(of usage: LabelUsage) -> Int {
+        options.firstIndex { $0.0 == usage } ?? 0
+    }
+    static func usage(at index: Int) -> LabelUsage {
+        options[index].0
     }
 }

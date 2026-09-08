@@ -1,0 +1,79 @@
+{
+  "provenance": {
+    "video": "/private/tmp/claude-501/-Users-coenhallie-Desktop-projects-badminton-rally-mobile/552e1fdf-e47c-4bbd-818c-e342a23314fe/scratchpad/gate-smoke.mp4",
+    "tracker_repo": "../badminton-tracker",
+    "tracker_repo_commit": "da46dbde8b5055f7861ddf79b9daa85dc39e39cd",
+    "tracknet_weights": "tools/models/weights/tracknet.pt",
+    "inpaintnet_weights": "tools/models/weights/inpaintnet.pt",
+    "tracknet_onnx": "tools/models/onnx/tracknet.fp16.onnx",
+    "inpaintnet_onnx": "tools/models/onnx/inpaintnet.fp16.onnx",
+    "swapped": "TrackNet + InpaintNet (deployed config)",
+    "batch_size": 16,
+    "max_bg_samples": 300
+  },
+  "gate": {
+    "frames": 596,
+    "visibility_agreement": 1.0,
+    "both_visible": 215,
+    "torch_visible_fraction": 0.36073825503355705,
+    "median_delta_px_at_512x288": 3.650218812752655e-05,
+    "p95_delta_px_at_512x288": 0.00012953130223350255,
+    "tracknet_shim_calls": 5,
+    "inpaintnet_shim_calls": 5,
+    "inpainted_frames_torch": [],
+    "inpainted_frames_onnx": [],
+    "inpaint_union_size": 0,
+    "inpaint_sets_match": true,
+    "max_inpaint_delta_px_at_512x288": null,
+    "raw_inpaint_calls_taped": 5,
+    "raw_inpaint_positions_compared": 649,
+    "raw_inpaint_nonfinite_consumed": 0,
+    "raw_inpaint_nonfinite_anywhere": 0,
+    "max_raw_inpaint_delta_px_at_512x288": 96.6361083984375,
+    "gate_terms": {
+      "visibility_agreement": {
+        "ok": true,
+        "value": 1.0,
+        "threshold_min": 0.99,
+        "n_measured": 596,
+        "n_required": 1,
+        "sample": "frames present in both the torch and the ONNX run"
+      },
+      "p95_delta_px_at_512x288": {
+        "ok": true,
+        "value": 0.00012953130223350255,
+        "threshold_max": 2.0,
+        "n_measured": 215,
+        "n_required": 1,
+        "sample": "frames both sides call the shuttle visible"
+      },
+      "inpaint_scoped": {
+        "ok": true,
+        "value": null,
+        "threshold_max": 2.0,
+        "sets_match": true,
+        "n_measured": 0,
+        "n_required": 1,
+        "sample": "frames either side's InpaintNet pass actually filled"
+      },
+      "inpaint_raw": {
+        "ok": false,
+        "value": 96.6361083984375,
+        "threshold_max": 2.0,
+        "calls_taped": 5,
+        "nonfinite_consumed": 0,
+        "nonfinite_anywhere": 0,
+        "n_measured": 649,
+        "n_required": 1,
+        "sample": "gap positions in every chunk the torch InpaintNet was called on, replayed through the ONNX graph"
+      }
+    }
+  },
+  "gate_measurable": true,
+  "gate_pass": false,
+  "underfloor_gate_terms": [
+    "inpaint_scoped"
+  ],
+  "inpaintnet_unexercised": true,
+  "informational": null
+}

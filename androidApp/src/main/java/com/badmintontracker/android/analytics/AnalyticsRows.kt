@@ -9,8 +9,12 @@ import com.badmintontracker.android.localanalysis.LocalAnalysisState
 import com.badmintontracker.android.localvideo.LocalVideoRow
 import com.badmintontracker.shared.analytics.AnalyticsRowState
 import com.badmintontracker.shared.analytics.analyticsRowState
+import com.badmintontracker.shared.localvideo.AnalyzeProgress
 import com.badmintontracker.shared.localvideo.AnalyzeStage
+import com.badmintontracker.shared.localvideo.DevicePhase
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
+import com.badmintontracker.shared.localvideo.cloudAnalysisStatus
+import com.badmintontracker.shared.localvideo.deviceWorkLabel
 import com.badmintontracker.shared.localvideo.isAnalysisRunning
 import kotlinx.datetime.Instant
 
@@ -22,20 +26,34 @@ import kotlinx.datetime.Instant
  * tracked apart). The device run wins when both are non-idle, because that is
  * the run this row's own button would start, but the cloud pipeline must not be
  * left silent just because the button starts the other one: a coach watching
- * this list must not see "Analyse" on a video that is, in fact, being analysed
+ * this list must not see "Analyze" on a video that is, in fact, being analyzed
  * right now, in the cloud.
  */
-internal fun affordanceFor(entry: LocalVideoEntry, live: LocalAnalysisState): AnalyseAffordance = when (live) {
-    is LocalAnalysisState.Preparing -> AnalyseAffordance.InProgress("Preparing video")
-    is LocalAnalysisState.Analysing -> AnalyseAffordance.InProgress("Analysing on device")
-    is LocalAnalysisState.Cutting -> AnalyseAffordance.InProgress("Cutting clips")
+internal fun affordanceFor(
+    entry: LocalVideoEntry,
+    live: LocalAnalysisState,
+    progress: AnalyzeProgress?,
+): AnalyseAffordance = when (live) {
+    // Through [deviceWorkLabel] rather than three literals of its own, which is
+    // what these used to be: the drawer's row and the chrome indicator already
+    // go through it, and a fourth hand-written copy is how this screen kept a
+    // spelling the rest of the app had left behind. No fraction, matching the
+    // drawer's row - see its comment for why the number is left off a list line.
+    is LocalAnalysisState.Preparing -> AnalyseAffordance.InProgress(deviceWorkLabel(DevicePhase.PREPARING, null))
+    is LocalAnalysisState.Analysing -> AnalyseAffordance.InProgress(deviceWorkLabel(DevicePhase.ANALYSING, null))
+    is LocalAnalysisState.Cutting -> AnalyseAffordance.InProgress(deviceWorkLabel(DevicePhase.CUTTING, null))
     is LocalAnalysisState.Failed -> AnalyseAffordance.Failed(live.message)
     // No device run in flight or failed: fall back to the cloud pipeline's own
-    // liveness for this entry, using the same wording BackgroundWork.kt does.
+    // liveness for this entry, in the shared wording the drawer's row for this
+    // same video uses. It used to say "Uploading" and "Processing in the cloud"
+    // here, which is the chrome indicator's vocabulary and dropped the
+    // percentage - so one tap apart the same run read two ways, and iOS's port
+    // of this screen had already gone the other way.
     is LocalAnalysisState.Idle, is LocalAnalysisState.Done -> when {
-        isAnalysisRunning(entry.stage) -> AnalyseAffordance.InProgress(
-            if (entry.stage == AnalyzeStage.UPLOADING) "Uploading" else "Processing in the cloud",
-        )
+        // Non-null for both running stages, so the fallback guards a future
+        // stage rather than anything reachable today.
+        isAnalysisRunning(entry.stage) ->
+            AnalyseAffordance.InProgress(cloudAnalysisStatus(entry.stage, progress) ?: "Analyzing…")
         entry.stage == AnalyzeStage.FAILED -> AnalyseAffordance.Failed(entry.failureMessage ?: "Unknown error")
         // A track only lands on disk when the run asked for pose (see
         // LocalAnalysisRunner.start): a Done device run that did not is not a
@@ -49,8 +67,8 @@ internal fun affordanceFor(entry: LocalVideoEntry, live: LocalAnalysisState): An
  * Which explanatory line sits above the list, if any.
  *
  * The screen used to switch two ways: all-inert, or the dot legend. That put
- * "Analysed on this phone - tap to view" and a green dot above a list where the
- * only row said "Analyse" and no dot was drawn anywhere, because ANALYSABLE
+ * "Analyzed on this phone - tap to view" and a green dot above a list where the
+ * only row said "Analyze" and no dot was drawn anywhere, because ANALYSABLE
  * fails the all-inert test without contributing a dot. A legend explaining a
  * symbol that is not on screen is worse than no legend. Found on iOS, where
  * every local video is ANALYSABLE and it was the ONLY thing a coach would see.
@@ -89,7 +107,7 @@ internal fun analyticsLegend(rows: List<AnalyticsRow>): AnalyticsLegend = when {
  * ANALYSABLE / NOT_ON_DEVICE - this only gathers its two booleans per match
  * and, for an ANALYSABLE one, reads both pipelines' own liveness via
  * [affordanceFor] so the row can show progress or a failure instead of a live
- * "Analyse" button. `hasStoredTrack` alone cannot tell a run in flight, or one
+ * "Analyze" button. `hasStoredTrack` alone cannot tell a run in flight, or one
  * that just failed, from one never attempted.
  *
  * [storedTrackIds] is a caller-computed set rather than a per-row disk probe:
@@ -102,6 +120,7 @@ internal fun buildAnalyticsRows(
     sharedMatches: List<MatchSummary>,
     localEntries: List<LocalVideoEntry>,
     liveAnalysisStates: Map<String, LocalAnalysisState>,
+    progressByEntryId: Map<String, AnalyzeProgress>,
     storedTrackIds: Set<String>,
 ): List<AnalyticsRow> {
     fun rowFor(key: String, entryId: String?, group: AnalyticsGroup, title: String, subtitle: String): AnalyticsRow {
@@ -120,7 +139,11 @@ internal fun buildAnalyticsRows(
         // exactly `entry != null` above. The null check stays as a guard, not a
         // second source of truth, so this cannot throw if that ever changes.
         val affordance = if (state == AnalyticsRowState.ANALYSABLE && entry != null) {
-            affordanceFor(entry, liveAnalysisStates[entry.id] ?: LocalAnalysisState.Idle)
+            affordanceFor(
+                entry,
+                liveAnalysisStates[entry.id] ?: LocalAnalysisState.Idle,
+                progressByEntryId[entry.id],
+            )
         } else {
             AnalyseAffordance.Ready
         }
@@ -143,6 +166,10 @@ internal fun buildAnalyticsRows(
             entryId = row.entry.id,
             group = AnalyticsGroup.LOCAL_VIDEOS,
             title = row.primaryText,
+            // Sentence case, as the mock has it ("1:05 · Sep 2"). This screen
+            // used to uppercase its match rows and not its local video rows, so
+            // one list drew "0:02 · Sep 4, 2026" directly over
+            // "2 RALLIES · SEP 1, 2026"; the answer turned out to be neither.
             subtitle = "${row.durationText} · " +
                 formatDate(Instant.fromEpochMilliseconds(row.entry.addedAtEpochMs)),
         )
@@ -186,7 +213,7 @@ internal fun buildAnalyticsRows(
 
     // One video, one row. A video-first import the cloud has finished clipping
     // is both a local video and an owned match, and the two rows carry the same
-    // entry id, the same state and two identical "Analyse" buttons - the drawer
+    // entry id, the same state and two identical "Analyze" buttons - the drawer
     // gets away with that because its two rows look nothing alike, and here they
     // are indistinguishable. The local row wins because it is the stable one: it
     // exists from import until the file leaves the phone, whereas the owned row

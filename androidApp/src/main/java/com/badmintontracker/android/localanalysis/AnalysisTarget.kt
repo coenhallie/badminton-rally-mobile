@@ -10,6 +10,6 @@ package com.badmintontracker.android.localanalysis
  * venue section 5.7 asks for, arrived at from the other direction.
  */
 enum class AnalysisTarget(val label: String) {
-    Cloud("Analyse in cloud"),
-    Device("Analyse on device"),
+    Cloud("Analyze in cloud"),
+    Device("Analyze on device"),
 }

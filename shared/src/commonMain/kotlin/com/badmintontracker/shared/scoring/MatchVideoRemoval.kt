@@ -66,7 +66,7 @@ fun matchVideoPrompt(action: MatchVideoAction, hasServerVideo: Boolean): MatchVi
         )
         MatchVideoAction.CHANGE -> MatchVideoPrompt(
             title = "Change this video?",
-            body = "$whatGoes $whatStays You'll pick a new video and Shuttl will analyse it.",
+            body = "$whatGoes $whatStays You'll pick a new video and Shuttl will analyze it.",
         )
     }
 }

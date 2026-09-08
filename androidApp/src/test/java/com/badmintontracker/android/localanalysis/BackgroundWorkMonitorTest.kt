@@ -79,7 +79,7 @@ class BackgroundWorkMonitorTest {
     fun a_finished_device_run_stops_showing() = runTest(UnconfinedTestDispatcher()) {
         val f = fixture(backgroundScope)
         f.device.value = mapOf("a" to LocalAnalysisState.Analysing(0.5f))
-        assertEquals("Analysing on device 50%", f.monitor.work.value!!.label)
+        assertEquals("Analyzing on device 50%", f.monitor.work.value!!.label)
 
         // Done and Idle stay in the runner's map after a run; neither may keep
         // the indicator spinning.

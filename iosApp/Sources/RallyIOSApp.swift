@@ -14,7 +14,7 @@ struct RallyIOSApp: App {
             deleteLocalVideoFile: { LocalVideoFiles.delete(relativePath: $0) }
         )
         // Before anything can import: reclaim files whose entry is already gone.
-        // Analysed videos removed by builds that did not delete the file are pure
+        // Analyzed videos removed by builds that did not delete the file are pure
         // dead weight in the container, and the user has no way to get at them.
         LocalVideoFiles.sweepOrphans(referenced: rally.localVideos.entries.value.map(\.uri))
         analyze = AnalyzeCoordinatorIosKt.createIosAnalyzeCoordinator(

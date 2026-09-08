@@ -5,6 +5,11 @@ import io.kotest.matchers.shouldBe
 import kotlinx.datetime.Instant
 import kotlin.test.Test
 
+/**
+ * The sub-line is sentence case now: the drawer's redesign carries no uppercase,
+ * and Analytics applies its own `.uppercase()` at the call site in
+ * AnalyticsRows.kt, which AnalyticsRowsTest still pins.
+ */
 class MatchRowLabelsTest {
     private fun match(title: String?, rallyCount: Int = 12) = MatchSummary(
         videoId = "v",
@@ -28,7 +33,7 @@ class MatchRowLabelsTest {
 
     @Test
     fun named_match_keeps_the_date_beside_the_rally_count() {
-        matchRowSecondary(match("Thu League vs Marco")) shouldBe "12 RALLIES · JUL 25, 2026"
+        matchRowSecondary(match("Thu League vs Marco")) shouldBe "12 rallies · Jul 25, 2026"
     }
 
     @Test
@@ -38,12 +43,12 @@ class MatchRowLabelsTest {
 
     @Test
     fun unnamed_match_secondary_stays_rally_count_only() {
-        matchRowSecondary(match(null)) shouldBe "12 RALLIES"
+        matchRowSecondary(match(null)) shouldBe "12 rallies"
     }
 
     @Test
     fun single_rally_is_not_pluralised() {
-        matchRowSecondary(match(null, rallyCount = 1)) shouldBe "1 RALLY"
+        matchRowSecondary(match(null, rallyCount = 1)) shouldBe "1 rally"
     }
 
     private fun clip(rallyIndex: Int, title: String?) = RallyClip(

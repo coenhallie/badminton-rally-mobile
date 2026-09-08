@@ -182,10 +182,15 @@ func matchRowPrimary(_ match: MatchSummary) -> String {
 /// Sub-line for a match row. When the name takes the headline the date moves
 /// down here, so it is never lost from the list. Port of Android's
 /// `matchRowSecondary`.
+///
+/// Sentence case, not the uppercase this used to return: the drawer's redesign
+/// carries no uppercase anywhere. Analytics applies `.uppercased()` at its own
+/// call site in AnalyticsRows.swift, so the casing is a screen's choice rather
+/// than something baked into the string.
 func matchRowSecondary(_ match: MatchSummary) -> String {
-    let rallies = "\(match.rallyCount) \(match.rallyCount == 1 ? "RALLY" : "RALLIES")"
+    let rallies = "\(match.rallyCount) \(match.rallyCount == 1 ? "rally" : "rallies")"
     guard match.title != nil else { return rallies }
-    return "\(rallies) · \(formatMatchDate(millis: match.latestCreatedAtMillis).uppercased())"
+    return "\(rallies) · \(formatMatchDate(millis: match.latestCreatedAtMillis))"
 }
 
 /// Name for the most-labelled rally in the summary sheet. Goes through the same

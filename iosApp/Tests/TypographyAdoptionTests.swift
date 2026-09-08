@@ -18,6 +18,17 @@ final class TypographyAdoptionTests: XCTestCase {
     private let allowed: Set<String> = [
         "CourtMarkingView.swift",     // sizes text inside a scaled Canvas
         "SchematicCourtGuide.swift",  // same
+        // Sizes an SF Symbol glyph, not text. SF Symbols take their height from
+        // a font's point size, so drawing Android's 24-unit icon at a matching
+        // height inside the 64pt disc has to say `.font(.system(size:))` - there
+        // is no type-scale role for "an icon this tall", and putting one there
+        // would make the glyph track the text scale it has nothing to do with.
+        "ShuttlEmptyState.swift",
+        // Same exemption, same reason: the transport's chevrons, frame-step
+        // arrows and play glyph are SF Symbols, which take their height from a
+        // font's point size. There is no type-scale role for "an icon this
+        // tall", and binding one would make the glyphs track the text scale.
+        "ShuttlTransportBar.swift",
         // Only one call site in this file is actually exempt: the main score
         // digit's size is computed from GeometryReader (`min(geo.size.height *
         // 0.40, geo.size.width * 0.75)`), a runtime value no static type-scale

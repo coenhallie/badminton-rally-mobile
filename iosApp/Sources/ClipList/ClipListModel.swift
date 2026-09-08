@@ -15,7 +15,6 @@ final class ClipListModel {
     /// reads this rather than keeping its own copy, so the "On this phone" list and
     /// the attach status this model derives from the same entries can never disagree.
     private(set) var localEntries: [LocalVideoEntry] = []
-    private(set) var thumbnailUrls: [String: URL] = [:]   // clipId -> signed URL
     var isRefreshing = false
     var error: String? = nil
     private var sharerByVideoId: [String: String] = [:]
@@ -171,15 +170,6 @@ final class ClipListModel {
         } catch {
             self.error = SwiftInteropKt.scoreLogDeleteFailedMessage(hasVideo: hasVideo)
             return false
-        }
-    }
-
-    func thumbnail(forCoverOf match: MatchSummary) async {
-        guard thumbnailUrls[match.coverClipId] == nil,
-              let cover = clips.first(where: { $0.id == match.coverClipId }) else { return }
-        if let signed = try? await rally.media.signedThumbnailUrl(clip: cover),
-           let url = URL(string: signed) {
-            thumbnailUrls[match.coverClipId] = url
         }
     }
 

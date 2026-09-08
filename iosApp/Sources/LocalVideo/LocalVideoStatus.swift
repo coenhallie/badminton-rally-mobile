@@ -1,22 +1,13 @@
 import Shared
 
-/// Verbatim port of Android LocalVideoListViewModel.toRow's status mapping.
 enum LocalVideoStatus {
-    static func text(stage: AnalyzeStage, uploadProgress: Float?, pipelineProgress: Float?) -> String? {
-        switch stage {
-        case .local, .failed:
-            return nil
-        case .uploading:
-            if let p = uploadProgress { return "Uploading \(Int(p * 100))%…" }
-            return "Uploading…"
-        case .processing:
-            if let p = pipelineProgress { return "Analyzing \(Int(p * 100))%…" }
-            return "Analyzing…"
-        case .analyzed:
-            return "Analyzed"
-        default:
-            return nil
-        }
+    /// How a cloud run reads on this row. Forwards the shared rule rather than
+    /// porting it: this used to be a hand-copied version of Android's own
+    /// mapping, and the copy that mattered was the third one - Android's
+    /// Analytics list wrote its own and drifted to "Uploading" with no
+    /// percentage while this said "Uploading 42%…" for the same run.
+    static func text(stage: AnalyzeStage, progress: AnalyzeProgress?) -> String? {
+        LocalVideoEntryKt.cloudAnalysisStatus(stage: stage, progress: progress)
     }
 
     static func canAnalyze(stage: AnalyzeStage) -> Bool {

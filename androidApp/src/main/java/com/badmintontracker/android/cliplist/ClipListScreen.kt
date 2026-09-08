@@ -2,8 +2,10 @@ package com.badmintontracker.android.cliplist
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -21,7 +24,6 @@ import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -38,10 +40,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.badmintontracker.android.localvideo.AnalyzeResultDialog
@@ -53,8 +53,8 @@ import com.badmintontracker.android.ui.components.ConfirmDialog
 import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlButtonVariant
 import com.badmintontracker.android.ui.components.ShuttlEmptyState
-import com.badmintontracker.android.ui.components.SwipeToRemoveRow
 import com.badmintontracker.android.ui.icons.ShuttlIcons
+import com.badmintontracker.android.ui.theme.ShuttlRadius
 import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
@@ -72,7 +72,6 @@ import kotlinx.datetime.toLocalDateTime
 @Composable
 fun ClipListScreen(
     vm: ClipListViewModel,
-    media: MediaRepository,
     shares: SharesRepository,
     onMatchClick: (MatchSummary) -> Unit,
     onScoreMatchClick: (ScoreMatchCard) -> Unit,
@@ -90,6 +89,14 @@ fun ClipListScreen(
     /** Entry just imported or recorded: its details sheet opens once, unprompted. */
     autoDetailsEntryId: String? = null,
     onAutoDetailsShown: () -> Unit = {},
+    /**
+     * That same sheet closing again, however it was closed: saved, skipped, or
+     * swiped away. Home opens the drawer on this, so the video the coach just
+     * named is on screen instead of a Home screen that looks untouched. Fired
+     * only for the auto-opened sheet - an "Edit details" from the row menu
+     * already happens with the drawer open and in front of the coach.
+     */
+    onAutoDetailsClosed: () -> Unit = {},
     onAttachedMarkCourt: (String) -> Unit = {},
     onAttachedRetry: (String) -> Unit = {},
     /** The empty state's own "Add new match": Home closes the drawer and opens its add sheet. */
@@ -177,10 +184,23 @@ fun ClipListScreen(
                     )
                 }
             } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    // An inset list, not a full-bleed one: rows are cards on the
+                    // panel separated by a gap, so there are no dividers left to
+                    // draw. The top inset plus a section label's own top padding
+                    // is the mock's 26px from the drawer header to the first
+                    // label; between two sections that gap becomes 28px, which
+                    // is this spacing added to the same label padding.
+                    contentPadding = PaddingValues(
+                        top = DrawerList.listTopInset,
+                        bottom = DrawerList.sideMargin,
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(DrawerList.rowGap),
+                ) {
                     localVideoSection(
                         rows = standaloneRows,
-                        header = { SectionHeader(it) },
+                        header = { DrawerSectionLabel(it) },
                         onRowClick = onLocalClick,
                         onAnalyzeClick = onLocalAnalyze,
                         onRemoveRequest = { localRemoveTarget = it },
@@ -191,9 +211,9 @@ fun ClipListScreen(
                         localClipCount = localClipCount,
                     )
                     if (state.ownedRows.isNotEmpty()) {
-                        item(key = "header-owned") { SectionHeader("My matches") }
+                        item(key = "header-owned") { DrawerSectionLabel("My matches") }
                         items(state.ownedRows, key = { it.key }) { row ->
-                            SwipeToRemoveRow(
+                            MatchRowContainer(
                                 label = "Delete",
                                 onSwiped = {
                                     when (row) {
@@ -211,13 +231,11 @@ fun ClipListScreen(
                                 when (row) {
                                     is MatchRow.Video -> VideoMatchRow(
                                         match = row.match,
-                                        media = media,
                                         onClick = { onMatchClick(row.match) },
                                         onShareClick = { sheetVideoId = row.match.videoId },
                                     )
                                     is MatchRow.Score -> ScoreMatchRow(
                                         row = row,
-                                        media = media,
                                         onClick = { onScoreMatchClick(row.card) },
                                         onShareClick = row.video?.let { { sheetVideoId = it.videoId } },
                                         onMarkCourt = { onAttachedMarkCourt(row.card.scoreLogId) },
@@ -225,24 +243,21 @@ fun ClipListScreen(
                                     )
                                 }
                             }
-                            HorizontalDivider()
                         }
                     }
                     if (state.sharedMatches.isNotEmpty()) {
-                        item(key = "header-shared") { SectionHeader("Shared with me") }
+                        item(key = "header-shared") { DrawerSectionLabel("Shared with me") }
                         items(state.sharedMatches, key = { "shared-${it.videoId}" }) { match ->
-                            SwipeToRemoveRow(
+                            MatchRowContainer(
                                 label = "Remove",
                                 onSwiped = { leaveShareTarget = match; false },
                             ) {
                                 VideoMatchRow(
                                     match = match,
-                                    media = media,
                                     onClick = { onMatchClick(match) },
                                     onShareClick = null,
                                 )
                             }
-                            HorizontalDivider()
                         }
                     }
                 }
@@ -268,14 +283,18 @@ fun ClipListScreen(
     }
 
     detailsTarget?.let { target ->
+        fun close() {
+            detailsTarget = null
+            if (target.autoOpened) onAutoDetailsClosed()
+        }
         MatchDetailsSheet(
             initialTitle = target.entry.title,
             initialDescription = target.entry.description,
             autoOpened = target.autoOpened,
-            onDismiss = { detailsTarget = null },
+            onDismiss = ::close,
             onSave = { title, description ->
                 onLocalDetailsSaved(target.entry.id, title, description)
-                detailsTarget = null
+                close()
             },
         )
     }
@@ -342,40 +361,51 @@ fun ClipListScreen(
 /** [autoOpened] switches the sheet's dismiss label between "Skip" and "Cancel". */
 private data class DetailsTarget(val entry: LocalVideoEntry, val autoOpened: Boolean)
 
+/**
+ * A match row's inset box.
+ *
+ * Quieter than the "On this phone" card above it, and deliberately so: the mock
+ * gives the drawer exactly one raised surface, on the section that leads
+ * somewhere new. These rows are transparent until they are pressed, so the fill
+ * behind the swipe reveal is the panel's own colour.
+ */
 @Composable
-private fun SectionHeader(text: String) {
-    Text(
-        text = text.uppercase(Locale.ROOT),
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+private fun MatchRowContainer(
+    label: String,
+    onSwiped: () -> Boolean,
+    content: @Composable () -> Unit,
+) {
+    DrawerRowContainer(
+        shape = RoundedCornerShape(ShuttlRadius.medium),
+        fill = MaterialTheme.colorScheme.background,
+        swipeLabel = label,
+        onSwiped = onSwiped,
+        content = content,
     )
 }
 
 @Composable
 private fun VideoMatchRow(
     match: MatchSummary,
-    media: MediaRepository,
     onClick: () -> Unit,
     onShareClick: (() -> Unit)?,
 ) {
-    val thumbUrl by produceState<String?>(initialValue = null, match.videoId) {
-        value = runCatching { media.signedThumbnailUrl(match.coverClip) }.getOrNull()
-    }
-
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(
+                start = DrawerList.rowPaddingH,
+                // See LocalVideoRowItem: backs out an IconButton's own 12dp so
+                // the glyph lands the same distance from the row's edge as the
+                // text does on the other side.
+                end = if (onShareClick != null) DrawerList.rowPaddingH - 12.dp
+                      else DrawerList.rowPaddingH,
+                top = DrawerList.rowPaddingV,
+                bottom = DrawerList.rowPaddingV,
+            ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        AsyncImage(
-            model = thumbUrl,
-            contentDescription = null,
-            modifier = Modifier.size(96.dp, 54.dp),
-        )
-        Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
                 matchRowPrimary(match),
@@ -386,8 +416,10 @@ private fun VideoMatchRow(
             )
             Text(
                 matchRowSecondary(match),
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
             match.description?.let { description ->
                 Text(
@@ -409,6 +441,7 @@ private fun VideoMatchRow(
             }
         }
         if (onShareClick != null) {
+            Spacer(Modifier.width(DrawerList.gap))
             IconButton(onClick = onShareClick) {
                 Icon(Icons.Default.Share, contentDescription = "Share match")
             }
@@ -431,12 +464,16 @@ internal fun matchRowPrimary(match: MatchSummary): String =
 /**
  * Sub-line for a match row. When the name takes the headline the date moves
  * down here, so it is never lost from the list.
+ *
+ * Sentence case, not the uppercase this used to return: the drawer's redesign
+ * carries no uppercase anywhere. Analytics still wants the old look and applies
+ * `.uppercase()` at its own call site in AnalyticsRows.kt, so the casing is a
+ * screen's choice rather than something baked into the string.
  */
 internal fun matchRowSecondary(match: MatchSummary): String {
     val rallies = "${match.rallyCount} ${if (match.rallyCount == 1) "rally" else "rallies"}"
-        .uppercase(Locale.ROOT)
     return if (match.title != null) {
-        "$rallies · ${formatDate(match.latestCreatedAt).uppercase(Locale.ROOT)}"
+        "$rallies · ${formatDate(match.latestCreatedAt)}"
     } else {
         rallies
     }
@@ -488,55 +525,37 @@ internal fun ClipRow(
 
 /**
  * A match scored courtside, in the same shape as [VideoMatchRow] so the two kinds
- * line up down the list. The cover slot is the same 96x54 box: a thumbnail once
- * the row's video has produced clips, the placeholder icon otherwise. A row 4dp
+ * line up down the list: the same insets, the same three text lines, and a
+ * trailing slot the same width whichever control is in it. A row a few dp
  * shorter than its neighbour reads as a bug.
  */
 @Composable
 private fun ScoreMatchRow(
     row: MatchRow.Score,
-    media: MediaRepository,
     onClick: () -> Unit,
     onShareClick: (() -> Unit)?,
     onMarkCourt: () -> Unit,
     onRetry: () -> Unit,
 ) {
     val card = row.card
-    val thumbUrl by produceState<String?>(initialValue = null, row.video?.videoId) {
-        val cover = row.video?.coverClip ?: return@produceState
-        value = runCatching { media.signedThumbnailUrl(cover) }.getOrNull()
-    }
+    // Only the share control is an IconButton with 12dp of padding of its own;
+    // the pills and the ring are drawn at their own size and need the row's
+    // full inset. See LocalVideoRowItem for what this is backing out.
+    val trailingIsIconButton = row.attach == null
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            // Matches VideoMatchRow's vertical padding: the two rows can now show
-            // the identical 96x54 thumbnail and must not differ by a few dp.
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(
+                start = DrawerList.rowPaddingH,
+                end = if (trailingIsIconButton) DrawerList.rowPaddingH - 12.dp
+                      else DrawerList.rowPaddingH,
+                top = DrawerList.rowPaddingV,
+                bottom = DrawerList.rowPaddingV,
+            ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (thumbUrl != null) {
-            AsyncImage(
-                model = thumbUrl,
-                contentDescription = null,
-                modifier = Modifier.size(96.dp, 54.dp),
-            )
-        } else {
-            Box(
-                modifier = Modifier
-                    .size(width = 96.dp, height = 54.dp)
-                    .background(ShuttlTheme.extended.bgTertiary),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.Default.List,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-        Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
                 text = card.title,
@@ -546,11 +565,12 @@ private fun ScoreMatchRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = "${card.scoreLine.uppercase()} · ${formatDate(Instant.fromEpochMilliseconds(card.createdAtEpochMs)).uppercase()}",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium,
-                letterSpacing = 0.55.sp,
+                text = "${card.scoreLine} · " +
+                    formatDate(Instant.fromEpochMilliseconds(card.createdAtEpochMs)),
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
             Text(
                 text = card.playersLine,
@@ -570,6 +590,7 @@ private fun ScoreMatchRow(
                 )
             }
         }
+        Spacer(Modifier.width(DrawerList.gap))
         when (row.attach?.kind) {
             AttachKind.COURT_NOT_MARKED ->
                 ShuttlButton(text = "Mark court", onClick = onMarkCourt,
@@ -578,11 +599,7 @@ private fun ScoreMatchRow(
                 ShuttlButton(text = "Retry", onClick = onRetry,
                     variant = ShuttlButtonVariant.Primary, compact = true)
             AttachKind.UPLOADING, AttachKind.CLIPPING, AttachKind.FINISHING_UP ->
-                // Boxed to the same 48dp the IconButton below occupies, so the trailing
-                // slot doesn't shift width when the state flips between the two.
-                Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                }
+                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
             // Sharing needs a video: match_shares is keyed on video_id. Present but
             // disabled with the reason until there is one, rather than absent.
             null -> IconButton(onClick = { onShareClick?.invoke() }, enabled = onShareClick != null) {

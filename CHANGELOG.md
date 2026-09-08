@@ -15,18 +15,54 @@ The mobile app is versioned independently from the web app.
   skeleton scales with the frame, so a joint can be checked up close.
 
 ### Changed
-- Every video player is now the same player. The clip screen and the local
-  video player use the skeleton view's rounded video card, with the timecode
-  chip, the speed chip, a fullscreen chip and a progress bar that scrubs, and
-  the same centred pill transport under it. Media3's own controller is gone
-  with its play button and time bar, and the purple floating "add note" button
-  is now an accent "Add note" pill on the line that heads the notes.
-- Segmented controls are pill switchers everywhere: the match page's Points and
-  Rallies, New match's format, scoring and coin toss, and a label's Use. The
-  playback sheet and the Add note sheet use pill chips, with a chosen label in
-  its own colour.
+- Setting a video up for analysis is now two steps instead of one crowded
+  screen. Step one is the court mapping alone: the frame on a rounded card, the
+  landmark being asked for named in its own colour, a bar showing how many of
+  the twelve are down, the court legend, Undo and Clear, and a Continue pinned
+  at the foot that stays disabled until all twelve are placed. Step two asks
+  what to analyze: the three options as cards with the accent around a chosen
+  one, the estimated time under them, and the cloud and device buttons pinned
+  below. The bar names the step and shows how far along it is, and both the
+  back arrow and the back gesture return to step one with the points intact.
+- The analysis options no longer claim rally clips are free "because the pose
+  pass is already running" when no pose option is selected. Only a pose option
+  can be free for that reason; anything else too small to measure now says so
+  plainly.
+- Every video player is now the same player, on both phones. The clip screen and
+  the local video player use the rounded video card, with the timecode chip, the
+  speed chip and a progress bar that scrubs, and the same centred pill transport
+  under it - a skip pill, a frame step either side of the accent play button, and
+  a skip pill. The players' own controllers are gone with their play buttons and
+  time bars, and the card takes the video's own shape instead of a fixed slab.
+  The purple floating "add note" button is now an accent "Add note" pill on the
+  line that heads the notes.
+  On Android the card also carries a fullscreen chip, pinches to zoom and pans
+  once zoomed; the iPhone's card does neither yet.
+- Segmented controls are pill switchers: the match page's Points and Rallies and
+  a label's Use on both phones, and New match's format, scoring and coin toss on
+  Android, where that screen is not built from a system form. The playback sheet
+  and the Add note sheet use pill chips, with a chosen label in its own colour.
 - The Analytics list lays its matches out as cards under a "Pick a match"
   headline, with the availability dot on the card's right.
+- The app says "analyze" everywhere. Half of it already did - the drawer's
+  buttons, its progress lines and the iPhone's Analytics buttons - while the
+  Analytics screen, the court mapping's options and the on-device notification
+  said "analyse", so one video could offer "Analyze" in the drawer and
+  "Analyse" one tap later.
+- A video being analyzed in the cloud reports the same progress on the
+  Analytics list as it does in the drawer: "Uploading 42%…" rather than a bare
+  "Uploading" on Android, which had been showing the chrome indicator's wording
+  and dropping the number. The iPhone already showed the percentage, so the two
+  platforms disagreed as well; both now read one shared line. That one line also
+  clamps: a progress report above 100%, or one that is not a number at all, no
+  longer reaches the row as "Uploading 140%…" or "Uploading NaN%…".
+- The Analytics list is on the redesign's typography, so it reads like the
+  drawer it sits one tap from: section labels are "On this phone" and "My
+  matches" in plain secondary text rather than tracked capitals, and a row says
+  "0:05 · Sep 8, 2026" rather than "0:05 · SEP 8, 2026". The uppercase was left
+  over from before the redesign, which carries none anywhere; it had also been
+  applied unevenly, so one list drew "0:02 · Sep 4, 2026" directly above
+  "2 RALLIES · SEP 1, 2026".
 - Screen titles are sentence case throughout: Analytics, Court mapping, Labels,
   Clips on this phone, and the match page's own title. The standalone heatmap
   reached from a finished run heads itself with the video's name, length and
@@ -199,6 +235,12 @@ The mobile app is versioned independently from the web app.
   supported method.
 
 ### Fixed
+- VoiceOver now says "button" on the iPhone's video transport. The play, frame
+  step and skip controls read a finger directly, so that a tap fires on press
+  and a hold can be told apart from it, and that had cost them the trait a
+  plain button carries: they were announced as images and could not be found by
+  name. Every one of them now carries its own label as well - "Play", "Next
+  frame", "Skip back 10 seconds".
 - The court heatmap (Android, on-device analysis) no longer takes a broadcast
   close-up for a position on the court. When a video cuts to a camera the court
   marks do not describe, the person filling the frame used to land somewhere on

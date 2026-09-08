@@ -87,7 +87,7 @@ class LocalAnalysisWakeLockTest {
         // measure the test device's scheduling.
         LocalAnalysisService.start(context, "wake lock test", 4_000L, 300L)
         assertTrue(
-            "expected the lock to be held while analysing",
+            "expected the lock to be held while analyzing",
             waitForLock(held = true, timeoutMillis = 5_000),
         )
 

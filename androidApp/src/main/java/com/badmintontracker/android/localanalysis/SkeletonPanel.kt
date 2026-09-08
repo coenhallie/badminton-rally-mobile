@@ -198,7 +198,7 @@ private fun SkeletonPlayer(
         // freezes silently instead of saying so.
         val listener = object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
-                playbackError = "Couldn't play the analysed video. Run the analysis again to rebuild it."
+                playbackError = "Couldn't play the analyzed video. Run the analysis again to rebuild it."
             }
         }
         player.addListener(listener)

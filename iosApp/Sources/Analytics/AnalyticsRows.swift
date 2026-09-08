@@ -94,9 +94,9 @@ enum AnalyticsLegend: Equatable {
         case .dot:
             // Android adds "- tap to view". Not here: only a READY row is
             // tappable on Android, and this list opens nothing at all (there is
-            // no iOS analysis screen to open), so the dot means "analysed" and
+            // no iOS analysis screen to open), so the dot means "analyzed" and
             // promises nothing further.
-            return "Analysed on this phone."
+            return "Analyzed on this phone."
         case .analyseButton:
             // What the button actually does on iPhone, said plainly, so a screen
             // called Analytics does not look like it is about to draw a chart.
@@ -120,11 +120,7 @@ func analyseAffordance(for entry: LocalVideoEntry, progress: AnalyzeProgress?) -
     if LocalVideoStatus.isRunning(stage: entry.stage) {
         // Non-nil for both running stages, so the fallback is a guard against a
         // future stage rather than a case anything reaches today.
-        let phase = LocalVideoStatus.text(
-            stage: entry.stage,
-            uploadProgress: progress?.uploadProgress?.floatValue,
-            pipelineProgress: progress?.pipelineProgress?.floatValue
-        )
+        let phase = LocalVideoStatus.text(stage: entry.stage, progress: progress)
         return .inProgress(phase: phase ?? "Analyzing…")
     }
     if entry.stage == .failed {
@@ -150,10 +146,15 @@ func analyseAction(for entry: LocalVideoEntry) -> AnalyseAction {
 /// The two screens list the same videos side by side in one tap, and a comment
 /// claiming they cannot describe a video two ways is worth less than a call that
 /// makes it so.
+///
+/// Sentence case, as the mock has it ("1:05 · Sep 2"). Neither this screen nor
+/// the drawer uppercases it any more: the redesign carries no uppercase
+/// anywhere, and Analytics kept transforming it at its own call site for a
+/// while after the drawer had stopped.
 func localVideoSubtitle(_ entry: LocalVideoEntry) -> String {
     let duration = LocalVideoLogic.formatDuration(ms: entry.durationMs)
     let date = formatMatchDate(millis: entry.addedAtEpochMs)
-    return "\(duration) · \(date)".uppercased()
+    return "\(duration) · \(date)"
 }
 
 /// Builds the Analytics list's rows, grouped like the drawer: local videos, then

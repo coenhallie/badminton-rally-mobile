@@ -55,26 +55,28 @@ struct LocalPlayerView: View {
     @ViewBuilder
     private func content(_ model: LocalPlayerModel) -> some View {
         VStack(spacing: 0) {
-            // 60% of the screen for the video so rallies can be evaluated closely;
-            // the annotation list scrolls in whatever space remains.
-            ZStack {
-                PlayerSurface(player: model.player)
-                    .frame(maxWidth: .infinity)
-                    .containerRelativeFrame(.vertical) { height, _ in height * 0.6 }
-                    .background(Color.black)
-                if let error = model.playbackError {
-                    VStack(spacing: 8) {
-                        ErrorBanner(message: error)
-                        Button("Retry") { model.retry() }
-                            .buttonStyle(PrimaryButtonStyle())
-                            .frame(maxWidth: 160)
+            // The card takes the video's own ratio rather than a share of the
+            // screen: the mock sizes it that way, and the 60% slab this replaced
+            // letterboxed a 16:9 recording with black above and below it.
+            ShuttlPlayer(
+                player: model.player,
+                prefs: rally.playbackPrefs,
+                step: { model.stepFrames($0) },
+                overlay: { EmptyView() },
+                errorContent: {
+                    if let error = model.playbackError {
+                        VStack(spacing: 8) {
+                            ErrorBanner(message: error)
+                            Button("Retry") { model.retry() }
+                                .buttonStyle(PrimaryButtonStyle())
+                                .frame(maxWidth: 160)
+                        }
+                        .padding(16)
                     }
-                    .padding(16)
                 }
-            }
-
-            PlaybackControlBar(player: model.player, prefs: rally.playbackPrefs)
-            FrameStepBar(player: model.player, step: { model.stepFrames($0) })
+            )
+            .padding(.top, 8)
+            .padding(.bottom, 8)
 
             if let actionError = model.actionError {
                 ErrorBanner(message: actionError)

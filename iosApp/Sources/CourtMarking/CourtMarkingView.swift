@@ -31,7 +31,7 @@ struct CourtMarkingView: View {
                 Spacer()
             }
         }
-        .navigationTitle("COURT MAPPING")
+        .navigationTitle("Court mapping")
         .navigationBarTitleDisplayMode(.inline)
         .task {
             guard marking == nil, error == nil else { return }

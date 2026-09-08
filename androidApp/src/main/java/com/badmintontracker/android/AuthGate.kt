@@ -203,13 +203,12 @@ fun AuthGate(
                     )
                     val localVm: LocalVideoListViewModel = viewModel(
                         factory = viewModelFactory {
-                            initializer { LocalVideoListViewModel(localVideos, coordinator, localAnnotations) }
+                            initializer { LocalVideoListViewModel(localVideos, coordinator, localAnnotations, localAnalysis.state) }
                         }
                     )
                     val localRows by localVm.rows.collectAsStateWithLifecycle()
                     HomeScreen(
                         vm = clipListVm,
-                        media = rally.media,
                         shares = rally.shares,
                         themePrefs = themePrefs,
                         localAnalysis = localAnalysis,
@@ -282,13 +281,14 @@ fun AuthGate(
                     )
                     val localVm: LocalVideoListViewModel = viewModel(
                         factory = viewModelFactory {
-                            initializer { LocalVideoListViewModel(localVideos, coordinator, localAnnotations) }
+                            initializer { LocalVideoListViewModel(localVideos, coordinator, localAnnotations, localAnalysis.state) }
                         }
                     )
                     val clipListState by clipListVm.state.collectAsStateWithLifecycle()
                     val localRows by localVm.rows.collectAsStateWithLifecycle()
                     val localEntries by localVideos.entries.collectAsStateWithLifecycle()
                     val liveAnalysisStates by localAnalysis.state.collectAsStateWithLifecycle()
+                    val cloudProgress by coordinator.progress.collectAsStateWithLifecycle()
 
                     val standaloneLocalRows = localRows.filter { it.entry.scoreLogId == null }
                     // Which videos have a track, asked the cheap way: hasStoredTrack
@@ -311,6 +311,7 @@ fun AuthGate(
                         sharedMatches = clipListState.sharedMatches,
                         localEntries = localEntries,
                         liveAnalysisStates = liveAnalysisStates,
+                        progressByEntryId = cloudProgress,
                         storedTrackIds = storedTrackIds,
                     )
 

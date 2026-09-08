@@ -92,6 +92,49 @@ fun orphanedLocalVideoIds(
 fun canResumeFailedAnalysis(entry: LocalVideoEntry): Boolean =
     entry.stage == AnalyzeStage.FAILED && entry.keypoints != null
 
+/**
+ * How a cloud run reads on a list row, as one line, or null when the stage is
+ * settled with nothing to say (LOCAL, and FAILED, whose message the row shows
+ * instead).
+ *
+ * Shared for the same reason [deviceWorkLabel] is: the drawer's local video row
+ * and the Analytics row describe the same run over the same video, one tap
+ * apart, and both platforms draw both. Written out per screen it drifted
+ * immediately - Analytics on Android said "Uploading" where the drawer beside
+ * it said "Uploading 42%…", and iOS said the drawer's line on both.
+ *
+ * Not [deviceWorkLabel]'s vocabulary, deliberately. That one names the pipeline
+ * ("Processing in the cloud") because the chrome indicator merges both and has
+ * to tell them apart; a row is already about one video, and ANALYZED is a state
+ * only a row ever shows.
+ */
+fun cloudAnalysisStatus(stage: AnalyzeStage, progress: AnalyzeProgress?): String? = when (stage) {
+    AnalyzeStage.LOCAL -> null
+    // Named apart from the pipeline half because they are not the same promise:
+    // an upload stops when the app leaves the foreground, while the cloud run
+    // keeps going whatever the phone does.
+    AnalyzeStage.UPLOADING -> rowPercent("Uploading", progress?.uploadProgress)
+    AnalyzeStage.PROCESSING -> rowPercent("Analyzing", progress?.pipelineProgress)
+    // The failure's own message is what the row shows, and it is on the entry
+    // rather than here.
+    AnalyzeStage.FAILED -> null
+    AnalyzeStage.ANALYZED -> "Analyzed"
+}
+
+/**
+ * A row's running line: trailing ellipsis whether or not a number is known, and
+ * the fraction TRUNCATED.
+ *
+ * Deliberately not BackgroundWork.kt's `withPercent`, which rounds and adds no
+ * ellipsis. The two are not interchangeable and must not be merged on the
+ * argument that they look alike: this one's exact output is what both platforms
+ * have shipped on their drawer rows, and rounding would move "41.6%" from 41 to
+ * 42 in a line a user watches tick.
+ */
+private fun rowPercent(label: String, fraction: Float?): String =
+    if (fraction == null || fraction.isNaN()) "$label…"
+    else "$label ${(fraction.coerceIn(0f, 1f) * 100).toInt()}%…"
+
 @Serializable
 data class LocalVideoEntry(
     val id: String,              // client UUID; becomes videos.id on Analyze

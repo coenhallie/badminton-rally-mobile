@@ -3,9 +3,11 @@ package com.badmintontracker.android.analytics
 import com.badmintontracker.analysis.player.PlayerTrack
 import com.badmintontracker.android.cliplist.MatchRow
 import com.badmintontracker.android.cliplist.MatchSummary
+import com.badmintontracker.android.cliplist.matchRowSecondary
 import com.badmintontracker.android.localanalysis.LocalAnalysisState
 import com.badmintontracker.android.localvideo.LocalVideoRow
 import com.badmintontracker.shared.analytics.AnalyticsRowState
+import com.badmintontracker.shared.localvideo.AnalyzeProgress
 import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.model.RallyClip
@@ -47,6 +49,7 @@ class AnalyticsRowsTest {
         analyzeLabel = "Analyze",
         canRemove = true,
         canEditDetails = true,
+        isBusy = false,
     )
 
     private fun scoreCard(scoreLogId: String = "log1", videoId: String? = null) = ScoreMatchCard(
@@ -86,6 +89,7 @@ class AnalyticsRowsTest {
         shared: List<MatchSummary> = emptyList(),
         entries: List<LocalVideoEntry> = emptyList(),
         live: Map<String, LocalAnalysisState> = emptyMap(),
+        progress: Map<String, AnalyzeProgress> = emptyMap(),
         tracks: Set<String> = emptySet(),
     ) = buildAnalyticsRows(
         standaloneLocalRows = standalone,
@@ -93,6 +97,7 @@ class AnalyticsRowsTest {
         sharedMatches = shared,
         localEntries = entries,
         liveAnalysisStates = live,
+        progressByEntryId = progress,
         storedTrackIds = tracks,
     )
 
@@ -100,25 +105,25 @@ class AnalyticsRowsTest {
 
     @Test
     fun a_device_run_preparing_says_so() {
-        affordanceFor(entry(), LocalAnalysisState.Preparing("Copying video")) shouldBe
+        affordanceFor(entry(), LocalAnalysisState.Preparing("Copying video"), null) shouldBe
             AnalyseAffordance.InProgress("Preparing video")
     }
 
     @Test
     fun a_device_run_analysing_says_so() {
-        affordanceFor(entry(), LocalAnalysisState.Analysing(0.4f)) shouldBe
-            AnalyseAffordance.InProgress("Analysing on device")
+        affordanceFor(entry(), LocalAnalysisState.Analysing(0.4f), null) shouldBe
+            AnalyseAffordance.InProgress("Analyzing on device")
     }
 
     @Test
     fun a_device_run_cutting_says_so() {
-        affordanceFor(entry(), LocalAnalysisState.Cutting(done = 2, total = 5)) shouldBe
+        affordanceFor(entry(), LocalAnalysisState.Cutting(done = 2, total = 5), null) shouldBe
             AnalyseAffordance.InProgress("Cutting clips")
     }
 
     @Test
     fun a_failed_device_run_carries_its_own_message() {
-        affordanceFor(entry(), LocalAnalysisState.Failed("no court found")) shouldBe
+        affordanceFor(entry(), LocalAnalysisState.Failed("no court found"), null) shouldBe
             AnalyseAffordance.Failed("no court found")
     }
 
@@ -128,13 +133,13 @@ class AnalyticsRowsTest {
     fun a_live_device_run_speaks_over_a_live_cloud_upload() {
         // Both pipelines busy at once. The row's own button starts the device
         // run, so that is the run its control has to speak for.
-        affordanceFor(entry(stage = AnalyzeStage.UPLOADING), LocalAnalysisState.Analysing(0.1f)) shouldBe
-            AnalyseAffordance.InProgress("Analysing on device")
+        affordanceFor(entry(stage = AnalyzeStage.UPLOADING), LocalAnalysisState.Analysing(0.1f), null) shouldBe
+            AnalyseAffordance.InProgress("Analyzing on device")
     }
 
     @Test
     fun a_failed_device_run_speaks_over_a_live_cloud_upload() {
-        affordanceFor(entry(stage = AnalyzeStage.UPLOADING), LocalAnalysisState.Failed("out of memory")) shouldBe
+        affordanceFor(entry(stage = AnalyzeStage.UPLOADING), LocalAnalysisState.Failed("out of memory"), null) shouldBe
             AnalyseAffordance.Failed("out of memory")
     }
 
@@ -142,31 +147,61 @@ class AnalyticsRowsTest {
 
     @Test
     fun an_idle_device_shows_a_cloud_upload() {
-        affordanceFor(entry(stage = AnalyzeStage.UPLOADING), LocalAnalysisState.Idle) shouldBe
-            AnalyseAffordance.InProgress("Uploading")
+        affordanceFor(entry(stage = AnalyzeStage.UPLOADING), LocalAnalysisState.Idle, null) shouldBe
+            AnalyseAffordance.InProgress("Uploading…")
     }
 
     @Test
     fun an_idle_device_shows_cloud_processing() {
-        affordanceFor(entry(stage = AnalyzeStage.PROCESSING), LocalAnalysisState.Idle) shouldBe
-            AnalyseAffordance.InProgress("Processing in the cloud")
+        affordanceFor(entry(stage = AnalyzeStage.PROCESSING), LocalAnalysisState.Idle, null) shouldBe
+            AnalyseAffordance.InProgress("Analyzing…")
+    }
+
+    @Test
+    fun a_cloud_run_reports_its_percentage_the_way_the_drawer_does() {
+        // The divergence this closes: this screen used to say "Uploading" and
+        // "Processing in the cloud" - the chrome indicator's vocabulary, with no
+        // number - while the drawer's row for the same video, one tap away, said
+        // "Uploading 42%…". iOS's port of this screen had already gone the other
+        // way, so the two platforms disagreed as well.
+        affordanceFor(
+            entry(stage = AnalyzeStage.UPLOADING),
+            LocalAnalysisState.Idle,
+            AnalyzeProgress(entryId = "e1", uploadProgress = 0.42f),
+        ) shouldBe AnalyseAffordance.InProgress("Uploading 42%…")
+        affordanceFor(
+            entry(stage = AnalyzeStage.PROCESSING),
+            LocalAnalysisState.Idle,
+            AnalyzeProgress(entryId = "e1", pipelineProgress = 0.8f),
+        ) shouldBe AnalyseAffordance.InProgress("Analyzing 80%…")
+    }
+
+    @Test
+    fun a_cloud_runs_progress_reaches_the_row_it_belongs_to() {
+        val e = entry(id = "e1", stage = AnalyzeStage.UPLOADING)
+        val row = rows(
+            standalone = listOf(localRow(e)),
+            entries = listOf(e),
+            progress = mapOf("e1" to AnalyzeProgress(entryId = "e1", uploadProgress = 0.25f)),
+        ).single()
+        row.affordance shouldBe AnalyseAffordance.InProgress("Uploading 25%…")
     }
 
     @Test
     fun an_idle_device_shows_a_cloud_failure_with_its_reason() {
-        affordanceFor(entry(stage = AnalyzeStage.FAILED, failureMessage = "upload rejected"), LocalAnalysisState.Idle) shouldBe
+        affordanceFor(entry(stage = AnalyzeStage.FAILED, failureMessage = "upload rejected"), LocalAnalysisState.Idle, null) shouldBe
             AnalyseAffordance.Failed("upload rejected")
     }
 
     @Test
     fun a_cloud_failure_with_no_message_still_says_something() {
-        affordanceFor(entry(stage = AnalyzeStage.FAILED), LocalAnalysisState.Idle) shouldBe
+        affordanceFor(entry(stage = AnalyzeStage.FAILED), LocalAnalysisState.Idle, null) shouldBe
             AnalyseAffordance.Failed("Unknown error")
     }
 
     @Test
     fun a_settled_cloud_stage_with_an_idle_device_offers_analyse() {
-        affordanceFor(entry(stage = AnalyzeStage.LOCAL), LocalAnalysisState.Idle) shouldBe
+        affordanceFor(entry(stage = AnalyzeStage.LOCAL), LocalAnalysisState.Idle, null) shouldBe
             AnalyseAffordance.Ready
     }
 
@@ -174,19 +209,19 @@ class AnalyticsRowsTest {
     fun a_done_device_run_still_reports_a_live_cloud_upload() {
         // Done is not "nothing to say": a clips-only device run leaves no track,
         // so the row stays ANALYSABLE while the cloud is still working on it.
-        affordanceFor(entry(stage = AnalyzeStage.UPLOADING), done) shouldBe
-            AnalyseAffordance.InProgress("Uploading")
+        affordanceFor(entry(stage = AnalyzeStage.UPLOADING), done, null) shouldBe
+            AnalyseAffordance.InProgress("Uploading…")
     }
 
     @Test
     fun a_done_device_run_still_reports_a_cloud_failure() {
-        affordanceFor(entry(stage = AnalyzeStage.FAILED, failureMessage = "quota"), done) shouldBe
+        affordanceFor(entry(stage = AnalyzeStage.FAILED, failureMessage = "quota"), done, null) shouldBe
             AnalyseAffordance.Failed("quota")
     }
 
     @Test
     fun a_done_device_run_that_saved_no_track_offers_analyse_again() {
-        affordanceFor(entry(stage = AnalyzeStage.LOCAL), done) shouldBe AnalyseAffordance.Ready
+        affordanceFor(entry(stage = AnalyzeStage.LOCAL), done, null) shouldBe AnalyseAffordance.Ready
     }
 
     // --- buildAnalyticsRows ---
@@ -235,7 +270,40 @@ class AnalyticsRowsTest {
             entries = listOf(e),
             live = mapOf("e1" to LocalAnalysisState.Analysing(0.2f)),
         ).single()
-        row.affordance shouldBe AnalyseAffordance.InProgress("Analysing on device")
+        row.affordance shouldBe AnalyseAffordance.InProgress("Analyzing on device")
+    }
+
+    @Test
+    fun every_row_describes_itself_in_sentence_case() {
+        // This has flipped twice. The screen once uppercased its match rows and
+        // not its local video rows, so one list drew "1:00 · Jan 1, 1970" over
+        // "3 RALLIES · JAN 1, 1970"; the fix at the time uppercased both. The
+        // mock settles it the other way - "On this phone", "1:05 · Sep 2" - and
+        // the redesign carries no uppercase anywhere, so a transform reappearing
+        // at any of these three call sites is a regression rather than a choice.
+        val e = entry(id = "e1")
+        val out = rows(
+            standalone = listOf(localRow(e)),
+            entries = listOf(e),
+            owned = listOf(MatchRow.Video(match = videoMatch("v1"))),
+            shared = listOf(videoMatch("v2")),
+        )
+        out.map { it.group } shouldBe listOf(
+            AnalyticsGroup.LOCAL_VIDEOS, AnalyticsGroup.OWNED_MATCHES, AnalyticsGroup.SHARED,
+        )
+        // Each subtitle still holds lower case somewhere, which an uppercasing
+        // call site would strip. "3 rallies · Jan 1, 1970" passes; the same
+        // string uppercased does not.
+        out.forEach { row -> row.subtitle.any { it.isLowerCase() } shouldBe true }
+        // Literals, deliberately, and NOT a comparison against the formatters
+        // themselves: `subtitle shouldBe matchRowSecondary(match)` re-derives the
+        // expectation from the code under test, so re-adding `.uppercase()` at
+        // the call site would change both sides and the test would still pass.
+        out.map { it.subtitle } shouldBe listOf(
+            "1:00 · Jan 1, 1970",
+            "3 rallies",
+            "3 rallies",
+        )
     }
 
     @Test
@@ -263,7 +331,7 @@ class AnalyticsRowsTest {
     fun one_video_produces_one_row_even_once_the_cloud_has_clipped_it() {
         // A video-first import that finished uploading is both a local video and
         // an owned match, and its two rows carry the same entry id, the same
-        // state and the same "Analyse" button. Two identical buttons on one
+        // state and the same "Analyze" button. Two identical buttons on one
         // video is a list bug, not a second thing the coach can do.
         val e = entry(id = "v1")
         val out = rows(
@@ -302,15 +370,15 @@ class AnalyticsRowsTest {
     fun a_list_with_a_live_button_and_no_dot_explains_the_button() {
         // The defect this decision exists for. ANALYSABLE fails the all-inert
         // test without contributing a dot, so the old two-way switch put
-        // "Analysed on this phone" and a green dot over a list whose only row
-        // said "Analyse" and drew no dot at all.
+        // "Analyzed on this phone" and a green dot over a list whose only row
+        // said "Analyze" and drew no dot at all.
         analyticsLegend(listOf(row(AnalyticsRowState.ANALYSABLE))) shouldBe
             AnalyticsLegend.ANALYSE_BUTTON
     }
 
     @Test
     fun a_dot_on_screen_outranks_a_button_on_screen() {
-        // A dot is a symbol and needs explaining; a button labelled "Analyse"
+        // A dot is a symbol and needs explaining; a button labelled "Analyze"
         // already says what it does.
         analyticsLegend(
             listOf(row(AnalyticsRowState.ANALYSABLE), row(AnalyticsRowState.READY)),

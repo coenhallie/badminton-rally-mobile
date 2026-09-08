@@ -94,7 +94,7 @@ final class AnalyticsRowsTests: XCTestCase {
     private func row(_ state: AnalyticsRowState, key: String = "k") -> AnalyticsRow {
         AnalyticsRow(
             key: key, entryId: state == .notOnDevice ? nil : "e-\(key)",
-            group: .ownedMatches, title: "Thu League", subtitle: "3 RALLIES",
+            group: .ownedMatches, title: "Thu League", subtitle: "3 rallies",
             state: state, affordance: .ready
         )
     }
@@ -118,6 +118,37 @@ final class AnalyticsRowsTests: XCTestCase {
         XCTAssertEqual(built[0].state, .notOnDevice)
         XCTAssertNil(built[0].entryId)
         XCTAssertEqual(built[0].group, .ownedMatches)
+    }
+
+    func testEveryRowDescribesItselfInSentenceCase() {
+        // This has flipped twice. Analytics uppercased its subtitles while the
+        // drawer beside it had already stopped, and Android was talked into
+        // uppercasing to match. The mock settles it the other way - "On this
+        // phone", "1:05 · Sep 2" - and the redesign carries no uppercase
+        // anywhere, so a `.uppercased()` reappearing at any of these three call
+        // sites is a regression rather than a choice.
+        let out = rows(
+            localEntries: [entry(id: "e1")],
+            ownedRows: [.video(videoMatch("v1"))],
+            sharedMatches: [videoMatch("v2")]
+        )
+        XCTAssertEqual(out.map(\.group), [.localVideos, .ownedMatches, .shared])
+        // Each subtitle still holds lower case somewhere, which an uppercasing
+        // call site would strip.
+        for row in out {
+            XCTAssertTrue(
+                row.subtitle.contains(where: { $0.isLowercase }),
+                "subtitle came out uppercased: \(row.subtitle)"
+            )
+        }
+        // Literals, deliberately, and NOT a comparison against the formatters
+        // themselves: `subtitle == matchRowSecondary(match)` re-derives the
+        // expectation from the code under test, so re-adding `.uppercased()` at
+        // the call site would change both sides and the test would still pass.
+        XCTAssertEqual(
+            out.map(\.subtitle),
+            ["1:05 · Jul 25, 2026", "3 rallies · Jul 25, 2026", "3 rallies · Jul 25, 2026"]
+        )
     }
 
     func testASharedMatchIsInertAndLandsInItsOwnSection() {
@@ -272,6 +303,6 @@ final class AnalyticsRowsTests: XCTestCase {
     func testAStoredTrackGetsTheDotLineAndTheDotPromisesNoTap() {
         let legend = analyticsLegend(for: [row(.ready, key: "a"), row(.analysable, key: "b")])
         XCTAssertEqual(legend, .dot)
-        XCTAssertEqual(legend.text, "Analysed on this phone.")
+        XCTAssertEqual(legend.text, "Analyzed on this phone.")
     }
 }
