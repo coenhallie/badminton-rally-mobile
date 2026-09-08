@@ -1,8 +1,8 @@
 # Body measurements from the stored skeleton: what can be measured, and how well
 
-Status: research, 2026-09-07. No code changed. Numbers below were measured on
-the host with the deployed pose graph over the corpus videos; the scripts are
-described in §6.
+Status: implemented 2026-09-08 on Android; see
+docs/screenshots/android-analytics-metrics-*.png. Tier C heights (§5) are not
+built.
 
 ## 1. The question and the short answer
 
