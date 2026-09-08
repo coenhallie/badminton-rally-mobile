@@ -89,7 +89,7 @@ fun CourtHeatmapView(
                 // The court plus the margin the selector accepts, so a player
                 // lunging past the baseline is drawn where they were rather
                 // than clamped onto the line.
-                .aspectRatio((Court.WIDTH_DOUBLES + 2 * MARGIN_M).toFloat() / (Court.LENGTH + 2 * MARGIN_M).toFloat()),
+                .aspectRatio((Court.WIDTH_DOUBLES + 2 * COURT_DRAW_MARGIN_M).toFloat() / (Court.LENGTH + 2 * COURT_DRAW_MARGIN_M).toFloat()),
         ) {
             if (image != null) {
                 drawImage(
@@ -100,7 +100,7 @@ fun CourtHeatmapView(
                     filterQuality = FilterQuality.High,
                 )
             }
-            drawCourt(marginM = MARGIN_M, lineColor = courtLine)
+            drawCourt(marginM = COURT_DRAW_MARGIN_M, lineColor = courtLine)
         }
 
         Text(
@@ -149,7 +149,7 @@ private fun heatImage(grid: List<List<Double>>, peak: Double): ImageBitmap? {
  * Drawn from `Court`'s dimensions rather than hand-placed fractions, so the
  * lines and the data cannot drift apart.
  */
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawCourt(marginM: Double, lineColor: Color) {
+internal fun androidx.compose.ui.graphics.drawscope.DrawScope.drawCourt(marginM: Double, lineColor: Color) {
     val totalW = Court.WIDTH_DOUBLES + 2 * marginM
     val totalH = Court.LENGTH + 2 * marginM
     fun x(m: Double) = ((m + marginM) / totalW * size.width).toFloat()
@@ -193,7 +193,7 @@ private fun summary(track: PlayerTrack, occupancy: CourtOccupancy): String {
     return "%.1f min tracked · player found in %d%% of frames".format(minutes, coverage)
 }
 
-private fun whyEmpty(track: PlayerTrack): String = when {
+internal fun whyEmpty(track: PlayerTrack): String = when {
     track.rejections.containsKey(RejectionReason.BAD_COURT) ->
         "The court marks do not fit a badminton court, so positions cannot be trusted. " +
             "Mark the court again and re-run the analysis."
@@ -203,7 +203,8 @@ private fun whyEmpty(track: PlayerTrack): String = when {
         "The player was not found on the near court in any of ${track.framesWithPose} frames."
 }
 
-private const val MARGIN_M = 2.0
+/** The court plus the margin the selector accepts, so a lunge past the baseline is drawn where it was. */
+internal const val COURT_DRAW_MARGIN_M = 2.0
 
 /**
  * DELIBERATELY raw hex, outside ShuttlPalette, and not a defect to "fix".

@@ -10,6 +10,12 @@ The mobile app is versioned independently from the web app.
 ## [Unreleased]
 
 ### Added
+- The Analytics detail has a Base tab: where the near player played from in
+  each rally, as a dot per rally on the court and a ring for the whole match,
+  with each base said against the service line and the centre line. It is the
+  median of the rally's positions from the ankles and the court marks, which
+  is the most stable number the track supports. Shown when a pose run and its
+  clips are stored for the video (Android, on-device analysis).
 - The skeleton view now measures the near player frame by frame: stance width
   and distance behind the service line in metres (from the court marks), and
   elbow, arm, knee and trunk-lean angles as seen by the camera. Tap a tile to
