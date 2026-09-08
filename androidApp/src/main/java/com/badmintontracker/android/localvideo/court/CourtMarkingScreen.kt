@@ -95,10 +95,7 @@ fun CourtMarkingScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        "COURT MAPPING",
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 14.sp),
-                    )
+                    Text("Court mapping")
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {

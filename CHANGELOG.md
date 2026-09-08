@@ -10,6 +10,48 @@ The mobile app is versioned independently from the web app.
 ## [Unreleased]
 
 ### Added
+- Pinch to zoom on every video player, up to five times, and drag to pan once
+  zoomed. Double-tap zooms in on the spot, double-tap again zooms out. The
+  skeleton scales with the frame, so a joint can be checked up close.
+
+### Changed
+- Every video player is now the same player. The clip screen and the local
+  video player use the skeleton view's rounded video card, with the timecode
+  chip, the speed chip, a fullscreen chip and a progress bar that scrubs, and
+  the same centred pill transport under it. Media3's own controller is gone
+  with its play button and time bar, and the purple floating "add note" button
+  is now an accent "Add note" pill on the line that heads the notes.
+- Segmented controls are pill switchers everywhere: the match page's Points and
+  Rallies, New match's format, scoring and coin toss, and a label's Use. The
+  playback sheet and the Add note sheet use pill chips, with a chosen label in
+  its own colour.
+- The Analytics list lays its matches out as cards under a "Pick a match"
+  headline, with the availability dot on the card's right.
+- Screen titles are sentence case throughout: Analytics, Court mapping, Labels,
+  Clips on this phone, and the match page's own title. The standalone heatmap
+  reached from a finished run heads itself with the video's name, length and
+  date, as the Analytics detail does.
+- The on-device analysis card and the local clip player dialog sit on the card
+  colour instead of Material's fallback tint.
+- The Analytics detail now follows the app's design language, from the Rally
+  Analysis mock. The bar names the video with its length and date under it;
+  the Heatmap, Base and Skeleton tabs are a pill switcher; the court sits on a
+  bordered card, with the heatmap's tracking summary as two stat tiles and a
+  low-to-high scale under it. The skeleton view puts the video on a rounded
+  card with a timecode chip, a speed chip and a progress bar; its transport is
+  a centred row of pill and circle buttons with the accent play button; its
+  measurements are stat tiles, swiped a page of four at a time (two rows of
+  two) or all at once when expanded, with the racket-arm choice as a pill
+  switcher; and its graph is a titled card that says the
+  range once in its header instead of drawing it on the plot.
+
+### Added
+- Two more tiles under the skeleton video: Shoulders and Hips, the tilt of
+  each line from level as the camera sees it, positive when the right-hand end
+  is higher. Tap one and the line is drawn on the skeleton with the horizontal
+  it is measured from.
+- A Play/Pause button between Previous frame and Next frame in the skeleton
+  view. Until now the only way to play there was to hold Next frame.
 - The Analytics detail has a Base tab: where the near player played from in
   each rally, as a dot per rally on the court and a ring for the whole match,
   with each base said against the service line and the centre line. It is the
@@ -125,6 +167,14 @@ The mobile app is versioned independently from the web app.
   (marked "Analyzed") and loses them only when removed from the app.
 
 ### Changed
+- The skeleton view is quieter by default. The measurements sit in one row
+  that scrolls sideways, with a chevron that opens the full grid, the
+  racket-arm control and the file's details; the grid stays open once opened.
+  The transport is one row of five: skip back, a frame back, play or pause, a
+  frame forward, skip forward, and the speed has moved to a chip on the frame
+  line that opens the same settings. Nothing was removed.
+- The metric tiles in the grid are centred in each row instead of hanging off
+  the left edge.
 - On iOS, labels are now created on the Labels screen only. The "+ New label"
   shortcut inside the Add-note sheet is gone, which matches Android and means a
   label's name, colour and scope are always chosen together in one place.

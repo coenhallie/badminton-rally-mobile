@@ -11,9 +11,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -23,16 +20,23 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.badmintontracker.android.cliplist.formatDate
 import com.badmintontracker.android.localanalysis.BackgroundWorkAction
 import com.badmintontracker.android.localanalysis.BasePositionPanel
 import com.badmintontracker.android.localanalysis.HeatmapPanel
 import com.badmintontracker.android.localanalysis.LocalAnalysisRunner
 import com.badmintontracker.android.localanalysis.LocalAnalysisState
 import com.badmintontracker.android.localanalysis.SkeletonPanel
+import com.badmintontracker.android.localvideo.formatDuration
+import com.badmintontracker.android.ui.components.ShuttlPillTabs
+import com.badmintontracker.android.ui.theme.ShuttlTheme
+import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.prefs.PlaybackPreferenceRepository
 import com.badmintontracker.shared.prefs.RacketArmPreferenceRepository
+import kotlinx.datetime.Instant
 
 /** Which renderer the detail is showing. A segment is offered only when it has content. */
 internal enum class AnalyticsPanel(val label: String) { Heatmap("Heatmap"), Base("Base"), Skeleton("Skeleton") }
@@ -52,16 +56,51 @@ internal fun availablePanels(hasTrack: Boolean, hasBoundedClips: Boolean, hasSke
     }
 
 /**
+ * The bar's two lines for one entry: the match's name, then its length and
+ * the day it was added, as the mock heads the page ("Vitidsarn vs Axelsen"
+ * over "Rally 12 of 46 · Aug 21"). The mock's second line names a rally;
+ * this screen shows the whole video, so its second line says which video.
+ */
+internal fun detailSubtitle(entry: LocalVideoEntry): String =
+    "${formatDuration(entry.durationMs)} · ${formatDate(Instant.fromEpochMilliseconds(entry.addedAtEpochMs))}"
+
+/**
+ * The bar's two lines for a video: the match's name over its length and date,
+ * or [fallback] alone when the video is no longer on the phone.
+ */
+@Composable
+fun VideoTitle(entry: LocalVideoEntry?, fallback: String) {
+    Column {
+        Text(
+            // The list's own naming: the user's title, else the file name.
+            entry?.title ?: entry?.displayName ?: fallback,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onBackground,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (entry != null) {
+            Text(
+                detailSubtitle(entry),
+                style = MaterialTheme.typography.bodySmall,
+                color = ShuttlTheme.extended.textTertiary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+/**
  * What one analysed match has to show, reached from a READY row on the
  * Analytics list.
  *
- * A segmented control between the heatmap, the per-rally base position and the
+ * A pill tab row between the heatmap, the per-rally base position and the
  * skeleton, drawn only when more than one of them has content. The earlier
  * version of this screen had no tab row, deliberately: with one renderer a
  * single pill read as a primary button that did nothing, and a control that
- * cannot be actuated is worse than a plain heading. Built as the match page
- * builds its facet selector, and gated the same way: a segment must have
- * something behind it.
+ * cannot be actuated is worse than a plain heading. Gated the same way the
+ * match page gates its facet selector: a tab must have something behind it.
  *
  * The heatmap itself, and the resolution of which track to draw, are
  * [HeatmapPanel]'s - shared with the standalone route the analysis banner
@@ -92,13 +131,14 @@ fun AnalyticsDetailScreen(
     val panels = availablePanels(hasTrack, hasBoundedClips, hasSkeleton)
     var chosen by rememberSaveable { mutableStateOf(AnalyticsPanel.Heatmap) }
     val panel = if (chosen in panels) chosen else AnalyticsPanel.Heatmap
-    val videoUri = remember(entryId) { localVideos.get(entryId)?.uri }
+    val entry = remember(entryId) { localVideos.get(entryId) }
+    val videoUri = entry?.uri
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { Text("ANALYSIS") },
+                title = { VideoTitle(entry = entry, fallback = "Analysis") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -110,17 +150,12 @@ fun AnalyticsDetailScreen(
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
             if (panels.size > 1) {
-                SingleChoiceSegmentedButtonRow(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                ) {
-                    panels.forEachIndexed { index, candidate ->
-                        SegmentedButton(
-                            selected = panel == candidate,
-                            onClick = { chosen = candidate },
-                            shape = SegmentedButtonDefaults.itemShape(index, panels.size),
-                        ) { Text(candidate.label) }
-                    }
-                }
+                ShuttlPillTabs(
+                    labels = panels.map { it.label },
+                    selectedIndex = panels.indexOf(panel),
+                    onSelect = { chosen = panels[it] },
+                    modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 16.dp),
+                )
             } else {
                 // Styled as the list's SectionHeader, not as a title: a coach arrives
                 // here in one tap from that list, and two treatments of the same thing
@@ -129,7 +164,7 @@ fun AnalyticsDetailScreen(
                     "HEATMAP",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
                 )
             }
             when (panel) {

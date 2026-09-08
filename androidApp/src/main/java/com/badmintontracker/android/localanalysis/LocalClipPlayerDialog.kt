@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -46,7 +48,10 @@ fun LocalClipPlayerDialog(clip: ClipCutter.Clip, onDismiss: () -> Unit) {
     DisposableEffect(player) { onDispose { player.release() } }
 
     Dialog(onDismissRequest = onDismiss) {
-        Card {
+        Card(
+            shape = MaterialTheme.shapes.large,
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        ) {
             Column(
                 modifier = Modifier.padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -54,7 +59,7 @@ fun LocalClipPlayerDialog(clip: ClipCutter.Clip, onDismiss: () -> Unit) {
                 Text(
                     "Rally ${clip.index}  ${"%.2f".format(clip.startSeconds)}s - " +
                         "${"%.2f".format(clip.endSeconds)}s",
-                    style = androidx.compose.material3.MaterialTheme.typography.labelLarge,
+                    style = MaterialTheme.typography.labelLarge,
                 )
                 AndroidView(
                     factory = { ctx -> PlayerView(ctx).apply { this.player = player } },

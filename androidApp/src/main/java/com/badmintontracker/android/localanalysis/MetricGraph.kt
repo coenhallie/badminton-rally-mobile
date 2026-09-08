@@ -1,25 +1,32 @@
 package com.badmintontracker.android.localanalysis
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
-import androidx.compose.ui.text.drawText
-import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import com.badmintontracker.analysis.player.MetricKind
+import com.badmintontracker.android.ui.theme.ShuttlRadius
+import com.badmintontracker.android.ui.theme.ShuttlTheme
 
 /**
  * What to draw for one metric over one window: a polyline per run of samples
@@ -103,13 +110,15 @@ internal fun graphSegments(
 }
 
 /**
- * The selected measurement over the seconds around the playhead.
+ * The selected measurement over the seconds around the playhead, on a card.
  *
  * A serve is a curve, not a frame: the elbow angle through a serve is what a
  * coach compares between two serves, and a tile cannot show a curve. Raw
  * values, no smoothing, a gap wherever the joint was absent for more than two
  * frames, a fixed vertical range per kind so the shape does not rescale
- * under the eye. The playhead sits at the centre; tapping or dragging seeks.
+ * under the eye. The card's header names the measurement and says the range
+ * once; the plot itself is the mock's bare line with the playhead at its
+ * centre, no frame and no axis labels. Tapping or dragging seeks.
  *
  * [durationS] is the clip's length in seconds, or [Double.POSITIVE_INFINITY]
  * while the player does not know it yet. A drag clamps to it, so dragging past
@@ -120,6 +129,7 @@ internal fun graphSegments(
 fun MetricGraph(
     series: List<MetricSample>,
     kind: MetricKind,
+    label: String,
     positionS: Double,
     fps: Double,
     durationS: Double,
@@ -128,11 +138,7 @@ fun MetricGraph(
     windowS: Double = 2.0,
 ) {
     val line = MaterialTheme.colorScheme.primary
-    val playhead = MaterialTheme.colorScheme.onSurface
-    val frame = MaterialTheme.colorScheme.outlineVariant
-    val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
-    val labelStyle = MaterialTheme.typography.labelSmall
-    val measurer = rememberTextMeasurer()
+    val playhead = MaterialTheme.colorScheme.onBackground
     val range = kind.range
     val gapS = if (fps > 0) 2.5 / fps else 0.1
 
@@ -150,63 +156,80 @@ fun MetricGraph(
     // the first composition of a clip and arrives later.
     val currentDurationS by rememberUpdatedState(durationS)
 
-    Canvas(
+    val shape = RoundedCornerShape(ShuttlRadius.large)
+    Column(
         modifier = modifier
             .fillMaxWidth()
-            .height(96.dp)
-            .padding(horizontal = 12.dp)
-            .pointerInput(windowS) {
-                detectTapGestures { tap ->
-                    currentOnSeek(currentPositionS + (tap.x / size.width - 0.5) * 2 * windowS)
-                }
-            }
-            .pointerInput(windowS) {
-                // The anchor is clamped, not just the seek: an unclamped anchor
-                // would keep accumulating past the clip's end and the drag back
-                // would spend its first centimetres undoing that instead of
-                // moving the playhead.
-                var anchorS = currentPositionS
-                detectHorizontalDragGestures(
-                    onDragStart = { anchorS = currentPositionS },
-                    onHorizontalDrag = { change, _ ->
-                        anchorS = (anchorS - (change.positionChange().x / size.width) * 2 * windowS)
-                            .coerceIn(0.0, maxOf(0.0, currentDurationS))
-                        currentOnSeek(anchorS)
-                    },
-                )
-            },
+            .padding(horizontal = 24.dp)
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceVariant, shape)
+            .padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 16.dp),
     ) {
-        val w = size.width
-        val h = size.height
-        val startS = positionS - windowS
-        val endS = positionS + windowS
-        fun x(t: Double) = (((t - startS) / (2 * windowS)) * w).toFloat()
-        fun y(v: Double) = (h - ((v - range.start) / (range.endInclusive - range.start)) * h).toFloat()
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+            Text(
+                "$label around this frame",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                metricRangeLabel(kind),
+                style = MaterialTheme.typography.bodySmall,
+                color = ShuttlTheme.extended.textTertiary,
+            )
+        }
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 12.dp)
+                .height(72.dp)
+                .pointerInput(windowS) {
+                    detectTapGestures { tap ->
+                        currentOnSeek(currentPositionS + (tap.x / size.width - 0.5) * 2 * windowS)
+                    }
+                }
+                .pointerInput(windowS) {
+                    // The anchor is clamped, not just the seek: an unclamped anchor
+                    // would keep accumulating past the clip's end and the drag back
+                    // would spend its first centimetres undoing that instead of
+                    // moving the playhead.
+                    var anchorS = currentPositionS
+                    detectHorizontalDragGestures(
+                        onDragStart = { anchorS = currentPositionS },
+                        onHorizontalDrag = { change, _ ->
+                            anchorS = (anchorS - (change.positionChange().x / size.width) * 2 * windowS)
+                                .coerceIn(0.0, maxOf(0.0, currentDurationS))
+                            currentOnSeek(anchorS)
+                        },
+                    )
+                },
+        ) {
+            val w = size.width
+            val h = size.height
+            val startS = positionS - windowS
+            val endS = positionS + windowS
+            fun x(t: Double) = (((t - startS) / (2 * windowS)) * w).toFloat()
+            fun y(v: Double) = (h - ((v - range.start) / (range.endInclusive - range.start)) * h).toFloat()
 
-        drawRect(color = frame, style = Stroke(width = 1f))
-
-        val segments = graphSegments(series, kind, startS, endS, gapS)
-        // Values outside the kind's range are real (a lunge behind the service
-        // line reads under -1 m), and Canvas does not clip on its own, so the
-        // curve is cut at the box edges rather than drawn over the tiles.
-        clipRect {
-            segments.polylines.forEach { polyline ->
-                for (n in 1 until polyline.size) {
-                    val (t0, v0) = polyline[n - 1]
-                    val (t1, v1) = polyline[n]
-                    drawLine(line, Offset(x(t0), y(v0)), Offset(x(t1), y(v1)), strokeWidth = 3f)
+            val segments = graphSegments(series, kind, startS, endS, gapS)
+            val stroke = 1.6.dp.toPx()
+            // Values outside the kind's range are real (a lunge behind the service
+            // line reads under -1 m), and Canvas does not clip on its own, so the
+            // curve is cut at the box edges rather than drawn over the header.
+            clipRect {
+                segments.polylines.forEach { polyline ->
+                    for (n in 1 until polyline.size) {
+                        val (t0, v0) = polyline[n - 1]
+                        val (t1, v1) = polyline[n]
+                        drawLine(line, Offset(x(t0), y(v0)), Offset(x(t1), y(v1)), strokeWidth = stroke, cap = StrokeCap.Round)
+                    }
+                }
+                segments.points.forEach { (t, v) ->
+                    drawCircle(line, radius = stroke, center = Offset(x(t), y(v)))
                 }
             }
-            segments.points.forEach { (t, v) ->
-                drawCircle(line, radius = 2f, center = Offset(x(t), y(v)))
-            }
+
+            drawLine(playhead, Offset(w / 2, 0f), Offset(w / 2, h), strokeWidth = 1.dp.toPx())
         }
-
-        drawLine(playhead, Offset(w / 2, 0f), Offset(w / 2, h), strokeWidth = 2f)
-
-        val style = labelStyle.copy(color = labelColor)
-        drawText(measurer, formatMetric(kind, range.endInclusive), topLeft = Offset(4f, 2f), style = style)
-        val bottom = measurer.measure(formatMetric(kind, range.start), style)
-        drawText(measurer, formatMetric(kind, range.start), topLeft = Offset(4f, h - bottom.size.height - 2f), style = style)
     }
 }

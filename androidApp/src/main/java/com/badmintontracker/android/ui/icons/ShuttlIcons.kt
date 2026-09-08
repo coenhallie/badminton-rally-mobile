@@ -21,7 +21,47 @@ object ShuttlIcons {
     val Sun: ImageVector by lazy { buildSun() }
     val Moon: ImageVector by lazy { buildMoon() }
     val Info: ImageVector by lazy { buildInfo() }
+
+    // The transport glyphs, traced from the Rally Analysis mock's own SVGs:
+    // 14-unit chevrons and steps at a 1.4 stroke, an 18-unit filled play and
+    // pause. Kept as one family so the five buttons of the skeleton view's
+    // transport row share a stroke weight.
+    val ChevronsLeft: ImageVector by lazy { buildStroked("ShuttlChevronsLeft") { moveTo(8f, 3f); lineTo(3.5f, 7f); lineTo(8f, 11f); moveTo(12f, 3f); lineTo(7.5f, 7f); lineTo(12f, 11f) } }
+    val ChevronsRight: ImageVector by lazy { buildStroked("ShuttlChevronsRight") { moveTo(6f, 3f); lineTo(10.5f, 7f); lineTo(6f, 11f); moveTo(2f, 3f); lineTo(6.5f, 7f); lineTo(2f, 11f) } }
+    val StepBack: ImageVector by lazy { buildStroked("ShuttlStepBack") { moveTo(9.5f, 3f); lineTo(5.5f, 7f); lineTo(9.5f, 11f); moveTo(3.5f, 3f); lineTo(3.5f, 11f) } }
+    val StepForward: ImageVector by lazy { buildStroked("ShuttlStepForward") { moveTo(4.5f, 3f); lineTo(8.5f, 7f); lineTo(4.5f, 11f); moveTo(10.5f, 3f); lineTo(10.5f, 11f) } }
+    // Corner brackets pointing out, and in: the fullscreen toggle on the video card.
+    val Maximize: ImageVector by lazy { buildStroked("ShuttlMaximize") { moveTo(2f, 5.5f); lineTo(2f, 2f); lineTo(5.5f, 2f); moveTo(8.5f, 2f); lineTo(12f, 2f); lineTo(12f, 5.5f); moveTo(12f, 8.5f); lineTo(12f, 12f); lineTo(8.5f, 12f); moveTo(5.5f, 12f); lineTo(2f, 12f); lineTo(2f, 8.5f) } }
+    val Minimize: ImageVector by lazy { buildStroked("ShuttlMinimize") { moveTo(2f, 5.5f); lineTo(5.5f, 5.5f); lineTo(5.5f, 2f); moveTo(8.5f, 2f); lineTo(8.5f, 5.5f); lineTo(12f, 5.5f); moveTo(12f, 8.5f); lineTo(8.5f, 8.5f); lineTo(8.5f, 12f); moveTo(5.5f, 12f); lineTo(5.5f, 8.5f); lineTo(2f, 8.5f) } }
+    val Play: ImageVector by lazy { buildFilled("ShuttlPlay") { moveTo(5f, 3f); lineTo(15f, 9f); lineTo(5f, 15f); close() } }
+    val Pause: ImageVector by lazy {
+        buildFilled("ShuttlPause") {
+            moveTo(4f, 3f); lineTo(7.5f, 3f); lineTo(7.5f, 15f); lineTo(4f, 15f); close()
+            moveTo(10.5f, 3f); lineTo(14f, 3f); lineTo(14f, 15f); lineTo(10.5f, 15f); close()
+        }
+    }
 }
+
+/** A 14-unit outlined glyph in the mock's 1.4 stroke. The colour is a placeholder for Icon's tint. */
+private fun buildStroked(name: String, pathData: androidx.compose.ui.graphics.vector.PathBuilder.() -> Unit): ImageVector =
+    ImageVector.Builder(name = name, defaultWidth = 14.dp, defaultHeight = 14.dp, viewportWidth = 14f, viewportHeight = 14f)
+        .apply {
+            path(
+                fill = SolidColor(Color.Transparent),
+                stroke = SolidColor(Color.Black),
+                strokeLineWidth = 1.4f,
+                strokeLineCap = StrokeCap.Round,
+                strokeLineJoin = StrokeJoin.Round,
+                pathBuilder = pathData,
+            )
+        }
+        .build()
+
+/** An 18-unit filled glyph. */
+private fun buildFilled(name: String, pathData: androidx.compose.ui.graphics.vector.PathBuilder.() -> Unit): ImageVector =
+    ImageVector.Builder(name = name, defaultWidth = 18.dp, defaultHeight = 18.dp, viewportWidth = 18f, viewportHeight = 18f)
+        .apply { path(fill = SolidColor(Color.Black), pathBuilder = pathData) }
+        .build()
 
 private fun buildSun(): ImageVector = ImageVector.Builder(
     name = "ShuttlSun",

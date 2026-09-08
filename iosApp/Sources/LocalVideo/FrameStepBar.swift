@@ -1,9 +1,9 @@
 import AVFoundation
 import SwiftUI
 
-/// Port of Android's FrameStepBar: tap = single frame step; hold-left = -3
+/// Port of Android's frame stepping (now in TransportBar.kt): tap = single frame step; hold-left = -3
 /// frames every 100ms; hold-right = real playback until release. 400ms hold
-/// activation, like Android's TransportButton.
+/// activation, like Android's pressAndHold.
 struct FrameStepBar: View {
     let player: AVPlayer
     let step: (Int64) -> Void

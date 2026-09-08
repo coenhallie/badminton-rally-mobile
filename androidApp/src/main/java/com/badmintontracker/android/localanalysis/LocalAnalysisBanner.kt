@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -52,12 +54,19 @@ fun LocalAnalysisBanner(
 
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         settled.forEach { (entryId, state) ->
-            Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+            // Pinned to the card colour and radius: M3's Card default resolves a
+            // surfaceContainer role this palette never sets, and falls back to
+            // Material's own tinted grey.
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+                shape = MaterialTheme.shapes.large,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            ) {
                 Column(
-                    modifier = Modifier.fillMaxWidth().padding(12.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Text("On-device analysis", style = androidx.compose.material3.MaterialTheme.typography.labelLarge)
+                    Text("On-device analysis", style = MaterialTheme.typography.labelLarge)
                     when (state) {
                         is LocalAnalysisState.Done -> {
                             Text(

@@ -125,6 +125,52 @@ class PoseMetricsTest {
     }
 
     @Test
+    fun shoulder_and_hip_tilt_are_zero_level_and_positive_when_the_frames_right_end_is_higher() {
+        val (kps, conf) = figure()
+        kps[Coco.LEFT_SHOULDER] = Point(90.0, 100.0)
+        kps[Coco.RIGHT_SHOULDER] = Point(110.0, 100.0)
+        kps[Coco.LEFT_HIP] = Point(92.0, 200.0)
+        kps[Coco.RIGHT_HIP] = Point(108.0, 200.0)
+        val level = poseMetrics(kps, conf, null)
+        near(0.0, level.shoulderTiltDeg, 1e-9, "level shoulders")
+        near(0.0, level.hipTiltDeg, 1e-9, "level hips")
+        // Right shoulder 20 px higher in the image over a 20 px span: 45 degrees.
+        kps[Coco.RIGHT_SHOULDER] = Point(110.0, 80.0)
+        // Right hip lower: negative.
+        kps[Coco.RIGHT_HIP] = Point(108.0, 216.0)
+        val tilted = poseMetrics(kps, conf, null)
+        near(45.0, tilted.shoulderTiltDeg, 1e-9, "right shoulder up")
+        near(-45.0, tilted.hipTiltDeg, 1e-9, "right hip down")
+    }
+
+    @Test
+    fun a_tilt_reads_the_same_whichever_way_the_player_faces() {
+        // The same visible line, its frame-left end higher, seen from behind
+        // (the anatomical left is on the frame's left) and from the front (the
+        // anatomical right is). The number is about the picture, so it is the
+        // same: the frame's right end is lower, negative.
+        near(-45.0, lineTiltDeg(left = Point(90.0, 80.0), right = Point(110.0, 100.0)), 1e-9, "facing away")
+        near(-45.0, lineTiltDeg(left = Point(110.0, 100.0), right = Point(90.0, 80.0)), 1e-9, "facing the camera")
+        // And the mirror image, frame-right end higher, positive both ways.
+        near(45.0, lineTiltDeg(left = Point(90.0, 100.0), right = Point(110.0, 80.0)), 1e-9, "facing away, right up")
+        near(45.0, lineTiltDeg(left = Point(110.0, 80.0), right = Point(90.0, 100.0)), 1e-9, "facing the camera, right up")
+        assertNull(lineTiltDeg(Point(1.0, 1.0), Point(1.0, 1.0)))
+    }
+
+    @Test
+    fun an_unconfident_shoulder_removes_only_the_shoulder_tilt() {
+        val (kps, conf) = figure()
+        kps[Coco.LEFT_SHOULDER] = Point(90.0, 100.0)
+        kps[Coco.RIGHT_SHOULDER] = Point(110.0, 100.0)
+        kps[Coco.LEFT_HIP] = Point(90.0, 200.0)
+        kps[Coco.RIGHT_HIP] = Point(110.0, 200.0)
+        conf[Coco.RIGHT_SHOULDER] = 0.2f
+        val m = poseMetrics(kps, conf, null)
+        assertNull(m.shoulderTiltDeg)
+        near(0.0, m.hipTiltDeg, 1e-9, "hips")
+    }
+
+    @Test
     fun arm_angle_is_zero_hanging_and_one_eighty_straight_up() {
         val (kps, conf) = figure()
         kps[Coco.LEFT_HIP] = Point(0.0, 100.0)
@@ -147,6 +193,7 @@ class PoseMetricsTest {
             stanceM = 1.0, behindServiceLineM = 2.0, fromCentreLineM = 3.0,
             elbowLeftDeg = 4.0, elbowRightDeg = 5.0, armLeftDeg = 6.0, armRightDeg = 7.0,
             kneeLeftDeg = 8.0, kneeRightDeg = 9.0, trunkLeanDeg = 10.0,
+            shoulderTiltDeg = 11.0, hipTiltDeg = 12.0,
         )
         val seen = MetricKind.entries.map { it.of(m) }
         assertEquals(seen.size, seen.toSet().size, "two kinds read the same field: $seen")
@@ -154,6 +201,8 @@ class PoseMetricsTest {
         assertEquals(2.0, MetricKind.BEHIND_LINE.of(m))
         assertEquals(5.0, MetricKind.ELBOW_RIGHT.of(m))
         assertEquals(10.0, MetricKind.LEAN.of(m))
+        assertEquals(11.0, MetricKind.SHOULDERS.of(m))
+        assertEquals(12.0, MetricKind.HIPS.of(m))
     }
 
     @Test
@@ -163,6 +212,11 @@ class PoseMetricsTest {
         assertEquals(Triple(Coco.RIGHT_HIP, Coco.RIGHT_KNEE, Coco.RIGHT_ANKLE), MetricKind.KNEE_RIGHT.angleJoints)
         assertNull(MetricKind.STANCE.angleJoints)
         assertNull(MetricKind.LEAN.angleJoints)
-        assertTrue(MetricKind.entries.filter { it.isAngle }.all { it.range == 0.0..180.0 || it == MetricKind.LEAN })
+        assertNull(MetricKind.SHOULDERS.angleJoints)
+        assertEquals(Coco.LEFT_HIP to Coco.RIGHT_HIP, MetricKind.HIPS.lineJoints)
+        // Joint angles span 0..180; the lean and the two tilts are signed about level.
+        val signed = setOf(MetricKind.LEAN, MetricKind.SHOULDERS, MetricKind.HIPS)
+        assertTrue(MetricKind.entries.filter { it.isAngle }.all { it.range == 0.0..180.0 || it in signed })
+        assertTrue(signed.all { it.range == -45.0..45.0 })
     }
 }

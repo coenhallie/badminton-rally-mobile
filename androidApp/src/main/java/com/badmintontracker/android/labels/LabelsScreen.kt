@@ -28,9 +28,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -59,6 +56,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.badmintontracker.android.localanalysis.BackgroundWorkAction
 import com.badmintontracker.android.ui.components.FieldLabel
+import com.badmintontracker.android.ui.components.ShuttlPillTabs
 import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlOutlinedTextField
 import com.badmintontracker.android.ui.components.SwipeToRemoveRow
@@ -85,10 +83,7 @@ fun LabelsScreen(vm: LabelsViewModel, onBack: () -> Unit) {
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        "LABELS",
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 14.sp),
-                    )
+                    Text("Labels")
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -368,19 +363,12 @@ private fun UsagePicker(selected: LabelUsage, onSelect: (LabelUsage) -> Unit) {
     Column {
         FieldLabel("Use")
         Spacer(Modifier.height(6.dp))
-        SingleChoiceSegmentedButtonRow(
-            Modifier
-                .fillMaxWidth()
-                .semantics { contentDescription = "Use" },
-        ) {
-            options.forEachIndexed { index, (usage, text) ->
-                SegmentedButton(
-                    selected = selected == usage,
-                    onClick = { onSelect(usage) },
-                    shape = SegmentedButtonDefaults.itemShape(index, options.size),
-                ) { Text(text) }
-            }
-        }
+        ShuttlPillTabs(
+            labels = options.map { it.second },
+            selectedIndex = options.indexOfFirst { it.first == selected },
+            onSelect = { onSelect(options[it].first) },
+            modifier = Modifier.semantics { contentDescription = "Use" },
+        )
     }
 }
 

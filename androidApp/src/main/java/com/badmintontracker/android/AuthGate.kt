@@ -33,6 +33,7 @@ import androidx.navigation.toRoute
 import com.badmintontracker.android.clipdetail.ClipDetailScreen
 import com.badmintontracker.android.clipdetail.ClipDetailViewModel
 import com.badmintontracker.android.analytics.AnalyticsDetailScreen
+import com.badmintontracker.android.analytics.VideoTitle
 import com.badmintontracker.android.analytics.AnalyticsScreen
 import com.badmintontracker.android.analytics.buildAnalyticsRows
 import com.badmintontracker.android.cliplist.ClipListViewModel
@@ -535,7 +536,7 @@ fun AuthGate(
                     Scaffold(
                         topBar = {
                             TopAppBar(
-                                title = { Text("CLIPS ON THIS PHONE") },
+                                title = { Text("Clips on this phone") },
                                 navigationIcon = {
                                     IconButton(onClick = { nav.popBackStack() }) {
                                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -587,7 +588,12 @@ fun AuthGate(
                     Scaffold(
                         topBar = {
                             TopAppBar(
-                                title = { Text("PLAYER HEATMAP") },
+                                title = {
+                                    // The same two lines the Analytics detail heads
+                                    // itself with, so the two routes to one heatmap
+                                    // do not read as two screens.
+                                    VideoTitle(entry = localVideos.get(args.entryId), fallback = "Player heatmap")
+                                },
                                 navigationIcon = {
                                     IconButton(onClick = { nav.popBackStack() }) {
                                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")

@@ -4,12 +4,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import com.badmintontracker.analysis.player.PlayerTrack
 
 /** A track to draw and the frame rate it was sampled at, which must travel together. */
@@ -83,10 +80,7 @@ fun HeatmapPanel(
             // A run's state lives in memory, so it is gone after a process death.
             // Said plainly rather than drawing an empty court, which would read as
             // a player who never moved.
-            Text(
-                "This analysis is no longer loaded. Run it again to see the heatmap.",
-                modifier = Modifier.padding(16.dp),
-            )
+            PanelMessage("This analysis is no longer loaded. Run it again to see the heatmap.")
         } else {
             CourtHeatmapView(track = source.track, fps = source.fps)
         }

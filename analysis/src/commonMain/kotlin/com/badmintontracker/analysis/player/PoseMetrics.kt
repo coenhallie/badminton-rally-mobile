@@ -53,9 +53,19 @@ data class PoseMetrics(
     val kneeRightDeg: Double?,
     /** Hip midpoint to shoulder midpoint, degrees from vertical, positive toward the frame's right. */
     val trunkLeanDeg: Double?,
+    /**
+     * The shoulder line's tilt from the image horizontal, degrees, positive
+     * when the end nearer the frame's right is higher. Between -90 and 90 so
+     * it reads the same whichever way the player faces: the joints are the
+     * player's anatomical left and right, and a figure facing the camera
+     * would otherwise come out near 180.
+     */
+    val shoulderTiltDeg: Double?,
+    /** The hip line's tilt, on the same terms as [shoulderTiltDeg]. */
+    val hipTiltDeg: Double?,
 ) {
     companion object {
-        val NONE = PoseMetrics(null, null, null, null, null, null, null, null, null, null)
+        val NONE = PoseMetrics(null, null, null, null, null, null, null, null, null, null, null, null)
     }
 }
 
@@ -80,7 +90,17 @@ enum class MetricKind(
     KNEE_LEFT(Side.LEFT, 0.0..180.0, Triple(Coco.LEFT_HIP, Coco.LEFT_KNEE, Coco.LEFT_ANKLE)),
     KNEE_RIGHT(Side.RIGHT, 0.0..180.0, Triple(Coco.RIGHT_HIP, Coco.RIGHT_KNEE, Coco.RIGHT_ANKLE)),
     LEAN(null, -45.0..45.0, null),
+    SHOULDERS(null, -45.0..45.0, null),
+    HIPS(null, -45.0..45.0, null),
     ;
+
+    /** (left, right) joints of a tilt line, for the overlay; null for the kinds without one. */
+    val lineJoints: Pair<Int, Int>?
+        get() = when (this) {
+            SHOULDERS -> Coco.LEFT_SHOULDER to Coco.RIGHT_SHOULDER
+            HIPS -> Coco.LEFT_HIP to Coco.RIGHT_HIP
+            else -> null
+        }
 
     /** Angles, including the lean; the rest are metres. */
     val isAngle: Boolean get() = this != STANCE && this != BEHIND_LINE
@@ -98,7 +118,30 @@ enum class MetricKind(
         KNEE_LEFT -> m.kneeLeftDeg
         KNEE_RIGHT -> m.kneeRightDeg
         LEAN -> m.trunkLeanDeg
+        SHOULDERS -> m.shoulderTiltDeg
+        HIPS -> m.hipTiltDeg
     }
+}
+
+/**
+ * The tilt of the line from [left] to [right] against the image horizontal,
+ * degrees in (-90, 90], positive when the end nearer the frame's right sits
+ * higher in the image; null when the two points coincide.
+ *
+ * Reduced to a line's tilt rather than a vector's direction on purpose. The
+ * joints are the player's own left and right, so the vector points to the
+ * frame's left whenever the player faces the camera, and its direction would
+ * flip by 180 degrees for the same visible tilt.
+ */
+fun lineTiltDeg(left: Point, right: Point): Double? {
+    val dx = right.x - left.x
+    // Image y grows downward, so "right end higher" is left.y - right.y.
+    val dy = left.y - right.y
+    if (dx == 0.0 && dy == 0.0) return null
+    var deg = atan2(dy, dx) * 180.0 / PI
+    while (deg > 90.0) deg -= 180.0
+    while (deg <= -90.0) deg += 180.0
+    return deg
 }
 
 /** The image-plane angle at [vertex] between [a] and [c], degrees in 0..180; null when a limb has no length. */
@@ -157,6 +200,9 @@ fun poseMetrics(
         if (sx != hx || sy != hy) lean = atan2(sx - hx, hy - sy) * 180.0 / PI
     }
 
+    fun tilt(left: Int, right: Int): Double? =
+        if (ok(left, right)) lineTiltDeg(keypoints[left], keypoints[right]) else null
+
     return PoseMetrics(
         stanceM = stance,
         behindServiceLineM = behind,
@@ -168,5 +214,7 @@ fun poseMetrics(
         kneeLeftDeg = angle(Coco.LEFT_HIP, Coco.LEFT_KNEE, Coco.LEFT_ANKLE),
         kneeRightDeg = angle(Coco.RIGHT_HIP, Coco.RIGHT_KNEE, Coco.RIGHT_ANKLE),
         trunkLeanDeg = lean,
+        shoulderTiltDeg = tilt(Coco.LEFT_SHOULDER, Coco.RIGHT_SHOULDER),
+        hipTiltDeg = tilt(Coco.LEFT_HIP, Coco.RIGHT_HIP),
     )
 }

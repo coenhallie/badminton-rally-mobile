@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,10 +15,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -27,11 +28,14 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.badmintontracker.android.localanalysis.BackgroundWorkAction
 import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlButtonVariant
+import com.badmintontracker.android.ui.theme.ShuttlRadius
 import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.shared.analytics.AnalyticsRowState
 import java.util.Locale
@@ -108,7 +112,7 @@ fun AnalyticsScreen(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { Text("ANALYTICS") },
+                title = { Text("Analytics") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -129,7 +133,20 @@ fun AnalyticsScreen(
             return@Scaffold
         }
 
-        LazyColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentPadding = PaddingValues(bottom = GUTTER),
+        ) {
+            // The mock's headline over the list, then the one line that says
+            // what the rows offer.
+            item(key = "headline") {
+                Text(
+                    "Pick a match",
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier.padding(start = GUTTER, end = GUTTER, top = 16.dp),
+                )
+            }
             item(key = "explainer") {
                 when (legend) {
                     AnalyticsLegend.SILENT -> Unit
@@ -150,7 +167,7 @@ fun AnalyticsScreen(
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = ShuttlTheme.extended.textTertiary,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        modifier = Modifier.padding(horizontal = GUTTER, vertical = 10.dp),
                     )
                 }
             }
@@ -165,7 +182,6 @@ fun AnalyticsScreen(
                             onClick = { onOpenDetail(row) },
                             onAnalyse = { onAnalyse(row) },
                         )
-                        HorizontalDivider()
                     }
                 }
             }
@@ -173,10 +189,13 @@ fun AnalyticsScreen(
     }
 }
 
+/** The page gutter the mock lays every card in. */
+private val GUTTER = 24.dp
+
 @Composable
 private fun DotLegend() {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = GUTTER, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
@@ -199,10 +218,15 @@ private fun SectionHeader(text: String) {
         text = text.uppercase(Locale.ROOT),
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+        modifier = Modifier.padding(start = GUTTER, end = GUTTER, top = 18.dp, bottom = 10.dp),
     )
 }
 
+/**
+ * One match, on the mock's card: title over subtitle, and on the right the
+ * availability dot for a READY row, the Analyse pill for an ANALYSABLE one,
+ * nothing for a match that is not on this phone.
+ */
 @Composable
 private fun AnalyticsRowItem(
     row: AnalyticsRow,
@@ -211,37 +235,32 @@ private fun AnalyticsRowItem(
     onAnalyse: () -> Unit,
 ) {
     val ready = row.state == AnalyticsRowState.READY
+    val shape = RoundedCornerShape(ShuttlRadius.large)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .let { if (ready) it.clickable(onClick = onClick) else it }
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(start = GUTTER, end = GUTTER, bottom = 8.dp)
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceVariant, shape)
+            .let { if (ready) it.clickable(role = Role.Button, onClick = onClick) else it }
+            .padding(horizontal = 20.dp, vertical = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(modifier = Modifier.size(8.dp), contentAlignment = Alignment.Center) {
-            if (ready) {
-                Box(
-                    modifier = Modifier
-                        .size(8.dp)
-                        .background(MaterialTheme.colorScheme.primary, CircleShape),
-                )
-            }
-        }
-        Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
                 row.title,
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onBackground,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
                 row.subtitle,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+                color = ShuttlTheme.extended.textTertiary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 4.dp),
             )
             if (row.state == AnalyticsRowState.NOT_ON_DEVICE && showNotOnDeviceSubtitle) {
                 Text(
@@ -270,8 +289,16 @@ private fun AnalyticsRowItem(
                 }
             }
         }
+        if (ready) {
+            Spacer(Modifier.width(16.dp))
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .background(MaterialTheme.colorScheme.primary, CircleShape),
+            )
+        }
         if (row.state == AnalyticsRowState.ANALYSABLE) {
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(16.dp))
             when (row.affordance) {
                 is AnalyseAffordance.InProgress ->
                     // The spinner goes inside the pill, using ShuttlButton's own

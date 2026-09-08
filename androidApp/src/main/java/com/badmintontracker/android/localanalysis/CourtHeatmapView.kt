@@ -1,19 +1,37 @@
 package com.badmintontracker.android.localanalysis
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.unit.dp
+import com.badmintontracker.android.ui.components.ShuttlStatTile
+import com.badmintontracker.android.ui.theme.ShuttlRadius
+import com.badmintontracker.android.ui.theme.ShuttlTheme
+import java.util.Locale
 import com.badmintontracker.analysis.geometry.Court
 import com.badmintontracker.analysis.player.CourtOccupancy
 import com.badmintontracker.analysis.player.PlayerTrack
@@ -74,23 +92,11 @@ fun CourtHeatmapView(
 
     Column(modifier) {
         if (track.samples.isEmpty()) {
-            Text(
-                whyEmpty(track),
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(16.dp),
-            )
+            PanelMessage(whyEmpty(track))
             return@Column
         }
 
-        Canvas(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-                // The court plus the margin the selector accepts, so a player
-                // lunging past the baseline is drawn where they were rather
-                // than clamped onto the line.
-                .aspectRatio((Court.WIDTH_DOUBLES + 2 * COURT_DRAW_MARGIN_M).toFloat() / (Court.LENGTH + 2 * COURT_DRAW_MARGIN_M).toFloat()),
-        ) {
+        CourtCard {
             if (image != null) {
                 drawImage(
                     image = image,
@@ -103,13 +109,86 @@ fun CourtHeatmapView(
             drawCourt(marginM = COURT_DRAW_MARGIN_M, lineColor = courtLine)
         }
 
-        Text(
-            summary(track, occupancy),
-            style = MaterialTheme.typography.labelSmall,
-            modifier = Modifier.padding(horizontal = 16.dp),
+        // The scale, said once under the court as the mock says it: the ramp
+        // itself from nothing to the hottest cell, and the words for its ends.
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = COURT_GUTTER, vertical = 18.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(3.dp)
+                    .clip(RoundedCornerShape(ShuttlRadius.pill))
+                    .background(Brush.horizontalGradient(listOf(COOL.copy(alpha = 0f), COOL, HOT))),
+            )
+            Spacer(Modifier.width(12.dp))
+            Text("Low to high", style = MaterialTheme.typography.bodySmall, color = ShuttlTheme.extended.textTertiary)
+        }
+
+        // How much of the map to trust, as the mock's pair of stat tiles.
+        // Coverage is the whole quality story: every sample stands on the
+        // ankles, so a frame without confident ankles contributes nothing
+        // rather than a guess, and the share of frames that produced a
+        // position is what the picture rests on.
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = COURT_GUTTER),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            ShuttlStatTile(
+                value = String.format(Locale.US, "%.1f", occupancy.totalSeconds / 60.0),
+                unit = " min",
+                label = "Tracked",
+                modifier = Modifier.weight(1f),
+            )
+            ShuttlStatTile(
+                value = (track.coverage * 100).toInt().toString(),
+                unit = "%",
+                label = "Frames with the player",
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Spacer(Modifier.height(COURT_GUTTER))
+    }
+}
+
+/** The page gutter the mock lays every card in. */
+internal val COURT_GUTTER = 24.dp
+
+/**
+ * The court on a bordered card, centred and no wider than the mock draws it.
+ *
+ * The court is 1.7 times taller than it is wide, so a court the full width of
+ * a phone is taller than the screen and takes the summary under it off the
+ * bottom. Capped at the mock's width instead, and centred. The canvas covers
+ * the court plus the margin the selector accepts, so a player lunging past
+ * the baseline is drawn where they were rather than clamped onto the line.
+ */
+@Composable
+internal fun CourtCard(draw: DrawScope.() -> Unit) {
+    val shape = RoundedCornerShape(ShuttlRadius.medium)
+    Box(modifier = Modifier.fillMaxWidth().padding(horizontal = COURT_GUTTER), contentAlignment = Alignment.Center) {
+        Canvas(
+            modifier = Modifier
+                // The cap goes outside the fill: a fill applied first would
+                // take the whole gutter and leave the cap nothing to cap.
+                .widthIn(max = COURT_CARD_MAX_WIDTH)
+                .fillMaxWidth()
+                .aspectRatio((Court.WIDTH_DOUBLES + 2 * COURT_DRAW_MARGIN_M).toFloat() / (Court.LENGTH + 2 * COURT_DRAW_MARGIN_M).toFloat())
+                .clip(shape)
+                .background(MaterialTheme.colorScheme.surfaceVariant, shape)
+                .border(1.dp, MaterialTheme.colorScheme.outline, shape),
+            onDraw = draw,
         )
     }
 }
+
+/**
+ * The mock's court panel is 232 px in a 345 px column. Wider here because the
+ * canvas carries the two-metre margin on every side, which the mock's panel
+ * does not, so at the mock's width the court itself would be a third narrower.
+ */
+private val COURT_CARD_MAX_WIDTH = 300.dp
 
 /**
  * The occupancy field as one small image, one pixel per cell.
@@ -149,7 +228,7 @@ private fun heatImage(grid: List<List<Double>>, peak: Double): ImageBitmap? {
  * Drawn from `Court`'s dimensions rather than hand-placed fractions, so the
  * lines and the data cannot drift apart.
  */
-internal fun androidx.compose.ui.graphics.drawscope.DrawScope.drawCourt(marginM: Double, lineColor: Color) {
+internal fun DrawScope.drawCourt(marginM: Double, lineColor: Color) {
     val totalW = Court.WIDTH_DOUBLES + 2 * marginM
     val totalH = Court.LENGTH + 2 * marginM
     fun x(m: Double) = ((m + marginM) / totalW * size.width).toFloat()
@@ -178,19 +257,6 @@ internal fun androidx.compose.ui.graphics.drawscope.DrawScope.drawCourt(marginM:
 
     // Centre line, on the near half only: this pipeline tracks one player.
     line(Court.WIDTH_DOUBLES / 2, Court.LENGTH / 2 + Court.SERVICE_LINE, Court.WIDTH_DOUBLES / 2, Court.LENGTH)
-}
-
-/**
- * Says how much of the map to trust, rather than only how much there is.
- *
- * Coverage is the whole quality story: every sample stands on the ankles, so a
- * frame without confident ankles contributes nothing rather than a guess, and
- * the share of frames that produced a position is what the picture rests on.
- */
-private fun summary(track: PlayerTrack, occupancy: CourtOccupancy): String {
-    val minutes = occupancy.totalSeconds / 60.0
-    val coverage = (track.coverage * 100).toInt()
-    return "%.1f min tracked · player found in %d%% of frames".format(minutes, coverage)
 }
 
 internal fun whyEmpty(track: PlayerTrack): String = when {

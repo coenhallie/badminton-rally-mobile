@@ -18,10 +18,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
+import com.badmintontracker.android.ui.components.ShuttlPillTabs
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -85,15 +83,11 @@ fun NewMatchScreen(
             )
 
             SectionLabel("Format")
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                listOf(false to "Singles", true to "Doubles").forEachIndexed { index, (doubles, label) ->
-                    SegmentedButton(
-                        selected = state.doubles == doubles,
-                        onClick = { vm.setDoubles(doubles) },
-                        shape = SegmentedButtonDefaults.itemShape(index, 2),
-                    ) { Text(label) }
-                }
-            }
+            ShuttlPillTabs(
+                labels = listOf("Singles", "Doubles"),
+                selectedIndex = if (state.doubles) 1 else 0,
+                onSelect = { vm.setDoubles(it == 1) },
+            )
 
             SectionLabel("Players")
             PlayerField(state.homePlayers[0], "Home player") { vm.setPlayer(Side.HOME, 0, it) }
@@ -108,26 +102,18 @@ fun NewMatchScreen(
             }
 
             SectionLabel("Scoring")
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                ScoringRules.PRESETS.forEachIndexed { index, rules ->
-                    SegmentedButton(
-                        selected = state.rules == rules,
-                        onClick = { vm.setRules(rules) },
-                        shape = SegmentedButtonDefaults.itemShape(index, ScoringRules.PRESETS.size),
-                    ) { Text(rules.label()) }
-                }
-            }
+            ShuttlPillTabs(
+                labels = ScoringRules.PRESETS.map { it.label() },
+                selectedIndex = ScoringRules.PRESETS.indexOf(state.rules),
+                onSelect = { vm.setRules(ScoringRules.PRESETS[it]) },
+            )
 
             SectionLabel("Coin toss")
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                listOf(Side.HOME, Side.AWAY).forEachIndexed { index, side ->
-                    SegmentedButton(
-                        selected = state.firstServer == side,
-                        onClick = { vm.setFirstServer(side) },
-                        shape = SegmentedButtonDefaults.itemShape(index, 2),
-                    ) { Text(if (side == Side.HOME) "Home serves" else "Away serves") }
-                }
-            }
+            ShuttlPillTabs(
+                labels = listOf("Home serves", "Away serves"),
+                selectedIndex = if (state.firstServer == Side.AWAY) 1 else 0,
+                onSelect = { vm.setFirstServer(if (it == 1) Side.AWAY else Side.HOME) },
+            )
 
             state.problem?.let {
                 Text(

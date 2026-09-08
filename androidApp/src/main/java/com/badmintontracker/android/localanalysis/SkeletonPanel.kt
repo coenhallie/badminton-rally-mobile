@@ -1,10 +1,10 @@
 package com.badmintontracker.android.localanalysis
 
-import android.view.LayoutInflater
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -16,24 +16,23 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
-import androidx.media3.ui.PlayerView
 import com.badmintontracker.analysis.geometry.Matrix3x3
 import com.badmintontracker.analysis.geometry.homography
 import com.badmintontracker.analysis.geometry.maxResidualM
@@ -42,25 +41,20 @@ import com.badmintontracker.analysis.player.NearPlayerSelector
 import com.badmintontracker.analysis.player.nearestPose
 import com.badmintontracker.analysis.player.poseMetrics
 import com.badmintontracker.analysis.player.poseToleranceS
-import com.badmintontracker.android.R
-import com.badmintontracker.android.clipdetail.FrameStepBar
-import com.badmintontracker.android.clipdetail.PlaybackControlBar
+import com.badmintontracker.android.clipdetail.PlaybackSettingsSheet
+import com.badmintontracker.android.clipdetail.TransportBar
+import com.badmintontracker.android.clipdetail.VideoCard
+import com.badmintontracker.android.clipdetail.rememberPlaybackPosition
+import com.badmintontracker.android.ui.theme.ShuttlTheme
+import com.badmintontracker.shared.prefs.PlaybackOptions
 import com.badmintontracker.shared.prefs.PlaybackPreferenceRepository
 import com.badmintontracker.shared.prefs.RacketArmPreferenceRepository
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/**
- * What the file's court marks came to.
- *
- * [NONE] and [BAD] both leave the two court-plane tiles off the strip, but they
- * are different problems with different fixes - a re-run for marks that were
- * never stored, a re-marking for marks that do not fit - so the summary line
- * tells them apart rather than sending a coach to re-run a court it will
- * reject again.
- */
-private enum class CourtFit { NONE, BAD, OK }
+/** The page gutter the mock lays every card in. */
+private val GUTTER = 24.dp
 
 /** Whether the stored skeleton has been read from disk yet. */
 private sealed interface SkeletonLoad {
@@ -84,12 +78,12 @@ private sealed interface SkeletonLoad {
  * looks like tracking that is broken, and a coach cannot tell that from
  * tracking that is bad.
  *
- * Under the video sit the strip and the graph: one tile per measurement of
- * the frame on screen, and the selected tile's kind drawn on the skeleton as
- * an arc and plotted over the two seconds either side of the playhead.
- * Nothing here is stored - every number is computed from the poses in the file
- * at view time, so a metric added later needs no re-run, and the two
- * court-plane tiles appear only when the file carries marks that fit.
+ * Under the video sit the transport, the strip and the graph: one tile per
+ * measurement of the frame on screen, and the selected tile's kind drawn on
+ * the skeleton as an arc and plotted over the two seconds either side of the
+ * playhead. Nothing here is stored - every number is computed from the poses
+ * in the file at view time, so a metric added later needs no re-run, and the
+ * two court-plane tiles appear only when the file carries marks that fit.
  */
 @Composable
 fun SkeletonPanel(
@@ -133,17 +127,13 @@ fun SkeletonPanel(
 
     Column(modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         when (val l = load) {
-            SkeletonLoad.Loading -> Text("Loading skeleton", modifier = Modifier.padding(16.dp))
+            SkeletonLoad.Loading -> PanelMessage("Loading skeleton")
             is SkeletonLoad.Loaded -> when {
-                l.stored == null -> Text(
+                l.stored == null -> PanelMessage(
                     "No skeleton was kept for this video. Run the analysis again with " +
                         "\"Skeleton playback\" ticked.",
-                    modifier = Modifier.padding(16.dp),
                 )
-                source == null -> Text(
-                    "The video this skeleton was measured on is no longer on this phone.",
-                    modifier = Modifier.padding(16.dp),
-                )
+                source == null -> PanelMessage("The video this skeleton was measured on is no longer on this phone.")
                 else -> SkeletonPlayer(
                     source = source,
                     stored = l.stored,
@@ -159,15 +149,24 @@ fun SkeletonPanel(
     }
 }
 
+/** One line in the gutter, for a panel that has nothing to draw and says why. */
+@Composable
+internal fun PanelMessage(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = GUTTER, vertical = 16.dp),
+    )
+}
+
 /**
  * The player, the overlay, and the loop that keeps them on the same frame.
  *
- * The box takes the video's own aspect ratio, as the court-marking screen
- * does, so the player fills it edge to edge and the overlay's letterbox
- * arithmetic reduces to the identity. The position is read once per
- * display frame with `withFrameNanos`, because Media3 has no per-frame
- * position callback and a coach stepping frame by frame needs the joints to
- * move with the frame, not a few hundred milliseconds after it.
+ * The card takes the video's own stored aspect ratio, so the player fills it
+ * edge to edge and the overlay's letterbox arithmetic reduces to the
+ * identity. The position comes from [rememberPlaybackPosition], read once per
+ * display frame so the joints move with the frame.
  */
 @Composable
 private fun SkeletonPlayer(
@@ -184,10 +183,7 @@ private fun SkeletonPlayer(
         // Guards aspectRatio() below, which throws on a non-positive ratio.
         // A stored size this broken is another "this skeleton cannot be
         // shown" case, not a crash.
-        Text(
-            "This skeleton's stored video size is invalid. Run the analysis again to rebuild it.",
-            modifier = Modifier.padding(16.dp),
-        )
+        PanelMessage("This skeleton's stored video size is invalid. Run the analysis again to rebuild it.")
         return
     }
 
@@ -217,17 +213,9 @@ private fun SkeletonPlayer(
         player.playWhenReady = false
     }
 
-    var positionMs by remember { mutableLongStateOf(0L) }
-    LaunchedEffect(player) {
-        while (true) {
-            // Polls once per display frame rather than waiting on a Media3
-            // callback, because there is none. This keeps the Recomposer
-            // non-idle for as long as this screen is composed, so a Compose
-            // UI test of this screen must not wait for idle: it never will.
-            withFrameNanos { }
-            positionMs = player.currentPosition
-        }
-    }
+    val position by rememberPlaybackPosition(player)
+    val positionMs = position.positionMs
+    val durationMs = position.durationMs
     val tolerance = remember(stored.fps) { poseToleranceS(stored.fps) }
     val pose = remember(positionMs, stored) { nearestPose(stored.poses, positionMs / 1000.0, tolerance) }
 
@@ -243,40 +231,27 @@ private fun SkeletonPlayer(
     // itself is kept, so putting the arm back brings the tile back selected.
     val selected = if (chosen in visible) chosen else visible.first()
     val metrics = remember(pose, homography) { pose?.let { poseMetrics(it.keypoints, it.confidence, homography) } }
+    val expanded by prefs.metricsExpanded.collectAsStateWithLifecycle()
+    val speed by prefs.speed.collectAsStateWithLifecycle()
+    val skipSeconds by prefs.skipSeconds.collectAsStateWithLifecycle()
+    var showSettings by remember { mutableStateOf(false) }
 
     val error = playbackError
     if (error != null) {
-        // In place of the video box: the overlay is inside it and so never
-        // draws when this branch runs instead. The transport bars stay -
+        // In place of the video card: the overlay is inside it and so never
+        // draws when this branch runs instead. The transport stays -
         // seeking or pausing an errored ExoPlayer is a no-op, not a crash -
-        // but the summary line below is skipped explicitly, since it too is
+        // but everything under it is skipped explicitly, since it is all
         // about a frame that is not on screen.
-        Text(error, modifier = Modifier.padding(16.dp))
+        PanelMessage(error)
     } else {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(stored.videoWidth.toFloat() / stored.videoHeight.toFloat())
-                .background(Color.Black),
+        VideoCard(
+            player = player,
+            position = position,
+            speed = speed,
+            onSpeedTap = { showSettings = true },
+            aspectRatio = stored.videoWidth.toFloat() / stored.videoHeight.toFloat(),
         ) {
-            AndroidView(
-                factory = { c ->
-                    // The layout, not PlayerView(c): it asks for a texture surface, and
-                    // only a texture surface lets Compose animate and scroll over the
-                    // video. A SurfaceView renders in its own window, so it survives the
-                    // exit animation for a frame on top of the next screen (715e22b),
-                    // and this one is inside a scroller as well.
-                    val view = LayoutInflater.from(c)
-                        .inflate(R.layout.clip_player_view, null) as PlayerView
-                    view.apply {
-                        this.player = player
-                        // The bars below own transport; a controller over the
-                        // skeleton would sit exactly where the joints are.
-                        useController = false
-                    }
-                },
-                modifier = Modifier.fillMaxSize(),
-            )
             if (pose != null) {
                 SkeletonOverlay(
                     keypoints = pose.keypoints,
@@ -288,6 +263,46 @@ private fun SkeletonPlayer(
                 )
             }
         }
+    }
+    TransportBar(
+        player = player,
+        prefs = prefs,
+        onSettings = { showSettings = true },
+        modifier = Modifier.padding(top = 16.dp),
+    )
+    if (showSettings) {
+        PlaybackSettingsSheet(
+            skipSeconds = skipSeconds,
+            speed = speed,
+            onSkipSeconds = prefs::setSkipSeconds,
+            onSpeed = prefs::setSpeed,
+            onDismiss = { showSettings = false },
+        )
+    }
+    if (error == null) {
+        // The frame is the one fact read per frame; the speed sits opposite
+        // it, as the mock lays the line out, and opens the same sheet the
+        // transport's hold gesture does.
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = GUTTER, end = GUTTER, top = 22.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                skeletonFooter(pose?.frame),
+                style = MaterialTheme.typography.bodySmall,
+                color = ShuttlTheme.extended.textTertiary,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                "${PlaybackOptions.formatSpeed(speed)} speed",
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .clickable(role = Role.Button, onClick = { showSettings = true })
+                    .padding(vertical = 4.dp),
+            )
+        }
         MetricsStrip(
             metrics = metrics,
             hasCourt = hasCourt,
@@ -298,17 +313,18 @@ private fun SkeletonPlayer(
             },
             selected = selected,
             onSelect = { chosen = it },
+            expanded = expanded,
+            onExpanded = prefs::setMetricsExpanded,
+            detail = skeletonDetail(stored.poses.size, courtFit),
+            modifier = Modifier.padding(top = 10.dp),
         )
-    }
-    PlaybackControlBar(player = player, prefs = prefs)
-    FrameStepBar(player = player)
-    if (error == null) {
         MetricGraph(
             series = series,
             kind = selected,
+            label = metricLabel(selected, racketArm),
             positionS = positionMs / 1000.0,
             fps = stored.fps,
-            durationS = player.duration.takeIf { it > 0 }?.let { it / 1000.0 } ?: Double.POSITIVE_INFINITY,
+            durationS = if (durationMs > 0) durationMs / 1000.0 else Double.POSITIVE_INFINITY,
             onSeek = { seconds ->
                 if (player.isPlaying) player.pause()
                 player.seekTo(
@@ -316,20 +332,19 @@ private fun SkeletonPlayer(
                         .coerceIn(0L, player.duration.takeIf { it > 0 } ?: Long.MAX_VALUE),
                 )
             },
+            modifier = Modifier.padding(top = 8.dp),
         )
-        // The court line is part of the summary because a file whose marks are
-        // missing or do not fit is missing two tiles, and a coach should not
-        // have to guess why, nor which of the two fixes to reach for.
-        val court = when (courtFit) {
-            CourtFit.OK -> " · court marks in file"
-            CourtFit.NONE -> " · no court marks: stance and position need a re-run"
-            CourtFit.BAD -> " · court marks do not fit: mark the court again for stance and position"
+        // A court warning is shown here, not only in the expanded detail: a
+        // coach looking for the Stance tile should not have to open the grid
+        // to learn why it is not there.
+        courtWarning(courtFit)?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.bodySmall,
+                color = ShuttlTheme.extended.textTertiary,
+                modifier = Modifier.padding(horizontal = GUTTER, vertical = 12.dp),
+            )
         }
-        Text(
-            "Skeleton in ${stored.poses.size} frames" +
-                (pose?.let { " · frame ${it.frame}" } ?: " · no skeleton at this frame") + court,
-            style = MaterialTheme.typography.labelSmall,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-        )
+        Spacer(Modifier.height(GUTTER))
     }
 }

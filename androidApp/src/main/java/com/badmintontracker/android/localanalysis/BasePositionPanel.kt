@@ -1,10 +1,9 @@
 package com.badmintontracker.android.localanalysis
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -18,6 +17,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
+import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.analysis.geometry.Court
 import com.badmintontracker.analysis.geometry.Point
 import com.badmintontracker.analysis.player.BasePositions
@@ -67,7 +67,7 @@ fun BasePositionPanel(
             else -> null
         }
         if (message != null) {
-            Text(message, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(16.dp))
+            PanelMessage(message)
             return@Column
         }
         requireNotNull(bases)
@@ -76,23 +76,26 @@ fun BasePositionPanel(
             Text(
                 "Whole match: ${describeBase(it)}",
                 style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(horizontal = 16.dp),
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.padding(start = COURT_GUTTER, end = COURT_GUTTER, top = 18.dp),
             )
         }
         Text(
             "The median position in each rally, from the ankles and the court marks. " +
                 "Left and right are the player's own, facing the net.",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = ShuttlTheme.extended.textTertiary,
+            modifier = Modifier.padding(horizontal = COURT_GUTTER, vertical = 8.dp),
         )
         bases.rallies.forEach { rally ->
             Text(
                 describeRally(rally),
                 style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = COURT_GUTTER, vertical = 4.dp),
             )
         }
+        Spacer(Modifier.height(COURT_GUTTER))
     }
 }
 
@@ -109,12 +112,7 @@ private fun CourtBaseView(bases: BasePositions) {
     val label = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurface)
     val measurer = rememberTextMeasurer()
 
-    Canvas(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp)
-            .aspectRatio((Court.WIDTH_DOUBLES + 2 * COURT_DRAW_MARGIN_M).toFloat() / (Court.LENGTH + 2 * COURT_DRAW_MARGIN_M).toFloat()),
-    ) {
+    CourtCard {
         drawCourt(marginM = COURT_DRAW_MARGIN_M, lineColor = courtLine)
         val totalW = Court.WIDTH_DOUBLES + 2 * COURT_DRAW_MARGIN_M
         val totalH = Court.LENGTH + 2 * COURT_DRAW_MARGIN_M

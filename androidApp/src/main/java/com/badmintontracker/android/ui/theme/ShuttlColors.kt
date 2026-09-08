@@ -90,6 +90,27 @@ internal val ShuttlDarkExtended = ShuttlExtendedColors(
 
 val LocalShuttlColors = staticCompositionLocalOf { ShuttlLightExtended }
 
+/**
+ * What sits on top of a video, in both themes.
+ *
+ * Deliberately not themed: these draw over the frame, not over the page, and
+ * the frame is whatever the camera saw. A light-theme scrim would be a pale
+ * chip over a purple court, so the dark palette's values are used in both
+ * themes, the way the scoreboard halves are fixed for their own reasons. Text
+ * on the scrim is the dark theme's text, and accent text on it is the dark
+ * theme's [ShuttlPalette.accentDark], following the rule that the accent is
+ * a fill and never a text colour.
+ */
+object ShuttlVideoOverlay {
+    /** 70% of the dark page colour, the mock's own `rgba(11,12,13,.7)`. */
+    val scrim: Color = ShuttlPalette.bg.darkColor.copy(alpha = 0.7f)
+    val text: Color = ShuttlPalette.text.darkColor
+    val accentText: Color = ShuttlPalette.accentDark.darkColor
+    /** The unfilled part of the progress bar: the mock's `rgba(255,255,255,.12)`. */
+    val track: Color = Color.White.copy(alpha = 0.12f)
+    val progress: Color = ShuttlPalette.accent.darkColor
+}
+
 object ShuttlTheme {
     val extended: ShuttlExtendedColors
         @Composable @ReadOnlyComposable

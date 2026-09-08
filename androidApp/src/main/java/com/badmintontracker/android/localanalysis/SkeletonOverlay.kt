@@ -6,6 +6,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import com.badmintontracker.analysis.geometry.Point
 import com.badmintontracker.analysis.player.Coco
@@ -14,16 +15,22 @@ import com.badmintontracker.analysis.player.NearPlayerSelector
 import com.badmintontracker.analysis.player.Skeleton
 import kotlin.math.atan2
 
-/** What the overlay emphasises for the selected tile: the arc of an angle, or the line between the ankles. */
+/**
+ * What the overlay emphasises for the selected tile: the arc of an angle, the
+ * line between the ankles, or a tilt line with the horizontal it is measured from.
+ */
 sealed interface PoseHighlight {
     data class Angle(val a: Int, val vertex: Int, val c: Int) : PoseHighlight
     data object Stance : PoseHighlight
+    data class Tilt(val left: Int, val right: Int) : PoseHighlight
 }
 
 fun MetricKind.highlight(): PoseHighlight? {
     val joints = angleJoints
+    val line = lineJoints
     return when {
         joints != null -> PoseHighlight.Angle(joints.first, joints.second, joints.third)
+        line != null -> PoseHighlight.Tilt(line.first, line.second)
         this == MetricKind.STANCE -> PoseHighlight.Stance
         else -> null
     }
@@ -125,6 +132,26 @@ fun SkeletonOverlay(
                     confidence.getOrElse(Coco.RIGHT_ANKLE) { 0f } >= minConfidence
                 ) {
                     drawLine(HIGHLIGHT, at(Coco.LEFT_ANKLE), at(Coco.RIGHT_ANKLE), strokeWidth = HIGHLIGHT_WIDTH)
+                }
+            }
+            is PoseHighlight.Tilt -> {
+                val (l, r) = highlight
+                if (confidence.getOrElse(l) { 0f } >= minConfidence && confidence.getOrElse(r) { 0f } >= minConfidence) {
+                    val a = at(l)
+                    val b = at(r)
+                    // The horizontal the tilt is measured from, dashed and as
+                    // long as the line, so the angle between the two is the
+                    // number on the tile.
+                    val half = (b - a).getDistance() / 2f
+                    val mid = Offset((a.x + b.x) / 2f, (a.y + b.y) / 2f)
+                    drawLine(
+                        HIGHLIGHT.copy(alpha = 0.6f),
+                        Offset(mid.x - half, mid.y),
+                        Offset(mid.x + half, mid.y),
+                        strokeWidth = HIGHLIGHT_WIDTH * 0.6f,
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f)),
+                    )
+                    drawLine(HIGHLIGHT, a, b, strokeWidth = HIGHLIGHT_WIDTH)
                 }
             }
             null -> Unit

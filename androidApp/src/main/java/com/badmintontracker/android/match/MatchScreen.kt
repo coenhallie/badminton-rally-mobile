@@ -26,9 +26,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -47,7 +44,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.badmintontracker.android.cliplist.ClipListViewModel
@@ -59,6 +55,7 @@ import com.badmintontracker.android.localanalysis.BackgroundWorkAction
 import com.badmintontracker.android.scoring.AttachIntent
 import com.badmintontracker.android.share.ShareSheet
 import com.badmintontracker.android.ui.components.ShuttlButton
+import com.badmintontracker.android.ui.components.ShuttlPillTabs
 import com.badmintontracker.android.ui.components.ShuttlButtonVariant
 import com.badmintontracker.android.ui.components.ThemeToggleButton
 import com.badmintontracker.android.ui.shareText
@@ -72,7 +69,6 @@ import com.badmintontracker.shared.scoring.AttachStatus
 import com.badmintontracker.shared.scoring.MatchVideoAction
 import com.badmintontracker.shared.scoring.exportMatchText
 import com.badmintontracker.shared.scoring.matchVideoPrompt
-import java.util.Locale
 
 /** Which half of a match page is on screen. Only meaningful when the match has both. */
 private enum class Facet { Points, Rallies }
@@ -202,20 +198,14 @@ fun MatchScreen(
                         // A match with a video - own its title, whether or not it
                         // also has a score log. Matches the rallies-only screen this
                         // page replaced.
-                        match != null -> {
-                            val titleText = match.title?.uppercase(Locale.ROOT)
-                                ?: "MATCH · ${formatDate(match.latestCreatedAt).uppercase(Locale.ROOT)}"
-                            Text(
-                                titleText,
-                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 14.sp),
-                            )
-                        }
+                        match != null -> Text(
+                            match.title ?: "Match · ${formatDate(match.latestCreatedAt)}",
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                         // Score-only: same title as the screen this page replaced.
                         log != null -> Text(log.title, maxLines = 1)
-                        else -> Text(
-                            "RALLIES",
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 14.sp),
-                        )
+                        else -> Text("Rallies")
                     }
                 },
                 navigationIcon = {
@@ -342,18 +332,13 @@ fun MatchScreen(
                     AttachStatusBanner(attach = attach, onMarkCourt = onMarkCourt, onRetry = onRetry)
                 }
                 if (hasPoints && hasRallies) {
-                    SingleChoiceSegmentedButtonRow(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                    ) {
-                        listOf(Facet.Points to "Points", Facet.Rallies to "Rallies")
-                            .forEachIndexed { index, (candidate, label) ->
-                                SegmentedButton(
-                                    selected = facet == candidate,
-                                    onClick = { chosenFacet = candidate },
-                                    shape = SegmentedButtonDefaults.itemShape(index, 2),
-                                ) { Text(label) }
-                            }
-                    }
+                    val facets = listOf(Facet.Points to "Points", Facet.Rallies to "Rallies")
+                    ShuttlPillTabs(
+                        labels = facets.map { it.second },
+                        selectedIndex = facets.indexOfFirst { it.first == facet },
+                        onSelect = { chosenFacet = facets[it].first },
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                    )
                 }
 
                 LazyColumn(modifier = Modifier.fillMaxSize()) {

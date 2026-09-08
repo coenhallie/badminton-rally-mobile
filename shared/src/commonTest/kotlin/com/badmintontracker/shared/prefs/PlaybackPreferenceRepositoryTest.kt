@@ -28,6 +28,18 @@ class PlaybackPreferenceRepositoryTest {
     }
 
     @Test
+    fun the_metrics_grid_starts_collapsed_and_stays_open_once_opened() {
+        val settings = MapSettings()
+        val repo = PlaybackPreferenceRepository(settings)
+        assertEquals(false, repo.metricsExpanded.value)
+        repo.setMetricsExpanded(true)
+        assertEquals(true, repo.metricsExpanded.value)
+        assertEquals(true, PlaybackPreferenceRepository(settings).metricsExpanded.value)
+        repo.setMetricsExpanded(false)
+        assertEquals(false, PlaybackPreferenceRepository(settings).metricsExpanded.value)
+    }
+
+    @Test
     fun unsupported_skip_snaps_to_the_nearest_supported_value() {
         val repo = PlaybackPreferenceRepository(MapSettings())
         repo.setSkipSeconds(7)

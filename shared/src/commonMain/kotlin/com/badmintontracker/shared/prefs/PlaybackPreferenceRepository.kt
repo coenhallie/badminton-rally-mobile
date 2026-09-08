@@ -57,6 +57,20 @@ class PlaybackPreferenceRepository(private val settings: Settings) {
     private val speedState = MutableStateFlow(loadSpeed())
     val speed: StateFlow<Float> = speedState.asStateFlow()
 
+    /**
+     * Whether the skeleton view shows every measurement as a grid, or the
+     * compact row it opens with. A coach who works from the grid should not
+     * have to open it again on every video, so the choice is kept here with
+     * the other choices about how a player surface is laid out.
+     */
+    private val metricsExpandedState = MutableStateFlow(settings.getStringOrNull(KEY_METRICS_EXPANDED) == "true")
+    val metricsExpanded: StateFlow<Boolean> = metricsExpandedState.asStateFlow()
+
+    fun setMetricsExpanded(expanded: Boolean) {
+        settings.putString(KEY_METRICS_EXPANDED, expanded.toString())
+        metricsExpandedState.value = expanded
+    }
+
     fun setSkipSeconds(seconds: Int) {
         val next = nearest(seconds.toFloat(), PlaybackOptions.skipSecondsOptions.map { it.toFloat() })
             .toInt()
@@ -91,5 +105,6 @@ class PlaybackPreferenceRepository(private val settings: Settings) {
     private companion object {
         const val KEY_SKIP = "playback_skip_seconds"
         const val KEY_SPEED = "playback_speed"
+        const val KEY_METRICS_EXPANDED = "skeleton_metrics_expanded"
     }
 }

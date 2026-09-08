@@ -1,6 +1,6 @@
 import Foundation
 
-/// Pure port of Android FrameStepBar.seekFrames (androidApp .../clipdetail/FrameStepBar.kt):
+/// Pure port of Android FrameStepBar.seekFrames (androidApp .../clipdetail/TransportBar.kt):
 ///   1. add half a frame before dividing so a truncated reported position still
 ///      maps to the frame that is actually displayed;
 ///   2. target 1ms past the frame's start so an exact seek lands inside the

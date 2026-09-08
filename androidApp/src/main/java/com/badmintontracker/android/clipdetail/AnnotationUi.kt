@@ -10,21 +10,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -37,6 +32,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
+import com.badmintontracker.android.ui.components.ShuttlButton
+import com.badmintontracker.android.ui.components.ShuttlButtonVariant
+import com.badmintontracker.android.ui.components.ShuttlChip
 import com.badmintontracker.shared.model.AnnotationLabel
 import com.badmintontracker.shared.model.LabelColor
 import kotlinx.coroutines.launch
@@ -58,7 +56,7 @@ internal fun AnnotationRow(
     onDelete: (() -> Unit)?,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 24.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -118,7 +116,7 @@ internal fun AddAnnotationSheet(
                 .imePadding(),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text("Add note", style = MaterialTheme.typography.titleLarge)
+            Text("Add note", style = MaterialTheme.typography.headlineMedium)
 
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -142,27 +140,23 @@ internal fun AddAnnotationSheet(
             )
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = { hideThen { onDismiss() } }) { Text("Cancel") }
+                ShuttlButton(text = "Cancel", onClick = { hideThen { onDismiss() } }, variant = ShuttlButtonVariant.Secondary)
                 Spacer(Modifier.width(8.dp))
-                Button(enabled = canAdd, onClick = { hideThen { onConfirm(body, label) } }) { Text("Add") }
+                ShuttlButton(text = "Add", onClick = { hideThen { onConfirm(body, label) } }, enabled = canAdd)
             }
         }
     }
 }
 
+/** A label to pick, chosen in its own swatch so the chip and the badge it becomes share a colour. */
 @Composable
 private fun LabelChip(label: AnnotationLabel, selected: Boolean, onClick: () -> Unit) {
     val swatch = LabelColor.from(label.colorKey)
-    FilterChip(
+    ShuttlChip(
+        text = label.name,
         selected = selected,
         onClick = onClick,
-        label = { Text(label.name) },
-        shape = RoundedCornerShape(50),
-        colors = FilterChipDefaults.filterChipColors(
-            selectedContainerColor = swatch?.let { Color(it.background.toInt()) }
-                ?: MaterialTheme.colorScheme.surfaceVariant,
-            selectedLabelColor = swatch?.let { Color(it.foreground.toInt()) }
-                ?: MaterialTheme.colorScheme.onSurfaceVariant,
-        ),
+        selectedContainer = swatch?.let { Color(it.background.toInt()) },
+        selectedContent = swatch?.let { Color(it.foreground.toInt()) },
     )
 }

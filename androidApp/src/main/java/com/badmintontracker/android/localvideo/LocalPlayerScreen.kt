@@ -1,26 +1,19 @@
 package com.badmintontracker.android.localvideo
 
 import android.content.res.Configuration
-import android.view.LayoutInflater
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -28,7 +21,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -45,23 +37,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
-import androidx.media3.ui.PlayerView
-import com.badmintontracker.android.R
 import com.badmintontracker.android.clipdetail.AddAnnotationSheet
 import com.badmintontracker.android.clipdetail.AnnotationRow
-import com.badmintontracker.android.clipdetail.FrameStepBar
-import com.badmintontracker.android.clipdetail.PlaybackControlBar
-import com.badmintontracker.android.clipdetail.withoutMedia3SpeedMenu
+import com.badmintontracker.android.clipdetail.NotesHeader
+import com.badmintontracker.android.clipdetail.PlaybackErrorOverlay
+import com.badmintontracker.android.clipdetail.PlaybackSettingsSheet
+import com.badmintontracker.android.clipdetail.TransportBar
+import com.badmintontracker.android.clipdetail.VideoCard
+import com.badmintontracker.android.clipdetail.rememberPlaybackPosition
 import com.badmintontracker.android.ui.components.FullscreenEffect
 import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlButtonVariant
@@ -94,7 +85,6 @@ fun LocalPlayerScreen(
     val player = remember {
         ExoPlayer.Builder(ctx).build().apply { setSeekParameters(SeekParameters.EXACT) }
     }
-    val viewPlayer = remember(player) { player.withoutMedia3SpeedMenu() }
     var isFullscreen by remember { mutableStateOf(false) }
     var addDialog by remember { mutableStateOf<Float?>(null) }
     var pendingDelete by remember { mutableStateOf<LocalAnnotation?>(null) }
@@ -145,57 +135,32 @@ fun LocalPlayerScreen(
         vm.seekTo.collect { ms -> player.seekTo(ms) }
     }
 
-    val playerSurface: @Composable (Modifier) -> Unit = { modifier ->
-        Box(modifier = modifier) {
-            AndroidView(
-                factory = { c ->
-                    val view = LayoutInflater.from(c)
-                        .inflate(R.layout.clip_player_view, null) as PlayerView
-                    view.apply {
-                        this.player = viewPlayer
-                        setFullscreenButtonClickListener { isFullscreen = !isFullscreen }
-                        controllerShowTimeoutMs = 1500
-                        controllerAutoShow = false
-                        // The transport bar below owns skipping and speed. Media3's
-                        // own rewind/fast-forward are frozen at the Builder's 5s/15s,
-                        // so they could never follow the preference.
-                        setShowRewindButton(false)
-                        setShowFastForwardButton(false)
-                        hideController()
-                    }
-                },
-                update = { it.setFullscreenButtonState(isFullscreen) },
-                modifier = Modifier.fillMaxSize(),
-            )
-            if (playbackError != null) {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.9f),
-                ) {
-                    Column(
-                        modifier = Modifier.fillMaxSize().padding(16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
-                    ) {
-                        Text(
-                            playbackError!!,
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                            textAlign = TextAlign.Center,
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        ShuttlButton(
-                            text = "Retry",
-                            onClick = {
-                                playbackError = null
-                                player.setMediaItem(MediaItem.fromUri(entry.uri))
-                                player.prepare()
-                            },
-                            variant = ShuttlButtonVariant.Primary,
-                        )
-                    }
+    val position by rememberPlaybackPosition(player)
+    val speed by playbackPrefs.speed.collectAsStateWithLifecycle()
+    val skipSeconds by playbackPrefs.skipSeconds.collectAsStateWithLifecycle()
+    var showSettings by remember { mutableStateOf(false) }
+
+    val video: @Composable (Boolean) -> Unit = { fullscreen ->
+        VideoCard(
+            player = player,
+            position = position,
+            speed = speed,
+            onSpeedTap = { showSettings = true },
+            fullscreen = fullscreen,
+            onFullscreenToggle = { isFullscreen = !isFullscreen },
+            error = playbackError?.let { message ->
+                {
+                    PlaybackErrorOverlay(
+                        message = message,
+                        onRetry = {
+                            playbackError = null
+                            player.setMediaItem(MediaItem.fromUri(entry.uri))
+                            player.prepare()
+                        },
+                    )
                 }
-            }
-        }
+            },
+        )
     }
 
     Scaffold(
@@ -231,67 +196,43 @@ fun LocalPlayerScreen(
                 )
             }
         },
-        floatingActionButton = {
-            if (!isFullscreen) {
-                FloatingActionButton(onClick = {
-                    addDialog = (player.currentPosition.coerceAtLeast(0L)) / 1000f
-                }) {
-                    Icon(Icons.Default.Add, contentDescription = "Add note")
-                }
-            }
-        },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
             if (!isFullscreen) {
-                // 60% of the screen for the video so rallies can be evaluated closely;
-                // the annotation list scrolls in whatever space remains.
-                playerSurface(Modifier.fillMaxWidth().fillMaxHeight(0.6f).background(Color.Black))
-                Column(modifier = Modifier.padding(vertical = 8.dp)) {
-                    PlaybackControlBar(player = player, prefs = playbackPrefs)
-                    FrameStepBar(player = player)
-                }
-
+                video(false)
+                TransportBar(
+                    player = player,
+                    prefs = playbackPrefs,
+                    onSettings = { showSettings = true },
+                    modifier = Modifier.padding(top = 16.dp),
+                )
                 entry.description?.let { description ->
                     Text(
                         text = description,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 22.dp),
                     )
-                    HorizontalDivider()
                 }
-
-                if (annotations.isEmpty()) {
-                    Box(
-                        Modifier.fillMaxSize().padding(24.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            ANNOTATION_STORAGE_NOTE,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                // The caption doubles as the notes' heading: where they live is
+                // the one thing a coach needs to know before writing one.
+                NotesHeader(
+                    caption = ANNOTATION_STORAGE_NOTE,
+                    onAdd = { addDialog = player.currentPosition.coerceAtLeast(0L) / 1000f },
+                    modifier = Modifier.padding(top = 22.dp, bottom = 8.dp),
+                )
+                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    items(annotations, key = { it.id }) { a ->
+                        AnnotationRow(
+                            timestampSeconds = a.timestampSeconds,
+                            body = a.body,
+                            labelName = a.labelName,
+                            labelColor = a.labelColor,
+                            onClick = { vm.onAnnotationTap(a) },
+                            onDelete = { pendingDelete = a },
                         )
-                    }
-                } else {
-                    Text(
-                        ANNOTATION_STORAGE_NOTE,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    )
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        items(annotations, key = { it.id }) { a ->
-                            AnnotationRow(
-                                timestampSeconds = a.timestampSeconds,
-                                body = a.body,
-                                labelName = a.labelName,
-                                labelColor = a.labelColor,
-                                onClick = { vm.onAnnotationTap(a) },
-                                onDelete = { pendingDelete = a },
-                            )
-                            HorizontalDivider()
-                        }
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 24.dp))
                     }
                 }
             }
@@ -300,14 +241,24 @@ fun LocalPlayerScreen(
 
     if (isFullscreen) {
         Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-            playerSurface(Modifier.fillMaxSize())
-            Column(
+            video(true)
+            TransportBar(
+                player = player,
+                prefs = playbackPrefs,
+                onSettings = { showSettings = true },
                 modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 24.dp),
-            ) {
-                PlaybackControlBar(player = player, prefs = playbackPrefs)
-                FrameStepBar(player = player)
-            }
+            )
         }
+    }
+
+    if (showSettings) {
+        PlaybackSettingsSheet(
+            skipSeconds = skipSeconds,
+            speed = speed,
+            onSkipSeconds = playbackPrefs::setSkipSeconds,
+            onSpeed = playbackPrefs::setSpeed,
+            onDismiss = { showSettings = false },
+        )
     }
 
     addDialog?.let { ts ->
