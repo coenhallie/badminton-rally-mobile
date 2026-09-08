@@ -44,6 +44,14 @@ The mobile app is versioned independently from the web app.
   two) or all at once when expanded, with the racket-arm choice as a pill
   switcher; and its graph is a titled card that says the
   range once in its header instead of drawing it on the plot.
+- Every empty list now says the same thing the same way: a glyph, a title, one
+  line saying how the list gets filled, and the button that fills it where one
+  belongs on that screen. The matches drawer and Labels offer their action
+  directly, so a first-time user is no longer told to go and find a button on
+  another screen. Analytics, the rallies tab and the points tab name where the
+  action lives instead, because it is not on that screen or is already on it.
+  Labels also says when a load failed, with a Retry, rather than reading as an
+  empty account once the error has timed out.
 
 ### Added
 - Two more tiles under the skeleton video: Shoulders and Hips, the tilt of

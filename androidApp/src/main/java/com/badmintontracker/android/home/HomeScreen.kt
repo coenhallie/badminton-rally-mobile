@@ -227,6 +227,12 @@ fun HomeScreen(
                         onAutoDetailsShown = onAutoDetailsShown,
                         onAttachedMarkCourt = onAttachedMarkCourt,
                         onAttachedRetry = onAttachedRetry,
+                        // The sheet is Home's, composed outside the drawer, so it
+                        // opens over the drawer as it slides shut.
+                        onAddMatch = {
+                            scope.launch { drawerState.close() }
+                            addSheetOpen = true
+                        },
                     )
                 }
             }

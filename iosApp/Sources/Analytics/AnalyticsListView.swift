@@ -44,12 +44,13 @@ struct AnalyticsListView: View {
 
         return Group {
             if rows.isEmpty {
-                VStack {
-                    Text("No matches yet.")
-                        .shuttlType(ShuttlType.bodyMedium)
-                        .foregroundStyle(Shuttl.textSecondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // No action here: matches are added on Home, and this screen's
+                // only way there is its back button, which the body names.
+                ShuttlEmptyState(
+                    systemImage: "chart.bar",
+                    title: "No matches yet",
+                    message: "Add a match on Home and it will be listed here, ready to analyse."
+                ) { EmptyView() }
                 .background(Shuttl.bg)
             } else {
                 list(rows: rows, legend: legend)

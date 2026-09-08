@@ -13,7 +13,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.CircularProgressIndicator
@@ -49,7 +52,9 @@ import com.badmintontracker.android.share.ShareSheet
 import com.badmintontracker.android.ui.components.ConfirmDialog
 import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlButtonVariant
+import com.badmintontracker.android.ui.components.ShuttlEmptyState
 import com.badmintontracker.android.ui.components.SwipeToRemoveRow
+import com.badmintontracker.android.ui.icons.ShuttlIcons
 import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
@@ -87,6 +92,8 @@ fun ClipListScreen(
     onAutoDetailsShown: () -> Unit = {},
     onAttachedMarkCourt: (String) -> Unit = {},
     onAttachedRetry: (String) -> Unit = {},
+    /** The empty state's own "Add new match": Home closes the drawer and opens its add sheet. */
+    onAddMatch: () -> Unit = {},
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -144,12 +151,30 @@ fun ClipListScreen(
             if (state.ownedRows.isEmpty() && state.sharedMatches.isEmpty() &&
                 standaloneRows.isEmpty() && !state.isRefreshing
             ) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    // Names the actual control rather than "the + button above":
-                    // that button lived in this screen's own bar, which no longer
-                    // exists now that Home owns the bar and this list sits behind
-                    // the drawer.
-                    Text("No matches yet. Tap \"Add new match\" on Home to get started.")
+                // Scrollable even though nothing scrolls: PullToRefreshBox only
+                // sees the gesture through a nested-scroll child, so without
+                // this a pull on the empty list did nothing.
+                Box(
+                    Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    // The control itself, not directions to it: this list sits
+                    // behind the drawer, and "tap Add new match on Home" sent a
+                    // first-time user back out to find a button they had not
+                    // seen yet.
+                    ShuttlEmptyState(
+                        icon = ShuttlIcons.Trophy,
+                        title = "No matches yet",
+                        body = "Record, import or score a match and it will show up here.",
+                        action = {
+                            ShuttlButton(
+                                text = "Add new match",
+                                onClick = onAddMatch,
+                                leadingIcon = Icons.Default.Add,
+                                compact = true,
+                            )
+                        },
+                    )
                 }
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {

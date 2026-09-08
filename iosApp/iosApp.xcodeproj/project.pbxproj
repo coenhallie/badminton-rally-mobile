@@ -65,6 +65,7 @@
 		A2D4DCB5726EFCF40DF814AB /* Archivo-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 99C07A121F12C581870E83CC /* Archivo-Bold.ttf */; };
 		A3E7CE695279E31B5DE51490 /* ClipDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89FA84FB777601A064F7BD1C /* ClipDetailView.swift */; };
 		A7F76CE03E6A6D6ECA3A84B0 /* LabelsLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2773B3FC4873D44B5C253B68 /* LabelsLogicTests.swift */; };
+		AA8CAB15A365A7F79CE1EE03 /* ShuttlEmptyState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9999B38366B71CBE818454F /* ShuttlEmptyState.swift */; };
 		ADB1A8FA16544D50471033AA /* ClipSort.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DBB4CC1CACCD0256476D9DE /* ClipSort.swift */; };
 		AFB2A9D8104EDE8D830D6881 /* AnalyticsRowsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFF2ED7FFD80218413D9C2D0 /* AnalyticsRowsTests.swift */; };
 		B3423C48C469B78520C89FE6 /* LocalVideoSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEFBC0DB886D05C0A25F6E05 /* LocalVideoSection.swift */; };
@@ -91,6 +92,7 @@
 		EB93197882D94A5AF008CD13 /* ShuttlTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C55FBA93C98A27AC7EE21BE /* ShuttlTheme.swift */; };
 		EC56A892E716930456F75F35 /* CourtTapMathTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F3FB619BC2DFED2E13C3209 /* CourtTapMathTests.swift */; };
 		EC9D51B8D24EEF7328ACD3FE /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B1720870E51445F47D3045A0 /* Assets.xcassets */; };
+		ECC4BF8B5BD59A51628A59F4 /* CompactPillButtonStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67FC6A79C22E61AFFD5C6032 /* CompactPillButtonStyle.swift */; };
 		EE7A9B1A1CC005EC4BCF015B /* ErrorBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = F445C67CB4C46F120008DAD3 /* ErrorBanner.swift */; };
 		EFC7C2B1753F37A837868571 /* ShuttlPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62C3B5945D6755C849EF171A /* ShuttlPalette.swift */; };
 		F34C70DAE58109539EEA2D7B /* AddAnnotationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B46560A5190E75D7D9644D0 /* AddAnnotationSheet.swift */; };
@@ -153,6 +155,7 @@
 		5EFC41BB1279BF8DAD45DC0C /* RalliesFacet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RalliesFacet.swift; sourceTree = "<group>"; };
 		5F14BB1D771EB662B983D4D6 /* MatchModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchModel.swift; sourceTree = "<group>"; };
 		62C3B5945D6755C849EF171A /* ShuttlPalette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShuttlPalette.swift; sourceTree = "<group>"; };
+		67FC6A79C22E61AFFD5C6032 /* CompactPillButtonStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompactPillButtonStyle.swift; sourceTree = "<group>"; };
 		7000786E94D92922A2812A6E /* ShuttlCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShuttlCard.swift; sourceTree = "<group>"; };
 		70E5927A0FF5276512DACA06 /* PointsFacet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PointsFacet.swift; sourceTree = "<group>"; };
 		769DC477BEE2C03BD6080CAE /* SignInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignInView.swift; sourceTree = "<group>"; };
@@ -182,6 +185,7 @@
 		A02D8B89ABF94AD30304E3A5 /* FrameStepMathTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameStepMathTests.swift; sourceTree = "<group>"; };
 		A5828909CBE2B20598B0AAB8 /* PlaybackBridgingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackBridgingTests.swift; sourceTree = "<group>"; };
 		A7E5E9D329D5BCA69DF98CB4 /* Archivo-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Archivo-SemiBold.ttf"; sourceTree = "<group>"; };
+		A9999B38366B71CBE818454F /* ShuttlEmptyState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShuttlEmptyState.swift; sourceTree = "<group>"; };
 		A9ACAC7A0C5AA3AAE9EEE080 /* DrawerDragMath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrawerDragMath.swift; sourceTree = "<group>"; };
 		B0808EB7D7A1AF8A36818AEE /* MatchGroupingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchGroupingTests.swift; sourceTree = "<group>"; };
 		B1720870E51445F47D3045A0 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -248,12 +252,14 @@
 			isa = PBXGroup;
 			children = (
 				E080747F6DAAF21E24B722D6 /* ChipFlow.swift */,
+				67FC6A79C22E61AFFD5C6032 /* CompactPillButtonStyle.swift */,
 				F445C67CB4C46F120008DAD3 /* ErrorBanner.swift */,
 				C930D6A6291A278327ECE0CE /* LabelBadge.swift */,
 				9312F90EA6107B3E6B22BB2D /* PlaybackControlBar.swift */,
 				242769BAC8EBC2E4D80F23C3 /* PlayerSurface.swift */,
 				82FC0470AAADE04383A85BE1 /* PrimaryButtonStyle.swift */,
 				7000786E94D92922A2812A6E /* ShuttlCard.swift */,
+				A9999B38366B71CBE818454F /* ShuttlEmptyState.swift */,
 				96F673E0F6EB74EB624DEFA8 /* TransportButton.swift */,
 				2D98BD2F339E3CC958F2CE44 /* VersionLabel.swift */,
 			);
@@ -629,6 +635,7 @@
 				D3A0C6A3CA64CF44286066FC /* ClipListModel.swift in Sources */,
 				0A0265AF927A66B40DBCA06B /* ClipListView.swift in Sources */,
 				ADB1A8FA16544D50471033AA /* ClipSort.swift in Sources */,
+				ECC4BF8B5BD59A51628A59F4 /* CompactPillButtonStyle.swift in Sources */,
 				CCACC800E2B9DFB80BDD7351 /* CourtFrameLoader.swift in Sources */,
 				A0D4B364A2C644E52BE9AD50 /* CourtMarkingView.swift in Sources */,
 				8C5CF8AD1B54D54976AE62C2 /* CourtTapMath.swift in Sources */,
@@ -669,6 +676,7 @@
 				0C13FDBF13DB762D4066A24C /* ScoringView.swift in Sources */,
 				D90B20576A674D829140588B /* ShareSheetView.swift in Sources */,
 				60AC11B9815BD71920288100 /* ShuttlCard.swift in Sources */,
+				AA8CAB15A365A7F79CE1EE03 /* ShuttlEmptyState.swift in Sources */,
 				EFC7C2B1753F37A837868571 /* ShuttlPalette.swift in Sources */,
 				7BCE0FFBA927D82D9D9EB2F0 /* ShuttlRadius.swift in Sources */,
 				EB93197882D94A5AF008CD13 /* ShuttlTheme.swift in Sources */,

@@ -98,7 +98,13 @@ struct HomeView: View {
                         model: listModel,
                         onMatchTap: { matchRoute = $0 },
                         onCourtMarking: { courtMarkingRoute = $0 },
-                        onLocalPlayer: { localPlayerRoute = $0 }
+                        onLocalPlayer: { localPlayerRoute = $0 },
+                        // The sheet is Home's, presented outside the drawer, so
+                        // it opens over the drawer as it slides shut.
+                        onAddMatch: {
+                            withAnimation(.snappy(duration: 0.24)) { drawerOpen = false }
+                            showAddSheet = true
+                        }
                     )
                 }
             }

@@ -58,8 +58,11 @@ import com.badmintontracker.android.localanalysis.BackgroundWorkAction
 import com.badmintontracker.android.ui.components.FieldLabel
 import com.badmintontracker.android.ui.components.ShuttlPillTabs
 import com.badmintontracker.android.ui.components.ShuttlButton
+import com.badmintontracker.android.ui.components.ShuttlButtonVariant
+import com.badmintontracker.android.ui.components.ShuttlEmptyState
 import com.badmintontracker.android.ui.components.ShuttlOutlinedTextField
 import com.badmintontracker.android.ui.components.SwipeToRemoveRow
+import com.badmintontracker.android.ui.icons.ShuttlIcons
 import com.badmintontracker.shared.model.AnnotationLabel
 import com.badmintontracker.shared.model.LabelColor
 import com.badmintontracker.shared.model.LabelUsage
@@ -114,36 +117,36 @@ fun LabelsScreen(vm: LabelsViewModel, onBack: () -> Unit) {
                     contentAlignment = Alignment.Center,
                 ) {
                     if (state.loadFailed) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Text(
-                                "Couldn't load your labels",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            TextButton(onClick = vm::refresh) { Text("Retry") }
-                        }
+                        ShuttlEmptyState(
+                            icon = ShuttlIcons.Tag,
+                            title = "Couldn't load your labels",
+                            body = "Check your connection and try again.",
+                            action = {
+                                ShuttlButton(
+                                    text = "Retry",
+                                    onClick = vm::refresh,
+                                    variant = ShuttlButtonVariant.Secondary,
+                                    compact = true,
+                                )
+                            },
+                        )
                     } else {
                         // With the in-list "add" row gone, an empty screen must teach
                         // the action itself rather than leave a first-time user staring
                         // at nothing but a small "+" in the corner.
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(16.dp),
-                        ) {
-                            Text(
-                                "No labels yet",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            ShuttlButton(
-                                text = "Add label",
-                                onClick = vm::startCreating,
-                                compact = true,
-                            )
-                        }
+                        ShuttlEmptyState(
+                            icon = ShuttlIcons.Tag,
+                            title = "No labels yet",
+                            body = "Create a label to tag notes as you review a match.",
+                            action = {
+                                ShuttlButton(
+                                    text = "Add label",
+                                    onClick = vm::startCreating,
+                                    leadingIcon = Icons.Default.Add,
+                                    compact = true,
+                                )
+                            },
+                        )
                     }
                 }
             } else {

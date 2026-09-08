@@ -27,8 +27,14 @@ struct RalliesFacet: View {
                 .foregroundStyle(Shuttl.textSecondary)
         }
         if clips.isEmpty {
-            Text("No rallies in this match.")
-                .foregroundStyle(Shuttl.textSecondary)
+            ShuttlEmptyState(
+                systemImage: "video",
+                title: "No rallies yet",
+                message: "Rallies show up here once this match's video has been clipped."
+            ) { EmptyView() }
+            .listRowInsets(EdgeInsets())
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
         }
         ForEach(clips, id: \.id) { clip in
             NavigationLink {

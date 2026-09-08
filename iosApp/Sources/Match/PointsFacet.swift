@@ -74,9 +74,17 @@ struct PointsFacet: View {
         }
 
         if points.isEmpty {
+            // No action of its own: the Score button in the header above is
+            // the one that fills this list.
             Section {
-                Text("No points scored yet.")
-                    .foregroundStyle(Shuttl.textSecondary)
+                ShuttlEmptyState(
+                    systemImage: "list.number",
+                    title: "No points yet",
+                    message: "Points are listed here as you score the match."
+                ) { EmptyView() }
+                .listRowInsets(EdgeInsets())
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
             }
         } else {
             // Newest first: courtside, the rally you care about is the last one.

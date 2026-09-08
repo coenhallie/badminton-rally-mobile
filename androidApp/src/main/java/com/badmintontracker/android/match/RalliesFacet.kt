@@ -12,6 +12,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.badmintontracker.android.cliplist.ClipRow
 import com.badmintontracker.android.cliplist.MatchLabelStrip
+import com.badmintontracker.android.ui.components.ShuttlEmptyState
+import com.badmintontracker.android.ui.icons.ShuttlIcons
 import com.badmintontracker.shared.model.MatchLabelSummary
 import com.badmintontracker.shared.model.RallyClip
 import com.badmintontracker.shared.repo.MediaRepository
@@ -78,7 +80,11 @@ fun LazyListScope.ralliesFacet(
                 Modifier.fillParentMaxSize(),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("No rallies in this match.")
+                ShuttlEmptyState(
+                    icon = ShuttlIcons.Video,
+                    title = "No rallies yet",
+                    body = "Rallies show up here once this match's video has been clipped.",
+                )
             }
         }
     } else if (clips.isNotEmpty()) {

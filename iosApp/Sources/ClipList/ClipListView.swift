@@ -26,6 +26,9 @@ struct MatchesList: View {
     let onMatchTap: (MatchRoute) -> Void
     let onCourtMarking: (CourtMarkingRoute) -> Void
     let onLocalPlayer: (LocalPlayerRoute) -> Void
+    /// The empty state's own "Add new match": Home closes the drawer and
+    /// opens its add sheet.
+    let onAddMatch: () -> Void
 
     @State private var shareTarget: MatchSummary? = nil
     @State private var confirmTarget: PendingMatchAction? = nil
@@ -212,16 +215,32 @@ struct MatchesList: View {
                     }
                 } header: { Shuttl.sectionLabel("Shared with me") }
             }
-            if standalone.isEmpty && model.ownedRows.isEmpty && model.shared.isEmpty && !model.isRefreshing {
-                // Names the actual control rather than "the + button above":
-                // that button lived in this screen's own toolbar, which no
-                // longer exists now that Home owns the bar and this list sits
-                // behind the drawer. Mirrors ClipListScreen.kt's own copy.
-                Text("No matches yet. Tap \"Add new match\" on Home to get started.")
-                    .foregroundStyle(Shuttl.textSecondary)
-            }
         }
         .listStyle(.plain)
+        // Over the list rather than in it: a row cannot centre itself in the
+        // panel, and the list underneath keeps `.refreshable` working.
+        .overlay {
+            if standalone.isEmpty && model.ownedRows.isEmpty && model.shared.isEmpty && !model.isRefreshing {
+                // The control itself, not directions to it: this list sits
+                // behind the drawer, and "tap Add new match on Home" sent a
+                // first-time user back out to find a button they had not
+                // seen yet. Mirrors ClipListScreen.kt's own copy.
+                ShuttlEmptyState(
+                    systemImage: "trophy",
+                    title: "No matches yet",
+                    message: "Record, import or score a match and it will show up here."
+                ) {
+                    Button(action: onAddMatch) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "plus")
+                            Text("Add new match")
+                        }
+                    }
+                    .buttonStyle(CompactPillButtonStyle())
+                    .accessibilityLabel("Add new match")
+                }
+            }
+        }
         .confirmationDialog(
             "Delete this match and every point you scored? This can't be undone.",
             isPresented: Binding(

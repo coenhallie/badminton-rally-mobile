@@ -26,12 +26,19 @@ struct LabelsView: View {
                 // With the in-list "add" row gone, an empty screen must teach
                 // the action itself rather than leave a first-time user
                 // staring at nothing but a small "+" in the corner.
-                ContentUnavailableView {
-                    Label("No labels", systemImage: "tag")
-                } description: {
-                    Text("Create a label to tag notes as you review a match.")
-                } actions: {
-                    Button("Add label") { model.startCreating() }
+                ShuttlEmptyState(
+                    systemImage: "tag",
+                    title: "No labels yet",
+                    message: "Create a label to tag notes as you review a match."
+                ) {
+                    Button { model.startCreating() } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "plus")
+                            Text("Add label")
+                        }
+                    }
+                    .buttonStyle(CompactPillButtonStyle())
+                    .accessibilityLabel("Add label")
                 }
             } else {
                 List {

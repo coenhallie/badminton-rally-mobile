@@ -1,7 +1,6 @@
 package com.badmintontracker.android.match
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,6 +19,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.badmintontracker.android.clipdetail.LabelBadge
 import com.badmintontracker.android.cliplist.LabelCountChip
+import com.badmintontracker.android.ui.components.ShuttlEmptyState
+import com.badmintontracker.android.ui.icons.ShuttlIcons
 import com.badmintontracker.shared.scoring.ScoreLog
 import com.badmintontracker.shared.scoring.ScoreLogStatus
 import com.badmintontracker.shared.scoring.ScoreMatchCard
@@ -81,12 +82,14 @@ fun LazyListScope.pointsFacet(
 
     if (points.isEmpty()) {
         item(key = "no-points") {
-            Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                Text(
-                    "No points scored yet.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            // No action of its own: the Score button in the header above is
+            // the one that fills this list.
+            ShuttlEmptyState(
+                icon = ShuttlIcons.ListOrdered,
+                title = "No points yet",
+                body = "Points are listed here as you score the match.",
+                modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+            )
         }
     } else {
         // Newest first: courtside, the rally you care about is the last one.

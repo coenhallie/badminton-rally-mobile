@@ -35,6 +35,8 @@ import androidx.compose.ui.unit.dp
 import com.badmintontracker.android.localanalysis.BackgroundWorkAction
 import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlButtonVariant
+import com.badmintontracker.android.ui.components.ShuttlEmptyState
+import com.badmintontracker.android.ui.icons.ShuttlIcons
 import com.badmintontracker.android.ui.theme.ShuttlRadius
 import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.shared.analytics.AnalyticsRowState
@@ -124,10 +126,12 @@ fun AnalyticsScreen(
     ) { padding ->
         if (rows.isEmpty()) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Text(
-                    "No matches yet.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                // No action here: matches are added on Home, and this screen's
+                // only way there is its back arrow, which the body names.
+                ShuttlEmptyState(
+                    icon = ShuttlIcons.ChartColumn,
+                    title = "No matches yet",
+                    body = "Add a match on Home and it will be listed here, ready to analyse.",
                 )
             }
             return@Scaffold
