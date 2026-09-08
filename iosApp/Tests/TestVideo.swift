@@ -20,9 +20,26 @@ enum TestVideo {
     static let lumaBase = 16
     static let lumaStep = 8
 
+    /// How many frames the luma encoding can tell apart.
+    ///
+    /// `16 + 29 * 8` is 248, and the next step does not fit in a byte. The
+    /// values are spaced by 8 so H.264's quantisation cannot make two levels
+    /// indistinguishable; packing them tighter would buy more frames and lose
+    /// the property the encoding exists for.
+    static let identifiableFrames = 30
+
     /// The luma an index was written with, and back again, so a test can say
     /// which frame it is holding.
-    static func luma(forFrame index: Int) -> UInt8 { UInt8(lumaBase + index * lumaStep) }
+    ///
+    /// Wraps past `identifiableFrames`, so a longer clip is still a valid video
+    /// - it is just no longer one whose frames can be identified from their
+    /// pixels. Only the decode tests need that; the throughput measurement
+    /// wants length.
+    static func luma(forFrame index: Int) -> UInt8 {
+        UInt8(lumaBase + (index % identifiableFrames) * lumaStep)
+    }
+
+    /// Unambiguous only for a clip of at most `identifiableFrames` frames.
     static func frame(forLuma luma: UInt8) -> Int {
         // H.264 is lossy, so the value is matched to the nearest written level.
         Int(((Double(luma) - Double(lumaBase)) / Double(lumaStep)).rounded())

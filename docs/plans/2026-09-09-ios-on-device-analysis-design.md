@@ -118,9 +118,10 @@ production's own PyTorch path fills zero too. Porting a stage Android does not
 run would be a divergence, not parity. The stale Android KDoc is a real defect
 and is listed in §7.
 
-### 3.3 Decode: `AVAssetReader`, sequentially, twice
+### 3.3 Decode: `AVAssetReader`, sequentially
 
-Two passes, matching `VideoFrameSource` exactly:
+Three walks of the file, two of which decode. The two that decode match
+`VideoFrameSource` exactly:
 
 1. **A background pass.** Production computes the median background from up to
    300 frames sampled evenly across the whole video, and that background is an
@@ -138,6 +139,20 @@ a time-derived index lands on a different frame than production's
 construction. It costs one extra decode of the file with no inference attached,
 which is small beside a pass that runs three models per frame, and it is
 *more* faithful than Android's, not less.
+
+**The third walk counts frames and decodes nothing.**
+`AVAssetReaderTrackOutput` with `outputSettings: nil` vends samples in the
+format they are stored in, which makes counting container parsing rather than a
+decode - the direct analogue of Android's `MediaExtractor` sample walk. It
+matters more than it sounds: `nominalFrameRate` times duration is an estimate,
+on this corpus it is the wrong estimate, and the count sets every frame index
+and therefore every rally boundary.
+
+**The background pass gets a tenth of the progress bar.** It is minutes of work
+on a long match, and a bar that only starts moving once the models do reads as a
+run that never started. Android does not need this - its background pass is 300
+seeks - and it is the reason the two platforms' bars cannot be compared tick for
+tick.
 
 The sample indices themselves come from `backgroundSampleIndices`, which
 reproduces `np.linspace(..., dtype=int)`'s truncation. That belongs in
@@ -297,6 +312,22 @@ state models (`BackgroundWork`, `DeviceWork`, `deviceWorkLabel`) already in
 The whole argument of §2 is that parity reduces to `RawInference` parity, so
 that is where the evidence has to be.
 
+**Throughput, before the picker quotes anything.** Measured 2026-09-09 and
+recorded in `tools/models/reports/ios-throughput-simulator.md`. Two findings:
+build configuration moves the per-frame cost by 3.8x, because the preprocessing
+is a per-pixel loop that `-Onone` does not optimise; and the S23 seeds
+`DeviceThroughput` ships are not defensible on this platform. What is still
+missing is a real iPhone, and until it exists the picker's first estimate on iOS
+is a reference Android device's.
+
+**Throughput, before the picker quotes anything.** Measured 2026-09-09 and
+recorded in `tools/models/reports/ios-throughput-simulator.md`. Two findings:
+build configuration moves the per-frame cost by 3.8x, because the preprocessing
+is a per-pixel loop that `-Onone` does not optimise; and the S23 seeds
+`DeviceThroughput` ships are not the right shape for this platform. What is
+still missing is a real iPhone, and until one exists the picker's first estimate
+on iOS is a reference Android device's.
+
 **Preprocessing, on the simulator, against the committed fixture.** stage1
 Task 12 produced reference tensors from production's OpenCV. The Swift
 `FramePreprocessor` is held to the same threshold the Kotlin one is, on the same
@@ -341,9 +372,27 @@ Belongs in pipeline §6.
   `ModelCatalog.INPAINTNET` carries a long comment about a graph nothing loads.
   `inpaintnet.onnx` is bundled into the APK and read by nothing. Small, and it
   is exactly the kind of stale comment this codebase treats as a defect.
-- `backgroundSampleIndices` is production-parity arithmetic living in an
-  Android UI-layer file. It belongs in `:analysis`, where iOS can call it and
-  where its truncation behaviour can be tested without a device.
+- `backgroundSampleIndices` was production-parity arithmetic living in an
+  Android UI-layer file. **Moved to `:analysis` in this pass**, since iOS needs
+  it and a second copy was the alternative; its tests moved from `androidTest`
+  to `commonTest` with it, where CI runs them.
+- `TrackNetRunner` reports progress of exactly 1.0 on the last full sequence,
+  which `LocalInferenceEngine`'s own contract forbids: completion is the
+  coordinator's to report after the analysis that FOLLOWS inference. The
+  coordinator's `coerceAtMost(0.999f)` hides it, so the visible symptom is only
+  that Android's bar sits full through rally detection and clip cutting. iOS
+  clamps in the engine; Android still does not.
+- `DeviceThroughputRepository` records what a run achieved without knowing which
+  build produced it. A Debug build measures 3.8x slower here than a Release one,
+  and a developer running Debug teaches the estimator that this phone is four
+  times slower than it is - and the estimate persists. **Fixed in this
+  pass**, since iOS needs it and a second copy was the alternative.
+- `TrackNetRunner` reports progress of exactly 1.0 on the last full sequence,
+  which `LocalInferenceEngine`'s own contract forbids - completion is the
+  coordinator's to report after the analysis that follows inference. The
+  coordinator's `coerceAtMost(0.999f)` hides it today, so the visible symptom is
+  only that Android's bar sits full through rally detection and clip cutting.
+  iOS clamps in the engine; Android still does not.
 
 **Deliberately not in this pass.**
 

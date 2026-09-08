@@ -73,36 +73,31 @@ final class VideoFrameSource {
 
     // MARK: - Metadata
 
-    /// Reads the track's dimensions and counts its frames by decoding.
+    /// Reads the track's dimensions and counts its samples.
     ///
-    /// Android reads a sample count out of `MediaExtractor` without decoding,
-    /// because one container sample is one encoded frame for every codec it
-    /// handles. `AVAssetReader` has no equivalent cheap walk: `nominalFrameRate`
-    /// times duration is an estimate, and on the variable-frame-rate corpus it
-    /// is the wrong estimate. Counting by decoding is slower and exact, and
-    /// exactness is what matters here - the frame count sets every frame index
-    /// and therefore every rally boundary.
+    /// Counting walks the container without decompressing anything, the way
+    /// Android's `MediaExtractor` sample walk does: one container sample is one
+    /// encoded frame for every codec this app decodes. Estimating instead -
+    /// `nominalFrameRate` times duration - is what the variable-frame-rate
+    /// corpus punishes, and the count sets every frame index and therefore
+    /// every rally boundary.
     ///
-    /// The count is cached because both passes and the coordinator ask for it.
+    /// Cached, because both passes and the coordinator ask for it.
     func metadata() throws -> Metadata {
         if let cached = cachedMetadata { return cached }
         let asset = AVURLAsset(url: url)
         guard let track = try loadVideoTrack(asset) else { throw Failure.noVideoTrack(name) }
 
         let size = try awaitValue { try await track.load(.naturalSize) }
-        let transform = try awaitValue { try await track.load(.preferredTransform) }
         // A portrait recording is stored landscape with a rotation transform,
         // and every model here is fed the pixels as decoded. Applying the
-        // transform gives the dimensions a viewer sees; the raw size is what
-        // the pixel buffers actually carry, and court keypoints were marked
-        // against those. Taking the presented size would rotate every
+        // transform would give the dimensions a viewer sees; the raw size is
+        // what the pixel buffers actually carry, and court keypoints were
+        // marked against those. Taking the presented size would rotate every
         // coordinate this pipeline produces.
-        _ = transform
         let duration = try awaitValue { try await asset.load(.duration) }
 
-        var frames = 0
-        try forEachFrame { _ in frames += 1 }
-
+        let frames = try countSamples(asset: asset, track: track)
         let seconds = CMTimeGetSeconds(duration)
         let meta = Metadata(
             frameCount: frames,
@@ -116,6 +111,42 @@ final class VideoFrameSource {
         )
         cachedMetadata = meta
         return meta
+    }
+
+    /// Walks the video track counting samples, decoding nothing.
+    ///
+    /// `outputSettings: nil` is what makes that true: the output then vends
+    /// samples in the format they are stored in, so this is container parsing
+    /// rather than a third full decode of the file. With decompression
+    /// requested - which is what every other reader here asks for - counting a
+    /// 30-minute match would cost as much as the background pass, before the
+    /// progress bar has anything to report.
+    private func countSamples(asset: AVURLAsset, track: AVAssetTrack) throws -> Int {
+        let reader: AVAssetReader
+        do {
+            reader = try AVAssetReader(asset: asset)
+        } catch {
+            throw Failure.unreadable(name, error)
+        }
+        let output = AVAssetReaderTrackOutput(track: track, outputSettings: nil)
+        output.alwaysCopiesSampleData = false
+        guard reader.canAdd(output) else { throw Failure.decodeFailed(name, nil) }
+        reader.add(output)
+        guard reader.startReading() else { throw Failure.decodeFailed(name, reader.error) }
+        defer { if reader.status == .reading { reader.cancelReading() } }
+
+        var count = 0
+        while let sample = output.copyNextSampleBuffer() {
+            // A sample with no duration and no data is a marker, not a frame.
+            // Counting one would shift every index after it.
+            if CMSampleBufferGetNumSamples(sample) > 0 { count += CMSampleBufferGetNumSamples(sample) }
+            CMSampleBufferInvalidate(sample)
+        }
+        // A reader that stopped on an error looks exactly like one that reached
+        // the end, and a short count is a plausible-looking wrong analysis
+        // rather than a failure.
+        if reader.status == .failed { throw Failure.decodeFailed(name, reader.error) }
+        return count
     }
 
     private var cachedMetadata: Metadata?

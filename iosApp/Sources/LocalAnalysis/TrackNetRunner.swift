@@ -65,7 +65,7 @@ final class TrackNetRunner {
         // floats, and allocating that per sequence would churn thousands of
         // times over a match.
         var input = [Float](repeating: 0, count: Self.channels * Self.plane)
-        let background = try computeBackground()
+        let background = try computeBackground(onProgress: onProgress)
         input.replaceSubrange(0..<background.count, with: background)
 
         var resized = [UInt8](repeating: 0, count: Self.plane * 3)
@@ -139,7 +139,7 @@ final class TrackNetRunner {
                 // ceiling used here, so the two agree on the number rather than
                 // only on the behaviour.
                 if total > 0 {
-                    onProgress(min(Float(frame.index + 1) / Float(total), 0.999))
+                    onProgress(Self.mainPassProgress(Float(frame.index + 1) / Float(total)))
                 }
             }
         }
@@ -159,7 +159,35 @@ final class TrackNetRunner {
     /// sampling pass, so what is held across all 300 samples is 300 resized
     /// frames, about 130MB, rather than 300 source-resolution ones, which for a
     /// 1920x1080 source is about 2.5GB and kills the process outright.
-    private func computeBackground() throws -> [Float] {
+    /// What share of the bar the background pass gets.
+    ///
+    /// It is a full sequential decode of the file with no inference attached,
+    /// so on a 30-minute match it is minutes of work - and without a share of
+    /// its own the bar would sit at zero through all of it, which reads as a
+    /// run that never started. Android's background pass is 300 seeks and is
+    /// over quickly enough that it does not need one.
+    ///
+    /// A tenth, from the shape of the two passes rather than a measurement:
+    /// decode and colour conversion are about a third of a frame's cost when
+    /// three models run on it, and this pass skips the models. It is a
+    /// proportion, not a promise, and it is the reason the two platforms' bars
+    /// cannot be compared tick for tick.
+    private static let backgroundShare: Float = 0.1
+
+    /// Clamped below 1: the contract on `LocalInferenceEngine` is a fraction in
+    /// [0, 1), because completion is the coordinator's to report after the
+    /// analysis that FOLLOWS inference, and a bar that fills on the last decoded
+    /// frame would sit finished through the rally detection and the clip
+    /// cutting.
+    ///
+    /// Android does not clamp and reaches 1.0 on the last full sequence; its
+    /// coordinator's own coerceAtMost hides it. Same ceiling used here, so the
+    /// two agree on the number rather than only on the behaviour.
+    private static func mainPassProgress(_ fraction: Float) -> Float {
+        min(backgroundShare + fraction * (1 - backgroundShare), 0.999)
+    }
+
+    private func computeBackground(onProgress: (Float) -> Void) throws -> [Float] {
         let total = try source.metadata().frameCount
         let indices = MedianBackgroundKt
             .backgroundSampleIndices(totalFrames: Int32(total), maxSamples: MedianBackgroundKt.MAX_BACKGROUND_SAMPLES)
@@ -171,9 +199,12 @@ final class TrackNetRunner {
         var frames = [UInt8]()
         frames.reserveCapacity(indices.count * Self.plane * 3)
         var scratch = [UInt8](repeating: 0, count: Self.plane * 3)
+        var taken = 0
         let samples = try source.sampleFramesForBackground(indices: indices) { buffer -> Bool in
             FramePreprocessor.toRgbResized(buffer, into: &scratch, width: Self.width, height: Self.height)
             frames.append(contentsOf: scratch)
+            taken += 1
+            onProgress(Self.backgroundShare * Float(taken) / Float(indices.count))
             return true
         }
         guard !samples.isEmpty else {

@@ -4,15 +4,13 @@ import com.badmintontracker.analysis.shuttle.HEATMAP_MAX_AREA
 import com.badmintontracker.analysis.shuttle.HEATMAP_THRESHOLD
 import com.badmintontracker.analysis.shuttle.HeatmapCoord
 import com.badmintontracker.analysis.shuttle.heatmapToCoord
-import com.badmintontracker.analysis.shuttle.medianBackground
+import com.badmintontracker.analysis.shuttle.medianBackgroundInto
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.FloatVar
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.get
-import kotlinx.cinterop.plus
-import kotlinx.cinterop.reinterpret
 import kotlinx.cinterop.usePinned
 import platform.posix.memcpy
 
@@ -20,8 +18,8 @@ import platform.posix.memcpy
  * Bulk buffers across the Swift boundary, by pointer.
  *
  * Two functions in `:analysis` take arrays of pixels: [heatmapToCoord] takes a
- * `FloatArray` of 147,456 floats, and [medianBackground] takes 300 `ByteArray`s
- * of 442,368 each. Both are the shared implementations the whole port exists to
+ * `FloatArray` of 147,456 floats, and the median background reduces 300 frames
+ * of 442,368 bytes each. Both are the shared implementations the whole port exists to
  * reuse - the design's section 3.1 is explicit that reimplementing the blob
  * detector in Swift is the one thing this stage must not do.
  *
@@ -62,7 +60,7 @@ object BulkInterop {
     }
 
     /**
-     * [medianBackground] over [frameCount] frames laid end to end in one
+     * The median background over [frameCount] frames laid end to end in one
      * buffer, writing the result into [out].
      *
      * One contiguous buffer rather than a list of pointers because that is the
@@ -78,19 +76,15 @@ object BulkInterop {
         frameLength: Int,
         out: CPointer<ByteVar>,
     ) {
-        // The split into per-frame arrays happens here rather than in Swift for
-        // the same reason as above: `List<ByteArray>` is what the shared
-        // function takes, and building 300 of them from Swift would box every
-        // one of 132 million bytes.
-        val planes = ArrayList<ByteArray>(frameCount)
-        for (i in 0 until frameCount) {
-            val plane = ByteArray(frameLength)
-            plane.usePinned {
-                memcpy(it.addressOf(0), frames + (i.toLong() * frameLength.toLong()), frameLength.toULong())
-            }
-            planes.add(plane)
+        // Read through an accessor rather than copied into Kotlin ByteArrays.
+        // The list form would build a second 132MB copy of what Swift already
+        // holds, live at the same time as the first and at the same moment as
+        // three ONNX sessions - which is the memory profile Android's own
+        // decode layer records as having killed a 2GB device.
+        val median = ByteArray(frameLength)
+        medianBackgroundInto(median, frameCount, frameLength) { frame, index ->
+            frames[frame.toLong() * frameLength + index].toInt() and 0xFF
         }
-        val median = medianBackground(planes)
         median.usePinned { memcpy(out, it.addressOf(0), frameLength.toULong()) }
     }
 

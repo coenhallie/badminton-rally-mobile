@@ -19,21 +19,48 @@ fun medianBackground(frames: List<ByteArray>): ByteArray {
     require(frames.isNotEmpty()) { "no frames to reduce" }
     val size = frames[0].size
     require(frames.all { it.size == size }) { "frames differ in length" }
-
     val out = ByteArray(size)
-    val column = IntArray(frames.size)
-    for (i in 0 until size) {
-        for (f in frames.indices) column[f] = frames[f][i].toInt() and 0xFF
+    medianBackgroundInto(out, frames.size, size) { frame, index ->
+        frames[frame][index].toInt() and 0xFF
+    }
+    return out
+}
+
+/**
+ * [medianBackground] over frames this function never holds.
+ *
+ * Same arithmetic, reached through an accessor instead of a list, and written
+ * into [out] instead of allocating. It exists because the caller's frames may
+ * already be somewhere this module should not copy them out of: the iOS
+ * platform layer holds its 300 samples in one Swift-owned buffer, and the
+ * `List<ByteArray>` form above would make Kotlin build a second 132MB copy of
+ * them, live at the same time as the first, at the exact step Android's own
+ * decode layer records as having killed a 2GB device.
+ *
+ * [sampleAt] is called `frameCount * frameLength` times - roughly 130 million
+ * for a 300-sample background - so it must be a plain read. Anything that
+ * allocates per call belongs on the other side of it.
+ */
+fun medianBackgroundInto(
+    out: ByteArray,
+    frameCount: Int,
+    frameLength: Int,
+    sampleAt: (frame: Int, index: Int) -> Int,
+) {
+    require(frameCount > 0) { "no frames to reduce" }
+    require(out.size >= frameLength) { "output shorter than a frame" }
+
+    val column = IntArray(frameCount)
+    for (i in 0 until frameLength) {
+        for (f in 0 until frameCount) column[f] = sampleAt(f, i)
         column.sort()
-        val n = column.size
-        val median = if (n % 2 == 1) {
-            column[n / 2].toDouble()
+        val median = if (frameCount % 2 == 1) {
+            column[frameCount / 2].toDouble()
         } else {
-            (column[n / 2 - 1] + column[n / 2]) / 2.0
+            (column[frameCount / 2 - 1] + column[frameCount / 2]) / 2.0
         }
         out[i] = median.toInt().toByte()
     }
-    return out
 }
 
 /**

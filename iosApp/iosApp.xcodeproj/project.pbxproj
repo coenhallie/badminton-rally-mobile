@@ -48,6 +48,7 @@
 		5ADBEFAA75F6EF54B2F3D085 /* LabelBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = C930D6A6291A278327ECE0CE /* LabelBadge.swift */; };
 		5C9837ECBC6EEDFD23C6E592 /* CameraRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9460204E541BF370BAFFB9BE /* CameraRecorder.swift */; };
 		5CF4E9EB9E265172C21BF8F2 /* MatchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C56698E7571E945684C2474 /* MatchView.swift */; };
+		5D7BD17FB726522D3703D7C1 /* ThroughputMeasurementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2F75F01604943A3636A5B51 /* ThroughputMeasurementTests.swift */; };
 		5DBF6F864ECBB35639A57D0A /* PlayerSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = 242769BAC8EBC2E4D80F23C3 /* PlayerSurface.swift */; };
 		5E87E0064158262606D850FC /* VideoPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C2F901A70401154D8989C1D /* VideoPicker.swift */; };
 		60AC11B9815BD71920288100 /* ShuttlCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7000786E94D92922A2812A6E /* ShuttlCard.swift */; };
@@ -241,6 +242,7 @@
 		E080747F6DAAF21E24B722D6 /* ChipFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChipFlow.swift; sourceTree = "<group>"; };
 		E169E538F23D04ED878E1EFF /* RallyIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RallyIOSApp.swift; sourceTree = "<group>"; };
 		E1B9EC6CE7B68DC43C4F92C7 /* LocalVideoLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalVideoLogic.swift; sourceTree = "<group>"; };
+		E2F75F01604943A3636A5B51 /* ThroughputMeasurementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThroughputMeasurementTests.swift; sourceTree = "<group>"; };
 		E67BD8A82174D4DA74ABDDB3 /* PoseRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PoseRunner.swift; sourceTree = "<group>"; };
 		E764F7DB51182B2B498F5CD6 /* LocalVideoStatusTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalVideoStatusTests.swift; sourceTree = "<group>"; };
 		E7D356BF06A24361EB632F18 /* SchematicCourtGuide.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchematicCourtGuide.swift; sourceTree = "<group>"; };
@@ -371,6 +373,7 @@
 				18B28237BDD6785E014E9F62 /* SmokeTests.swift */,
 				374F7ADDCA02DFBA8D628BFB /* SystemImageTests.swift */,
 				BDB45733DE4B47AB71347191 /* TestVideo.swift */,
+				E2F75F01604943A3636A5B51 /* ThroughputMeasurementTests.swift */,
 				482622C0504DD57A384A6C0D /* TypographyAdoptionTests.swift */,
 				CD80CFB10A2177E69CD6069C /* VideoFrameSourceTests.swift */,
 			);
@@ -829,6 +832,7 @@
 				18DFDCCFF6258C4B0568B3CA /* SmokeTests.swift in Sources */,
 				0DC43A1CC4BA72DAF1867C1F /* SystemImageTests.swift in Sources */,
 				B5B1EA467916705BDEFC3105 /* TestVideo.swift in Sources */,
+				5D7BD17FB726522D3703D7C1 /* ThroughputMeasurementTests.swift in Sources */,
 				8746D3304D2ED39E69A97EC5 /* TypographyAdoptionTests.swift in Sources */,
 				E192F2ED2DE1941D057ECE5E /* VideoFrameSourceTests.swift in Sources */,
 			);

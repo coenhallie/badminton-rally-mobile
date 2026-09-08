@@ -43,9 +43,24 @@ final class PoseRunner {
 
     private var stride: Int { Self.keypointsOffset + keypointCount * 3 }
 
+    /// Repaint the whole canvas with Ultralytics' grey before the image is
+    /// written into the middle of it.
+    ///
+    /// Every frame, not once: a source whose aspect ratio changed would leave
+    /// the previous letterbox's pixels in the new padding.
+    ///
+    /// `memset` rather than a loop over `indices`. At 960 that loop is 2.76
+    /// million bounds-checked writes per frame, which on a pass already paying
+    /// for three models is measurable for no reason.
+    private func refillPadding() {
+        letterboxed.withUnsafeMutableBufferPointer { canvas in
+            memset(canvas.baseAddress, Int32(Self.pad), canvas.count)
+        }
+    }
+
     func detect(frame: Int, buffer: CVPixelBuffer) throws -> PoseFrame {
         let box = Letterbox(source: buffer, size: Self.size)
-        for i in letterboxed.indices { letterboxed[i] = Self.pad }
+        refillPadding()
         FramePreprocessor.toRgbResizedInto(
             buffer, canvas: &letterboxed, canvasWidth: Self.size,
             offsetX: box.padX, offsetY: box.padY, fitWidth: box.fitWidth, fitHeight: box.fitHeight
