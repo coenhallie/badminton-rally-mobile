@@ -21,12 +21,14 @@
 		180BE08FA55055D020A3D2EF /* MatchSummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAD86CD770119F9EFBB7003E /* MatchSummaryView.swift */; };
 		18DFDCCFF6258C4B0568B3CA /* SmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18B28237BDD6785E014E9F62 /* SmokeTests.swift */; };
 		19083545671B6C7512BC48DC /* MatchModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A9896412F77DC2290D32532 /* MatchModelTests.swift */; };
+		1C81D6F669B7BB6D2FFCCEB3 /* onnxruntime in Frameworks */ = {isa = PBXBuildFile; productRef = E2169304751825EED397174B /* onnxruntime */; };
 		210B8C3B0B549A6B46DFDCC4 /* ShuttlTypeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F610CC46B780E5324DFC77FD /* ShuttlTypeTests.swift */; };
 		23922C424B4B830F052063AA /* DrawerDragMath.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9ACAC7A0C5AA3AAE9EEE080 /* DrawerDragMath.swift */; };
 		240133B2EF631DC8B1C2979F /* FrameStepMathTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A02D8B89ABF94AD30304E3A5 /* FrameStepMathTests.swift */; };
 		27D47564638D6299811A5A5B /* MatchGrouping.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94F21AB0AEE5F66047B679 /* MatchGrouping.swift */; };
 		27F80402EE08D89DF3AD3D3C /* AnalyticsRows.swift in Sources */ = {isa = PBXBuildFile; fileRef = 844A5ADF8D1F5A74E9FCB8FE /* AnalyticsRows.swift */; };
 		2AB0842817D586F21A4AFC8E /* AddMatchSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EC80F89EBB792162FD96152 /* AddMatchSheet.swift */; };
+		2AB5089784DDFA9FAA82B3C3 /* OnnxSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2B6C5DE171A479978CF2184 /* OnnxSessionTests.swift */; };
 		2E71C6E8CEB45C9A1AF67518 /* FrameStepMath.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDDECE8F42B9ED83E1030453 /* FrameStepMath.swift */; };
 		2F6E3F9479FC9B91BFAB3F39 /* ShuttlPaletteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09DC5A242EBE164C182143AD /* ShuttlPaletteTests.swift */; };
 		3144DD38FA7D5B4B6C6739E7 /* ScoringBoardUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EADBE4DF5FC5144E7AC1BDF /* ScoringBoardUITests.swift */; };
@@ -94,6 +96,7 @@
 		E181F1F66ED18C1E88B0F96A /* LabelSwatchGridUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C31833453FB35FF6A77236BF /* LabelSwatchGridUITests.swift */; };
 		E877315410B463404B5DCE25 /* Archivo-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 145EC4AB0D71A09BE80F75B0 /* Archivo-Regular.ttf */; };
 		E9317E046BD0CDA91B74CCDA /* ArchivoFontTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B3FFABDAE597442DCC03C13 /* ArchivoFontTests.swift */; };
+		EA223747B60B6A6E5B32F05C /* ModelCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = B976577885618A37CA34DB74 /* ModelCatalog.swift */; };
 		EA714ACCC69004187438494C /* LocalVideoCleanupWiringTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B444C4421DE7CF39AE7A4E5 /* LocalVideoCleanupWiringTests.swift */; };
 		EB93197882D94A5AF008CD13 /* ShuttlTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C55FBA93C98A27AC7EE21BE /* ShuttlTheme.swift */; };
 		EC56A892E716930456F75F35 /* CourtTapMathTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F3FB619BC2DFED2E13C3209 /* CourtTapMathTests.swift */; };
@@ -103,6 +106,7 @@
 		EFC7C2B1753F37A837868571 /* ShuttlPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62C3B5945D6755C849EF171A /* ShuttlPalette.swift */; };
 		F34C70DAE58109539EEA2D7B /* AddAnnotationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B46560A5190E75D7D9644D0 /* AddAnnotationSheet.swift */; };
 		F6E6B5EF3C2DEEF79282ADCE /* Archivo-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = A7E5E9D329D5BCA69DF98CB4 /* Archivo-SemiBold.ttf */; };
+		FEB1B904E92819730266F380 /* OnnxSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFA34C0702D7C4F873579DEF /* OnnxSession.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -198,9 +202,11 @@
 		B0808EB7D7A1AF8A36818AEE /* MatchGroupingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchGroupingTests.swift; sourceTree = "<group>"; };
 		B1720870E51445F47D3045A0 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B1918CECF45DC06DFCAE89CF /* CourtTapMath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CourtTapMath.swift; sourceTree = "<group>"; };
+		B976577885618A37CA34DB74 /* ModelCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelCatalog.swift; sourceTree = "<group>"; };
 		BA7AE2547676C60BDC65D02A /* ShuttlPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShuttlPlayer.swift; sourceTree = "<group>"; };
 		BE370B3A23B49D0DED479199 /* LocalVideoIntake.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalVideoIntake.swift; sourceTree = "<group>"; };
 		BFF2ED7FFD80218413D9C2D0 /* AnalyticsRowsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsRowsTests.swift; sourceTree = "<group>"; };
+		C2B6C5DE171A479978CF2184 /* OnnxSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnnxSessionTests.swift; sourceTree = "<group>"; };
 		C31833453FB35FF6A77236BF /* LabelSwatchGridUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabelSwatchGridUITests.swift; sourceTree = "<group>"; };
 		C59114F647E69202552CE362 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		C8F0982C6053F4BFEB29954C /* LabelsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabelsView.swift; sourceTree = "<group>"; };
@@ -212,6 +218,7 @@
 		D08E6FF694DA1AD73D7A1B09 /* LocalPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalPlayerView.swift; sourceTree = "<group>"; };
 		D75E7C46412BEAF4B6640F9D /* PlaybackSettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackSettingsSheet.swift; sourceTree = "<group>"; };
 		D8AA053DD42B2C5F92F0EE84 /* ScoringView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoringView.swift; sourceTree = "<group>"; };
+		DFA34C0702D7C4F873579DEF /* OnnxSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnnxSession.swift; sourceTree = "<group>"; };
 		E080747F6DAAF21E24B722D6 /* ChipFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChipFlow.swift; sourceTree = "<group>"; };
 		E169E538F23D04ED878E1EFF /* RallyIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RallyIOSApp.swift; sourceTree = "<group>"; };
 		E1B9EC6CE7B68DC43C4F92C7 /* LocalVideoLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalVideoLogic.swift; sourceTree = "<group>"; };
@@ -225,6 +232,17 @@
 		FAD86CD770119F9EFBB7003E /* MatchSummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchSummaryView.swift; sourceTree = "<group>"; };
 		FEFBC0DB886D05C0A25F6E05 /* LocalVideoSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalVideoSection.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		EF8A6E9BFD470986D9D5C9B5 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1C81D6F669B7BB6D2FFCCEB3 /* onnxruntime in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		1163A95C23D7588F851BA063 /* Match */ = {
@@ -319,6 +337,7 @@
 				E764F7DB51182B2B498F5CD6 /* LocalVideoStatusTests.swift */,
 				B0808EB7D7A1AF8A36818AEE /* MatchGroupingTests.swift */,
 				3A9896412F77DC2290D32532 /* MatchModelTests.swift */,
+				C2B6C5DE171A479978CF2184 /* OnnxSessionTests.swift */,
 				A5828909CBE2B20598B0AAB8 /* PlaybackBridgingTests.swift */,
 				79A7421877A151C7C161E81E /* PlaybackPositionTests.swift */,
 				0F86CA7E3C3A9EBC8035FF98 /* ScoreLogDeleteMessageTests.swift */,
@@ -442,6 +461,15 @@
 			path = Share;
 			sourceTree = "<group>";
 		};
+		B5256EF49AF2798E3C5D8EE2 /* LocalAnalysis */ = {
+			isa = PBXGroup;
+			children = (
+				B976577885618A37CA34DB74 /* ModelCatalog.swift */,
+				DFA34C0702D7C4F873579DEF /* OnnxSession.swift */,
+			);
+			path = LocalAnalysis;
+			sourceTree = "<group>";
+		};
 		B53BB82DD7780F3657A03A11 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
@@ -456,6 +484,7 @@
 				775B63AAA79EF901964398BC /* CourtMarking */,
 				6EE7D57B0F946CBF10784D1B /* Home */,
 				9FE4AE560945DD46BA789279 /* Labels */,
+				B5256EF49AF2798E3C5D8EE2 /* LocalAnalysis */,
 				690EA4B7050089824EA3B563 /* LocalVideo */,
 				1163A95C23D7588F851BA063 /* Match */,
 				206858E4AF1EFE10BAF4F4E3 /* Scoring */,
@@ -504,6 +533,8 @@
 				4B44A75E2FD10EFE3C97FCF5 /* Compile Kotlin Framework */,
 				297B59D9CE634556D6007C40 /* Sources */,
 				1623B02D10928C8101C1F806 /* Resources */,
+				EF8A6E9BFD470986D9D5C9B5 /* Frameworks */,
+				9A6B89B2D7016FA94A5B8188 /* Stage ONNX Models */,
 			);
 			buildRules = (
 			);
@@ -511,6 +542,7 @@
 			);
 			name = iosApp;
 			packageProductDependencies = (
+				E2169304751825EED397174B /* onnxruntime */,
 			);
 			productName = iosApp;
 			productReference = 86038AE1032E284E79B32AD6 /* iosApp.app */;
@@ -576,6 +608,9 @@
 			);
 			mainGroup = 38B69C3F79CD97858CF7B609;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				42CC0F352027C506EF85F733 /* XCRemoteSwiftPackageReference "onnxruntime-swift-package-manager" */,
+			);
 			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
@@ -622,6 +657,25 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "if [ -z \"${JAVA_HOME:-}\" ]; then export JAVA_HOME=$(/usr/libexec/java_home); fi\ncd \"$SRCROOT/..\"\n./gradlew :shared:embedAndSignAppleFrameworkForXcode\n";
+		};
+		9A6B89B2D7016FA94A5B8188 /* Stage ONNX Models */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Stage ONNX Models";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"$SRCROOT/Scripts/stage-onnx-models.sh\"";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -678,7 +732,9 @@
 				180BE08FA55055D020A3D2EF /* MatchSummaryView.swift in Sources */,
 				5CF4E9EB9E265172C21BF8F2 /* MatchView.swift in Sources */,
 				E1057EA8190EFE412E89BC72 /* MatchesDrawer.swift in Sources */,
+				EA223747B60B6A6E5B32F05C /* ModelCatalog.swift in Sources */,
 				477D35EB905FDFE2CA28280A /* NewMatchView.swift in Sources */,
+				FEB1B904E92819730266F380 /* OnnxSession.swift in Sources */,
 				588606F944E2E70F3F3FA598 /* PlaybackSettingsSheet.swift in Sources */,
 				5DBF6F864ECBB35639A57D0A /* PlayerSurface.swift in Sources */,
 				4175AE2A684D5C4E22D3025F /* PointsFacet.swift in Sources */,
@@ -723,6 +779,7 @@
 				864D7A8CB1907E1F181FE602 /* LocalVideoStatusTests.swift in Sources */,
 				80422B2E577D3C2F2F960B7D /* MatchGroupingTests.swift in Sources */,
 				19083545671B6C7512BC48DC /* MatchModelTests.swift in Sources */,
+				2AB5089784DDFA9FAA82B3C3 /* OnnxSessionTests.swift in Sources */,
 				6F6311C57F7EC3E460777DA8 /* PlaybackBridgingTests.swift in Sources */,
 				6619900918B060348F0F21FE /* PlaybackPositionTests.swift in Sources */,
 				3AD1A4C1F76FB329D882B424 /* ScoreLogDeleteMessageTests.swift in Sources */,
@@ -1014,6 +1071,25 @@
 			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		42CC0F352027C506EF85F733 /* XCRemoteSwiftPackageReference "onnxruntime-swift-package-manager" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/microsoft/onnxruntime-swift-package-manager";
+			requirement = {
+				kind = exactVersion;
+				version = 1.20.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		E2169304751825EED397174B /* onnxruntime */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 42CC0F352027C506EF85F733 /* XCRemoteSwiftPackageReference "onnxruntime-swift-package-manager" */;
+			productName = onnxruntime;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 242FB5348943441C388468CE /* Project object */;
 }

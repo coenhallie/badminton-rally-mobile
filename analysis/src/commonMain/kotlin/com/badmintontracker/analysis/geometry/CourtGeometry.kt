@@ -1,4 +1,8 @@
+@file:OptIn(kotlin.experimental.ExperimentalObjCName::class)
+
 package com.badmintontracker.analysis.geometry
+
+import kotlin.native.ObjCName
 
 data class Point(val x: Double, val y: Double)
 
@@ -16,6 +20,20 @@ object Court {
  * Field names match the persisted `videos.manual_court_keypoints` shape
  * exactly, so there is no remapping between storage and use.
  */
+/**
+ * Named apart from `com.badmintontracker.shared.model.CourtKeypoints` for
+ * Objective-C only, because both modules land in one `Shared` framework for iOS
+ * and two classes of the same name collide there. Without this the compiler
+ * renames one of them to `CourtKeypoints_`, silently and on whichever it
+ * reaches second, and Swift call sites start binding to the other type.
+ *
+ * The name matches what the framework header carried before `:analysis` was
+ * exported, so no Swift moves. The two are not duplicates: this one is the
+ * compute type with `Point` corners, the shared one is the wire type with
+ * `[Float]` pairs and the `videos.manual_court_keypoints` serial names, and
+ * `toAnalysis()` is the single conversion between them.
+ */
+@ObjCName("AnalysisCourtKeypoints")
 data class CourtKeypoints(
     val topLeft: Point,
     val topRight: Point,

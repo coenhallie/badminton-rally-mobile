@@ -9,7 +9,17 @@ import kotlin.math.acos
 import kotlin.math.atan2
 import kotlin.math.hypot
 
-enum class Side { LEFT, RIGHT }
+/**
+ * Which side of the BODY a measurement belongs to - a left elbow against a
+ * right one.
+ *
+ * Not `com.badmintontracker.shared.scoring.Side`, which is HOME and AWAY, and
+ * named apart from it deliberately: both modules are exported into one
+ * Objective-C framework for iOS, where two enums called `Side` collide and
+ * Kotlin renames one of them to `Side_` - silently, and on whichever of the
+ * two the compiler reaches second.
+ */
+enum class BodySide { LEFT, RIGHT }
 
 /**
  * What one frame of the near player's joints measures, or does not.
@@ -77,18 +87,18 @@ data class PoseMetrics(
  * is (a, vertex, c) for the overlay's arc, null for the kinds with no arc.
  */
 enum class MetricKind(
-    val side: Side?,
+    val side: BodySide?,
     val range: ClosedFloatingPointRange<Double>,
     val angleJoints: Triple<Int, Int, Int>?,
 ) {
     STANCE(null, 0.0..2.0, null),
     BEHIND_LINE(null, -1.0..6.0, null),
-    ELBOW_LEFT(Side.LEFT, 0.0..180.0, Triple(Coco.LEFT_SHOULDER, Coco.LEFT_ELBOW, Coco.LEFT_WRIST)),
-    ELBOW_RIGHT(Side.RIGHT, 0.0..180.0, Triple(Coco.RIGHT_SHOULDER, Coco.RIGHT_ELBOW, Coco.RIGHT_WRIST)),
-    ARM_LEFT(Side.LEFT, 0.0..180.0, Triple(Coco.LEFT_ELBOW, Coco.LEFT_SHOULDER, Coco.LEFT_HIP)),
-    ARM_RIGHT(Side.RIGHT, 0.0..180.0, Triple(Coco.RIGHT_ELBOW, Coco.RIGHT_SHOULDER, Coco.RIGHT_HIP)),
-    KNEE_LEFT(Side.LEFT, 0.0..180.0, Triple(Coco.LEFT_HIP, Coco.LEFT_KNEE, Coco.LEFT_ANKLE)),
-    KNEE_RIGHT(Side.RIGHT, 0.0..180.0, Triple(Coco.RIGHT_HIP, Coco.RIGHT_KNEE, Coco.RIGHT_ANKLE)),
+    ELBOW_LEFT(BodySide.LEFT, 0.0..180.0, Triple(Coco.LEFT_SHOULDER, Coco.LEFT_ELBOW, Coco.LEFT_WRIST)),
+    ELBOW_RIGHT(BodySide.RIGHT, 0.0..180.0, Triple(Coco.RIGHT_SHOULDER, Coco.RIGHT_ELBOW, Coco.RIGHT_WRIST)),
+    ARM_LEFT(BodySide.LEFT, 0.0..180.0, Triple(Coco.LEFT_ELBOW, Coco.LEFT_SHOULDER, Coco.LEFT_HIP)),
+    ARM_RIGHT(BodySide.RIGHT, 0.0..180.0, Triple(Coco.RIGHT_ELBOW, Coco.RIGHT_SHOULDER, Coco.RIGHT_HIP)),
+    KNEE_LEFT(BodySide.LEFT, 0.0..180.0, Triple(Coco.LEFT_HIP, Coco.LEFT_KNEE, Coco.LEFT_ANKLE)),
+    KNEE_RIGHT(BodySide.RIGHT, 0.0..180.0, Triple(Coco.RIGHT_HIP, Coco.RIGHT_KNEE, Coco.RIGHT_ANKLE)),
     LEAN(null, -45.0..45.0, null),
     SHOULDERS(null, -45.0..45.0, null),
     HIPS(null, -45.0..45.0, null),

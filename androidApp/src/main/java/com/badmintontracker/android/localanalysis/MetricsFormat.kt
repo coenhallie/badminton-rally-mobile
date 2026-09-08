@@ -2,7 +2,7 @@ package com.badmintontracker.android.localanalysis
 
 import com.badmintontracker.analysis.player.MetricKind
 import com.badmintontracker.analysis.player.PoseMetrics
-import com.badmintontracker.analysis.player.Side
+import com.badmintontracker.analysis.player.BodySide
 import com.badmintontracker.shared.prefs.RacketArm
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -56,10 +56,10 @@ fun metricRangeLabel(kind: MetricKind): String {
  */
 fun metricLabel(kind: MetricKind, racketArm: RacketArm?): String {
     val armChosen = racketArm != null
-    fun sided(base: String, side: Side?, dropWhenChosen: Boolean): String = when {
+    fun sided(base: String, side: BodySide?, dropWhenChosen: Boolean): String = when {
         side == null -> base
         dropWhenChosen && armChosen -> base
-        side == Side.LEFT -> "$base L"
+        side == BodySide.LEFT -> "$base L"
         else -> "$base R"
     }
     return when (kind) {
@@ -81,6 +81,6 @@ fun visibleKinds(hasCourt: Boolean, racketArm: RacketArm?): List<MetricKind> =
             kind.needsCourt -> hasCourt
             kind == MetricKind.KNEE_LEFT || kind == MetricKind.KNEE_RIGHT || kind.side == null -> true
             racketArm == null -> true
-            else -> (kind.side == Side.LEFT) == (racketArm == RacketArm.LEFT)
+            else -> (kind.side == BodySide.LEFT) == (racketArm == RacketArm.LEFT)
         }
     }

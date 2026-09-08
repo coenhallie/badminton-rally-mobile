@@ -5,11 +5,25 @@ options:
 configFiles:
   Debug: Config/AppConfig.xcconfig
   Release: Config/AppConfig.xcconfig
+packages:
+  # The same runtime version androidApp pins in gradle/libs.versions.toml. Two
+  # versions would put a second variable into an A/B comparison whose whole
+  # point is that only the platform layer differs.
+  #
+  # SPM rather than the onnxruntime-objc pod: CocoaPods would mean a workspace,
+  # and the Compile Kotlin Framework pre-build script below already owns how
+  # Shared.framework reaches this target.
+  onnxruntime:
+    url: https://github.com/microsoft/onnxruntime-swift-package-manager
+    exactVersion: 1.20.0
 targets:
   iosApp:
     type: application
     platform: iOS
     sources: [Sources, Assets.xcassets, Resources]
+    dependencies:
+      - package: onnxruntime
+        product: onnxruntime
     # Declared, not inherited: the session lives in the Keychain (see
     # resolveSessionStore). Without this entitlement every Keychain call returns
     # -34018 and the app silently falls back to plaintext NSUserDefaults.
@@ -49,6 +63,14 @@ targets:
           if [ -z "${JAVA_HOME:-}" ]; then export JAVA_HOME=$(/usr/libexec/java_home); fi
           cd "$SRCROOT/.."
           ./gradlew :shared:embedAndSignAppleFrameworkForXcode
+    postBuildScripts:
+      # After the build, not before: it writes into BUILT_PRODUCTS_DIR, which a
+      # pre-build phase would see emptied again by the resource copy that
+      # follows it. See the script for why the graphs are staged rather than
+      # committed.
+      - name: Stage ONNX Models
+        basedOnDependencyAnalysis: false
+        script: '"$SRCROOT/Scripts/stage-onnx-models.sh"'
     scheme:
       testTargets: [iosAppTests, iosAppUITests]
   iosAppTests:

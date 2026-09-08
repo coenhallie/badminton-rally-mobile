@@ -39,6 +39,21 @@ kotlin {
         it.binaries.framework {
             baseName = "Shared"
             isStatic = true
+            // The api() dependency below already drags :analysis TYPES into the
+            // header, because :shared's own signatures mention them
+            // (LocalAnalysisOutcome carries a PlayerTrack). Free-standing
+            // functions are not mentioned by anything, so without this export
+            // heatmapToCoord, medianBackground and backgroundSampleIndices are
+            // absent from Shared.h and the iOS device layer would have to
+            // reimplement them in Swift.
+            //
+            // That is the one two-language implementation the pipeline design's
+            // section 5.4 conceded and stage 1 then deleted by going Android
+            // first. Deleting it again here is cheaper than the golden vector
+            // that would otherwise have to pay for it: the blob detector's
+            // 0.5 threshold, its max_area rejection and its weighted centroid
+            // are exactly the kind of detail two implementations drift on.
+            export(project(":analysis"))
         }
     }
 

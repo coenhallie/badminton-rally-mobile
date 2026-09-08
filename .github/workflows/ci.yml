@@ -72,10 +72,16 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - run: cp iosApp/Config/Supabase.xcconfig.example iosApp/Config/Supabase.xcconfig
       - name: Run iOS tests on first available iPhone simulator
+        # ONNX_MODELS_OPTIONAL: the same escape hatch android-assemble takes
+        # with -PonnxModelsOptional=true, and for the same reason - the bundled
+        # graphs are gitignored derived artifacts and exporting them needs the
+        # Modal weights and torch. The app this builds cannot analyse a video,
+        # and the on-device tests skip themselves rather than fail when the
+        # graphs are absent.
         run: |
           DEVICE=$(xcrun simctl list devices available | grep -oE 'iPhone [0-9][^(]*' | head -1 | sed 's/ *$//')
           echo "Using simulator: $DEVICE"
-          xcodebuild test \
+          ONNX_MODELS_OPTIONAL=YES xcodebuild test \
             -project iosApp/iosApp.xcodeproj \
             -scheme iosApp \
             -destination "platform=iOS Simulator,name=$DEVICE" \
