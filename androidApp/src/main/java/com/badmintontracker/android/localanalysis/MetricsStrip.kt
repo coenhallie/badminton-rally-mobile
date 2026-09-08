@@ -133,7 +133,16 @@ private fun rememberTileWidth(): Dp {
                 formatMetric(MetricKind.LEAN, 180.0) to valueStyle,
             )
         val textPx = widest.maxOf { (text, style) -> measurer.measure(text, style).size.width }
-        with(density) { textPx.toDp() } + TILE_PADDING * 2
+        // The sum is in pixels, and the padding is rounded here exactly as the
+        // tile rounds it, so the tile's inner width lands on textPx and not a
+        // pixel under. Adding TILE_PADDING twice in dp instead and letting the
+        // tile round it again does not survive every density: at 2.75 (440 dpi)
+        // the width rounds to textPx + 55 while the tile's two paddings round to
+        // 28 each, leaving the label one pixel short of the space it was
+        // measured for, which wraps it. No slack pixel is added on top, because
+        // the round trip is exact: roundToPx recovers the integer this toDp
+        // divided, so the tile is exactly as wide as it was measured to be.
+        with(density) { (textPx + 2 * TILE_PADDING.roundToPx()).toDp() }
     }
 }
 
