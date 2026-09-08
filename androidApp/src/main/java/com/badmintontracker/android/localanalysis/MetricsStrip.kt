@@ -74,13 +74,20 @@ fun MetricsStrip(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 8.dp),
         )
-        SingleChoiceSegmentedButtonRow(modifier = Modifier.padding(top = 8.dp)) {
+        // Full width with a weight each, not three self-sized segments. Left to
+        // themselves the segments size to their own text, and at the first
+        // system font step up "Right arm" wraps onto two lines, grows taller
+        // than the row and draws over its neighbours. An even third of the
+        // strip is about 129 dp on a 412 dp phone, which holds the longest
+        // label at every font scale the system offers.
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
             listOf(RacketArm.LEFT to "Left arm", RacketArm.RIGHT to "Right arm", null to "Both")
                 .forEachIndexed { index, (arm, label) ->
                     SegmentedButton(
                         selected = racketArm == arm,
                         onClick = { onRacketArm(arm) },
                         shape = SegmentedButtonDefaults.itemShape(index, 3),
+                        modifier = Modifier.weight(1f),
                     ) { Text(label, style = MaterialTheme.typography.labelSmall) }
                 }
         }
