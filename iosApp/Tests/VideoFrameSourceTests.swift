@@ -29,63 +29,9 @@ final class VideoFrameSourceTests: XCTestCase {
         try? FileManager.default.removeItem(at: scratch)
     }
 
-    /// Writes `frames` frames at a fixed rate, each a solid grey whose value is
-    /// its own index, so a frame can be identified from its pixels.
-    ///
-    /// H.264 rather than a lossless codec: this is the decode path production
-    /// footage takes, and a lossless one would not exercise the same reader.
-    /// The grey values are spaced so quantisation cannot make two frames
-    /// indistinguishable.
     private func writeVideo(frames: Int, fps: Int32 = 30, size: Int = 64) throws -> URL {
         let url = scratch.appendingPathComponent("clip.mp4")
-        let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
-        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
-            AVVideoCodecKey: AVVideoCodecType.h264,
-            AVVideoWidthKey: size,
-            AVVideoHeightKey: size,
-        ])
-        input.expectsMediaDataInRealTime = false
-        let adaptor = AVAssetWriterInputPixelBufferAdaptor(
-            assetWriterInput: input,
-            sourcePixelBufferAttributes: [
-                kCVPixelBufferPixelFormatTypeKey as String:
-                    Int(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange),
-                kCVPixelBufferWidthKey as String: size,
-                kCVPixelBufferHeightKey as String: size,
-            ]
-        )
-        writer.add(input)
-        XCTAssertTrue(writer.startWriting())
-        writer.startSession(atSourceTime: .zero)
-
-        for index in 0..<frames {
-            var buffer: CVPixelBuffer?
-            CVPixelBufferPoolCreatePixelBuffer(nil, adaptor.pixelBufferPool!, &buffer)
-            let pixels = try XCTUnwrap(buffer)
-            CVPixelBufferLockBaseAddress(pixels, [])
-            let luma = CVPixelBufferGetBaseAddressOfPlane(pixels, 0)!.assumingMemoryBound(to: UInt8.self)
-            let lumaStride = CVPixelBufferGetBytesPerRowOfPlane(pixels, 0)
-            let value = UInt8(16 + index * 8)
-            for row in 0..<size {
-                for column in 0..<size { luma[row * lumaStride + column] = value }
-            }
-            let chroma = CVPixelBufferGetBaseAddressOfPlane(pixels, 1)!.assumingMemoryBound(to: UInt8.self)
-            let chromaStride = CVPixelBufferGetBytesPerRowOfPlane(pixels, 1)
-            for row in 0..<(size / 2) {
-                for column in 0..<(size / 2) {
-                    chroma[row * chromaStride + column * 2] = 128
-                    chroma[row * chromaStride + column * 2 + 1] = 128
-                }
-            }
-            CVPixelBufferUnlockBaseAddress(pixels, [])
-            while !input.isReadyForMoreMediaData { usleep(1000) }
-            XCTAssertTrue(adaptor.append(pixels, withPresentationTime: CMTime(value: CMTimeValue(index), timescale: fps)))
-        }
-        input.markAsFinished()
-        let finished = expectation(description: "writer finishes")
-        writer.finishWriting { finished.fulfill() }
-        wait(for: [finished], timeout: 30)
-        XCTAssertEqual(writer.status, .completed, "\(writer.error?.localizedDescription ?? "")")
+        try TestVideo.write(frames: frames, fps: fps, width: size, height: size, to: url, test: self)
         return url
     }
 
@@ -140,9 +86,7 @@ final class VideoFrameSourceTests: XCTestCase {
             return luma[0]
         }
         XCTAssertEqual(values.count, wanted.count)
-        // Written as 16 + index * 8, and H.264 is lossy, so the value is
-        // matched to the nearest written level rather than exactly.
-        let recovered = values.map { Int(((Double($0) - 16) / 8).rounded()) }
+        let recovered = values.map { TestVideo.frame(forLuma: $0) }
         XCTAssertEqual(recovered, wanted)
     }
 

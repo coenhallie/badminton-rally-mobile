@@ -1,5 +1,8 @@
 package com.badmintontracker.shared
 
+import com.badmintontracker.shared.local.LocalAnalysisCoordinator
+import com.badmintontracker.shared.local.LocalAnalysisOutcome
+import com.badmintontracker.shared.model.CourtKeypoints
 import com.badmintontracker.shared.repo.userFacingMessage
 import com.badmintontracker.shared.auth.friendlyAuthError
 import com.badmintontracker.shared.model.AnnotationLabel
@@ -142,3 +145,26 @@ fun testScoreLogsRepository(now: Instant, ownerId: String?): ScoreLogsRepository
 }
 
 private const val TEST_SCORE_LOGS_SUITE = "com.badmintontracker.ios.tests.scorelogs"
+
+/**
+ * [LocalAnalysisCoordinator.analyze] with its `Result` unwrapped.
+ *
+ * The same problem the wrappers above exist for, arriving at the one call the
+ * whole on-device pipeline goes through: `Result<LocalAnalysisOutcome>` reaches
+ * Objective-C as a bare `id`, and Swift cannot tell a success carrying an
+ * outcome from a failure carrying a throwable - a failed analysis simply casts
+ * to nil, which reads as "the coordinator returned nothing" rather than as the
+ * decode error it actually was.
+ *
+ * Throwing rather than returning a message string, unlike its neighbours: this
+ * one has a value to return on success, and the reason a run failed - a missing
+ * model, an unreadable file, a decoder giving up halfway - is something the
+ * runner shows the coach verbatim, not something to flatten into one sentence
+ * here.
+ */
+@Throws(Throwable::class)
+suspend fun LocalAnalysisCoordinator.analyzeThrowing(
+    videoPath: String,
+    keypoints: CourtKeypoints,
+    onProgress: (Float) -> Unit,
+): LocalAnalysisOutcome = analyze(videoPath, keypoints, onProgress).getOrThrow()
