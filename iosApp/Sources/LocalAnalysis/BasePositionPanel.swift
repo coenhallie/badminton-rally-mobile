@@ -50,7 +50,21 @@ struct BasePositionPanel: View {
                 Color.clear.frame(height: 0)
             }
         }
-        .task(id: inputs) { bases = measure(); resolved = true }
+        // Off the main actor, and awaited: `measure` is the couple of million
+        // comparisons the property above describes, and a `.task` body with no
+        // suspension point in it runs to completion on the main thread - which
+        // blocked every open of this tab, and made the blank branch above
+        // unreachable rather than one frame long. `SkeletonPanelModel.loadSkeleton`
+        // reads its track the same way.
+        .task(id: inputs) {
+            let track = source
+            let rallies = windows
+            let measured = await Task.detached(priority: .userInitiated) {
+                BasePositionPanel.measure(source: track, windows: rallies)
+            }.value
+            bases = measured
+            resolved = true
+        }
     }
 
     @ViewBuilder
@@ -111,7 +125,12 @@ struct BasePositionPanel: View {
         )
     }
 
-    private func measure() -> BasePositions? {
+    /// Static so the detached task above carries the two values it needs rather
+    /// than the view, and `nonisolated` because a `View` is main-actor-isolated
+    /// and everything it declares inherits that - which would put this straight
+    /// back on the thread the task exists to keep it off (an error outright
+    /// under the Swift 6 language mode).
+    private nonisolated static func measure(source: HeatmapSource?, windows: [RallyWindow]) -> BasePositions? {
         guard let source else { return nil }
         return BasePositionKt.basePositions(
             track: source.track,
@@ -164,6 +183,9 @@ private struct CourtBaseView: View {
     private static let dotRadius: CGFloat = 5
     /// The whole-match ring, drawn around the dots rather than over them.
     private static let ringRadius: CGFloat = 10
+    private static let ringLineWidth: CGFloat = 2.5
+    /// Between a marker's edge and the number beside it.
+    private static let labelGap: CGFloat = 2
 
     var body: some View {
         CourtCard {
@@ -179,20 +201,34 @@ private struct CourtBaseView: View {
                     context.stroke(
                         Self.circle(at: centre, radius: Self.ringRadius),
                         with: GraphicsContext.Shading.color(Shuttl.accent),
-                        lineWidth: 2.5
+                        lineWidth: Self.ringLineWidth
                     )
                 }
-                // Numbers last, and clear of the ring, so the whole-match marker
-                // cannot sit on top of the one label that says which rally a dot
-                // is.
+                // Numbers last, and clear of both circles, so neither the
+                // whole-match marker nor the dot itself sits on the one label
+                // that says which rally a dot is. `rallyLabelX` owns where
+                // "clear" is; Android draws the same picture through the same
+                // function.
+                let ringCentre = bases.overall.map { CourtLayout.point($0, in: size) }
                 for rally in bases.rallies {
                     let centre = CourtLayout.point(rally.position, in: size)
                     let label = Text("\(rally.index)")
                         .shuttlCanvasType(ShuttlType.labelSmall)
                         .foregroundStyle(Shuttl.text)
+                    let x = BasePositionFormatKt.rallyLabelX(
+                        dotX: Float(centre.x),
+                        dotY: Float(centre.y),
+                        dotRadius: Float(Self.dotRadius),
+                        gap: Float(Self.labelGap),
+                        ringX: Float(ringCentre?.x ?? 0),
+                        ringY: Float(ringCentre?.y ?? 0),
+                        // The stroke straddles the radius, so the outer edge is
+                        // half a line width past it.
+                        ringReach: ringCentre == nil ? 0 : Float(Self.ringRadius + Self.ringLineWidth / 2)
+                    )
                     context.draw(
                         context.resolve(label),
-                        at: CGPoint(x: centre.x + Self.ringRadius + 2, y: centre.y),
+                        at: CGPoint(x: CGFloat(x), y: centre.y),
                         anchor: .leading
                     )
                 }

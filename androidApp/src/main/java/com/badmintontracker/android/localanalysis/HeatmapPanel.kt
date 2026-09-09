@@ -5,9 +5,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.Modifier
 import com.badmintontracker.analysis.player.PlayerTrack
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /** A track to draw and the frame rate it was sampled at, which must travel together. */
 internal data class HeatmapSource(val track: PlayerTrack, val fps: Double)
@@ -67,22 +69,42 @@ fun HeatmapPanel(
     // run may be a pose-less one whose empty track must fall through. This is a
     // detail screen reached by an explicit tap, so it is one parse per opening,
     // not the per-row cost the Analytics list had to avoid.
+    //
+    // One parse, and not on the thread drawing the frame: `remember` runs its
+    // block during composition, so the megabyte of track this reads was parsed
+    // on the main thread and the tab opened frozen for as long as it took.
+    // iOS reads it the same way, in AnalyticsDetailView.reload.
     val done = runner.stateFor(entryId) as? LocalAnalysisState.Done
-    val stored = remember(entryId) { runner.storedTrack(entryId) }
-    val source = heatmapSource(done, stored)
+    val loaded = produceState<Loaded?>(null, entryId, done) {
+        value = withContext(Dispatchers.Default) {
+            Loaded(heatmapSource(done, runner.storedTrack(entryId)))
+        }
+    }.value
 
     // Scrolls because the court is 1.7x taller than it is wide: in landscape, or
     // portrait at a large font scale, it overflows and takes the summary line -
     // which is how much of the map to trust - off the bottom with it. Fixed here
     // rather than on either host so both get it.
     Column(modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        if (source == null) {
+        val source = loaded?.source
+        when {
+            // The frames between the panel appearing and the read landing.
+            // Blank, and deliberately not the line below: "no longer loaded"
+            // would flash over every single opening of a perfectly good
+            // heatmap.
+            loaded == null -> Unit
             // A run's state lives in memory, so it is gone after a process death.
             // Said plainly rather than drawing an empty court, which would read as
             // a player who never moved.
-            PanelMessage("This analysis is no longer loaded. Run it again to see the heatmap.")
-        } else {
-            CourtHeatmapView(track = source.track, fps = source.fps)
+            source == null ->
+                PanelMessage("This analysis is no longer loaded. Run it again to see the heatmap.")
+            else -> CourtHeatmapView(track = source.track, fps = source.fps)
         }
     }
 }
+
+/**
+ * A finished read. Null in place of one of these means the read is still
+ * running, which is a blank frame rather than a message.
+ */
+private data class Loaded(val source: HeatmapSource?)

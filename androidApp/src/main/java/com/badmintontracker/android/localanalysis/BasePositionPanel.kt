@@ -10,7 +10,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -25,6 +25,9 @@ import com.badmintontracker.analysis.player.RallyWindow
 import com.badmintontracker.analysis.player.basePositions
 import com.badmintontracker.shared.local.describeBase
 import com.badmintontracker.shared.local.describeRally
+import com.badmintontracker.shared.local.rallyLabelX
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Where the player played from, rally by rally, on the court.
@@ -48,16 +51,27 @@ fun BasePositionPanel(
     runner: LocalAnalysisRunner,
     modifier: Modifier = Modifier,
 ) {
+    // Read and measured off the thread drawing the frame. Both halves need it:
+    // the track is a megabyte of JSON to parse, and `basePositions` sorts every
+    // sample in the match and then scans that sort once per rally, which is a
+    // couple of million comparisons on a long one. In `remember` that all ran
+    // during composition and the tab opened frozen. iOS says the same in
+    // BasePositionPanel's `bases`.
     val done = runner.stateFor(entryId) as? LocalAnalysisState.Done
-    val stored = remember(entryId) { runner.storedTrack(entryId) }
-    val source = heatmapSource(done, stored)
-    val windows = remember(entryId, done) {
-        (done?.clips?.takeIf { it.isNotEmpty() } ?: runner.storedClips(entryId))
-            .map { RallyWindow(it.index, it.startSeconds, it.endSeconds) }
-    }
-    val bases = remember(source, windows) { source?.let { basePositions(it.track, it.fps, windows) } }
+    val measured = produceState<Measured?>(null, entryId, done) {
+        value = withContext(Dispatchers.Default) {
+            val source = heatmapSource(done, runner.storedTrack(entryId))
+            val windows = (done?.clips?.takeIf { it.isNotEmpty() } ?: runner.storedClips(entryId))
+                .map { RallyWindow(it.index, it.startSeconds, it.endSeconds) }
+            Measured(source, windows, source?.let { basePositions(it.track, it.fps, windows) })
+        }
+    }.value
 
     Column(modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        // The frames between the panel appearing and the measurement landing.
+        // Blank, and deliberately not the ladder below: every rung of it would
+        // otherwise flash over an opening that is about to draw a court.
+        val (source, windows, bases) = measured ?: return@Column
         val message = when {
             source == null -> "This analysis is no longer loaded. Run it again to see where the player stood."
             source.track.samples.isEmpty() -> whyEmpty(source.track)
@@ -124,21 +138,47 @@ private fun CourtBaseView(bases: BasePositions) {
         )
         val radius = 5.dp.toPx()
         val ring = 10.dp.toPx()
+        val ringStroke = 2.5.dp.toPx()
         bases.rallies.forEach { rally ->
             drawCircle(dot.copy(alpha = 0.8f), radius = radius, center = at(rally.position))
         }
         bases.overall?.let {
-            drawCircle(dot, radius = ring, center = at(it), style = Stroke(width = 2.5.dp.toPx()))
+            drawCircle(dot, radius = ring, center = at(it), style = Stroke(width = ringStroke))
         }
-        // Numbers last, and clear of the ring, so the whole-match marker cannot
-        // sit on top of the one label that says which rally a dot is.
+        // Numbers last, and clear of both circles, so neither the whole-match
+        // marker nor the dot itself sits on the one label that says which
+        // rally a dot is. `rallyLabelX` owns where "clear" is; iOS draws the
+        // same picture through the same function.
+        val overall = bases.overall?.let { at(it) }
+        val gap = 2.dp.toPx()
         bases.rallies.forEach { rally ->
             val centre = at(rally.position)
             val measured = measurer.measure(rally.index.toString(), label)
+            val x = rallyLabelX(
+                dotX = centre.x,
+                dotY = centre.y,
+                dotRadius = radius,
+                gap = gap,
+                ringX = overall?.x ?: 0f,
+                ringY = overall?.y ?: 0f,
+                // The stroke straddles the radius, so the outer edge is half a
+                // line width past it.
+                ringReach = if (overall == null) 0f else ring + ringStroke / 2f,
+            )
             drawText(
                 textLayoutResult = measured,
-                topLeft = Offset(centre.x + ring + 2.dp.toPx(), centre.y - measured.size.height / 2f),
+                topLeft = Offset(x, centre.y - measured.size.height / 2f),
             )
         }
     }
 }
+
+/**
+ * A finished measurement. Null in place of one of these means it is still
+ * running, which is a blank frame rather than any of the panel's messages.
+ */
+private data class Measured(
+    val source: HeatmapSource?,
+    val windows: List<RallyWindow>,
+    val bases: BasePositions?,
+)
