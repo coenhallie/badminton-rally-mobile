@@ -116,9 +116,14 @@ private fun LocalVideoRowItem(
 ) {
     val entry = row.entry
     var menuOpen by remember { mutableStateOf(false) }
-    // The menu renders when either action applies; each item is gated on its
-    // own rule, so a mid-pipeline row that can do neither shows no menu at all.
-    val hasMenu = row.canRemove || row.canEditDetails
+    // The menu renders when ANY of its four items applies; each is gated on its
+    // own rule, so a mid-pipeline row that can do none shows no menu at all.
+    // The two analysis items count: gating the menu on remove and edit alone
+    // hid the clips and the heatmap on exactly the rows most likely to have
+    // them - an analysed video mid-upload can do neither of the other two, and
+    // its results were then reachable from nowhere.
+    val hasMenu = row.canRemove || row.canEditDetails ||
+        onOpenHeatmap != null || (localClips != null && onOpenLocalClips != null)
 
     Column(
         modifier = Modifier
