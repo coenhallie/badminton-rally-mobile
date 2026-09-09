@@ -1,9 +1,8 @@
-package com.badmintontracker.android.localanalysis
+package com.badmintontracker.shared.local
 
 import com.badmintontracker.analysis.geometry.Court
 import com.badmintontracker.analysis.geometry.Point
 import com.badmintontracker.analysis.player.RallyBase
-import java.util.Locale
 import kotlin.math.abs
 
 /**
@@ -15,7 +14,10 @@ import kotlin.math.abs
  * Left and right are the player's own, facing the net, which for the near
  * player is also the camera's left and right.
  *
- * Locale-fixed for the same reason as `formatMetric`: the test pins the digits.
+ * Shared rather than written once per platform: this is a sentence a coach
+ * reads on both phones, and a left/right convention or a rounding rule that
+ * drifted between them would be a disagreement about the same measurement.
+ * The digits come from [metres], which is [metricText]'s own rounding.
  */
 fun describeBase(p: Point): String {
     val behind = p.y - (Court.LENGTH / 2 + Court.SERVICE_LINE)
@@ -36,8 +38,6 @@ fun describeBase(p: Point): String {
 /** One list row: the rally, where its base was, and how much of the rally that rests on. */
 fun describeRally(base: RallyBase): String =
     "Rally ${base.index} · ${describeBase(base.position)} · found in ${(base.coverage * 100).toInt()}% of frames"
-
-private fun metres(m: Double): String = String.format(Locale.US, "%.2f m", m)
 
 /** Below this the two-decimal string would read "0.00 m", which is not a direction. */
 private const val HALF_CM = 0.005

@@ -23,6 +23,8 @@ import com.badmintontracker.analysis.geometry.Point
 import com.badmintontracker.analysis.player.BasePositions
 import com.badmintontracker.analysis.player.RallyWindow
 import com.badmintontracker.analysis.player.basePositions
+import com.badmintontracker.shared.local.describeBase
+import com.badmintontracker.shared.local.describeRally
 
 /**
  * Where the player played from, rally by rally, on the court.

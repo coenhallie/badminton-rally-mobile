@@ -59,6 +59,17 @@ private fun twoDecimals(value: Double): String {
     return "$sign$whole.$fraction"
 }
 
+/**
+ * A distance in metres, two decimals, as [metricText] sets one.
+ *
+ * Shared with it rather than written again beside it, because the rounding is
+ * the interesting part: [twoDecimals] rounds the magnitude, and the two places
+ * that print a signed distance from a court line are exactly where ties toward
+ * positive infinity would round the same measurement two different ways either
+ * side of that line.
+ */
+fun metres(m: Double): String = "${twoDecimals(m)} m"
+
 /** [metricText] as one string, for the places that set it in one face. */
 fun formatMetric(kind: MetricKind, value: Double?): String =
     metricText(kind, value).let { it.value + it.unit }

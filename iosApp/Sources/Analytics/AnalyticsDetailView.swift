@@ -41,6 +41,25 @@ func heatmapSource(
     return nil
 }
 
+/// The rallies a run cut, as the spans the base positions are measured over.
+/// Port of the `remember` in Android's `BasePositionPanel`.
+///
+/// A run still in memory may carry clips the sidecar on disk does not yet hold,
+/// so it wins - but only when it actually cut some. A run asked for pose alone
+/// completes with NO clips, and preferring it blindly would drop the windows a
+/// previous run left behind, which is the same shape of mistake `heatmapSource`
+/// exists to avoid on the track.
+///
+/// Clips recovered by filename have no bounds and reach `basePositions` as
+/// unbounded windows, which it skips. That is the honest outcome: the panel says
+/// the windows were not kept rather than measuring a median over the whole match
+/// and calling it a rally.
+func rallyWindows(done: [PlayerTrackStore.Clip], stored: [PlayerTrackStore.Clip]) -> [RallyWindow] {
+    (done.isEmpty ? stored : done).map {
+        RallyWindow(index: Int32($0.index), startSeconds: $0.startSeconds, endSeconds: $0.endSeconds)
+    }
+}
+
 /// What one analysed match has to show, reached from a ready row on the
 /// Analytics list. Port of Android's `AnalyticsDetailScreen`.
 ///
@@ -50,10 +69,11 @@ func heatmapSource(
 /// `availablePanels`, in `shared`, so a tab offered on one phone and not the
 /// other cannot happen.
 ///
-/// **Base is still androidApp's alone.** `availablePanels` is asked for it with
-/// `hasBoundedClips: false` rather than being given a two-case iOS variant that
-/// structurally disagrees with androidApp's three - the tab appears here the day
-/// `BasePositionPanel` is ported and that argument becomes real.
+/// The panels are `HeatmapPanel`, `BasePositionPanel` and `SkeletonPanel` on
+/// androidApp. Here the first is `CourtHeatmapView` and the other two are their
+/// own views, and this screen resolves what all three read - the track, the
+/// rally windows, whether a skeleton was kept - so a tab and the panel behind it
+/// cannot disagree about which run they are showing.
 struct AnalyticsDetailView: View {
     let rally: RallyApp
     let localAnalysis: LocalAnalysisRunner?
@@ -70,12 +90,15 @@ struct AnalyticsDetailView: View {
     /// file cost `storedTrackIds` exists to keep off the Analytics list.
     @State private var source: HeatmapSource? = nil
     @State private var hasSkeleton = false
+    /// The cut rallies as spans, for the Base panel and for the tab that offers
+    /// it. Read here rather than in the panel for the same reason `source` is:
+    /// `storedClips` parses a sidecar off disk.
+    @State private var windows: [RallyWindow] = []
 
     private var panels: [AnalyticsPanel] {
         AnalyticsPanelKt.availablePanels(
             hasTrack: source != nil,
-            // Base is not ported; see the note above.
-            hasBoundedClips: false,
+            hasBoundedClips: windows.contains { $0.isBounded },
             hasSkeleton: hasSkeleton
         )
     }
@@ -108,7 +131,7 @@ struct AnalyticsDetailView: View {
                         onSelect: { chosen = panels[$0] },
                         accessibilityLabel: "Analysis panel"
                     )
-                    .padding(.horizontal, CourtHeatmapView.gutter)
+                    .padding(.horizontal, ShuttlGutter.page)
                     .padding(.top, 8)
                     .padding(.bottom, 16)
                 } else {
@@ -119,7 +142,7 @@ struct AnalyticsDetailView: View {
                     Text("HEATMAP")
                         .shuttlType(ShuttlType.labelSmall)
                         .foregroundStyle(Shuttl.textSecondary)
-                        .padding(.horizontal, CourtHeatmapView.gutter)
+                        .padding(.horizontal, ShuttlGutter.page)
                         .padding(.vertical, 12)
                 }
                 switch panel {
@@ -136,10 +159,7 @@ struct AnalyticsDetailView: View {
                         )
                     }
                 case .base:
-                    // Unreachable while `hasBoundedClips` is false above, and
-                    // stated rather than defaulted so porting the panel is a
-                    // compiler-visible edit rather than a silently blank tab.
-                    PanelMessage(text: "Base position is not available on iPhone yet.")
+                    BasePositionPanel(source: source, windows: windows)
                 default:
                     EmptyView()
                 }
@@ -183,6 +203,10 @@ struct AnalyticsDetailView: View {
         }()
         source = heatmapSource(done: done, stored: localAnalysis?.storedTrack(entryId: entryId))
         hasSkeleton = localAnalysis?.hasStoredSkeleton(entryId: entryId) ?? false
+        windows = rallyWindows(
+            done: done?.clips ?? [],
+            stored: localAnalysis?.storedClips(entryId: entryId) ?? []
+        )
     }
 
     /// One entry's court heatmap, or an honest line saying why there is none.

@@ -35,6 +35,16 @@ The mobile app is versioned independently from the web app.
   can be judged more than once. Until now those clips were on the phone with
   nothing in the app that could open them. The same menu also reaches the
   player heatmap directly, as the Android one does.
+- **iPhone shows where the player played from, rally by rally.** An analysed
+  match with its rally clips kept now offers a Base tab beside the heatmap: the
+  median position of each rally on the same court the heatmap draws, numbered,
+  with a ring for the whole match, and each one said in words against the two
+  lines a near player plays around - "1.17 m behind the service line, 0.15 m left
+  of centre", with the share of the rally's frames the number rests on. The
+  median is the most trustworthy number the stored track supports: two pose
+  models put a rally's median within a centimetre or two of each other. This is
+  the last of the three panels Android has.
+
 - **iPhone can watch the skeleton over the video it was measured on.** An
   analysed match with skeleton playback kept now offers a Skeleton tab beside
   its heatmap: the joints drawn on each frame, the transport under them, and a

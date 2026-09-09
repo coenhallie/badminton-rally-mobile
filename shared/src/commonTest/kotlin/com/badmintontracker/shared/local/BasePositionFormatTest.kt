@@ -1,4 +1,4 @@
-package com.badmintontracker.android.localanalysis
+package com.badmintontracker.shared.local
 
 import com.badmintontracker.analysis.geometry.Point
 import com.badmintontracker.analysis.player.RallyBase

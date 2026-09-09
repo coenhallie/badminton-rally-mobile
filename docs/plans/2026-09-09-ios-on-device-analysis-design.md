@@ -310,19 +310,40 @@ has content.
 | panel | what it draws | Android source | state |
 |---|---|---|---|
 | Heatmap | where the near player stood, on a court | `HeatmapPanel`, `CourtHeatmapView` | **done** |
-| Base | per-rally base position | `BasePositionPanel`, `BasePositionFormat` | not yet |
+| Base | per-rally base position | `BasePositionPanel`, `BasePositionFormat` | **done** |
 | Skeleton | joints over playback, with the metrics strip and graph | `SkeletonPanel`, `SkeletonOverlay`, `MetricsStrip`, `MetricGraph` | **done** |
 
 The detail screen with one panel is not a reduced port: `availablePanels` on
 Android already gates each tab on having content and falls back to a plain
 "HEATMAP" heading when only one does, so this is the same screen in the state
-Android draws whenever the other two are empty. Each of the two lands by
-flipping one condition.
+Android draws whenever the other two are empty.
 
 `availablePanels` itself moved to `shared` with the skeleton panel, so the tab
 set is one rule rather than a three-case Android enum beside a two-case Swift
-one. iOS passes `hasBoundedClips: false` and gets the Base tab the day the panel
-is ported.
+one. All three arguments are real now: `hasBoundedClips` is the entry's stored
+clips, resolved beside the track.
+
+**Where the panels read from is this screen's, not each panel's.** Android's
+three panels each resolve their own track, clips and skeleton, because
+`remember(entryId)` keys the reads to the entry and they run once. SwiftUI has no
+such key, so a panel resolving its own would re-parse a megabyte of track on
+every redraw - the per-row file cost `storedTrackIds` exists to keep off the
+Analytics list, reintroduced one screen deeper. `AnalyticsDetailView` reads all
+three on opening and on a run settling, and hands them down. It is also what
+makes the tab set and the panel behind it structurally unable to disagree about
+which run they are showing.
+
+The base positions themselves are `basePositions` in `:analysis`, called from
+Swift, and the sentence under the court is `describeBase` - moved to `shared`
+with its tests rather than written a second time in Swift, for the reason §3.1
+gives: a signed distance from the service line with a rounding rule and a
+left/right convention is exactly the shape two implementations drift on. Its
+metre formatting is `metricText`'s own, so the base panel and the metrics strip
+cannot round the same measurement two different ways.
+
+`CourtCard` is one view now, drawn by both the heatmap and the base positions, so
+the two courts a coach reads against each other cannot end up differently
+proportioned.
 
 **The clips a run cut are reachable.** Android has a "Clips on this phone" route
 off the drawer row's menu, with a looping player over each cut rally, and it
@@ -388,6 +409,16 @@ desk; it is set from the first paired run and recorded in the plan.
 **End to end, by hand.** Import a video on an iPhone, mark the court, analyse on
 device, watch clips appear, open the heatmap, scrub the skeleton. Then the
 awkward one §4 exists for: background the app mid-run and come back.
+
+**Looked at, on the simulator.** The Base panel over a seeded fixture - a track
+with five rallies' worth of samples and five clip windows, written by a throwaway
+test in the host bundle, in the same `xcodebuild` invocation as the walkthrough
+because every install rotates the container:
+`docs/screenshots/2026-09-09-ios-base-panel.png` and
+`-base-panel-rallies.png`. Five dots, the whole-match ring, the numbers, and the
+sentence per rally with "in front of" appearing for the one base inside the
+service box. The heatmap was re-checked in the same pass, because both courts now
+come out of one `CourtCard`.
 
 **Looked at, on the simulator.** A live run driven from the drawer, which is
 the surface the device-liveness fix is about:
@@ -526,11 +557,26 @@ Belongs in pipeline §6.
 
 **Landed, and what has not.** The engine, the stores, the clip cutter, the run
 orchestration, the target picker, the metric selector, the Analytics list
-wiring, the heatmap, the clips screen and the skeleton panel are in. Still to
-come, in this order: the Base panel (§5), the chrome indicator and the analysis
-banner (§5), and the `RawInference` device-against-device comparison that is the
+wiring, the heatmap, the clips screen, the skeleton panel and the Base panel are
+in. Still to come, in this order: the chrome indicator and the analysis banner
+(§5), and the `RawInference` device-against-device comparison that is the
 design's real gate (§6) - which needs the corpus video, an iPhone, and an
 Android phone, none of which this machine has.
+
+**Found by the Base panel, not fixed.**
+
+- The detail screen's navigation bar has no background of its own, so a page long
+  enough to scroll draws its content straight through the title. The heatmap and
+  the skeleton are short enough that it never showed; the Base panel's rally list
+  is not (`docs/screenshots/2026-09-09-ios-base-panel-rallies.png`). One line to
+  fix, but the bar treatment is shared with the Analytics list, the clip list and
+  the labels screen, so it is a decision about all of them rather than about this
+  panel.
+- A rally whose base sits within a ring's radius of the whole-match marker has its
+  number drawn inside that ring. Android places the number at the DOT's centre
+  plus the ring radius, so a dot near the overall marker puts its label inside a
+  ring drawn around a different point; the port inherits it exactly. Legible,
+  because the numbers are drawn last, but tight. Both platforms.
 
 **Moved to `shared` by the skeleton panel, rather than written twice in Swift.**
 `graphSegments` and its window walk, `visibleKinds`, `metricLabel`,

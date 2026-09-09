@@ -18,22 +18,11 @@ struct CourtHeatmapView: View {
     let fps: Double
     var cellSizeM: Double = CourtOccupancy.companion.DEFAULT_CELL_SIZE_M
 
-    /// The court plus the margin the selector accepts, so a lunge past the
-    /// baseline is drawn where it was rather than clamped onto the line.
-    static let drawMarginM: Double = 2.0
-    /// The page gutter the mock lays every card in.
-    static let gutter: CGFloat = 24
-    /// The mock's court panel is 232pt in a 345pt column. Wider here because
-    /// the canvas carries the two-metre margin on every side, which the mock's
-    /// panel does not, so at the mock's width the court itself would be a third
-    /// narrower.
-    private static let cardMaxWidth: CGFloat = 300
-
     var body: some View {
         if track.samples.isEmpty {
             PanelMessage(text: whyEmpty(track))
         } else {
-            let occupancy = CourtOccupancy(cellSizeM: cellSizeM, marginM: Self.drawMarginM)
+            let occupancy = CourtOccupancy(cellSizeM: cellSizeM, marginM: CourtLayout.marginM)
             let _ = occupancy.addAll(samples: track.samples, fps: fps)
             let grid = occupancy.smoothed(sigmaM: CourtOccupancy.companion.DEFAULT_SIGMA_M)
                 .map { $0.map { $0.doubleValue } }
@@ -43,7 +32,7 @@ struct CourtHeatmapView: View {
                 courtCard(grid: grid, peak: peak)
                 scale
                 summary(occupancy: occupancy)
-                Spacer(minLength: Self.gutter)
+                Spacer(minLength: ShuttlGutter.page)
             }
         }
     }
@@ -52,9 +41,7 @@ struct CourtHeatmapView: View {
 
     @ViewBuilder
     private func courtCard(grid: [[Double]], peak: Double) -> some View {
-        let totalWidth = Court.shared.WIDTH_DOUBLES + 2 * Self.drawMarginM
-        let totalHeight = Court.shared.LENGTH + 2 * Self.drawMarginM
-        ZStack {
+        CourtCard {
             // One pixel per cell, scaled up by the renderer rather than drawn as
             // rectangles.
             //
@@ -71,19 +58,9 @@ struct CourtHeatmapView: View {
                     .interpolation(.high)
             }
             Canvas { context, size in
-                Self.drawCourt(context: &context, size: size, marginM: Self.drawMarginM)
+                Self.drawCourt(context: &context, size: size, marginM: CourtLayout.marginM)
             }
         }
-        .aspectRatio(totalWidth / totalHeight, contentMode: .fit)
-        .frame(maxWidth: Self.cardMaxWidth)
-        .background(Shuttl.bgSecondary)
-        .clipShape(RoundedRectangle(cornerRadius: ShuttlRadius.medium))
-        .overlay(
-            RoundedRectangle(cornerRadius: ShuttlRadius.medium)
-                .stroke(Shuttl.border, lineWidth: 1)
-        )
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, Self.gutter)
     }
 
     /// The scale, said once under the court as the mock says it: the ramp itself
@@ -100,7 +77,7 @@ struct CourtHeatmapView: View {
                 .shuttlType(ShuttlType.bodySmall)
                 .foregroundStyle(Shuttl.textTertiary)
         }
-        .padding(.horizontal, Self.gutter)
+        .padding(.horizontal, ShuttlGutter.page)
         .padding(.vertical, 18)
     }
 
@@ -124,7 +101,7 @@ struct CourtHeatmapView: View {
                 unit: "%", label: "Frames with the player", labelLineLimit: 2
             )
         }
-        .padding(.horizontal, Self.gutter)
+        .padding(.horizontal, ShuttlGutter.page)
     }
 
     // MARK: - Drawing
@@ -262,7 +239,7 @@ struct PanelMessage: View {
             .shuttlType(ShuttlType.bodySmall)
             .foregroundStyle(Shuttl.textTertiary)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, CourtHeatmapView.gutter)
+            .padding(.horizontal, ShuttlGutter.page)
             .padding(.vertical, 16)
     }
 }

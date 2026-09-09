@@ -67,6 +67,27 @@ enum ShuttlType {
     ]
 }
 
+extension Text {
+    /// A role applied to text that will be drawn inside a `Canvas`.
+    ///
+    /// `GraphicsContext.resolve` takes a `Text`, not a view, so the `View`
+    /// modifier below cannot reach it - and a canvas label left to set its own
+    /// `.font` is how a drawing quietly reverts to San Francisco while every
+    /// screen around it is on Archivo.
+    ///
+    /// Leading is the one part of a role a canvas label cannot carry: a resolved
+    /// `Text` is positioned by the drawing, not laid out in a stack, so there is
+    /// no line spacing to set. Every canvas label in this app is a single line.
+    ///
+    /// Named apart from `shuttlType(_:)` deliberately. An overload on `Text`
+    /// returning `Text` would win resolution at every ordinary `Text(...)
+    /// .shuttlType(...)` call site in the app and silently drop the leading
+    /// those DO need.
+    func shuttlCanvasType(_ role: ShuttlType.Role) -> Text {
+        self.font(role.font).kerning(role.kerning)
+    }
+}
+
 extension View {
     /// Applies a role's font, tracking and leading together, which is the only
     /// correct way to use one: kerning and leading are both derived from the
