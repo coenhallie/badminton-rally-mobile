@@ -27,87 +27,9 @@ import androidx.compose.ui.unit.dp
 import com.badmintontracker.analysis.player.MetricKind
 import com.badmintontracker.android.ui.theme.ShuttlRadius
 import com.badmintontracker.android.ui.theme.ShuttlTheme
-
-/**
- * What to draw for one metric over one window: a polyline per run of samples
- * that are present and close together, and a point per sample that joins
- * neither neighbour. Coordinates are (timestamp, value), not pixels.
- */
-data class GraphSegments(
-    val polylines: List<List<Pair<Double, Double>>>,
-    val points: List<Pair<Double, Double>>,
-) {
-    companion object {
-        val EMPTY = GraphSegments(emptyList(), emptyList())
-    }
-}
-
-/**
- * What to draw for [kind] between [startS] and [endS].
- *
- * The walk starts one sample before the window and ends one sample after it,
- * so a run that straddles an edge is drawn as a line crossing that edge
- * instead of stopping short of it; the caller clips to the box. Values are
- * never coerced into the kind's range: a clipped line says the value left the
- * range, a coerced one would say it sat on the boundary.
- *
- * A lone sample becomes a point only when it is inside the window. One that
- * falls outside it is there to anchor a crossing line, and drawing it as a
- * point would put a mark outside the window the caller asked for.
- */
-internal fun graphSegments(
-    series: List<MetricSample>,
-    kind: MetricKind,
-    startS: Double,
-    endS: Double,
-    gapS: Double,
-): GraphSegments {
-    if (series.isEmpty()) return GraphSegments.EMPTY
-
-    // First sample at or after the window's left edge.
-    var lo = 0
-    var hi = series.size
-    while (lo < hi) {
-        val mid = (lo + hi) ushr 1
-        if (series[mid].timestamp < startS) lo = mid + 1 else hi = mid
-    }
-
-    val polylines = mutableListOf<List<Pair<Double, Double>>>()
-    val points = mutableListOf<Pair<Double, Double>>()
-    var run = mutableListOf<Pair<Double, Double>>()
-
-    fun flush() {
-        if (run.size >= 2) {
-            polylines += run.toList()
-        } else if (run.size == 1) {
-            val point = run[0]
-            if (point.first >= startS && point.first <= endS) points += point
-        }
-        run = mutableListOf()
-    }
-
-    var i = maxOf(0, lo - 1)
-    var prev: MetricSample? = null
-    while (i < series.size) {
-        val s = series[i]
-        val value = kind.of(s.metrics)
-        val prevValue = prev?.let { kind.of(it.metrics) }
-        val joinsPrev = value != null && prevValue != null && s.timestamp - prev.timestamp <= gapS
-        if (value == null) {
-            flush()
-        } else {
-            if (!joinsPrev) flush()
-            run += s.timestamp to value
-        }
-        prev = s
-        // Consume exactly one sample past the right edge, then stop.
-        if (s.timestamp > endS) break
-        i++
-    }
-    flush()
-
-    return GraphSegments(polylines, points)
-}
+import com.badmintontracker.shared.local.MetricSample
+import com.badmintontracker.shared.local.graphSegments
+import com.badmintontracker.shared.local.metricRangeLabel
 
 /**
  * The selected measurement over the seconds around the playhead, on a card.
@@ -139,7 +61,6 @@ fun MetricGraph(
 ) {
     val line = MaterialTheme.colorScheme.primary
     val playhead = MaterialTheme.colorScheme.onBackground
-    val range = kind.range
     val gapS = if (fps > 0) 2.5 / fps else 0.1
 
     // Both gesture blocks are keyed on windowS alone, which never changes in
@@ -209,7 +130,7 @@ fun MetricGraph(
             val startS = positionS - windowS
             val endS = positionS + windowS
             fun x(t: Double) = (((t - startS) / (2 * windowS)) * w).toFloat()
-            fun y(v: Double) = (h - ((v - range.start) / (range.endInclusive - range.start)) * h).toFloat()
+            fun y(v: Double) = (h - ((v - kind.rangeStart) / (kind.rangeEnd - kind.rangeStart)) * h).toFloat()
 
             val segments = graphSegments(series, kind, startS, endS, gapS)
             val stroke = 1.6.dp.toPx()
@@ -219,13 +140,19 @@ fun MetricGraph(
             clipRect {
                 segments.polylines.forEach { polyline ->
                     for (n in 1 until polyline.size) {
-                        val (t0, v0) = polyline[n - 1]
-                        val (t1, v1) = polyline[n]
-                        drawLine(line, Offset(x(t0), y(v0)), Offset(x(t1), y(v1)), strokeWidth = stroke, cap = StrokeCap.Round)
+                        val a = polyline[n - 1]
+                        val b = polyline[n]
+                        drawLine(
+                            line,
+                            Offset(x(a.timestamp), y(a.value)),
+                            Offset(x(b.timestamp), y(b.value)),
+                            strokeWidth = stroke,
+                            cap = StrokeCap.Round,
+                        )
                     }
                 }
-                segments.points.forEach { (t, v) ->
-                    drawCircle(line, radius = stroke, center = Offset(x(t), y(v)))
+                segments.points.forEach { point ->
+                    drawCircle(line, radius = stroke, center = Offset(x(point.timestamp), y(point.value)))
                 }
             }
 

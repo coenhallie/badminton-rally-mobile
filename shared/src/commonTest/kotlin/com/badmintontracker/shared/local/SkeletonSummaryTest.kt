@@ -1,4 +1,4 @@
-package com.badmintontracker.android.localanalysis
+package com.badmintontracker.shared.local
 
 import io.kotest.matchers.shouldBe
 import kotlin.test.Test

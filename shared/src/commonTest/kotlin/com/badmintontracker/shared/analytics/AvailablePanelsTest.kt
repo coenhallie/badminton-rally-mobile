@@ -1,4 +1,4 @@
-package com.badmintontracker.android.analytics
+package com.badmintontracker.shared.analytics
 
 import io.kotest.matchers.shouldBe
 import kotlin.test.Test

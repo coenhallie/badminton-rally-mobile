@@ -1,9 +1,9 @@
-package com.badmintontracker.android.localanalysis
+package com.badmintontracker.shared.local
 
 import com.badmintontracker.analysis.player.MetricKind
 import com.badmintontracker.shared.prefs.RacketArm
 import io.kotest.matchers.shouldBe
-import org.junit.Test
+import kotlin.test.Test
 
 class MetricsFormatTest {
 
@@ -24,6 +24,21 @@ class MetricsFormatTest {
         // shrinks to a speck that reads as a stray dot, so it stays with the number.
         metricText(MetricKind.ELBOW_RIGHT, 173.6) shouldBe MetricText("174°", "")
         metricText(MetricKind.KNEE_LEFT, null) shouldBe MetricText("–", "")
+    }
+
+    @Test
+    fun a_metre_reading_rounds_by_magnitude_so_the_two_signs_round_alike() {
+        // %.2f is HALF_UP on the magnitude, which roundToInt is not: it breaks
+        // ties toward positive infinity, so it would round -0.125 to -0.12 and
+        // 0.125 to 0.13 - the same distance either side of the service line
+        // rounded two different ways.
+        formatMetric(MetricKind.BEHIND_LINE, 0.125) shouldBe "0.13 m"
+        formatMetric(MetricKind.BEHIND_LINE, -0.125) shouldBe "-0.13 m"
+        formatMetric(MetricKind.BEHIND_LINE, -0.015) shouldBe "-0.02 m"
+        // A value just under zero keeps its sign, as %.2f does: the sign is a
+        // fact about the measurement, not about the digits that survived.
+        formatMetric(MetricKind.BEHIND_LINE, -0.001) shouldBe "-0.00 m"
+        formatMetric(MetricKind.STANCE, 0.0) shouldBe "0.00 m"
     }
 
     @Test

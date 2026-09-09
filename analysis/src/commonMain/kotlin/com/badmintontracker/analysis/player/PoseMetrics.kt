@@ -112,6 +112,17 @@ enum class MetricKind(
             else -> null
         }
 
+    /**
+     * [range]'s bounds as plain numbers.
+     *
+     * `ClosedFloatingPointRange` crosses into Objective-C as a protocol whose
+     * `start` and `endInclusive` are untyped `id`, so every Swift read of a
+     * bound would be an `NSNumber` cast. Two derived accessors keep the range
+     * itself the one source of both platforms' numbers.
+     */
+    val rangeStart: Double get() = range.start
+    val rangeEnd: Double get() = range.endInclusive
+
     /** Angles, including the lean; the rest are metres. */
     val isAngle: Boolean get() = this != STANCE && this != BEHIND_LINE
 

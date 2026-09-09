@@ -34,6 +34,9 @@ import com.badmintontracker.analysis.player.PoseMetrics
 import com.badmintontracker.android.ui.components.ShuttlPillTabs
 import com.badmintontracker.android.ui.components.ShuttlStatTile
 import com.badmintontracker.android.ui.theme.ShuttlTheme
+import com.badmintontracker.shared.local.metricLabel
+import com.badmintontracker.shared.local.metricText
+import com.badmintontracker.shared.local.visibleKinds
 import com.badmintontracker.shared.prefs.RacketArm
 
 /** The page gutter the mock lays every card in. */

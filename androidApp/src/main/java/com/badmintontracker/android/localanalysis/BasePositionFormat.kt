@@ -15,7 +15,7 @@ import kotlin.math.abs
  * Left and right are the player's own, facing the net, which for the near
  * player is also the camera's left and right.
  *
- * Locale-fixed for the same reason as [formatMetric]: the test pins the digits.
+ * Locale-fixed for the same reason as `formatMetric`: the test pins the digits.
  */
 fun describeBase(p: Point): String {
     val behind = p.y - (Court.LENGTH / 2 + Court.SERVICE_LINE)

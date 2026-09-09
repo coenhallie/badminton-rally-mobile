@@ -1,9 +1,9 @@
-package com.badmintontracker.android.localanalysis
+package com.badmintontracker.shared.local
 
 import com.badmintontracker.analysis.player.MetricKind
 import com.badmintontracker.analysis.player.PoseMetrics
 import io.kotest.matchers.shouldBe
-import org.junit.Test
+import kotlin.test.Test
 
 class MetricGraphTest {
 
@@ -24,7 +24,9 @@ class MetricGraphTest {
 
         // The sample before the window is kept so the line crosses the edge
         // instead of starting inside the box; the caller clips it.
-        result.polylines shouldBe listOf(listOf(0.90 to 100.0, 0.95 to 110.0, 1.00 to 120.0))
+        result.polylines shouldBe listOf(
+            listOf(GraphPoint(0.90, 100.0), GraphPoint(0.95, 110.0), GraphPoint(1.00, 120.0)),
+        )
         result.points shouldBe emptyList()
     }
 
@@ -34,7 +36,7 @@ class MetricGraphTest {
 
         val result = segments(series, startS = 1.00, endS = 1.42)
 
-        result.polylines shouldBe listOf(listOf(1.40 to 100.0, 1.45 to 110.0))
+        result.polylines shouldBe listOf(listOf(GraphPoint(1.40, 100.0), GraphPoint(1.45, 110.0)))
         result.points shouldBe emptyList()
     }
 
@@ -53,8 +55,8 @@ class MetricGraphTest {
 
         // 1.00 and 1.10 each stand between absent frames, so they are points;
         // 1.20 and 1.25 are present and close, so they are a line.
-        result.points shouldBe listOf(1.00 to 100.0, 1.10 to 120.0)
-        result.polylines shouldBe listOf(listOf(1.20 to 130.0, 1.25 to 140.0))
+        result.points shouldBe listOf(GraphPoint(1.00, 100.0), GraphPoint(1.10, 120.0))
+        result.polylines shouldBe listOf(listOf(GraphPoint(1.20, 130.0), GraphPoint(1.25, 140.0)))
     }
 
     @Test
@@ -64,7 +66,7 @@ class MetricGraphTest {
         val result = segments(series, startS = 0.90, endS = 1.40)
 
         result.polylines shouldBe emptyList()
-        result.points shouldBe listOf(1.00 to 100.0, 1.20 to 110.0)
+        result.points shouldBe listOf(GraphPoint(1.00, 100.0), GraphPoint(1.20, 110.0))
     }
 
     @Test

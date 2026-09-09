@@ -33,27 +33,12 @@ import com.badmintontracker.android.localvideo.formatDuration
 import com.badmintontracker.android.ui.components.ShuttlPillTabs
 import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
+import com.badmintontracker.shared.analytics.AnalyticsPanel
+import com.badmintontracker.shared.analytics.availablePanels
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.prefs.PlaybackPreferenceRepository
 import com.badmintontracker.shared.prefs.RacketArmPreferenceRepository
 import kotlinx.datetime.Instant
-
-/** Which renderer the detail is showing. A segment is offered only when it has content. */
-internal enum class AnalyticsPanel(val label: String) { Heatmap("Heatmap"), Base("Base"), Skeleton("Skeleton") }
-
-/**
- * Which panels this entry can show, in tab order. The heatmap is always first
- * and always present: it is the screen's reason to exist, and it says why it is
- * empty itself. Base needs a track with samples and rally windows with bounds,
- * which is what [BasePositionPanel] measures from; skeleton needs a stored
- * skeleton.
- */
-internal fun availablePanels(hasTrack: Boolean, hasBoundedClips: Boolean, hasSkeleton: Boolean): List<AnalyticsPanel> =
-    buildList {
-        add(AnalyticsPanel.Heatmap)
-        if (hasTrack && hasBoundedClips) add(AnalyticsPanel.Base)
-        if (hasSkeleton) add(AnalyticsPanel.Skeleton)
-    }
 
 /**
  * The bar's two lines for one entry: the match's name, then its length and
