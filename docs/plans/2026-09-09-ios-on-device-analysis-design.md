@@ -311,13 +311,25 @@ has content.
 |---|---|---|---|
 | Heatmap | where the near player stood, on a court | `HeatmapPanel`, `CourtHeatmapView` | **done** |
 | Base | per-rally base position | `BasePositionPanel`, `BasePositionFormat` | not yet |
-| Skeleton | joints over playback, with the metrics strip and graph | `SkeletonPanel`, `SkeletonOverlay`, `MetricsStrip`, `MetricGraph` | not yet |
+| Skeleton | joints over playback, with the metrics strip and graph | `SkeletonPanel`, `SkeletonOverlay`, `MetricsStrip`, `MetricGraph` | **done** |
 
 The detail screen with one panel is not a reduced port: `availablePanels` on
 Android already gates each tab on having content and falls back to a plain
 "HEATMAP" heading when only one does, so this is the same screen in the state
 Android draws whenever the other two are empty. Each of the two lands by
 flipping one condition.
+
+`availablePanels` itself moved to `shared` with the skeleton panel, so the tab
+set is one rule rather than a three-case Android enum beside a two-case Swift
+one. iOS passes `hasBoundedClips: false` and gets the Base tab the day the panel
+is ported.
+
+**The clips a run cut are reachable.** Android has a "Clips on this phone" route
+off the drawer row's menu, with a looping player over each cut rally, and it
+exists so the two pipelines can be judged on what they actually produce -
+rally counts can match while the clips are cut at the wrong moment. iOS had the
+files on disk and nothing that opened them; `LocalClipsView` is that route, and
+the same menu gained Android's "Player heatmap" item beside it.
 
 **The chrome.** `BackgroundWorkAction` and `LocalAnalysisBanner` have shared
 state models (`BackgroundWork`, `DeviceWork`, `deviceWorkLabel`) already in
@@ -387,6 +399,44 @@ buttons. It updates live, which is the part no test covers: the row reads the
 runner's state through `state(for:)` inside a `ForEach`, and whether
 `@Observable` tracks that was an open question until the ring moved.
 
+**Looked at, on the simulator, for the two panels this pass added.** A fixture
+skeleton, track and set of cut clips were seeded into the app container by a
+throwaway test in the host bundle (the simulator cannot produce them: an
+`ONNX_MODELS_OPTIONAL` build bundles no graphs), and a throwaway XCUITest walked
+to each screen and held it while a `simctl io screenshot` loop ran alongside.
+
+- `docs/screenshots/2026-09-09-ios-local-clips-list.png` - the three cut rallies
+  with their bounds and lengths.
+- `docs/screenshots/2026-09-09-ios-local-clip-player.png` - one of them looping
+  in a half-height sheet.
+- `docs/screenshots/2026-09-09-ios-skeleton-panel.png` - the tab row, the joints
+  over the frame, the stance line between the ankles, the collapsed strip with
+  its page dots, and the graph. Note the absent right elbow reading as an en
+  dash rather than a stale number.
+- `docs/screenshots/2026-09-09-ios-skeleton-all-measurements.png` - the expanded
+  grid.
+- `docs/screenshots/2026-09-09-ios-skeleton-knee-selected.png` - after tapping
+  the Knee L tile: the strip turned to that tile's page on its own, the arc
+  moved to the left knee, and the graph's header, range and curve followed.
+
+What a screenshot cannot answer was asserted instead, in the same throwaway
+UI test:
+
+- A tap on the graph seeks, and a horizontal drag scrubs. Neither starts
+  playback - scrubbing a curve is not a reason to start playing, and the frame
+  under the finger is the thing being looked at.
+- A **vertical** drag started on the graph does not scrub, and the page scrolls
+  under it. This one needs a control to mean anything: the same drag started on
+  the tile grid is asserted to move the page first, so "the page did not scroll"
+  cannot pass for "the page had nowhere to scroll". It failed on the first
+  three attempts, which is why it is written down here: androidApp's
+  `detectHorizontalDragGestures` yields a vertical drag to the scroller and a
+  SwiftUI `DragGesture(minimumDistance: 0)` does not - it claims the touch on
+  touch-down, so a finger put on the card to scroll the page scrubbed the video
+  and the page stayed still. The port needs a tap gesture and a drag with a real
+  minimum distance, both `simultaneousGesture`, and the direction read once per
+  gesture.
+
 **Not verified, and not verifiable here.** The §4 claim that the OS freezes the
 process mid-decode and thaws it with the pass intact rests on reasoning, not on
 observation: `LocalAnalysisRunnerTests` calls `suspendForBackground` and
@@ -411,6 +461,14 @@ same opacity, so what has not been looked at is the word, not the geometry.
 Belongs in pipeline §6.
 
 **Android defects found while reading, not fixed by this design.**
+
+- `LocalVideoRowItem` gated its overflow menu on `canRemove || canEditDetails`,
+  while the menu also holds "Clips on this phone" and "Player heatmap". A row
+  that could do neither of the first two - an analysed video mid-upload - hid
+  the two items pointing at what its analysis produced, and they were then
+  reachable from nowhere. **Fixed in this pass on both platforms**, since the
+  iOS menu is a port of that one and shipping the port with the bug in it would
+  have been building the divergence in on purpose.
 
 - `TrackNetRunner`'s KDoc names an `InpaintNetRunner` that does not exist, and
   `ModelCatalog.INPAINTNET` carries a long comment about a graph nothing loads.
@@ -467,12 +525,30 @@ Belongs in pipeline §6.
   device-first precedence for the line above them.
 
 **Landed, and what has not.** The engine, the stores, the clip cutter, the run
-orchestration, the target picker, the metric selector, the Analytics list wiring
-and the heatmap are in. Still to come, in this order: the Base and Skeleton
-panels (§5), the chrome indicator and the analysis banner (§5), and the
-`RawInference` device-against-device comparison that is the design's real gate
-(§6) - which needs the corpus video, an iPhone, and an Android phone, none of
-which this machine has.
+orchestration, the target picker, the metric selector, the Analytics list
+wiring, the heatmap, the clips screen and the skeleton panel are in. Still to
+come, in this order: the Base panel (§5), the chrome indicator and the analysis
+banner (§5), and the `RawInference` device-against-device comparison that is the
+design's real gate (§6) - which needs the corpus video, an iPhone, and an
+Android phone, none of which this machine has.
+
+**Moved to `shared` by the skeleton panel, rather than written twice in Swift.**
+`graphSegments` and its window walk, `visibleKinds`, `metricLabel`,
+`metricText`/`formatMetric`/`metricRangeLabel`, `MetricSample`, the `CourtFit`
+copy (`skeletonFooter`, `courtWarning`, `skeletonDetail`) and `availablePanels`.
+All of them were androidApp-only and all of them are rules the two platforms
+must not disagree about; `graphSegments` in particular is a binary search and a
+one-sample-past-each-edge walk, which is the `heatmapToCoord` shape §3.2 refuses
+to have two of. Their tests moved with them into `commonTest`, where they now
+run against the iOS targets too. Two accessors were added to `MetricKind` for
+it - `rangeStart` and `rangeEnd` - because `ClosedFloatingPointRange` reaches
+Swift with untyped bounds.
+
+`metricText`'s metre formatting changed in the move: `String.format("%.2f")`
+does not exist in commonMain, and the hand-written replacement rounds the
+magnitude (HALF_UP) rather than using `roundToInt`'s ties-toward-positive-
+infinity, which would have rounded -0.125 m and 0.125 m two different ways
+either side of the service line. Pinned in `MetricsFormatTest`.
 
 **Deliberately not in this pass.**
 

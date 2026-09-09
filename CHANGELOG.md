@@ -29,8 +29,28 @@ The mobile app is versioned independently from the web app.
 - Pinch to zoom on every video player, up to five times, and drag to pan once
   zoomed. Double-tap zooms in on the spot, double-tap again zooms out. The
   skeleton scales with the frame, so a joint can be checked up close.
+- **iPhone can watch the rallies an on-device analysis cut.** The match's menu
+  in the drawer now offers "Clips on this phone", which lists each rally with
+  the seconds it was cut between and plays it on a tap, looping so a boundary
+  can be judged more than once. Until now those clips were on the phone with
+  nothing in the app that could open them. The same menu also reaches the
+  player heatmap directly, as the Android one does.
+- **iPhone can watch the skeleton over the video it was measured on.** An
+  analysed match with skeleton playback kept now offers a Skeleton tab beside
+  its heatmap: the joints drawn on each frame, the transport under them, and a
+  strip of everything that frame measures - stance, distance behind the service
+  line, both elbows, both arms, both knees, the lean and the shoulder and hip
+  tilts. Tapping a measurement draws the angle it came from on the figure and
+  plots it over the two seconds either side of the frame, and tapping the plot
+  seeks. Say which arm holds the racket and the other arm's tiles go away; the
+  choice is remembered per match. A file whose court marks are missing or do
+  not fit says which, because the two need different fixes.
 
 ### Fixed
+- A match's menu no longer hides its clips and its heatmap while the match is
+  mid-upload. The menu was shown only when "Edit details" or "Remove from app"
+  applied, so a row that could do neither offered no way back to what its
+  analysis produced. Both phones.
 - Deleting a match now also deletes what analysing it produced. The cut clips
   alone run to tens of megabytes per match, and until now they stayed on the
   phone for the life of the install with nothing left in the app that could
