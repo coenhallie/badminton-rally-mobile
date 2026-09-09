@@ -224,7 +224,8 @@ final class AnalyticsRowsTests: XCTestCase {
         XCTAssertEqual(
             analyseAffordance(
                 for: entry(id: "e1", stage: .uploading),
-                progress: AnalyzeProgress(entryId: "e1", uploadProgress: 0.42, pipelineProgress: nil)
+                progress: AnalyzeProgress(entryId: "e1", uploadProgress: 0.42, pipelineProgress: nil),
+                device: .idle
             ),
             .inProgress(phase: "Uploading 42%…")
         )
@@ -234,7 +235,8 @@ final class AnalyticsRowsTests: XCTestCase {
         XCTAssertEqual(
             analyseAffordance(
                 for: entry(id: "e1", stage: .processing),
-                progress: AnalyzeProgress(entryId: "e1", uploadProgress: nil, pipelineProgress: 0.8)
+                progress: AnalyzeProgress(entryId: "e1", uploadProgress: nil, pipelineProgress: 0.8),
+                device: .idle
             ),
             .inProgress(phase: "Analyzing 80%…")
         )
@@ -242,18 +244,122 @@ final class AnalyticsRowsTests: XCTestCase {
 
     func testAFailedRunCarriesThePipelinesOwnMessage() {
         XCTAssertEqual(
-            analyseAffordance(for: entry(id: "e1", stage: .failed, failureMessage: "Upload failed"), progress: nil),
+            analyseAffordance(
+                for: entry(id: "e1", stage: .failed, failureMessage: "Upload failed"),
+                progress: nil, device: .idle
+            ),
             .failed(reason: "Upload failed")
         )
         XCTAssertEqual(
-            analyseAffordance(for: entry(id: "e1", stage: .failed), progress: nil),
+            analyseAffordance(for: entry(id: "e1", stage: .failed), progress: nil, device: .idle),
             .failed(reason: "Unknown error")
         )
     }
 
     func testASettledRunLeavesTheButtonLive() {
-        XCTAssertEqual(analyseAffordance(for: entry(id: "e1", stage: .local), progress: nil), .ready)
-        XCTAssertEqual(analyseAffordance(for: entry(id: "e1", stage: .analyzed), progress: nil), .ready)
+        XCTAssertEqual(analyseAffordance(for: entry(id: "e1", stage: .local), progress: nil, device: .idle), .ready)
+        XCTAssertEqual(analyseAffordance(for: entry(id: "e1", stage: .analyzed), progress: nil, device: .idle), .ready)
+    }
+
+    // MARK: - The device's own liveness
+
+    func testADeviceRunSpeaksOverASettledCloudStage() {
+        // The reason isDeviceRunInFlight exists: a device run never moves
+        // LocalVideoEntry.stage, so a row reading the cloud stage alone shows a
+        // live "Analyze" button over a run already in progress. Pressing it
+        // walks the coach through marking the court again and then returns
+        // immediately, because the entry is already running - twelve taps, no
+        // effect, no explanation, which is what Android shipped.
+        XCTAssertEqual(
+            analyseAffordance(
+                for: entry(id: "e1", stage: .local), progress: nil,
+                device: .analysing(fraction: 0.4)
+            ),
+            .inProgress(phase: "Analyzing on device 40%")
+        )
+        XCTAssertEqual(
+            analyseAffordance(
+                for: entry(id: "e1", stage: .local), progress: nil,
+                device: .cutting(done: 2, total: 9)
+            ),
+            // No percentage: done/total counts clips, not frames, so rendering
+            // it as the analysis percentage would show the bar restarting near
+            // the end of a run.
+            .inProgress(phase: "Cutting clips")
+        )
+    }
+
+    func testADeviceRunSpeaksOverAStaleCloudFailure() {
+        // A cloud attempt that failed last week must not describe a device run
+        // happening now.
+        XCTAssertEqual(
+            analyseAffordance(
+                for: entry(id: "e1", stage: .failed, failureMessage: "Upload failed"),
+                progress: nil, device: .preparing(message: "Preparing video")
+            ),
+            .inProgress(phase: "Preparing video")
+        )
+    }
+
+    func testASuspendedRunIsNotAFailure() {
+        // iOS has no foreground service, so a run stops when the app does. That
+        // is not a failure and the control must not say "Retry".
+        XCTAssertEqual(
+            analyseAffordance(
+                for: entry(id: "e1", stage: .local), progress: nil,
+                device: .paused(fraction: 0.37)
+            ),
+            .paused(reason: "Paused at 37% - keep Shuttl open to finish")
+        )
+    }
+
+    func testAFinishedDeviceRunFallsThroughToTheCloudStage() {
+        // .done and .idle both stay in the runner's map after a run, and
+        // neither is work: a row must not spin over either.
+        for device in [LocalAnalysisState.idle] {
+            XCTAssertEqual(
+                analyseAffordance(for: entry(id: "e1", stage: .local), progress: nil, device: device),
+                .ready
+            )
+        }
+    }
+
+    func testAStoredTrackTurnsARowReady() {
+        // The line that was hardcoded false while no track store existed. A
+        // ready row is the only one this list opens.
+        let built = buildAnalyticsRows(
+            localEntries: [entry(id: "e1")],
+            ownedRows: [],
+            sharedMatches: [],
+            progressByEntryId: [:],
+            storedTrackIds: ["e1"]
+        )
+        XCTAssertEqual(built.map(\.state), [.ready])
+        // A ready row keeps its dot while a second run is in flight, because
+        // the track the first run produced is still there.
+        let reRunning = buildAnalyticsRows(
+            localEntries: [entry(id: "e1")],
+            ownedRows: [],
+            sharedMatches: [],
+            progressByEntryId: [:],
+            storedTrackIds: ["e1"],
+            deviceStates: ["e1": .analysing(fraction: 0.5)]
+        )
+        XCTAssertEqual(reRunning.map(\.state), [.ready])
+        XCTAssertEqual(reRunning.map(\.affordance), [.ready])
+    }
+
+    func testTheDotLegendAppearsOnlyOnceARowIsReady() {
+        let analysable = buildAnalyticsRows(
+            localEntries: [entry(id: "e1")], ownedRows: [], sharedMatches: [],
+            progressByEntryId: [:]
+        )
+        XCTAssertEqual(analyticsLegend(for: analysable), .analyseButton)
+        let ready = buildAnalyticsRows(
+            localEntries: [entry(id: "e1")], ownedRows: [], sharedMatches: [],
+            progressByEntryId: [:], storedTrackIds: ["e1"]
+        )
+        XCTAssertEqual(analyticsLegend(for: ready), .dot)
     }
 
     // MARK: - analyseAction
@@ -289,20 +395,23 @@ final class AnalyticsRowsTests: XCTestCase {
         XCTAssertEqual(legend.text, "None of these matches are on this phone yet.")
     }
 
-    /// The case iOS actually shows today: videos on this phone with live buttons
-    /// and no dot anywhere. The all-inert line would be false here, and so would
-    /// a legend explaining a dot that cannot render.
+    /// Videos on this phone with live buttons and nothing analysed yet. The
+    /// all-inert line would be false here, and so would a legend explaining a
+    /// dot that cannot render.
     func testALiveButtonAndNoDotGetsTheLineAboutTheButton() {
         let legend = analyticsLegend(for: [row(.analysable, key: "a"), row(.notOnDevice, key: "b")])
         XCTAssertEqual(legend, .analyseButton)
-        XCTAssertEqual(legend.text, "Analyze sends a video to the cloud and cuts it into rallies.")
+        // Both targets named: court marking offers cloud AND on device, and it
+        // is the on-device run that writes the track a row needs to turn ready.
+        XCTAssertEqual(legend.text, "Analyze cuts a video into rallies, on this phone or in the cloud.")
     }
 
-    /// Unreachable until a track store lands on iOS, and deliberately kept: the
-    /// day one does, this is the line that appears with no other UI change.
-    func testAStoredTrackGetsTheDotLineAndTheDotPromisesNoTap() {
+    func testAStoredTrackGetsTheDotLineAndTheDotPromisesATap() {
         let legend = analyticsLegend(for: [row(.ready, key: "a"), row(.analysable, key: "b")])
         XCTAssertEqual(legend, .dot)
-        XCTAssertEqual(legend.text, "Analyzed on this phone.")
+        // "- tap to view" is a promise this list can keep now that a ready row
+        // opens the detail screen. It was dropped while there was nothing to
+        // open, which is the same defect as a comment outliving its code.
+        XCTAssertEqual(legend.text, "Analyzed on this phone - tap to view")
     }
 }

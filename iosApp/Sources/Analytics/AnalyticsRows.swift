@@ -23,10 +23,19 @@ enum AnalyticsGroup: CaseIterable {
 enum AnalyseAffordance: Equatable {
     /// Nothing is running: the button is live.
     case ready
-    /// A run is under way. [phase] is the drawer's own wording for that stage.
+    /// A run is under way. `phase` is the drawer's own wording for that stage.
     case inProgress(phase: String)
     /// The last attempt ended in a failure, with the pipeline's own message.
     case failed(reason: String)
+    /// A device run stopped because the app left the foreground.
+    ///
+    /// A fourth case Android does not have, and the one place this list
+    /// deliberately diverges: over there a foreground service carries a run
+    /// through a locked screen, and here nothing can. Folding it into `.failed`
+    /// would put "Retry" on a run that did not go wrong and colour the line red;
+    /// folding it into `.inProgress` would spin a control over something that
+    /// has stopped. See `LocalAnalysisState.paused`.
+    case paused(reason: String)
 }
 
 /// Where an `analysable` row's button goes when it is tapped.
@@ -56,15 +65,16 @@ struct AnalyticsRow: Identifiable, Equatable {
 /// on screen rather than from the platform.
 ///
 /// Four cases. Android had two - all-inert, or the dot legend - which put a dot
-/// legend over a list with no dots the moment anything was ANALYSABLE. Every
-/// local video on iOS is ANALYSABLE, since no track store exists here yet, so
-/// that switch could not be copied; it turned out to be a live defect on Android
-/// as well, and this decision was ported back there.
+/// legend over a list with no dots the moment anything was analysable. That was
+/// found here, where every local video was analysable while no track store
+/// existed, and ported back there once it turned out to be a live defect on
+/// Android too.
 ///
-/// Both of the middle cases are ordinary on iOS: a coach whose matches were all
-/// filmed elsewhere sees an inert list, and a coach with videos on the phone sees
-/// live "Analyze" buttons and no dot to explain. Explaining a dot that cannot
-/// render is the same defect as a comment outliving its code.
+/// Both of the middle cases stay ordinary now that a track store does exist: a
+/// coach whose matches were all filmed elsewhere sees an inert list, and a coach
+/// with videos on the phone and nothing analysed yet sees live "Analyze" buttons
+/// and no dot to explain. Explaining a dot that cannot render is the same defect
+/// as a comment outliving its code.
 enum AnalyticsLegend: Equatable {
     /// The list is empty; there is nothing to explain. Not spelled `none`: the
     /// moment anything holds an `AnalyticsLegend?`, `.none` binds to
@@ -92,31 +102,63 @@ enum AnalyticsLegend: Equatable {
         case .nothingOnThisPhone:
             return "None of these matches are on this phone yet."
         case .dot:
-            // Android adds "- tap to view". Not here: only a READY row is
-            // tappable on Android, and this list opens nothing at all (there is
-            // no iOS analysis screen to open), so the dot means "analyzed" and
-            // promises nothing further.
-            return "Analyzed on this phone."
+            // "- tap to view", as Android has it. The words were dropped while
+            // there was no detail screen to open and nothing to tap; both exist
+            // now, so promising it is accurate again.
+            return "Analyzed on this phone - tap to view"
         case .analyseButton:
-            // What the button actually does on iPhone, said plainly, so a screen
-            // called Analytics does not look like it is about to draw a chart.
-            return "Analyze sends a video to the cloud and cuts it into rallies."
+            // What the button actually does, said plainly, so a screen called
+            // Analytics does not look like it is about to draw a chart. Both
+            // targets named on purpose: court marking offers cloud AND on
+            // device, and it is the on-device run that writes the track a row
+            // needs to turn ready, so copy naming only the cloud would steer a
+            // coach away from the dot this same legend explains.
+            return "Analyze cuts a video into rallies, on this phone or in the cloud."
         }
     }
 }
 
-/// What the pipeline is doing with this video right now.
+/// What either pipeline is doing with this video right now.
 ///
-/// ONE liveness source, not two. Android composes the on-device runner's
-/// `LocalAnalysisState` with the cloud pipeline's `AnalyzeStage`, because it has
-/// both; iOS has no on-device runner at all (no `LocalAnalysisRunner`, and no
-/// track store, which is the same reason no row here can be READY yet), so the
-/// cloud pipeline's stage is the whole of it. A reader arriving from
-/// `AnalyticsRows.kt` will expect a second signal and there is none to compose.
+/// TWO liveness sources, composed, as Android's `affordanceFor` composes them.
+/// A device run never moves `LocalVideoEntry.stage`, so the stage-based rules in
+/// shared cannot see one at all: a row reading the cloud stage alone would show
+/// a live "Analyze" button over a run already in progress, and pressing it walks
+/// the coach through marking the court again and then returns immediately
+/// because the entry is already running. Android shipped exactly that - twelve
+/// taps, no effect, no explanation - which is why `isDeviceRunInFlight` exists
+/// and why it is consulted here.
 ///
-/// The phase wording is `LocalVideoStatus`', the same text the drawer's own local
-/// video rows show for the same stages, rather than a second copy of it here.
-func analyseAffordance(for entry: LocalVideoEntry, progress: AnalyzeProgress?) -> AnalyseAffordance {
+/// The device speaks first when it has anything to say. It is the pipeline this
+/// phone controls, and its states are the ones that end in a track the row can
+/// then offer; a cloud stage left over from an earlier attempt must not describe
+/// a device run happening now.
+///
+/// The phase wording is shared on both sides: `deviceWorkLabel` for the device
+/// run, `LocalVideoStatus` for the cloud one, so this row and the chrome
+/// indicator over the same video say the same words.
+func analyseAffordance(
+    for entry: LocalVideoEntry,
+    progress: AnalyzeProgress?,
+    device: LocalAnalysisState
+) -> AnalyseAffordance {
+    switch device {
+    case .preparing, .analysing, .cutting:
+        // Non-nil for every running state, since toDeviceWork returns nil only
+        // for the ones this branch excludes.
+        if let work = toDeviceWork(entryId: entry.id, state: device) {
+            return .inProgress(phase: BackgroundWorkKt.deviceWorkLabel(
+                phase: work.phase, fraction: work.fraction
+            ))
+        }
+        return .inProgress(phase: "Analyzing on device")
+    case .failed(let message):
+        return .failed(reason: message)
+    case .paused(let fraction):
+        return .paused(reason: "Paused at \(Int(fraction * 100))% - keep Shuttl open to finish")
+    case .idle, .done:
+        break
+    }
     if LocalVideoStatus.isRunning(stage: entry.stage) {
         // Non-nil for both running stages, so the fallback is a guard against a
         // future stage rather than a case anything reaches today.
@@ -165,33 +207,42 @@ func localVideoSubtitle(_ entry: LocalVideoEntry) -> String {
 /// button. `hasStoredTrack` alone cannot tell a run in flight, or one that just
 /// failed, from one never attempted.
 ///
-/// Port of Android's `buildAnalyticsRows`, minus its `storedTrackIds` and its
-/// on-device liveness map, neither of which exists on this platform.
+/// Port of Android's `buildAnalyticsRows`, now including its `storedTrackIds`
+/// and its on-device liveness map.
 func buildAnalyticsRows(
     localEntries: [LocalVideoEntry],
     ownedRows: [MatchRow],
     sharedMatches: [MatchSummary],
-    progressByEntryId: [String: AnalyzeProgress]
+    progressByEntryId: [String: AnalyzeProgress],
+    /// Entries with a track this build can draw. Passed in as a set rather than
+    /// probed per row: the store answers from a file header, and a list of forty
+    /// matches would ask forty times on every redraw.
+    storedTrackIds: Set<String> = [],
+    /// What the on-device runner is doing, per entry. Absent means idle.
+    deviceStates: [String: LocalAnalysisState] = [:]
 ) -> [AnalyticsRow] {
     func rowFor(
         key: String, entryId: String?, group: AnalyticsGroup, title: String, subtitle: String
     ) -> AnalyticsRow {
         let entry = entryId.flatMap { id in localEntries.first { $0.id == id } }
-        // `false`, always, and deliberately NOT an iOS special case: there is no
-        // track store on this platform yet, so the classifier's own argument is
-        // simply not satisfied. The day one exists, this line starts returning
-        // READY and the screen needs no other change.
-        let state = analyticsRowState(hasLocalEntry: entry != nil, hasStoredTrack: false)
+        let state = analyticsRowState(
+            hasLocalEntry: entry != nil,
+            hasStoredTrack: entry.map { storedTrackIds.contains($0.id) } ?? false
+        )
         var affordance = AnalyseAffordance.ready
-        // Only an analysable row reads liveness. A READY row keeps its dot while
+        // Only an analysable row reads liveness. A ready row keeps its dot while
         // a second run is in flight, because the track the first run produced is
-        // still there; and a NOT_ON_DEVICE row has no run of its own to report.
+        // still there; and a not-on-device row has no run of its own to report.
         //
         // `entry` is never nil in this branch: analysable requires a local entry,
         // which is exactly `entry != nil` above. The binding is a guard, not a
         // second source of truth.
         if state == .analysable, let entry {
-            affordance = analyseAffordance(for: entry, progress: progressByEntryId[entry.id])
+            affordance = analyseAffordance(
+                for: entry,
+                progress: progressByEntryId[entry.id],
+                device: deviceStates[entry.id] ?? .idle
+            )
         }
         return AnalyticsRow(
             key: key,

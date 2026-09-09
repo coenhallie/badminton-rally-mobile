@@ -36,6 +36,9 @@ private enum CreateFlowDestination: Hashable, Identifiable {
 struct HomeView: View {
     let rally: RallyApp
     let analyze: AnalyzeCoordinator
+    /// The on-device pipeline, or nil in a build with no models staged. Owned by
+    /// `RootView`; Home only routes it to the two screens that offer a run.
+    let localAnalysis: LocalAnalysisRunner?
 
     @State private var drawerOpen = false
     @State private var showAddSheet = false
@@ -79,9 +82,10 @@ struct HomeView: View {
     @State private var localPlayerRoute: LocalPlayerRoute? = nil
     @State private var createFlowTarget: CreateFlowDestination? = nil
 
-    init(rally: RallyApp, analyze: AnalyzeCoordinator) {
+    init(rally: RallyApp, analyze: AnalyzeCoordinator, localAnalysis: LocalAnalysisRunner?) {
         self.rally = rally
         self.analyze = analyze
+        self.localAnalysis = localAnalysis
         _intake = State(initialValue: LocalVideoIntake(rally: rally))
         _listModel = State(initialValue: ClipListModel(rally: rally, analyze: analyze))
     }
@@ -110,7 +114,10 @@ struct HomeView: View {
             }
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(item: $courtMarkingRoute) { route in
-                CourtMarkingView(rally: rally, analyze: analyze, entryId: route.entryId)
+                CourtMarkingView(
+                    rally: rally, analyze: analyze,
+                    localAnalysis: localAnalysis, entryId: route.entryId
+                )
             }
             .navigationDestination(isPresented: $showLabels) {
                 LabelsView(rally: rally)
@@ -123,10 +130,16 @@ struct HomeView: View {
                 // AnalyticsListView, where it presents one level deeper. From
                 // here it would swap this screen out and then return the coach
                 // to Home instead of to his list.
-                AnalyticsListView(rally: rally, analyze: analyze, model: listModel)
+                AnalyticsListView(
+                    rally: rally, analyze: analyze,
+                    model: listModel, localAnalysis: localAnalysis
+                )
             }
             .navigationDestination(item: $matchRoute) { route in
-                MatchView(rally: rally, analyze: analyze, route: route)
+                MatchView(
+                    rally: rally, analyze: analyze,
+                    localAnalysis: localAnalysis, route: route
+                )
             }
             .navigationDestination(isPresented: $showNewMatch) {
                 NewMatchView(rally: rally) { id in
@@ -151,13 +164,16 @@ struct HomeView: View {
                     )
                 case .finished(let scoreLogId, let attach):
                     MatchView(
-                        rally: rally, analyze: analyze,
+                        rally: rally, analyze: analyze, localAnalysis: localAnalysis,
                         route: MatchRoute(scoreLogId: scoreLogId, videoId: nil, attach: attach)
                     )
                 }
             }
             .navigationDestination(item: $localPlayerRoute) { route in
-                LocalPlayerView(rally: rally, analyze: analyze, entryId: route.entryId)
+                LocalPlayerView(
+                    rally: rally, analyze: analyze,
+                    localAnalysis: localAnalysis, entryId: route.entryId
+                )
             }
         }
         .sheet(isPresented: $showAddSheet) {

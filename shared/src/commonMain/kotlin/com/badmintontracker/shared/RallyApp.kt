@@ -1,9 +1,10 @@
 package com.badmintontracker.shared
 
-import com.badmintontracker.shared.local.LocalAnalysisCoordinator
 import com.badmintontracker.shared.local.LocalInferenceEngine
 import com.badmintontracker.shared.localvideo.AnalyzeCoordinator
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
+import com.badmintontracker.shared.local.DeviceThroughputRepository
+import com.badmintontracker.shared.local.LocalAnalysisCoordinator
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.localvideo.orphanedLocalVideoIds
@@ -69,6 +70,16 @@ class RallyApp(
     val themePrefs:       ThemePreferenceRepository    = ThemePreferenceRepository(settings)
     val playbackPrefs:    PlaybackPreferenceRepository = PlaybackPreferenceRepository(settings)
     val racketArmPrefs:   RacketArmPreferenceRepository = RacketArmPreferenceRepository(settings)
+
+    /**
+     * What this phone has learned about how fast it analyses.
+     *
+     * Here rather than in each app, where androidApp built its own: the metric
+     * picker on both platforms quotes what this holds, and two instances over
+     * the same Settings would each carry their own StateFlow and disagree about
+     * the number for as long as one of them had not been rebuilt.
+     */
+    val deviceThroughput: DeviceThroughputRepository = DeviceThroughputRepository(settings)
 
     // Matches scored on this phone. Local first, like the video registry above it:
     // a match is created and scored courtside, where there is usually no signal.

@@ -36,6 +36,12 @@ final class TypographyAdoptionTests: XCTestCase {
         // was ordinary UI text on a numerals-shaped exemption and has been
         // converted - see final-review.md's F-typescale.
         "ScoringView.swift",
+        // The metric card's tick is an SF Symbol inside a 22pt disc, same
+        // exemption as ShuttlEmptyState and the transport bar: SF Symbols take
+        // their height from a font's point size, and binding the glyph to a
+        // type-scale role would make a checkmark grow with the text scale while
+        // the disc around it did not.
+        "MetricSelector.swift",
     ]
 
     private func sourceFiles() -> [URL] {

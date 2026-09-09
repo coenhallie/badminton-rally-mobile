@@ -5,10 +5,10 @@ import SwiftUI
 /// grouping (local videos, owned matches, shared), so the same match shows up in
 /// the same place on both screens. Port of Android's `AnalyticsScreen`.
 ///
-/// Nothing here navigates on tap. Only a READY row opens anything on Android, and
-/// iOS cannot produce READY until a track store exists, so an iOS detail screen
-/// would have no entry point at all; making the other two states tappable to
-/// compensate would just be a tap that leads somewhere unrelated.
+/// A ready row opens its analysis and the other two do not, as on Android. The
+/// two that do not are not inert for want of a modifier: an analysable row's one
+/// action is the pill it already carries, and a match that is not on this phone
+/// has nothing behind it to open.
 struct AnalyticsListView: View {
     let rally: RallyApp
     let analyze: AnalyzeCoordinator
@@ -19,8 +19,17 @@ struct AnalyticsListView: View {
     /// from this view's own `.task` costs a coach who never opens Analytics
     /// nothing.
     let model: ClipListModel
+    /// The on-device pipeline, or nil in a build with no models staged. Its
+    /// absence is what keeps every row's control honest: with no runner there is
+    /// no track store, so nothing can be ready.
+    let localAnalysis: LocalAnalysisRunner?
 
     @State private var progressById: [String: AnalyzeProgress] = [:]
+    /// The entries with a stored track, read once per appearance rather than
+    /// per row. `PlayerTrackStore.has` is a small header read and a list of
+    /// forty matches would otherwise do forty of them on every redraw.
+    @State private var storedTrackIds: Set<String> = []
+    @State private var detailRoute: AnalyticsDetailRoute? = nil
     /// Registered on this view rather than on Home, so court marking stacks ON
     /// Analytics instead of replacing it.
     ///
@@ -38,7 +47,9 @@ struct AnalyticsListView: View {
             localEntries: model.localEntries,
             ownedRows: model.ownedRows,
             sharedMatches: model.shared,
-            progressByEntryId: progressById
+            progressByEntryId: progressById,
+            storedTrackIds: storedTrackIds,
+            deviceStates: localAnalysis?.states ?? [:]
         )
         let legend = analyticsLegend(for: rows)
 
@@ -75,8 +86,22 @@ struct AnalyticsListView: View {
             }
         }
         .refreshable { await model.refresh() }
+        .onChange(of: model.localEntries.map(\.id)) { _, ids in refreshStoredTracks(ids) }
+        // Also when a run finishes: the track appears on disk without the entry
+        // list moving, so nothing above would notice.
+        .onChange(of: localAnalysis?.states.count ?? 0) { _, _ in
+            refreshStoredTracks(model.localEntries.map(\.id))
+        }
         .navigationDestination(item: $courtMarkingRoute) { route in
-            CourtMarkingView(rally: rally, analyze: analyze, entryId: route.entryId)
+            CourtMarkingView(
+                rally: rally, analyze: analyze,
+                localAnalysis: localAnalysis, entryId: route.entryId
+            )
+        }
+        .navigationDestination(item: $detailRoute) { route in
+            AnalyticsDetailView(
+                rally: rally, localAnalysis: localAnalysis, entryId: route.entryId
+            )
         }
     }
 
@@ -164,10 +189,7 @@ struct AnalyticsListView: View {
     /// availability dot for a ready row, the Analyze pill for an analysable one,
     /// nothing for a match that is not on this phone.
     ///
-    /// The card does not respond to a tap, and that is this platform's own
-    /// state rather than a missing modifier: only a ready row opens anything on
-    /// Android, and iOS cannot produce ready until a track store lands. See the
-    /// note on `AnalyticsListView` itself.
+    /// A ready row opens its analysis; the other two do not, matching Android.
     @ViewBuilder
     private func rowView(_ row: AnalyticsRow, showNotOnDeviceSubtitle: Bool) -> some View {
         HStack(spacing: 0) {
@@ -200,6 +222,12 @@ struct AnalyticsListView: View {
                         .shuttlType(ShuttlType.bodySmall)
                         .foregroundStyle(Shuttl.textSecondary)
                         .lineLimit(1)
+                case .paused(let reason):
+                    // Secondary, not the error colour: nothing went wrong.
+                    Text(reason)
+                        .shuttlType(ShuttlType.bodySmall)
+                        .foregroundStyle(Shuttl.textSecondary)
+                        .lineLimit(2)
                 case .failed(let reason):
                     Text(reason)
                         .shuttlType(ShuttlType.bodySmall)
@@ -230,6 +258,14 @@ struct AnalyticsListView: View {
             Shuttl.bgSecondary,
             in: RoundedRectangle(cornerRadius: ShuttlRadius.large)
         )
+        // contentShape before the gesture, or the gaps between the title and
+        // the dot are not part of the target and the card feels unreliable.
+        .contentShape(RoundedRectangle(cornerRadius: ShuttlRadius.large))
+        .onTapGesture {
+            guard row.state == .ready, let entryId = row.entryId else { return }
+            detailRoute = AnalyticsDetailRoute(entryId: entryId)
+        }
+        .accessibilityAddTraits(row.state == .ready ? .isButton : [])
     }
 
     @ViewBuilder
@@ -237,6 +273,11 @@ struct AnalyticsListView: View {
         switch row.affordance {
         case .ready:
             analysePill("Analyze", row: row, loading: false)
+        case .paused:
+            // "Resume", because the run is not lost: whatever it wrote before
+            // the app went away is on disk, and starting again picks up from a
+            // marked court rather than from the beginning of the flow.
+            analysePill("Resume", row: row, loading: false)
         case .failed:
             // "Retry", not the drawer's "Re-analyze": this row already carries
             // the failure reason on the line above, exactly as a scored match's
@@ -352,5 +393,25 @@ private extension View {
         ))
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
+    }
+}
+
+
+/// Which analysis the detail screen should open.
+struct AnalyticsDetailRoute: Hashable {
+    let entryId: String
+}
+
+private extension AnalyticsListView {
+    /// Re-reads which entries have a track this build can draw.
+    ///
+    /// Off the main actor: it stats and header-reads one file per entry, which
+    /// is small but is still disk, and this runs on every list appearance.
+    func refreshStoredTracks(_ ids: [String]) {
+        guard let localAnalysis else {
+            storedTrackIds = []
+            return
+        }
+        storedTrackIds = localAnalysis.storedTrackIds(among: ids)
     }
 }

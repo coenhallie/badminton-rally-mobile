@@ -55,6 +55,9 @@ private enum MatchSheet: Identifiable, Hashable {
 struct MatchView: View {
     let rally: RallyApp
     let analyze: AnalyzeCoordinator
+    /// Routed through only so the court marking this page can push offers the
+    /// same two targets it offers everywhere else.
+    let localAnalysis: LocalAnalysisRunner?
     let route: MatchRoute
 
     @State private var matchModel: MatchModel
@@ -111,9 +114,15 @@ struct MatchView: View {
     // silently snap a reader on the rallies facet back to Points mid-read.
     @State private var chosenFacet: Facet
 
-    init(rally: RallyApp, analyze: AnalyzeCoordinator, route: MatchRoute) {
+    init(
+        rally: RallyApp,
+        analyze: AnalyzeCoordinator,
+        localAnalysis: LocalAnalysisRunner?,
+        route: MatchRoute
+    ) {
         self.rally = rally
         self.analyze = analyze
+        self.localAnalysis = localAnalysis
         self.route = route
         let model = MatchModel(rally: rally, analyze: analyze, scoreLogId: route.scoreLogId)
         _matchModel = State(initialValue: model)
@@ -310,7 +319,10 @@ struct MatchView: View {
             ClipDetailView(rally: rally, clipId: route.id)
         }
         .navigationDestination(item: $navigationTarget) { route in
-            CourtMarkingView(rally: rally, analyze: analyze, entryId: route.entryId)
+            CourtMarkingView(
+                rally: rally, analyze: analyze,
+                localAnalysis: localAnalysis, entryId: route.entryId
+            )
         }
         .navigationDestination(item: $scoringTarget) { route in
             ScoringView(

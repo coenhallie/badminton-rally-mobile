@@ -65,7 +65,10 @@ class RallyAndroidApp : Application(), SingletonImageLoader.Factory {
 
         // The on-device sibling of analyzeCoordinator. Application-scoped
         // for the same reason: an analysis outlives the screen that starts it.
-        throughput = DeviceThroughputRepository(settings)
+        // The app graph's, not a second one over the same Settings: two
+        // instances each carry their own StateFlow and would disagree about
+        // the estimate until one of them was rebuilt.
+        throughput = rally.deviceThroughput
         localAnalysis = LocalAnalysisRunner(
             context = this,
             scope = appScope,

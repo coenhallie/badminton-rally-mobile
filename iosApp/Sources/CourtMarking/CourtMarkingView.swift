@@ -5,11 +5,47 @@ struct CourtMarkingRoute: Hashable {
     let entryId: String
 }
 
+/// Which of the two setup steps is on screen.
+///
+/// Android's `SetupStep`, and the same two: the court is marked, then what the
+/// run should produce is chosen. Split rather than stacked because the mapping
+/// step wants the whole screen for a video frame and the options step wants a
+/// scrolling column.
+private enum SetupStep {
+    case mapping
+    case options
+
+    var title: String {
+        switch self {
+        case .mapping: return "Court mapping"
+        case .options: return "What to analyze"
+        }
+    }
+}
+
 struct CourtMarkingView: View {
     let rally: RallyApp
     let analyze: AnalyzeCoordinator
+    /// The on-device pipeline, or nil where only the cloud is offered.
+    ///
+    /// Optional rather than always present so a build with no ONNX graphs
+    /// staged - CI's, and any checkout that has not run the export scripts -
+    /// shows one button rather than a second that fails on the tap.
+    let localAnalysis: LocalAnalysisRunner?
     let entryId: String
     @Environment(\.dismiss) private var dismiss
+    @State private var step: SetupStep = .mapping
+    @State private var courtFrame: CourtFrame? = nil
+    /// Clips only by default, matching Android: it is the one metric every user
+    /// came for, and pose roughly doubles the wait, so it is opted into rather
+    /// than out of.
+    @State private var metrics: Set<AnalysisMetric> = [.rallyClips]
+    @State private var throughput: DeviceThroughput = DeviceThroughput(
+        baseMsPerFrame: DeviceThroughput.companion.SEED_BASE_MS,
+        poseMsPerFrame: DeviceThroughput.companion.SEED_POSE_MS,
+        cutMsPerClipSecond: DeviceThroughput.companion.SEED_CUT_MS,
+        measured: false
+    )
     @State private var frame: UIImage? = nil
     @State private var marking: CourtMarkingState? = nil
     @State private var error: String? = nil
@@ -23,6 +59,8 @@ struct CourtMarkingView: View {
             if let error {
                 ErrorBanner(message: error)
                 Spacer()
+            } else if step == .options, let courtFrame, let marking, marking.isComplete {
+                optionsStep(courtFrame: courtFrame, marking: marking)
             } else if let frame, let marking {
                 content(frame: frame, marking: marking)
             } else {
@@ -31,8 +69,19 @@ struct CourtMarkingView: View {
                 Spacer()
             }
         }
-        .navigationTitle("Court mapping")
+        .navigationTitle(step.title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // Back out of the options step to the mapping step rather than off
+            // the screen, which is what Android's BackHandler does. Without it
+            // the only way to change a mark after reaching the options is to
+            // leave and start again.
+            if step == .options {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Back") { step = .mapping }
+                }
+            }
+        }
         .task {
             guard marking == nil, error == nil else { return }
             guard let entry = rally.localVideos.get(id: entryId) else {
@@ -40,13 +89,18 @@ struct CourtMarkingView: View {
                 return
             }
             do {
-                let image = try await CourtFrameLoader.loadFirstFrame(relativePath: entry.uri)
-                frame = image
+                let loaded = try await CourtFrameLoader.loadFirstFrame(relativePath: entry.uri)
+                courtFrame = loaded
+                frame = loaded.image
                 marking = CourtMarkingState(
-                    videoWidth: Int32(image.size.width * image.scale),
-                    videoHeight: Int32(image.size.height * image.scale),
+                    videoWidth: Int32(loaded.image.size.width * loaded.image.scale),
+                    videoHeight: Int32(loaded.image.size.height * loaded.image.scale),
                     points: []
                 )
+                // What this phone has learned about itself, if anything. Read
+                // here rather than in the selector so the selector stays a view
+                // over values it is given.
+                throughput = rally.deviceThroughput.throughput.value
             } catch {
                 self.error = error.localizedDescription   // "Couldn't extract video frame"
             }
@@ -88,13 +142,71 @@ struct CourtMarkingView: View {
         .padding(.horizontal, 16)
 
         if marking.isComplete {
-            Button("Start Analysis") {
-                analyze.startAnalysis(entryId: entryId, keypoints: marking.toCourtKeypoints())
-                dismiss()
-            }
-            .buttonStyle(PrimaryButtonStyle())
-            .padding(16)
+            Button("Continue") { step = .options }
+                .buttonStyle(PrimaryButtonStyle())
+                .padding(16)
         }
+    }
+
+    // MARK: - Step two: what the run should produce
+
+    @ViewBuilder
+    private func optionsStep(courtFrame: CourtFrame, marking: CourtMarkingState) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("What to analyze")
+                    .shuttlType(ShuttlType.headlineLarge)
+                    .foregroundStyle(Shuttl.textHeading)
+                    .padding(.top, 16)
+                Text("Pick what this run should produce.")
+                    .shuttlType(ShuttlType.bodySmall)
+                    .foregroundStyle(Shuttl.textTertiary)
+                    .padding(.top, 8)
+                MetricSelector(
+                    frames: courtFrame.frameCount,
+                    fps: courtFrame.fps,
+                    selected: metrics,
+                    throughput: throughput,
+                    onToggle: { metric in
+                        if metrics.contains(metric) { metrics.remove(metric) } else { metrics.insert(metric) }
+                    }
+                )
+                .padding(.top, 22)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 16)
+        }
+
+        // Two buttons rather than one with a toggle: the point is to run the
+        // same video through both pipelines back to back and compare, and a
+        // toggle adds a step to every comparison.
+        VStack(spacing: 10) {
+            Button("Analyze in cloud") { start(onDevice: false, marking: marking) }
+                .buttonStyle(PrimaryButtonStyle())
+            if localAnalysis != nil {
+                Button("Analyze on device") { start(onDevice: true, marking: marking) }
+                    .buttonStyle(SecondaryPillButtonStyle())
+                    .disabled(metrics.isEmpty)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 16)
+    }
+
+    private func start(onDevice: Bool, marking: CourtMarkingState) {
+        let keypoints = marking.toCourtKeypoints()
+        if onDevice, let localAnalysis, let entry = rally.localVideos.get(id: entryId) {
+            localAnalysis.start(
+                entryId: entryId,
+                videoPath: LocalVideoFiles.resolve(relativePath: entry.uri).path,
+                keypoints: keypoints,
+                metrics: metrics
+            )
+        } else {
+            analyze.startAnalysis(entryId: entryId, keypoints: keypoints)
+        }
+        dismiss()
     }
 
     private func tapGesture(displaySize: CGSize) -> some Gesture {

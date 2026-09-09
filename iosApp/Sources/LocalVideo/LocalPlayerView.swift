@@ -5,6 +5,11 @@ import SwiftUI
 struct LocalPlayerView: View {
     let rally: RallyApp
     let analyze: AnalyzeCoordinator
+    /// Routed through only so the court marking this screen can push offers the
+    /// same two targets it offers everywhere else. A coach who marks a court
+    /// from the player must not get a cloud-only flow because of where they
+    /// started.
+    let localAnalysis: LocalAnalysisRunner?
     let entryId: String
     @Environment(\.dismiss) private var dismiss
     @State private var model: LocalPlayerModel?
@@ -137,7 +142,10 @@ struct LocalPlayerView: View {
             }
         }
         .navigationDestination(item: $courtTarget) { route in
-            CourtMarkingView(rally: rally, analyze: analyze, entryId: route.entryId)
+            CourtMarkingView(
+                rally: rally, analyze: analyze,
+                localAnalysis: localAnalysis, entryId: route.entryId
+            )
         }
         .sheet(item: $addSheet) { item in
             AddAnnotationSheet(

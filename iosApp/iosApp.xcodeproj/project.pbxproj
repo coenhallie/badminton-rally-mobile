@@ -33,6 +33,7 @@
 		2AB5089784DDFA9FAA82B3C3 /* OnnxSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2B6C5DE171A479978CF2184 /* OnnxSessionTests.swift */; };
 		2E71C6E8CEB45C9A1AF67518 /* FrameStepMath.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDDECE8F42B9ED83E1030453 /* FrameStepMath.swift */; };
 		2F6E3F9479FC9B91BFAB3F39 /* ShuttlPaletteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09DC5A242EBE164C182143AD /* ShuttlPaletteTests.swift */; };
+		2F7D97729B7F863FC85FE3FD /* MetricSelector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9636B8DE06074EE38B4BCA36 /* MetricSelector.swift */; };
 		3144DD38FA7D5B4B6C6739E7 /* ScoringBoardUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EADBE4DF5FC5144E7AC1BDF /* ScoringBoardUITests.swift */; };
 		34CAF7EBABBE17BD0D9F7633 /* FramePreprocessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FDAAA15B0E6D9178584AAA9 /* FramePreprocessor.swift */; };
 		3AD1A4C1F76FB329D882B424 /* ScoreLogDeleteMessageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F86CA7E3C3A9EBC8035FF98 /* ScoreLogDeleteMessageTests.swift */; };
@@ -44,6 +45,7 @@
 		49E53F7E5A98AA5D6F41C7DA /* MatchModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F14BB1D771EB662B983D4D6 /* MatchModel.swift */; };
 		4DBE757463239161048DA780 /* HeroTickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30669EDE03573C3CB42B11BA /* HeroTickerView.swift */; };
 		51E57622EAB2FD01C3C76AD5 /* VersionLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D98BD2F339E3CC958F2CE44 /* VersionLabel.swift */; };
+		521BA70452F31751FF57239A /* CourtHeatmapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D624F5633DF1C622984C898 /* CourtHeatmapView.swift */; };
 		588606F944E2E70F3F3FA598 /* PlaybackSettingsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D75E7C46412BEAF4B6640F9D /* PlaybackSettingsSheet.swift */; };
 		5ADBEFAA75F6EF54B2F3D085 /* LabelBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = C930D6A6291A278327ECE0CE /* LabelBadge.swift */; };
 		5C9837ECBC6EEDFD23C6E592 /* CameraRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9460204E541BF370BAFFB9BE /* CameraRecorder.swift */; };
@@ -65,6 +67,7 @@
 		76AB0A268C431540353471F0 /* TrackNetRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31E65E242A0E0BC5F3FB3DF9 /* TrackNetRunner.swift */; };
 		77F381D4EA05BBFC12F5FFD2 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76A23487DD59B49157A3135C /* RootView.swift */; };
 		7BCE0FFBA927D82D9D9EB2F0 /* ShuttlRadius.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21A3E77B3442881360ADAFA6 /* ShuttlRadius.swift */; };
+		7F0DDAAC880AA1405FD7C595 /* AnalyticsDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09D5897919C11FF8DB6E68FF /* AnalyticsDetailView.swift */; };
 		80422B2E577D3C2F2F960B7D /* MatchGroupingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0808EB7D7A1AF8A36818AEE /* MatchGroupingTests.swift */; };
 		82FCD13E2F1A2AAA98EC26F5 /* ClipDetailModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F08C072BC144799AD2F86506 /* ClipDetailModel.swift */; };
 		864D7A8CB1907E1F181FE602 /* LocalVideoStatusTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E764F7DB51182B2B498F5CD6 /* LocalVideoStatusTests.swift */; };
@@ -144,6 +147,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		09D5897919C11FF8DB6E68FF /* AnalyticsDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsDetailView.swift; sourceTree = "<group>"; };
 		09DC5A242EBE164C182143AD /* ShuttlPaletteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShuttlPaletteTests.swift; sourceTree = "<group>"; };
 		0B444C4421DE7CF39AE7A4E5 /* LocalVideoCleanupWiringTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalVideoCleanupWiringTests.swift; sourceTree = "<group>"; };
 		0C55FBA93C98A27AC7EE21BE /* ShuttlTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShuttlTheme.swift; sourceTree = "<group>"; };
@@ -218,8 +222,10 @@
 		8F48D800419AB5B1F89A5DD9 /* LocalVideoLogicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalVideoLogicTests.swift; sourceTree = "<group>"; };
 		9460204E541BF370BAFFB9BE /* CameraRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraRecorder.swift; sourceTree = "<group>"; };
 		95B96E99BED4A10A8FDA5011 /* DetectorRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetectorRunner.swift; sourceTree = "<group>"; };
+		9636B8DE06074EE38B4BCA36 /* MetricSelector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricSelector.swift; sourceTree = "<group>"; };
 		99C07A121F12C581870E83CC /* Archivo-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Archivo-Bold.ttf"; sourceTree = "<group>"; };
 		9B13CBB38AE526A3C355DE8B /* LabelsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabelsModel.swift; sourceTree = "<group>"; };
+		9D624F5633DF1C622984C898 /* CourtHeatmapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CourtHeatmapView.swift; sourceTree = "<group>"; };
 		9DBB4CC1CACCD0256476D9DE /* ClipSort.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipSort.swift; sourceTree = "<group>"; };
 		A02D8B89ABF94AD30304E3A5 /* FrameStepMathTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameStepMathTests.swift; sourceTree = "<group>"; };
 		A5828909CBE2B20598B0AAB8 /* PlaybackBridgingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackBridgingTests.swift; sourceTree = "<group>"; };
@@ -487,8 +493,10 @@
 		A18087E7FD4D09124AC3C76E /* Analytics */ = {
 			isa = PBXGroup;
 			children = (
+				09D5897919C11FF8DB6E68FF /* AnalyticsDetailView.swift */,
 				7FBB549CA3203C05EA69EA75 /* AnalyticsListView.swift */,
 				844A5ADF8D1F5A74E9FCB8FE /* AnalyticsRows.swift */,
+				9D624F5633DF1C622984C898 /* CourtHeatmapView.swift */,
 			);
 			path = Analytics;
 			sourceTree = "<group>";
@@ -510,6 +518,7 @@
 				7FDAAA15B0E6D9178584AAA9 /* FramePreprocessor.swift */,
 				7F09AE3FEADD4D23B45A2009 /* IosLocalInferenceEngine.swift */,
 				8467FBF49DD4EC2EDA5EECEC /* LocalAnalysisRunner.swift */,
+				9636B8DE06074EE38B4BCA36 /* MetricSelector.swift */,
 				B976577885618A37CA34DB74 /* ModelCatalog.swift */,
 				DFA34C0702D7C4F873579DEF /* OnnxSession.swift */,
 				ABB5230079D3AB202DC9DC26 /* PlayerTrackStore.swift */,
@@ -747,6 +756,7 @@
 				F34C70DAE58109539EEA2D7B /* AddAnnotationSheet.swift in Sources */,
 				2AB0842817D586F21A4AFC8E /* AddMatchSheet.swift in Sources */,
 				EA4F1D80D4D1A98FFC0302DC /* AnalysisFiles.swift in Sources */,
+				7F0DDAAC880AA1405FD7C595 /* AnalyticsDetailView.swift in Sources */,
 				42C49DD9F9F50EE8F0D89FA1 /* AnalyticsListView.swift in Sources */,
 				27F80402EE08D89DF3AD3D3C /* AnalyticsRows.swift in Sources */,
 				5C9837ECBC6EEDFD23C6E592 /* CameraRecorder.swift in Sources */,
@@ -759,6 +769,7 @@
 				ADB1A8FA16544D50471033AA /* ClipSort.swift in Sources */,
 				ECC4BF8B5BD59A51628A59F4 /* CompactPillButtonStyle.swift in Sources */,
 				CCACC800E2B9DFB80BDD7351 /* CourtFrameLoader.swift in Sources */,
+				521BA70452F31751FF57239A /* CourtHeatmapView.swift in Sources */,
 				A0D4B364A2C644E52BE9AD50 /* CourtMarkingView.swift in Sources */,
 				8C5CF8AD1B54D54976AE62C2 /* CourtTapMath.swift in Sources */,
 				117445DC856780CB80574F1E /* DetectorRunner.swift in Sources */,
@@ -789,6 +800,7 @@
 				180BE08FA55055D020A3D2EF /* MatchSummaryView.swift in Sources */,
 				5CF4E9EB9E265172C21BF8F2 /* MatchView.swift in Sources */,
 				E1057EA8190EFE412E89BC72 /* MatchesDrawer.swift in Sources */,
+				2F7D97729B7F863FC85FE3FD /* MetricSelector.swift in Sources */,
 				EA223747B60B6A6E5B32F05C /* ModelCatalog.swift in Sources */,
 				477D35EB905FDFE2CA28280A /* NewMatchView.swift in Sources */,
 				FEB1B904E92819730266F380 /* OnnxSession.swift in Sources */,

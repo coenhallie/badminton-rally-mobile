@@ -143,7 +143,12 @@ final class LocalAnalysisRunner {
         states.compactMap { toDeviceWork(entryId: $0.key, state: $0.value) }
     }
 
-    /// Whether anything is running, which is what holds the screen awake.
+    /// Whether anything is running.
+    ///
+    /// Read by `RootView`, which owns `isIdleTimerDisabled` for the whole app.
+    /// Not set here: an upload already drives that same global flag, and two
+    /// writers means whichever finishes first turns the screen lock back on
+    /// under the other one - which for a 20-minute analysis is the run dying.
     var isRunning: Bool { !running.isEmpty }
 
     // MARK: - Stored results
@@ -188,10 +193,6 @@ final class LocalAnalysisRunner {
         }
         running.insert(entryId)
         suspendRequested = false
-        // The iOS analogue of Android's wake lock. Without it the screen locks
-        // under a running analysis and the pass stops with it, which on a
-        // 20-minute run is every run.
-        UIApplication.shared.isIdleTimerDisabled = true
         states[entryId] = .preparing(message: "Preparing video")
 
         let wantsPose = metrics.contains { $0.needsPose }
@@ -213,14 +214,8 @@ final class LocalAnalysisRunner {
         }
     }
 
-    /// Ends a run's hold on the screen, and drops the idle-timer override once
-    /// nothing at all is running.
-    ///
-    /// Two videos analysed back to back share one hold, and releasing on the
-    /// first would let the screen lock under the second.
     private func released(_ entryId: String) {
         running.remove(entryId)
-        if running.isEmpty { UIApplication.shared.isIdleTimerDisabled = false }
     }
 
     private func finish(entryId: String, with state: LocalAnalysisState) {
