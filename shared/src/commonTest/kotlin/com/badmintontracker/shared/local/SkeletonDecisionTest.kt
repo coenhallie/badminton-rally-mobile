@@ -1,10 +1,9 @@
-package com.badmintontracker.android.localanalysis
+package com.badmintontracker.shared.local
 
 import com.badmintontracker.analysis.geometry.Point
 import com.badmintontracker.analysis.player.PlayerPose
-import com.badmintontracker.shared.local.AnalysisMetric
 import io.kotest.matchers.shouldBe
-import org.junit.Test
+import kotlin.test.Test
 
 /**
  * The pure save-or-delete rule the runner applies to a completed run's

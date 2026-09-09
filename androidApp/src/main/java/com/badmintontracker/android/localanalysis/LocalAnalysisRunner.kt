@@ -5,6 +5,8 @@ import android.net.Uri
 import com.badmintontracker.analysis.player.PlayerTrack
 import com.badmintontracker.shared.local.AnalysisMetric
 import com.badmintontracker.shared.local.DeviceThroughputRepository
+import com.badmintontracker.shared.local.SkeletonAction
+import com.badmintontracker.shared.local.skeletonAction
 import com.badmintontracker.shared.local.LocalAnalysisCoordinator
 import com.badmintontracker.shared.localvideo.DevicePhase
 import com.badmintontracker.shared.localvideo.DeviceWork

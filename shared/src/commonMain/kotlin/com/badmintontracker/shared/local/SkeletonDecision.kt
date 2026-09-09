@@ -1,13 +1,16 @@
-package com.badmintontracker.android.localanalysis
+package com.badmintontracker.shared.local
 
 import com.badmintontracker.analysis.player.PlayerPose
-import com.badmintontracker.shared.local.AnalysisMetric
 
 /** What a completed run should do with the skeleton stored for its entry. */
 enum class SkeletonAction { SAVE, DELETE }
 
 /**
  * Whether a completed run's skeleton should be written or removed.
+ *
+ * Here rather than in either app, because it is the rule that decides what a
+ * coach's storage holds and both platforms have to apply it the same way. It
+ * started in androidApp, where iOS could not see it.
  *
  * SAVE only when [AnalysisMetric.SKELETON_PLAYBACK] was asked for and the pose
  * pass actually found the near player somewhere: `poses.isNotEmpty()`. Every
