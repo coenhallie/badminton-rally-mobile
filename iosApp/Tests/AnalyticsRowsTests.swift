@@ -307,9 +307,22 @@ final class AnalyticsRowsTests: XCTestCase {
         XCTAssertEqual(
             analyseAffordance(
                 for: entry(id: "e1", stage: .local), progress: nil,
-                device: .paused(fraction: 0.37)
+                device: .paused(.analysing(fraction: 0.37))
             ),
             .paused(reason: "Paused at 37% - keep Shuttl open to finish")
+        )
+    }
+
+    func testAPauseWithNoFractionDoesNotInventAZero() {
+        // A run can be frozen while preparing, or while cutting clips, and
+        // neither reports an analysis fraction. "Paused at 0%" over a run three
+        // clips from the end would be worse than saying nothing.
+        XCTAssertEqual(
+            analyseAffordance(
+                for: entry(id: "e1", stage: .local), progress: nil,
+                device: .paused(.cutting(done: 6, total: 9))
+            ),
+            .paused(reason: "Paused - keep Shuttl open to finish")
         )
     }
 
@@ -318,10 +331,10 @@ final class AnalyticsRowsTests: XCTestCase {
         // and the pass carries on from the frame it was on. A row that counted
         // it as finished would offer an "Analyze" button that start() refuses on
         // its own guard - the same dead button the cloud stage used to give.
-        XCTAssertTrue(isDeviceRunInFlight(.paused(fraction: 0.37)))
+        XCTAssertTrue(isDeviceRunInFlight(.paused(.analysing(fraction: 0.37))))
         // And nothing to light in the chrome, which is only on screen when the
         // app is active - by which point the state is already gone.
-        XCTAssertNil(toDeviceWork(entryId: "e1", state: .paused(fraction: 0.37)))
+        XCTAssertNil(toDeviceWork(entryId: "e1", state: .paused(.analysing(fraction: 0.37))))
     }
 
     func testAFinishedDeviceRunFallsThroughToTheCloudStage() {

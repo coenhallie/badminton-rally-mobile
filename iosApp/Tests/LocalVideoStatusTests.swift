@@ -99,7 +99,7 @@ final class LocalVideoStatusTests: XCTestCase {
             .cutting(done: 2, total: 9),
             // Nothing was cancelled by the app going away, so there is still a
             // run here and still no second one to start.
-            .paused(fraction: 0.4),
+            .paused(.analysing(fraction: 0.4)),
         ] {
             XCTAssertFalse(
                 LocalVideoStatus.canAnalyze(stage: .local, device: device),
@@ -137,7 +137,7 @@ final class LocalVideoStatusTests: XCTestCase {
             "Analysis failed: no models"
         )
         XCTAssertEqual(
-            LocalVideoStatus.rowStatus(stage: .local, progress: nil, device: .paused(fraction: 0.4)),
+            LocalVideoStatus.rowStatus(stage: .local, progress: nil, device: .paused(.analysing(fraction: 0.4))),
             "Paused - keep Shuttl open"
         )
     }

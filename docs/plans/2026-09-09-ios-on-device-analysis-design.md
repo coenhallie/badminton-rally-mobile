@@ -377,6 +377,16 @@ desk; it is set from the first paired run and recorded in the plan.
 device, watch clips appear, open the heatmap, scrub the skeleton. Then the
 awkward one §4 exists for: background the app mid-run and come back.
 
+**Looked at, on the simulator.** A live run driven from the drawer, which is
+the surface the device-liveness fix is about:
+`docs/screenshots/2026-09-09-ios-drawer-row-analyzing-on-device.png`. The row's
+Analyze button is gone, its overflow menu with it, the status line reads
+"Analyzing on device…" on one line in the column Android had to drop the
+percentage for, the ring turns, and the four rows below it keep their own
+buttons. It updates live, which is the part no test covers: the row reads the
+runner's state through `state(for:)` inside a `ForEach`, and whether
+`@Observable` tracks that was an open question until the ring moved.
+
 **Not verified, and not verifiable here.** The §4 claim that the OS freezes the
 process mid-decode and thaws it with the pass intact rests on reasoning, not on
 observation: `LocalAnalysisRunnerTests` calls `suspendForBackground` and

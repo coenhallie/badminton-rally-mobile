@@ -34,6 +34,18 @@ struct LocalVideoRowView: View {
     private var canAnalyze: Bool { LocalVideoStatus.canAnalyze(stage: entry.stage, device: device) }
     private var canRemove: Bool { LocalVideoStatus.canRemove(stage: entry.stage, device: device) }
     private var hasMenu: Bool { canRemove || LocalVideoStatus.canEditDetails(stage: entry.stage) }
+    /// A ring turns for work that is moving, on either pipeline.
+    ///
+    /// A paused device run is the exception, and it is the case this row is most
+    /// likely to be SEEN in: the app switcher snapshots the scene on the way
+    /// out, so the card a coach checks while he is away is this one. A ring
+    /// turning there over a run getting no CPU would contradict the line beside
+    /// it, which reads "Paused - keep Shuttl open".
+    private var spins: Bool {
+        if case .paused = device { return false }
+        return (LocalVideoStatus.isRunning(stage: entry.stage) || isDeviceRunInFlight(device))
+            && !canAnalyze
+    }
 
     var body: some View {
         Button(action: onTap) {
@@ -75,12 +87,9 @@ struct LocalVideoRowView: View {
                         }
                     }
                     Spacer(minLength: 0)
-                    if (LocalVideoStatus.isRunning(stage: entry.stage) || isDeviceRunInFlight(device)),
-                       !canAnalyze {
+                    if spins {
                         // Settled stages (e.g. ANALYZED) show neither ring nor
                         // button - the status text already says what happened.
-                        // A device run spins here too: it is the same card, and
-                        // its button has just gone for the same reason.
                         ProgressView().controlSize(.small)
                     }
                     // The menu renders when either action applies; each item is gated

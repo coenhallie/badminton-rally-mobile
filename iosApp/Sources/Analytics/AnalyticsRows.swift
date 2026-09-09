@@ -154,7 +154,13 @@ func analyseAffordance(
         return .inProgress(phase: "Analyzing on device")
     case .failed(let message):
         return .failed(reason: message)
-    case .paused(let fraction):
+    case .paused:
+        // The percentage only when there is one: a run frozen while preparing,
+        // or while cutting clips, has no analysis fraction to quote and must not
+        // invent a zero.
+        guard let fraction = device.pausedFraction else {
+            return .paused(reason: "Paused - keep Shuttl open to finish")
+        }
         return .paused(reason: "Paused at \(Int(fraction * 100))% - keep Shuttl open to finish")
     case .idle, .done:
         break

@@ -114,8 +114,10 @@ final class LocalAnalysisRunnerTests: XCTestCase {
         XCTAssertTrue(isDeviceRunInFlight(runner.state(for: "e1")))
 
         runner.resumeFromBackground()
-        if case .paused = runner.state(for: "e1") {
-            XCTFail("coming back left the row saying paused")
+        // Back to the state it interrupted, not to a guessed one: a run frozen
+        // while cutting clips has to come back cutting clips.
+        guard case .analysing = runner.state(for: "e1") else {
+            return XCTFail("coming back left the row saying \(runner.state(for: "e1"))")
         }
 
         // And the run itself was never cancelled by any of that.

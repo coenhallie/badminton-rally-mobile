@@ -33,7 +33,20 @@ enum LocalAnalysisState: Equatable {
     /// written before clip cutting - minutes of work - so a kill during THAT
     /// step keeps them; a kill during the analysis itself keeps nothing,
     /// because at that point nothing has been written.
-    case paused(fraction: Float)
+    ///
+    /// Carries the state it interrupted rather than a bare fraction, because a
+    /// run can be frozen while preparing or while cutting clips too, and
+    /// neither of those has a fraction to carry. `resumeFromBackground` puts
+    /// exactly that state back.
+    indirect case paused(LocalAnalysisState)
+
+    /// How far a run had got when it was paused, if it was paused during the
+    /// analysis. Nil while preparing and while cutting, neither of which
+    /// reports one.
+    var pausedFraction: Float? {
+        if case .paused(.analysing(let fraction)) = self { return fraction }
+        return nil
+    }
 
     struct Done: Equatable {
         let rallies: Int
@@ -248,17 +261,23 @@ final class LocalAnalysisRunner {
     /// on the way out, so a stale "Analyzing on device 42%" would sit there for
     /// as long as the coach is away.
     ///
-    /// `.analysing` alone. `.preparing` and `.cutting` state a POSITION rather
-    /// than a rate - "Preparing video", "Cutting clips 3 of 12" - and each stays
-    /// true of a frozen run; `.paused` carries the analysis fraction and has
-    /// nothing to say about either.
+    /// All three working states, not `.analysing` alone. The words a frozen
+    /// `.cutting` row shows would still be true - "Cutting clips 3 of 12" is a
+    /// position, not a rate - but its spinner would not: a ring turning on the
+    /// switcher's card over a run getting no CPU says the opposite of the line
+    /// beside it.
     func suspendForBackground() {
         isBackgrounded = true
         guard isRunning else { return }
         log("local analysis: the app left the foreground, the run stops until it is back")
         for (entryId, state) in states {
-            if case .analysing(let fraction) = state {
-                states[entryId] = .paused(fraction: fraction)
+            switch state {
+            case .preparing, .analysing, .cutting:
+                states[entryId] = .paused(state)
+            // Outcomes, and a pause already recorded. Nothing here is work that
+            // could have stopped.
+            case .idle, .done, .failed, .paused:
+                break
             }
         }
     }
@@ -271,9 +290,7 @@ final class LocalAnalysisRunner {
     func resumeFromBackground() {
         isBackgrounded = false
         for (entryId, state) in states {
-            if case .paused(let fraction) = state {
-                states[entryId] = .analysing(fraction: fraction)
-            }
+            if case .paused(let interrupted) = state { states[entryId] = interrupted }
         }
     }
 
@@ -314,7 +331,7 @@ final class LocalAnalysisRunner {
                     // it, and it is the app's own state - not the run's - that
                     // decides which of them a row shows.
                     self.states[entryId] = self.isBackgrounded
-                        ? .paused(fraction: value)
+                        ? .paused(.analysing(fraction: value))
                         : .analysing(fraction: value)
                 }
             }
