@@ -109,15 +109,17 @@ struct AnalyticsDetailView: View {
 
     /// Whether the run for THIS entry has stopped, whichever way it stopped.
     ///
-    /// Cheap - a dictionary lookup - and read on every redraw on purpose: it is
-    /// what tells this screen that a run finishing behind it has written a track
-    /// or a skeleton, which androidApp gets from collecting `done`. The reload it
-    /// triggers is the expensive part, and that is gated on this changing.
+    /// It is what tells this screen that a run finishing behind it has written a
+    /// track or a skeleton, which androidApp gets from collecting `done`. The
+    /// reload it triggers is the expensive part, and that is gated on this
+    /// changing.
+    ///
+    /// Read from `settledRuns` and not from `state(for:)`: a state read
+    /// subscribes this whole screen to every progress write of every run, and
+    /// the redraw that follows rebuilt the panel behind it - the Base panel's
+    /// rally list included - at the rate of the progress bar.
     private var runSettled: Bool {
-        switch localAnalysis?.state(for: entryId) ?? .idle {
-        case .done, .failed: return true
-        default: return false
-        }
+        localAnalysis?.settledRuns.contains(entryId) ?? false
     }
 
     var body: some View {
@@ -167,9 +169,10 @@ struct AnalyticsDetailView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(Shuttl.bg)
-        .task { reload() }
-        .onChange(of: runSettled) { _, _ in reload() }
+        .task { await reload() }
+        .onChange(of: runSettled) { _, _ in Task { await reload() } }
         .navigationBarTitleDisplayMode(.inline)
+        .shuttlNavigationBarBackground()
         .toolbar {
             // The chrome indicator, on every bar androidApp puts it on. See
             // `BackgroundWorkAction`.
@@ -199,17 +202,37 @@ struct AnalyticsDetailView: View {
     /// The disk is read even when a run is in memory, because that run may be a
     /// pose-less one whose empty track has to fall through to a stored one; see
     /// `heatmapSource`.
-    private func reload() {
+    /// What the three stored reads produced, carried back from the task that
+    /// did them.
+    private struct Stored {
+        let track: PlayerTrackStore.Stored?
+        let hasSkeleton: Bool
+        let clips: [PlayerTrackStore.Clip]
+    }
+
+    private func reload() async {
         let done: LocalAnalysisState.Done? = {
             if case .done(let done) = localAnalysis?.state(for: entryId) ?? .idle { return done }
             return nil
         }()
-        source = heatmapSource(done: done, stored: localAnalysis?.storedTrack(entryId: entryId))
-        hasSkeleton = localAnalysis?.hasStoredSkeleton(entryId: entryId) ?? false
-        windows = rallyWindows(
-            done: done?.clips ?? [],
-            stored: localAnalysis?.storedClips(entryId: entryId) ?? []
-        )
+        // The three disk reads off the main actor. `storedTrack`, `storedClips`
+        // and `hasStoredSkeleton` are `nonisolated` precisely so they can run
+        // there; calling them from a main-actor task put the megabyte track
+        // parse, the clips sidecar and the skeleton header back on the main
+        // thread on every open and every time a run settled behind this screen.
+        let runner = localAnalysis
+        let id = entryId
+        let stored = await Task.detached(priority: .userInitiated) { () -> Stored in
+            Stored(
+                track: runner?.storedTrack(entryId: id),
+                hasSkeleton: runner?.hasStoredSkeleton(entryId: id) ?? false,
+                clips: runner?.storedClips(entryId: id) ?? []
+            )
+        }.value
+
+        source = heatmapSource(done: done, stored: stored.track)
+        hasSkeleton = stored.hasSkeleton
+        windows = rallyWindows(done: done?.clips ?? [], stored: stored.clips)
     }
 
     /// One entry's court heatmap, or an honest line saying why there is none.

@@ -83,7 +83,17 @@ struct LocalClipsView: View {
         .background(Shuttl.bg)
         .navigationTitle("Clips on this phone")
         .navigationBarTitleDisplayMode(.inline)
-        .task { clips = localAnalysis?.storedClips(entryId: entryId) ?? [] }
+        .shuttlNavigationBarBackground()
+        // Off the main actor: `storedClips` parses a sidecar and stats one file
+        // per clip, and this runs on the push transition. `storedClips` is
+        // already `nonisolated` for exactly this.
+        .task {
+            let runner = localAnalysis
+            let id = entryId
+            clips = await Task.detached(priority: .userInitiated) {
+                runner?.storedClips(entryId: id) ?? []
+            }.value
+        }
         .sheet(item: $playing) { clip in
             LocalClipPlayerSheet(clip: clip)
         }

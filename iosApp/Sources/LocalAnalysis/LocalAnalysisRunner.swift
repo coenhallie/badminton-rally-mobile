@@ -48,6 +48,21 @@ enum LocalAnalysisState: Equatable {
         return nil
     }
 
+    /// Whether the run has stopped, whichever way it stopped.
+    ///
+    /// Both outcomes, not `.done` alone: the track is written before the clips
+    /// are cut, so a run that failed in the cut still left one behind and the
+    /// screens that read it can still open it.
+    ///
+    /// A paused run has not stopped. `.paused` carries the state it interrupted
+    /// and none of the states it can interrupt is an outcome.
+    var hasSettled: Bool {
+        switch self {
+        case .done, .failed: return true
+        case .idle, .preparing, .analysing, .cutting, .paused: return false
+        }
+    }
+
     struct Done: Equatable {
         let rallies: Int
         let shuttleVisible: Int
@@ -137,6 +152,31 @@ func toDeviceWork(entryId: String, state: LocalAnalysisState) -> DeviceWork? {
 final class LocalAnalysisRunner {
 
     private(set) var states: [String: LocalAnalysisState] = [:]
+
+    /// Which runs have stopped. Observe this, not `states`, to learn that one
+    /// has.
+    ///
+    /// `@Observable` tracks a property, not a key: reading `states` at all -
+    /// `state(for:)` included - subscribes the reader to every write to the
+    /// dictionary, and a run in flight writes one per analysed frame. A screen
+    /// that only wants to re-read the disk when a run finishes was redrawing
+    /// itself, and its panels with it, at the rate of the progress bar. This set
+    /// changes twice per run.
+    private(set) var settledRuns: Set<String> = []
+
+    /// The one place `states` changes.
+    ///
+    /// Every write goes through here so `settledRuns` is derived rather than
+    /// kept by hand: a dozen assignment sites and a second collection to
+    /// remember at each of them is a drift waiting to happen.
+    private func set(_ state: LocalAnalysisState?, for entryId: String) {
+        states[entryId] = state
+        if state?.hasSettled == true {
+            settledRuns.insert(entryId)
+        } else {
+            settledRuns.remove(entryId)
+        }
+    }
 
     // `nonisolated`, because `analyse` is: both stores are stateless value
     // types over the file system, and the run reaches them from the queue it
@@ -255,11 +295,11 @@ final class LocalAnalysisRunner {
     ) {
         guard !running.contains(entryId) else { return }
         guard ModelCatalog.canAnalyseOnDevice else {
-            states[entryId] = .failed(message: IosLocalInferenceEngine.Failure.noModels.localizedDescription)
+            set(.failed(message: IosLocalInferenceEngine.Failure.noModels.localizedDescription), for: entryId)
             return
         }
         running.insert(entryId)
-        states[entryId] = .preparing(message: "Preparing video")
+        set(.preparing(message: "Preparing video"), for: entryId)
 
         let wantsPose = metrics.contains { $0.needsPose }
         Task.detached(priority: .userInitiated) { [weak self] in
@@ -282,7 +322,7 @@ final class LocalAnalysisRunner {
     }
 
     private func finish(entryId: String, with state: LocalAnalysisState) {
-        states[entryId] = state
+        set(state, for: entryId)
     }
 
     /// Called by the app when the scene goes to the BACKGROUND.
@@ -310,7 +350,7 @@ final class LocalAnalysisRunner {
         for (entryId, state) in states {
             switch state {
             case .preparing, .analysing, .cutting:
-                states[entryId] = .paused(state)
+                set(.paused(state), for: entryId)
             // Outcomes, and a pause already recorded. Nothing here is work that
             // could have stopped.
             case .idle, .done, .failed, .paused:
@@ -327,7 +367,7 @@ final class LocalAnalysisRunner {
     func resumeFromBackground() {
         isBackgrounded = false
         for (entryId, state) in states {
-            if case .paused(let interrupted) = state { states[entryId] = interrupted }
+            if case .paused(let interrupted) = state { set(interrupted, for: entryId) }
         }
     }
 
@@ -348,7 +388,7 @@ final class LocalAnalysisRunner {
         started: Date
     ) async throws {
         let source = URL(fileURLWithPath: videoPath)
-        await MainActor.run { states[entryId] = .analysing(fraction: 0) }
+        await MainActor.run { set(.analysing(fraction: 0), for: entryId) }
 
         let engine = IosLocalInferenceEngine(wantsPose: wantsPose)
         let coordinator = LocalAnalysisCoordinator(engine: engine, log: log)
@@ -367,9 +407,12 @@ final class LocalAnalysisRunner {
                     // is still moving through frames whenever the system lets
                     // it, and it is the app's own state - not the run's - that
                     // decides which of them a row shows.
-                    self.states[entryId] = self.isBackgrounded
-                        ? .paused(.analysing(fraction: value))
-                        : .analysing(fraction: value)
+                    self.set(
+                        self.isBackgrounded
+                            ? .paused(.analysing(fraction: value))
+                            : .analysing(fraction: value),
+                        for: entryId
+                    )
                 }
             }
         )
@@ -400,13 +443,13 @@ final class LocalAnalysisRunner {
         }
 
         let windows = metrics.contains(.rallyClips) ? result.clipWindows : []
-        await MainActor.run { states[entryId] = .cutting(done: 0, total: windows.count) }
+        await MainActor.run { set(.cutting(done: 0, total: windows.count), for: entryId) }
         var clips: [PlayerTrackStore.Clip] = []
         if !windows.isEmpty {
             let directory = try AnalysisFiles.directory("local-clips/\(entryId)")
             clips = try ClipCutter().cut(source: source, windows: windows, into: directory) { done in
                 Task { @MainActor [weak self] in
-                    self?.states[entryId] = .cutting(done: done, total: windows.count)
+                    self?.set(.cutting(done: done, total: windows.count), for: entryId)
                 }
             }
             try tracks.saveClips(entryId: entryId, clips: clips)
@@ -414,7 +457,7 @@ final class LocalAnalysisRunner {
 
         let elapsed = Date().timeIntervalSince(started)
         await MainActor.run {
-            states[entryId] = .done(LocalAnalysisState.Done(
+            set(.done(LocalAnalysisState.Done(
                 rallies: result.result.rallies.count,
                 shuttleVisible: result.result.shuttlePositions.values.filter(\.visible).count,
                 totalFrames: Int(result.result.totalFrames),
@@ -422,10 +465,10 @@ final class LocalAnalysisRunner {
                 elapsedSeconds: elapsed,
                 playerTrack: result.playerTrack,
                 fps: result.result.fps
-            ))
+            )), for: entryId)
         }
         log("local analysis done: \(clips.count) clips in \(Int(elapsed))s")
     }
 
-    func clear(entryId: String) { states[entryId] = nil }
+    func clear(entryId: String) { set(nil, for: entryId) }
 }

@@ -43,6 +43,16 @@ struct MetricGraph: View {
     /// once per gesture and held, so a scrub that drifts vertically keeps
     /// scrubbing and a scroll that drifts sideways keeps scrolling.
     @State private var isScrub: Bool? = nil
+    /// True for exactly as long as a drag is on the card.
+    ///
+    /// `@GestureState` and not `@State` because it is the one flag that resets
+    /// when a gesture is CANCELLED as well as when it ends, and cancellation is
+    /// the normal outcome here: a drag that starts on this card and is taken
+    /// over by the ScrollView above it never delivers `onEnded`. Before this,
+    /// such a drag left `isScrub` latched to false and scrubbing was dead for
+    /// the life of the view - every later drag skipped the direction decision
+    /// and then failed the `isScrub == true` guard.
+    @GestureState private var dragging = false
 
     private var gapS: Double { fps > 0 ? 2.5 / fps : 0.1 }
 
@@ -93,6 +103,15 @@ struct MetricGraph: View {
                     }
                 )
                 .simultaneousGesture(scrubGesture(width: proxy.size.width))
+                // The two `@State` halves of a scrub, cleared on the way out of
+                // every gesture including a cancelled one. `onEnded` clears
+                // them too; this is what covers the case it never sees.
+                .onChange(of: dragging) { _, stillDragging in
+                    if !stillDragging {
+                        anchorS = nil
+                        isScrub = nil
+                    }
+                }
         }
     }
 
@@ -152,6 +171,7 @@ struct MetricGraph: View {
     /// scrubbing and a scroll that drifts sideways keeps scrolling.
     private func scrubGesture(width: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: Metrics.slop)
+            .updating($dragging) { _, dragging, _ in dragging = true }
             .onChanged { value in
                 guard width > 0 else { return }
                 if isScrub == nil {

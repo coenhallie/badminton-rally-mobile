@@ -74,13 +74,15 @@ struct MatchesList: View {
                 progressById = map
             }
         }
-        .onChange(of: model.localEntries.map(\.id)) { _, ids in refreshStoredResults(ids) }
+        .onChange(of: model.localEntries.map(\.id)) { _, ids in
+            Task { await refreshStoredResults(ids) }
+        }
         // Also when a run settles: a track and a set of clips appear on disk
         // without the entry list moving, so nothing above would notice. Keyed on
         // which runs have settled rather than on the state map, which moves on
         // every progress callback - see `settledRuns`.
         .onChange(of: settledRuns) { _, _ in
-            refreshStoredResults(model.localEntries.map(\.id))
+            Task { await refreshStoredResults(model.localEntries.map(\.id)) }
         }
         .sheet(item: $shareTarget) { match in
             ShareSheetView(rally: rally, videoId: match.videoId)
@@ -614,32 +616,33 @@ private struct PendingMatchAction {
 private extension MatchesList {
     /// The runs that have stopped, whichever way they stopped.
     ///
-    /// Both outcomes, not `.done` alone: the track is written before the clips
-    /// are cut, so a run that failed in the cut still left one behind and its
-    /// row can still open it.
-    var settledRuns: Set<String> {
-        guard let localAnalysis else { return [] }
-        return Set(localAnalysis.states.compactMap { id, state in
-            switch state {
-            case .done, .failed: return id
-            case .idle, .preparing, .analysing, .cutting, .paused: return nil
-            }
-        })
-    }
+    /// The runner's own set, rather than one rebuilt from `states` here. That
+    /// scan ran on every redraw of this list, and it ran because a redraw is
+    /// what a progress callback causes: see `LocalAnalysisRunner.settledRuns`
+    /// for why reading the state map at all subscribes the reader to every
+    /// frame of every run.
+    var settledRuns: Set<String> { localAnalysis?.settledRuns ?? [] }
 
     /// Re-reads what each row's earlier runs left on disk.
     ///
-    /// On the main actor, because the two things that trigger it - the list
-    /// appearing and a run settling - are rare and the answer has to be there
-    /// for the very next redraw. What must not happen is calling it per row or
-    /// per progress tick.
-    func refreshStoredResults(_ ids: [String]) {
+    /// Rare - the list appearing, and a run settling - but not cheap:
+    /// `storedClipCounts` parses a sidecar and stats a file per clip for every
+    /// entry, which on a long list is dozens of file operations. Off the main
+    /// actor for that reason, and both accessors are `nonisolated` so it can
+    /// be. The list redraws when the two values land, one hop later, which
+    /// costs nothing. What must not happen is calling this per row or per
+    /// progress tick.
+    func refreshStoredResults(_ ids: [String]) async {
         guard let localAnalysis else {
             storedTrackIds = []
             localClipCounts = [:]
             return
         }
-        storedTrackIds = localAnalysis.storedTrackIds(among: ids)
-        localClipCounts = localAnalysis.storedClipCounts(among: ids)
+        let runner = localAnalysis
+        let read = await Task.detached(priority: .userInitiated) {
+            (tracks: runner.storedTrackIds(among: ids), counts: runner.storedClipCounts(among: ids))
+        }.value
+        storedTrackIds = read.tracks
+        localClipCounts = read.counts
     }
 }

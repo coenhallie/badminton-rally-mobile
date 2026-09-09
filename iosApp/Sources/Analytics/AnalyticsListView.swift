@@ -69,6 +69,7 @@ struct AnalyticsListView: View {
         }
         .navigationTitle("Analytics")
         .navigationBarTitleDisplayMode(.inline)
+        .shuttlNavigationBarBackground()
         .toolbar {
             // The chrome indicator, on every bar androidApp puts it on. See
             // `BackgroundWorkAction`.
@@ -90,7 +91,7 @@ struct AnalyticsListView: View {
             // fires on a CHANGE, and by the time this view appears the entries
             // are usually already loaded, so the first render read an empty set
             // and every analysed match showed as never analysed.
-            refreshStoredTracks(model.localEntries.map(\.id))
+            await refreshStoredTracks(model.localEntries.map(\.id))
         }
         .task {
             for await map in analyze.progress {
@@ -98,7 +99,9 @@ struct AnalyticsListView: View {
             }
         }
         .refreshable { await model.refresh() }
-        .onChange(of: model.localEntries.map(\.id)) { _, ids in refreshStoredTracks(ids) }
+        .onChange(of: model.localEntries.map(\.id)) { _, ids in
+            Task { await refreshStoredTracks(ids) }
+        }
         // Also when a run settles: a track appears on disk without the entry
         // list moving, so nothing above would notice.
         //
@@ -108,7 +111,7 @@ struct AnalyticsListView: View {
         // forty reads per redraw that `storedTrackIds` exists to avoid. A set of
         // ids moves exactly on the transitions that can write a track.
         .onChange(of: settledRuns) { _, _ in
-            refreshStoredTracks(model.localEntries.map(\.id))
+            Task { await refreshStoredTracks(model.localEntries.map(\.id)) }
         }
         .navigationDestination(item: $courtMarkingRoute) { route in
             CourtMarkingView(
@@ -430,30 +433,27 @@ struct AnalyticsDetailRoute: Hashable {
 private extension AnalyticsListView {
     /// The runs that have stopped, whichever way they stopped.
     ///
-    /// Both outcomes, not `.done` alone: the track is written before the clips
-    /// are cut, so a run that failed in the cut still left one behind and its
-    /// row can still open it.
-    var settledRuns: Set<String> {
-        guard let localAnalysis else { return [] }
-        return Set(localAnalysis.states.compactMap { id, state in
-            switch state {
-            case .done, .failed: return id
-            case .idle, .preparing, .analysing, .cutting, .paused: return nil
-            }
-        })
-    }
+    /// The runner's own set, rather than one rebuilt from `states` here: this
+    /// list already redraws on every progress callback to move its rows, and
+    /// that scan ran on each of those redraws.
+    var settledRuns: Set<String> { localAnalysis?.settledRuns ?? [] }
 
     /// Re-reads which entries have a track this build can draw.
     ///
-    /// One header read per entry, on the main actor, because the two things
-    /// that trigger it - the list appearing and a run settling - are rare and
-    /// the answer has to be there for the very next redraw. What must not
-    /// happen is calling it per row or per progress tick; see `settledRuns`.
-    func refreshStoredTracks(_ ids: [String]) {
+    /// One header read per entry, and off the main actor: rare - the list
+    /// appearing, and a run settling - is a reason not to do it often, not a
+    /// reason to do it on the main thread, and `storedTrackIds` is
+    /// `nonisolated` so it need not be. The list redraws when the set lands,
+    /// one hop later. What must not happen is calling it per row or per
+    /// progress tick; see `settledRuns`.
+    func refreshStoredTracks(_ ids: [String]) async {
         guard let localAnalysis else {
             storedTrackIds = []
             return
         }
-        storedTrackIds = localAnalysis.storedTrackIds(among: ids)
+        let runner = localAnalysis
+        storedTrackIds = await Task.detached(priority: .userInitiated) {
+            runner.storedTrackIds(among: ids)
+        }.value
     }
 }
