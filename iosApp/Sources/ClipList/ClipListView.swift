@@ -23,6 +23,11 @@ struct MatchesList: View {
     /// Analytics reads the same one. This view no longer builds it, so the splash
     /// it used to show for the one frame before `.task` ran is gone with it.
     let model: ClipListModel
+    /// The on-device pipeline, or nil in a build with no models staged. Read for
+    /// the same reason Analytics reads it: a device run never moves the entry's
+    /// stage, so a row asking the stage alone offers Analyze and Remove over a
+    /// run already in flight.
+    let localAnalysis: LocalAnalysisRunner?
     let onMatchTap: (MatchRoute) -> Void
     let onCourtMarking: (CourtMarkingRoute) -> Void
     let onLocalPlayer: (LocalPlayerRoute) -> Void
@@ -135,6 +140,7 @@ struct MatchesList: View {
                             entry: entry,
                             thumbnails: thumbnails,
                             progress: progressById[entry.id],
+                            device: localAnalysis?.state(for: entry.id) ?? .idle,
                             onTap: { onLocalPlayer(LocalPlayerRoute(entryId: entry.id)) },
                             onAnalyze: { analyzeAction(entry) },
                             onRemove: {
@@ -148,8 +154,12 @@ struct MatchesList: View {
                         .drawerListRow()
                         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                             // Hidden mid-pipeline: removing would delete the file
-                            // under the active upload and swallow the run's outcome.
-                            if LocalVideoStatus.canRemove(stage: entry.stage) {
+                            // under the active upload - or under a device run's own
+                            // decoder - and swallow the run's outcome.
+                            if LocalVideoStatus.canRemove(
+                                stage: entry.stage,
+                                device: localAnalysis?.state(for: entry.id) ?? .idle
+                            ) {
                                 Button(role: .destructive) {
                                     intake.remove(entry: entry)
                                     thumbnails.evict(id: entry.id)

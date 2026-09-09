@@ -23,8 +23,9 @@ The mobile app is versioned independently from the web app.
   on-device run needs Shuttl open and the phone unlocked. iOS has no equivalent
   of the Android foreground service, so a run stops making progress when you
   leave and says so on its row, rather than pretending to continue in the
-  background. It is not thrown away: come back and it carries on from where it
-  was.
+  background. Come back and it carries on from where it was - unless the phone
+  reclaimed the memory in the meantime, which for a long video it may, and then
+  the analysis has to be started again.
 - Pinch to zoom on every video player, up to five times, and drag to pan once
   zoomed. Double-tap zooms in on the spot, double-tap again zooms out. The
   skeleton scales with the frame, so a joint can be checked up close.

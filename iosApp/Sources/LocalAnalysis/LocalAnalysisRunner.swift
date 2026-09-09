@@ -243,7 +243,15 @@ final class LocalAnalysisRunner {
     /// down would be false.
     ///
     /// Repaints the rows itself rather than waiting for the next progress
-    /// callback, which will not arrive at all once the process is frozen.
+    /// callback, which will not arrive at all once the process is frozen. The
+    /// app switcher's card is a real audience for that: iOS snapshots the scene
+    /// on the way out, so a stale "Analyzing on device 42%" would sit there for
+    /// as long as the coach is away.
+    ///
+    /// `.analysing` alone. `.preparing` and `.cutting` state a POSITION rather
+    /// than a rate - "Preparing video", "Cutting clips 3 of 12" - and each stays
+    /// true of a frozen run; `.paused` carries the analysis fraction and has
+    /// nothing to say about either.
     func suspendForBackground() {
         isBackgrounded = true
         guard isRunning else { return }

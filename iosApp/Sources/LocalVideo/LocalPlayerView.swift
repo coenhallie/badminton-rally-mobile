@@ -116,7 +116,12 @@ struct LocalPlayerView: View {
                 // Live stage, not the model's load-time snapshot: after "Start
                 // Analysis" the button must disappear while the pipeline runs.
                 let stage = (liveEntry ?? model.entry).stage
-                if LocalVideoStatus.canAnalyze(stage: stage) {
+                // And the device's own liveness: the stage rules out a cloud run
+                // in flight, but a device run never moves it, so this button
+                // would sit here live over the run it already started.
+                if LocalVideoStatus.canAnalyze(
+                    stage: stage, device: localAnalysis?.state(for: entryId) ?? .idle
+                ) {
                     Button(LocalVideoStatus.analyzeButtonLabel(stage: stage)) {
                         courtTarget = CourtMarkingRoute(entryId: entryId)
                     }

@@ -82,4 +82,73 @@ final class LocalVideoStatusTests: XCTestCase {
         XCTAssertFalse(LocalVideoStatus.canEditDetails(stage: .analyzed))
         XCTAssertFalse(LocalVideoStatus.canEditDetails(stage: .failed))
     }
+
+    // MARK: - The device's own liveness
+
+    func testTheAnalyzeButtonGoesForADeviceRunToo() {
+        // A device run leaves the stage on LOCAL for its whole length. Asking
+        // the stage alone leaves this button live over the run it started:
+        // pressing it walks the coach through marking the court again and then
+        // returns immediately on start()'s own guard - twelve taps, no effect,
+        // no explanation, which is what Android shipped before it was given
+        // isDeviceRunInFlight.
+        XCTAssertTrue(LocalVideoStatus.canAnalyze(stage: .local, device: .idle))
+        for device: LocalAnalysisState in [
+            .preparing(message: "Preparing video"),
+            .analysing(fraction: 0.4),
+            .cutting(done: 2, total: 9),
+            // Nothing was cancelled by the app going away, so there is still a
+            // run here and still no second one to start.
+            .paused(fraction: 0.4),
+        ] {
+            XCTAssertFalse(
+                LocalVideoStatus.canAnalyze(stage: .local, device: device),
+                "\(device) left the Analyze button live"
+            )
+        }
+        // Settled: the button comes back, because a second run is a real thing
+        // to ask for.
+        XCTAssertTrue(LocalVideoStatus.canAnalyze(stage: .local, device: .failed(message: "boom")))
+    }
+
+    func testRemovalIsBlockedForADeviceRunToo() {
+        // Removal deletes the source copy out from under a live decoder and the
+        // clips directory out from under a live encoder.
+        XCTAssertTrue(LocalVideoStatus.canRemove(stage: .local, device: .idle))
+        XCTAssertFalse(LocalVideoStatus.canRemove(stage: .local, device: .analysing(fraction: 0.1)))
+        XCTAssertFalse(LocalVideoStatus.canRemove(stage: .local, device: .cutting(done: 1, total: 9)))
+    }
+
+    func testTheRowStatusLetsTheDeviceSpeakFirst() {
+        // A cloud stage left over from an earlier attempt must not describe a
+        // device run happening now.
+        XCTAssertEqual(
+            LocalVideoStatus.rowStatus(stage: .local, progress: nil, device: .analysing(fraction: 0.4)),
+            // No percentage: the drawer leaves this line about 115pt and
+            // "Analyzing on device" fills it on its own. Home's banner and the
+            // chrome indicator both have room and both show the number.
+            "Analyzing on device…"
+        )
+        XCTAssertEqual(
+            LocalVideoStatus.rowStatus(stage: .local, progress: nil, device: .failed(message: "no models")),
+            // The row is the only place a device failure is ever said: the
+            // result dialog is gated on stage == FAILED, which a device run
+            // never reaches.
+            "Analysis failed: no models"
+        )
+        XCTAssertEqual(
+            LocalVideoStatus.rowStatus(stage: .local, progress: nil, device: .paused(fraction: 0.4)),
+            "Paused - keep Shuttl open"
+        )
+    }
+
+    func testTheRowStatusFallsBackToTheCloudWhenTheDeviceIsQuiet() {
+        XCTAssertEqual(
+            LocalVideoStatus.rowStatus(stage: .uploading, progress: progress(upload: 0.42), device: .idle),
+            "Uploading 42%…"
+        )
+        // .done stays in the runner's map after a run and is not work: the row
+        // must not keep describing it.
+        XCTAssertNil(LocalVideoStatus.rowStatus(stage: .local, progress: nil, device: .idle))
+    }
 }

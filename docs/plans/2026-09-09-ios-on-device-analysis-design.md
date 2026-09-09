@@ -377,6 +377,22 @@ desk; it is set from the first paired run and recorded in the plan.
 device, watch clips appear, open the heatmap, scrub the skeleton. Then the
 awkward one §4 exists for: background the app mid-run and come back.
 
+**Not verified, and not verifiable here.** The §4 claim that the OS freezes the
+process mid-decode and thaws it with the pass intact rests on reasoning, not on
+observation: `LocalAnalysisRunnerTests` calls `suspendForBackground` and
+`resumeFromBackground` by hand, in the foreground, which proves what the states
+do and nothing about what the system does to a real run. This needs the same
+iPhone the parity gate needs. Two things to watch for when it exists: that a run
+survives a full lock-screen round trip, and that a long video does not simply get
+jetsammed while suspended.
+
+The `.paused` presentation itself has not been seen on a screen either, and
+cannot be here: the app is in the background whenever the state is set, so its
+one genuine audience is the app switcher's snapshot of the scene - which is a
+real audience, since checking the card is how a coach asks whether the analysis
+is done. The pill it draws is the in-progress pill minus its spinner, at the
+same opacity, so what has not been looked at is the word, not the geometry.
+
 ---
 
 ## 7. Register: what this changes elsewhere, and what it leaves behind
@@ -427,6 +443,18 @@ Belongs in pipeline §6.
   to avoid, reintroduced. It watches the set of settled runs instead.
 - `AnalysisFiles.deleteAll` was written and never called, which is where the
   leak above was found.
+- `isDeviceRunInFlight` was ported, tested and then never called from anything
+  that ships. Android asks it in three places - the drawer row's Analyze button,
+  the same row's Remove, and the local player's toolbar - and iOS asked it in
+  none: only the Analytics list was covered, and only because
+  `analyseAffordance` happens to consult the device state on its own. So the
+  drawer offered "Analyze" over a run already in flight (court marking, then
+  nothing, which is the Android defect the function's own KDoc says it exists to
+  prevent) and offered "Remove from app", which deletes the source copy out from
+  under a live decoder - and, once the leak above was closed, the clips
+  directory out from under a live encoder. `LocalVideoStatus.canAnalyze` and
+  `canRemove` take the device state now, and `rowStatus` ports Android's
+  device-first precedence for the line above them.
 
 **Landed, and what has not.** The engine, the stores, the clip cutter, the run
 orchestration, the target picker, the metric selector, the Analytics list wiring
@@ -438,6 +466,12 @@ which this machine has.
 
 **Deliberately not in this pass.**
 
+- Recovering from a run the system killed while suspended. `states` is in
+  memory only, so a coach who loses one relaunches to a row that says nothing
+  happened, with a live Analyze button and no account of the twenty minutes.
+  Detecting it means persisting enough of a run to know one was interrupted,
+  which is a store and a lifecycle of its own, and Android - where a foreground
+  service makes the case rarer but not impossible - does not do it either.
 - Cloud sync of locally-produced results (pipeline §5.5). Android does not do it
   either; adding it on iOS first would be a divergence in the wrong direction.
 - Capability routing (pipeline §5.6, Stage 4). Needs iPhone throughput numbers

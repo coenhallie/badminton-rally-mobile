@@ -17,6 +17,9 @@ struct LocalVideoRowView: View {
     let entry: LocalVideoEntry
     let thumbnails: LocalThumbnails
     let progress: AnalyzeProgress?
+    /// What the on-device pipeline is doing with this video. Asked alongside the
+    /// cloud stage rather than instead of it - see `LocalVideoStatus.canAnalyze`.
+    var device: LocalAnalysisState = .idle
     /// Pushes `LocalPlayerRoute` on the host's behalf. A plain `Button` rather
     /// than `NavigationLink(value:)`: the host owns the destination as an
     /// `item:` binding now (Home owns every destination this row's list used
@@ -28,10 +31,9 @@ struct LocalVideoRowView: View {
     let onEditDetails: () -> Void
 
     private var subtitle: String { localVideoSubtitle(entry) }
-    private var hasMenu: Bool {
-        LocalVideoStatus.canRemove(stage: entry.stage)
-            || LocalVideoStatus.canEditDetails(stage: entry.stage)
-    }
+    private var canAnalyze: Bool { LocalVideoStatus.canAnalyze(stage: entry.stage, device: device) }
+    private var canRemove: Bool { LocalVideoStatus.canRemove(stage: entry.stage, device: device) }
+    private var hasMenu: Bool { canRemove || LocalVideoStatus.canEditDetails(stage: entry.stage) }
 
     var body: some View {
         Button(action: onTap) {
@@ -60,7 +62,9 @@ struct LocalVideoRowView: View {
                             .shuttlType(ShuttlType.bodySmall)
                             .foregroundStyle(Shuttl.textSecondary)
                             .lineLimit(1)
-                        if let status = LocalVideoStatus.text(stage: entry.stage, progress: progress) {
+                        if let status = LocalVideoStatus.rowStatus(
+                            stage: entry.stage, progress: progress, device: device
+                        ) {
                             Text(status)
                                 .shuttlType(ShuttlType.bodySmall)
                                 .foregroundStyle(Shuttl.textSecondary)
@@ -71,10 +75,12 @@ struct LocalVideoRowView: View {
                         }
                     }
                     Spacer(minLength: 0)
-                    if LocalVideoStatus.isRunning(stage: entry.stage),
-                       !LocalVideoStatus.canAnalyze(stage: entry.stage) {
+                    if (LocalVideoStatus.isRunning(stage: entry.stage) || isDeviceRunInFlight(device)),
+                       !canAnalyze {
                         // Settled stages (e.g. ANALYZED) show neither ring nor
                         // button - the status text already says what happened.
+                        // A device run spins here too: it is the same card, and
+                        // its button has just gone for the same reason.
                         ProgressView().controlSize(.small)
                     }
                     // The menu renders when either action applies; each item is gated
@@ -84,7 +90,7 @@ struct LocalVideoRowView: View {
                             if LocalVideoStatus.canEditDetails(stage: entry.stage) {
                                 Button("Edit details") { onEditDetails() }
                             }
-                            if LocalVideoStatus.canRemove(stage: entry.stage) {
+                            if canRemove {
                                 Button("Remove from app", role: .destructive) { onRemove() }
                             }
                         } label: {
@@ -99,7 +105,7 @@ struct LocalVideoRowView: View {
                         .accessibilityLabel("Local video menu")
                     }
                 }
-                if LocalVideoStatus.canAnalyze(stage: entry.stage) {
+                if canAnalyze {
                     // Its own line, not the trailing slot the mock draws it in.
                     // The mock's card carries a thumbnail, two lines and one
                     // pill; this one also carries the overflow menu, and

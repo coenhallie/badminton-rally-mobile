@@ -100,6 +100,7 @@ struct HomeView: View {
                         analyze: analyze,
                         intake: intake,
                         model: listModel,
+                        localAnalysis: localAnalysis,
                         onMatchTap: { matchRoute = $0 },
                         onCourtMarking: { courtMarkingRoute = $0 },
                         onLocalPlayer: { localPlayerRoute = $0 },
