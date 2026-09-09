@@ -89,6 +89,19 @@ final class ScoringBoardUITests: XCTestCase {
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5)).tap()
     }
 
+    /// Swipes the list until [element] is on screen and touchable, or gives up.
+    ///
+    /// `exists` is not the same question: it is true for a row the list has
+    /// built and scrolled away, and every gesture on such a row fails.
+    private func scrollIntoView(_ app: XCUIApplication, _ element: XCUIElement) -> Bool {
+        var scrolls = 0
+        while !element.isHittable && scrolls < 10 {
+            app.swipeUp()
+            scrolls += 1
+        }
+        return element.isHittable
+    }
+
     /// Leaves the account as the test found it. The board has no navigation bar,
     /// so the way off it is its own back control - the same one a coach uses.
     ///
@@ -107,15 +120,18 @@ final class ScoringBoardUITests: XCTestCase {
         // any account with enough of them, which is a property of the account
         // rather than of the board this test is about.
         let row = app.staticTexts[matchName].firstMatch
-        var scrolls = 0
-        while !row.exists && scrolls < 10 {
-            app.swipeUp()
-            scrolls += 1
-        }
-        XCTAssertTrue(row.waitForExistence(timeout: 5), "the match did not come back to the list")
+        XCTAssertTrue(row.waitForExistence(timeout: 5) || scrollIntoView(app, row),
+                      "the match did not come back to the list")
 
         while app.staticTexts[matchName].firstMatch.exists {
-            app.staticTexts[matchName].firstMatch.swipeLeft()
+            let row = app.staticTexts[matchName].firstMatch
+            // Scrolled until it can be TOUCHED, not until it exists. A SwiftUI
+            // List keeps a row in the accessibility tree for a while after it
+            // leaves the screen, and a swipe on one of those fails with "visible
+            // frame is empty" - which is what made this cleanup fail on a device
+            // holding enough rows to push this one under the fold.
+            XCTAssertTrue(scrollIntoView(app, row), "the match row never came on screen")
+            row.swipeLeft()
             let delete = app.buttons["Delete"].firstMatch
             XCTAssertTrue(delete.waitForExistence(timeout: 3), "no delete action on the row")
             delete.tap()
