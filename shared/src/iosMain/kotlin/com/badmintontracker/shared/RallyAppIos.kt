@@ -24,6 +24,16 @@ fun createRallyApp(
      * keeps every removal path cleaning up, not just the ones that remember to.
      */
     deleteLocalVideoFile: (String) -> Unit,
+    /**
+     * Deletes what an on-device analysis of that video produced - its track, its
+     * skeleton and its cut clips - given the entry id they are filed under.
+     *
+     * Separate from [deleteLocalVideoFile] because the two are keyed
+     * differently: the video is found by its path and the analysis by the entry
+     * id. Both hang off the one removal callback so a coach deleting a match
+     * cannot leave tens of megabytes of clips behind, reachable by nothing.
+     */
+    deleteLocalAnalysis: (String) -> Unit,
 ): RallyApp {
     val prefs = NSUserDefaultsSettings(NSUserDefaults.standardUserDefaults)
     // Probes the Keychain and migrates any pre-existing NSUserDefaults session into
@@ -40,6 +50,9 @@ fun createRallyApp(
         config = SupabaseConfig(url = url, anonKey = anonKey),
         settings = prefs,
         sessionSettings = session,
-        onLocalVideoRemoved = { entry -> deleteLocalVideoFile(entry.uri) },
+        onLocalVideoRemoved = { entry ->
+            deleteLocalVideoFile(entry.uri)
+            deleteLocalAnalysis(entry.id)
+        },
     )
 }

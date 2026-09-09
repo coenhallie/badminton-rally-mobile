@@ -94,12 +94,15 @@ struct AnalyticsListView: View {
         }
         .refreshable { await model.refresh() }
         .onChange(of: model.localEntries.map(\.id)) { _, ids in refreshStoredTracks(ids) }
-        // Also on every move of a run's state: a track appears on disk without
-        // the entry list moving, so nothing above would notice. The whole map,
-        // not its count - a run going from analysing to done leaves the count
-        // where it was, and that transition is exactly the one that writes the
-        // track.
-        .onChange(of: localAnalysis?.states ?? [:]) { _, _ in
+        // Also when a run settles: a track appears on disk without the entry
+        // list moving, so nothing above would notice.
+        //
+        // Keyed on which runs have settled rather than on the state map itself.
+        // The map changes on every progress callback - thirty times a second on
+        // a fast video - and each firing stats one file per row, which is the
+        // forty reads per redraw that `storedTrackIds` exists to avoid. A set of
+        // ids moves exactly on the transitions that can write a track.
+        .onChange(of: settledRuns) { _, _ in
             refreshStoredTracks(model.localEntries.map(\.id))
         }
         .navigationDestination(item: $courtMarkingRoute) { route in
@@ -284,10 +287,14 @@ struct AnalyticsListView: View {
         case .ready:
             analysePill("Analyze", row: row, loading: false)
         case .paused:
-            // "Resume", because the run is not lost: whatever it wrote before
-            // the app went away is on disk, and starting again picks up from a
-            // marked court rather than from the beginning of the flow.
-            analysePill("Resume", row: row, loading: false)
+            // Inert, and not "Resume": nothing was cancelled, so there is
+            // nothing to restart. The pass picks up by itself once the app is
+            // back in the foreground - which is where a coach has to be to read
+            // this at all - and a button here would route through
+            // `analyseAction`, which knows nothing about device runs and would
+            // send him back to mark a court he has already marked. The line
+            // above the pill says why it stopped.
+            analysePill("Paused", row: row, loading: false, enabled: false)
         case .failed:
             // "Retry", not the drawer's "Re-analyze": this row already carries
             // the failure reason on the line above, exactly as a scored match's
@@ -306,7 +313,9 @@ struct AnalyticsListView: View {
     /// The same pill the drawer's local video row uses, down to the padding: the
     /// two screens list the same videos and their one action must not look like
     /// two.
-    private func analysePill(_ label: String, row: AnalyticsRow, loading: Bool) -> some View {
+    private func analysePill(
+        _ label: String, row: AnalyticsRow, loading: Bool, enabled: Bool = true
+    ) -> some View {
         Button {
             analyse(row)
         } label: {
@@ -329,13 +338,14 @@ struct AnalyticsListView: View {
             .background(Shuttl.accent)
             .clipShape(Capsule())
             // Android dims the whole control while it is inert, rather than the
-            // label alone.
-            .opacity(loading ? 0.5 : 1)
+            // label alone. One opacity for both ways of being inert, so a
+            // spinning pill and a paused one read as the same kind of thing.
+            .opacity(loading || !enabled ? 0.5 : 1)
         }
         // Borderless, or the List makes the whole card tappable and every tap
         // anywhere on the row starts an analysis.
         .buttonStyle(.borderless)
-        .disabled(loading)
+        .disabled(loading || !enabled)
         .layoutPriority(1)
     }
 
@@ -413,10 +423,27 @@ struct AnalyticsDetailRoute: Hashable {
 }
 
 private extension AnalyticsListView {
+    /// The runs that have stopped, whichever way they stopped.
+    ///
+    /// Both outcomes, not `.done` alone: the track is written before the clips
+    /// are cut, so a run that failed in the cut still left one behind and its
+    /// row can still open it.
+    var settledRuns: Set<String> {
+        guard let localAnalysis else { return [] }
+        return Set(localAnalysis.states.compactMap { id, state in
+            switch state {
+            case .done, .failed: return id
+            case .idle, .preparing, .analysing, .cutting, .paused: return nil
+            }
+        })
+    }
+
     /// Re-reads which entries have a track this build can draw.
     ///
-    /// Off the main actor: it stats and header-reads one file per entry, which
-    /// is small but is still disk, and this runs on every list appearance.
+    /// One header read per entry, on the main actor, because the two things
+    /// that trigger it - the list appearing and a run settling - are rare and
+    /// the answer has to be there for the very next redraw. What must not
+    /// happen is calling it per row or per progress tick; see `settledRuns`.
     func refreshStoredTracks(_ ids: [String]) {
         guard let localAnalysis else {
             storedTrackIds = []

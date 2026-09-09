@@ -12,7 +12,7 @@ enum LocalAnalysisState: Equatable {
     case done(Done)
     case failed(message: String)
 
-    /// A run that stopped because the app left the foreground.
+    /// A run that is not progressing, because the app is in the background.
     ///
     /// iOS has no foreground service and no wake lock. `beginBackgroundTask`
     /// buys seconds, and `BGProcessingTaskRequest` runs when the system chooses,
@@ -21,9 +21,18 @@ enum LocalAnalysisState: Equatable {
     /// only in the foreground or to promise background analysis and deliver a
     /// run that dies silently at 4%.
     ///
-    /// So the run is suspended and SAYS it is suspended, and whatever was
-    /// already written - the track, the skeleton - is kept, which is why the
-    /// runner writes those before it cuts clips.
+    /// So the run SAYS it has stopped, and it is NOT cancelled. The system
+    /// freezes the process seconds after it goes to the background and thaws it
+    /// on return, so the pass resumes on the frame it was on; cancelling would
+    /// throw away minutes of work the OS was about to hand back intact. This
+    /// state is what a row shows in the meantime, and `resumeFromBackground`
+    /// clears it.
+    ///
+    /// What is genuinely lost is a run the system kills while suspended, which
+    /// takes with it everything not yet on disk. The track and the skeleton are
+    /// written before clip cutting - minutes of work - so a kill during THAT
+    /// step keeps them; a kill during the analysis itself keeps nothing,
+    /// because at that point nothing has been written.
     case paused(fraction: Float)
 
     struct Done: Equatable {
@@ -58,12 +67,15 @@ enum LocalAnalysisState: Equatable {
 /// fails to compile here rather than quietly defaulting to "not running".
 func isDeviceRunInFlight(_ state: LocalAnalysisState) -> Bool {
     switch state {
-    case .preparing, .analysing, .cutting:
+    case .preparing, .analysing, .cutting, .paused:
+        // `.paused` counts, because nothing was cancelled. A row that treated it
+        // as finished would offer a live button over a pass that is still there,
+        // `start` would refuse it on its own guard, and the coach would get
+        // exactly the Android defect this function exists to prevent.
         return true
     // Outcomes, not work. `.idle` covers both "never started" and "finished and
-    // forgotten after a termination". `.paused` is deliberately NOT in flight:
-    // the whole point is that the coach can start it again.
-    case .failed, .done, .idle, .paused:
+    // forgotten after a termination".
+    case .failed, .done, .idle:
         return false
     }
 }
@@ -90,8 +102,10 @@ func toDeviceWork(entryId: String, state: LocalAnalysisState) -> DeviceWork? {
         return DeviceWork(entryId: entryId, phase: .cutting, fraction: nil, failed: false)
     case .failed:
         return DeviceWork(entryId: entryId, phase: .analysing, fraction: nil, failed: true)
-    // A paused run is not running, so it must not keep the chrome indicator
-    // lit. What it is doing instead is said on its own row.
+    // Nothing to light. The indicator is only on screen while the app is
+    // active, and `.paused` is cleared on the way back to active, so all this
+    // could do is contradict the row - which says the run has stopped - for the
+    // one frame before it goes.
     case .paused:
         return nil
     }
@@ -111,9 +125,12 @@ final class LocalAnalysisRunner {
 
     private(set) var states: [String: LocalAnalysisState] = [:]
 
-    private let tracks = PlayerTrackStore()
-    private let skeletons = SkeletonStore()
-    private let log: (String) -> Void
+    // `nonisolated`, because `analyse` is: both stores are stateless value
+    // types over the file system, and the run reaches them from the queue it
+    // works on rather than from the main one.
+    private nonisolated let tracks = PlayerTrackStore()
+    private nonisolated let skeletons = SkeletonStore()
+    private nonisolated let log: @Sendable (String) -> Void
 
     /// Which analyses are in flight.
     ///
@@ -123,16 +140,16 @@ final class LocalAnalysisRunner {
     /// right rather than on matching a particular state.
     private var running: Set<String> = []
 
-    /// Set when the app leaves the foreground, read by the running pass at every
-    /// progress callback.
+    /// Whether the app is in the background, and so whether a run in flight is
+    /// getting any CPU.
     ///
-    /// Cooperative cancellation rather than `Task.cancel`, because the pass is a
-    /// synchronous loop over a decoder on a dispatch queue - there is no
-    /// suspension point for a cancellation to land on, and the loop is exactly
-    /// where the check belongs.
-    private var suspendRequested = false
+    /// Presentational only. There is nothing here to cancel: the pass is a
+    /// synchronous loop over a decoder on a dispatch queue, and the system
+    /// freezes and thaws it with the rest of the process. This flag decides
+    /// which of two words a row uses for the same live run.
+    private var isBackgrounded = false
 
-    init(log: @escaping (String) -> Void = { _ in }) {
+    init(log: @escaping @Sendable (String) -> Void = { _ in }) {
         self.log = log
     }
 
@@ -192,7 +209,6 @@ final class LocalAnalysisRunner {
             return
         }
         running.insert(entryId)
-        suspendRequested = false
         states[entryId] = .preparing(message: "Preparing video")
 
         let wantsPose = metrics.contains { $0.needsPose }
@@ -204,9 +220,6 @@ final class LocalAnalysisRunner {
                     metrics: metrics, wantsPose: wantsPose, started: started
                 )
                 _ = outcome
-            } catch is CancellationError {
-                // Not a failure: the coach backgrounded the app, and `analyse`
-                // has already recorded how far it got.
             } catch {
                 await self?.finish(entryId: entryId, with: .failed(message: error.localizedDescription))
             }
@@ -222,20 +235,49 @@ final class LocalAnalysisRunner {
         states[entryId] = state
     }
 
-    /// Called by the app when the scene stops being active.
+    /// Called by the app when the scene goes to the BACKGROUND.
     ///
-    /// Requests, rather than performs: the pass is inside a decode loop and the
-    /// next progress callback is where it can stop cleanly, with whatever it has
-    /// written still on disk.
+    /// Not `.inactive`: an app switcher glance, a control centre pull and a
+    /// notification banner all make a scene inactive while it keeps running at
+    /// full speed, and telling a coach his analysis stopped because he swiped
+    /// down would be false.
+    ///
+    /// Repaints the rows itself rather than waiting for the next progress
+    /// callback, which will not arrive at all once the process is frozen.
     func suspendForBackground() {
+        isBackgrounded = true
         guard isRunning else { return }
-        suspendRequested = true
-        log("local analysis: suspending, the app left the foreground")
+        log("local analysis: the app left the foreground, the run stops until it is back")
+        for (entryId, state) in states {
+            if case .analysing(let fraction) = state {
+                states[entryId] = .paused(fraction: fraction)
+            }
+        }
     }
 
-    private func shouldSuspend() -> Bool { suspendRequested }
+    /// Called by the app when the scene becomes active again.
+    ///
+    /// Repaints for the same reason, in the other direction: the pass thaws
+    /// mid-frame and its next callback can be a second away, which on a row
+    /// still reading "Paused" looks like a run that did not come back.
+    func resumeFromBackground() {
+        isBackgrounded = false
+        for (entryId, state) in states {
+            if case .paused(let fraction) = state {
+                states[entryId] = .analysing(fraction: fraction)
+            }
+        }
+    }
 
-    private func analyse(
+    /// `nonisolated`, and deliberately so.
+    ///
+    /// Every state write in here already hops to the main actor explicitly. What
+    /// does not, and must not, is the work between them: `tracks.save`, the
+    /// skeleton write and above all `ClipCutter.cut`, which re-encodes every
+    /// rally and blocks its thread for as long as that takes. Isolated to the
+    /// main actor - which is what a method of a `@MainActor` class is unless it
+    /// says otherwise - those froze the UI for the length of the cut.
+    private nonisolated func analyse(
         entryId: String,
         videoPath: String,
         keypoints: CourtKeypoints,
@@ -246,7 +288,6 @@ final class LocalAnalysisRunner {
         let source = URL(fileURLWithPath: videoPath)
         await MainActor.run { states[entryId] = .analysing(fraction: 0) }
 
-        var lastFraction: Float = 0
         let engine = IosLocalInferenceEngine(wantsPose: wantsPose)
         let coordinator = LocalAnalysisCoordinator(engine: engine, log: log)
 
@@ -258,22 +299,18 @@ final class LocalAnalysisRunner {
             keypoints: keypoints,
             onProgress: { [weak self] fraction in
                 let value = fraction.floatValue
-                lastFraction = value
                 Task { @MainActor [weak self] in
                     guard let self else { return }
-                    guard !self.shouldSuspend() else {
-                        self.states[entryId] = .paused(fraction: value)
-                        return
-                    }
-                    self.states[entryId] = .analysing(fraction: value)
+                    // One assignment, two words for it: a run in the background
+                    // is still moving through frames whenever the system lets
+                    // it, and it is the app's own state - not the run's - that
+                    // decides which of them a row shows.
+                    self.states[entryId] = self.isBackgrounded
+                        ? .paused(fraction: value)
+                        : .analysing(fraction: value)
                 }
             }
         )
-
-        if await MainActor.run(body: { shouldSuspend() }) {
-            await MainActor.run { states[entryId] = .paused(fraction: lastFraction) }
-            throw CancellationError()
-        }
 
         // Written before the clips are cut, which is minutes of work: a track
         // that survived the analysis should not be lost to a failure - or a

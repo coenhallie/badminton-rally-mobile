@@ -1,5 +1,6 @@
 package com.badmintontracker.android
 
+import com.badmintontracker.android.localanalysis.AnalysisFiles
 import com.badmintontracker.android.localanalysis.BackgroundWorkMonitor
 import com.badmintontracker.android.localanalysis.LocalAnalysisRunner
 import com.badmintontracker.shared.local.DeviceThroughputRepository
@@ -45,7 +46,15 @@ class RallyAndroidApp : Application(), SingletonImageLoader.Factory {
     override fun onCreate() {
         super.onCreate()
         val settings = SharedPreferencesSettings(getSharedPreferences("rally", MODE_PRIVATE))
-        rally       = RallyApp(SupabaseConfig(BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_ANON_KEY), settings)
+        rally       = RallyApp(
+            config = SupabaseConfig(BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_ANON_KEY),
+            settings = settings,
+            // The video itself is a content:// handle into the gallery and is
+            // not ours to delete. What IS ours is everything the on-device
+            // pipeline wrote about it, and until this was passed nothing
+            // deleted that.
+            onLocalVideoRemoved = { entry -> AnalysisFiles.deleteAll(filesDir, entry.id) },
+        )
         themePrefs  = rally.themePrefs
         localVideos = rally.localVideos
         localAnnotations = rally.localAnnotations

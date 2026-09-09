@@ -302,8 +302,8 @@ final class AnalyticsRowsTests: XCTestCase {
     }
 
     func testASuspendedRunIsNotAFailure() {
-        // iOS has no foreground service, so a run stops when the app does. That
-        // is not a failure and the control must not say "Retry".
+        // iOS has no foreground service, so a run stops making progress when the
+        // app does. That is not a failure and the control must not say "Retry".
         XCTAssertEqual(
             analyseAffordance(
                 for: entry(id: "e1", stage: .local), progress: nil,
@@ -311,6 +311,17 @@ final class AnalyticsRowsTests: XCTestCase {
             ),
             .paused(reason: "Paused at 37% - keep Shuttl open to finish")
         )
+    }
+
+    func testASuspendedRunIsStillInFlight() {
+        // It was never cancelled: the system freezes the process and thaws it,
+        // and the pass carries on from the frame it was on. A row that counted
+        // it as finished would offer an "Analyze" button that start() refuses on
+        // its own guard - the same dead button the cloud stage used to give.
+        XCTAssertTrue(isDeviceRunInFlight(.paused(fraction: 0.37)))
+        // And nothing to light in the chrome, which is only on screen when the
+        // app is active - by which point the state is already gone.
+        XCTAssertNil(toDeviceWork(entryId: "e1", state: .paused(fraction: 0.37)))
     }
 
     func testAFinishedDeviceRunFallsThroughToTheCloudStage() {

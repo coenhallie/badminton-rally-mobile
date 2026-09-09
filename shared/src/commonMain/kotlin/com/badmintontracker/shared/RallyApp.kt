@@ -47,9 +47,14 @@ class RallyApp(
     sessionSettings: Settings = settings,
     httpEngine: HttpClientEngine? = null,
     /**
-     * Releases the file behind a local-video entry when that entry is removed.
-     * iOS passes its file store's delete; Android's entries are content:// handles
-     * into the gallery, which the app must not delete. See [LocalVideoRepository].
+     * Releases what a local-video entry leaves on disk when that entry is
+     * removed: the video itself where the app owns it, and on both platforms
+     * whatever an on-device analysis of it wrote.
+     *
+     * iOS passes its file store's delete plus its analysis store's; Android's
+     * entries are content:// handles into the gallery, which the app must not
+     * delete, so it passes the analysis store's alone. See
+     * [LocalVideoRepository].
      */
     onLocalVideoRemoved: (LocalVideoEntry) -> Unit = {},
 ) {

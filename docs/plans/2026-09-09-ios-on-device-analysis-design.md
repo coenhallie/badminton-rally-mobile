@@ -245,11 +245,23 @@ while a run is in flight.**
 - `UIApplication.shared.isIdleTimerDisabled = true` for the duration, so the
   screen does not lock under a running analysis. This is the direct analogue of
   Android's wake lock and it is what makes a 20-minute run survivable.
-- On `scenePhase` leaving `.active`, the run is **suspended and reported as
-  suspended**, not cancelled: the coach comes back to a run that resumes, or to
-  an honest "Analysis paused - keep Shuttl open" line. Partial work already
-  written (the track, the skeleton) is kept, because `LocalAnalysisRunner`
-  already writes those before clip cutting for exactly this class of reason.
+- On `scenePhase` reaching `.background`, the run is **reported as paused**,
+  and it is **not cancelled**: the system freezes the process seconds later and
+  thaws it on return, so the pass carries on from the frame it was on and the
+  coach comes back to a run that finishes. `resumeFromBackground` clears the
+  state on the way back to `.active`. Cancelling would throw away minutes of
+  work the OS was about to hand back intact, and the first draft of this did
+  exactly that: it threw `CancellationError` above the track write, so a run
+  that had actually completed was discarded on the way out.
+- `.inactive` is deliberately left alone. An app switcher glance, a control
+  centre pull and a notification banner all pass through it while the app runs
+  at full speed, and a row announcing a stopped analysis for each of them would
+  be false.
+- What is genuinely lost is a run the system kills while suspended, which takes
+  everything not yet on disk with it. The track and the skeleton are written
+  before clip cutting - minutes of work - so a kill during THAT step keeps them;
+  a kill during the analysis itself keeps nothing, because at that point nothing
+  has been written.
 - The metric picker's time estimate says "keep Shuttl open" on iOS. It is the
   same `AnalysisEstimate.describe()` string with one platform sentence after it,
   not a different estimate.
@@ -388,17 +400,33 @@ Belongs in pipeline §6.
   coordinator's `coerceAtMost(0.999f)` hides it, so the visible symptom is only
   that Android's bar sits full through rally detection and clip cutting. iOS
   clamps in the engine; Android still does not.
+- Nothing deleted what an on-device analysis wrote. A match removed from the app
+  kept its track, its skeleton and its cut clips - tens of megabytes of
+  re-encoded video - for the life of the install, reachable by nothing.
+  `RallyApp` already had the callback for it (`onLocalVideoRemoved`); Android
+  simply never passed one, because its videos are `content://` handles it must
+  not delete and the analysis beside them was never considered. **Fixed in this
+  pass on both platforms**, over the same four store names, since writing the
+  iOS half against a leak the other side still had would have been building the
+  divergence in on purpose.
 - `DeviceThroughputRepository` records what a run achieved without knowing which
   build produced it. A Debug build measures 3.8x slower here than a Release one,
   and a developer running Debug teaches the estimator that this phone is four
   times slower than it is - and the estimate persists. **Fixed in this
   pass**, since iOS needs it and a second copy was the alternative.
-- `TrackNetRunner` reports progress of exactly 1.0 on the last full sequence,
-  which `LocalInferenceEngine`'s own contract forbids - completion is the
-  coordinator's to report after the analysis that follows inference. The
-  coordinator's `coerceAtMost(0.999f)` hides it today, so the visible symptom is
-  only that Android's bar sits full through rally detection and clip cutting.
-  iOS clamps in the engine; Android still does not.
+**iOS defects found by review after the first pass, all fixed here.**
+
+- `analyse` was a method of a `@MainActor` class and so main-actor isolated,
+  which put `tracks.save`, the skeleton write and `ClipCutter.cut` - a full
+  re-encode of every rally - on the main thread. `LocalAnalysisRunnerTests`
+  covers it now, and fails without the `nonisolated`.
+- The suspend path cancelled a run that the OS had only frozen, and threw above
+  the track write, so a completed run's output was discarded. See §4.
+- The Analytics list watched the whole state map, so it re-read one file header
+  per row on every progress callback - the per-row cost `storedTrackIds` exists
+  to avoid, reintroduced. It watches the set of settled runs instead.
+- `AnalysisFiles.deleteAll` was written and never called, which is where the
+  leak above was found.
 
 **Landed, and what has not.** The engine, the stores, the clip cutter, the run
 orchestration, the target picker, the metric selector, the Analytics list wiring

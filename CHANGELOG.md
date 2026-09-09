@@ -21,11 +21,19 @@ The mobile app is versioned independently from the web app.
 
   One thing works differently, and the app says so where it matters: an
   on-device run needs Shuttl open and the phone unlocked. iOS has no equivalent
-  of the Android foreground service, so a run pauses when you leave and picks up
-  what it had written rather than pretending to continue in the background.
+  of the Android foreground service, so a run stops making progress when you
+  leave and says so on its row, rather than pretending to continue in the
+  background. It is not thrown away: come back and it carries on from where it
+  was.
 - Pinch to zoom on every video player, up to five times, and drag to pan once
   zoomed. Double-tap zooms in on the spot, double-tap again zooms out. The
   skeleton scales with the frame, so a joint can be checked up close.
+
+### Fixed
+- Deleting a match now also deletes what analysing it produced. The cut clips
+  alone run to tens of megabytes per match, and until now they stayed on the
+  phone for the life of the install with nothing left in the app that could
+  reach them.
 
 ### Changed
 - Setting a video up for analysis is now two steps instead of one crowded

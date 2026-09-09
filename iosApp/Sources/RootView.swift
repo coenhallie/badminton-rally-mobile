@@ -57,10 +57,19 @@ struct RootView: View {
             UIApplication.shared.isIdleTimerDisabled = awake
         }
         .onChange(of: scenePhase) { _, phase in
-            // iOS has no foreground service. What a run can do when the app
-            // stops being active is stop cleanly and say so, keeping whatever
-            // it already wrote; see LocalAnalysisState.paused.
-            if phase != .active { localAnalysis?.suspendForBackground() }
+            // iOS has no foreground service, so a run in the background gets no
+            // CPU and says so; see LocalAnalysisState.paused.
+            //
+            // `.background` against `.active`, with `.inactive` left alone on
+            // purpose: an app switcher glance, a control centre pull and a
+            // notification banner all pass through inactive while the app keeps
+            // running, and a row that announced a stopped analysis for each of
+            // them would be wrong every time.
+            switch phase {
+            case .background: localAnalysis?.suspendForBackground()
+            case .active:     localAnalysis?.resumeFromBackground()
+            default:          break
+            }
         }
     }
 }

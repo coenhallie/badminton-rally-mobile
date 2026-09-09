@@ -11,7 +11,8 @@ struct RallyIOSApp: App {
         rally = RallyAppIosKt.createRallyApp(
             url: info?["SUPABASE_URL"] as? String ?? "",
             anonKey: info?["SUPABASE_ANON_KEY"] as? String ?? "",
-            deleteLocalVideoFile: { LocalVideoFiles.delete(relativePath: $0) }
+            deleteLocalVideoFile: { LocalVideoFiles.delete(relativePath: $0) },
+            deleteLocalAnalysis: { AnalysisFiles.deleteAll(entryId: $0) }
         )
         // Before anything can import: reclaim files whose entry is already gone.
         // Analyzed videos removed by builds that did not delete the file are pure
