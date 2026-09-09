@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.ProvidableCompositionLocal
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
@@ -69,6 +70,13 @@ fun BackgroundWorkAction() {
     var showDetail by remember { mutableStateOf(false) }
 
     BackgroundWorkAction(work, onClick = { showDetail = true })
+
+    // Dropped when the last run settles, not merely hidden. The sheet is drawn
+    // on `showDetail && work != null`, so a flag left set while `work` is null
+    // is a sheet that opens itself the moment the next analysis starts, over
+    // whatever screen the coach is on. iOS's BackgroundWorkAction clears its
+    // own for the same reason.
+    LaunchedEffect(work == null) { if (work == null) showDetail = false }
 
     if (showDetail && work != null) {
         BackgroundWorkSheet(

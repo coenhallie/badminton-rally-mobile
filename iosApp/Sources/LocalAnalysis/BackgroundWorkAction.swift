@@ -17,19 +17,33 @@ struct BackgroundWorkAction: View {
     @State private var showDetail = false
 
     var body: some View {
-        if let work {
-            Button { showDetail = true } label: { ring(work) }
-                // The label is the accessibility label rather than only a
-                // tooltip, because a progress ring on its own tells a screen
-                // reader nothing about which pipeline is running or how far
-                // along it is.
-                .accessibilityLabel(work.label)
-                .sheet(isPresented: $showDetail) {
-                    BackgroundWorkSheet(work: work) {
-                        showDetail = false
-                        goToMatches()
+        // The `if` inside a Group rather than as the whole body: `showDetail`
+        // outlives the button, and when the last run settles the button - and
+        // with it the `.sheet` modifier - leaves the tree without SwiftUI
+        // writing `false` back to the binding. The flag stayed set, so the
+        // sheet presented itself unasked over whatever screen the coach was on
+        // the moment the next run started. The reset below has to hang on
+        // something that STAYS, which is what the Group is for. Android's
+        // BackgroundWorkAction had the same defect and clears its own flag the
+        // same way.
+        Group {
+            if let work {
+                Button { showDetail = true } label: { ring(work) }
+                    // The label is the accessibility label rather than only a
+                    // tooltip, because a progress ring on its own tells a screen
+                    // reader nothing about which pipeline is running or how far
+                    // along it is.
+                    .accessibilityLabel(work.label)
+                    .sheet(isPresented: $showDetail) {
+                        BackgroundWorkSheet(work: work) {
+                            showDetail = false
+                            goToMatches()
+                        }
                     }
-                }
+            }
+        }
+        .onChange(of: work == nil) { _, nothingRunning in
+            if nothingRunning { showDetail = false }
         }
     }
 
