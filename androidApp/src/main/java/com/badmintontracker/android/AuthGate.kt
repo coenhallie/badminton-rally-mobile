@@ -17,8 +17,11 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -207,6 +210,31 @@ fun AuthGate(
                         }
                     )
                     val localRows by localVm.rows.collectAsStateWithLifecycle()
+                    // What earlier runs left on disk, read once for the list
+                    // rather than once per row. Keyed on which runs have STOPPED
+                    // rather than on the states themselves: Home's rows are fed
+                    // by those states and tick several times a second while a run
+                    // is going, and only a run that has stopped can change what
+                    // is on disk. Failed counts as stopped - the track is written
+                    // before the clips are cut, so a run that died in the cut
+                    // still left one behind.
+                    val homeStates by localAnalysis.state.collectAsStateWithLifecycle()
+                    val homeEntryIds = localRows.map { it.entry.id }
+                    val homeSettledIds = homeStates
+                        .filterValues { it is LocalAnalysisState.Done || it is LocalAnalysisState.Failed }
+                        .keys
+                    val homeResults by produceState(LocalRunResults(), homeEntryIds, homeSettledIds) {
+                        value = withContext(Dispatchers.IO) {
+                            LocalRunResults(
+                                heatmapIds = homeEntryIds.filterTo(mutableSetOf()) {
+                                    localAnalysis.hasStoredTrack(it)
+                                },
+                                clipCounts = homeEntryIds
+                                    .associateWith { localAnalysis.storedClips(it).size }
+                                    .filterValues { it > 0 },
+                            )
+                        }
+                    }
                     HomeScreen(
                         vm = clipListVm,
                         shares = rally.shares,
@@ -216,9 +244,9 @@ fun AuthGate(
                         onScoreMatchClick = { nav.navigate(Route.Match(scoreLogId = it.scoreLogId)) },
                         onNewMatch = { nav.navigate(Route.NewMatch) },
                         onOpenHeatmap = { nav.navigate(Route.Heatmap(it.id)) },
-                        hasHeatmap = { localAnalysis.hasStoredTrack(it.id) },
+                        hasHeatmap = { it.id in homeResults.heatmapIds },
                         onOpenLocalClips = { nav.navigate(Route.LocalClips(it.id)) },
-                        localClipCount = { localAnalysis.storedClips(it.id).size },
+                        localClipCount = { homeResults.clipCounts[it.id] ?: 0 },
                         localRows = localRows,
                         intakeError = intakeError,
                         onIntakeErrorShown = { intakeError = null },
@@ -683,6 +711,21 @@ fun AuthGate(
         }
     }
 }
+
+/**
+ * What earlier runs left on disk for the videos on Home.
+ *
+ * Read once for the whole list rather than per row: `hasStoredTrack` stats a
+ * file and `storedClips` parses a sidecar - or lists a directory when there is
+ * none - and `LocalVideoSection` asked both from inside its row loop, on the
+ * thread drawing the frame. Empty until the read lands, which shows as the clips
+ * chip and the heatmap item arriving a frame after the row. iOS reads the same
+ * two things the same way; see `refreshStoredResults`.
+ */
+private data class LocalRunResults(
+    val heatmapIds: Set<String> = emptySet(),
+    val clipCounts: Map<String, Int> = emptyMap(),
+)
 
 @Composable
 private fun Splash() {
