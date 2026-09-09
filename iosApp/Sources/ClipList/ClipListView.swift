@@ -31,6 +31,10 @@ struct MatchesList: View {
     let onMatchTap: (MatchRoute) -> Void
     let onCourtMarking: (CourtMarkingRoute) -> Void
     let onLocalPlayer: (LocalPlayerRoute) -> Void
+    /// The two destinations an on-device run's own output lives at, reported
+    /// upward like every other one this list carries. Home owns them.
+    let onLocalClips: (LocalClipsRoute) -> Void
+    let onAnalyticsDetail: (AnalyticsDetailRoute) -> Void
     /// The empty state's own "Add new match": Home closes the drawer and
     /// opens its add sheet.
     let onAddMatch: () -> Void
@@ -42,6 +46,11 @@ struct MatchesList: View {
     @State private var resultEntry: LocalVideoEntry? = nil
     @State private var detailsTarget: MatchDetailsTarget? = nil
     @State private var deleteScoreTarget: ScoreMatchCard? = nil
+    /// What an on-device run left on disk for each row, read for the whole list
+    /// at once rather than per row - see `LocalAnalysisRunner.storedClipCounts`
+    /// and `AnalyticsListView`'s own note on the same trap.
+    @State private var localClipCounts: [String: Int] = [:]
+    @State private var storedTrackIds: Set<String> = []
 
     var body: some View {
         content(model)
@@ -64,6 +73,14 @@ struct MatchesList: View {
             for await map in analyze.progress {
                 progressById = map
             }
+        }
+        .onChange(of: model.localEntries.map(\.id)) { _, ids in refreshStoredResults(ids) }
+        // Also when a run settles: a track and a set of clips appear on disk
+        // without the entry list moving, so nothing above would notice. Keyed on
+        // which runs have settled rather than on the state map, which moves on
+        // every progress callback - see `settledRuns`.
+        .onChange(of: settledRuns) { _, _ in
+            refreshStoredResults(model.localEntries.map(\.id))
         }
         .sheet(item: $shareTarget) { match in
             ShareSheetView(rally: rally, videoId: match.videoId)
@@ -149,7 +166,12 @@ struct MatchesList: View {
                             },
                             onEditDetails: {
                                 detailsTarget = MatchDetailsTarget(entry: entry, autoOpened: false)
-                            }
+                            },
+                            localClips: localClipCounts[entry.id],
+                            onOpenLocalClips: { onLocalClips(LocalClipsRoute(entryId: entry.id)) },
+                            onOpenHeatmap: storedTrackIds.contains(entry.id)
+                                ? { onAnalyticsDetail(AnalyticsDetailRoute(entryId: entry.id)) }
+                                : nil
                         )
                         .drawerListRow()
                         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
@@ -585,5 +607,39 @@ private struct PendingMatchAction {
         case .deleteMatch, .deleteBoundMatch: return "Delete"
         case .leaveShare: return "Remove"
         }
+    }
+}
+
+
+private extension MatchesList {
+    /// The runs that have stopped, whichever way they stopped.
+    ///
+    /// Both outcomes, not `.done` alone: the track is written before the clips
+    /// are cut, so a run that failed in the cut still left one behind and its
+    /// row can still open it.
+    var settledRuns: Set<String> {
+        guard let localAnalysis else { return [] }
+        return Set(localAnalysis.states.compactMap { id, state in
+            switch state {
+            case .done, .failed: return id
+            case .idle, .preparing, .analysing, .cutting, .paused: return nil
+            }
+        })
+    }
+
+    /// Re-reads what each row's earlier runs left on disk.
+    ///
+    /// On the main actor, because the two things that trigger it - the list
+    /// appearing and a run settling - are rare and the answer has to be there
+    /// for the very next redraw. What must not happen is calling it per row or
+    /// per progress tick.
+    func refreshStoredResults(_ ids: [String]) {
+        guard let localAnalysis else {
+            storedTrackIds = []
+            localClipCounts = [:]
+            return
+        }
+        storedTrackIds = localAnalysis.storedTrackIds(among: ids)
+        localClipCounts = localAnalysis.storedClipCounts(among: ids)
     }
 }

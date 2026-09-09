@@ -183,29 +183,66 @@ final class LocalAnalysisRunner {
 
     // MARK: - Stored results
 
+    // All `nonisolated`: every one of these reads a file through a stateless
+    // store and touches nothing this actor owns, and the skeleton panel measures
+    // 6,000 poses off the main thread before it can draw anything. Isolating
+    // them would put that parse and that pass back on the main actor, which is
+    // the defect `analyse` was already fixed for once.
+
     /// The track from an earlier run, for a screen opened after this one died.
-    func storedTrack(entryId: String) -> PlayerTrackStore.Stored? { tracks.load(entryId: entryId) }
+    nonisolated func storedTrack(entryId: String) -> PlayerTrackStore.Stored? { tracks.load(entryId: entryId) }
 
     /// Whether `storedTrack` has anything to return, without loading it. For a
     /// list deciding what each of its rows can do.
-    func hasStoredTrack(entryId: String) -> Bool { tracks.has(entryId: entryId) }
+    nonisolated func hasStoredTrack(entryId: String) -> Bool { tracks.has(entryId: entryId) }
 
     /// The clips from an earlier run, for the same reason.
-    func storedClips(entryId: String) -> [PlayerTrackStore.Clip] { tracks.loadClips(entryId: entryId) }
+    nonisolated func storedClips(entryId: String) -> [PlayerTrackStore.Clip] { tracks.loadClips(entryId: entryId) }
 
-    func storedSkeleton(entryId: String) -> SkeletonStore.Stored? { skeletons.load(entryId: entryId) }
+    nonisolated func storedSkeleton(entryId: String) -> SkeletonStore.Stored? { skeletons.load(entryId: entryId) }
 
     /// Header-only, for a screen deciding whether it has a second renderer to
     /// offer.
-    func hasStoredSkeleton(entryId: String) -> Bool { skeletons.has(entryId: entryId) }
+    nonisolated func hasStoredSkeleton(entryId: String) -> Bool { skeletons.has(entryId: entryId) }
 
     /// Every entry with a track this app can draw.
     ///
     /// The list asks once for the whole list rather than once per row, matching
     /// Android's `storedTrackIds`: `has` is a small read, and a list of forty
     /// matches is forty of them on every recomposition otherwise.
-    func storedTrackIds(among entryIds: [String]) -> Set<String> {
+    nonisolated func storedTrackIds(among entryIds: [String]) -> Set<String> {
         Set(entryIds.filter { tracks.has(entryId: $0) })
+    }
+
+    /// How many clips each entry has, for the rows that offer to play them.
+    ///
+    /// Asked for the whole list at once, for the same reason `storedTrackIds`
+    /// is: androidApp asks `storedClips(id).size` per row, which parses an
+    /// index - or lists a directory - once per row on every recomposition.
+    /// Entries with none are absent rather than zero, so a caller reads
+    /// "nothing to offer" as nil.
+    nonisolated func storedClipCounts(among entryIds: [String]) -> [String: Int] {
+        var counts: [String: Int] = [:]
+        for id in entryIds {
+            let count = tracks.loadClips(entryId: id).count
+            if count > 0 { counts[id] = count }
+        }
+        return counts
+    }
+
+    /// The file the analysis actually decoded, if it is still there.
+    ///
+    /// A skeleton is indexed by the frames of THIS file, so a renderer that took
+    /// the video from anywhere else would be drawing joints over frames they
+    /// were not measured on. On iOS that reduces to the entry's own copy:
+    /// importing moves the file into this app's container (`LocalVideoFiles`),
+    /// so there is no second copy and no revocable grant - which is what
+    /// androidApp's version of this has to reckon with and this one does not.
+    /// Nil once the file is gone, in which case the skeleton has no video to sit
+    /// on and the panel says so.
+    nonisolated func analysedSource(relativePath: String) -> URL? {
+        let url = LocalVideoFiles.resolve(relativePath: relativePath)
+        return FileManager.default.isReadableFile(atPath: url.path) ? url : nil
     }
 
     // MARK: - Running

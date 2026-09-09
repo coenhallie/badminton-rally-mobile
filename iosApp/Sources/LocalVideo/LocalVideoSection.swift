@@ -29,11 +29,29 @@ struct LocalVideoRowView: View {
     let onAnalyze: () -> Void
     let onRemove: () -> Void
     let onEditDetails: () -> Void
+    /// Opens the rallies an on-device run cut, or nil when it produced none.
+    ///
+    /// The clips used to be reachable only from the state of the run that made
+    /// them, so they went with the process even though tens of megabytes of
+    /// re-encoded video were on disk - half an hour of analysis with no way back
+    /// to what it produced. Mirrors androidApp's `onOpenLocalClips`.
+    var localClips: Int? = nil
+    var onOpenLocalClips: (() -> Void)? = nil
+    /// Opens the heatmap of a stored track, on the same footing and for the same
+    /// reason. Nil when this entry has no track.
+    var onOpenHeatmap: (() -> Void)? = nil
 
     private var subtitle: String { localVideoSubtitle(entry) }
     private var canAnalyze: Bool { LocalVideoStatus.canAnalyze(stage: entry.stage, device: device) }
     private var canRemove: Bool { LocalVideoStatus.canRemove(stage: entry.stage, device: device) }
-    private var hasMenu: Bool { canRemove || LocalVideoStatus.canEditDetails(stage: entry.stage) }
+    /// The menu renders when ANY of its four items applies; each is gated on its
+    /// own rule, so a mid-pipeline row that can do none shows no menu at all.
+    /// The two analysis items count: gating on remove and edit alone would hide
+    /// the clips and the heatmap on exactly the rows most likely to have them.
+    private var hasMenu: Bool {
+        canRemove || LocalVideoStatus.canEditDetails(stage: entry.stage)
+            || onOpenHeatmap != nil || (localClips != nil && onOpenLocalClips != nil)
+    }
     /// A ring turns for work that is moving, on either pipeline.
     ///
     /// A paused device run is the exception, and it is the case this row is most
@@ -92,10 +110,14 @@ struct LocalVideoRowView: View {
                         // button - the status text already says what happened.
                         ProgressView().controlSize(.small)
                     }
-                    // The menu renders when either action applies; each item is gated
-                    // on its own rule, so a mid-pipeline row shows no menu at all.
                     if hasMenu {
                         Menu {
+                            if let localClips, let onOpenLocalClips {
+                                Button("Clips on this phone (\(localClips))") { onOpenLocalClips() }
+                            }
+                            if let onOpenHeatmap {
+                                Button("Player heatmap") { onOpenHeatmap() }
+                            }
                             if LocalVideoStatus.canEditDetails(stage: entry.stage) {
                                 Button("Edit details") { onEditDetails() }
                             }

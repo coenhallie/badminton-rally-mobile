@@ -112,37 +112,19 @@ struct CourtHeatmapView: View {
     /// picture rests on.
     private func summary(occupancy: CourtOccupancy) -> some View {
         HStack(spacing: 8) {
-            statTile(
+            // Two lines for the caption: both of these run longer than half a
+            // phone, and the shared tile's one-line default would ellipsize
+            // "Frames with the player" to "Frames with the…".
+            ShuttlStatTile(
                 value: String(format: "%.1f", occupancy.totalSeconds / 60),
-                unit: " min", label: "Tracked"
+                unit: " min", label: "Tracked", labelLineLimit: 2
             )
-            statTile(
+            ShuttlStatTile(
                 value: "\(Int(track.coverage * 100))",
-                unit: "%", label: "Frames with the player"
+                unit: "%", label: "Frames with the player", labelLineLimit: 2
             )
         }
         .padding(.horizontal, Self.gutter)
-    }
-
-    private func statTile(value: String, unit: String, label: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline, spacing: 0) {
-                Text(value)
-                    .shuttlType(ShuttlType.headlineLarge)
-                    .foregroundStyle(Shuttl.textHeading)
-                Text(unit)
-                    .shuttlType(ShuttlType.bodySmall)
-                    .foregroundStyle(Shuttl.textTertiary)
-            }
-            Text(label)
-                .shuttlType(ShuttlType.bodySmall)
-                .foregroundStyle(Shuttl.textTertiary)
-                .lineLimit(2)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .background(Shuttl.bgSecondary, in: RoundedRectangle(cornerRadius: ShuttlRadius.medium))
     }
 
     // MARK: - Drawing

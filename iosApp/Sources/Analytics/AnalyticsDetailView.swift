@@ -44,36 +44,111 @@ func heatmapSource(
 /// What one analysed match has to show, reached from a ready row on the
 /// Analytics list. Port of Android's `AnalyticsDetailScreen`.
 ///
-/// **Heatmap only, for now.** Android offers a pill tab row over Heatmap, Base
-/// and Skeleton, drawn only when more than one of them has content, and falls
-/// back to a plain "HEATMAP" heading when one does. This screen is that
-/// single-panel case, which is not a reduced port but the same screen in the
-/// state Android draws whenever the other two panels have nothing behind them.
-/// The two that are missing - the per-rally base position and the skeleton over
-/// playback - each land by flipping one condition in `availablePanels`.
+/// A pill tab row over the panels that have content, or the plain "HEATMAP"
+/// heading when only one does - which is the ordinary case, since a run that was
+/// not asked for a skeleton leaves none. Which panels those are is
+/// `availablePanels`, in `shared`, so a tab offered on one phone and not the
+/// other cannot happen.
+///
+/// **Base is still androidApp's alone.** `availablePanels` is asked for it with
+/// `hasBoundedClips: false` rather than being given a two-case iOS variant that
+/// structurally disagrees with androidApp's three - the tab appears here the day
+/// `BasePositionPanel` is ported and that argument becomes real.
 struct AnalyticsDetailView: View {
     let rally: RallyApp
     let localAnalysis: LocalAnalysisRunner?
     let entryId: String
 
+    @State private var chosen: AnalyticsPanel = .heatmap
+
+    /// What this entry has, read once per opening rather than per redraw.
+    ///
+    /// `storedTrack` is a full parse - about a megabyte for a 30-minute match -
+    /// and `hasStoredSkeleton` a file header. Resolved in a computed property
+    /// they would run several times per body evaluation, once for the tab set,
+    /// again for the tab held to it, and again for the panel: the same per-redraw
+    /// file cost `storedTrackIds` exists to keep off the Analytics list.
+    @State private var source: HeatmapSource? = nil
+    @State private var hasSkeleton = false
+
+    private var panels: [AnalyticsPanel] {
+        AnalyticsPanelKt.availablePanels(
+            hasTrack: source != nil,
+            // Base is not ported; see the note above.
+            hasBoundedClips: false,
+            hasSkeleton: hasSkeleton
+        )
+    }
+
+    /// The coach's pick held to the tabs on screen, the same way the metrics
+    /// strip holds its own: a stored skeleton can go while this screen is up.
+    private var panel: AnalyticsPanel { panels.contains(chosen) ? chosen : .heatmap }
+
+    /// Whether the run for THIS entry has stopped, whichever way it stopped.
+    ///
+    /// Cheap - a dictionary lookup - and read on every redraw on purpose: it is
+    /// what tells this screen that a run finishing behind it has written a track
+    /// or a skeleton, which androidApp gets from collecting `done`. The reload it
+    /// triggers is the expensive part, and that is gated on this changing.
+    private var runSettled: Bool {
+        switch localAnalysis?.state(for: entryId) ?? .idle {
+        case .done, .failed: return true
+        default: return false
+        }
+    }
+
     var body: some View {
         let entry = rally.localVideos.get(id: entryId)
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                // Styled as the list's own section label, not as a title: a
-                // coach arrives here in one tap from that list, and two
-                // treatments of the same thing across those two screens reads
-                // as two different kinds of heading.
-                Text("HEATMAP")
-                    .shuttlType(ShuttlType.labelSmall)
-                    .foregroundStyle(Shuttl.textSecondary)
+                if panels.count > 1 {
+                    ShuttlPillTabs(
+                        labels: panels.map(\.label),
+                        selectedIndex: panels.firstIndex(of: panel) ?? 0,
+                        onSelect: { chosen = panels[$0] },
+                        accessibilityLabel: "Analysis panel"
+                    )
                     .padding(.horizontal, CourtHeatmapView.gutter)
-                    .padding(.vertical, 12)
-                panel
+                    .padding(.top, 8)
+                    .padding(.bottom, 16)
+                } else {
+                    // Styled as the list's own section label, not as a title: a
+                    // coach arrives here in one tap from that list, and two
+                    // treatments of the same thing across those two screens
+                    // reads as two different kinds of heading.
+                    Text("HEATMAP")
+                        .shuttlType(ShuttlType.labelSmall)
+                        .foregroundStyle(Shuttl.textSecondary)
+                        .padding(.horizontal, CourtHeatmapView.gutter)
+                        .padding(.vertical, 12)
+                }
+                switch panel {
+                case .heatmap:
+                    heatmap
+                case .skeleton:
+                    if let localAnalysis {
+                        SkeletonPanel(
+                            entryId: entryId,
+                            videoRelativePath: entry?.uri,
+                            runner: localAnalysis,
+                            prefs: rally.playbackPrefs,
+                            racketArmPrefs: rally.racketArmPrefs
+                        )
+                    }
+                case .base:
+                    // Unreachable while `hasBoundedClips` is false above, and
+                    // stated rather than defaulted so porting the panel is a
+                    // compiler-visible edit rather than a silently blank tab.
+                    PanelMessage(text: "Base position is not available on iPhone yet.")
+                default:
+                    EmptyView()
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(Shuttl.bg)
+        .task { reload() }
+        .onChange(of: runSettled) { _, _ in reload() }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
@@ -95,24 +170,29 @@ struct AnalyticsDetailView: View {
         }
     }
 
-    /// One entry's court heatmap, or an honest line saying why there is none.
+    /// Re-reads what this entry has. One parse of the track and one header read,
+    /// on opening and whenever a run settles - never per redraw.
     ///
-    /// In memory if the run is still loaded, from disk otherwise. A pose run
-    /// costs minutes to half an hour, so losing its result to a termination and
-    /// asking for another one is not an option.
-    ///
-    /// The disk is read once per entry even when a run is in memory, because
-    /// that run may be a pose-less one whose empty track must fall through. This
-    /// is a detail screen reached by an explicit tap, so it is one parse per
-    /// opening, not the per-row cost the Analytics list had to avoid.
-    @ViewBuilder
-    private var panel: some View {
+    /// The disk is read even when a run is in memory, because that run may be a
+    /// pose-less one whose empty track has to fall through to a stored one; see
+    /// `heatmapSource`.
+    private func reload() {
         let done: LocalAnalysisState.Done? = {
             if case .done(let done) = localAnalysis?.state(for: entryId) ?? .idle { return done }
             return nil
         }()
-        let stored = localAnalysis?.storedTrack(entryId: entryId)
-        if let source = heatmapSource(done: done, stored: stored) {
+        source = heatmapSource(done: done, stored: localAnalysis?.storedTrack(entryId: entryId))
+        hasSkeleton = localAnalysis?.hasStoredSkeleton(entryId: entryId) ?? false
+    }
+
+    /// One entry's court heatmap, or an honest line saying why there is none.
+    ///
+    /// In memory if the run is still loaded, from disk otherwise - `reload`
+    /// resolves which. A pose run costs minutes to half an hour, so losing its
+    /// result to a termination and asking for another one is not an option.
+    @ViewBuilder
+    private var heatmap: some View {
+        if let source {
             CourtHeatmapView(track: source.track, fps: source.fps)
         } else {
             // A run's state lives in memory, so it is gone after a termination.

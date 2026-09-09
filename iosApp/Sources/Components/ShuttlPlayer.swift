@@ -19,8 +19,16 @@ struct ShuttlPlayer<Overlay: View, ErrorContent: View>: View {
     /// The video's own ratio when the caller knows it; otherwise the card reads
     /// it from the player once the first frame decodes.
     var aspectRatio: Double? = nil
-    /// Drawn over the frame and scaled with it. Unused on iPhone today: Android
-    /// spends it on the skeleton, which arrives here with pipeline Stage 2.
+    /// Reports the playhead to a caller that needs it for more than the card's
+    /// own timecode and bar.
+    ///
+    /// The skeleton panel needs it to pick the pose to draw and to centre the
+    /// graph, and it cannot read it out of the overlay: `overlay` is a value
+    /// built by the caller before this view runs, so the caller has to know
+    /// where the playhead is to build it. One observer, reported outward, rather
+    /// than a second periodic observer on the same player.
+    var onPosition: ((PlaybackPosition) -> Void)? = nil
+    /// Drawn over the frame and scaled with it.
     @ViewBuilder var overlay: Overlay
     @ViewBuilder var errorContent: ErrorContent
 
@@ -116,6 +124,7 @@ struct ShuttlPlayer<Overlay: View, ErrorContent: View>: View {
         }
         for await next in stream {
             position = next
+            onPosition?(next)
         }
     }
 
@@ -154,13 +163,15 @@ extension ShuttlPlayer where Overlay == EmptyView, ErrorContent == EmptyView {
         player: AVPlayer?,
         prefs: PlaybackPreferenceRepository,
         step: @escaping (Int64) -> Void,
-        aspectRatio: Double? = nil
+        aspectRatio: Double? = nil,
+        onPosition: ((PlaybackPosition) -> Void)? = nil
     ) {
         self.init(
             player: player,
             prefs: prefs,
             step: step,
             aspectRatio: aspectRatio,
+            onPosition: onPosition,
             overlay: { EmptyView() },
             errorContent: { EmptyView() }
         )

@@ -6,6 +6,7 @@ import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.model.CourtKeypoints
 import com.badmintontracker.shared.model.MatchMetadata
 import com.badmintontracker.shared.model.RallyClip
+import com.badmintontracker.shared.prefs.RacketArmPreferenceRepository
 import com.badmintontracker.shared.repo.ClipsRepository
 import com.badmintontracker.shared.repo.ProcessingUpdate
 import com.badmintontracker.shared.repo.UploadState
@@ -89,6 +90,16 @@ fun testLocalVideoRepository(): LocalVideoRepository {
 }
 
 /**
+ * A [RacketArmPreferenceRepository] the iOS test bundle can build, cleared on
+ * every call so one test's chosen arm is never another's starting point.
+ */
+fun testRacketArmPreferences(): RacketArmPreferenceRepository {
+    val settings = NSUserDefaultsSettings(NSUserDefaults(suiteName = TEST_RACKET_ARM_SUITE))
+    settings.clear()
+    return RacketArmPreferenceRepository(settings)
+}
+
+/**
  * A [ClipsRepository] the iOS test bundle can build, for wherever a test needs
  * clips on screen without a coordinator alongside it (see this file's doc
  * comment). Mutate `clips.value` directly through the same [InMemoryClipsRepository]
@@ -125,3 +136,4 @@ fun testAnalyzeCoordinator(localVideos: LocalVideoRepository, clips: ClipsReposi
 
 private const val TEST_LOCAL_VIDEOS_SUITE = "com.badmintontracker.ios.tests.localvideos"
 private const val TEST_LOCAL_ANNOTATIONS_SUITE = "com.badmintontracker.ios.tests.localannotations"
+private const val TEST_RACKET_ARM_SUITE = "com.badmintontracker.ios.tests.racketarm"

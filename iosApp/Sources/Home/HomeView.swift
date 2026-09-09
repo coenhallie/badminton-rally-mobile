@@ -80,6 +80,11 @@ struct HomeView: View {
     /// total, and this route and that one are never on screen at once.
     @State private var matchRoute: MatchRoute? = nil
     @State private var localPlayerRoute: LocalPlayerRoute? = nil
+    /// Where an on-device run's own output is reached from the drawer: the
+    /// rallies it cut, and the heatmap of the track it kept. Owned here like
+    /// every other destination the list reports upward.
+    @State private var localClipsRoute: LocalClipsRoute? = nil
+    @State private var analyticsDetailRoute: AnalyticsDetailRoute? = nil
     @State private var createFlowTarget: CreateFlowDestination? = nil
 
     init(rally: RallyApp, analyze: AnalyzeCoordinator, localAnalysis: LocalAnalysisRunner?) {
@@ -104,6 +109,8 @@ struct HomeView: View {
                         onMatchTap: { matchRoute = $0 },
                         onCourtMarking: { courtMarkingRoute = $0 },
                         onLocalPlayer: { localPlayerRoute = $0 },
+                        onLocalClips: { localClipsRoute = $0 },
+                        onAnalyticsDetail: { analyticsDetailRoute = $0 },
                         // The sheet is Home's, presented outside the drawer, so
                         // it opens over the drawer as it slides shut.
                         onAddMatch: {
@@ -174,6 +181,17 @@ struct HomeView: View {
                 LocalPlayerView(
                     rally: rally, analyze: analyze,
                     localAnalysis: localAnalysis, entryId: route.entryId
+                )
+            }
+            .navigationDestination(item: $localClipsRoute) { route in
+                LocalClipsView(localAnalysis: localAnalysis, entryId: route.entryId)
+            }
+            // The same screen the Analytics list pushes, not a second one: both
+            // routes to one heatmap render `AnalyticsDetailView`, so there is
+            // one resolution of which track to draw rather than two.
+            .navigationDestination(item: $analyticsDetailRoute) { route in
+                AnalyticsDetailView(
+                    rally: rally, localAnalysis: localAnalysis, entryId: route.entryId
                 )
             }
         }
