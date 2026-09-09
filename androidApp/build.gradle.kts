@@ -148,12 +148,29 @@ dependencies {
 // smaller than the detector and measured at 230ms a frame against medium's
 // 1567, so it is both shippable and the only one that runs on a phone.
 val bundledModels = listOf(
-    // inpaintnet is fp32 on purpose; see ModelCatalog.INPAINTNET for why the
-    // fp16 graph of this one model cannot be shipped.
-    "tracknet.fp16.onnx", "inpaintnet.onnx", "badminton.fp16.onnx", "posen.fp16.onnx",
+    "tracknet.fp16.onnx", "badminton.fp16.onnx", "posen.fp16.onnx",
 )
+
+// Exported and exercised, but NOT shipped: the gap-filling stage InpaintNet
+// belongs to is not run on either platform - see TrackNetRunner's KDoc and the
+// pipeline design's section 6.3 - so its 2MB sat in every install as a graph
+// nothing loads. It stays in the build because it is the one graph here with a
+// genuinely dynamic axis, which is worth proving ONNX Runtime handles on a real
+// device; OnnxSessionTest reads it from the TEST apk's assets through the
+// instrumentation's own context.
+//
+// fp32, deliberately, while every other graph here is fp16. The fp16 conversion
+// of this one model is broken: measured against the real PyTorch module on
+// trajectories shaped like production's chunks, the fp32 graph is within 0.05px
+// at 512x288 and the fp16 graph is out by up to 76px and returns NaN outright on
+// a third of chunks at the 256 length production uses. That matches the warning
+// recorded for the converter it came from - onnxconverter-common fails at Resize
+// nodes, and InpaintNet upsamples. See tools/models/README.md step 4. Do not
+// "restore consistency" by switching this to the fp16 file.
+val testOnlyModels = listOf("inpaintnet.onnx")
 val onnxSourceDir = rootProject.layout.projectDirectory.dir("tools/models/onnx")
 val onnxAssetsDir = layout.buildDirectory.dir("generated/onnxAssets")
+val onnxTestAssetsDir = layout.buildDirectory.dir("generated/onnxTestAssets")
 
 // Fail with the command that fixes it. Without this the app builds fine and
 // dies at runtime on a missing asset, which is a far worse place to learn the
@@ -178,7 +195,7 @@ val verifyOnnxModels by tasks.registering {
     val optional = providers.gradleProperty("onnxModelsOptional")
         .map { it.toBoolean() }.getOrElse(false)
     doLast {
-        val missing = bundledModels.filterNot { source.file(it).asFile.exists() }
+        val missing = (bundledModels + testOnlyModels).filterNot { source.file(it).asFile.exists() }
         if (missing.isEmpty()) return@doLast
         val problem = "missing ONNX graphs in ${source.asFile}: ${missing.joinToString()}\n" +
             "Run: python tools/models/pull_weights.py --tracker-repo ../badminton-tracker\n" +
@@ -204,6 +221,18 @@ val copyOnnxModels by tasks.registering(Sync::class) {
     into(onnxAssetsDir.map { it.dir("models") })
 }
 
+// The same staging for the graph the app does not ship, into the test variant's
+// own assets. One task each rather than one task and a filter: `Sync` deletes
+// whatever its destination holds that its source does not name, so the two lists
+// cannot share a directory.
+val copyTestOnlyOnnxModels by tasks.registering(Sync::class) {
+    description = "Stage the ONNX graphs only the instrumented tests load."
+    dependsOn(verifyOnnxModels)
+    from(onnxSourceDir) { include(testOnlyModels) }
+    into(onnxTestAssetsDir.map { it.dir("models") })
+}
+
 android.sourceSets.getByName("main").assets.srcDir(onnxAssetsDir)
+android.sourceSets.getByName("androidTest").assets.srcDir(onnxTestAssetsDir)
 tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }
-    .configureEach { dependsOn(copyOnnxModels) }
+    .configureEach { dependsOn(copyOnnxModels, copyTestOnlyOnnxModels) }

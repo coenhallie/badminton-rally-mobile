@@ -18,9 +18,13 @@ import java.io.File
  *  2. Blob detection with an area filter and a weighted centroid, not an
  *     argmax. That lives in `:analysis` as `heatmapToCoord`, ported and held
  *     to production by golden vectors.
- *  3. InpaintNet gap-filling over the finished trajectory - run by
- *     [InpaintNetRunner], separately, because it is trajectory-level rather
- *     than frame-level.
+ *  3. InpaintNet gap-filling over the finished trajectory. **Not run**, here
+ *     or on iOS. It is trajectory-level rather than frame-level, so it would
+ *     be a runner of its own; the pipeline design's section 6.3 records why
+ *     there is not one - it filled zero frames on both measured videos, and
+ *     production's own PyTorch path fills zero too. The graph is still exported
+ *     and still tested, but not shipped: `testOnlyModels` in
+ *     androidApp/build.gradle.kts says where it lives now.
  */
 class TrackNetRunner(
     private val context: Context,
@@ -35,6 +39,20 @@ class TrackNetRunner(
         const val CHANNELS = (SEQ_LEN + 1) * 3
 
         private const val PLANE = WIDTH * HEIGHT
+
+        /**
+         * The ceiling this pass reports, never 1.0.
+         *
+         * `LocalInferenceEngine.run` takes a fraction in [0, 1) because
+         * completion is the coordinator's to report after the analysis that
+         * FOLLOWS inference. Reaching 1.0 on the last full sequence left the
+         * bar sitting finished through rally detection and clip cutting;
+         * `LocalAnalysisCoordinator`'s own `coerceAtMost` hid it from the
+         * screen but not from any other caller of this runner. iOS's
+         * `TrackNetRunner.mainPassProgress` clamps at the same number, so the
+         * two platforms agree on the value and not only on the behaviour.
+         */
+        private const val MAX_PROGRESS = 0.999f
     }
 
     /**
@@ -109,7 +127,9 @@ class TrackNetRunner(
                 inSeq++
                 if (inSeq == SEQ_LEN) {
                     flush()
-                    if (total > 0) onProgress((index + 1).toFloat() / total)
+                    if (total > 0) {
+                        onProgress(((index + 1).toFloat() / total).coerceAtMost(MAX_PROGRESS))
+                    }
                 }
             }
             flush()

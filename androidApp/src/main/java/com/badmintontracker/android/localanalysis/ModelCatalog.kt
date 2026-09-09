@@ -1,6 +1,7 @@
 package com.badmintontracker.android.localanalysis
 
 import android.content.Context
+import android.content.res.AssetManager
 import com.badmintontracker.android.BuildConfig
 import java.io.File
 
@@ -17,24 +18,14 @@ import java.io.File
  * detector, and at 230ms a frame against medium's 1567 it is the only one that
  * runs on a phone at all.
  */
+/**
+ * A graph the app SHIPS. InpaintNet is not one: the stage it belongs to is not
+ * run on either platform, so it is exported and tested but left out of the APK -
+ * see `testOnlyModels` in androidApp/build.gradle.kts, and `path(Context, String)`
+ * below for how the test still loads it.
+ */
 enum class Model(val asset: String) {
     TRACKNET("models/tracknet.fp16.onnx"),
-    /**
-     * fp32, deliberately, while every other graph here is fp16.
-     *
-     * The fp16 conversion of this model is broken. Measured against the real
-     * PyTorch module on trajectories shaped like production's chunks, the fp32
-     * graph is within 0.05px at 512x288 and the fp16 graph is out by up to 76px
-     * and returns NaN outright on a third of chunks at the 256 length
-     * production actually uses. The 0a gate's new inpaint_raw term is what
-     * caught it; see tools/models/README.md step 4.
-     *
-     * That matches the warning already recorded for the converter this graph
-     * came from: onnxconverter-common fails at Resize nodes, and InpaintNet
-     * upsamples. Costs 1MB over the fp16 file, which is the whole price of the
-     * fix. Do not "restore consistency" by switching this back.
-     */
-    INPAINTNET("models/inpaintnet.onnx"),
     DETECTOR("models/badminton.fp16.onnx"),
 
     /**
@@ -60,11 +51,25 @@ object ModelCatalog {
      */
     val VERSION: String = BuildConfig.MODEL_VERSION
 
-    fun path(context: Context, model: Model): String {
-        val out = File(context.filesDir, "onnx/${model.asset.substringAfterLast('/')}")
+    fun path(context: Context, model: Model): String = path(context, model.asset)
+
+    /**
+     * The same staging, for a graph named by its asset path rather than by a
+     * [Model], and optionally read from somewhere other than [context]'s own
+     * assets.
+     *
+     * Both exist for the one graph the app does not ship: `OnnxSessionTest`
+     * reads InpaintNet out of the TEST apk's assets, so that the enum above can
+     * go on meaning "what this APK carries". [assets] is a separate argument
+     * because an instrumented test runs inside the APP's process - it can read
+     * the test package's assets but cannot write to its data directory, so the
+     * file has to be read from one package and staged into the other's.
+     */
+    fun path(context: Context, asset: String, assets: AssetManager = context.assets): String {
+        val out = File(context.filesDir, "onnx/${asset.substringAfterLast('/')}")
         if (out.exists() && out.length() > 0) return out.path
         out.parentFile?.mkdirs()
-        context.assets.open(model.asset).use { input ->
+        assets.open(asset).use { input ->
             out.outputStream().use { input.copyTo(it) }
         }
         return out.path

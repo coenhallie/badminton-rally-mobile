@@ -22,6 +22,13 @@ class OnnxSessionTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
 
     /**
+     * The TEST apk's own assets, which carry the one graph the app does not
+     * ship. See `testOnlyModels` in androidApp/build.gradle.kts. Staged into
+     * the app's files directory, which is the one this process can write to.
+     */
+    private val testAssets = InstrumentationRegistry.getInstrumentation().context.assets
+
+    /**
      * Seeded noise, never zeros.
      *
      * Desktop measurement showed an all-zero image drives YOLO26's
@@ -65,7 +72,7 @@ class OnnxSessionTest {
         // The length axis is genuinely dynamic: production chunks at 256 with
         // stride 128 and pads to a multiple of 8, so one session sees several
         // lengths. Tracing at a single length would not prove this.
-        OnnxSession(ModelCatalog.path(context, Model.INPAINTNET)).use { s ->
+        OnnxSession(ModelCatalog.path(context, "models/inpaintnet.onnx", testAssets)).use { s ->
             assertEquals(-1L, s.inputShape()[2])
             for (length in listOf(16, 128, 256)) {
                 val out = s.run(noise(1 * 3 * length), longArrayOf(1, 3, length.toLong()))
