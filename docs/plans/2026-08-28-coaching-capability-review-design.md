@@ -160,6 +160,9 @@ first four needs any new machine learning.
   derived. Do not build it first and regret the input.
 - **The `score_logs` migration is still unapplied on the server.** Every
   capability here reads or writes that table.
+  **Update 2026-09-09: no longer true.** `supabase migration list --linked` on
+  2026-09-07 shows it applied. Reconcile, player identity and the ledgers are
+  unblocked on the server side.
 
 ---
 

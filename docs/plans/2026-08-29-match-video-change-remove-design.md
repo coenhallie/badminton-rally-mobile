@@ -224,3 +224,9 @@ same-named parity cases in `MatchModelTests` and nothing else.
 cannot be observed. Benign for this change: a failed upsert means the pull never
 runs, so the local detach is not overwritten. It is still unverified rather than
 verified.
+
+> **Update 2026-09-09.** The migration IS applied. `supabase migration list
+> --linked` on 2026-09-07 shows every local migration through
+> `20260830000000_label_usage` on the remote, `20260827000000_score_logs`
+> included. The round trip above is verifiable now; the paragraph is left as
+> written because it is what the change was reasoned against.

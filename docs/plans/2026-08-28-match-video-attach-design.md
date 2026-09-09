@@ -438,6 +438,11 @@ applied: the binding write targets a column in a table that does not exist. This
 is L1a Task 1, it was reported and deliberately left out of the scoring work,
 and it has to be the first task of this one.
 
+> **Update 2026-09-09.** Task 0 is done. `supabase migration list --linked` on
+> 2026-09-07 shows `20260827000000_score_logs` applied on the remote, along with
+> every other local migration through `20260830000000_label_usage`. Treat this
+> section as history, not as an open prerequisite.
+
 ---
 
 ## 6. Deliberately not in this pass

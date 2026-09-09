@@ -82,8 +82,61 @@ The mobile app is versioned independently from the web app.
   alone run to tens of megabytes per match, and until now they stayed on the
   phone for the life of the install with nothing left in the app that could
   reach them.
+- **Court mapping opens on the marks the video was analysed with last time.**
+  They were saved before every run and read back by nothing, so a second run
+  over the same video - in the cloud after one on the phone, at a different set
+  of metrics, or after a failure - meant placing all twelve points again by
+  hand, on landmarks only as repeatable as the hand placing them. The points
+  are still Undo-able and Clear-able from there, so re-marking is a choice
+  rather than the only option. Both phones.
+- The court legend's Center-Near marker is visible in the light theme. It is
+  drawn in desktop's own white, on a white page, which left one of the twelve
+  landmarks as blank space; every marker now carries a ring. Both phones.
+- The rally numbers on the Base panel no longer fall inside the whole-match
+  ring. A rally whose base sat within a ring's width of the overall marker had
+  its number drawn inside a ring centred on a different point, which reads as
+  that ring's label. Both phones.
+- **The "what is running" sheet no longer opens itself.** Leaving it open when
+  the last analysis finished left the app holding the intent to show it, so the
+  next run - minutes or days later - presented it unasked over whatever screen
+  you were on. Both phones.
+- **iPhone: the Analytics list, an analysis and the clips list drew their
+  content through the navigation title.** A page long enough to scroll ran
+  under a transparent bar; the Base panel's rally list is the first page long
+  enough for it to show. The labels screen keeps the system's own bar.
+- iPhone: a drag on a metric graph that turned into a page scroll left
+  scrubbing dead for the rest of the visit to that screen. The graph decided
+  once per gesture whether a drag was a scrub, and a gesture the scroller took
+  over never told it the drag was over.
+- iPhone: opening an analysis, opening the clips list, and the Analytics and
+  drawer lists learning what earlier runs left on disk no longer block the main
+  thread. Each of those reads a track of a megabyte or so, a clips sidecar and
+  a file per clip, and all of it ran where the screen is drawn - which is what
+  the underlying reads were made thread-safe for in the first place.
+- The court mapping screen now says when the marks on it came from the video's
+  last analysis, and that Clear starts over. Twelve dots that appear on opening
+  otherwise read as work you just did - and where those marks are wrong, which
+  every court marked on an iPhone before this release is, nothing said that
+  clearing them was the way out. Both phones.
+- Android: opening the Heatmap or Base tab no longer freezes the screen while it
+  reads. Parsing the stored track and measuring a rally's median position both
+  ran where the frame is drawn, so the tab arrived frozen for as long as that
+  took, on a long match noticeably. Both now run off that thread, with the panel
+  blank for the frame or two in between rather than flashing a message about a
+  run it has not looked for yet.
+- iPhone: an analysis screen and the two lists that show run progress no longer
+  redraw themselves - and re-measure the panel behind them - on every frame of
+  every run in flight. Asking whether one run had finished subscribed the whole
+  screen to every progress report of all of them.
+- iPhone: the court mapping screen drew through its own title bar, which was
+  worst in the one case it mattered - a video whose file has gone paints the top
+  of the screen red, "Court mapping" and the status bar included.
 
 ### Changed
+- The Android app is 2MB smaller. It shipped a fourth model, InpaintNet, whose
+  stage neither phone runs; it is still exported and still exercised on a real
+  device by the instrumented tests, from those tests' own assets rather than
+  from the app's.
 - Setting a video up for analysis is now two steps instead of one crowded
   screen. Step one is the court mapping alone: the frame on a rounded card, the
   landmark being asked for named in its own colour, a bar showing how many of
