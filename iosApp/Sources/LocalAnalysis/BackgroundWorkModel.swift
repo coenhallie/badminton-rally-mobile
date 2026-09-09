@@ -38,9 +38,23 @@ final class BackgroundWorkModel {
     /// note is the long form.
     private(set) var cloudFailures: Set<String> = []
 
-    /// Started once. Two loops that never return, which is why this object is
-    /// held by `RootView` and not by a view that can be pushed and popped.
-    private var started = false
+    /// The two loops, held for the model's own lifetime.
+    ///
+    /// Started in `init` rather than from a view's `.task`, and that is not a
+    /// style choice. The only view that could own them is the scope, which lives
+    /// inside `RootView`'s authenticated branch: signing out takes that branch
+    /// away, cancels the task and unwinds both loops, and signing back in
+    /// re-creates a scope around the SAME model - whose entries and progress
+    /// would then sit frozen at the moment of sign-out for the rest of the
+    /// session. The device half would go on working, because `work` reads the
+    /// runner live, so the symptom would be a ring that had quietly stopped
+    /// noticing cloud runs. androidApp's monitor launches into an
+    /// application-scoped `CoroutineScope` in its own `init` for the same reason.
+    ///
+    /// Not cancelled anywhere, and not leaked either: exactly one of these is
+    /// made, `RootView` holds it for the life of the process, and `deinit` on a
+    /// `@MainActor` class cannot reach an isolated property to cancel it.
+    private var loops: Task<Void, Never>?
 
     init(
         localVideos: LocalVideoRepository,
@@ -54,7 +68,9 @@ final class BackgroundWorkModel {
         // already in flight when the app launches must light the ring on the
         // first frame, not on its next progress callback.
         self.entries = localVideos.entries.value
+        loops = Task { [weak self] in await self?.observe() }
     }
+
 
     /// What the indicator renders, or nil when nothing is running and nothing
     /// has failed.
@@ -80,9 +96,7 @@ final class BackgroundWorkModel {
         )
     }
 
-    func start() async {
-        guard !started else { return }
-        started = true
+    private func observe() async {
         await withTaskGroup(of: Void.self) { group in
             group.addTask { @MainActor [weak self] in
                 guard let self else { return }
@@ -152,8 +166,6 @@ struct BackgroundWorkScope<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        content
-            .environment(\.backgroundWork, model.work)
-            .task { await model.start() }
+        content.environment(\.backgroundWork, model.work)
     }
 }

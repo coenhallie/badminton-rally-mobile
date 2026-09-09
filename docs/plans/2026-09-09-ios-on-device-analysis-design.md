@@ -446,6 +446,14 @@ Analytics bar at 34% with its sheet open, over the row that says the same thing;
 `-analysis-banner.png` is what the finished run left on Home. The numbers are
 honest for a synthetic clip - no shuttle, so no rallies and no clips.
 
+The indicator's own navigation is walked too, because `goToMatches` dismisses
+nine bindings at once and this file's `CreateFlowDestination` comment is an
+on-device account of SwiftUI not settling a pop on one binding racing a push on
+another. From an analysed match's detail screen - two pushes deep, with a run in
+flight - the ring's sheet opens and "Go to matches" lands on Home with the drawer
+open on the matches list, which is what androidApp's `launchSingleTop` plus
+`pendingDrawerOpen` does.
+
 The part no screenshot answers is whether the ring is LIVE, and two things assert
 it rather than showing it. `BackgroundWorkTests` starts a real run and samples
 `work` until it settles, which covers the model; the walkthrough reads the
@@ -627,6 +635,15 @@ seven that vanished were exactly those below the threshold the inset predicts.
 Two independent signatures of the same cause. The fix is the modifier order -
 every gesture goes on the framed view, above `.position` - which also repairs the
 magnify centroid and the pan, since both read the same space.
+
+Both configurations are checked, not just the easy one. `CourtTapMath.inverse`
+is only right if the tap, the offset and the scale share a space, and the
+reorder moved all three at once; the zoomed case is the one the screen's own copy
+recommends ("Pinch to zoom for accuracy") and the one where a residual error
+would scale with the zoom rather than being a constant anyone would notice. A
+walkthrough pinches to 2.2x and places a mark in the lower part of the frame -
+the region the unfixed screen could not reach at all - and the marker lands on
+the tap.
 
 This is not a defect the port introduced and it is not androidApp's: over there
 the tap arrives in the Canvas's own coordinates. Every court marked on an iPhone
