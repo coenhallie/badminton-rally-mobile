@@ -10,6 +10,19 @@ The mobile app is versioned independently from the web app.
 ## [Unreleased]
 
 ### Added
+- **iPhone can analyze a match on the phone.** Everything the Android app has
+  done on device since the summer now runs on iOS too: the video is decoded
+  once, three models run on each frame, the rallies are cut into their own
+  clips, and where the near player stood is drawn on a court. Court mapping ends
+  in the same two choices Android offers - analyze in the cloud, or on this
+  phone - with the same list of what a run should produce and what it will cost
+  in time. An analysed match carries the availability dot on the Analytics list
+  and opens its heatmap on a tap.
+
+  One thing works differently, and the app says so where it matters: an
+  on-device run needs Shuttl open and the phone unlocked. iOS has no equivalent
+  of the Android foreground service, so a run pauses when you leave and picks up
+  what it had written rather than pretending to continue in the background.
 - Pinch to zoom on every video player, up to five times, and drag to pan once
   zoomed. Double-tap zooms in on the spot, double-tap again zooms out. The
   skeleton scales with the frame, so a joint can be checked up close.

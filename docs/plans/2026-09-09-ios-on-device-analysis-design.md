@@ -1,7 +1,7 @@
 # Design: the on-device analysis pipeline on iOS
 
 **Date:** 2026-09-09
-**Status:** Proposal, pending approval
+**Status:** Implemented, except where §7 says otherwise (2026-09-09)
 **Implements:** Stage 2 of `2026-08-31-on-device-analysis-pipeline-design.md`
 ("Phase 1 on iOS"), plus the Phase 2 platform work Android has since shipped.
 **Reference convention:** a bare `§N` means a section of *this* document;
@@ -295,11 +295,17 @@ has content.
 
 **The panels**, in the order they are worth building:
 
-| panel | what it draws | Android source |
-|---|---|---|
-| Heatmap | where the near player stood, on a court | `HeatmapPanel`, `CourtHeatmapView` |
-| Base | per-rally base position | `BasePositionPanel`, `BasePositionFormat` |
-| Skeleton | joints over playback, with the metrics strip and graph | `SkeletonPanel`, `SkeletonOverlay`, `MetricsStrip`, `MetricGraph` |
+| panel | what it draws | Android source | state |
+|---|---|---|---|
+| Heatmap | where the near player stood, on a court | `HeatmapPanel`, `CourtHeatmapView` | **done** |
+| Base | per-rally base position | `BasePositionPanel`, `BasePositionFormat` | not yet |
+| Skeleton | joints over playback, with the metrics strip and graph | `SkeletonPanel`, `SkeletonOverlay`, `MetricsStrip`, `MetricGraph` | not yet |
+
+The detail screen with one panel is not a reduced port: `availablePanels` on
+Android already gates each tab on having content and falls back to a plain
+"HEATMAP" heading when only one does, so this is the same screen in the state
+Android draws whenever the other two are empty. Each of the two lands by
+flipping one condition.
 
 **The chrome.** `BackgroundWorkAction` and `LocalAnalysisBanner` have shared
 state models (`BackgroundWork`, `DeviceWork`, `deviceWorkLabel`) already in
@@ -393,6 +399,14 @@ Belongs in pipeline §6.
   coordinator's `coerceAtMost(0.999f)` hides it today, so the visible symptom is
   only that Android's bar sits full through rally detection and clip cutting.
   iOS clamps in the engine; Android still does not.
+
+**Landed, and what has not.** The engine, the stores, the clip cutter, the run
+orchestration, the target picker, the metric selector, the Analytics list wiring
+and the heatmap are in. Still to come, in this order: the Base and Skeleton
+panels (§5), the chrome indicator and the analysis banner (§5), and the
+`RawInference` device-against-device comparison that is the design's real gate
+(§6) - which needs the corpus video, an iPhone, and an Android phone, none of
+which this machine has.
 
 **Deliberately not in this pass.**
 
