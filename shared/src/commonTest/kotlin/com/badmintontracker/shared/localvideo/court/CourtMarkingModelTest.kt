@@ -1,5 +1,6 @@
 package com.badmintontracker.shared.localvideo.court
 
+import com.badmintontracker.shared.model.CourtKeypoints
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.floats.plusOrMinus
 import io.kotest.matchers.shouldBe
@@ -63,5 +64,42 @@ class CourtMarkingModelTest {
     @Test
     fun toCourtKeypoints_requires_completion() {
         shouldThrow<IllegalStateException> { CourtMarkingState(100, 100).toCourtKeypoints() }
+    }
+
+    @Test
+    fun restored_round_trips_a_saved_marking_in_the_same_order() {
+        var s = CourtMarkingState(1920, 1080)
+        repeat(12) { i -> s = s.place(i.toFloat(), (i * 2).toFloat(), 1920f, 1080f) }
+
+        val restored = CourtMarkingState.restored(1920, 1080, s.toCourtKeypoints())
+
+        restored.points shouldBe s.points
+        restored.isComplete shouldBe true
+        restored.nextIndex shouldBe 12
+        restored.toCourtKeypoints() shouldBe s.toCourtKeypoints()
+    }
+
+    @Test
+    fun restored_without_saved_keypoints_is_an_empty_marking() {
+        val restored = CourtMarkingState.restored(1920, 1080, null)
+        restored.points shouldBe emptyList()
+        restored.videoWidth shouldBe 1920
+        restored.videoHeight shouldBe 1080
+    }
+
+    @Test
+    fun restored_drops_a_malformed_marking_rather_than_placing_part_of_it() {
+        // A pair short of its y: taking the eleven good ones would relabel
+        // every point after the gap as its neighbour.
+        val truncated = CourtKeypoints(
+            topLeft = listOf(1f, 2f), topRight = listOf(3f, 4f),
+            bottomRight = listOf(5f, 6f), bottomLeft = listOf(7f, 8f),
+            netLeft = listOf(9f, 10f), netRight = listOf(11f, 12f),
+            serviceLineNearLeft = listOf(13f, 14f), serviceLineNearRight = listOf(15f, 16f),
+            serviceLineFarLeft = listOf(17f, 18f), serviceLineFarRight = listOf(19f, 20f),
+            centerNear = listOf(21f), centerFar = listOf(23f, 24f),
+        )
+
+        CourtMarkingState.restored(1920, 1080, truncated).points shouldBe emptyList()
     }
 }

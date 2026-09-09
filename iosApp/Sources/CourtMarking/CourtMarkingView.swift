@@ -48,6 +48,13 @@ struct CourtMarkingView: View {
     )
     @State private var frame: UIImage? = nil
     @State private var marking: CourtMarkingState? = nil
+    /// Whether the marks on screen are the ones the last run used, untouched.
+    ///
+    /// Set when the screen opens on them and cleared by the first edit, which
+    /// from a complete marking means Undo or Clear: a tap on a marking that
+    /// already has its twelve points is ignored. androidApp keeps the same flag
+    /// in `CourtMarkingUiState`.
+    @State private var showsSavedMarks = false
     @State private var error: String? = nil
     @State private var scale: CGFloat = 1
     @State private var offset: CGSize = .zero
@@ -71,6 +78,11 @@ struct CourtMarkingView: View {
         }
         .navigationTitle(step.title)
         .navigationBarTitleDisplayMode(.inline)
+        // Without this the bar is transparent and whatever is at the top of the
+        // VStack runs up behind the title and the status bar. Seen on the
+        // simulator with the error banner: a video whose file has gone paints
+        // the whole top of the screen red, "Court mapping" included.
+        .shuttlNavigationBarBackground()
         // The system back button REPLACED on the options step, not joined by a
         // second one. Adding a leading item leaves the navigation chevron in
         // place beside it, and the two then do different things - one returns to
@@ -103,11 +115,18 @@ struct CourtMarkingView: View {
                 let loaded = try await CourtFrameLoader.loadFirstFrame(relativePath: entry.uri)
                 courtFrame = loaded
                 frame = loaded.image
-                marking = CourtMarkingState(
+                // Opened on the marks this entry was analysed with last time,
+                // when it has any. They are persisted before either pipeline
+                // starts and were read back by nothing, so a second run over a
+                // video - cloud after device, a different metric set, a retry
+                // that falls through to here - meant placing all twelve again.
+                let restored = CourtMarkingState.companion.restored(
                     videoWidth: Int32(loaded.image.size.width * loaded.image.scale),
                     videoHeight: Int32(loaded.image.size.height * loaded.image.scale),
-                    points: []
+                    keypoints: entry.keypoints
                 )
+                marking = restored
+                showsSavedMarks = restored.isComplete
                 // What this phone has learned about itself, if anything. Read
                 // here rather than in the selector so the selector stays a view
                 // over values it is given.
@@ -152,14 +171,31 @@ struct CourtMarkingView: View {
         }
 
         instructionRow(marking: marking)
+        // Above the guide, not below it: the guide is asking him to tap
+        // landmarks that are already down, and this is the line that says why
+        // they are. androidApp says the same, from the same constant.
+        if showsSavedMarks {
+            Text(CourtMarkingSpec.shared.SAVED_MARKS_NOTE)
+                .font(.footnote)
+                .foregroundStyle(Shuttl.textTertiary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
+        }
         SchematicCourtGuide(placedCount: Int(marking.points.count))
             .padding(.vertical, 8)
 
         HStack(spacing: 12) {
-            Button("Undo") { self.marking = marking.undo() }
-                .disabled(marking.points.isEmpty)
-            Button("Clear") { self.marking = marking.clear() }
-                .disabled(marking.points.isEmpty)
+            Button("Undo") {
+                self.marking = marking.undo()
+                showsSavedMarks = false
+            }
+            .disabled(marking.points.isEmpty)
+            Button("Clear") {
+                self.marking = marking.clear()
+                showsSavedMarks = false
+            }
+            .disabled(marking.points.isEmpty)
         }
         .padding(.horizontal, 16)
 

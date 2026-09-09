@@ -631,7 +631,7 @@ fun AuthGate(
                         factory = viewModelFactory {
                             initializer {
                                 val e = localVideos.get(args.entryId) ?: error("Local video not found")
-                                CourtMarkingViewModel(args.entryId) {
+                                CourtMarkingViewModel(args.entryId, e.keypoints) {
                                     loadFirstFrame(appCtx, Uri.parse(e.uri))
                                 }
                             }

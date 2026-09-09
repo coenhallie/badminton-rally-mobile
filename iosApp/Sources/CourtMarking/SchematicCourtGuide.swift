@@ -70,9 +70,18 @@ struct SchematicCourtGuide: View {
                 let color = specColor(i).opacity(isPlaced || isNext ? 1 : 0.35)
                 let circle = Path(ellipseIn: CGRect(x: dp.x - radius, y: dp.y - radius, width: radius * 2, height: radius * 2))
                 context.fill(circle, with: .color(color))
-                if isNext {
-                    context.stroke(circle, with: .color(.black), lineWidth: 1)
-                }
+                // Every marker is ringed, and in a grey that reads on both
+                // pages rather than black. Two of the twelve colours come from
+                // desktop as white and light grey, and Center-Near - the white
+                // one - was invisible on the light theme's white page; a black
+                // ring would have been as invisible on the dark one. The next
+                // point is still told apart by its size. Android's
+                // SchematicCourtGuide rings its markers the same way.
+                context.stroke(
+                    circle,
+                    with: .color(Shuttl.textSecondary.opacity(isPlaced || isNext ? 1 : 0.35)),
+                    lineWidth: 1
+                )
             }
         }
     }

@@ -175,6 +175,7 @@ fun CourtMarkingScreen(
                     vm = vm,
                     marking = marking,
                     frame = state.frame,
+                    showsSavedMarks = state.showsSavedMarks,
                     onContinue = { savedStep = SetupStep.Options },
                 )
                 else -> OptionsStep(
@@ -246,6 +247,7 @@ private fun ColumnScope.MappingStep(
     vm: CourtMarkingViewModel,
     marking: CourtMarkingState,
     frame: android.graphics.Bitmap?,
+    showsSavedMarks: Boolean,
     onContinue: () -> Unit,
 ) {
     // The frame takes the height its own aspect ratio asks for and no more,
@@ -284,6 +286,21 @@ private fun ColumnScope.MappingStep(
             ) {
                 InstructionRow(marking)
                 PlacementProgress(placed = marking.points.size)
+                // Said above the guide, not below it: the guide is telling him
+                // to tap landmarks that are already down, and this is the line
+                // that explains why they are. iOS says the same, from the same
+                // constant.
+                if (showsSavedMarks) {
+                    Text(
+                        text = CourtMarkingSpec.SAVED_MARKS_NOTE,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = ShuttlTheme.extended.textTertiary,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = PagePadding)
+                            .padding(top = 12.dp),
+                    )
+                }
                 SchematicCourtGuide(nextIndex = marking.nextIndex, placedCount = marking.points.size)
 
                 Row(
@@ -636,6 +653,10 @@ private val schematicPositions: List<Pair<Float, Float>> = listOf(
 @Composable
 private fun SchematicCourtGuide(nextIndex: Int, placedCount: Int) {
     val outline = MaterialTheme.colorScheme.outline
+    // Not `outline`: the court lines' grey is 1.3:1 on the light theme's white
+    // page, which is enough to suggest a line and not enough to hold a marker
+    // whose own fill is white. onSurfaceVariant reads against both pages.
+    val ring = MaterialTheme.colorScheme.onSurfaceVariant
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -678,8 +699,20 @@ private fun SchematicCourtGuide(nextIndex: Int, placedCount: Int) {
                 val isNext = i == nextIndex
                 val r = if (isNext) 6.dp.toPx() else 3.5f.dp.toPx()
                 val color = Color(CourtMarkingSpec.colors[i])
-                drawCircle(if (placed || isNext) color else color.copy(alpha = 0.35f), r, at(pos))
-                if (isNext) drawCircle(Color.Black, r, at(pos), style = Stroke(1.dp.toPx()))
+                val shown = if (placed || isNext) color else color.copy(alpha = 0.35f)
+                drawCircle(shown, r, at(pos))
+                // Every marker is ringed, and in a grey that reads on both
+                // pages rather than black. Two of the twelve come from desktop
+                // as white and light grey, and Center-Near - the white one -
+                // was invisible on the light theme's white surface; a black
+                // ring would have been as invisible on the dark one. The next
+                // point is still told apart by its size.
+                drawCircle(
+                    ring.copy(alpha = if (placed || isNext) 1f else 0.35f),
+                    r,
+                    at(pos),
+                    style = Stroke(1.dp.toPx()),
+                )
             }
         }
         Spacer(Modifier.width(16.dp))

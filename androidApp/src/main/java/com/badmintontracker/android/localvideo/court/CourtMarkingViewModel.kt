@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.badmintontracker.shared.localvideo.court.CourtMarkingState
+import com.badmintontracker.shared.model.CourtKeypoints
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -30,10 +31,25 @@ data class CourtMarkingUiState(
     /** Carried through for the analysis time estimate, which is priced in frames. */
     val fps: Double = 0.0,
     val frameCount: Int = 0,
+    /**
+     * Whether the marks on screen are the ones the last run used, untouched.
+     *
+     * True from the moment the screen opens on them until the coach edits them,
+     * which from a complete marking means Undo or Clear: a tap on a marking that
+     * already has its twelve points is ignored. What it drives is one line
+     * saying where the dots came from.
+     */
+    val showsSavedMarks: Boolean = false,
 )
 
 class CourtMarkingViewModel(
     val entryId: String,
+    /**
+     * What this entry was marked with last time, if it was. The screen opens on
+     * those twelve points rather than an empty frame, so a second run over the
+     * same video is a review of the marks and not a re-marking of them.
+     */
+    private val savedKeypoints: CourtKeypoints? = null,
     private val loadFrame: suspend () -> CourtFrame,
 ) : ViewModel() {
 
@@ -43,12 +59,14 @@ class CourtMarkingViewModel(
         viewModelScope.launch {
             runCatching { loadFrame() }
                 .onSuccess { f ->
+                    val restored = CourtMarkingState.restored(f.width, f.height, savedKeypoints)
                     state.update {
                         it.copy(
                             frame = f.frame,
-                            marking = CourtMarkingState(f.width, f.height),
+                            marking = restored,
                             fps = f.fps,
                             frameCount = f.frameCount,
+                            showsSavedMarks = restored.isComplete,
                         )
                     }
                 }
@@ -64,6 +82,6 @@ class CourtMarkingViewModel(
         }
     }
 
-    fun onUndo() = state.update { it.copy(marking = it.marking?.undo()) }
-    fun onClear() = state.update { it.copy(marking = it.marking?.clear()) }
+    fun onUndo() = state.update { it.copy(marking = it.marking?.undo(), showsSavedMarks = false) }
+    fun onClear() = state.update { it.copy(marking = it.marking?.clear(), showsSavedMarks = false) }
 }
