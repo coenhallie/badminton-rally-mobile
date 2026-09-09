@@ -71,6 +71,12 @@ struct CourtMarkingView: View {
         }
         .navigationTitle(step.title)
         .navigationBarTitleDisplayMode(.inline)
+        // The system back button REPLACED on the options step, not joined by a
+        // second one. Adding a leading item leaves the navigation chevron in
+        // place beside it, and the two then do different things - one returns to
+        // the marks, the other leaves court marking entirely - which is two back
+        // buttons on one screen doing two things.
+        .navigationBarBackButtonHidden(step == .options)
         .toolbar {
             // Back out of the options step to the mapping step rather than off
             // the screen, which is what Android's BackHandler does. Without it
@@ -78,7 +84,12 @@ struct CourtMarkingView: View {
             // leave and start again.
             if step == .options {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Back") { step = .mapping }
+                    Button {
+                        step = .mapping
+                    } label: {
+                        Image(systemName: "chevron.left")
+                    }
+                    .accessibilityLabel("Back to court mapping")
                 }
             }
         }

@@ -81,15 +81,25 @@ struct AnalyticsListView: View {
             await model.refresh()
         }
         .task {
+            // Once on appearance, and not only from the onChange below: that
+            // fires on a CHANGE, and by the time this view appears the entries
+            // are usually already loaded, so the first render read an empty set
+            // and every analysed match showed as never analysed.
+            refreshStoredTracks(model.localEntries.map(\.id))
+        }
+        .task {
             for await map in analyze.progress {
                 progressById = map
             }
         }
         .refreshable { await model.refresh() }
         .onChange(of: model.localEntries.map(\.id)) { _, ids in refreshStoredTracks(ids) }
-        // Also when a run finishes: the track appears on disk without the entry
-        // list moving, so nothing above would notice.
-        .onChange(of: localAnalysis?.states.count ?? 0) { _, _ in
+        // Also on every move of a run's state: a track appears on disk without
+        // the entry list moving, so nothing above would notice. The whole map,
+        // not its count - a run going from analysing to done leaves the count
+        // where it was, and that transition is exactly the one that writes the
+        // track.
+        .onChange(of: localAnalysis?.states ?? [:]) { _, _ in
             refreshStoredTracks(model.localEntries.map(\.id))
         }
         .navigationDestination(item: $courtMarkingRoute) { route in
