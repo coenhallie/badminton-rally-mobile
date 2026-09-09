@@ -549,6 +549,9 @@ struct MatchView: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
+        // The chrome indicator, on every bar androidApp puts it on. See
+        // `BackgroundWorkAction`.
+        ToolbarItem(placement: .topBarTrailing) { BackgroundWorkAction() }
         // The sort order only means something while rallies are on screen.
         if facet == .rallies {
             ToolbarItem(placement: .topBarTrailing) {

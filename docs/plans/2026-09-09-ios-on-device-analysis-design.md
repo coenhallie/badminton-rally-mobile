@@ -354,7 +354,35 @@ the same menu gained Android's "Player heatmap" item beside it.
 
 **The chrome.** `BackgroundWorkAction` and `LocalAnalysisBanner` have shared
 state models (`BackgroundWork`, `DeviceWork`, `deviceWorkLabel`) already in
-`shared`, so the port is the SwiftUI, not the logic.
+`shared`, so the port is the SwiftUI, not the logic. Two things had to be
+decided rather than copied:
+
+- **Where the state lives.** androidApp provides `BackgroundWork` as a
+  composition local around the NavHost, so no screen signature carries a
+  progress concern. `@Environment` is the direct analogue and is what iOS uses,
+  provided by a `BackgroundWorkScope` around Home. The scope is its own small
+  view on purpose: reading the work is what establishes the observation that
+  fires on every progress callback, and here that re-evaluates the wrapper and
+  nothing else - the content is built by `RootView` and only the bars that
+  actually read the key follow. `BackgroundWork` itself is a plain value in the
+  environment rather than the model, so a toolbar is never observing the runner.
+- **Where the device half comes from.** `BackgroundWorkModel.work` is computed,
+  not stored, and reads `runner.deviceWork` at the moment it is asked. That is
+  what makes the ring live without the model subscribing to the runner at all.
+  Only the cloud half is held, because a cloud failure is a TRANSITION between
+  two readings of the entry list rather than a state on it; that diff is
+  `failureTransitions` in `shared` now, with androidApp's `collect` and iOS's
+  `for await` each keeping only the previous map.
+
+The indicator sits on the eight bars androidApp puts it on. Court marking is
+deliberately not one of them, on either platform: it is the screen a run is
+started FROM.
+
+The banner departs from androidApp in one place. Over there each finished run
+lists its clips as buttons over a dialog, because there was no screen that
+showed them; iOS has `LocalClipsView`, which draws every cut rally with its
+bounds and loops it, so the banner routes there instead of growing a second,
+worse clip list.
 
 ---
 
@@ -409,6 +437,22 @@ desk; it is set from the first paired run and recorded in the plan.
 **End to end, by hand.** Import a video on an iPhone, mark the court, analyse on
 device, watch clips appear, open the heatmap, scrub the skeleton. Then the
 awkward one §4 exists for: background the app mid-run and come back.
+
+**Looked at, on the simulator.** The chrome, over a real on-device run: a
+generated 90-frame video seeded as a local video by a host-bundle test, then
+marked and analysed through the app's own screens.
+`docs/screenshots/2026-09-09-ios-background-work-indicator.png` is the ring in the
+Analytics bar at 34% with its sheet open, over the row that says the same thing;
+`-analysis-banner.png` is what the finished run left on Home. The numbers are
+honest for a synthetic clip - no shuttle, so no rallies and no clips.
+
+The part no screenshot answers is whether the ring is LIVE, and two things assert
+it rather than showing it. `BackgroundWorkTests` starts a real run and samples
+`work` until it settles, which covers the model; the walkthrough reads the
+indicator's accessibility label - which IS the work label, percentage included -
+once a second and fails unless it changes, which covers `@Environment` inside a
+`ToolbarItem`. That was an open question: `@Observable` tracking through a
+`ForEach` was one until the ring moved, and through a toolbar it was a new one.
 
 **Looked at, on the simulator.** The Base panel over a seeded fixture - a track
 with five rallies' worth of samples and five clip windows, written by a throwaway
@@ -555,13 +599,38 @@ Belongs in pipeline §6.
   `canRemove` take the device state now, and `rowStatus` ports Android's
   device-first precedence for the line above them.
 
-**Landed, and what has not.** The engine, the stores, the clip cutter, the run
-orchestration, the target picker, the metric selector, the Analytics list
-wiring, the heatmap, the clips screen, the skeleton panel and the Base panel are
-in. Still to come, in this order: the chrome indicator and the analysis banner
-(§5), and the `RawInference` device-against-device comparison that is the
-design's real gate (§6) - which needs the corpus video, an iPhone, and an
-Android phone, none of which this machine has.
+**Landed, and what has not.** Everything §5 lists is in: the engine, the stores,
+the clip cutter, the run orchestration, the target picker, the metric selector,
+the Analytics list wiring, the heatmap, the clips screen, the skeleton panel, the
+Base panel, the chrome indicator and the analysis banner. What is left is the
+`RawInference` device-against-device comparison that is the design's real gate
+(§6), which needs the corpus video, an iPhone and an Android phone, none of which
+this machine has.
+
+**Found by the chrome walkthrough, and fixed here: iOS court marking placed
+every mark in the wrong place, and could not reach the near half of the court at
+all.**
+
+`CourtMarkingView` attached its tap gesture AFTER `.position(...)`. That modifier
+returns a view filling its parent with the child drawn at a point inside it, so
+the gesture reported locations in the `GeometryReader`'s space while `place`
+read them as the frame's. The court is 16:9 in a column about twice as tall, so
+every mark landed the letterbox inset - about 137pt of a 226pt frame - below the
+finger, and any tap past roughly 40% of the frame mapped beyond its bottom edge
+and was dropped silently by `tapGesture`'s own bounds guard. The near half of the
+court, which is the half this whole pipeline tracks a player on, could not be
+marked.
+
+Found by driving the real screen: a walkthrough placed twelve points at known
+positions and five landed, all of them displaced by exactly the inset, and the
+seven that vanished were exactly those below the threshold the inset predicts.
+Two independent signatures of the same cause. The fix is the modifier order -
+every gesture goes on the framed view, above `.position` - which also repairs the
+magnify centroid and the pan, since both read the same space.
+
+This is not a defect the port introduced and it is not androidApp's: over there
+the tap arrives in the Canvas's own coordinates. Every court marked on an iPhone
+before this is wrong, and re-marking is the only way to correct one.
 
 **Found by the Base panel, not fixed.**
 

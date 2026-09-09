@@ -171,6 +171,9 @@ struct AnalyticsDetailView: View {
         .onChange(of: runSettled) { _, _ in reload() }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            // The chrome indicator, on every bar androidApp puts it on. See
+            // `BackgroundWorkAction`.
+            ToolbarItem(placement: .topBarTrailing) { BackgroundWorkAction() }
             ToolbarItem(placement: .principal) {
                 VStack(spacing: 0) {
                     // The list's own naming: the coach's title, else the file

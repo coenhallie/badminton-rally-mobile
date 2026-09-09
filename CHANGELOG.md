@@ -35,6 +35,17 @@ The mobile app is versioned independently from the web app.
   can be judged more than once. Until now those clips were on the phone with
   nothing in the app that could open them. The same menu also reaches the
   player heatmap directly, as the Android one does.
+- **The iPhone app says what it is working on, from every screen.** A progress
+  ring in the bar while an analysis runs - in the cloud or on the phone - with
+  the percentage inside it; tap it for what each run is actually doing, since
+  copying a video, building a background image and running the models all look
+  the same to a ring. It carries a mark when something has failed while you were
+  elsewhere, and it is simply absent when nothing is running.
+- **What an on-device run produced now waits for you on Home.** A card with the
+  rallies it found, the clips it cut, how many frames the shuttle was visible in
+  and how long it took - the numbers worth holding a cloud run of the same video
+  against - with a way through to the clips and the heatmap, and a Dismiss.
+
 - **iPhone shows where the player played from, rally by rally.** An analysed
   match with its rally clips kept now offers a Base tab beside the heatmap: the
   median position of each rally on the same court the heatmap draws, numbered,
@@ -57,6 +68,12 @@ The mobile app is versioned independently from the web app.
   not fit says which, because the two need different fixes.
 
 ### Fixed
+- **Court mapping on iPhone placed every mark in the wrong place, and the near
+  half of the court could not be marked at all.** A tap landed roughly 60% of the
+  frame's height below your finger, and anything below about the service line was
+  ignored without a mark appearing. Every analysis run on an iPhone before this
+  was measured against a court that was not the one on screen; a match already
+  analysed has to be mapped again to correct it. Android was never affected.
 - A match's menu no longer hides its clips and its heatmap while the match is
   mid-upload. The menu was shown only when "Edit details" or "Remove from app"
   applied, so a row that could do neither offered no way back to what its

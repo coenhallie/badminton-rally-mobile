@@ -69,6 +69,11 @@ struct AnalyticsListView: View {
         }
         .navigationTitle("Analytics")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // The chrome indicator, on every bar androidApp puts it on. See
+            // `BackgroundWorkAction`.
+            ToolbarItem(placement: .topBarTrailing) { BackgroundWorkAction() }
+        }
         .task {
             await model.start()
             // Android builds a fresh ClipListViewModel per entry to

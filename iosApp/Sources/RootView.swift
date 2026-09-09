@@ -13,12 +13,29 @@ struct RootView: View {
     /// any checkout that has not run the export scripts. Passed down as nil so
     /// every screen offers the cloud alone rather than a second button that
     /// fails on the tap.
-    @State private var localAnalysis: LocalAnalysisRunner? =
-        ModelCatalog.canAnalyseOnDevice ? LocalAnalysisRunner() : nil
+    @State private var localAnalysis: LocalAnalysisRunner?
+    /// What the app is working on, for the chrome indicator. Held here for the
+    /// same reason `localAnalysis` is: a run outlives every screen that shows it,
+    /// and its two `for await` loops never return.
+    @State private var backgroundWork: BackgroundWorkModel
     @Environment(\.scenePhase) private var scenePhase
     @State private var authState: AuthState? = nil
     @State private var themeMode: ThemeMode = .light
     @State private var uploading = false
+
+    /// Both models are made here, once, as `HomeView` makes its own: they need
+    /// `rally`, which a property initialiser cannot see, and a second instance
+    /// of either would restart loops that are meant to run for the life of the
+    /// app.
+    init(rally: RallyApp, analyze: AnalyzeCoordinator) {
+        self.rally = rally
+        self.analyze = analyze
+        let runner = ModelCatalog.canAnalyseOnDevice ? LocalAnalysisRunner() : nil
+        _localAnalysis = State(initialValue: runner)
+        _backgroundWork = State(
+            initialValue: BackgroundWorkModel(localVideos: rally.localVideos, analyze: analyze, runner: runner)
+        )
+    }
 
     var body: some View {
         Group {
@@ -26,7 +43,12 @@ struct RootView: View {
             case nil, .loading:
                 SplashView()
             case .authenticated:
-                HomeView(rally: rally, analyze: analyze, localAnalysis: localAnalysis)
+                // The scope is what reads `work` and so what re-evaluates on
+                // every progress callback; Home is built by this body and handed
+                // in, so only the bars that actually read the environment follow.
+                BackgroundWorkScope(model: backgroundWork) {
+                    HomeView(rally: rally, analyze: analyze, localAnalysis: localAnalysis)
+                }
             case .unauthenticated:
                 SignInView(rally: rally)
             case .some:

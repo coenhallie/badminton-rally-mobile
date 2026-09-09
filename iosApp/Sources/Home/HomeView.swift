@@ -195,6 +195,9 @@ struct HomeView: View {
                 )
             }
         }
+        // Inside the stack, because every destination that carries the indicator
+        // is inside it and the routes this dismisses are Home's.
+        .environment(\.backgroundWorkClick, goToMatches)
         .sheet(isPresented: $showAddSheet) {
             AddMatchSheet(
                 onNewMatch: {
@@ -307,6 +310,16 @@ struct HomeView: View {
             if let error = intake.error {
                 ErrorBanner(message: error)
             }
+            // Above the hero for the same reason androidApp puts it above its
+            // own: an on-device run takes minutes and what it produced belongs
+            // where it is visible on return, and Home is where that is.
+            if let localAnalysis {
+                LocalAnalysisBanner(
+                    runner: localAnalysis,
+                    onOpenClips: { localClipsRoute = LocalClipsRoute(entryId: $0) },
+                    onOpenHeatmap: { analyticsDetailRoute = AnalyticsDetailRoute(entryId: $0) }
+                )
+            }
             Spacer().frame(height: 48)
             HeroTickerView(isPaused: drawerOpen)
                 .padding(.horizontal, 24)
@@ -323,6 +336,27 @@ struct HomeView: View {
         // the mock's 26px "how close to the edge must this begin", the same
         // rule the drawer's own close-drag mirrors on its header.
         .gesture(edgeOpenDrag)
+    }
+
+    /// Where the chrome indicator sends a coach: Home, with the drawer open.
+    ///
+    /// The run it points at lives in the drawer's list, not on Home itself, so
+    /// arriving is not enough - the drawer has to open too. androidApp settles
+    /// the same question the same way, and pops to Home with `launchSingleTop`
+    /// for the reason this dismisses every route: the indicator is reachable
+    /// from any of them, and without this a tap from two screens deep would
+    /// silently do nothing.
+    private func goToMatches() {
+        courtMarkingRoute = nil
+        matchRoute = nil
+        localPlayerRoute = nil
+        localClipsRoute = nil
+        analyticsDetailRoute = nil
+        createFlowTarget = nil
+        showLabels = false
+        showAnalytics = false
+        showNewMatch = false
+        withAnimation(.snappy(duration: 0.24)) { drawerOpen = true }
     }
 
     // The hamburger sits on the LEFT, not the right as the mock draws it: it
@@ -361,6 +395,12 @@ struct HomeView: View {
                     .foregroundStyle(Shuttl.text)
             }
             .accessibilityLabel("Menu")
+
+            // Home's bar is Home's own, not a navigation bar, so the indicator
+            // is placed rather than declared as a toolbar item. Left of the
+            // menu, which is where every pushed screen's bar puts it too.
+            BackgroundWorkAction()
+                .padding(.leading, 12)
         }
         .padding(.horizontal, 24)
         .padding(.top, 12)

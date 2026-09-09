@@ -5,6 +5,7 @@ import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.BackgroundWork
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.backgroundWork
+import com.badmintontracker.shared.localvideo.failureTransitions
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -42,27 +43,16 @@ class BackgroundWorkMonitor(
 
     init {
         scope.launch {
-            // Transitions in both directions. An entry already FAILED when
-            // collection starts failed in an earlier run of the app, and its row
-            // already carries the failure and the Retry that clears it; badging
-            // it here would put a permanent mark on the chrome. Equally, a badge
-            // that only ever accumulates is the same bug: retry and succeed, and
-            // the dot would outlive the failure with nothing left to click.
+            // Transitions in both directions, and why, are `failureTransitions`'
+            // own doc. Only the previous map is held here, because holding it is
+            // the part that differs between a Flow and an AsyncSequence.
             var seen = emptyMap<String, AnalyzeStage>()
             entries.collect { current ->
                 val stages = current.associate { it.id to it.stage }
-                val failed = stages.filter { (id, stage) ->
-                    val before = seen[id]
-                    stage == AnalyzeStage.FAILED && before != null && before != AnalyzeStage.FAILED
-                }.keys
-                val resolved = seen.keys.filter { id ->
-                    // Retried into any other stage, or removed from the library.
-                    val now = stages[id]
-                    now == null || (seen[id] == AnalyzeStage.FAILED && now != AnalyzeStage.FAILED)
-                }.toSet()
+                val transitions = failureTransitions(seen, stages)
                 seen = stages
-                if (failed.isNotEmpty() || resolved.isNotEmpty()) {
-                    cloudFailures.update { (it + failed) - resolved }
+                if (transitions.failed.isNotEmpty() || transitions.resolved.isNotEmpty()) {
+                    cloudFailures.update { (it + transitions.failed) - transitions.resolved }
                 }
             }
         }

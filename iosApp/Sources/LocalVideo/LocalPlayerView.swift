@@ -112,6 +112,9 @@ struct LocalPlayerView: View {
             return e.title ?? e.displayName
         }())
         .toolbar {
+            // The chrome indicator, on every bar androidApp puts it on. See
+            // `BackgroundWorkAction`.
+            ToolbarItem(placement: .topBarTrailing) { BackgroundWorkAction() }
             ToolbarItem(placement: .topBarTrailing) {
                 // Live stage, not the model's load-time snapshot: after "Start
                 // Analysis" the button must disappear while the pipeline runs.

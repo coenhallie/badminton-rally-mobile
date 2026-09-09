@@ -119,6 +119,44 @@ fun backgroundWork(
 }
 
 /**
+ * Ids that have just failed, and ids whose failure is resolved, between two
+ * readings of the entry list.
+ *
+ * [backgroundWork]'s [sessionFailures] is a set the caller has to maintain, and
+ * its own note says why maintaining it wrongly is a bug in two directions: an
+ * entry already `FAILED` when collection starts failed in an earlier run of the
+ * app and its row already carries the failure and the Retry that clears it, so
+ * badging it would put a permanent mark on the chrome; and a set that only ever
+ * accumulates leaves a red dot behind a run that was retried and succeeded.
+ *
+ * Both platforms hold the previous map themselves - a `collect` closure on one
+ * side, a `for await` on the other - because that is observation machinery. The
+ * diff between two maps is not, and it is the part that would drift.
+ */
+data class FailureTransitions(val failed: Set<String>, val resolved: Set<String>)
+
+/**
+ * The transitions between [seen] and [now]. See [FailureTransitions].
+ *
+ * Resolved covers two different things on purpose: an entry retried into any
+ * other stage, and an entry removed from the library altogether. Both leave a
+ * badge pointing at nothing.
+ */
+fun failureTransitions(
+    seen: Map<String, AnalyzeStage>,
+    now: Map<String, AnalyzeStage>,
+): FailureTransitions = FailureTransitions(
+    failed = now.filter { (id, stage) ->
+        val before = seen[id]
+        stage == AnalyzeStage.FAILED && before != null && before != AnalyzeStage.FAILED
+    }.keys,
+    resolved = seen.keys.filter { id ->
+        val current = now[id]
+        current == null || (seen[id] == AnalyzeStage.FAILED && current != AnalyzeStage.FAILED)
+    }.toSet(),
+)
+
+/**
  * How an on-device run reads to a person, as one line.
  *
  * Public because the chrome indicator is not the only thing that has to say

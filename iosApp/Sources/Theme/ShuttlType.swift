@@ -40,6 +40,23 @@ enum ShuttlType {
             return max(0, size * lineHeightMultiple - natural)
         }
 
+        /// The same role at a different size, which is androidApp's
+        /// `style.copy(fontSize = ...)`.
+        ///
+        /// For the handful of places where the scale's step is wrong but its
+        /// face and its tracking are right - the number inside a 26pt progress
+        /// ring, where labelSmall's 11pt does not leave room for three digits.
+        /// Tracking follows the new size, because it is a fraction of it.
+        func at(size: CGFloat) -> Role {
+            Role(
+                name: "\(name)@\(Int(size))",
+                size: size,
+                weight: weight,
+                trackingEm: trackingEm,
+                lineHeightMultiple: lineHeightMultiple
+            )
+        }
+
         /// The SwiftUI font. Falls back to the system font at the same size if
         /// Archivo is somehow missing, so a bundling mistake degrades rather
         /// than crashes. ArchivoFontTests is what catches it properly.

@@ -134,10 +134,21 @@ struct CourtMarkingView: View {
             .frame(width: displayW, height: displayH)
             .clipped()
             .contentShape(Rectangle())
-            .position(x: geo.size.width / 2, y: geo.size.height / 2)
+            // Every gesture goes on the FRAMED view, above `.position`, and the
+            // order is the whole point. `.position` returns a view that fills
+            // its parent and draws the child at a point inside it, so a gesture
+            // attached after it reports locations in the GEOMETRYREADER's space
+            // while `place` reads them as the frame's. The court is 16:9 in a
+            // tall column, so that space is about twice as tall as the picture:
+            // every mark landed the letterbox inset too low, and a tap below
+            // about 40% of the frame mapped past its bottom edge and was
+            // silently dropped by `tapGesture`'s own bounds guard. Which is to
+            // say the near half of the court - the half this pipeline tracks a
+            // player on - could not be marked at all.
             .gesture(tapGesture(displaySize: CGSize(width: displayW, height: displayH)))
             .simultaneousGesture(magnifyGesture())
             .simultaneousGesture(panGesture)
+            .position(x: geo.size.width / 2, y: geo.size.height / 2)
         }
 
         instructionRow(marking: marking)

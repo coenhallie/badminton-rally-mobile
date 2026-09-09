@@ -74,6 +74,9 @@ struct LabelsView: View {
         .navigationTitle("Labels")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            // The chrome indicator, on every bar androidApp puts it on. See
+            // `BackgroundWorkAction`.
+            ToolbarItem(placement: .topBarTrailing) { BackgroundWorkAction() }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     model.startCreating()
