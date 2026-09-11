@@ -134,7 +134,7 @@ the same types, on both platforms, with no view code touched.
 | 3.3 | A finished device run is promoted into "My matches" | Keep it under "On this phone" | One place to look for a match, whoever analysed it. Costs the row's menu a new home, see §6. |
 | 3.4 | Notes live in video time when they belong to no rally, clip time when they do | A one-way migration of notes into clips | The rule makes migration and re-analysis the same idempotent, lossless operation. See §5. |
 | 3.5 | Clip id is `local:<entryId>:<index>` | A stored UUID per clip | The id must be derivable from the sidecar, which pre-sidecar runs do not have. Derived ids survive `scanClips` recovery; stored ones would not. |
-| 3.6 | `ownerId` is stamped at read time from `auth.currentUserId()` | Persisted in the sidecar | `ClipDetailViewModel.kt:103` computes `isOwner` by comparing them. A persisted value goes stale on a session restore and silently removes the Add-note button. |
+| 3.6 | A local clip is owned by definition; ownership does not route through auth | Stamp `ownerId` from `auth.currentUserId()`, at read time or in the sidecar | `AuthRepository.kt:11` returns `String?`, and there is a documented window where it is null after a cold start (`orphanedLocalVideoIds`' comment: "supabase-kt has not restored the session yet"). `ClipDetailViewModel.kt:103` compares it to a non-null `ownerId`, so during that window the coach's own rallies would render read-only. See §4.4. |
 | 3.7 | Cloud clips win when both exist for one videoId | Block cloud Analyze once a device run exists | Removing a capability to avoid a conflict is worse than the conflict. Consequence stated in §7.3. |
 | 3.8 | No clip thumbnails are generated | A JPEG per clip at cut time | Unnecessary. Android registers `VideoFrameDecoder` globally (`RallyAndroidApp.kt:32`), so `AsyncImage` decodes a frame from the clip file itself, exactly as the local video row already does (`LocalVideoSection.kt:144`). iOS rally rows draw no thumbnail at all (`RalliesFacet.swift:39-52`). |
 
@@ -189,7 +189,7 @@ In shared. Folds three sources into `List<RallyClip>`:
 |---|---|
 | `id` | `"local:<entryId>:<index>"` |
 | `videoId` | the entry id (which is the future `videos.id`, §1.3) |
-| `ownerId` | `auth.currentUserId()`, at read time (3.6) |
+| `ownerId` | `LOCAL_OWNER`, a constant. Never compared to an account (3.6, §4.4) |
 | `rallyIndex` | `LocalClipFile.index`, already 1-based (`ClipCutter.kt:43`) |
 | `startTimestamp` / `endTimestamp` | the clip's bounds in the source video |
 | `durationSeconds` | `LocalClipFile.durationSeconds` |
@@ -214,7 +214,28 @@ The clip file list is read per entry and cached in a `MutableStateFlow`,
 invalidated when a device run completes and on the entries the app already
 probes at start (`AuthGate.kt:233` does exactly this read today).
 
-### 4.3 Per-clip titles
+### 4.3 Ownership
+
+A clip on this phone belongs to whoever is holding the phone. There is no
+second party, no RLS and no sharing, so there is nothing for an account id to
+decide.
+
+`ClipDetailViewModel.kt:103` and its iOS counterpart therefore learn one extra
+clause: a local clip is owned. Concretely `isOwner = isLocalClipId(clip.id) ||
+clip.ownerId == auth.currentUserId()`, with `isLocalClipId` in shared beside
+the id format (3.5) so both platforms ask the same question. `ownerId` on a
+synthesized clip is a constant that is never read for a decision.
+
+The alternative - stamping the signed-in account id - looks equivalent and is
+not. `AuthRepository.currentUserId()` is `String?` (`AuthRepository.kt:11`) and
+returns null in the window before supabase-kt restores the session, which this
+repo already documents in `orphanedLocalVideoIds`. In that window the
+comparison is false, and the rally page a coach opens on their own phone comes
+up read-only: no Add-note button, no delete. It would be intermittent, it would
+depend on how fast the session restores, and it would look like a bug in the
+notes feature rather than in ownership.
+
+### 4.4 Per-clip titles
 
 `ClipsRepository.updateTitle` is the per-clip rename, and the cloud rally page
 offers it. Local clips get a small `Settings`-backed map from clip id to title,
@@ -274,7 +295,24 @@ than orphaning under a clip id that no longer resolves. Under §5.1 this needs
 no special casing: it is what re-partitioning does when nothing contains the
 note.
 
-### 5.3 Storage
+### 5.3 When it runs
+
+Two triggers, both one-shot, both outside any flow:
+
+1. **A device run completes**, right after `saveClips` (`LocalAnalysisRunner.kt:251`,
+   `LocalAnalysisRunner.swift:455`) - the moment the window set changes.
+2. **An entry's clips are first read** in a process, when `LocalClipsRepository`
+   loads that entry - which covers every run cut before this feature existed.
+
+It must never run from inside the clip-list flow. §4.2 makes `annotationCount`
+a live `combine` over `LocalAnnotationsRepository.byVideoId`, and partitioning
+writes to that same `StateFlow`: invoked from the flow it feeds, a write would
+provoke the emission that provokes the write. Idempotence means such a loop
+converges rather than runs forever, but it is still a loop, and one that redraws
+every rally row in the app. Trigger 2 therefore fires from the repository's
+load path, once per entry per process, not from a collector.
+
+### 5.4 Storage
 
 The existing single `Settings` JSON map (`LocalAnnotationsRepository.kt:81`,
 key `local_annotations`) gains clip ids as additional keys alongside entry ids.
@@ -282,7 +320,7 @@ key `local_annotations`) gains clip ids as additional keys alongside entry ids.
 (`:58`) learns to drop every `local:<entryId>:` key too, or removing a video
 would leave its rally notes behind forever.
 
-### 5.4 The labels themselves
+### 5.5 The labels themselves
 
 Unchanged. `AnnotationLabelsRepository` is already the shared palette that both
 the cloud rally page and `LocalPlayerScreen` read, with its own on-disk cache,
@@ -300,12 +338,33 @@ change: it takes `RallyClip` and `RallyAnnotation`, which is what §4.2 produces
 composite yields local clips, a finished device run becomes a `MatchSummary`
 and a `MatchRow.Video` with no change to either.
 
-The mirror of the existing de-duplication rule is required.
-`ClipListScreen.kt:116` already filters "On this phone" down to
-`localRows.filter { it.entry.scoreLogId == null }` so an attached video is not
-"the same match twice". A promoted entry needs the same treatment: an entry
-with local clips is excluded from `standaloneRows`, or it renders in both
+Two de-duplication rules are needed, and the second is the one that bites.
+
+**The section filter.** `ClipListScreen.kt:116` already filters "On this phone"
+down to `localRows.filter { it.entry.scoreLogId == null }` so an attached video
+is not "the same match twice". A promoted entry needs the same treatment: an
+entry with local clips is excluded from `standaloneRows`, or it renders in both
 sections. iOS applies the same filter in `ClipListModel.swift`.
+
+**The fold onto a scored match.** `mergeMatchRows` (`MatchRow.kt:60`) folds a
+video match into the score row that claims it, and it decides the claim with
+`claimed = scoreMatches.mapNotNull { it.videoId }`. That `videoId` comes from
+the score log row (`ScoreMatchCard.kt:64`, `videoId = log.videoId`), and
+`score_logs.video_id` has a foreign key to `videos(id)`, so it stays null until
+the cloud pipeline's CREATE_ROW step - which a device run never reaches. The
+pre-CREATE_ROW binding lives on the entry instead, as `LocalVideoEntry.scoreLogId`
+(`LocalVideoEntry.kt:157-168` says exactly why).
+
+So a video filmed for a scored match and then analysed on the device emits a
+`MatchRow.Video` of its own while its `MatchRow.Score` row still offers "Add
+video": the same match twice, through a path the section filter does not touch.
+This is the common case, not an edge - on one real device ten of eleven videos
+were match-attached (`orphanedLocalVideoIds`' comment).
+
+`mergeMatchRows` therefore takes the entry bindings as a second claim source:
+a video match folds into a score row when `card.videoId == match.videoId` **or**
+when a local entry with that videoId carries that `scoreLogId`. Both platforms
+read one function, and it is unit-tested with a null `card.videoId`.
 
 ### 6.2 Where the row's menu goes
 
@@ -393,8 +452,10 @@ uploading annotations, which is the sync path this design does not build.
 - **The heatmap, skeleton and metrics panels.** They keep their own routes and
   their own entry point; only the menu item's location moves (§6.2).
 - **Retiring `Route.LocalClips` / `LocalClipsView`.** They stay as the A/B
-  comparison surface they were written to be, reachable in debug builds. They
-  are no longer how a coach reaches their rallies.
+  comparison surface they were written to be, and they keep an entry point: the
+  drawer menu item is gone (§6.2), so in debug builds the match page's overflow
+  carries "Clips on this phone (raw)" in its place. In release builds the route
+  is unreachable. What a coach reaches for their rallies is the match page.
 
 ---
 
@@ -406,9 +467,13 @@ Test-first. Every rule worth pinning lives here, and both platforms get it:
 
 - `RallyClip` synthesis: ids, 1-based rally index, title stamping and fallback,
   live note counts, owner stamped at read time.
-- Note partitioning: video time to clip time and back is lossless; running it
+- Note partitioning, driven by window sets constructed in the test rather than
+  by an analysis run: video time to clip time and back is lossless; running it
   twice is a no-op; a note outside every rally stays in video time; an entry
-  with unknown bounds is left alone.
+  with unknown bounds is left alone; a second window set with a different rally
+  count moves each note exactly once.
+- `mergeMatchRows` folds a local match into its scored match when the score
+  log's own `videoId` is still null (§6.1).
 - `matchClipWindows`: overlap pairing, a changed rally count, a rally that
   disappears, and the minimum-overlap refusal.
 - `planReanchor` wiring: existing tests stay green and gain a caller.
@@ -436,7 +501,11 @@ Capture a screenshot at each step rather than chaining blind taps, which drift:
 2. Label a rally; the summary strip appears over the match with the right count.
 3. Kill the app, reopen: the label is still there.
 4. Re-run analysis on the same entry; notes land on the right rallies and none
-   is lost.
+   is lost. Use a one- to two-minute video for this, not a match: this pipeline
+   pays per frame, and a full re-run with pose is half an hour, which is how a
+   verification step turns into one that gets skipped. The partitioner's real
+   coverage is §9.1's synthetic window sets; this step checks that the trigger
+   fires and that the two halves are wired to each other.
 5. Both platforms, both themes. Light theme is the one to check: `bgInput` and
    `bgTertiary` resolve to the same colour there, so a layered surface that
    reads correctly in dark can flatten into one block.
