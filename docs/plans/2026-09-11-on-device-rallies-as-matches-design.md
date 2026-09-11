@@ -83,7 +83,10 @@ Three facts decide this design, and none of them is an accident.
   `ClipReanchoring.kt:56`, in `shared/.../local/`, with a full test suite
   (`ClipReanchoringTest.kt`) and a doc comment describing "the one place local
   deliberately does something the cloud does not": moving a note when
-  re-analysis shifts a clip boundary. It was written for this feature.
+  re-analysis shifts a clip boundary. It was written for this feature - which
+  means someone had already worked out that local notes need a story for moved
+  boundaries. §5.2 keeps the conclusion and replaces the mechanism, which turns
+  out to be a special case of a simpler one.
 - **A local entry's id is its future `videos.id`.**
   `LocalVideoEntry.kt:140`: "client UUID; becomes videos.id on Analyze". So a
   device match and the cloud match of the same video share an identity rather
@@ -275,25 +278,46 @@ Entries whose clips have unknown bounds (§4.1) are skipped rather than guessed
 at: without a start there is no mapping, and inventing one would relocate a
 coach's note into a rally it was not about.
 
-### 5.2 Where `planReanchor` fits, and what it does not do
+### 5.2 What §5.1 subsumes, including `planReanchor`
 
-`planReanchor` is per-clip: it takes one old start, one new start, one new
-duration and that clip's notes. It assumes the caller has already decided which
-new clip an old one *is*. Rally count can change between runs, so the index is
-not identity.
+The rule in §5.1 is the whole mechanism. Re-analysis needs nothing added to it,
+and this section records why, because the obvious reading of §1.3 is that
+`planReanchor` is the missing caller and it is not.
 
-So there are two pieces, both in shared and both unit-tested:
+`planReanchor` computes, for one clip whose boundary moved, `shift = oldStart -
+newStart` and rewrites each note to `t + shift`. Re-partitioning computes
+`v = oldStart + t` and then `t' = v - newStart`. These are the same number:
+`t + (oldStart - newStart) = oldStart + t - newStart`. What `planReanchor`
+additionally needs - a decision about which new clip an old one *is*, since the
+rally count can change and the index is not identity - re-partitioning gets for
+free, because containment of the note's video time answers it directly. Its
+`flagged` case (a note that lands outside the new clip) is the case where
+nothing contains the note, which §5.1 already sends back to video time.
 
-1. **`matchClipWindows(old, new)`** - pairs old windows to new by greatest
-   temporal overlap, requiring a minimum overlap fraction so two unrelated
-   rallies are never matched. Unmatched old windows return no pair.
-2. **`planReanchor`** - unchanged, called per matched pair, for the boundary
-   shift.
+So there is no `matchClipWindows`, no overlap pairing and no minimum-overlap
+threshold. One function, `partitionNotes(notesInVideoTime, windows)`, does all
+of it.
 
-Notes belonging to an old rally with no match fall back to video time rather
-than orphaning under a clip id that no longer resolves. Under §5.1 this needs
-no special casing: it is what re-partitioning does when nothing contains the
-note.
+Two details it does have to state, which `planReanchor` did not face:
+
+**Overlapping windows.** `ClipWindows.kt:28` is explicit that `refineRallies`
+produces overlapping rallies and that padding preserves the overlap, so a
+note's video time can fall inside two clips. The rule is: the window the note
+sits furthest inside wins (greatest distance to its nearer boundary), ties to
+the lower rally index. A note in the overlap is usually about the action rather
+than about the padding either side of it, and a tie-break that depends on list
+order is one that moves a coach's note between runs for no reason.
+
+**A sub-epsilon rewrite is skipped.** When the recomputed clip time differs from
+the stored one by less than `REANCHOR_EPSILON_SECONDS` (`ClipReanchoring.kt:29`,
+0.05s), the note is left alone. Not for row churn - this is one local JSON blob -
+but so that repeated re-analysis of an unchanged boundary is provably a no-op
+rather than a slow accumulation of float noise.
+
+`ClipReanchoring.kt` and its test therefore stay unused, and the implementation
+plan's last task deletes them. They were written for this feature; keeping a tested, documented function
+that describes a mechanism the code deliberately does not use is how the next
+reader concludes the wiring is missing and adds it back.
 
 ### 5.3 When it runs
 
@@ -476,7 +500,8 @@ Test-first. Every rule worth pinning lives here, and both platforms get it:
   log's own `videoId` is still null (§6.1).
 - `matchClipWindows`: overlap pairing, a changed rally count, a rally that
   disappears, and the minimum-overlap refusal.
-- `planReanchor` wiring: existing tests stay green and gain a caller.
+- Overlapping windows: a note inside two clips lands in the one it sits
+  furthest inside, and the choice does not depend on list order.
 - Composite: merge order, `refresh()` leaving local clips intact, prefix
   routing for `updateTitle`, cloud-preferred de-duplication when one videoId
   has both.
