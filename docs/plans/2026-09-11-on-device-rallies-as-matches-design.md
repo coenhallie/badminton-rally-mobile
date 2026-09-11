@@ -269,10 +269,18 @@ That single rule collapses three problems into one operation:
 All three are the same function: **normalize every note for the entry back to
 video time, then re-partition against the current clip windows.** It is a pure
 function of (notes in video time, windows), so it is idempotent - running it
-twice changes nothing - and lossless, because a note in clip time carries its
-clip's start and can always be mapped back. No migration marker, no one-way
-rewrite of the notes blob, which is the only artifact in this design that holds
-work the coach cannot reproduce.
+twice changes nothing. No migration marker, no one-way rewrite of the notes
+blob, which is the only artifact in this design that holds work the coach
+cannot reproduce.
+
+Normalizing has to be exact, and that costs one field. A note in clip time
+cannot be converted back through the sidecar, because a re-run overwrites the
+sidecar with the new windows and the old start it was relative to is gone. So
+`LocalAnnotation` gains `videoTimestampSeconds`: every note carries its own
+anchor in video time, written when the note is made, and the partition never
+has to reconstruct one. The field defaults to null, which decodes every note
+already on a phone correctly - those are all entry-keyed, where the timestamp
+already is video time.
 
 Entries whose clips have unknown bounds (§4.1) are skipped rather than guessed
 at: without a start there is no mapping, and inventing one would relocate a
@@ -387,8 +395,10 @@ were match-attached (`orphanedLocalVideoIds`' comment).
 
 `mergeMatchRows` therefore takes the entry bindings as a second claim source:
 a video match folds into a score row when `card.videoId == match.videoId` **or**
-when a local entry with that videoId carries that `scoreLogId`. Both platforms
-read one function, and it is unit-tested with a null `card.videoId`.
+when a local entry with that videoId carries that `scoreLogId`. It is a port
+pair like the rest of this file (`MatchRow.kt:60`, `MatchGrouping.swift:128`),
+so both copies change together and both gain the same test, with a null
+`card.videoId`.
 
 ### 6.2 Where the row's menu goes
 
