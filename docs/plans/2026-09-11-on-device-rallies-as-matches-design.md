@@ -412,6 +412,7 @@ five affordances live. Promotion moves the row, so it moves all five:
 | "Edit details" (`:228`) | Gated to `stage == LOCAL` already (`canEditLocalVideoDetails`), which a device-analysed entry still is, so it moves to the match page overflow with its rule unchanged. |
 | "Remove from app" (`:234`) | Match page overflow, same confirm text, same `canRemoveLocalVideo` gate. It now also deletes the clips and their notes (§5.3). |
 | Cloud "Analyze" (the row's button, not its menu) | Match page overflow. See §7.3 for what happens when it is used. |
+| The row's own tap: the whole-video player (`Route.LocalPlayer`) | Match page overflow, as "Play the whole video". Not optional, and the table originally missed it by only counting the menu: §5.1 keeps a note in video time when it falls in no rally, and this player is the only surface that shows those notes. Promoting the row without it makes every dead-air note invisible. |
 
 ### 6.3 What the match page must gate
 

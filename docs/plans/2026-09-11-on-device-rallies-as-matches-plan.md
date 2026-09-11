@@ -425,21 +425,26 @@ class NotePartitionTest {
     fun overlapping_rallies_take_the_note_it_sits_furthest_inside() {
         // padRallyWindows preserves overlap because refineRallies produces
         // overlapping rallies (ClipWindows.kt:28), so containment is genuinely
-        // ambiguous here. 19.0 is 9.0s inside rally 1 and 1.0s inside rally 2.
-        val overlapping = listOf(clip(1, 10.0, 20.0), clip(2, 18.0, 28.0))
+        // ambiguous here. The metric is distance to the NEARER boundary, and
+        // this case is built so it disagrees with the index tie-break: at 19.0,
+        // rally 1 scores min(9, 1) = 1 and rally 2 scores min(7, 21) = 7, so the
+        // note goes to rally 2 despite rally 1 coming first. A test where the
+        // two rules agree would pass against either one.
+        val overlapping = listOf(clip(1, 10.0, 20.0), clip(2, 12.0, 40.0))
         val moves = planNotePartition("e1", listOf(videoNote("a", 19.0)), overlapping)
-        moves.single().toKey shouldBe "local:e1:1"
+        moves.single().toKey shouldBe "local:e1:2"
+        moves.single().timestampSeconds shouldBe 7.0
     }
 
     @Test
     fun an_exact_tie_in_an_overlap_goes_to_the_lower_rally() {
-        // 19.0 sits 1.0s inside rally 1's tail and 1.0s inside rally 2's head.
-        // Anything that depends on list order here moves a note between runs.
-        val overlapping = listOf(clip(1, 10.0, 20.0), clip(2, 18.0, 28.0))
-        val moves = planNotePartition("e1", listOf(videoNote("a", 19.0)), overlapping.reversed())
-        moves.singleOrNull().shouldBeNull()   // 19.0 is not a tie; see the test above
-        val tied = listOf(clip(1, 10.0, 20.0), clip(2, 18.0, 20.0))
-        planNotePartition("e1", listOf(videoNote("b", 19.0)), tied.reversed())
+        // At 19.0, rally 1 scores min(9, 1) = 1 and rally 2 scores min(1, 9) = 1.
+        // A genuine tie, and anything that resolves it by list order moves a
+        // coach's note between two runs that found the same rallies.
+        val tied = listOf(clip(1, 10.0, 20.0), clip(2, 18.0, 28.0))
+        planNotePartition("e1", listOf(videoNote("a", 19.0)), tied)
+            .single().toKey shouldBe "local:e1:1"
+        planNotePartition("e1", listOf(videoNote("a", 19.0)), tied.reversed())
             .single().toKey shouldBe "local:e1:1"
     }
 
@@ -922,7 +927,7 @@ Where a directory of mp4 files becomes the same `RallyClip` the cloud produces.
 
 **Interfaces:**
 - Consumes: `LocalClipFile`, `localClipId`, `LOCAL_CLIP_OWNER` (Task 1); `planNotePartition` (Task 3); `LocalAnnotationsRepository.anchoredNotesFor/applyMoves/countsByKey` (Task 4); `LocalVideoRepository.entries`.
-- Produces: `LocalClipTitles(settings)` with `byClipId: StateFlow<Map<String, String>>`, `put(clipId, title)`, `removeAllFor(entryId)`; `LocalClipsRepository(source, localVideos, localAnnotations, titles, scope)` with `clips: StateFlow<List<RallyClip>>`, `invalidate(entryId)`, `entryIdsWithClips: Set<String>`.
+- Produces: `LocalClipTitles(settings)` with `byClipId: StateFlow<Map<String, String>>`, `put(clipId, title)`, `removeAllFor(entryId)`; `LocalClipsRepository(source, localVideos, localAnnotations, titles, scope)` with `clips: StateFlow<List<RallyClip>>`, `invalidate(entryId)`, `repartition(entryId)`, `entryIdsWithClips: Set<String>`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1243,6 +1248,16 @@ class LocalClipsRepository(
         lock.withLock { files.value = files.value + (entryId to clips) }
         partition(entryId, clips)
     }
+
+    /**
+     * Re-file this entry's notes against the rallies already known, without
+     * re-reading the directory.
+     *
+     * For the full-video player: a note added there on an analysed entry belongs
+     * to whichever rally contains it, and without this it sits in that player's
+     * list and nowhere else until the next cold start.
+     */
+    fun repartition(entryId: String) = partition(entryId, files.value[entryId].orEmpty())
 
     /**
      * Re-file this entry's notes against the rallies that exist now.
@@ -1606,15 +1621,19 @@ class CompositeAnnotationsRepository(
     }
 
     /**
-     * Deletion is by annotation id alone, and the local store is keyed by clip,
-     * so a local delete has to find the key first. Cloud ids are UUIDs and local
-     * ones are too, so there is no prefix to route on here.
+     * Deletion is by annotation id alone, and the local store is keyed by what a
+     * note is filed under, so a local delete has to find that key first. Cloud
+     * annotation ids are UUIDs and local ones are too, so there is no prefix to
+     * route on: presence in the local store is the whole test, and it holds for a
+     * note on a rally and a note in dead air alike.
      */
     override suspend fun delete(id: String): Result<Unit> {
         val key = localAnnotations.byVideoId.value.entries
             .firstOrNull { (_, notes) -> notes.any { it.id == id } }
             ?.key
-        if (key == null || !isLocalClipId(key)) return cloud.delete(id)
+        // Found in the local store at all means local, whether it is filed under
+        // a clip or under the video - a note in dead air lives under the entry id.
+        if (key == null) return cloud.delete(id)
         return runCatching { localAnnotations.delete(key, id) }
     }
 }
@@ -1728,7 +1747,37 @@ Then replace the three repository properties. `clips`, `annotations` and `media`
 
 **Ordering matters here.** `localVideos` and `localAnnotations` are declared below `clips` in the current file; move the three composite properties below them, or the constructor runs against uninitialised references and every read returns null through the Swift bridge.
 
-Also extend `onLocalVideoRemoved`'s call site so a removed entry drops its renames: in `LocalVideoRepository`'s removal path the notes already go through `removeAllFor`; add `localClipTitles.removeAllFor(id)` beside it.
+A removed entry must also drop its renames, and that is not a one-line addition.
+`localAnnotations.removeAllFor` is called from **five** places today - Android's
+`LocalVideoListViewModel.kt:76` and `ClipListViewModel.kt:264`, iOS's
+`LocalVideoIntake.swift:84` and `ClipListModel.swift:158`, and shared's
+`MatchVideoRemoval.kt:142` - so adding the title sweep beside each is four
+chances to forget one and one guarantee that the next store added is forgotten
+everywhere.
+
+Give the removal one home instead. In `RallyApp`:
+
+```kotlin
+    /**
+     * Removes a local video and everything the phone holds about it: the entry,
+     * its notes and its per-rally renames, plus whatever an analysis wrote (via
+     * [onLocalVideoRemoved], which the platform supplies).
+     *
+     * One method rather than a line at each call site. Before this there were
+     * five places that removed an entry and its notes, which is four places to
+     * forget a third store and a guarantee that a fourth is forgotten in all of
+     * them.
+     */
+    fun removeLocalVideo(entryId: String) {
+        localVideos.remove(entryId)
+        localAnnotations.removeAllFor(entryId)
+        localClipTitles.removeAllFor(entryId)
+    }
+```
+
+Point all five call sites at it. `MatchVideoRemoval.kt:142` takes its stores as
+parameters, so give it a `removeLocalVideo: (String) -> Unit` instead and pass
+`rally::removeLocalVideo` from both platforms.
 
 - [ ] **Step 2: Build shared and run its suite**
 
@@ -1835,11 +1884,16 @@ Then in `RallyAndroidApp.kt`, pass `onClipsCut = { rally.localClips.invalidate(i
 - [ ] **Step 5: Build and install Android**
 
 ```bash
-./gradlew :androidApp:testDebugUnitTest
-ANDROID_SERIAL=emulator-5554 ./gradlew :androidApp:installDebug
+./gradlew :androidApp:testDebugUnitTest :androidApp:assembleDebug
 ```
 
-Expected: both succeed. Open the app: an entry with cut rallies now appears under "My matches" **and** still under "On this phone" - the duplicate is real and Task 8 removes it. Open the match: the rally rows draw, with thumbnails and durations.
+Expected: both succeed.
+
+**Do not install yet.** Between this task and Task 8 an entry with cut rallies
+appears under "My matches" *and* still under "On this phone" - one match, two
+rows. That is expected and Task 8 closes it, but a review gate that ends with a
+worse app on the phone than before is not a gate anyone can judge. The first
+on-device look is at the end of Task 8.
 
 - [ ] **Step 6: Write the iOS clip source and wire it**
 
@@ -2067,13 +2121,17 @@ In `ClipListScreen.kt:116`, widen the filter:
 
 `localClipEntryIds` comes in as a new `ClipListScreen` parameter, supplied by `HomeScreen` from `rally.localClips.entryIdsWithClips`.
 
-- [ ] **Step 5: Run the Android tests**
+- [ ] **Step 5: Run the Android tests, then look at it on the emulator**
 
 ```bash
 ./gradlew :androidApp:testDebugUnitTest
+ANDROID_SERIAL=emulator-5554 ./gradlew :androidApp:installDebug
 ```
 
-Expected: PASS.
+Expected: PASS, and the first on-device look of this plan. An entry with cut
+rallies appears exactly once, under "My matches". Open it: the rally rows draw,
+with a decoded thumbnail and a real duration rather than "0.0s". The match page
+still offers share at this point - Task 9 takes it away.
 
 - [ ] **Step 6: Port both rules to iOS**
 
@@ -2278,9 +2336,20 @@ use it for every cloud-only affordance:
   existing `canEditLocalVideoDetails(entry.stage)`, "Remove from app" -> the same
   confirm and the same `canRemoveLocalVideo(entry.stage)` gate, and "Analyze"
   (the cloud run) -> `nav.navigate(Route.CourtMarking(videoId))`.
+- "Play the whole video" -> `nav.navigate(Route.LocalPlayer(videoId))`. This is
+  the row's own tap, not one of its menu items, and it is the one that must not
+  be missed: §5.1 keeps a note in video time when it falls in no rally, and this
+  player is the only surface that shows those notes. Without it, promoting the
+  row makes every dead-air note invisible.
 - Behind `BuildConfig.DEBUG` only, "Clips on this phone (raw)" ->
   `nav.navigate(Route.LocalClips(videoId))`, which is what keeps the A/B
   comparison surface reachable now that the drawer no longer offers it.
+
+A note added in that player on an analysed entry needs re-filing at once, or it
+sits in the video player's list and nowhere else until the next app start. Give
+`LocalClipsRepository` a public `repartition(entryId)` - the existing private
+`partition` over the cached clips, with no directory re-read - and call it from
+both platforms' full-video annotate paths after the add.
 
 - [ ] **Step 4: Take the five items off the drawer row**
 
