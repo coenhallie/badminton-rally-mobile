@@ -42,8 +42,9 @@ internal fun heatmapSource(
     stored: PlayerTrackStore.Stored?,
 ): HeatmapSource? = when {
     done != null && done.playerTrack.samples.isNotEmpty() -> HeatmapSource(done.playerTrack, done.fps)
-    stored != null -> HeatmapSource(stored.track, stored.fps)
-    else -> null
+    // The near track, for this panel's near-only drawing. A stored file with
+    // only a far track (cloud, no near player) has nothing this panel can draw.
+    else -> stored?.near?.let { HeatmapSource(it, stored.fps) }
 }
 
 /**

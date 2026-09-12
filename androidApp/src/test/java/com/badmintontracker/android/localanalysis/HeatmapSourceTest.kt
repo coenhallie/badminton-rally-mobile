@@ -1,6 +1,7 @@
 package com.badmintontracker.android.localanalysis
 
 import com.badmintontracker.analysis.geometry.Point
+import com.badmintontracker.analysis.player.CourtSide
 import com.badmintontracker.analysis.player.PlayerSample
 import com.badmintontracker.analysis.player.PlayerTrack
 import io.kotest.matchers.shouldBe
@@ -72,5 +73,8 @@ class HeatmapSourceTest {
         fps = 30.0,
     )
 
-    private fun stored(track: PlayerTrack, fps: Double) = PlayerTrackStore.Stored(track, fps)
+    private fun stored(track: PlayerTrack, fps: Double) = PlayerTrackStore.Stored(
+        listOf(PlayerTrackStore.SideTrack(CourtSide.NEAR, track)),
+        fps,
+    )
 }

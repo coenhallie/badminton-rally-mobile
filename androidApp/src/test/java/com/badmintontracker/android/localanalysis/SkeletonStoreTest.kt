@@ -2,7 +2,10 @@ package com.badmintontracker.android.localanalysis
 
 import com.badmintontracker.analysis.geometry.Point
 import com.badmintontracker.analysis.player.Coco
+import com.badmintontracker.analysis.player.CourtSide
 import com.badmintontracker.analysis.player.PlayerPose
+import com.badmintontracker.analysis.player.PlayerSelection
+import com.badmintontracker.analysis.player.PlayerTrack
 import io.kotest.matchers.shouldBe
 import org.junit.Rule
 import org.junit.Test
@@ -19,12 +22,15 @@ class SkeletonStoreTest {
 
     private fun store() = SkeletonStore(temp.root)
 
-    private fun pose(frame: Int) = PlayerPose(
+    private fun pose(frame: Int, t: Double = frame / 25.0) = PlayerPose(
         frame = frame,
-        timestamp = frame / 25.0,
+        timestamp = t,
         keypoints = List(Coco.COUNT) { Point(frame + it * 1.5, frame * 2.0 + it) },
         confidence = List(Coco.COUNT) { 0.5f + it / 100f },
     )
+
+    /** An empty near track, for a saveAll call that only cares about poses. */
+    private fun emptyTrack() = PlayerTrack(emptyList(), 0, emptyMap())
 
     private val marks = com.badmintontracker.analysis.geometry.CourtKeypoints(
         topLeft = Point(649.5, 484.8), topRight = Point(1277.3, 481.2),
@@ -212,5 +218,81 @@ class SkeletonStoreTest {
     @Test
     fun delete_on_a_never_saved_entry_does_not_throw() {
         store().delete("e1")
+    }
+
+    @Test
+    fun `a v2 file written by the previous build still loads`() {
+        // SkeletonStore already read v1 and v2 from the header alone, unlike
+        // PlayerTrackStore. Pinned anyway: the two stores start from
+        // different places and a change made to both at once is exactly when
+        // that asymmetry gets flattened.
+        val store = SkeletonStore(temp.root)
+        store.save("e1", listOf(pose(frame = 0, t = 0.0)), fps = 30.0, videoWidth = 1920, videoHeight = 1080, marks = null)
+
+        store.has("e1") shouldBe true
+        val stored = store.load("e1")!!
+        stored.tracks.size shouldBe 1
+        stored.tracks[0].side shouldBe CourtSide.NEAR
+        stored.poses.size shouldBe 1
+    }
+
+    @Test
+    fun `two players round trip through v3`() {
+        val store = SkeletonStore(temp.root)
+        val near = listOf(pose(frame = 0, t = 0.0), pose(frame = 1, t = 0.033))
+        val far = listOf(pose(frame = 0, t = 0.0))
+
+        store.saveAll(
+            "e1", TrackSource.CLOUD,
+            listOf(
+                PlayerSelection(CourtSide.NEAR, emptyTrack(), near),
+                PlayerSelection(CourtSide.FAR, emptyTrack(), far),
+            ),
+            fps = 59.94, videoWidth = 1920, videoHeight = 1080, marks = null,
+        )
+
+        val stored = store.load("e1", TrackSource.CLOUD)!!
+        stored.fps shouldBe 59.94
+        stored.videoWidth shouldBe 1920
+        stored.tracks.map { it.side } shouldBe listOf(CourtSide.NEAR, CourtSide.FAR)
+        stored.tracks[0].poses shouldBe near
+        stored.tracks[1].poses shouldBe far
+        // The near list, for every caller that predates the far player.
+        stored.poses shouldBe near
+    }
+
+    @Test
+    fun `the court marks travel with a v3 file too`() {
+        // A reading in metres needs the homography those marks fit, and the
+        // local entry that holds them can be deleted while this file lives
+        // on. That reasoning does not change because there are two players.
+        val store = SkeletonStore(temp.root)
+
+        store.saveAll(
+            "e1", TrackSource.CLOUD,
+            listOf(PlayerSelection(CourtSide.NEAR, emptyTrack(), listOf(pose(0, 0.0)))),
+            fps = 30.0, videoWidth = 1920, videoHeight = 1080, marks = marks,
+        )
+
+        store.load("e1", TrackSource.CLOUD)!!.marks shouldBe marks
+    }
+
+    @Test
+    fun `a deleted local skeleton leaves the cloud one alone`() {
+        // The concrete consequence of the two subtrees. skeletonAction
+        // returns DELETE for a run that asked for rallies only, and that run
+        // must not be able to reach a cloud artifact.
+        val store = SkeletonStore(temp.root)
+        store.save("e1", listOf(pose(0, 0.0)), 30.0, 1920, 1080, null)
+        store.saveAll(
+            "e1", TrackSource.CLOUD,
+            listOf(PlayerSelection(CourtSide.NEAR, emptyTrack(), listOf(pose(0, 0.0)))),
+            fps = 30.0, videoWidth = 1920, videoHeight = 1080, marks = null,
+        )
+
+        store.delete("e1")
+
+        store.has("e1", TrackSource.LOCAL) shouldBe false
+        store.has("e1", TrackSource.CLOUD) shouldBe true
     }
 }

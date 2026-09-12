@@ -1,9 +1,28 @@
 package com.badmintontracker.android.localanalysis
 
 import com.badmintontracker.analysis.geometry.Point
+import com.badmintontracker.analysis.player.CourtSide
 import com.badmintontracker.analysis.player.PlayerSample
+import com.badmintontracker.analysis.player.PlayerSelection
 import com.badmintontracker.analysis.player.PlayerTrack
 import java.io.File
+
+/**
+ * Which analysis produced an artifact: this phone's, or the cloud's.
+ *
+ * Separate directories rather than a field inside one file. skeletonAction
+ * holds that "a completed run is the new truth for its entry", which is right
+ * for a device run and wrong across the two sources: a rally-only run would
+ * otherwise delete a cloud skeleton the coach waited on a GPU for. Two
+ * subtrees make that impossible rather than merely discouraged.
+ *
+ * LOCAL's directories are the ones already on every phone, unchanged, because
+ * moving them would orphan every artifact a device run has ever written.
+ */
+enum class TrackSource(val trackDir: String, val skeletonDir: String) {
+    LOCAL("player-tracks", "skeletons"),
+    CLOUD("cloud-tracks", "cloud-skeletons"),
+}
 
 /**
  * The player track, kept on disk so a heatmap outlives the process that made it.
@@ -19,6 +38,13 @@ import java.io.File
  */
 class PlayerTrackStore(private val root: File) {
 
+    /**
+     * One near-player track, in the v2 format.
+     *
+     * Still what a device run writes, and deliberately. Only the cloud has two
+     * usable players, so a multi-track local file is a file nobody writes and
+     * every other build would refuse.
+     */
     fun save(entryId: String, track: PlayerTrack, fps: Double) {
         val file = fileFor(entryId).apply { parentFile?.mkdirs() }
         file.writeText(
@@ -32,6 +58,48 @@ class PlayerTrackStore(private val root: File) {
                 }
             },
         )
+    }
+
+    /**
+     * Every track from one analysis, in the v3 format.
+     *
+     * v3 is a SECOND format the readers accept, not a replacement for v2. See
+     * [has] for what changing VERSION would have cost.
+     *
+     *   v3 <fps> <trackCount>
+     *   <side> <framesWithPose> <sampleCount>
+     *   <frame>,<x>,<y>   x sampleCount
+     *   ...repeated per track
+     */
+    fun saveAll(
+        entryId: String,
+        source: TrackSource,
+        selections: List<PlayerSelection>,
+        fps: Double,
+    ) {
+        // Nothing to draw is nothing to offer, matching save(): no file, so
+        // has() stays false rather than answering true for an empty court.
+        if (selections.none { it.track.samples.isNotEmpty() }) return
+        val file = fileFor(entryId, source).apply { parentFile?.mkdirs() }
+        val text = buildString {
+            append(VERSION_V3).append(' ').append(fps).append(' ').append(selections.size).append('\n')
+            selections.forEach { selection ->
+                append(selection.side.name).append(' ')
+                    .append(selection.track.framesWithPose).append(' ')
+                    .append(selection.track.samples.size).append('\n')
+                selection.track.samples.forEach {
+                    append(it.frame).append(',')
+                        .append(it.courtPosition.x).append(',')
+                        .append(it.courtPosition.y).append('\n')
+                }
+            }
+        }
+        val tmp = File(file.parentFile, file.name + ".tmp")
+        tmp.writeText(text)
+        if (!tmp.renameTo(file)) {
+            tmp.delete()
+            throw java.io.IOException("Failed to rename ${tmp.absolutePath} to ${file.absolutePath}")
+        }
     }
 
     /**
@@ -54,37 +122,69 @@ class PlayerTrackStore(private val root: File) {
      * header, which would need the process killed inside a single writeText
      * of a track that was just held whole in memory. Accepted.
      */
-    fun has(entryId: String): Boolean {
-        val file = fileFor(entryId)
+    fun has(entryId: String, source: TrackSource = TrackSource.LOCAL): Boolean {
+        val file = fileFor(entryId, source)
         if (!file.isFile) return false
         return runCatching {
-            file.bufferedReader().use { it.readLine() }?.split(' ')?.firstOrNull() == VERSION
+            file.bufferedReader().use { it.readLine() }?.split(' ')?.firstOrNull() in READABLE_VERSIONS
         }.getOrDefault(false)
     }
 
     /** Null when there is nothing stored, or when what is stored cannot be read. */
-    fun load(entryId: String): Stored? {
-        val file = fileFor(entryId)
+    fun load(entryId: String, source: TrackSource = TrackSource.LOCAL): Stored? {
+        val file = fileFor(entryId, source)
         if (!file.isFile) return null
         return runCatching {
             val lines = file.readLines()
             val header = lines.firstOrNull()?.split(' ') ?: return null
-            if (header.getOrNull(0) != VERSION) return null
-            val fps = header[1].toDouble()
-            val framesWithPose = header[2].toInt()
-            val samples = lines.drop(1).mapNotNull { line ->
-                if (line.isBlank()) return@mapNotNull null
-                val f = line.split(',')
-                PlayerSample(
-                    frame = f[0].toInt(),
-                    courtPosition = Point(f[1].toDouble(), f[2].toDouble()),
-                )
+            when (header.getOrNull(0)) {
+                VERSION -> loadV2(header, lines)
+                VERSION_V3 -> loadV3(header, lines)
+                else -> null
             }
-            // Rejections are not stored: they explain a thin track while it is
-            // being produced, and the count that matters afterwards, coverage,
-            // is recoverable from the samples.
-            Stored(PlayerTrack(samples, framesWithPose, emptyMap()), fps)
         }.getOrNull()
+    }
+
+    /** The single-track format: one header line, then every sample. */
+    private fun loadV2(header: List<String>, lines: List<String>): Stored {
+        val fps = header[1].toDouble()
+        val framesWithPose = header[2].toInt()
+        val samples = lines.drop(1).mapNotNull(::parseSample)
+        // Rejections are not stored: they explain a thin track while it is
+        // being produced, and the count that matters afterwards, coverage, is
+        // recoverable from the samples.
+        return Stored(
+            listOf(SideTrack(CourtSide.NEAR, PlayerTrack(samples, framesWithPose, emptyMap()))),
+            fps,
+        )
+    }
+
+    /** The multi-track format: a header line, then a section per track. */
+    private fun loadV3(header: List<String>, lines: List<String>): Stored? {
+        val fps = header[1].toDouble()
+        val trackCount = header[2].toInt()
+        val tracks = ArrayList<SideTrack>(trackCount)
+        var at = 1
+        repeat(trackCount) {
+            val section = lines.getOrNull(at)?.split(' ') ?: return null
+            val side = CourtSide.entries.firstOrNull { it.name == section.getOrNull(0) } ?: return null
+            val framesWithPose = section[1].toInt()
+            val sampleCount = section[2].toInt()
+            // Bounds-checked against the file's own length before the slice,
+            // so a truncated file returns null rather than throwing out of a
+            // runCatching that would swallow it as "no track".
+            if (at + 1 + sampleCount > lines.size) return null
+            val samples = lines.subList(at + 1, at + 1 + sampleCount).mapNotNull(::parseSample)
+            tracks.add(SideTrack(side, PlayerTrack(samples, framesWithPose, emptyMap())))
+            at += 1 + sampleCount
+        }
+        return Stored(tracks, fps)
+    }
+
+    private fun parseSample(line: String): PlayerSample? {
+        if (line.isBlank()) return null
+        val f = line.split(',')
+        return PlayerSample(f[0].toInt(), Point(f[1].toDouble(), f[2].toDouble()))
     }
 
     /**
@@ -158,13 +258,24 @@ class PlayerTrackStore(private val root: File) {
 
     private fun clipIndexFor(entryId: String) = File(root, "local-clips/$entryId/clips.index")
 
-    private fun fileFor(entryId: String) = File(root, "$DIR/$entryId.track")
+    private fun fileFor(entryId: String, source: TrackSource = TrackSource.LOCAL) =
+        File(root, "${source.trackDir}/$entryId.track")
 
-    data class Stored(val track: PlayerTrack, val fps: Double)
+    /** One player's path, and which half of the court they were on. */
+    data class SideTrack(val side: CourtSide, val track: PlayerTrack)
+
+    data class Stored(val tracks: List<SideTrack>, val fps: Double) {
+        /**
+         * The near player, or null when the file holds only a far one.
+         *
+         * Every caller that predates the far player wants this, and reading
+         * `tracks[0]` at each of them would break silently the first time a
+         * file arrived far-first.
+         */
+        val near: PlayerTrack? get() = tracks.firstOrNull { it.side == CourtSide.NEAR }?.track
+    }
 
     private companion object {
-        const val DIR = "player-tracks"
-
         /** Bumped if the columns change, so an old file is ignored rather than misread. */
         /**
          * v2 dropped the per-sample ankle flag: every sample is an ankle
@@ -172,5 +283,16 @@ class PlayerTrackStore(private val root: File) {
          * see [has].
          */
         const val VERSION = "v2"
+
+        /**
+         * The multi-track format, ADDED alongside v2 rather than replacing it.
+         *
+         * Both [has] and [load] compared the header against VERSION for exact
+         * equality, so changing that constant would have refused every file
+         * already written by every previous build. v1 stays refused for its
+         * own reason (see [has]); v2 is correct, merely single-track.
+         */
+        const val VERSION_V3 = "v3"
+        val READABLE_VERSIONS = setOf(VERSION, VERSION_V3)
     }
 }

@@ -115,25 +115,32 @@ class LocalAnalysisRunner(
 
     private val tracks = PlayerTrackStore(context.filesDir)
 
-    /** The track from an earlier run, for a screen opened after this one died. */
-    fun storedTrack(entryId: String): PlayerTrackStore.Stored? = tracks.load(entryId)
-
     /**
-     * Whether [storedTrack] has anything to return, without loading it. For a
-     * list deciding what each of its rows can do: see [PlayerTrackStore.has].
+     * The track to draw for this entry: the cloud's if there is one, else this
+     * phone's.
+     *
+     * Cloud wins, and silently. It comes from a large model on a GPU and
+     * carries both players, so it is strictly the better track; a picker
+     * between the two would be a third selector on a screen that already has
+     * panel tabs and a player toggle. See the design's 3 and 10.
      */
-    fun hasStoredTrack(entryId: String): Boolean = tracks.has(entryId)
+    fun storedTrack(entryId: String): PlayerTrackStore.Stored? =
+        tracks.load(entryId, TrackSource.CLOUD) ?: tracks.load(entryId, TrackSource.LOCAL)
+
+    fun hasStoredTrack(entryId: String): Boolean =
+        tracks.has(entryId, TrackSource.CLOUD) || tracks.has(entryId, TrackSource.LOCAL)
 
     /** The clips from an earlier run, for the same reason. */
     fun storedClips(entryId: String): List<ClipCutter.Clip> = tracks.loadClips(entryId)
 
     private val skeletons = SkeletonStore(context.filesDir)
 
-    /** A skeleton from an earlier run, for the same reason as [storedTrack]. */
-    fun storedSkeleton(entryId: String): SkeletonStore.Stored? = skeletons.load(entryId)
+    /** The cloud's skeleton if there is one, else this phone's. See [storedTrack]. */
+    fun storedSkeleton(entryId: String): SkeletonStore.Stored? =
+        skeletons.load(entryId, TrackSource.CLOUD) ?: skeletons.load(entryId, TrackSource.LOCAL)
 
-    /** Header-only, for a screen deciding whether it has a second renderer to offer. */
-    fun hasStoredSkeleton(entryId: String): Boolean = skeletons.has(entryId)
+    fun hasStoredSkeleton(entryId: String): Boolean =
+        skeletons.has(entryId, TrackSource.CLOUD) || skeletons.has(entryId, TrackSource.LOCAL)
 
     /**
      * The file the analysis actually decoded, if it is still there.
