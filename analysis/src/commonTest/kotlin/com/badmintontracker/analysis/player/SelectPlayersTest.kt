@@ -19,7 +19,11 @@ import kotlin.test.Test
  * the phone runs a nano-class model and reaches 44% far-player coverage
  * against 93% near (see NearPlayerSelector's own KDoc). So this exists for
  * the cloud path, and the near half has to stay bit-identical to what the
- * device path already ships - which is what the first test here asserts.
+ * device path already ships. selectNearPlayer is defined as this file's
+ * near half, so that identity holds by construction; the regression
+ * evidence that the partition did not move it is the four pre-existing
+ * classes (NearPlayerSelectionTest, PlayerTrackTest, NearPlayerSelectorTest,
+ * DevicePoseDumpTest) passing unchanged.
  */
 class SelectPlayersTest {
 
@@ -89,10 +93,14 @@ class SelectPlayersTest {
 
     @Test
     fun the_near_half_is_exactly_what_select_near_player_returns() {
-        // The whole safety argument for this change. selectNearPlayer is what
-        // every device run on every phone already uses; if the partition moved
-        // its output by one sample, this would be a silent regression in
-        // shipped heatmaps rather than a new feature.
+        // Pins the delegation: selectNearPlayer is defined as
+        // selectPlayers(...).first { NEAR }, so this assertion holds by
+        // construction and cannot by itself catch a regression in the
+        // partition. The actual regression evidence is the four pre-existing
+        // classes (NearPlayerSelectionTest, PlayerTrackTest,
+        // NearPlayerSelectorTest, DevicePoseDumpTest) passing unchanged -
+        // they exercise selectNearPlayer's behaviour directly, and this test
+        // only guards against the delegation itself being undone.
         val raw = inference(
             RawFrame(0, 0.0, null, emptyList(), listOf(nearPlayer(), farPlayer())),
             RawFrame(1, 1.0 / 30.0, null, emptyList(), listOf(nearPlayer(), farPlayer())),

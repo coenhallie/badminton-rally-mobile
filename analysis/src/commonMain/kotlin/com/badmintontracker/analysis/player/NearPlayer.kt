@@ -86,21 +86,25 @@ enum class RejectionReason {
 enum class CourtSide { NEAR, FAR }
 
 /**
- * Picks the player nearest the camera out of one frame of pose detections.
+ * Picks the player on a requested side of the net out of one frame of pose
+ * detections, NEAR by default.
  *
- * Near only, on purpose. Measurement on an S23 put nano's far-player coverage at
- * 44% of frames against 93% near, and even the largest model reaches only about
- * 70% far. Tracking one player is what makes the smallest model viable rather
- * than a compromise, and it drops the half of the data that was unreliable
- * whatever the model.
+ * Built around one player at a time, on purpose. Measurement on an S23 put
+ * nano's far-player coverage at 44% of frames against 93% near, and even the
+ * largest model reaches only about 70% far - so a device run only ever asks
+ * for NEAR, which is what makes the smallest model viable rather than a
+ * compromise, and it drops the half of the data that was unreliable whatever
+ * the model. [CourtSide] is what a cloud run, with a model that does not have
+ * this problem, uses to ask for both.
  *
  * Four gates in order, cheapest first, each rejecting something different: a
- * person with no usable ground point, a person on the far side, a person who
- * is not on the court at all, and a person whose torso is too long for the
- * court scale where they stand. The third is not optional - the far side of
- * the net line contains the crowd, and on real footage it rejected more
- * detections than it kept. The fourth catches a close-up from another camera,
- * which lands on the court at a scale no player there could have; see
+ * person with no usable ground point, a person on the side of the net that
+ * was not requested, a person who is not on the court at all, and a person
+ * whose torso is too long for the court scale where they stand. The third is
+ * not optional: when NEAR is requested it is what keeps the crowd on the far
+ * side of the net line out, and on real footage it rejected more detections
+ * than it kept. The fourth catches a close-up from another camera, which
+ * lands on the court at a scale no player there could have; see
  * [plausibleScale].
  */
 class NearPlayerSelector(
