@@ -934,7 +934,12 @@ Spec §5.2. The worker already holds everything this needs; it currently frees i
 
 **Interfaces:**
 - Consumes: `encode`, `RawHeader`, `RawFrame`, `RawPerson`, `RawBox`, `RawKeypoint` from Task 2.
+- Consumes: `_bbox_from_player_keypoints(player) -> dict | None` (`modal_supabase_processor.py:577`), which already handles this exact dict-form keypoint shape.
 - Produces: `POSES_ARTIFACT_NAME = "poses.raw"`; `raw_inference_from_skeleton_frames(skeleton_frames, fps, total_frames, video_width, video_height, model_version) -> tuple[RawHeader, list[RawFrame]]`; `results_meta` keys `poses_artifact_path`, `poses_frame_count`, `poses_codec_version`.
+
+**Read this before writing the projection.** Phase 2's player dict, built at `modal_supabase_processor.py:3272`, carries exactly `player_id`, `keypoints`, `center`, `current_speed` and `pose`. **There is no `bbox` key.** The box is derived where it is needed, by `_bbox_from_player_keypoints` (`:577`).
+
+That matters because of what the box is for on the phone. `NearPlayerSelector.select` ranks candidates within one side with `if (person.boxConfidence > bestConfidence)`, starting from `Float.NEGATIVE_INFINITY`. If every `RawBox.confidence` were the same fallback zero, the strict `>` would make the **first** passing candidate win rather than the best one, and two detections on one side - a player and a line judge behind them - would resolve arbitrarily with nothing saying so. The confidence therefore has to be a real, varying number, and the honest one is the mean of the person's own keypoint confidences: it is model output, not a metric, so it stays on the right side of the boundary this design exists to keep.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -949,21 +954,25 @@ SKELETON_FRAMES = [
         "frame": 1,
         "timestamp": 0.0333,
         "players": [
+            # The real shape Phase 2 builds at modal_supabase_processor.py:3272.
+            # No bbox key: the box is derived, not stored.
             {
                 "player_id": 0,
                 "keypoints": [
-                    {"name": f"k{i}", "x": float(i), "y": float(i) * 2, "confidence": 0.5}
+                    {"name": f"k{i}", "x": float(i) + 1, "y": float(i) * 2 + 1, "confidence": 0.5}
                     for i in range(17)
                 ],
-                "bbox": {"x1": 1.0, "y1": 2.0, "x2": 3.0, "y2": 4.0, "confidence": 0.8},
+                "center": {"x": 8.0, "y": 16.0},
+                "current_speed": 12.4,
             },
             {
                 "player_id": 1,
                 "keypoints": [
-                    {"name": f"k{i}", "x": float(i) + 100, "y": float(i), "confidence": 0.4}
+                    {"name": f"k{i}", "x": float(i) + 100, "y": float(i) + 1, "confidence": 0.25}
                     for i in range(17)
                 ],
-                "bbox": {"x1": 5.0, "y1": 6.0, "x2": 7.0, "y2": 8.0, "confidence": 0.6},
+                "center": {"x": 108.0, "y": 8.0},
+                "current_speed": 3.1,
             },
         ],
     },
@@ -987,10 +996,24 @@ check("both players on the first frame", len(frames[0].persons) == 2)
 check("frame index carried", frames[0].frame == 1)
 check("presentation timestamp carried, not frame/fps", frames[0].timestamp == 0.0333)
 check("17 keypoints", len(frames[0].persons[0].keypoints) == 17)
-check("keypoint values carried", frames[0].persons[0].keypoints[3].x == 3.0)
+check("keypoint values carried", frames[0].persons[0].keypoints[3].x == 4.0)
 check("keypoint confidence carried", frames[0].persons[0].keypoints[3].confidence == 0.5)
-check("box carried", frames[0].persons[0].box.x2 == 3.0)
-check("box confidence carried", frames[0].persons[0].box.confidence == 0.8)
+
+print("the box is derived from the keypoints, because Phase 2 stores none")
+# player_data (modal_supabase_processor.py:3272) has no bbox key. The corners
+# come from _bbox_from_player_keypoints, the same helper the thumbnail capture
+# uses, so there is one derivation rather than two.
+check("box spans the keypoint extent", frames[0].persons[0].box.x1 == 1.0)
+check("box spans the keypoint extent", frames[0].persons[0].box.x2 == 17.0)
+
+print("the box confidence RANKS candidates, so it must vary between them")
+# NearPlayerSelector picks within one side with a strict `>` from negative
+# infinity. Equal confidences would make the FIRST passing candidate win
+# rather than the best, and a player and a line judge on the same side would
+# resolve arbitrarily. The mean of the person's own keypoint confidences is
+# model output, which is what is allowed to cross this boundary.
+check("mean keypoint confidence", abs(frames[0].persons[0].box.confidence - 0.5) < 1e-6)
+check("and it differs per person", abs(frames[0].persons[1].box.confidence - 0.25) < 1e-6)
 check("an empty frame survives as an empty frame", frames[1].persons == [])
 
 print("the artifact carries no shuttle and no boxes beyond the players")
@@ -1014,20 +1037,26 @@ _, short_frames = raw_inference_from_skeleton_frames(
 )
 check("dropped", short_frames[0].persons == [], str(short_frames[0].persons))
 
-print("a player with no bbox still contributes its keypoints")
-# The box confidence only ranks candidates within a frame
-# (NearPlayerSelector picks the highest boxConfidence among those that pass
-# the gates). A missing box is a worse rank, not a missing player.
-no_box = [{"frame": 1, "timestamp": 0.0,
+print("a player whose keypoints are too sparse to bound still contributes them")
+# _bbox_from_player_keypoints needs five keypoints at positive coordinates and
+# returns None below that. A player it cannot bound is still a player: the
+# gates on the phone stand on the ankles, not on the box, so dropping it would
+# cost coverage for a reason that has nothing to do with the player.
+sparse = [{"frame": 1, "timestamp": 0.0,
            "players": [{"player_id": 0,
-                        "keypoints": [{"name": f"k{i}", "x": float(i), "y": float(i),
-                                       "confidence": 0.9} for i in range(17)]}]}]
+                        "keypoints": [
+                            {"name": f"k{i}", "x": float(i) if i < 3 else 0.0,
+                             "y": float(i) if i < 3 else 0.0, "confidence": 0.9}
+                            for i in range(17)
+                        ],
+                        "center": {"x": 1.0, "y": 1.0}, "current_speed": 0.0}]}]
 _, boxless = raw_inference_from_skeleton_frames(
-    no_box, fps=30.0, total_frames=1, video_width=100, video_height=100,
+    sparse, fps=30.0, total_frames=1, video_width=100, video_height=100,
     model_version="cloud:test",
 )
 check("kept", len(boxless[0].persons) == 1)
-check("zero-confidence box", boxless[0].persons[0].box.confidence == 0.0)
+check("zero-extent box", boxless[0].persons[0].box.x1 == 0.0)
+check("but a real confidence, so ranking still works", boxless[0].persons[0].box.confidence == 0.9)
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -1041,6 +1070,8 @@ Expected: FAIL with `ImportError: cannot import name 'raw_inference_from_skeleto
 - [ ] **Step 3: Write the projection**
 
 In `backend/modal_supabase_processor.py`, beside the `supabase_helpers` import near `:35`:
+
+The projection also needs `_bbox_from_player_keypoints`, which is already in this module at `:577`. No import for it.
 
 ```python
 from raw_inference_codec import (  # noqa: E402
@@ -1096,6 +1127,12 @@ def raw_inference_from_skeleton_frames(
     short: the phone's ground-point gate rejects a short list by size, so a
     truncated player would cost coverage with nothing able to say why.
 
+    The box is DERIVED here, because Phase 2's player dict does not carry one
+    (:3272) - and its confidence is the mean of the person's own keypoint
+    confidences, because that number is what ranks candidates within a side on
+    the phone. A constant would turn that ranking into "whichever the model
+    listed first".
+
     The timestamp is the frame's container presentation time as the Phase 2
     loop recorded it (CAP_PROP_POS_MSEC), never frame / fps. PlayerPose's own
     KDoc is explicit that playback matches on the former and that the two
@@ -1108,12 +1145,20 @@ def raw_inference_from_skeleton_frames(
             keypoints = player.get("keypoints") or []
             if len(keypoints) != COCO_KEYPOINT_COUNT:
                 continue
-            bbox = player.get("bbox") or {}
+            # Phase 2's player dict has no bbox (see :3272); the box is
+            # derived, by the same helper the thumbnail capture uses.
+            bbox = _bbox_from_player_keypoints(player) or {}
+            # The ranking score. NearPlayerSelector picks the highest
+            # boxConfidence among the candidates that pass its gates on one
+            # side, with a strict `>`, so a constant here would silently make
+            # the first passing candidate win instead of the best one.
+            confidences = [float(k.get("confidence") or 0.0) for k in keypoints]
+            mean_confidence = sum(confidences) / len(confidences) if confidences else 0.0
             persons.append(
                 RawPerson(
                     box=RawBox(
                         class_id=0,
-                        confidence=float(bbox.get("confidence") or 0.0),
+                        confidence=mean_confidence,
                         x1=float(bbox.get("x1") or 0.0),
                         y1=float(bbox.get("y1") or 0.0),
                         x2=float(bbox.get("x2") or 0.0),
@@ -2634,6 +2679,15 @@ data class CloudPoseOutcome(
     /** What the poses are measured in, so a renderer can fit them to a display box. */
     val videoWidth: Int,
     val videoHeight: Int,
+    /**
+     * The court these positions were projected through.
+     *
+     * Carried out rather than left to the caller to remember, for
+     * SkeletonStore's reason: a reading in metres needs the homography these
+     * marks fit, and a file that carries what it needs cannot be paired with
+     * the wrong marks.
+     */
+    val marks: AnalysisCourtKeypoints,
 )
 
 /**
@@ -2652,17 +2706,22 @@ data class CloudPoseOutcome(
  *   here so exactly one conversion site exists, matching
  *   [LocalAnalysisCoordinator.analyze].
  */
-fun poseOnlyAnalysis(raw: RawInference, keypoints: CourtKeypoints): CloudPoseOutcome =
-    CloudPoseOutcome(
-        selections = selectPlayers(raw, keypoints.toAnalysis()),
+fun poseOnlyAnalysis(raw: RawInference, keypoints: CourtKeypoints): CloudPoseOutcome {
+    val marks = keypoints.toAnalysis()
+    return CloudPoseOutcome(
+        selections = selectPlayers(raw, marks),
         // The same normalisation every other path applies. A container the
         // prober could not read arrives as a zero, and it divides into every
         // occupancy figure the heatmap draws.
         fps = normalizeFps(raw.header.fps).fps,
         videoWidth = raw.header.videoWidth,
         videoHeight = raw.header.videoHeight,
+        marks = marks,
     )
+}
 ```
+
+Import the compute type under an alias so the two `CourtKeypoints` in this file cannot be confused: `import com.badmintontracker.analysis.geometry.CourtKeypoints as AnalysisCourtKeypoints`.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -3019,9 +3078,16 @@ The sequencing lives in `shared` behind an injected capability, following `Local
 **Interfaces:**
 - Consumes: `poseOnlyAnalysis`, `CloudPoseOutcome` (Task 9); `VideoStatus` (Task 10).
 - Produces:
-  - `data class CloudPoseArtifact(val videoId: String, val storagePath: String, val frameCount: Int)`
+  - `data class CloudPoseArtifact(val videoId: String, val storagePath: String, val frameCount: Int, val keypoints: CourtKeypoints)`
   - `interface CloudPoseRepository { suspend fun artifact(videoId: String): Result<CloudPoseArtifact?>; suspend fun download(artifact: CloudPoseArtifact, onProgress: (Float) -> Unit): Result<ByteArray> }`
-  - `class CloudPoseCoordinator(repository: CloudPoseRepository)` with `suspend fun install(videoId: String, keypoints: CourtKeypoints, onProgress: (Float) -> Unit = {}, save: (CloudPoseOutcome) -> Unit): Result<Boolean>` - `false` when the cloud has no artifact for this video, `true` when one was fetched and saved.
+  - `class CloudPoseCoordinator(repository: CloudPoseRepository)` with `suspend fun install(videoId: String, onProgress: (Float) -> Unit = {}, save: (CloudPoseOutcome) -> Unit): Result<Boolean>` - `false` when the cloud has no artifact for this video, `true` when one was fetched and saved.
+  - `CloudPoseOutcome` gains `val marks: CourtKeypoints` (the compute type), so the sink can hand them to `SkeletonStore.saveAll` without a second source.
+
+**The court marks come from the videos row, not from the local entry.** This is not a convenience: `analyticsRowState` now has a `READY_NO_VIDEO` state precisely for a match uploaded from another of the coach's phones, and such a phone has no `LocalVideoEntry` and therefore no `LocalVideoEntry.keypoints`. An `install` that took marks as a parameter would have nothing to pass there, and Task 15 step 7 would fail.
+
+Reading them from `videos.manual_court_keypoints` is also the more correct source even when a local entry exists: it is the exact set Phase 2 was handed, so the artifact and the marks it must be interpreted with come from one row and cannot be paired with each other by coincidence. `CloudPoseArtifact` therefore carries them, and `install` drops its `keypoints` parameter.
+
+An artifact path with no marks beside it is not a usable artifact: return null, the same as no artifact at all. Phase 1 requires `manual_court_keypoints` before it will run, so this cannot happen for a video that reached Phase 2, and a null here means the row is in a state nobody has seen rather than a heatmap worth attempting.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -3093,7 +3159,7 @@ class CloudPoseCoordinatorTest {
         val repository = FakeRepository(artifact = null)
         var saved = 0
 
-        val result = CloudPoseCoordinator(repository).install("v1", marks) { saved++ }
+        val result = CloudPoseCoordinator(repository).install("v1") { saved++ }
 
         result.getOrNull() shouldBe false
         saved shouldBe 0
@@ -3103,12 +3169,12 @@ class CloudPoseCoordinatorTest {
     @Test
     fun an_artifact_is_downloaded_decoded_and_handed_to_the_sink_once() = runTest {
         val repository = FakeRepository(
-            artifact = CloudPoseArtifact("v1", "uid/v1/poses.raw", frameCount = 0),
+            artifact = CloudPoseArtifact("v1", "uid/v1/poses.raw", frameCount = 0, keypoints = marks),
             bytes = streamOf(frames = 0),
         )
         var saved: CloudPoseOutcome? = null
 
-        val result = CloudPoseCoordinator(repository).install("v1", marks) { saved = it }
+        val result = CloudPoseCoordinator(repository).install("v1") { saved = it }
 
         result.getOrNull() shouldBe true
         repository.downloads shouldBe 1
@@ -3122,12 +3188,12 @@ class CloudPoseCoordinatorTest {
     @Test
     fun progress_from_the_download_reaches_the_caller() = runTest {
         val repository = FakeRepository(
-            artifact = CloudPoseArtifact("v1", "uid/v1/poses.raw", 0),
+            artifact = CloudPoseArtifact("v1", "uid/v1/poses.raw", 0, marks),
             bytes = streamOf(0),
         )
         val seen = mutableListOf<Float>()
 
-        CloudPoseCoordinator(repository).install("v1", marks, onProgress = { seen.add(it) }) {}
+        CloudPoseCoordinator(repository).install("v1", onProgress = { seen.add(it) }) {}
 
         seen.contains(0.5f) shouldBe true
         // Completion is the coordinator's to report, after the decode and the
@@ -3137,11 +3203,22 @@ class CloudPoseCoordinatorTest {
     }
 
     @Test
+    fun an_artifact_the_row_has_no_marks_for_installs_nothing() = runTest {
+        // The repository returns null in that case rather than an artifact
+        // with no court, so this is the same path as "no artifact". Pinned
+        // separately because the two have different causes and a future edit
+        // might reasonably want to tell them apart.
+        val repository = FakeRepository(artifact = null)
+
+        CloudPoseCoordinator(repository).install("v1") {}.getOrNull() shouldBe false
+    }
+
+    @Test
     fun a_failed_lookup_is_a_failure_the_caller_can_render_not_a_crash() = runTest {
         val repository = FakeRepository(artifactError = IllegalStateException("HTTP 503"))
         var saved = 0
 
-        val result = CloudPoseCoordinator(repository).install("v1", marks) { saved++ }
+        val result = CloudPoseCoordinator(repository).install("v1") { saved++ }
 
         result.isFailure shouldBe true
         saved shouldBe 0
@@ -3154,12 +3231,12 @@ class CloudPoseCoordinatorTest {
         // DECODE would throw mid-selection and the sink must not have been
         // called with whatever had accumulated.
         val repository = FakeRepository(
-            artifact = CloudPoseArtifact("v1", "uid/v1/poses.raw", 0),
+            artifact = CloudPoseArtifact("v1", "uid/v1/poses.raw", 0, marks),
             downloadError = IllegalStateException("connection lost"),
         )
         var saved = 0
 
-        val result = CloudPoseCoordinator(repository).install("v1", marks) { saved++ }
+        val result = CloudPoseCoordinator(repository).install("v1") { saved++ }
 
         result.isFailure shouldBe true
         saved shouldBe 0
@@ -3173,12 +3250,12 @@ class CloudPoseCoordinatorTest {
         // That exception must surface as a failed install, not as a video
         // that quietly has no heatmap.
         val repository = FakeRepository(
-            artifact = CloudPoseArtifact("v1", "uid/v1/poses.raw", 0),
+            artifact = CloudPoseArtifact("v1", "uid/v1/poses.raw", 0, marks),
             bytes = byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8),
         )
         var saved = 0
 
-        val result = CloudPoseCoordinator(repository).install("v1", marks) { saved++ }
+        val result = CloudPoseCoordinator(repository).install("v1") { saved++ }
 
         result.isFailure shouldBe true
         saved shouldBe 0
@@ -3243,22 +3320,37 @@ interface CloudPoseRepository {
 class CloudPoseRepositoryImpl(private val client: SupabaseClient) : CloudPoseRepository {
 
     @Serializable
-    private data class MetaRow(@SerialName("results_meta") val resultsMeta: JsonObject? = null)
+    private data class ArtifactRow(
+        @SerialName("results_meta") val resultsMeta: JsonObject? = null,
+        // The marks Phase 2 itself was handed. Read on the SAME query as the
+        // artifact path, so the stream and the court it is interpreted
+        // against come from one row rather than from two sources that could
+        // disagree - and so a phone with no local entry for this video, which
+        // is the whole point of READY_NO_VIDEO, has marks at all.
+        @SerialName("manual_court_keypoints") val keypoints: CourtKeypoints? = null,
+    )
 
     override suspend fun artifact(videoId: String): Result<CloudPoseArtifact?> = runCatching {
-        val meta = client.postgrest.from("videos")
-            .select(Columns.list("results_meta")) { filter { eq("id", videoId) } }
-            .decodeSingleOrNull<MetaRow>()
-            ?.resultsMeta
+        val row = client.postgrest.from("videos")
+            .select(Columns.list("results_meta", "manual_court_keypoints")) {
+                filter { eq("id", videoId) }
+            }
+            .decodeSingleOrNull<ArtifactRow>()
             ?: return@runCatching null
+        val meta = row.resultsMeta ?: return@runCatching null
         // A null path is the honest value the worker writes when the artifact
         // upload failed, which is non-fatal there. Treated the same as "Phase
         // 2 never ran": there is nothing to fetch either way.
         val path = meta["poses_artifact_path"]?.jsonPrimitive?.contentOrNull ?: return@runCatching null
+        // Phase 1 refuses to run without marks, so a row that reached Phase 2
+        // always has them. Null here means a state nobody has seen, and an
+        // artifact with no court to project onto is not worth attempting.
+        val keypoints = row.keypoints ?: return@runCatching null
         CloudPoseArtifact(
             videoId = videoId,
             storagePath = path,
             frameCount = meta["poses_frame_count"]?.jsonPrimitive?.int ?: 0,
+            keypoints = keypoints,
         )
     }.annotateHttpStatus()
 
@@ -3318,10 +3410,13 @@ class CloudPoseCoordinator(
      */
     suspend fun install(
         videoId: String,
-        keypoints: CourtKeypoints,
         onProgress: (Float) -> Unit = {},
         save: (CloudPoseOutcome) -> Unit,
     ): Result<Boolean> = runCatching {
+        // The marks ride on the artifact, from the same videos row. Not taken
+        // as a parameter: a match uploaded from another of this coach's
+        // phones has no LocalVideoEntry here and so no local copy of them,
+        // and that match is exactly what READY_NO_VIDEO exists for.
         val artifact = repository.artifact(videoId).getOrThrow() ?: return@runCatching false
         log("cloud pose: ${artifact.frameCount} frames at ${artifact.storagePath}")
 
@@ -3334,7 +3429,7 @@ class CloudPoseCoordinator(
         // throw becomes a failed Result here rather than a video that quietly
         // has no heatmap. See RawInferenceCodec's Reader.take.
         val raw = RawInferenceCodec.decode(bytes)
-        val outcome = poseOnlyAnalysis(raw, keypoints)
+        val outcome = poseOnlyAnalysis(raw, artifact.keypoints)
         outcome.selections.forEach { selection ->
             log(
                 "cloud pose ${selection.side}: ${selection.track.samples.size} samples over " +
@@ -3385,21 +3480,31 @@ In `LocalAnalysisRunner.kt`, add a method that runs the coordinator and saves in
      * to do on the thread drawing a frame.
      */
     suspend fun installCloudAnalysis(
-        entryId: String,
-        keypoints: CourtKeypoints,
+        videoId: String,
         onProgress: (Float) -> Unit = {},
     ): Result<Boolean> = withContext(Dispatchers.Default) {
-        cloudPoses.install(entryId, keypoints, onProgress) { outcome ->
-            tracks.saveAll(entryId, TrackSource.CLOUD, outcome.selections, outcome.fps)
+        cloudPoses.install(videoId, onProgress) { outcome ->
+            tracks.saveAll(videoId, TrackSource.CLOUD, outcome.selections, outcome.fps)
             skeletons.saveAll(
-                entryId, TrackSource.CLOUD, outcome.selections,
+                videoId, TrackSource.CLOUD, outcome.selections,
                 fps = outcome.fps,
                 videoWidth = outcome.videoWidth,
                 videoHeight = outcome.videoHeight,
-                marks = keypoints.toAnalysis(),
+                // The marks the cloud analysed against, carried through from
+                // the videos row rather than read from a local entry that may
+                // not exist. SkeletonStore's KDoc gives the reason they travel
+                // with the poses at all: a file that carries what it needs
+                // cannot be paired with the wrong marks.
+                marks = outcome.marks,
             )
         }
     }
+
+    /**
+     * Named by VIDEO id rather than entry id, deliberately. The two are the
+     * same value whenever a local entry exists (LocalVideoEntry.kt:140), and
+     * this path is the one that also runs when no entry does.
+     */
 ```
 
 The store key is the video id, which `LocalVideoEntry.kt:140` establishes is the entry id whenever a local entry exists. A match uploaded from another phone has no entry and lands under its video id alone, which is what Task 12 depends on.

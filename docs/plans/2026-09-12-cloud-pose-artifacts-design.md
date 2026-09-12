@@ -218,8 +218,18 @@ worker writes one `RAWI` stream:
   loop already records (`:2849`), which is the presentation time
   `PlayerPose.timestamp` requires. `shuttle` null and `boxes` empty: this
   artifact is pose only, by §3's rally decision. `persons` holds the two the
-  identity tracker retained, each with its box and 17 COCO keypoints in source
-  video pixels.
+  identity tracker retained, each with 17 COCO keypoints in source video
+  pixels and a box.
+
+  The box is **derived**, not copied. Phase 2's player dict carries
+  `player_id`, `keypoints`, `center`, `current_speed` and `pose`, and no
+  bounding box (`modal_supabase_processor.py:3272`). Its corners come from
+  `_bbox_from_player_keypoints`, already in that module, and its confidence is
+  the mean of the person's own keypoint confidences. That last part matters
+  more than it looks: `NearPlayerSelector` ranks candidates within one side by
+  box confidence with a strict `>`, so a constant would quietly turn "the best
+  detection" into "whichever the model listed first" wherever two people stand
+  on one half.
 - **Destination.** `results/{owner}/{video_id}/poses.raw`, the existing bucket
   with the existing owner-prefix RLS. No migration, no new policy.
 - **Discovery.** `results_meta` gains `poses_artifact_path`,
