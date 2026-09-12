@@ -159,6 +159,7 @@ and it was rejected on that ground.
 | Who decides which player is which | `:analysis`, from `isFarSide` and the court marks | **Carry the cloud's `player_id` across the boundary.** It would work, but it puts an identity assignment in the wire format, which `LocalInferenceEngine.kt:9-11` forbids, and it would mean two rules for "which side is this player on". The cloud tracker still earns its keep: it chooses *which* two detections cross the wire. `:analysis` decides what they mean. |
 | Rally truth for a cloud video | `rally_clips`, unchanged | **Re-derive rallies on the phone from the same stream.** The stream would carry shuttle and boxes and `analyse` would produce a fourth rally list (reference §8.9 already counts three), disagreeing with the clips the coach has already annotated. Made structural, not conventional: the cloud path calls a pose-only entry point that cannot reach the rally detectors. |
 | Provenance of the stored artifacts | Cloud artifacts in their own store namespace; cloud wins when both exist | **One namespace with a flag.** `skeletonAction` (`SkeletonDecision.kt:18-21`) holds that "a completed run is the new truth for its entry", so a later rally-only device run would silently delete a cloud skeleton. A separate namespace makes that impossible rather than merely discouraged. |
+| Store format for two players | A multi-track `v3` added alongside `v2`, written only by the cloud path; readers accept either | **Bump both stores to `v3` and migrate.** `PlayerTrackStore.has` (`:61`) and `load` (`:72`) compare the header against one `VERSION` for exact equality, so the bump refuses every track file already on every phone, and the documented recovery is a half-hour re-run. The local path will never write two tracks anyway (§9), so a multi-track local format is a format nobody writes. |
 | Compression of the artifact | None | Gzip would roughly halve it, but Kotlin/Native has no built-in inflate and adding a dependency to both platforms costs more than the bytes are worth for a one-time download. Revisit if the measurement in §10 comes back far above the estimate. |
 | Panel availability without a local video | Heatmap yes, Skeleton no | The heatmap needs only a track. The skeleton overlays playback and has nothing to draw over. |
 
@@ -272,6 +273,12 @@ screen is opened and no cloud artifact is stored yet, with a progress line in
 place of the panel, and opportunistically when a foregrounded pipeline observes
 `completed`. Once stored it is never fetched again.
 
+The second trigger depends on §6.3 and does not work without it. `completed` is
+a status `observeProcessing` never reaches today, because the flow terminates at
+`phase1_complete` (§1.1). Wiring the opportunistic fetch before the status
+machine is extended produces a trigger that can never fire, which is why §12
+keeps the two in one step.
+
 ### 6.3 Triggering Phase 2
 
 `ProcessingUpdate.isSuccess` (`VideosRepository.kt:41`) splits in two:
@@ -285,6 +292,15 @@ existing edge function.
 (`LocalVideoEntry.kt`) gains its line. That function's own test file records why
 it is shared: four screens render it and three of them had written it out
 separately and drifted. The new stage goes in there with the others.
+
+`AnalyzeStage` is persisted in the local video registry, and
+`LocalVideoEntry.kt:146-148` warns that a registry written before a field
+existed must still decode or `load()` swallows the failure and returns an empty
+library. An added enum **case** is a different risk from an added field, and the
+plan checks how `AnalyzeStage` deserializes against a registry written by the
+current build before committing to the name. `LocalVideoEntry.kt:165-166` also
+records that Swift constructs this type with every argument spelled out, so any
+change here is a two-platform edit.
 
 ### 6.4 Where the artifacts land
 
@@ -313,10 +329,26 @@ partition.
 This is most of the mobile work in this change, because both stores are
 single-track formats today:
 
-- `PlayerTrackStore` goes to `v3`, carrying a track count and a side tag per
-  track. `SkeletonStore` goes to `SKEL` v3 the same way. Both already read older
-  versions (`SkeletonStore.kt:99-113` reads v1 and v2 from the header alone), so
-  existing device runs keep working and are simply single-track files.
+- A multi-track format is added, `v3` for the track table and `SKEL` v3 for the
+  skeleton, each carrying a track count and a side tag per track. **The local
+  writer keeps writing v2.** Only the cloud path ever writes v3, because only a
+  cloud run ever has two usable players (§9). The readers widen to accept either
+  version; nothing narrows.
+
+  This is not the same as bumping the version, and the difference is data loss.
+  `PlayerTrackStore.has` (`:61`) and `load` (`:72`) both compare the header
+  against a single `VERSION` for exact equality, so changing that constant to
+  `"v3"` would refuse every track file already on every phone, and the recovery
+  its own KDoc names (`:41-53`) is a re-run that costs half an hour.
+  `SkeletonStore` is the more forgiving of the two: `has` (`:99`) already
+  accepts v1 or v2 from the header alone. The two stores are therefore not
+  symmetric today, and a plan that treats them as symmetric silently wipes
+  heatmaps.
+
+  The v1 refusal stays absolute. Its reason (`PlayerTrackStore.kt:41-53`) is
+  that v1 tracks were built on a homography that could be metres off, so they
+  are wrong rather than merely old. v2's geometry is correct, so that reason
+  does not reach it.
 - `HeatmapPanel` and `SkeletonPanel` gain a Near/Far toggle, **shown only when
   the loaded data has two tracks**. A device run stores one, so the device UI is
   unchanged on both platforms.
@@ -402,8 +434,13 @@ two must agree sample for sample. A partition that changes the near player's
 track is a regression, not a feature.
 
 **The stores, both versions, both platforms.** A v2 file written by the current
-build must still load after the v3 change, on Android and on iOS, and must
-present as a single-track result with no toggle.
+build must still load after v3 exists, on Android and on iOS, and must present
+as a single-track result with no toggle. Tested per store rather than once,
+because the two do not start from the same place: `SkeletonStore.has` already
+accepts more than one version and `PlayerTrackStore.has` accepts exactly one
+(§7). The regression to guard is a phone whose existing heatmaps vanish after an
+app update, and it is invisible to any test that writes its fixture with the new
+writer.
 
 **The annotation shift (§4).** A replay test in `backend/scripts/`: annotate a
 clip set, re-cut with moved bounds, assert every surviving note lands on the
