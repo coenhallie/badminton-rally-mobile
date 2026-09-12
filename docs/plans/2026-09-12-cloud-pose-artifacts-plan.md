@@ -3804,9 +3804,13 @@ The port of Task 13. Same rule, same gating, same labels.
 - Modify: `iosApp/Sources/Analytics/CourtHeatmapView.swift` (`:16`) if it resolves its own track
 - Test: `iosApp/Tests/BasePositionPanelTests.swift`, `iosApp/Tests/AnalyticsRowsTests.swift`
 
+**Interfaces:**
+- Consumes: `PlayerTrackStore.Stored.tracks`, `SkeletonStore.Stored.tracks` (Task 8); `CourtSide` bridged by SKIE (Task 6); `AnalyticsPanelKt.availablePanels(hasTrack:hasBoundedClips:hasSkeleton:hasVideo:)` (Task 12).
+- Produces: `struct HeatmapSource { let tracks: [PlayerTrackStore.SideTrack]; let fps: Double }` and `func heatmapSource(done: LocalAnalysisState.Done?, stored: PlayerTrackStore.Stored?) -> HeatmapSource?`, matching the Android names exactly so the two can be read side by side.
+
 - [ ] **Step 1: Write the failing tests**
 
-Mirror Task 13's five test names one for one in the iOS suite, against the Swift `heatmapSource` equivalent. If iOS has no such function and resolves the track inline in `AnalyticsDetailView.reload` (`:228`), extract it first, as a pure function with the same name and the same five cases: an inline resolution cannot be tested, and the two platforms disagreeing about which track to draw is precisely what the shared rule exists to prevent.
+Five tests, one for each of Task 13's, with the same names transliterated to XCTest (`testAStoredPairOfTracksIsOfferedAsAPair`, `testAnInMemoryRunIsStillOneNearTrack`, `testAnEmptyInMemoryRunStillFallsThroughToAStoredPair`, `testASideWithNoSamplesIsNotOfferedAsAChoice`, `testNeitherInMemoryNorStoredIsStillNothing`), asserting the same five things against the Swift `heatmapSource`. If iOS has no such function and resolves the track inline in `AnalyticsDetailView.reload` (`:228`), extract it first, as a pure function with the same name and the same five cases: an inline resolution cannot be tested, and the two platforms disagreeing about which track to draw is precisely what the shared rule exists to prevent.
 
 - [ ] **Step 2: Run tests to verify they fail**
 
