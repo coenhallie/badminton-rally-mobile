@@ -34,6 +34,20 @@ class AnalysisFilesTest {
     }
 
     @Test
+    fun `deletes the cloud artifacts for a removed entry too`() {
+        // Removing an entry already removes its derived local analysis; a
+        // cloud artifact is not protected the way a local one is, since it
+        // costs a re-download rather than half an hour of device time, so the
+        // same precedent applies to it.
+        val cloudTrack = write("cloud-tracks/e1.track")
+        val cloudSkeleton = write("cloud-skeletons/e1.skel")
+
+        AnalysisFiles.deleteAll(temp.root, "e1")
+
+        listOf(cloudTrack, cloudSkeleton).map { it.exists() } shouldBe List(2) { false }
+    }
+
+    @Test
     fun `leaves another video's analysis alone`() {
         // Prefix matching would take these with it: the ids are opaque strings
         // and nothing stops one from starting with another.

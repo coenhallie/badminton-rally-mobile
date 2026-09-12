@@ -95,10 +95,14 @@ class PlayerTrackStore(private val root: File) {
             }
         }
         val tmp = File(file.parentFile, file.name + ".tmp")
-        tmp.writeText(text)
-        if (!tmp.renameTo(file)) {
+        try {
+            tmp.writeText(text)
+            if (!tmp.renameTo(file)) {
+                throw java.io.IOException("Failed to rename ${tmp.absolutePath} to ${file.absolutePath}")
+            }
+        } catch (e: Exception) {
             tmp.delete()
-            throw java.io.IOException("Failed to rename ${tmp.absolutePath} to ${file.absolutePath}")
+            throw e
         }
     }
 
@@ -163,6 +167,10 @@ class PlayerTrackStore(private val root: File) {
     private fun loadV3(header: List<String>, lines: List<String>): Stored? {
         val fps = header[1].toDouble()
         val trackCount = header[2].toInt()
+        // Rejected before the ArrayList below can allocate on it: a negative
+        // or implausibly large count is corruption, not a file this store
+        // wrote, and there are never more tracks than CourtSide has sides.
+        if (trackCount < 0 || trackCount > CourtSide.entries.size) return null
         val tracks = ArrayList<SideTrack>(trackCount)
         var at = 1
         repeat(trackCount) {
