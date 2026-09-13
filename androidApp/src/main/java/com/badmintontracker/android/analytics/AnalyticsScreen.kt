@@ -40,6 +40,7 @@ import com.badmintontracker.android.ui.icons.ShuttlIcons
 import com.badmintontracker.android.ui.theme.ShuttlRadius
 import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.shared.analytics.AnalyticsRowState
+import com.badmintontracker.shared.analytics.opensAnalytics
 
 /** Which of the drawer's own sections a row belongs to, in display order. */
 enum class AnalyticsGroup(val label: String) {
@@ -252,7 +253,7 @@ private fun AnalyticsRowItem(
     onClick: () -> Unit,
     onAnalyse: () -> Unit,
 ) {
-    val ready = row.state == AnalyticsRowState.READY
+    val ready = opensAnalytics(row.state)
     val shape = RoundedCornerShape(ShuttlRadius.large)
     Row(
         modifier = Modifier

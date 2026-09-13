@@ -99,7 +99,11 @@ struct AnalyticsDetailView: View {
         AnalyticsPanelKt.availablePanels(
             hasTrack: source != nil,
             hasBoundedClips: windows.contains { $0.isBounded },
-            hasSkeleton: hasSkeleton
+            hasSkeleton: hasSkeleton,
+            // A cloud analysis lands on a phone that never held the footage,
+            // so the skeleton tab has nothing to overlay. Same resolution
+            // SkeletonPanel uses for the file it plays.
+            hasVideo: rally.localVideos.get(id: entryId)?.uri != nil
         )
     }
 

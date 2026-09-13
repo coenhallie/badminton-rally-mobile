@@ -9,6 +9,7 @@ import com.badmintontracker.android.localanalysis.LocalAnalysisState
 import com.badmintontracker.android.localvideo.LocalVideoRow
 import com.badmintontracker.shared.analytics.AnalyticsRowState
 import com.badmintontracker.shared.analytics.analyticsRowState
+import com.badmintontracker.shared.analytics.opensAnalytics
 import com.badmintontracker.shared.localvideo.AnalyzeProgress
 import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.DevicePhase
@@ -97,7 +98,7 @@ internal fun analyticsLegend(rows: List<AnalyticsRow>): AnalyticsLegend = when {
     // Repeating "Not on this phone" down the whole list would say the same thing
     // as many times as there are rows.
     rows.all { it.state == AnalyticsRowState.NOT_ON_DEVICE } -> AnalyticsLegend.NOTHING_ON_THIS_PHONE
-    rows.any { it.state == AnalyticsRowState.READY } -> AnalyticsLegend.DOT
+    rows.any { opensAnalytics(it.state) } -> AnalyticsLegend.DOT
     else -> AnalyticsLegend.ANALYSE_BUTTON
 }
 

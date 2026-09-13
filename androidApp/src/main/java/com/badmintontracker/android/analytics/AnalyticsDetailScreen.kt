@@ -113,11 +113,14 @@ fun AnalyticsDetailScreen(
         (done?.clips?.takeIf { it.isNotEmpty() } ?: localAnalysis.storedClips(entryId))
             .any { it.endSeconds > it.startSeconds }
     }
-    val panels = availablePanels(hasTrack, hasBoundedClips, hasSkeleton)
-    var chosen by rememberSaveable { mutableStateOf(AnalyticsPanel.Heatmap) }
-    val panel = if (chosen in panels) chosen else AnalyticsPanel.Heatmap
     val entry = remember(entryId) { localVideos.get(entryId) }
     val videoUri = entry?.uri
+    // A cloud analysis lands on a phone that never held the footage, so the
+    // skeleton tab has nothing to overlay. The heatmap and base read only the
+    // stored track and are unaffected.
+    val panels = availablePanels(hasTrack, hasBoundedClips, hasSkeleton, hasVideo = videoUri != null)
+    var chosen by rememberSaveable { mutableStateOf(AnalyticsPanel.Heatmap) }
+    val panel = if (chosen in panels) chosen else AnalyticsPanel.Heatmap
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,

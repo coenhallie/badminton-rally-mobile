@@ -262,7 +262,7 @@ struct AnalyticsListView: View {
             // on the LEFT so titles lined up across a mixed list; a card starts
             // its content at the same x whatever the row carries, so there is
             // nothing left to reserve against.
-            if row.state == .ready {
+            if AnalyticsRowStateKt.opensAnalytics(state: row.state) {
                 Circle()
                     .fill(Shuttl.accent)
                     .frame(width: AnalyticsList.dot, height: AnalyticsList.dot)
@@ -283,10 +283,11 @@ struct AnalyticsListView: View {
         // the dot are not part of the target and the card feels unreliable.
         .contentShape(RoundedRectangle(cornerRadius: ShuttlRadius.large))
         .onTapGesture {
-            guard row.state == .ready, let entryId = row.entryId else { return }
+            guard AnalyticsRowStateKt.opensAnalytics(state: row.state),
+                  let entryId = row.entryId else { return }
             detailRoute = AnalyticsDetailRoute(entryId: entryId)
         }
-        .accessibilityAddTraits(row.state == .ready ? .isButton : [])
+        .accessibilityAddTraits(AnalyticsRowStateKt.opensAnalytics(state: row.state) ? .isButton : [])
     }
 
     @ViewBuilder

@@ -340,6 +340,6 @@ func analyticsLegend(for rows: [AnalyticsRow]) -> AnalyticsLegend {
     if rows.allSatisfy({ $0.state == .notOnDevice }) { return .nothingOnThisPhone }
     // A dot is a symbol and needs explaining; a button labelled "Analyze" does
     // not, so the dot wins whenever both are on screen.
-    if rows.contains(where: { $0.state == .ready }) { return .dot }
+    if rows.contains(where: { AnalyticsRowStateKt.opensAnalytics(state: $0.state) }) { return .dot }
     return .analyseButton
 }
