@@ -43,6 +43,19 @@ class AnalyzeCoordinator(
      * dependency on scoring.
      */
     private val onVideoRowReady: (entryId: String) -> Unit = {},
+    /**
+     * Fetch this video's cloud pose artifact and store it, if there is one.
+     *
+     * Injected the way [openChannel] is: the stores are platform types, so the
+     * platform supplies the capability and this owns the sequencing. The
+     * default is a no-op, which is what every test that does not care about
+     * Phase 2 gets.
+     *
+     * Must not throw. A Phase 2 that produced nothing is not a Phase 1
+     * failure, and the caller below deliberately does not treat it as one.
+     */
+    private val installCloudPoses: suspend (videoId: String, onProgress: (Float) -> Unit) -> Unit =
+        { _, _ -> },
 ) {
     private val _progress = MutableStateFlow<Map<String, AnalyzeProgress>>(emptyMap())
     val progress: StateFlow<Map<String, AnalyzeProgress>> = _progress.asStateFlow()
@@ -197,6 +210,17 @@ class AnalyzeCoordinator(
                 "Analysis finished but found no rallies in this video.",
             )
         }
+        // Phase 2, and everything it needs, BEFORE the branch below: that
+        // branch removes the entry for a video with no annotations, and both
+        // stores are keyed by entry id. Installing afterwards would write a
+        // track and a skeleton against an id the registry no longer lists.
+        //
+        // MEASURING is set before the wait rather than after, because it is
+        // what makes canRemoveLocalVideo false: a coach who swiped the row
+        // away mid-run would otherwise leave the finished artifact with no
+        // entry to land against.
+        measureMovement(entryId)
+
         if (localAnnotations.hasAnnotations(entryId)) {
             // Keep annotated videos so the notes survive; mark them Analyzed.
             localVideos.update(entryId) {
@@ -205,6 +229,42 @@ class AnalyzeCoordinator(
         } else {
             localVideos.remove(entryId)
         }
+    }
+
+    /**
+     * Runs Phase 2 and installs what it produced.
+     *
+     * Deliberately swallows every failure. Phase 1 has already succeeded by
+     * the time this runs - the clips exist and are watchable - and a heatmap
+     * that could not be fetched is not a reason to paint the row red and ask
+     * the coach to analyse the whole video again. The failures are logged and
+     * the entry is left exactly where Phase 1 left it.
+     *
+     * The three ways this ends with no heatmap, none of them a failure of
+     * this video: start-analytics refuses (the row was not in a state it
+     * accepts), Phase 2 runs and cannot upload its artifact (non-fatal on the
+     * worker, so results_meta carries a null path), or the download breaks.
+     */
+    private suspend fun measureMovement(entryId: String) {
+        localVideos.update(entryId) { it.copy(stage = AnalyzeStage.MEASURING) }
+        setProgress(entryId) { it.copy(pipelineProgress = null) }
+
+        videos.startAnalytics(entryId).onFailure {
+            log("video $entryId phase 2 not started: ${it.message}")
+            return
+        }
+        var failed: String? = null
+        videos.observeProcessing(entryId, awaitAnalytics = true).collect { update ->
+            setProgress(entryId) { it.copy(pipelineProgress = update.progress) }
+            if (update.isFailure) failed = update.error ?: "Phase 2 failed"
+        }
+        failed?.let {
+            log("video $entryId phase 2 failed: $it")
+            return
+        }
+
+        runCatching { installCloudPoses(entryId) { p -> setProgress(entryId) { s -> s.copy(pipelineProgress = p) } } }
+            .onFailure { log("video $entryId pose artifact not installed: ${it.message}") }
     }
 
     private fun fail(entryId: String, step: AnalyzeStep, message: String) {

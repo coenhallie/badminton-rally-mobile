@@ -12,6 +12,7 @@ import com.badmintontracker.shared.localvideo.DevicePhase
 import com.badmintontracker.shared.localvideo.DeviceWork
 import com.badmintontracker.shared.model.CourtKeypoints
 import com.badmintontracker.shared.model.toAnalysis
+import com.badmintontracker.shared.local.CloudPoseOutcome
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -141,6 +142,30 @@ class LocalAnalysisRunner(
 
     fun hasStoredSkeleton(entryId: String): Boolean =
         skeletons.has(entryId, TrackSource.CLOUD) || skeletons.has(entryId, TrackSource.LOCAL)
+
+    /**
+     * Store what a cloud analysis produced for this entry.
+     *
+     * Writes into [TrackSource.CLOUD], which is what keeps `skeletonAction` -
+     * "a completed run is the new truth for its entry" - from being able to
+     * delete it on the next rally-only device run.
+     *
+     * The caller has already decoded and selected off the main thread; this is
+     * two file writes.
+     */
+    fun saveCloudAnalysis(entryId: String, outcome: CloudPoseOutcome) {
+        tracks.saveAll(entryId, TrackSource.CLOUD, outcome.selections, outcome.fps)
+        skeletons.saveAll(
+            entryId = entryId,
+            source = TrackSource.CLOUD,
+            selections = outcome.selections,
+            fps = outcome.fps,
+            videoWidth = outcome.videoWidth,
+            videoHeight = outcome.videoHeight,
+            marks = outcome.marks,
+        )
+        log("cloud analysis stored for $entryId")
+    }
 
     /**
      * The file the analysis actually decoded, if it is still there.

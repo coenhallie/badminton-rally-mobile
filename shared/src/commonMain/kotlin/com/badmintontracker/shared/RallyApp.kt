@@ -19,6 +19,9 @@ import com.badmintontracker.shared.repo.AuthRepository
 import com.badmintontracker.shared.repo.AuthRepositoryImpl
 import com.badmintontracker.shared.repo.AuthState
 import com.badmintontracker.shared.repo.ClipsRepository
+import com.badmintontracker.shared.local.CloudPoseCoordinator
+import com.badmintontracker.shared.repo.CloudPoseRepositoryImpl
+import com.badmintontracker.shared.repo.CloudPoseRepository
 import com.badmintontracker.shared.repo.ClipsRepositoryImpl
 import com.badmintontracker.shared.repo.MediaRepository
 import com.badmintontracker.shared.repo.MediaRepositoryImpl
@@ -66,6 +69,7 @@ class RallyApp(
     val media:       MediaRepository       = MediaRepositoryImpl(client)
     val shares:      SharesRepository      = SharesRepositoryImpl(client)
     val videos:      VideosRepository      = VideosRepositoryImpl(client)
+    val cloudPoses:  CloudPoseRepository   = CloudPoseRepositoryImpl(client)
 
     val authState: Flow<AuthState> = auth.sessionFlow.map { it.toAuthState() }
 
@@ -128,6 +132,14 @@ class RallyApp(
     ): LocalAnalysisCoordinator = LocalAnalysisCoordinator(engine = engine, log = log)
 
     /**
+     * The cloud sibling of [localAnalysisCoordinator]. Built here rather than
+     * per platform so both phones fetch and decode a pose artifact the same
+     * way; only the sink that stores the result differs.
+     */
+    fun cloudPoseCoordinator(log: (String) -> Unit = {}): CloudPoseCoordinator =
+        CloudPoseCoordinator(repository = cloudPoses, log = log)
+
+    /**
      * Builds the analyze pipeline with the scoring link already wired in. Both
      * platforms call this rather than constructing a coordinator themselves, so
      * "a finished upload binds its match" cannot be true on one phone and not the
@@ -137,6 +149,7 @@ class RallyApp(
         scope: CoroutineScope,
         openChannel: suspend (uri: String, offset: Long) -> ByteReadChannel,
         log: (String) -> Unit = {},
+        installCloudPoses: suspend (videoId: String, onProgress: (Float) -> Unit) -> Unit = { _, _ -> },
     ): AnalyzeCoordinator = AnalyzeCoordinator(
         localVideos = localVideos,
         videos = videos,
@@ -145,6 +158,7 @@ class RallyApp(
         openChannel = openChannel,
         log = log,
         localAnnotations = localAnnotations,
+        installCloudPoses = installCloudPoses,
         onVideoRowReady = { entryId ->
             // The videos row now exists, so the foreign key can be satisfied. A
             // video-first import has no match and this is a no-op.

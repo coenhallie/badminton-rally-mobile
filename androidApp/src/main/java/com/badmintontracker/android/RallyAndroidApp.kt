@@ -21,6 +21,7 @@ import com.badmintontracker.shared.prefs.ThemePreferenceRepository
 import com.russhwolf.settings.SharedPreferencesSettings
 import io.ktor.utils.io.jvm.javaio.toByteReadChannel
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 
@@ -58,6 +59,21 @@ class RallyAndroidApp : Application(), SingletonImageLoader.Factory {
         themePrefs  = rally.themePrefs
         localVideos = rally.localVideos
         localAnnotations = rally.localAnnotations
+        // Before analyzeCoordinator, which now needs it: the cloud pose sink
+        // writes through this runner's stores. Application-scoped for the same
+        // reason the coordinator is - an analysis outlives the screen that
+        // starts it - and the app graph's throughput, not a second one over
+        // the same Settings: two instances each carry their own StateFlow and
+        // would disagree about the estimate until one of them was rebuilt.
+        throughput = rally.deviceThroughput
+        localAnalysis = LocalAnalysisRunner(
+            context = this,
+            scope = appScope,
+            throughput = throughput,
+            log = { Log.i("LocalAnalysis", it) },
+        )
+
+        val cloudPoses = rally.cloudPoseCoordinator(log = { Log.i("CloudPose", it) })
         analyzeCoordinator = rally.analyzeCoordinator(
             scope = appScope,
             openChannel = { uri, offset ->
@@ -69,21 +85,19 @@ class RallyAndroidApp : Application(), SingletonImageLoader.Factory {
                 stream.toByteReadChannel()
             },
             log = { Log.i("AnalyzeCoordinator", it) },
+            installCloudPoses = { videoId, onProgress ->
+                // Off the main thread: a 30-minute stream decodes to roughly
+                // 1.8M keypoint objects, which is the same magnitude an
+                // on-device run already holds but is not something to do on
+                // the thread drawing a frame.
+                withContext(Dispatchers.Default) {
+                    cloudPoses.install(videoId, onProgress) { outcome ->
+                        localAnalysis.saveCloudAnalysis(videoId, outcome)
+                    }.getOrThrow()
+                }
+            },
         )
         analyzeCoordinator.reattachToProcessing()
-
-        // The on-device sibling of analyzeCoordinator. Application-scoped
-        // for the same reason: an analysis outlives the screen that starts it.
-        // The app graph's, not a second one over the same Settings: two
-        // instances each carry their own StateFlow and would disagree about
-        // the estimate until one of them was rebuilt.
-        throughput = rally.deviceThroughput
-        localAnalysis = LocalAnalysisRunner(
-            context = this,
-            scope = appScope,
-            throughput = throughput,
-            log = { Log.i("LocalAnalysis", it) },
-        )
 
         // Last: it reads the two coordinators above, so it cannot be built
         // before them.

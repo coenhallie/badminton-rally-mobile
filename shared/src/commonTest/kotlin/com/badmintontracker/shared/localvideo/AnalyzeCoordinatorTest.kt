@@ -51,13 +51,17 @@ class AnalyzeCoordinatorTest {
         createdAt = Instant.fromEpochMilliseconds(0),
     )
 
-    private fun TestScope.coordinator(registry: LocalVideoRepository = localVideos) = AnalyzeCoordinator(
+    private fun TestScope.coordinator(
+        registry: LocalVideoRepository = localVideos,
+        installCloudPoses: suspend (String, (Float) -> Unit) -> Unit = { _, _ -> },
+    ) = AnalyzeCoordinator(
         localVideos = registry,
         videos = videos,
         clips = clips,
         scope = CoroutineScope(backgroundScope.coroutineContext + UnconfinedTestDispatcher(testScheduler)),
         openChannel = { _, _ -> ByteReadChannel(ByteArray(0)) },
         localAnnotations = localAnnotations,
+        installCloudPoses = installCloudPoses,
     )
 
     @Test
@@ -414,5 +418,86 @@ class AnalyzeCoordinatorTest {
             entryAtHook.shouldNotBeNull()
             localVideos.get("e1").shouldBeNull()
         }
+    }
+
+    // MARK: - Phase 2, which must never turn a good Phase 1 red (Task 11)
+
+    @Test
+    fun the_pose_pass_runs_after_the_clips_and_before_the_entry_is_removed() = runTest {
+        // Both stores are keyed by entry id, so an install after the removal
+        // below would write a track against an id the registry no longer
+        // lists. The install is handed the id and must find the entry there.
+        localVideos.add(entry())
+        clips.clips.value = listOf(clipFor("e1"))
+        val stagesSeen = mutableListOf<AnalyzeStage?>()
+
+        val c = coordinator(installCloudPoses = { id, _ ->
+            stagesSeen += localVideos.get(id)?.stage
+        })
+        c.startAnalysis("e1", keypoints())
+        runCurrent()
+
+        videos.startAnalyticsCalls shouldBe listOf("e1")
+        // MEASURING while it runs, which is what makes the row unremovable.
+        stagesSeen shouldBe listOf(AnalyzeStage.MEASURING)
+        // And the ordinary end state is unchanged.
+        localVideos.get("e1").shouldBeNull()
+    }
+
+    @Test
+    fun the_clip_wait_and_the_analytics_wait_are_different_waits() = runTest {
+        // The bug ProcessingUpdateTest describes but cannot catch at this
+        // level: a Phase 2 wait that stopped at phase1_complete would fetch a
+        // poses.raw Modal has not written yet.
+        localVideos.add(entry())
+        clips.clips.value = listOf(clipFor("e1"))
+
+        coordinator().startAnalysis("e1", keypoints())
+        runCurrent()
+
+        videos.awaitAnalyticsCalls shouldBe listOf(false, true)
+    }
+
+    @Test
+    fun a_phase_two_that_never_starts_leaves_a_good_phase_one_alone() = runTest {
+        // start-analytics answers 409 to a row it will not accept. The clips
+        // exist and are watchable; painting the row red and asking the coach
+        // to analyse the whole video again would be a lie about what failed.
+        localVideos.add(entry())
+        clips.clips.value = listOf(clipFor("e1"))
+        videos.nextStartAnalyticsResult = Result.failure(IllegalStateException("HTTP 409"))
+
+        coordinator().startAnalysis("e1", keypoints())
+        runCurrent()
+
+        clips.refreshCalls.size shouldBe 1
+        localVideos.get("e1").shouldBeNull()   // removed on success, as ever
+    }
+
+    @Test
+    fun an_install_that_throws_leaves_a_good_phase_one_alone() = runTest {
+        // The download broke, or the stream was corrupt. Same reasoning: the
+        // heatmap is missing, the analysis is not.
+        localVideos.add(entry())
+        clips.clips.value = listOf(clipFor("e1"))
+
+        coordinator(installCloudPoses = { _, _ -> throw IllegalStateException("connection lost") })
+            .startAnalysis("e1", keypoints())
+        runCurrent()
+
+        localVideos.get("e1").shouldBeNull()
+    }
+
+    @Test
+    fun an_annotated_video_still_ends_analyzed_after_the_pose_pass() = runTest {
+        // The other arm of the branch the install has to precede.
+        localVideos.add(entry())
+        clips.clips.value = listOf(clipFor("e1"))
+        localAnnotations.add("e1", 1f, "note", null)
+
+        coordinator().startAnalysis("e1", keypoints())
+        runCurrent()
+
+        localVideos.get("e1")?.stage shouldBe AnalyzeStage.ANALYZED
     }
 }
