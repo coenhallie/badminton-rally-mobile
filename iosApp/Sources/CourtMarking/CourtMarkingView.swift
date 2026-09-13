@@ -56,6 +56,8 @@ struct CourtMarkingView: View {
     /// in `CourtMarkingUiState`.
     @State private var showsSavedMarks = false
     @State private var error: String? = nil
+    /// Whether the "what each run produces" sheet is up.
+    @State private var showCapabilities = false
     @State private var scale: CGFloat = 1
     @State private var offset: CGSize = .zero
     @State private var lastPanTranslation: CGSize = .zero
@@ -212,10 +214,28 @@ struct CourtMarkingView: View {
     private func optionsStep(courtFrame: CourtFrame, marking: CourtMarkingState) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                Text("What to analyze")
-                    .shuttlType(ShuttlType.headlineLarge)
-                    .foregroundStyle(Shuttl.textHeading)
-                    .padding(.top, 16)
+                HStack(alignment: .firstTextBaseline) {
+                    Text("What to analyze")
+                        .shuttlType(ShuttlType.headlineLarge)
+                        .foregroundStyle(Shuttl.textHeading)
+                    Spacer(minLength: 8)
+                    // On the header rather than on either button: the question
+                    // it answers is "what is the difference between these two",
+                    // which is about the pair.
+                    Button { showCapabilities = true } label: {
+                        Text("?")
+                            .shuttlType(ShuttlType.labelMedium)
+                            .foregroundStyle(Shuttl.textTertiary)
+                            .frame(width: 26, height: 26)
+                            .overlay(Circle().stroke(Shuttl.textTertiary, lineWidth: 1))
+                            // 44pt is the minimum touch target; the ring stays 26.
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("What each run produces")
+                }
+                .padding(.top, 16)
                 Text("Pick what this run should produce.")
                     .shuttlType(ShuttlType.bodySmall)
                     .foregroundStyle(Shuttl.textTertiary)
@@ -250,6 +270,7 @@ struct CourtMarkingView: View {
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 16)
+        .sheet(isPresented: $showCapabilities) { CapabilitySheet() }
     }
 
     private func start(onDevice: Bool, marking: CourtMarkingState) {
