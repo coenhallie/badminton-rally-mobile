@@ -27,8 +27,40 @@ final class SkeletonPanelModel {
         /// `courtFit` is `.ok`.
         let homography: [[KotlinDouble]]?
         let courtFit: CourtFit
-        /// One entry per pose, in pose order, for the graph.
-        let series: [MetricSample]
+        /// One entry per pose, in pose order, for the graph - per side, because
+        /// a cloud analysis carries both players and the graph belongs to
+        /// whichever one the toggle is showing.
+        let seriesBySide: [CourtSide: [MetricSample]]
+    }
+
+    /// The side on screen. Held by side rather than by index so a reload that
+    /// reordered or dropped one cannot silently swap which player is drawn.
+    private(set) var side: CourtSide = .near
+
+    /// The sides this file has joints for, in file order.
+    var drawableSides: [CourtSide] {
+        guard case .loaded(let l) = load, let stored = l.stored else { return [] }
+        return stored.tracks.filter { !$0.poses.isEmpty }.map(\.side)
+    }
+
+    /// The shown side's joints. Not `stored.poses`, which is always near.
+    var shownPoses: [PlayerPose] {
+        guard case .loaded(let l) = load, let stored = l.stored else { return [] }
+        let drawable = stored.tracks.filter { !$0.poses.isEmpty }
+        return (drawable.first { $0.side == side } ?? drawable.first)?.poses ?? []
+    }
+
+    var shownSeries: [MetricSample] {
+        guard case .loaded(let l) = load else { return [] }
+        return l.seriesBySide[shownSide] ?? []
+    }
+
+    var shownSide: CourtSide { drawableSides.contains(side) ? side : (drawableSides.first ?? .near) }
+
+    func setSide(_ next: CourtSide) {
+        guard next != side else { return }
+        side = next
+        resolvePose()
     }
 
     private(set) var load: Load = .loading
@@ -93,18 +125,26 @@ final class SkeletonPanelModel {
                 return candidate
             }
             let courtFit: CourtFit = marks == nil ? .none : (homography == nil ? .bad : .ok)
-            let series = (stored?.poses ?? []).map { pose in
-                MetricSample(
-                    timestamp: pose.timestamp,
-                    metrics: PoseMetricsKt.poseMetrics(
-                        keypoints: pose.keypoints,
-                        confidence: pose.confidence,
-                        homography: homography,
-                        minConfidence: NearPlayerSelector.companion.MIN_KEYPOINT_CONFIDENCE
+            // Per side, and here rather than on selection: the metrics for a
+            // 30-minute match are the expensive part of this read, and moving
+            // them to the toggle would put them on the main actor.
+            var seriesBySide: [CourtSide: [MetricSample]] = [:]
+            for track in stored?.tracks ?? [] {
+                seriesBySide[track.side] = track.poses.map { pose in
+                    MetricSample(
+                        timestamp: pose.timestamp,
+                        metrics: PoseMetricsKt.poseMetrics(
+                            keypoints: pose.keypoints,
+                            confidence: pose.confidence,
+                            homography: homography,
+                            minConfidence: NearPlayerSelector.companion.MIN_KEYPOINT_CONFIDENCE
+                        )
                     )
-                )
+                }
             }
-            return Loaded(stored: stored, homography: homography, courtFit: courtFit, series: series)
+            return Loaded(
+                stored: stored, homography: homography, courtFit: courtFit, seriesBySide: seriesBySide
+            )
         }.value
 
         load = .loaded(loaded)
@@ -155,7 +195,7 @@ final class SkeletonPanelModel {
     private func resolvePose() {
         guard case .loaded(let loaded) = load, let stored = loaded.stored else { return }
         let found = PoseLookupKt.nearestPose(
-            poses: stored.poses,
+            poses: shownPoses,
             seconds: Double(position.positionMs) / 1000,
             toleranceS: PoseLookupKt.poseToleranceS(fps: stored.fps)
         )
@@ -354,6 +394,18 @@ struct SkeletonPanel: View {
             }
             .padding(.horizontal, ShuttlGutter.page)
             .padding(.top, 22)
+            // With the strip rather than above it, so one row of controls does
+            // not become two. Absent on a device run, which only has the near
+            // player.
+            if model.drawableSides.count > 1 {
+                SideToggle(
+                    sides: model.drawableSides,
+                    selected: model.shownSide,
+                    onSelect: { model.setSide($0) }
+                )
+                .padding(.horizontal, ShuttlGutter.page)
+                .padding(.vertical, 8)
+            }
             MetricsStrip(
                 metrics: model.metrics,
                 hasCourt: model.hasCourt,
@@ -364,12 +416,12 @@ struct SkeletonPanel: View {
                 expanded: model.expanded,
                 onExpanded: { prefs.setMetricsExpanded(expanded: $0) },
                 detail: SkeletonSummaryKt.skeletonDetail(
-                    frames: Int32(stored.poses.count), courtFit: loaded.courtFit
+                    frames: Int32(model.shownPoses.count), courtFit: loaded.courtFit
                 )
             )
             .padding(.top, 10)
             MetricGraph(
-                series: loaded.series,
+                series: model.shownSeries,
                 kind: model.selected,
                 label: MetricsFormatKt.metricLabel(kind: model.selected, racketArm: model.racketArm),
                 positionS: Double(model.position.positionMs) / 1000,

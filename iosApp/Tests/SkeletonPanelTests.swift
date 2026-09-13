@@ -80,7 +80,7 @@ final class SkeletonPanelTests: XCTestCase {
         // things, and "no skeleton was kept" is the one that tells a coach to
         // re-run with the metric ticked.
         XCTAssertNil(loaded.stored)
-        XCTAssertTrue(loaded.series.isEmpty)
+        XCTAssertTrue(loaded.seriesBySide.isEmpty)
         XCTAssertNil(model.player)
     }
 
@@ -105,8 +105,11 @@ final class SkeletonPanelTests: XCTestCase {
         XCTAssertFalse(model.hasCourt)
         // One entry per pose either way: the angles are measurable without a
         // court, and only the two court-plane fields go null.
-        XCTAssertEqual(loaded.series.count, 4)
-        XCTAssertNil(loaded.series[0].metrics.stanceM)
+        // Keyed by side now. A v2 file is one near track, so there is exactly
+        // one entry and it is the near one.
+        XCTAssertEqual(loaded.seriesBySide.keys.map(\.self), [.near])
+        XCTAssertEqual(model.shownSeries.count, 4)
+        XCTAssertNil(model.shownSeries[0].metrics.stanceM)
     }
 
     @MainActor

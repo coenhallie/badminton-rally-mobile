@@ -35,8 +35,49 @@ struct BasePositionPanel: View {
     /// Whether `bases` has been resolved at all, so an empty result and a result
     /// still being computed do not read the same.
     @State private var resolved = false
+    /// Which player is measured. See `shown`.
+    @State private var side: CourtSide = .near
 
     var body: some View {
+        Group {
+            if let source, source.tracks.count > 1, let shown {
+                // Above the ladder, not inside it: the toggle has to stay on
+                // screen when the shown side is the one with nothing to say,
+                // or the coach cannot switch back.
+                VStack(spacing: 0) {
+                    SideToggle(
+                        sides: source.tracks.map(\.side),
+                        selected: shown.side,
+                        onSelect: { side = $0 }
+                    )
+                    .padding(.horizontal, ShuttlGutter.page)
+                    .padding(.vertical, 8)
+                    inner
+                }
+            } else {
+                inner
+            }
+        }
+        // Off the main actor, and awaited: `measure` is the couple of million
+        // comparisons the property above describes, and a `.task` body with no
+        // suspension point in it runs to completion on the main thread - which
+        // blocked every open of this tab, and made the blank branch below
+        // unreachable rather than one frame long. `SkeletonPanelModel.loadSkeleton`
+        // reads its track the same way.
+        .task(id: inputs) {
+            let chosen = shown?.track
+            let rate = source?.fps ?? 0
+            let rallies = windows
+            let measured = await Task.detached(priority: .userInitiated) {
+                BasePositionPanel.measure(track: chosen, fps: rate, windows: rallies)
+            }.value
+            bases = measured
+            resolved = true
+        }
+    }
+
+    @ViewBuilder
+    private var inner: some View {
         Group {
             if let message {
                 PanelMessage(text: message)
@@ -49,21 +90,6 @@ struct BasePositionPanel: View {
                 // noticeable than nothing at all.
                 Color.clear.frame(height: 0)
             }
-        }
-        // Off the main actor, and awaited: `measure` is the couple of million
-        // comparisons the property above describes, and a `.task` body with no
-        // suspension point in it runs to completion on the main thread - which
-        // blocked every open of this tab, and made the blank branch above
-        // unreachable rather than one frame long. `SkeletonPanelModel.loadSkeleton`
-        // reads its track the same way.
-        .task(id: inputs) {
-            let track = source
-            let rallies = windows
-            let measured = await Task.detached(priority: .userInitiated) {
-                BasePositionPanel.measure(source: track, windows: rallies)
-            }.value
-            bases = measured
-            resolved = true
         }
     }
 
@@ -101,7 +127,7 @@ struct BasePositionPanel: View {
     private var message: String? {
         // Held back until the medians land, so the last rung does not flash
         // "not found" over the frame before they do.
-        baseMessage(source: source, windows: windows, bases: resolved ? bases : nil, measured: resolved)
+        baseMessage(track: shown?.track, windows: windows, bases: resolved ? bases : nil, measured: resolved)
     }
 
     /// What `bases` was measured from. Changing any of it re-measures; nothing
@@ -113,13 +139,23 @@ struct BasePositionPanel: View {
     /// bridge the object came from.
     private struct Inputs: Equatable {
         let samples: Int
+        /// In the key so switching sides re-measures. Two sides with the same
+        /// sample count would otherwise reuse the first one's medians.
+        let side: CourtSide
         let fps: Double
         let bounds: [Double]
     }
 
+    /// The side on screen. Held by side rather than by index so a reload that
+    /// reordered or dropped one cannot silently swap which player is measured.
+    private var shown: PlayerTrackStore.SideTrack? {
+        source.map { $0.tracks.first { $0.side == side } ?? $0.tracks[0] }
+    }
+
     private var inputs: Inputs {
         Inputs(
-            samples: source?.track.samples.count ?? 0,
+            samples: shown?.track.samples.count ?? 0,
+            side: side,
             fps: source?.fps ?? 0,
             bounds: windows.flatMap { [Double($0.index), $0.startSeconds, $0.endSeconds] }
         )
@@ -130,11 +166,13 @@ struct BasePositionPanel: View {
     /// and everything it declares inherits that - which would put this straight
     /// back on the thread the task exists to keep it off (an error outright
     /// under the Swift 6 language mode).
-    private nonisolated static func measure(source: HeatmapSource?, windows: [RallyWindow]) -> BasePositions? {
-        guard let source else { return nil }
+    private nonisolated static func measure(
+        track: PlayerTrack?, fps: Double, windows: [RallyWindow]
+    ) -> BasePositions? {
+        guard let track else { return nil }
         return BasePositionKt.basePositions(
-            track: source.track,
-            fps: source.fps,
+            track: track,
+            fps: fps,
             windows: windows,
             minSeconds: BasePositionKt.MIN_RALLY_SECONDS
         )
@@ -151,16 +189,20 @@ struct BasePositionPanel: View {
 /// [measured] is whether [bases] has been computed at all. Without it a panel
 /// one frame from its answer says the player was never found, which is a claim
 /// about the match rather than about the frame.
+///
+/// Takes the SHOWN track rather than the whole source: with two players the
+/// panel draws one of them, and an emptiness message about the other would be
+/// answering a question the coach did not ask.
 func baseMessage(
-    source: HeatmapSource?,
+    track: PlayerTrack?,
     windows: [RallyWindow],
     bases: BasePositions?,
     measured: Bool
 ) -> String? {
-    guard let source else {
+    guard let track else {
         return "This analysis is no longer loaded. Run it again to see where the player stood."
     }
-    if source.track.samples.isEmpty { return whyEmpty(source.track) }
+    if track.samples.isEmpty { return whyEmpty(track) }
     if !windows.contains(where: { $0.isBounded }) {
         return "The rally windows for this analysis were not kept, so there is nothing to measure "
             + "per rally. Run the analysis again."

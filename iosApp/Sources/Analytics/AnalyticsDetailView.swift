@@ -1,11 +1,38 @@
 import Shared
 import SwiftUI
 
-/// A track to draw and the frame rate it was sampled at, which must travel
-/// together.
+/// The tracks to draw and the frame rate they were sampled at, which must
+/// travel together.
+///
+/// A list because a cloud analysis carries both players. Returning the pair is
+/// still the point: the fps belongs to the tracks it was measured with, and
+/// picking each independently paired them by coincidence.
 struct HeatmapSource {
-    let track: PlayerTrack
+    let tracks: [PlayerTrackStore.SideTrack]
     let fps: Double
+}
+
+/// Near or Far, shown only where both were found.
+///
+/// Camera-relative labels. `videos.player_labels` carries the coach's own names
+/// and Phase 2's thumbnails; using them is out of scope (spec 10), and a label
+/// saying "Anna" over a track the gates assigned by net side would claim an
+/// identification this pipeline does not make.
+///
+/// Mirrors androidApp's `SideToggle` in HeatmapPanel.kt, label for label.
+struct SideToggle: View {
+    let sides: [CourtSide]
+    let selected: CourtSide
+    let onSelect: (CourtSide) -> Void
+
+    var body: some View {
+        ShuttlPillTabs(
+            labels: sides.map { $0 == .near ? "Near" : "Far" },
+            selectedIndex: max(0, sides.firstIndex(of: selected) ?? 0),
+            onSelect: { onSelect(sides[$0]) },
+            accessibilityLabel: "Which player"
+        )
+    }
 }
 
 /// Which track a heatmap should draw: the one still in memory, the one on disk,
@@ -32,14 +59,19 @@ func heatmapSource(
     done: LocalAnalysisState.Done?,
     stored: PlayerTrackStore.Stored?
 ) -> HeatmapSource? {
+    // A device run produces the near player only, so this branch is always a
+    // single track. The empty check is unchanged and load-bearing: see above.
     if let done, !done.playerTrack.samples.isEmpty {
-        return HeatmapSource(track: done.playerTrack, fps: done.fps)
+        return HeatmapSource(
+            tracks: [PlayerTrackStore.SideTrack(side: .near, track: done.playerTrack)],
+            fps: done.fps
+        )
     }
-    // `near` rather than `tracks[0]`: a cloud file can arrive far-first, and
-    // a far-only one has nothing this single-track shape can draw. Task 14
-    // widens this to offer both sides.
-    if let stored, let near = stored.near {
-        return HeatmapSource(track: near, fps: stored.fps)
+    // Only sides anyone was actually found on. A toggle whose second option
+    // draws an empty court is a control that cannot usefully be actuated.
+    if let stored {
+        let drawable = stored.tracks.filter { !$0.track.samples.isEmpty }
+        if !drawable.isEmpty { return HeatmapSource(tracks: drawable, fps: stored.fps) }
     }
     return nil
 }
@@ -92,6 +124,9 @@ struct AnalyticsDetailView: View {
     /// again for the tab held to it, and again for the panel: the same per-redraw
     /// file cost `storedTrackIds` exists to keep off the Analytics list.
     @State private var source: HeatmapSource? = nil
+    /// Held by side rather than by index, so a reload that reordered or dropped
+    /// a side cannot silently swap which player the court is showing.
+    @State private var side: CourtSide = .near
     @State private var hasSkeleton = false
     /// The cut rallies as spans, for the Base panel and for the tab that offers
     /// it. Read here rather than in the panel for the same reason `source` is:
@@ -250,7 +285,19 @@ struct AnalyticsDetailView: View {
     @ViewBuilder
     private var heatmap: some View {
         if let source {
-            CourtHeatmapView(track: source.track, fps: source.fps)
+            let shown = source.tracks.first { $0.side == side } ?? source.tracks[0]
+            VStack(spacing: 0) {
+                if source.tracks.count > 1 {
+                    SideToggle(
+                        sides: source.tracks.map(\.side),
+                        selected: shown.side,
+                        onSelect: { side = $0 }
+                    )
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                }
+                CourtHeatmapView(track: shown.track, fps: source.fps)
+            }
         } else {
             // A run's state lives in memory, so it is gone after a termination.
             // Said plainly rather than drawing an empty court, which would read
