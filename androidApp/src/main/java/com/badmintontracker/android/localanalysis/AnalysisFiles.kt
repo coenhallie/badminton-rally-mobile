@@ -19,8 +19,7 @@ import java.io.File
  * uploaded from a different phone has no local entry here to delete, so its
  * artifacts are never reached by this.
  *
- * The iOS side is `AnalysisFiles.deleteAll`, over the local names only for
- * now; it picks up the cloud names in the task that gives it a cloud path.
+ * The iOS side is `AnalysisFiles.deleteAll`, over the same six names.
  */
 object AnalysisFiles {
 

@@ -48,7 +48,18 @@ enum AnalysisFiles {
     /// its clips - tens of megabytes - and its skeleton for the life of the
     /// install, reachable by nothing.
     static func deleteAll(entryId: String) {
-        for store in ["player-tracks", "skeletons", "local-clips", "local-sources"] {
+        // The cloud stores are here on the same footing as the local ones:
+        // removing the entry already removes its local analysis, and nothing
+        // protects a cloud artifact the way it protects a local one - a local
+        // track costs half an hour of device time to recreate, a cloud one
+        // only a re-download. A match uploaded from a different phone has no
+        // local entry here, so this never reaches an artifact whose entry
+        // lives elsewhere. Mirrors Android's AnalysisFiles.STORES.
+        let stores = [
+            "player-tracks", "skeletons", "local-clips", "local-sources",
+            "cloud-tracks", "cloud-skeletons",
+        ]
+        for store in stores {
             let base = directory.appendingPathComponent(store, isDirectory: true)
             // Two shapes: a directory named for the entry (clips) and a file
             // named for it with an extension (the rest). Removing a path that

@@ -13,11 +13,54 @@ import Shared
 /// A plain text table rather than a serialization framework: the shape is three
 /// numbers and it has to be readable by a person debugging a bad heatmap. The
 /// whole file for a 30-minute match is under a megabyte.
+/// Which analysis produced an artifact: this phone's, or the cloud's.
+///
+/// Separate directories rather than a field inside one file. `skeletonAction`
+/// holds that "a completed run is the new truth for its entry", which is right
+/// for a device run and wrong across the two sources: a rally-only run would
+/// otherwise delete a cloud skeleton the coach waited on a GPU for. Two
+/// subtrees make that impossible rather than merely discouraged.
+///
+/// `local`'s directories are the ones already on every phone, unchanged,
+/// because moving them would orphan every artifact a device run has written.
+/// Mirrors Android's `TrackSource`, name for name and directory for directory.
+enum TrackSource {
+    case local
+    case cloud
+
+    var trackDir: String {
+        switch self {
+        case .local: return "player-tracks"
+        case .cloud: return "cloud-tracks"
+        }
+    }
+
+    var skeletonDir: String {
+        switch self {
+        case .local: return "skeletons"
+        case .cloud: return "cloud-skeletons"
+        }
+    }
+}
+
 struct PlayerTrackStore {
 
-    struct Stored {
+    /// One player's path, and which half of the court they were on.
+    struct SideTrack {
+        let side: CourtSide
         let track: PlayerTrack
+    }
+
+    struct Stored {
+        let tracks: [SideTrack]
         let fps: Double
+
+        /// The near player, or nil when the file holds only a far one.
+        ///
+        /// Every caller that predates the far player wants this, and reading
+        /// `tracks[0]` at each of them would break silently the first time a
+        /// file arrived far-first.
+        var near: PlayerTrack? { tracks.first { $0.side == .near }?.track }
     }
 
     /// Bumped if the columns change, so an old file is ignored rather than
@@ -27,16 +70,55 @@ struct PlayerTrackStore {
     /// now. v1 files are refused rather than migrated, on purpose - see `has`.
     private static let version = "v2"
 
-    private static let directoryName = "player-tracks"
+    /// A SECOND format the readers accept, not a replacement for v2. Comparing
+    /// the header for exact equality against one version is what made a bump
+    /// refuse every track already on every phone.
+    private static let versionV3 = "v3"
+    private static let readableVersions = [version, versionV3]
+
     private static let clipsDirectoryName = "local-clips"
 
     func save(entryId: String, track: PlayerTrack, fps: Double) throws {
-        let directory = try AnalysisFiles.directory(Self.directoryName)
+        let directory = try AnalysisFiles.directory(TrackSource.local.trackDir)
         var text = "\(Self.version) \(fps) \(track.framesWithPose)\n"
         for sample in track.samples {
             text += "\(sample.frame),\(sample.courtPosition.x),\(sample.courtPosition.y)\n"
         }
         try text.write(to: directory.appendingPathComponent("\(entryId).track"), atomically: true, encoding: .utf8)
+    }
+
+    /// Every track from one analysis, in the v3 format.
+    ///
+    /// v3 is a SECOND format the readers accept, not a replacement for v2: see
+    /// `has` for what changing `version` would have cost.
+    ///
+    ///   v3 <fps> <trackCount>
+    ///   <side> <framesWithPose> <sampleCount>
+    ///   <frame>,<x>,<y>   x sampleCount
+    ///   ...repeated per track
+    func saveAll(
+        entryId: String,
+        source: TrackSource,
+        selections: [PlayerSelection],
+        fps: Double
+    ) throws {
+        // Nothing to draw is nothing to offer, matching save(): no file, so
+        // has() stays false rather than answering true for an empty court.
+        guard selections.contains(where: { !$0.track.samples.isEmpty }) else { return }
+        let directory = try AnalysisFiles.directory(source.trackDir)
+        var text = "\(Self.versionV3) \(fps) \(selections.count)\n"
+        for selection in selections {
+            text += "\(selection.side.name) \(selection.track.framesWithPose) \(selection.track.samples.count)\n"
+            for sample in selection.track.samples {
+                text += "\(sample.frame),\(sample.courtPosition.x),\(sample.courtPosition.y)\n"
+            }
+        }
+        // .atomic: a partial write must never become visible, which is what
+        // makes `has` reading the header alone sound for files this store wrote.
+        try text.write(
+            to: directory.appendingPathComponent("\(entryId).track"),
+            atomically: true, encoding: .utf8
+        )
     }
 
     /// Whether a track this version of the app can draw exists for `entryId`,
@@ -52,43 +134,87 @@ struct PlayerTrackStore {
     /// tracks were built on a homography that could be metres off and on hip
     /// positions two to three metres off, and a row offering one would offer a
     /// heatmap that is wrong rather than merely unloadable.
-    func has(entryId: String) -> Bool {
-        guard let handle = try? FileHandle(forReadingFrom: fileFor(entryId)) else { return false }
+    func has(entryId: String, source: TrackSource = .local) -> Bool {
+        guard let handle = try? FileHandle(forReadingFrom: fileFor(entryId, source)) else { return false }
         defer { try? handle.close() }
         // The header is short; a fixed read is enough to reach the first space
         // and cannot be defeated by a huge single-line file.
         guard let head = try? handle.read(upToCount: 64), let text = String(data: head, encoding: .utf8)
         else { return false }
-        return text.split(separator: " ", maxSplits: 1).first.map(String.init) == Self.version
+        let version = text.split(separator: " ", maxSplits: 1).first.map(String.init)
+        return version.map(Self.readableVersions.contains) ?? false
     }
 
     /// Nil when there is nothing stored, or when what is stored cannot be read.
-    func load(entryId: String) -> Stored? {
-        guard let text = try? String(contentsOf: fileFor(entryId), encoding: .utf8) else { return nil }
+    func load(entryId: String, source: TrackSource = .local) -> Stored? {
+        guard let text = try? String(contentsOf: fileFor(entryId, source), encoding: .utf8) else { return nil }
         var lines = text.split(separator: "\n", omittingEmptySubsequences: true)
         guard !lines.isEmpty else { return nil }
         let header = lines.removeFirst().split(separator: " ")
-        guard header.count >= 3, header[0] == Self.version,
-              let fps = Double(header[1]), let framesWithPose = Int32(header[2])
-        else { return nil }
-
-        var samples: [PlayerSample] = []
-        samples.reserveCapacity(lines.count)
-        for line in lines {
-            let fields = line.split(separator: ",")
-            guard fields.count == 3,
-                  let frame = Int32(fields[0]),
-                  let x = Double(fields[1]), let y = Double(fields[2])
-            else { continue }
-            samples.append(PlayerSample(frame: frame, courtPosition: Point(x: x, y: y)))
+        guard header.count >= 3, let fps = Double(header[1]) else { return nil }
+        switch String(header[0]) {
+        case Self.version: return loadV2(fps: fps, framesWithPose: header[2], lines: lines)
+        case Self.versionV3: return loadV3(fps: fps, trackCount: header[2], lines: lines)
+        default: return nil
         }
+    }
+
+    /// The single-track format: one header line, then every sample.
+    private func loadV2(
+        fps: Double, framesWithPose: Substring, lines: [Substring]
+    ) -> Stored? {
+        guard let framesWithPose = Int32(framesWithPose) else { return nil }
         // Rejections are not stored: they explain a thin track while it is being
         // produced, and the count that matters afterwards, coverage, is
         // recoverable from the samples.
-        return Stored(
-            track: PlayerTrack(samples: samples, framesWithPose: framesWithPose, rejections: [:]),
-            fps: fps
+        let track = PlayerTrack(
+            samples: lines.compactMap(Self.parseSample),
+            framesWithPose: framesWithPose,
+            rejections: [:]
         )
+        return Stored(tracks: [SideTrack(side: .near, track: track)], fps: fps)
+    }
+
+    /// The multi-track format: a header line, then a section per track.
+    private func loadV3(
+        fps: Double, trackCount: Substring, lines: [Substring]
+    ) -> Stored? {
+        guard let trackCount = Int(trackCount) else { return nil }
+        // Rejected before anything allocates on it: a negative or implausibly
+        // large count is corruption, not a file this store wrote, and there are
+        // never more tracks than CourtSide has sides.
+        guard trackCount >= 0, trackCount <= CourtSide.allCases.count else { return nil }
+        var tracks: [SideTrack] = []
+        tracks.reserveCapacity(trackCount)
+        var at = 0
+        for _ in 0..<trackCount {
+            guard at < lines.count else { return nil }
+            let section = lines[at].split(separator: " ")
+            guard section.count >= 3,
+                  let side = CourtSide.allCases.first(where: { $0.name == String(section[0]) }),
+                  let framesWithPose = Int32(section[1]),
+                  let sampleCount = Int(section[2]), sampleCount >= 0
+            else { return nil }
+            // Bounds-checked against the file's own length before the slice, so
+            // a truncated file returns nil rather than trapping.
+            guard at + 1 + sampleCount <= lines.count else { return nil }
+            let samples = lines[(at + 1)..<(at + 1 + sampleCount)].compactMap(Self.parseSample)
+            tracks.append(SideTrack(
+                side: side,
+                track: PlayerTrack(samples: samples, framesWithPose: framesWithPose, rejections: [:])
+            ))
+            at += 1 + sampleCount
+        }
+        return Stored(tracks: tracks, fps: fps)
+    }
+
+    private static func parseSample(_ line: Substring) -> PlayerSample? {
+        let fields = line.split(separator: ",")
+        guard fields.count == 3,
+              let frame = Int32(fields[0]),
+              let x = Double(fields[1]), let y = Double(fields[2])
+        else { return nil }
+        return PlayerSample(frame: frame, courtPosition: Point(x: x, y: y))
     }
 
     // MARK: - Clips
@@ -162,9 +288,9 @@ struct PlayerTrackStore {
         }.sorted { $0.index < $1.index }
     }
 
-    private func fileFor(_ entryId: String) -> URL {
+    private func fileFor(_ entryId: String, _ source: TrackSource = .local) -> URL {
         AnalysisFiles.directory
-            .appendingPathComponent(Self.directoryName, isDirectory: true)
+            .appendingPathComponent(source.trackDir, isDirectory: true)
             .appendingPathComponent("\(entryId).track")
     }
 

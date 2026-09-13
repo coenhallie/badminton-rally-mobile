@@ -35,8 +35,11 @@ func heatmapSource(
     if let done, !done.playerTrack.samples.isEmpty {
         return HeatmapSource(track: done.playerTrack, fps: done.fps)
     }
-    if let stored {
-        return HeatmapSource(track: stored.track, fps: stored.fps)
+    // `near` rather than `tracks[0]`: a cloud file can arrive far-first, and
+    // a far-only one has nothing this single-track shape can draw. Task 14
+    // widens this to offer both sides.
+    if let stored, let near = stored.near {
+        return HeatmapSource(track: near, fps: stored.fps)
     }
     return nil
 }
