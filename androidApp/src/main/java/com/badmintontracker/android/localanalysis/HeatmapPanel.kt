@@ -4,15 +4,29 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import com.badmintontracker.analysis.player.PlayerTrack
+import androidx.compose.ui.unit.dp
+import com.badmintontracker.analysis.player.CourtSide
+import com.badmintontracker.android.ui.components.ShuttlPillTabs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** A track to draw and the frame rate it was sampled at, which must travel together. */
-internal data class HeatmapSource(val track: PlayerTrack, val fps: Double)
+/**
+ * The tracks to draw and the frame rate they were sampled at, which must
+ * travel together.
+ *
+ * A list because a cloud analysis carries both players. Returning the pair is
+ * still the point: the fps belongs to the tracks it was measured with, and
+ * picking each independently paired them by coincidence.
+ */
+internal data class HeatmapSource(val tracks: List<PlayerTrackStore.SideTrack>, val fps: Double)
 
 /**
  * Which track a heatmap should draw: the one still in memory, the one on disk, or
@@ -41,10 +55,17 @@ internal fun heatmapSource(
     done: LocalAnalysisState.Done?,
     stored: PlayerTrackStore.Stored?,
 ): HeatmapSource? = when {
-    done != null && done.playerTrack.samples.isNotEmpty() -> HeatmapSource(done.playerTrack, done.fps)
-    // The near track, for this panel's near-only drawing. A stored file with
-    // only a far track (cloud, no near player) has nothing this panel can draw.
-    else -> stored?.near?.let { HeatmapSource(it, stored.fps) }
+    // A device run produces the near player only, so this branch is always a
+    // single track. The empty check is unchanged and load-bearing: see the
+    // KDoc above and HeatmapSourceTest.
+    done != null && done.playerTrack.samples.isNotEmpty() ->
+        HeatmapSource(listOf(PlayerTrackStore.SideTrack(CourtSide.NEAR, done.playerTrack)), done.fps)
+    // Only sides anyone was actually found on. A toggle whose second option
+    // draws an empty court is a control that cannot usefully be actuated.
+    stored != null -> stored.tracks.filter { it.track.samples.isNotEmpty() }
+        .takeIf { it.isNotEmpty() }
+        ?.let { HeatmapSource(it, stored.fps) }
+    else -> null
 }
 
 /**
@@ -99,9 +120,47 @@ fun HeatmapPanel(
             // a player who never moved.
             source == null ->
                 PanelMessage("This analysis is no longer loaded. Run it again to see the heatmap.")
-            else -> CourtHeatmapView(track = source.track, fps = source.fps)
+            else -> {
+                // Held by side rather than by index: a redraw that reordered
+                // or dropped a side would otherwise silently swap which
+                // player the court is showing.
+                var side by rememberSaveable { mutableStateOf(CourtSide.NEAR) }
+                val shown = source.tracks.firstOrNull { it.side == side } ?: source.tracks.first()
+                if (source.tracks.size > 1) {
+                    SideToggle(
+                        sides = source.tracks.map { it.side },
+                        selected = shown.side,
+                        onSelect = { side = it },
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                }
+                CourtHeatmapView(track = shown.track, fps = source.fps)
+            }
         }
     }
+}
+
+/**
+ * Near or Far, shown only where both were found.
+ *
+ * Camera-relative labels. `videos.player_labels` carries the coach's own names
+ * and Phase 2's thumbnails; using them is out of scope (spec 10), and a label
+ * that said "Anna" on a track the gates assigned by net side would be claiming
+ * an identification this pipeline does not make.
+ */
+@Composable
+internal fun SideToggle(
+    sides: List<CourtSide>,
+    selected: CourtSide,
+    onSelect: (CourtSide) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    ShuttlPillTabs(
+        labels = sides.map { if (it == CourtSide.NEAR) "Near" else "Far" },
+        selectedIndex = sides.indexOf(selected).coerceAtLeast(0),
+        onSelect = { onSelect(sides[it]) },
+        modifier = modifier,
+    )
 }
 
 /**

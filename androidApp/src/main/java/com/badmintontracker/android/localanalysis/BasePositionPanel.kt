@@ -10,7 +10,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -19,6 +23,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.analysis.geometry.Court
+import com.badmintontracker.analysis.player.CourtSide
 import com.badmintontracker.analysis.geometry.Point
 import com.badmintontracker.analysis.player.BasePositions
 import com.badmintontracker.analysis.player.RallyWindow
@@ -63,7 +68,16 @@ fun BasePositionPanel(
             val source = heatmapSource(done, runner.storedTrack(entryId))
             val windows = (done?.clips?.takeIf { it.isNotEmpty() } ?: runner.storedClips(entryId))
                 .map { RallyWindow(it.index, it.startSeconds, it.endSeconds) }
-            Measured(source, windows, source?.let { basePositions(it.track, it.fps, windows) })
+            // Measured for every side here, off the main thread, rather than
+            // recomputed when the toggle moves: the medians are cheap next to
+            // the parse above, and doing it on selection would put them on the
+            // thread drawing the frame.
+            Measured(
+                source, windows,
+                source?.tracks?.associate {
+                    it.side to basePositions(it.track, source.fps, windows)
+                } ?: emptyMap(),
+            )
         }
     }.value
 
@@ -71,10 +85,22 @@ fun BasePositionPanel(
         // The frames between the panel appearing and the measurement landing.
         // Blank, and deliberately not the ladder below: every rung of it would
         // otherwise flash over an opening that is about to draw a court.
-        val (source, windows, bases) = measured ?: return@Column
+        val (source, windows, basesBySide) = measured ?: return@Column
+        var side by rememberSaveable { mutableStateOf(CourtSide.NEAR) }
+        val shown = source?.tracks?.firstOrNull { it.side == side } ?: source?.tracks?.firstOrNull()
+        val bases = shown?.let { basesBySide[it.side] }
+        if (source != null && source.tracks.size > 1 && shown != null) {
+            SideToggle(
+                sides = source.tracks.map { it.side },
+                selected = shown.side,
+                onSelect = { side = it },
+                modifier = Modifier.padding(horizontal = COURT_GUTTER, vertical = 8.dp),
+            )
+        }
         val message = when {
-            source == null -> "This analysis is no longer loaded. Run it again to see where the player stood."
-            source.track.samples.isEmpty() -> whyEmpty(source.track)
+            source == null || shown == null ->
+                "This analysis is no longer loaded. Run it again to see where the player stood."
+            shown.track.samples.isEmpty() -> whyEmpty(shown.track)
             windows.none { it.isBounded } ->
                 "The rally windows for this analysis were not kept, so there is nothing to measure per rally. " +
                     "Run the analysis again."
@@ -180,5 +206,6 @@ private fun CourtBaseView(bases: BasePositions) {
 private data class Measured(
     val source: HeatmapSource?,
     val windows: List<RallyWindow>,
-    val bases: BasePositions?,
+    /** One entry per side the analysis found somebody on. */
+    val basesBySide: Map<CourtSide, BasePositions>,
 )
