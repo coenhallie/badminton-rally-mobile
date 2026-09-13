@@ -1,6 +1,7 @@
 package com.badmintontracker.shared.localvideo
 
 import io.kotest.matchers.shouldBe
+import kotlinx.serialization.json.Json
 import kotlin.test.Test
 
 /**
@@ -70,5 +71,44 @@ class CloudAnalysisStatusTest {
         // NaN reaches here from a divide by a zero-length file, and "NaN%" on a
         // row is worse than no number at all.
         cloudAnalysisStatus(AnalyzeStage.UPLOADING, progress(upload = Float.NaN)) shouldBe "Uploading…"
+    }
+
+    @Test
+    fun the_pose_pass_is_named_apart_from_the_clip_pass() {
+        // Two waits, minutes apart, and the second is the longer one. A coach
+        // who saw "Analyzing" twice would reasonably think the app had
+        // restarted itself. What the second pass produces is the heatmap, so
+        // that is what it is named after.
+        cloudAnalysisStatus(AnalyzeStage.MEASURING, progress(pipeline = 0.4f)) shouldBe "Measuring movement 40%…"
+        cloudAnalysisStatus(AnalyzeStage.MEASURING, null) shouldBe "Measuring movement…"
+    }
+
+    @Test
+    fun the_pose_pass_counts_as_running() {
+        // Drives the row spinner and, more importantly, the removal guard:
+        // deleting the entry mid-run would leave the finished artifact with
+        // no entry to land against.
+        isAnalysisRunning(AnalyzeStage.MEASURING) shouldBe true
+        canRemoveLocalVideo(AnalyzeStage.MEASURING) shouldBe false
+    }
+
+    @Test
+    fun a_registry_written_before_this_stage_existed_still_decodes() {
+        // AnalyzeStage gained a case in the MIDDLE of the enum. kotlinx
+        // serializes enums by name, so that is safe - but LocalVideoEntry's
+        // own comment warns that a registry which fails to decode empties the
+        // library, so "safe" is checked here rather than assumed.
+        fun entry(stage: String) = """
+            {"id":"e1","uri":"a.mp4","displayName":"a","durationMs":1,
+             "sizeBytes":2,"addedAtEpochMs":3,"stage":"$stage"}
+        """.trimIndent()
+
+        val json = Json { ignoreUnknownKeys = true }
+
+        json.decodeFromString<LocalVideoEntry>(entry("PROCESSING")).stage shouldBe AnalyzeStage.PROCESSING
+        json.decodeFromString<LocalVideoEntry>(entry("ANALYZED")).stage shouldBe AnalyzeStage.ANALYZED
+        // The case after the insertion point: if anything ever moved to
+        // ordinals, this is the one that would come back as MEASURING.
+        json.decodeFromString<LocalVideoEntry>(entry("FAILED")).stage shouldBe AnalyzeStage.FAILED
     }
 }

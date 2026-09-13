@@ -3,7 +3,10 @@ package com.badmintontracker.shared.localvideo
 import com.badmintontracker.shared.model.CourtKeypoints
 import kotlinx.serialization.Serializable
 
-enum class AnalyzeStage { LOCAL, UPLOADING, PROCESSING, FAILED, ANALYZED }
+// MEASURING sits after PROCESSING and before FAILED so the enum reads in
+// execution order, matching AnalyzeStep below. Safe to insert mid-enum:
+// kotlinx serializes these by name, and nothing persists the ordinal.
+enum class AnalyzeStage { LOCAL, UPLOADING, PROCESSING, MEASURING, FAILED, ANALYZED }
 
 /** Pipeline steps in execution order; retry resumes from the failed one. */
 enum class AnalyzeStep { UPLOAD, CREATE_ROW, KEYPOINTS, TRIGGER, PROCESSING }
@@ -13,7 +16,9 @@ enum class AnalyzeStep { UPLOAD, CREATE_ROW, KEYPOINTS, TRIGGER, PROCESSING }
  * both platforms — settled stages (LOCAL, FAILED, ANALYZED) must not spin.
  */
 fun isAnalysisRunning(stage: AnalyzeStage): Boolean =
-    stage == AnalyzeStage.UPLOADING || stage == AnalyzeStage.PROCESSING
+    stage == AnalyzeStage.UPLOADING ||
+        stage == AnalyzeStage.PROCESSING ||
+        stage == AnalyzeStage.MEASURING
 
 /**
  * Whether the row's remove affordances (swipe, menu) may be shown. Removing
@@ -115,6 +120,10 @@ fun cloudAnalysisStatus(stage: AnalyzeStage, progress: AnalyzeProgress?): String
     // keeps going whatever the phone does.
     AnalyzeStage.UPLOADING -> rowPercent("Uploading", progress?.uploadProgress)
     AnalyzeStage.PROCESSING -> rowPercent("Analyzing", progress?.pipelineProgress)
+    // Named apart from PROCESSING for the same reason PROCESSING is named
+    // apart from UPLOADING: they are different promises minutes apart, and
+    // the coach waiting on this one is waiting for a heatmap, not for clips.
+    AnalyzeStage.MEASURING -> rowPercent("Measuring movement", progress?.pipelineProgress)
     // The failure's own message is what the row shows, and it is on the entry
     // rather than here.
     AnalyzeStage.FAILED -> null

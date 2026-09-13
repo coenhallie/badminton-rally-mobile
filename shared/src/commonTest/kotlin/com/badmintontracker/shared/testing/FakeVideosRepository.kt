@@ -58,8 +58,26 @@ class FakeVideosRepository : VideosRepository {
         return nextStartResult
     }
 
-    override fun observeProcessing(videoId: String, pollIntervalMs: Long): Flow<ProcessingUpdate> =
-        flow { processingUpdates.forEach { emit(it) } }
+    /** Recorded separately from [startCalls]: the two triggers are different phases. */
+    val startAnalyticsCalls = mutableListOf<String>()
+    var nextStartAnalyticsResult: Result<Unit> = Result.success(Unit)
+
+    override suspend fun startAnalytics(videoId: String): Result<Unit> {
+        startAnalyticsCalls += videoId
+        return nextStartAnalyticsResult
+    }
+
+    /** Recorded so a test can assert which kind of wait a caller asked for. */
+    val awaitAnalyticsCalls = mutableListOf<Boolean>()
+
+    override fun observeProcessing(
+        videoId: String,
+        pollIntervalMs: Long,
+        awaitAnalytics: Boolean,
+    ): Flow<ProcessingUpdate> = flow {
+        awaitAnalyticsCalls += awaitAnalytics
+        processingUpdates.forEach { emit(it) }
+    }
 
     /** Optional per-video gate: the upload flow suspends until it completes. */
     val uploadGates = mutableMapOf<String, CompletableDeferred<Unit>>()

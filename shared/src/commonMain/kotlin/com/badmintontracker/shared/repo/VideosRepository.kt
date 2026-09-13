@@ -33,14 +33,50 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 /**
+ * The statuses the videos row holds, as the pipeline writes them.
+ *
+ * Named rather than spelled out at each comparison: three of these are
+ * compared in more than one place, and a typo in a string literal reads as
+ * "this video is not finished" rather than as an error.
+ */
+object VideoStatus {
+    const val UPLOADED = "uploaded"
+    const val PROCESSING_PHASE1 = "processing_phase1"
+    const val PHASE1_COMPLETE = "phase1_complete"
+    const val PROCESSING_PHASE2 = "processing_phase2"
+    const val COMPLETED = "completed"
+}
+
+/**
  * Snapshot of the cloud pipeline's state for one video (from the videos row).
  * [progress] is normalized to 0f..1f (the DB stores it as a 0..100 percentage).
+ *
+ * There are two kinds of "done" here and they are not interchangeable. Phase 1
+ * ends with watchable rally clips and the pipeline then STOPS: Phase 2 runs
+ * only when something calls start-analytics. Phase 2 ends with the pose
+ * artifact the heatmap and skeleton are drawn from. A caller waiting for clips
+ * wants [isTerminal]; a caller waiting for the artifact wants
+ * [isAnalyticsTerminal].
  */
 data class ProcessingUpdate(val status: String, val progress: Float?, val error: String?) {
-    // Phase 1 produces the rally clips; phase 2 analytics is desktop-only.
-    val isSuccess: Boolean get() = status == "phase1_complete" || status == "completed"
+    /** Phase 1 is done: the rally clips exist. Phase 2 merges into its results, so it keeps them. */
+    val hasClips: Boolean get() = status == VideoStatus.PHASE1_COMPLETE || status == VideoStatus.COMPLETED
+
+    /**
+     * Phase 2 is done.
+     *
+     * Not the same as "a pose artifact exists": the upload is non-fatal on the
+     * worker, so a completed video can still have a null poses_artifact_path.
+     * That is the field to gate a fetch on, not this.
+     */
+    val hasAnalytics: Boolean get() = status == VideoStatus.COMPLETED
+
+    val isSuccess: Boolean get() = hasClips
     val isFailure: Boolean get() = status.startsWith("failed")
     val isTerminal: Boolean get() = isSuccess || isFailure
+
+    /** A wait for the pose artifact. phase1_complete does NOT end it: Phase 2 is still to come. */
+    val isAnalyticsTerminal: Boolean get() = hasAnalytics || isFailure
 }
 
 sealed interface UploadState {
@@ -98,8 +134,30 @@ interface VideosRepository {
     suspend fun setCourtKeypoints(videoId: String, keypoints: CourtKeypoints): Result<Unit>
     /** Invoke the process-video Edge Function (requires row + keypoints in place). */
     suspend fun startProcessing(videoId: String): Result<Unit>
-    /** Poll the videos row until a terminal status, emitting every change of state. */
-    fun observeProcessing(videoId: String, pollIntervalMs: Long = 5_000): Flow<ProcessingUpdate>
+
+    /**
+     * Invoke the start-analytics Edge Function, which runs Phase 2: the full
+     * pose pass whose artifact the heatmap and skeleton are drawn from.
+     *
+     * Only valid from `phase1_complete` or `failed_phase2`; the function
+     * answers 409 otherwise, and flips the status to `processing_phase2`
+     * BEFORE calling Modal, so a double tap cannot start two workers.
+     */
+    suspend fun startAnalytics(videoId: String): Result<Unit>
+
+    /**
+     * Poll the videos row until a terminal status, emitting every change.
+     *
+     * @param awaitAnalytics keep polling past `phase1_complete` until Phase 2
+     *   finishes. False for the ordinary upload-and-clips wait, because
+     *   nothing advances a video past `phase1_complete` on its own and such a
+     *   wait would never end.
+     */
+    fun observeProcessing(
+        videoId: String,
+        pollIntervalMs: Long = 5_000,
+        awaitAnalytics: Boolean = false,
+    ): Flow<ProcessingUpdate>
     /**
      * Resumable (TUS) upload to videos/{uid}/{videoId}.mp4. [channelProvider] must
      * return a channel positioned at the requested byte offset so interrupted
@@ -232,7 +290,32 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
         check(response.status.isSuccess()) { response.bodyAsText() }
     }.annotateHttpStatus()
 
-    override fun observeProcessing(videoId: String, pollIntervalMs: Long): Flow<ProcessingUpdate> = flow {
+    /**
+     * Deliberately NOT a copy of [startProcessing]'s opening move.
+     *
+     * That one clears the row to "uploaded" before invoking, because Phase 1
+     * restarts from scratch and a stale failed_phase1 would be re-read by the
+     * poll loop. Phase 2 is the opposite case: start-analytics accepts only
+     * `phase1_complete` or `failed_phase2` and answers 409 to anything else,
+     * so resetting the status first would reject every call. The edge function
+     * flips the status itself, before it calls Modal.
+     */
+    override suspend fun startAnalytics(videoId: String): Result<Unit> = runCatching {
+        val response = client.functions(
+            function = "start-analytics",
+            body = ProcessVideoBody(videoId),
+            headers = Headers.build {
+                append(HttpHeaders.ContentType, ContentType.Application.Json.toString())
+            },
+        )
+        check(response.status.isSuccess()) { response.bodyAsText() }
+    }.annotateHttpStatus()
+
+    override fun observeProcessing(
+        videoId: String,
+        pollIntervalMs: Long,
+        awaitAnalytics: Boolean,
+    ): Flow<ProcessingUpdate> = flow {
         // Collectors run in an app scope where an uncaught throw is fatal, and
         // processing spans minutes — a poll error must never escape this flow.
         // Tolerate transient errors; only persistent ones become a terminal update.
@@ -265,7 +348,7 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
             // DB progress is a 0..100 percentage; normalize to 0..1 for the UI.
             val update = ProcessingUpdate(row.status, row.progress?.let { (it / 100f).coerceIn(0f, 1f) }, row.error)
             emit(update)
-            if (update.isTerminal) break
+            if (if (awaitAnalytics) update.isAnalyticsTerminal else update.isTerminal) break
             delay(pollIntervalMs)
         }
     }

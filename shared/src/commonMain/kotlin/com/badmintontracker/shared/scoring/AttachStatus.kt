@@ -46,6 +46,12 @@ fun attachStatus(
                 AttachKind.UPLOADING,
             )
             AnalyzeStage.PROCESSING -> return AttachStatus("Clipping…", AttachKind.CLIPPING)
+            // The clips already exist by the time Phase 2 runs, so this row is
+            // not waiting on the attachment any more. It reuses CLIPPING's kind
+            // rather than gaining one: the attach banner's question is "can I
+            // watch this match yet", and the answer during the pose pass is the
+            // same yes-with-a-run-in-flight it is during clipping.
+            AnalyzeStage.MEASURING -> return AttachStatus("Measuring movement…", AttachKind.CLIPPING)
             AnalyzeStage.FAILED ->
                 return AttachStatus(entry.failureMessage ?: "Analysis failed", AttachKind.FAILED)
             // ANALYZED means the pipeline succeeded, not that clips have synced -

@@ -41,7 +41,10 @@ private open class NoopVideosRepository : VideosRepository {
     override suspend fun setCourtKeypoints(videoId: String, keypoints: CourtKeypoints): Result<Unit> =
         Result.success(Unit)
     override suspend fun startProcessing(videoId: String): Result<Unit> = Result.success(Unit)
-    override fun observeProcessing(videoId: String, pollIntervalMs: Long): Flow<ProcessingUpdate> = emptyFlow()
+    override suspend fun startAnalytics(videoId: String): Result<Unit> = Result.success(Unit)
+    override fun observeProcessing(
+        videoId: String, pollIntervalMs: Long, awaitAnalytics: Boolean,
+    ): Flow<ProcessingUpdate> = emptyFlow()
     override fun uploadVideo(
         videoId: String, sizeBytes: Long, channelProvider: suspend (offset: Long) -> ByteReadChannel,
     ): Flow<UploadState> = emptyFlow()
