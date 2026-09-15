@@ -3,4 +3,4 @@
 // iOS: included via iosApp/Config/AppConfig.xcconfig -> MARKETING_VERSION/CURRENT_PROJECT_VERSION.
 // Release commits are tagged v<MARKETING_VERSION>; CI verifies the tag matches.
 MARKETING_VERSION = 0.7.2
-CURRENT_PROJECT_VERSION = 21
+CURRENT_PROJECT_VERSION = 22

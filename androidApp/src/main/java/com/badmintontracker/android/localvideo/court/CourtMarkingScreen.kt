@@ -81,6 +81,7 @@ import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlButtonVariant
 import com.badmintontracker.android.ui.theme.ShuttlRadius
 import com.badmintontracker.android.ui.theme.ShuttlTheme
+import com.badmintontracker.shared.analytics.METRIC_PICKER_LINE
 import com.badmintontracker.shared.local.AnalysisMetric
 import com.badmintontracker.shared.local.DeviceThroughput
 import com.badmintontracker.shared.localvideo.court.CourtMarkingSpec
@@ -539,7 +540,7 @@ private fun ColumnScope.OptionsStep(
             CapabilitySheet(onDismiss = { showCapabilities = false })
         }
         Text(
-            "Pick what this run should produce.",
+            METRIC_PICKER_LINE,
             style = MaterialTheme.typography.bodySmall,
             color = ShuttlTheme.extended.textTertiary,
             modifier = Modifier.padding(top = 8.dp),

@@ -32,13 +32,13 @@ class AnalysisCapabilityTest {
     }
 
     @Test
-    fun the_skeleton_is_the_only_row_that_names_a_condition() {
-        // Everything else converged: after the cloud pose artifact, both paths
-        // produce the same panels. The skeleton overlays playback, so it alone
-        // still depends on the footage being here. If a second row ever grows
-        // an "if", that is a real divergence and worth noticing here.
-        val conditional = panelCapabilities.filter { it.cloud.contains(" if ") }
-        conditional.map { it.panel } shouldBe listOf(AnalyticsPanel.Skeleton)
+    fun no_row_names_a_condition_any_more() {
+        // The two paths have fully converged. The skeleton was the last row to
+        // carry an "if", and it carried it because a cloud run released the
+        // video the skeleton is drawn over - the run removing the thing its own
+        // output needed. It keeps the video now, so every row is unconditional.
+        // A new "if" here is a real divergence and worth noticing.
+        panelCapabilities.filter { it.cloud.contains(" if ") } shouldBe emptyList()
     }
 
     @Test
@@ -52,12 +52,12 @@ class AnalysisCapabilityTest {
     }
 
     @Test
-    fun the_cloud_notes_say_the_video_leaves_and_what_that_costs() {
-        // The one promise on this sheet a coach acts on before starting: a
-        // cloud run frees the footage. That is the reason to pick it and the
-        // reason the skeleton row carries an "if", so the sheet has to say it
-        // rather than let the coach discover it when the tab is missing.
-        cloudNotes.any { it.contains("leaves this phone") } shouldBe true
+    fun the_cloud_notes_say_the_video_stays_and_what_that_costs() {
+        // The one thing on this sheet a coach acts on before starting: a cloud
+        // run does NOT free the footage, and they may have picked it expecting
+        // that it would. Better said here than discovered as storage that never
+        // came back.
+        cloudNotes.any { it.contains("Keeps the video on this phone") } shouldBe true
 
         // And it must not go back to claiming a phone that never held the
         // video gets a heatmap. Nothing fetches an artifact except the phone

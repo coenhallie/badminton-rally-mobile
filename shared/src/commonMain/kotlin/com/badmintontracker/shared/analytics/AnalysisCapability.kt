@@ -43,15 +43,31 @@ val panelCapabilities: List<PanelCapability> = listOf(
         device = "The near player",
     ),
     PanelCapability(
-        // The one row where the two are not symmetric, and the asymmetry is
-        // real: the skeleton is drawn over playback, so it needs the file. A
-        // cloud run releases the footage when it finishes, so "if" is the
-        // ordinary case rather than the corner - see cloudNotes.
+        // No longer conditional. The skeleton is drawn over playback, so it
+        // needs the file - and a cloud run now keeps the file, precisely so
+        // this row can be unconditional. It read "if the video is here" while
+        // the run itself was what took the video away.
         panel = AnalyticsPanel.Skeleton,
-        cloud = "Both players, if the video is here",
+        cloud = "Both players",
         device = "The near player",
     ),
 )
+
+/**
+ * The line above the metric picker.
+ *
+ * Names the device run, because the picker only drives that one: the cloud
+ * button hands `startAnalysis` the court marks and nothing else, and the worker
+ * decides its own stages. The old line said "this run", so a coach could tick
+ * Skeleton, press the cloud button, and reasonably conclude they had asked for
+ * something. They had not - and the one panel they had ticked was the one that
+ * then did not appear.
+ *
+ * Shared for the reason the rest of this file is: a promise about what the app
+ * does, worded once.
+ */
+const val METRIC_PICKER_LINE: String =
+    "Pick what a run on this phone should produce. A cloud run measures everything."
 
 /** The line above the table: what both paths produce whatever you pick. */
 const val CAPABILITY_SHARED_LINE: String =
@@ -66,13 +82,12 @@ const val CAPABILITY_SHARED_LINE: String =
 val cloudNotes: List<String> = listOf(
     "Runs on a GPU, so a long match is not limited by this phone.",
     "Measures movement automatically once the clips are ready. That is a second pass, and it takes as long as it takes.",
-    // Says the storage trade and the skeleton caveat in one line, because they
-    // are one fact. The earlier wording - "works even on a phone that never
-    // held the video" - promised something with no code behind it: an artifact
-    // is only ever fetched by the phone that uploaded, so a match analysed from
-    // a coach's OTHER phone still arrives here with no track. That is a
-    // follow-up, not a claim this sheet gets to make in the meantime.
-    "The video leaves this phone when it finishes. The heatmap and base position stay; the skeleton needs the footage, so it goes with it.",
+    // The storage cost, said plainly, because it is the one thing a cloud run
+    // asks of the phone. It used to release the video here and say so - but the
+    // skeleton it had just computed is drawn OVER that video, so releasing it
+    // left an artifact nothing could display. Keeping the file is what makes
+    // the Skeleton row above unconditional.
+    "Keeps the video on this phone, so the skeleton has something to draw over. Remove the video yourself when you want the space back.",
 )
 
 /** The same, for a run on this phone. */

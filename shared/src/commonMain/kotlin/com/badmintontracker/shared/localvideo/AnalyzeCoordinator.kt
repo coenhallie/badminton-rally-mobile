@@ -246,17 +246,21 @@ class AnalyzeCoordinator(
         // happened to survive.
         _finishedRuns.update { it + entryId }
 
-        if (localAnnotations.hasAnnotations(entryId)) {
-            // Keep annotated videos so the notes survive; mark them Analyzed.
-            localVideos.update(entryId) {
-                it.copy(stage = AnalyzeStage.ANALYZED, failedStep = null, failureMessage = null)
-            }
-        } else {
-            // RETIRED, not removed. The clips live in the cloud now and the
-            // footage can go, but measureMovement has just written this entry's
-            // cloud track and skeleton, and a discard would delete them - the
-            // whole result of the run, thrown away seconds after it landed.
-            localVideos.retire(entryId)
+        // The entry is KEPT, always, and this must not become conditional again.
+        //
+        // It used to be removed for a video with no annotations, on the reasoning
+        // that the clips live in the cloud and the on-device copy is dead weight.
+        // Two things make that wrong. The removal hook deletes what an analysis
+        // produced, so it threw away the cloud track and skeleton written seconds
+        // earlier by measureMovement. And even with the artifacts spared, the
+        // skeleton is drawn OVER playback: releasing the footage left an 11MB
+        // artifact the app could never display, after the coach had waited on a
+        // GPU for it.
+        //
+        // Freeing the storage is the coach's call, through the same remove the
+        // drawer already offers, which discards the analysis with it.
+        localVideos.update(entryId) {
+            it.copy(stage = AnalyzeStage.ANALYZED, failedStep = null, failureMessage = null)
         }
     }
 

@@ -76,7 +76,10 @@ class AnalyzeCoordinatorTest {
         videos.keypointsCalls.single().first shouldBe "e1"
         videos.startCalls shouldBe listOf("e1")
         clips.refreshCalls.size shouldBe 1
-        localVideos.get("e1").shouldBeNull()   // auto-removed on success
+        // Kept, not removed. The cloud computes a skeleton for every run and the
+        // skeleton is an overlay on playback, so releasing the footage left an
+        // 11MB artifact on the phone that nothing could ever draw.
+        localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED
     }
 
     @Test
@@ -96,7 +99,7 @@ class AnalyzeCoordinatorTest {
         c.retry("e1")
         runCurrent()
         videos.uploadCalls shouldBe listOf("e1", "e1")
-        localVideos.get("e1").shouldBeNull()
+        localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED
     }
 
     @Test
@@ -115,7 +118,7 @@ class AnalyzeCoordinatorTest {
         videos.uploadCalls.size shouldBe 1     // not re-uploaded
         videos.createCalls.size shouldBe 1     // not re-created
         videos.startCalls.size shouldBe 2
-        localVideos.get("e1").shouldBeNull()
+        localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED
     }
 
     @Test
@@ -129,7 +132,7 @@ class AnalyzeCoordinatorTest {
         c.startAnalysis("e1", keypoints())
         runCurrent()
         // CREATE_ROW duplicate -> continue; pipeline completes.
-        localVideos.get("e1").shouldBeNull()
+        localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED
     }
 
     @Test
@@ -170,7 +173,7 @@ class AnalyzeCoordinatorTest {
         advanceTimeBy(10_000)   // cover the clip-count retry delays
         runCurrent()
         clips.countCalls.size shouldBe 2       // retried after the failed query
-        localVideos.get("e1").shouldBeNull()   // success, not a false "no rallies"
+        localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED  // success, not a false "no rallies"
     }
 
     @Test
@@ -184,7 +187,7 @@ class AnalyzeCoordinatorTest {
         advanceTimeBy(10_000)   // cover the clip-count retry delays
         runCurrent()
         clips.countCalls.size shouldBe 2
-        localVideos.get("e1").shouldBeNull()   // success, not a false "no rallies"
+        localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED  // success, not a false "no rallies"
     }
 
     @Test
@@ -198,7 +201,7 @@ class AnalyzeCoordinatorTest {
         runCurrent()
         // The pipeline reported success and the count was never confirmed to be
         // zero — treat as success rather than contradicting the matches list.
-        localVideos.get("e1").shouldBeNull()
+        localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED
     }
 
     @Test
@@ -209,7 +212,7 @@ class AnalyzeCoordinatorTest {
         c.reattachToProcessing()
         runCurrent()
         videos.uploadCalls shouldBe emptyList<String>()
-        localVideos.get("e1").shouldBeNull()   // completed via observeProcessing
+        localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED  // completed via observeProcessing
     }
 
     @Test
@@ -221,7 +224,7 @@ class AnalyzeCoordinatorTest {
         c.reattachToProcessing()
         runCurrent()
         videos.uploadCalls shouldBe listOf("e1")   // resumed from the UPLOAD step
-        localVideos.get("e1").shouldBeNull()       // completed end-to-end
+        localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED  // completed end-to-end
     }
 
     @Test
@@ -237,9 +240,12 @@ class AnalyzeCoordinatorTest {
     }
 
     @Test
-    fun a_successful_analysis_releases_the_local_file() = runTest {
-        // The clips live in the cloud now; on iOS the on-device copy is the only
-        // thing holding that storage and nothing else will ever reference it.
+    fun a_successful_analysis_keeps_the_local_file() = runTest {
+        // It used to release it: the clips live in the cloud, so the on-device
+        // copy looked like pure dead weight. It is not. The cloud computes a
+        // skeleton for every run, the skeleton is drawn OVER playback, and
+        // releasing the video left that artifact unviewable forever - the coach
+        // paid GPU time and storage for a panel the app could never offer.
         val released = mutableListOf<String>()
         val registry = LocalVideoRepository(MapSettings(), onRemoved = { e, _ -> released += e.uri })
         registry.add(entry())
@@ -247,7 +253,7 @@ class AnalyzeCoordinatorTest {
         val c = coordinator(registry)
         c.startAnalysis("e1", keypoints())
         runCurrent()
-        released shouldBe listOf("content://x/e1")
+        released shouldBe emptyList()
     }
 
     @Test
@@ -271,7 +277,7 @@ class AnalyzeCoordinatorTest {
         c.startAnalysis("e1", keypoints())
         runCurrent()
 
-        registry.get("e1").shouldBeNull()          // retired: the entry is gone
+        registry.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED  // kept, with its analysis
         cloudArtifacts shouldBe setOf("e1")        // the heatmap is not
     }
 
@@ -307,14 +313,18 @@ class AnalyzeCoordinatorTest {
     }
 
     @Test
-    fun a_successful_analysis_retires_the_entry_rather_than_discarding_it() = runTest {
-        val reasons = mutableListOf<LocalVideoRemoval>()
-        val registry = LocalVideoRepository(MapSettings(), onRemoved = { _, reason -> reasons += reason })
+    fun a_successful_analysis_removes_nothing_at_all() = runTest {
+        // The guard on the defect this whole area exists for. The success path
+        // must not reach the removal hook, because that hook deletes what an
+        // analysis produced - and the analysis it would delete is the one that
+        // just finished.
+        val removals = mutableListOf<String>()
+        val registry = LocalVideoRepository(MapSettings(), onRemoved = { e, _ -> removals += e.id })
         registry.add(entry())
         clips.clips.value = listOf(clipFor("e1"))
         coordinator(registry).startAnalysis("e1", keypoints())
         runCurrent()
-        reasons shouldBe listOf(LocalVideoRemoval.RETIRED)
+        removals shouldBe emptyList()
     }
 
     @Test
@@ -361,7 +371,7 @@ class AnalyzeCoordinatorTest {
         runCurrent()
         videos.startCalls.size shouldBe 2      // edge function re-invoked
         videos.uploadCalls.size shouldBe 1     // upload not repeated
-        localVideos.get("e1").shouldBeNull()   // retry completed end-to-end
+        localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED  // retry completed end-to-end
     }
 
     @Test
@@ -483,7 +493,7 @@ class AnalyzeCoordinatorTest {
             c.startAnalysis("e1", keypoints())
             runCurrent()
             entryAtHook.shouldNotBeNull()
-            localVideos.get("e1").shouldBeNull()
+            localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED
         }
     }
 
@@ -508,7 +518,7 @@ class AnalyzeCoordinatorTest {
         // MEASURING while it runs, which is what makes the row unremovable.
         stagesSeen shouldBe listOf(AnalyzeStage.MEASURING)
         // And the ordinary end state is unchanged.
-        localVideos.get("e1").shouldBeNull()
+        localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED
     }
 
     @Test
@@ -538,7 +548,7 @@ class AnalyzeCoordinatorTest {
         runCurrent()
 
         clips.refreshCalls.size shouldBe 1
-        localVideos.get("e1").shouldBeNull()   // removed on success, as ever
+        localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED  // kept on success, as ever now
     }
 
     @Test
@@ -552,7 +562,7 @@ class AnalyzeCoordinatorTest {
             .startAnalysis("e1", keypoints())
         runCurrent()
 
-        localVideos.get("e1").shouldBeNull()
+        localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED
     }
 
     @Test

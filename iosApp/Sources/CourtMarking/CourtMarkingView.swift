@@ -236,7 +236,7 @@ struct CourtMarkingView: View {
                     .accessibilityLabel("What each run produces")
                 }
                 .padding(.top, 16)
-                Text("Pick what this run should produce.")
+                Text(AnalysisCapabilityKt.METRIC_PICKER_LINE)
                     .shuttlType(ShuttlType.bodySmall)
                     .foregroundStyle(Shuttl.textTertiary)
                     .padding(.top, 8)
