@@ -77,19 +77,22 @@ class CloudRallyWindowsTest {
     }
 
     @Test
-    fun a_cloud_track_whose_clips_have_not_loaded_falls_back_rather_than_showing_nothing() {
-        // The clip cache refreshes asynchronously. An empty Base tab for the
-        // couple of seconds before it lands would read as "this run measured
-        // nothing", so the other source is used rather than none.
+    fun a_cloud_track_whose_clips_have_not_loaded_measures_nothing_rather_than_borrowing() {
+        // The clip cache refreshes asynchronously, so there is a beat where a
+        // cloud track has no windows. Borrowing the device detector's
+        // boundaries for it would be the exact "two runs' answers on one court"
+        // the pairing exists to prevent, and it would be invisible: medians
+        // over slightly wrong windows still look like medians. The Base tab is
+        // simply not offered until the clips land.
         val device = listOf(RallyWindow(1, 1.0, 4.0))
 
-        rallyWindowsFor(preferCloud = true, cloud = emptyList(), device = device) shouldBe device
+        rallyWindowsFor(preferCloud = true, cloud = emptyList(), device = device) shouldBe emptyList()
     }
 
     @Test
-    fun a_device_track_with_no_kept_bounds_falls_back_to_the_cloud_windows() {
+    fun a_device_track_with_no_kept_bounds_does_not_borrow_the_cloud_windows() {
         val cloud = listOf(RallyWindow(1, 0.0, 5.0))
 
-        rallyWindowsFor(preferCloud = false, cloud = cloud, device = emptyList()) shouldBe cloud
+        rallyWindowsFor(preferCloud = false, cloud = cloud, device = emptyList()) shouldBe emptyList()
     }
 }

@@ -52,11 +52,11 @@ fun rallyWindowsFor(
     preferCloud: Boolean,
     cloud: List<RallyWindow>,
     device: List<RallyWindow>,
-): List<RallyWindow> = when {
-    preferCloud && cloud.isNotEmpty() -> cloud
-    device.isNotEmpty() -> device
-    // A cloud track whose clips the cache has not loaded yet, or a device track
-    // whose sidecar predates the index: fall back rather than show an empty
-    // Base tab, since an unbounded window is skipped downstream anyway.
-    else -> cloud
-}
+): List<RallyWindow> =
+    // No fallback across the two, deliberately. A cloud track whose clips the
+    // cache has not loaded yet would otherwise borrow the device detector's
+    // boundaries, which is the exact "two runs' answers on one court" this
+    // pairing exists to prevent - and it would be invisible, because medians
+    // over slightly wrong windows still look like medians. Empty means the Base
+    // tab is not offered for the moment, and the clip cache lands a beat later.
+    if (preferCloud) cloud else device

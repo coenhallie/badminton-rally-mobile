@@ -23,6 +23,8 @@
 
 **D4 - One source per entry, for every panel.** Track, skeleton and rally windows are resolved together from whichever run produced the track being drawn. A cloud track with device rally windows is two runs' answers on one court. This also subsumes defect 4.
 
+**D6 - No fallback between the two window sources.** A cloud track whose clips have not loaded yet gets no windows rather than the device detector's, and vice versa. Borrowing would be the exact "two runs' answers on one court" D4 exists to prevent, and it would be invisible, because medians over slightly wrong windows still look like medians. The Base tab simply waits a beat.
+
 **D5 - Cloud rally windows come from `rally_clips`.** It is already the rally truth for a cloud video (spec section 3). No rally is computed on the phone from a cloud pose stream; `CloudPoseOutcome` still has nowhere to put one.
 
 ## Global constraints
@@ -124,6 +126,7 @@ This is the step the previous plan skipped, and skipping it is why this plan exi
 - [ ] Step 3: owner opens Analytics and confirms the row is tappable after the run finishes
 - [ ] Step 4: owner confirms the tab row shows Heatmap and Base, and that the Near/Far toggle has two usable sides
 - [ ] Step 5: owner screenshots the tab row; agent records what was seen here
+- [ ] Step 6: owner checks a match analysed BEFORE this branch. Its artifacts were already deleted by the old code and nothing re-downloads one, so those rows still read "Not on this phone". Not a regression, but the first thing a coach notices; re-analysing is the only recovery.
 
 ## Follow-ups (not in scope)
 

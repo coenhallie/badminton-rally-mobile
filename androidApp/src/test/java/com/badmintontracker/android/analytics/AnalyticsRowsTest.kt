@@ -327,6 +327,11 @@ class AnalyticsRowsTest {
     fun a_shared_match_with_a_track_opens_too() {
         // Same story for a match another coach shared: no local entry here
         // either, and the panels read only the stored track.
+        // NOTE: synthetic. Nothing fetches a pose artifact except the phone
+        // that uploaded, so a shared match cannot actually have a track here
+        // yet. This pins the row logic for when one can - it is not evidence
+        // the cross-phone case works, and cloudNotes deliberately does not
+        // claim it does.
         val row = rows(shared = listOf(videoMatch("v1")), tracks = setOf("v1")).single()
 
         row.state shouldBe AnalyticsRowState.READY_NO_VIDEO

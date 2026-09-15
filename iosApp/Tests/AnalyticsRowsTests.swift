@@ -215,6 +215,11 @@ final class AnalyticsRowsTests: XCTestCase {
     func testASharedMatchWithATrackOpensToo() {
         // Same story for a match another coach shared: no local entry here
         // either, and the panels read only the stored track.
+        // NOTE: synthetic. Nothing fetches a pose artifact except the phone
+        // that uploaded, so a shared match cannot actually have a track here
+        // yet. This pins the row logic for when one can - it is not evidence
+        // the cross-phone case works, and cloudNotes deliberately does not
+        // claim it does.
         let built = rows(sharedMatches: [videoMatch("v1")], tracks: ["v1"])
 
         XCTAssertEqual(built[0].state, .readyNoVideo)
