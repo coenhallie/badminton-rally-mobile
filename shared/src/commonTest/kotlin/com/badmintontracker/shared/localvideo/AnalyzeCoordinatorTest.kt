@@ -241,7 +241,7 @@ class AnalyzeCoordinatorTest {
         // The clips live in the cloud now; on iOS the on-device copy is the only
         // thing holding that storage and nothing else will ever reference it.
         val released = mutableListOf<String>()
-        val registry = LocalVideoRepository(MapSettings(), onRemoved = { released += it.uri })
+        val registry = LocalVideoRepository(MapSettings(), onRemoved = { e, _ -> released += e.uri })
         registry.add(entry())
         clips.clips.value = listOf(clipFor("e1"))
         val c = coordinator(registry)
@@ -251,11 +251,47 @@ class AnalyzeCoordinatorTest {
     }
 
     @Test
+    fun a_successful_analysis_keeps_the_cloud_analysis_it_just_installed() = runTest {
+        // The run downloads a pose artifact, selects both players from it and
+        // writes two stores - and then retires the entry. Retiring releases the
+        // footage (the clips live in the cloud now) but must NOT take the
+        // analysis with it: that is the whole result the coach waited for.
+        val cloudArtifacts = mutableSetOf<String>()
+        val registry = LocalVideoRepository(
+            MapSettings(),
+            // What RallyAndroidApp wires: AnalysisFiles.deleteAll, whose store
+            // list includes cloud-tracks and cloud-skeletons.
+            onRemoved = { entry, reason ->
+                if (reason == LocalVideoRemoval.DISCARDED) cloudArtifacts.remove(entry.id)
+            },
+        )
+        registry.add(entry())
+        clips.clips.value = listOf(clipFor("e1"))
+        val c = coordinator(registry, installCloudPoses = { id, _ -> cloudArtifacts.add(id) })
+        c.startAnalysis("e1", keypoints())
+        runCurrent()
+
+        registry.get("e1").shouldBeNull()          // retired: the entry is gone
+        cloudArtifacts shouldBe setOf("e1")        // the heatmap is not
+    }
+
+    @Test
+    fun a_successful_analysis_retires_the_entry_rather_than_discarding_it() = runTest {
+        val reasons = mutableListOf<LocalVideoRemoval>()
+        val registry = LocalVideoRepository(MapSettings(), onRemoved = { _, reason -> reasons += reason })
+        registry.add(entry())
+        clips.clips.value = listOf(clipFor("e1"))
+        coordinator(registry).startAnalysis("e1", keypoints())
+        runCurrent()
+        reasons shouldBe listOf(LocalVideoRemoval.RETIRED)
+    }
+
+    @Test
     fun an_analysis_that_keeps_an_annotated_entry_keeps_its_file() = runTest {
         // The entry survives as ANALYZED so the notes stay playable; deleting the
         // file underneath it would leave the user tapping a dead video.
         val released = mutableListOf<String>()
-        val registry = LocalVideoRepository(MapSettings(), onRemoved = { released += it.uri })
+        val registry = LocalVideoRepository(MapSettings(), onRemoved = { e, _ -> released += e.uri })
         registry.add(entry())
         clips.clips.value = listOf(clipFor("e1"))
         localAnnotations.add("e1", 1f, "note", null)
@@ -268,7 +304,7 @@ class AnalyzeCoordinatorTest {
     @Test
     fun a_failed_analysis_keeps_the_local_file_for_the_retry() = runTest {
         val released = mutableListOf<String>()
-        val registry = LocalVideoRepository(MapSettings(), onRemoved = { released += it.uri })
+        val registry = LocalVideoRepository(MapSettings(), onRemoved = { e, _ -> released += e.uri })
         registry.add(entry())
         videos.processingUpdates = listOf(ProcessingUpdate("failed_phase1", null, "no court detected"))
         val c = coordinator(registry)

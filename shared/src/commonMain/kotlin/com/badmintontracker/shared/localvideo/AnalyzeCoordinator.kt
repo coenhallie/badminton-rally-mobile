@@ -227,7 +227,11 @@ class AnalyzeCoordinator(
                 it.copy(stage = AnalyzeStage.ANALYZED, failedStep = null, failureMessage = null)
             }
         } else {
-            localVideos.remove(entryId)
+            // RETIRED, not removed. The clips live in the cloud now and the
+            // footage can go, but measureMovement has just written this entry's
+            // cloud track and skeleton, and a discard would delete them - the
+            // whole result of the run, thrown away seconds after it landed.
+            localVideos.retire(entryId)
         }
     }
 

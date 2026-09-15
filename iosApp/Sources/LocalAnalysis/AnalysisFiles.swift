@@ -1,4 +1,5 @@
 import Foundation
+import Shared
 
 /// Where an on-device analysis keeps what it produced.
 ///
@@ -42,23 +43,32 @@ enum AnalysisFiles {
         return url
     }
 
-    /// Removes everything an analysis produced for one video.
+    /// What this device's own analysis wrote. Always removed: the entry is
+    /// leaving either way, and a local track is only reachable through it.
+    private static let localStores = [
+        "player-tracks", "skeletons", "local-clips", "local-sources",
+    ]
+
+    /// What a cloud analysis wrote for this entry.
+    ///
+    /// Removed on a discard and kept on a retire. A cloud artifact costs a
+    /// re-download rather than half an hour of device time, which is why it was
+    /// once safe to treat it like the local ones - but nothing re-downloads it
+    /// today (`CloudPoseCoordinator.install` has one caller, inside the upload
+    /// pipeline), so deleting it on the pipeline's own success path loses it
+    /// for good.
+    private static let cloudStores = ["cloud-tracks", "cloud-skeletons"]
+
+    /// Removes what this video left on disk, as much of it as `reason` allows.
     ///
     /// Called when the video leaves the phone. Without it a deleted match keeps
     /// its clips - tens of megabytes - and its skeleton for the life of the
     /// install, reachable by nothing.
-    static func deleteAll(entryId: String) {
-        // The cloud stores are here on the same footing as the local ones:
-        // removing the entry already removes its local analysis, and nothing
-        // protects a cloud artifact the way it protects a local one - a local
-        // track costs half an hour of device time to recreate, a cloud one
-        // only a re-download. A match uploaded from a different phone has no
-        // local entry here, so this never reaches an artifact whose entry
-        // lives elsewhere. Mirrors Android's AnalysisFiles.STORES.
-        let stores = [
-            "player-tracks", "skeletons", "local-clips", "local-sources",
-            "cloud-tracks", "cloud-skeletons",
-        ]
+    ///
+    /// Mirrors Android's `AnalysisFiles.deleteAll`, over the same six names and
+    /// the same rule.
+    static func deleteAll(entryId: String, reason: LocalVideoRemoval) {
+        let stores = reason == .discarded ? localStores + cloudStores : localStores
         for store in stores {
             let base = directory.appendingPathComponent(store, isDirectory: true)
             // Two shapes: a directory named for the entry (clips) and a file

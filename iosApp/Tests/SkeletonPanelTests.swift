@@ -15,11 +15,11 @@ final class SkeletonPanelTests: XCTestCase {
     private let entry = "skeleton-panel-under-test"
 
     override func setUpWithError() throws {
-        AnalysisFiles.deleteAll(entryId: entry)
+        AnalysisFiles.deleteAll(entryId: entry, reason: .discarded)
     }
 
     override func tearDownWithError() throws {
-        AnalysisFiles.deleteAll(entryId: entry)
+        AnalysisFiles.deleteAll(entryId: entry, reason: .discarded)
     }
 
     // MARK: - The highlight

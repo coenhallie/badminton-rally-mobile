@@ -54,7 +54,7 @@ class RallyAndroidApp : Application(), SingletonImageLoader.Factory {
             // not ours to delete. What IS ours is everything the on-device
             // pipeline wrote about it, and until this was passed nothing
             // deleted that.
-            onLocalVideoRemoved = { entry -> AnalysisFiles.deleteAll(filesDir, entry.id) },
+            onLocalVideoRemoved = { entry, reason -> AnalysisFiles.deleteAll(filesDir, entry.id, reason) },
         )
         themePrefs  = rally.themePrefs
         localVideos = rally.localVideos

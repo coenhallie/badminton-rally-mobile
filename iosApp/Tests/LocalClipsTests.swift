@@ -14,11 +14,11 @@ final class LocalClipsTests: XCTestCase {
     private let entry = "local-clips-under-test"
 
     override func setUpWithError() throws {
-        AnalysisFiles.deleteAll(entryId: entry)
+        AnalysisFiles.deleteAll(entryId: entry, reason: .discarded)
     }
 
     override func tearDownWithError() throws {
-        AnalysisFiles.deleteAll(entryId: entry)
+        AnalysisFiles.deleteAll(entryId: entry, reason: .discarded)
     }
 
     private func clip(_ index: Int, _ start: Double, _ end: Double) -> PlayerTrackStore.Clip {

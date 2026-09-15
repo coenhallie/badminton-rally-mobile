@@ -1,9 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- The tile the "S." mark sits on: ShuttlPalette.textHeading light / bg dark,
+     the same near-black as the SHUTTL. wordmark's ink. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <gradient
-        android:angle="315"
-        android:startColor="#22C55E"
-        android:endColor="#16A34A"
-        android:type="linear"/>
+    <solid android:color="#0B0C0D"/>
 </shape>

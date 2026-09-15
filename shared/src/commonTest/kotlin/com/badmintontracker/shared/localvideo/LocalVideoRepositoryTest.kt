@@ -92,7 +92,7 @@ class LocalVideoRepositoryTest {
         // iOS copies the video into its app container, so the registry entry is the
         // only reference to that file. A removal that skips this strands it forever.
         val removed = mutableListOf<LocalVideoEntry>()
-        val repo = LocalVideoRepository(MapSettings(), onRemoved = { removed += it })
+        val repo = LocalVideoRepository(MapSettings(), onRemoved = { e, _ -> removed += e })
         repo.add(entry("a"))
         repo.add(entry("b"))
 
@@ -102,9 +102,52 @@ class LocalVideoRepositoryTest {
     }
 
     @Test
+    fun remove_reports_the_entry_as_discarded() {
+        // A coach deleting a video wants everything derived from it gone too.
+        val reasons = mutableListOf<LocalVideoRemoval>()
+        val repo = LocalVideoRepository(MapSettings(), onRemoved = { _, r -> reasons += r })
+        repo.add(entry("a"))
+
+        repo.remove("a")
+
+        reasons shouldBe listOf(LocalVideoRemoval.DISCARDED)
+    }
+
+    @Test
+    fun retire_reports_the_entry_as_retired_and_still_releases_the_file() {
+        // The pipeline tidying up after itself. The footage goes - it lives in
+        // the cloud now - but a cloud analysis keyed to this id must survive,
+        // which is what the reason lets the cleanup hook tell apart.
+        val released = mutableListOf<String>()
+        val reasons = mutableListOf<LocalVideoRemoval>()
+        val repo = LocalVideoRepository(
+            MapSettings(),
+            onRemoved = { e, r -> released += e.id; reasons += r },
+        )
+        repo.add(entry("a"))
+
+        repo.retire("a")
+
+        repo.get("a").shouldBeNull()
+        released shouldBe listOf("a")
+        reasons shouldBe listOf(LocalVideoRemoval.RETIRED)
+    }
+
+    @Test
+    fun retiring_an_unknown_id_does_not_fire_the_cleanup_hook() {
+        val removed = mutableListOf<LocalVideoEntry>()
+        val repo = LocalVideoRepository(MapSettings(), onRemoved = { e, _ -> removed += e })
+        repo.add(entry("a"))
+
+        repo.retire("nope")
+
+        removed shouldBe emptyList()
+    }
+
+    @Test
     fun removing_an_unknown_id_does_not_fire_the_cleanup_hook() {
         val removed = mutableListOf<LocalVideoEntry>()
-        val repo = LocalVideoRepository(MapSettings(), onRemoved = { removed += it })
+        val repo = LocalVideoRepository(MapSettings(), onRemoved = { e, _ -> removed += e })
         repo.add(entry("a"))
 
         repo.remove("nope")
@@ -115,7 +158,7 @@ class LocalVideoRepositoryTest {
     @Test
     fun add_and_update_never_fire_the_cleanup_hook() {
         val removed = mutableListOf<LocalVideoEntry>()
-        val repo = LocalVideoRepository(MapSettings(), onRemoved = { removed += it })
+        val repo = LocalVideoRepository(MapSettings(), onRemoved = { e, _ -> removed += e })
         repo.add(entry("a"))
         repo.update("a") { it.copy(stage = AnalyzeStage.UPLOADING) }
 
@@ -128,7 +171,7 @@ class LocalVideoRepositoryTest {
         // if the process died in between; that reads as a corrupt library.
         var stillPresent: LocalVideoEntry? = null
         lateinit var repo: LocalVideoRepository
-        repo = LocalVideoRepository(MapSettings(), onRemoved = { stillPresent = repo.get(it.id) })
+        repo = LocalVideoRepository(MapSettings(), onRemoved = { e, _ -> stillPresent = repo.get(e.id) })
         repo.add(entry("a"))
 
         repo.remove("a")

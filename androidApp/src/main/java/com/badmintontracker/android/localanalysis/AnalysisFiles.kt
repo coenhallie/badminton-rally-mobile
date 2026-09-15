@@ -1,5 +1,6 @@
 package com.badmintontracker.android.localanalysis
 
+import com.badmintontracker.shared.localvideo.LocalVideoRemoval
 import java.io.File
 
 /**
@@ -12,16 +13,37 @@ import java.io.File
  * its cut clips - tens of megabytes - and its skeleton for the life of the
  * install, reachable by nothing.
  *
- * The cloud stores are included on the same footing as the local ones:
- * removing the entry already removes its local analysis, and nothing protects
- * a cloud artifact the way it protects a local one - a local track costs half
- * an hour of device time to recreate, a cloud one only a re-download. A match
- * uploaded from a different phone has no local entry here to delete, so its
- * artifacts are never reached by this.
+ * How much goes depends on WHY the entry left, which is what
+ * [LocalVideoRemoval] carries. A coach deleting a video wants everything
+ * derived from it gone. A cloud run retiring one does not: it has just written
+ * this entry's cloud track and skeleton, and deleting them here would throw
+ * away the result of the run that is doing the deleting. That is not
+ * hypothetical - it is what shipped, and what this split exists to stop.
  *
- * The iOS side is `AnalysisFiles.deleteAll`, over the same six names.
+ * The iOS side is `AnalysisFiles.deleteAll`, over the same six names and the
+ * same rule.
  */
 object AnalysisFiles {
+
+    /**
+     * What this device's own analysis wrote. Always removed: the entry is
+     * leaving either way, and a local track is only reachable through it.
+     */
+    private val LOCAL_STORES = listOf(
+        "player-tracks", "skeletons", "local-clips", "local-sources",
+    )
+
+    /**
+     * What a cloud analysis wrote for this entry.
+     *
+     * Removed on a DISCARD and kept on a RETIRE. A cloud artifact costs a
+     * re-download rather than half an hour of device time, which is why it was
+     * once safe to treat it like the local ones - but nothing re-downloads it
+     * today (`CloudPoseCoordinator.install` has one caller, inside the upload
+     * pipeline), so deleting it on the pipeline's own success path loses it for
+     * good.
+     */
+    private val CLOUD_STORES = listOf("cloud-tracks", "cloud-skeletons")
 
     /**
      * Two shapes: a directory named for the entry (the clips) and a file named
@@ -29,21 +51,15 @@ object AnalysisFiles {
      * store rather than mapped one to one, so adding a store here is one string
      * and cannot get its shape wrong.
      */
-    private val STORES = listOf(
-        "player-tracks", "skeletons", "local-clips", "local-sources",
-        // Cloud artifacts for this entry, not this device's own analysis.
-        // Removing the entry already removes its local analysis, and a cloud
-        // artifact has no equivalent reason to survive: it costs a
-        // re-download, not half an hour of device time. A match uploaded
-        // from a different phone has no local entry to delete, so this never
-        // reaches an artifact whose local entry is elsewhere.
-        "cloud-tracks", "cloud-skeletons",
-    )
     private val SUFFIXES = listOf(".track", ".skel", ".mp4")
 
-    /** Removes everything an analysis produced for one video. */
-    fun deleteAll(filesDir: File, entryId: String) {
-        for (store in STORES) {
+    /** Removes what this video left on disk, as much of it as [reason] allows. */
+    fun deleteAll(filesDir: File, entryId: String, reason: LocalVideoRemoval) {
+        val stores = when (reason) {
+            LocalVideoRemoval.DISCARDED -> LOCAL_STORES + CLOUD_STORES
+            LocalVideoRemoval.RETIRED -> LOCAL_STORES
+        }
+        for (store in stores) {
             val base = File(filesDir, store)
             File(base, entryId).deleteRecursively()
             for (suffix in SUFFIXES) File(base, entryId + suffix).delete()

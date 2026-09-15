@@ -14,11 +14,11 @@ final class AnalysisStoreTests: XCTestCase {
     private let entry = "entry-under-test"
 
     override func setUpWithError() throws {
-        AnalysisFiles.deleteAll(entryId: entry)
+        AnalysisFiles.deleteAll(entryId: entry, reason: .discarded)
     }
 
     override func tearDownWithError() throws {
-        AnalysisFiles.deleteAll(entryId: entry)
+        AnalysisFiles.deleteAll(entryId: entry, reason: .discarded)
     }
 
     // MARK: - The player track
@@ -362,7 +362,7 @@ final class AnalysisStoreTests: XCTestCase {
             fps: 30, videoWidth: 100, videoHeight: 50, marks: nil
         )
 
-        AnalysisFiles.deleteAll(entryId: entry)
+        AnalysisFiles.deleteAll(entryId: entry, reason: .discarded)
 
         XCTAssertFalse(tracks.has(entryId: entry, source: .cloud))
         XCTAssertFalse(skeletons.has(entryId: entry, source: .cloud))

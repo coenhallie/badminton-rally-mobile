@@ -6,6 +6,7 @@ import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.local.DeviceThroughputRepository
 import com.badmintontracker.shared.local.LocalAnalysisCoordinator
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
+import com.badmintontracker.shared.localvideo.LocalVideoRemoval
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.localvideo.orphanedLocalVideoIds
 import com.badmintontracker.shared.prefs.PlaybackPreferenceRepository
@@ -59,7 +60,7 @@ class RallyApp(
      * delete, so it passes the analysis store's alone. See
      * [LocalVideoRepository].
      */
-    onLocalVideoRemoved: (LocalVideoEntry) -> Unit = {},
+    onLocalVideoRemoved: (LocalVideoEntry, LocalVideoRemoval) -> Unit = { _, _ -> },
 ) {
     val client: SupabaseClient = buildSupabaseClient(config, settings, sessionSettings, httpEngine)
     val auth:        AuthRepository        = AuthRepositoryImpl(client)

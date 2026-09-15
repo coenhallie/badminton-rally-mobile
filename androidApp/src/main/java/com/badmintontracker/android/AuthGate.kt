@@ -794,7 +794,7 @@ private fun Splash() {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text("Rally Clips")
+        Text("Shuttl")
         CircularProgressIndicator()
     }
 }

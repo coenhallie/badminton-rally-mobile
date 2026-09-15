@@ -32,7 +32,7 @@ final class LocalVideoCleanupWiringTests: XCTestCase {
             url: "https://test.supabase.co",
             anonKey: "test-anon-key",
             deleteLocalVideoFile: { deleted.append($0) },
-            deleteLocalAnalysis: { _ in }
+            deleteLocalAnalysis: { _, _ in }
         )
         // A unique id so the shared NSUserDefaults registry this reads is left as
         // it was found: add and remove touch only this entry.
@@ -51,7 +51,7 @@ final class LocalVideoCleanupWiringTests: XCTestCase {
             url: "https://test.supabase.co",
             anonKey: "test-anon-key",
             deleteLocalVideoFile: { LocalVideoFiles.delete(relativePath: $0) },
-            deleteLocalAnalysis: { AnalysisFiles.deleteAll(entryId: $0) }
+            deleteLocalAnalysis: { AnalysisFiles.deleteAll(entryId: $0, reason: $1) }
         )
         let temp = FileManager.default.temporaryDirectory
             .appendingPathComponent("wiring-\(UUID().uuidString).mp4")
@@ -82,7 +82,7 @@ final class LocalVideoCleanupWiringTests: XCTestCase {
             url: "https://test.supabase.co",
             anonKey: "test-anon-key",
             deleteLocalVideoFile: { LocalVideoFiles.delete(relativePath: $0) },
-            deleteLocalAnalysis: { AnalysisFiles.deleteAll(entryId: $0) }
+            deleteLocalAnalysis: { AnalysisFiles.deleteAll(entryId: $0, reason: $1) }
         )
         let id = "wiring-\(UUID().uuidString)"
 
@@ -102,5 +102,52 @@ final class LocalVideoCleanupWiringTests: XCTestCase {
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: track.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: clip.path))
+    }
+
+    func testRetiringAnEntryKeepsTheCloudAnalysisAndDropsTheLocalOne() throws {
+        // The pipeline tidying up after its own success. The cloud track it just
+        // wrote IS the result of that run; deleting it here threw away the
+        // heatmap the coach waited on a GPU for, seconds after it landed.
+        let rally = RallyAppIosKt.createRallyApp(
+            url: "https://test.supabase.co",
+            anonKey: "test-anon-key",
+            deleteLocalVideoFile: { LocalVideoFiles.delete(relativePath: $0) },
+            deleteLocalAnalysis: { AnalysisFiles.deleteAll(entryId: $0, reason: $1) }
+        )
+        let id = "wiring-\(UUID().uuidString)"
+
+        let cloudTrack = try AnalysisFiles.directory("cloud-tracks")
+            .appendingPathComponent("\(id).track")
+        try "v3 30.0 2\n".write(to: cloudTrack, atomically: true, encoding: .utf8)
+        let localTrack = try AnalysisFiles.directory("player-tracks")
+            .appendingPathComponent("\(id).track")
+        try "v2 30.0 0\n".write(to: localTrack, atomically: true, encoding: .utf8)
+
+        rally.localVideos.add(entry: entry(id: id))
+        rally.localVideos.retire(id: id)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: cloudTrack.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: localTrack.path))
+        try? FileManager.default.removeItem(at: cloudTrack)
+    }
+
+    func testDiscardingAnEntryTakesTheCloudAnalysisToo() throws {
+        // The other half of the same rule: a coach deleting a video wants
+        // everything derived from it gone, cloud included.
+        let rally = RallyAppIosKt.createRallyApp(
+            url: "https://test.supabase.co",
+            anonKey: "test-anon-key",
+            deleteLocalVideoFile: { LocalVideoFiles.delete(relativePath: $0) },
+            deleteLocalAnalysis: { AnalysisFiles.deleteAll(entryId: $0, reason: $1) }
+        )
+        let id = "wiring-\(UUID().uuidString)"
+        let cloudTrack = try AnalysisFiles.directory("cloud-tracks")
+            .appendingPathComponent("\(id).track")
+        try "v3 30.0 2\n".write(to: cloudTrack, atomically: true, encoding: .utf8)
+
+        rally.localVideos.add(entry: entry(id: id))
+        rally.localVideos.remove(id: id)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: cloudTrack.path))
     }
 }
