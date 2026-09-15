@@ -21,6 +21,8 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,6 +31,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -63,6 +66,7 @@ import com.badmintontracker.android.scoring.ScoringScreen
 import com.badmintontracker.android.scoring.ScoringViewModel
 import com.badmintontracker.android.signin.SignInScreen
 import com.badmintontracker.android.signin.SignInViewModel
+import com.badmintontracker.shared.localvideo.announceFinishedRuns
 import com.badmintontracker.shared.localvideo.AnalyzeCoordinator
 import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.canResumeFailedAnalysis
@@ -159,6 +163,64 @@ fun AuthGate(
             )
 
             val work by backgroundWork.work.collectAsStateWithLifecycle()
+
+            // A device run that lands takes the coach to the Analytics list.
+            //
+            // Above the NavHost on purpose. announceFinishedRuns updates its
+            // seen-set on every tick whether or not it navigates, and that is
+            // what stops a run which finished while the coach was three screens
+            // away from ambushing them the next time they pass through Home.
+            // Observed from inside Route.Home it could not tell those apart:
+            // Home leaves composition on every trip out and comes back looking
+            // like a fresh arrival.
+            //
+            // The seen-set lives in the coroutine rather than in a
+            // `remember`ed state: nothing draws it, and a snapshot write would
+            // be a second invalidation of this scope for no one's benefit. It
+            // survives exactly as long as a `remember` would, the effect being
+            // scoped to this composition. Rotation does not cost it: the
+            // activity declares configChanges for orientation. Process death
+            // does not either, because the runner comes back new and holds no
+            // finished run to re-announce.
+            //
+            // One recreation does reset it, and is left alone deliberately: a
+            // SYSTEM dark-mode flip, uiMode not being in that configChanges
+            // list. A run that landed while the coach was away would then
+            // announce itself on the next visit to Home. It needs the system
+            // theme to change inside that window - the app's own toggle does
+            // not go through uiMode - and the cost of being wrong is one
+            // screen the coach was heading for anyway.
+            //
+            // Collected here rather than read as composition state on purpose.
+            // `collectAsStateWithLifecycle` would put a snapshot read in THIS
+            // scope, which is the one that calls NavHost, so every progress
+            // tick - several a second while a run is going - would invalidate
+            // the host of the whole nav graph. Keying the effect cannot help
+            // with that; the recomposition happens before the effect is
+            // consulted. Mapping to the finished set and dropping duplicates
+            // upstream means the body below runs twice per run instead.
+            LaunchedEffect(localAnalysis, nav) {
+                var seen = emptySet<String>()
+                localAnalysis.state
+                    .map { states -> states.filterValues { it is LocalAnalysisState.Done }.keys }
+                    .distinctUntilChanged()
+                    .collect { finished ->
+                        val announcement = announceFinishedRuns(
+                            finished = finished,
+                            seen = seen,
+                            onHome = nav.currentBackStackEntry
+                                ?.destination?.hasRoute<Route.Home>() == true,
+                        )
+                        seen = announcement.seen
+                        // singleTop: the coach can also have reached Analytics
+                        // by hand while the run was finishing, and a second
+                        // copy on the stack would make Back walk through the
+                        // same screen twice.
+                        if (announcement.openAnalytics) {
+                            nav.navigate(Route.Analytics) { launchSingleTop = true }
+                        }
+                    }
+            }
             // Provided around the NavHost so every destination's bar can show it
             // without the state appearing in any screen's signature.
             CompositionLocalProvider(
@@ -239,7 +301,6 @@ fun AuthGate(
                         vm = clipListVm,
                         shares = rally.shares,
                         themePrefs = themePrefs,
-                        localAnalysis = localAnalysis,
                         onMatchClick = { nav.navigate(Route.Match(videoId = it.videoId)) },
                         onScoreMatchClick = { nav.navigate(Route.Match(scoreLogId = it.scoreLogId)) },
                         onNewMatch = { nav.navigate(Route.NewMatch) },
@@ -289,7 +350,6 @@ fun AuthGate(
                                     }
                                 }
                         },
-                        onOpenHeatmapFromBanner = { nav.navigate(Route.Heatmap(it)) },
                         openDrawerRequested = pendingDrawerOpen,
                         onDrawerOpenConsumed = { pendingDrawerOpen = false },
                     )

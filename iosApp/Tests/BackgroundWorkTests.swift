@@ -116,26 +116,6 @@ final class BackgroundWorkTests: XCTestCase {
         XCTAssertTrue(t.resolved.isEmpty)
     }
 
-    // MARK: - The banner
-
-    func testTheBannerSaysTheNumbersACloudRunCanBeHeldAgainst() {
-        let done = LocalAnalysisState.Done(
-            rallies: 7,
-            shuttleVisible: 5_012,
-            totalFrames: 5_972,
-            clips: [],
-            elapsedSeconds: 61.6,
-            playerTrack: PlayerTrack(samples: [], framesWithPose: 0, rejections: [:]),
-            fps: 29.7
-        )
-        // Whole seconds, and the order androidApp sets them in, so two runs of
-        // the same video can be read side by side.
-        XCTAssertEqual(
-            LocalAnalysisBanner.summary(done),
-            "7 rallies, 0 clips, shuttle in 5012/5972 frames, 62s"
-        )
-    }
-
     private static func court() -> CourtKeypoints {
         func point(_ x: Double, _ y: Double) -> [KotlinFloat] {
             [KotlinFloat(float: Float(x * 320)), KotlinFloat(float: Float(y * 180))]

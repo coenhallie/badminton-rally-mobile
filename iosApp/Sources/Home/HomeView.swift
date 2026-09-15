@@ -87,6 +87,10 @@ struct HomeView: View {
     @State private var analyticsDetailRoute: AnalyticsDetailRoute? = nil
     @State private var createFlowTarget: CreateFlowDestination? = nil
 
+    /// Device runs already announced, so a finished one opens Analytics once.
+    /// See `announceFinishedRuns`, which owns the rule both platforms follow.
+    @State private var announcedRuns: Set<String> = []
+
     init(rally: RallyApp, analyze: AnalyzeCoordinator, localAnalysis: LocalAnalysisRunner?) {
         self.rally = rally
         self.analyze = analyze
@@ -194,6 +198,30 @@ struct HomeView: View {
                     rally: rally, localAnalysis: localAnalysis, entryId: route.entryId
                 )
             }
+        }
+        // A device run that lands takes the coach to the Analytics list.
+        // androidApp does the same from above its NavHost; `announceFinishedRuns`
+        // in shared is the rule both follow, and a change to when this fires is a
+        // change in both places.
+        //
+        // Keyed on `settledRuns`, never on `states`, for the reason that
+        // property's own doc gives: `@Observable` tracks a property, so reading
+        // `states` from a body - and the `of:` expression is body - subscribes
+        // Home to every per-frame write and redraws it at the rate of the
+        // progress bar. `settledRuns` changes twice per run. Picking the
+        // finished ones back out does need `states`, but a read inside the
+        // action closure is not tracked.
+        .onChange(of: localAnalysis?.settledRuns) { _, _ in
+            let finished = (localAnalysis?.states ?? [:]).compactMap { id, state -> String? in
+                if case .done = state { return id } else { return nil }
+            }
+            let announcement = RunAnnouncementKt.announceFinishedRuns(
+                finished: Set(finished),
+                seen: announcedRuns,
+                onHome: isOnHome
+            )
+            announcedRuns = announcement.seen
+            if announcement.openAnalytics { showAnalytics = true }
         }
         // Inside the stack, because every destination that carries the indicator
         // is inside it and the routes this dismisses are Home's.
@@ -304,21 +332,26 @@ struct HomeView: View {
         Task { _ = try? await SwiftInteropKt.signOutOrMessage(rally.auth) }
     }
 
+    /// Whether Home itself is what the coach is looking at.
+    ///
+    /// androidApp asks its NavController one question (`hasRoute<Route.Home>()`).
+    /// This stack is driven by a binding per destination instead, so the same
+    /// question is the conjunction of all of them, and EVERY new destination or
+    /// sheet added to this view has to be listed here. Miss one and a finished
+    /// run pushes Analytics on top of whatever the coach was doing.
+    private var isOnHome: Bool {
+        !showLabels && !showAnalytics && !showNewMatch && !showAddSheet
+            && !showRecorder && !showImporter
+            && courtMarkingRoute == nil && matchRoute == nil && localPlayerRoute == nil
+            && localClipsRoute == nil && analyticsDetailRoute == nil
+            && createFlowTarget == nil && detailsTarget == nil
+    }
+
     private var homeScreen: some View {
         VStack(spacing: 0) {
             topBar
             if let error = intake.error {
                 ErrorBanner(message: error)
-            }
-            // Above the hero for the same reason androidApp puts it above its
-            // own: an on-device run takes minutes and what it produced belongs
-            // where it is visible on return, and Home is where that is.
-            if let localAnalysis {
-                LocalAnalysisBanner(
-                    runner: localAnalysis,
-                    onOpenClips: { localClipsRoute = LocalClipsRoute(entryId: $0) },
-                    onOpenHeatmap: { analyticsDetailRoute = AnalyticsDetailRoute(entryId: $0) }
-                )
             }
             Spacer().frame(height: 48)
             HeroTickerView(isPaused: drawerOpen)

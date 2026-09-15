@@ -54,8 +54,6 @@ import com.badmintontracker.android.cliplist.ClipListScreen
 import com.badmintontracker.android.cliplist.ClipListViewModel
 import com.badmintontracker.android.cliplist.MatchSummary
 import com.badmintontracker.android.localanalysis.BackgroundWorkAction
-import com.badmintontracker.android.localanalysis.LocalAnalysisBanner
-import com.badmintontracker.android.localanalysis.LocalAnalysisRunner
 import com.badmintontracker.android.localvideo.LocalVideoRow
 import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlButtonVariant
@@ -85,7 +83,6 @@ fun HomeScreen(
     vm: ClipListViewModel,
     shares: SharesRepository,
     themePrefs: ThemePreferenceRepository,
-    localAnalysis: LocalAnalysisRunner,
     onMatchClick: (MatchSummary) -> Unit,
     onScoreMatchClick: (ScoreMatchCard) -> Unit,
     onNewMatch: () -> Unit,
@@ -109,7 +106,6 @@ fun HomeScreen(
     onOpenAnalytics: () -> Unit = {},
     onAttachedMarkCourt: (String) -> Unit = {},
     onAttachedRetry: (String) -> Unit = {},
-    onOpenHeatmapFromBanner: (String) -> Unit = {},
     /** Set by the background-work indicator: its job is to show the run, which
      * lives in the drawer's list, so arriving here also opens the drawer. */
     openDrawerRequested: Boolean = false,
@@ -321,11 +317,6 @@ fun HomeScreen(
             snackbarHost = { SnackbarHost(snackbarHostState) },
         ) { padding ->
             Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-                // Above the hero for the same reason it sat above the list:
-                // an on-device run takes minutes and belongs where it is
-                // visible on return, and Home is now where that is.
-                LocalAnalysisBanner(runner = localAnalysis, onOpenHeatmap = onOpenHeatmapFromBanner)
-
                 Spacer(Modifier.height(48.dp))
                 HeroTickerView(
                     isPaused = drawerState.isOpen,
