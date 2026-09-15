@@ -17,6 +17,39 @@ class HeatmapSourceTest {
     }
 
     @Test
+    fun a_stored_cloud_track_outranks_a_finished_device_run() {
+        // storedTrack's own rule - "Cloud wins, and silently" - applied where a
+        // run is still in memory. It comes from a large model on a GPU and
+        // carries both players, so a near-only device run finishing beside it
+        // must not take the court back. Until the process was restarted the
+        // same screen showed one player or two depending on nothing the coach
+        // could see.
+        val cloud = PlayerTrackStore.Stored(
+            tracks = listOf(
+                PlayerTrackStore.SideTrack(CourtSide.NEAR, trackWith(samples = 3)),
+                PlayerTrackStore.SideTrack(CourtSide.FAR, trackWith(samples = 2)),
+            ),
+            fps = 60.0,
+            source = TrackSource.CLOUD,
+        )
+
+        val s = heatmapSource(done(walked), cloud)!!
+
+        s.tracks.map { it.side } shouldBe listOf(CourtSide.NEAR, CourtSide.FAR)
+        s.fps shouldBe 60.0
+    }
+
+    @Test
+    fun a_stored_local_track_still_loses_to_a_finished_device_run() {
+        // The other half: a device run that has just finished IS the newest
+        // truth for its own source, and its track is in memory before it is on
+        // disk. Only the cloud outranks it.
+        val s = heatmapSource(done(walked), stored(sat, fps = 60.0))
+        s?.tracks?.map { it.track } shouldBe listOf(walked)
+        s?.fps shouldBe 30.0
+    }
+
+    @Test
     fun a_run_that_asked_for_no_pose_falls_through_to_the_stored_track() {
         // The defect this function exists for, and the test that pins the fps
         // pairing, since it is the only one where both sources exist and their

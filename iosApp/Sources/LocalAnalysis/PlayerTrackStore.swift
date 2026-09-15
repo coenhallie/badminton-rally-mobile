@@ -55,6 +55,15 @@ struct PlayerTrackStore {
         let tracks: [SideTrack]
         let fps: Double
 
+        /// Which run produced this, so a reader can rank it against another.
+        ///
+        /// Carried rather than inferred from the shape: a cloud file usually
+        /// has two tracks and a local one always has a single near track, so
+        /// "two tracks means cloud" nearly works and is wrong exactly when the
+        /// far player was never found. Defaults to `.local` so every existing
+        /// construction site, and every test, keeps meaning what it meant.
+        var source: TrackSource = .local
+
         /// The near player, or nil when the file holds only a far one.
         ///
         /// Every caller that predates the far player wants this, and reading
@@ -152,11 +161,17 @@ struct PlayerTrackStore {
         guard !lines.isEmpty else { return nil }
         let header = lines.removeFirst().split(separator: " ")
         guard header.count >= 3, let fps = Double(header[1]) else { return nil }
+        // The source is stamped here rather than inside each reader: it is a
+        // property of WHERE the file was found, not of the format in it, and
+        // both formats can appear under either source.
+        var stored: Stored?
         switch String(header[0]) {
-        case Self.version: return loadV2(fps: fps, framesWithPose: header[2], lines: lines)
-        case Self.versionV3: return loadV3(fps: fps, trackCount: header[2], lines: lines)
+        case Self.version: stored = loadV2(fps: fps, framesWithPose: header[2], lines: lines)
+        case Self.versionV3: stored = loadV3(fps: fps, trackCount: header[2], lines: lines)
         default: return nil
         }
+        stored?.source = source
+        return stored
     }
 
     /// The single-track format: one header line, then every sample.

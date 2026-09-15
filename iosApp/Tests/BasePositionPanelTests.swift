@@ -147,12 +147,15 @@ final class BasePositionPanelTests: XCTestCase {
         )
     }
 
-    private func stored(_ pairs: [(CourtSide, Int)], fps: Double = 30.0) -> PlayerTrackStore.Stored {
+    private func stored(
+        _ pairs: [(CourtSide, Int)], fps: Double = 30.0, source: TrackSource = .local
+    ) -> PlayerTrackStore.Stored {
         PlayerTrackStore.Stored(
             tracks: pairs.map {
                 PlayerTrackStore.SideTrack(side: $0.0, track: trackWith(samples: $0.1))
             },
-            fps: fps
+            fps: fps,
+            source: source
         )
     }
 
@@ -166,6 +169,33 @@ final class BasePositionPanelTests: XCTestCase {
             playerTrack: trackWith(samples: samples),
             fps: fps
         )
+    }
+
+    func testAStoredCloudTrackOutranksAFinishedDeviceRun() throws {
+        // `storedTrack`'s own rule - "Cloud wins, and silently" - applied where
+        // a run is still in memory. It comes from a large model on a GPU and
+        // carries both players, so a near-only device run finishing beside it
+        // must not take the court back. Until the process was restarted the
+        // same screen showed one player or two depending on nothing the coach
+        // could see.
+        let cloud = stored([(.near, 3), (.far, 2)], fps: 60.0, source: .cloud)
+
+        let source = try XCTUnwrap(heatmapSource(done: done(samples: 4), stored: cloud))
+
+        XCTAssertEqual(source.tracks.map(\.side), [.near, .far])
+        XCTAssertEqual(source.fps, 60.0)
+    }
+
+    func testAStoredLocalTrackStillLosesToAFinishedDeviceRun() throws {
+        // The other half: a device run that has just finished IS the newest
+        // truth for its own source, and its track is in memory before it is on
+        // disk. Only the cloud outranks it.
+        let source = try XCTUnwrap(
+            heatmapSource(done: done(samples: 4), stored: stored([(.near, 3), (.far, 2)], fps: 60.0))
+        )
+
+        XCTAssertEqual(source.tracks.map(\.side), [.near])
+        XCTAssertEqual(source.fps, 25.0)
     }
 
     func testAStoredPairOfTracksIsOfferedAsAPair() throws {

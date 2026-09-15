@@ -54,18 +54,27 @@ internal data class HeatmapSource(val tracks: List<PlayerTrackStore.SideTrack>, 
 internal fun heatmapSource(
     done: LocalAnalysisState.Done?,
     stored: PlayerTrackStore.Stored?,
-): HeatmapSource? = when {
-    // A device run produces the near player only, so this branch is always a
-    // single track. The empty check is unchanged and load-bearing: see the
-    // KDoc above and HeatmapSourceTest.
-    done != null && done.playerTrack.samples.isNotEmpty() ->
-        HeatmapSource(listOf(PlayerTrackStore.SideTrack(CourtSide.NEAR, done.playerTrack)), done.fps)
+): HeatmapSource? {
     // Only sides anyone was actually found on. A toggle whose second option
     // draws an empty court is a control that cannot usefully be actuated.
-    stored != null -> stored.tracks.filter { it.track.samples.isNotEmpty() }
-        .takeIf { it.isNotEmpty() }
+    val fromDisk = stored?.tracks?.filter { it.track.samples.isNotEmpty() }
+        ?.takeIf { it.isNotEmpty() }
         ?.let { HeatmapSource(it, stored.fps) }
-    else -> null
+    // A device run produces the near player only, so this is always a single
+    // track. The empty check is load-bearing: see the KDoc above and
+    // HeatmapSourceTest.
+    val fromMemory = done?.takeIf { it.playerTrack.samples.isNotEmpty() }
+        ?.let { HeatmapSource(listOf(PlayerTrackStore.SideTrack(CourtSide.NEAR, it.playerTrack)), it.fps) }
+    // Cloud first, matching storedTrack's own rule: it comes from a large model
+    // on a GPU and carries both players, so a near-only device run finishing
+    // beside it must not take the court back. Below that the in-memory run
+    // wins, because it is the newest truth for the local source and lands in
+    // memory before it lands on disk.
+    return when {
+        stored?.source == TrackSource.CLOUD && fromDisk != null -> fromDisk
+        fromMemory != null -> fromMemory
+        else -> fromDisk
+    }
 }
 
 /**

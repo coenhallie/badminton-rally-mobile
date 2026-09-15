@@ -59,21 +59,29 @@ func heatmapSource(
     done: LocalAnalysisState.Done?,
     stored: PlayerTrackStore.Stored?
 ) -> HeatmapSource? {
-    // A device run produces the near player only, so this branch is always a
-    // single track. The empty check is unchanged and load-bearing: see above.
+    // Only sides anyone was actually found on. A toggle whose second option
+    // draws an empty court is a control that cannot usefully be actuated.
+    var fromDisk: HeatmapSource?
+    if let stored {
+        let drawable = stored.tracks.filter { !$0.track.samples.isEmpty }
+        if !drawable.isEmpty { fromDisk = HeatmapSource(tracks: drawable, fps: stored.fps) }
+    }
+    // A device run produces the near player only, so this is always a single
+    // track. The empty check is load-bearing: see above.
+    var fromMemory: HeatmapSource?
     if let done, !done.playerTrack.samples.isEmpty {
-        return HeatmapSource(
+        fromMemory = HeatmapSource(
             tracks: [PlayerTrackStore.SideTrack(side: .near, track: done.playerTrack)],
             fps: done.fps
         )
     }
-    // Only sides anyone was actually found on. A toggle whose second option
-    // draws an empty court is a control that cannot usefully be actuated.
-    if let stored {
-        let drawable = stored.tracks.filter { !$0.track.samples.isEmpty }
-        if !drawable.isEmpty { return HeatmapSource(tracks: drawable, fps: stored.fps) }
-    }
-    return nil
+    // Cloud first, matching `storedTrack`'s own rule: it comes from a large
+    // model on a GPU and carries both players, so a near-only device run
+    // finishing beside it must not take the court back. Below that the
+    // in-memory run wins, because it is the newest truth for the local source
+    // and lands in memory before it lands on disk.
+    if stored?.source == .cloud, let fromDisk { return fromDisk }
+    return fromMemory ?? fromDisk
 }
 
 /// The rallies a run cut, as the spans the base positions are measured over.

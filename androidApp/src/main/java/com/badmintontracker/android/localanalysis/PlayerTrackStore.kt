@@ -141,11 +141,14 @@ class PlayerTrackStore(private val root: File) {
         return runCatching {
             val lines = file.readLines()
             val header = lines.firstOrNull()?.split(' ') ?: return null
+            // The source is stamped here rather than inside each reader: it is
+            // a property of WHERE the file was found, not of the format in it,
+            // and both formats can appear under either source.
             when (header.getOrNull(0)) {
                 VERSION -> loadV2(header, lines)
                 VERSION_V3 -> loadV3(header, lines)
                 else -> null
-            }
+            }?.copy(source = source)
         }.getOrNull()
     }
 
@@ -272,7 +275,20 @@ class PlayerTrackStore(private val root: File) {
     /** One player's path, and which half of the court they were on. */
     data class SideTrack(val side: CourtSide, val track: PlayerTrack)
 
-    data class Stored(val tracks: List<SideTrack>, val fps: Double) {
+    data class Stored(
+        val tracks: List<SideTrack>,
+        val fps: Double,
+        /**
+         * Which run produced this, so a reader can rank it against another.
+         *
+         * Carried rather than inferred from the shape: a cloud file usually has
+         * two tracks and a local one always has a single near track, so "two
+         * tracks means cloud" nearly works and is wrong exactly when the far
+         * player was never found. Defaults to LOCAL so every existing
+         * construction site, and every test, keeps meaning what it meant.
+         */
+        val source: TrackSource = TrackSource.LOCAL,
+    ) {
         /**
          * The near player, or null when the file holds only a far one.
          *
