@@ -140,6 +140,10 @@ struct AnalyticsDetailView: View {
     /// it. Read here rather than in the panel for the same reason `source` is:
     /// `storedClips` parses a sidecar off disk.
     @State private var windows: [RallyWindow] = []
+    /// `rally_clips` for this video: the rally truth for a CLOUD-analysed one,
+    /// which cuts nothing on this phone. Without these the Base tab could never
+    /// appear for a cloud run, however good its track.
+    @State private var cloudClips: [RallyClip] = []
 
     private var panels: [AnalyticsPanel] {
         AnalyticsPanelKt.availablePanels(
@@ -220,6 +224,16 @@ struct AnalyticsDetailView: View {
         }
         .background(Shuttl.bg)
         .task { await reload() }
+        // The clip cache, watched rather than read once: it refreshes
+        // asynchronously after a cloud run, and the Base tab's windows come out
+        // of it. Reading it only on open left the tab missing for the seconds
+        // between the screen appearing and the clips landing.
+        .task {
+            for await latest in rally.clips.observeClips() {
+                cloudClips = latest
+                await reload()
+            }
+        }
         .onChange(of: runSettled) { _, _ in Task { await reload() } }
         .navigationBarTitleDisplayMode(.inline)
         .shuttlNavigationBarBackground()
@@ -282,7 +296,14 @@ struct AnalyticsDetailView: View {
 
         source = heatmapSource(done: done, stored: stored.track)
         hasSkeleton = stored.hasSkeleton
-        windows = rallyWindows(done: done?.clips ?? [], stored: stored.clips)
+        // One source for the whole screen. A median taken over one run's rally
+        // boundaries and plotted from another run's track is two answers on one
+        // court, so whichever run `heatmapSource` drew also supplies the windows.
+        windows = CloudRallyWindowsKt.rallyWindowsFor(
+            preferCloud: stored.track?.source == .cloud,
+            cloud: CloudRallyWindowsKt.cloudRallyWindows(clips: cloudClips, videoId: id),
+            device: rallyWindows(done: done?.clips ?? [], stored: stored.clips)
+        )
     }
 
     /// One entry's court heatmap, or an honest line saying why there is none.

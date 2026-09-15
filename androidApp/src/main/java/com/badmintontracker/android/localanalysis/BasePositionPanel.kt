@@ -43,9 +43,11 @@ import kotlinx.coroutines.withContext
  * two read together, then said in words against the two lines the near player
  * plays around.
  *
- * The rally windows are the stored clips', which carry two seconds of pre-roll
- * and one and a half of post-roll around the detected rally. A median does not
- * notice: the player is standing at or near their base during both.
+ * The rally windows are the clips', which carry two seconds of pre-roll and one
+ * and a half of post-roll around the detected rally. A median does not notice:
+ * the player is standing at or near their base during both. For a device run
+ * they are the clips this phone cut; for a cloud run they are `rally_clips`,
+ * which is that video's rally truth and what the coach's annotations hang off.
  *
  * The track is resolved exactly as [HeatmapPanel] resolves it, for the same
  * reasons, so the two tabs can never disagree about which run they show.
@@ -54,6 +56,15 @@ import kotlinx.coroutines.withContext
 fun BasePositionPanel(
     entryId: String,
     runner: LocalAnalysisRunner,
+    /**
+     * The rallies to measure over, resolved by the caller alongside the track.
+     *
+     * Passed in rather than read here: a cloud analysis cuts no clips on this
+     * phone and takes its rallies from `rally_clips`, and the screen that
+     * decides which track to draw is the only place that can keep the two on
+     * one run. See `rallyWindowsFor`.
+     */
+    windows: List<RallyWindow>,
     modifier: Modifier = Modifier,
 ) {
     // Read and measured off the thread drawing the frame. Both halves need it:
@@ -66,8 +77,6 @@ fun BasePositionPanel(
     val measured = produceState<Measured?>(null, entryId, done) {
         value = withContext(Dispatchers.Default) {
             val source = heatmapSource(done, runner.storedTrack(entryId))
-            val windows = (done?.clips?.takeIf { it.isNotEmpty() } ?: runner.storedClips(entryId))
-                .map { RallyWindow(it.index, it.startSeconds, it.endSeconds) }
             // Measured for every side here, off the main thread, rather than
             // recomputed when the toggle moves: the medians are cheap next to
             // the parse above, and doing it on selection would put them on the

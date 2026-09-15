@@ -702,12 +702,17 @@ fun AuthGate(
 
                 composable<Route.AnalyticsDetail> { entry ->
                     val args = entry.toRoute<Route.AnalyticsDetail>()
+                    // rally_clips, which is the rally truth for a cloud-analysed
+                    // video and the only source of rally bounds on a phone that
+                    // cut no clips itself.
+                    val cloudClips by rally.clips.observeClips().collectAsStateWithLifecycle(emptyList())
                     AnalyticsDetailScreen(
                         entryId = args.entryId,
                         localAnalysis = localAnalysis,
                         localVideos = localVideos,
                         playbackPrefs = rally.playbackPrefs,
                         racketArmPrefs = rally.racketArmPrefs,
+                        cloudClips = cloudClips,
                         onBack = { nav.popBackStack() },
                     )
                 }
