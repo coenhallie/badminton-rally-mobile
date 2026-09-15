@@ -48,20 +48,36 @@ class AnalysisFilesTest {
     }
 
     @Test
-    fun `keeps the cloud artifacts for a retired entry and drops the local ones`() {
-        // The pipeline tidying up after its own success. The cloud track and
-        // skeleton ARE that run's result, written moments earlier; taking them
-        // here threw away the heatmap the coach waited on a GPU for.
+    fun `freeing the video keeps both tracks and drops what needs the footage`() {
+        // The coach wants the space back, not the match gone. Only the skeleton
+        // needs the video - it is drawn over playback - so it goes with the
+        // footage and the clips, while the tracks stay and the heatmap and base
+        // position keep working. Taking the tracks here would turn "get my
+        // storage back" into "lose my analysis".
         val cloudTrack = write("cloud-tracks/e1.track")
-        val cloudSkeleton = write("cloud-skeletons/e1.skel")
         val localTrack = write("player-tracks/e1.track")
+        val cloudSkeleton = write("cloud-skeletons/e1.skel")
+        val localSkeleton = write("skeletons/e1.skel")
         val localClip = write("local-clips/e1/rally-1.mp4")
         val source = write("local-sources/e1.mp4")
 
-        AnalysisFiles.deleteAll(temp.root, "e1", LocalVideoRemoval.RETIRED)
+        AnalysisFiles.deleteAll(temp.root, "e1", LocalVideoRemoval.VIDEO_ONLY)
 
-        listOf(cloudTrack, cloudSkeleton).map { it.exists() } shouldBe List(2) { true }
-        listOf(localTrack, localClip, source).map { it.exists() } shouldBe List(3) { false }
+        listOf(cloudTrack, localTrack).map { it.exists() } shouldBe List(2) { true }
+        listOf(cloudSkeleton, localSkeleton, localClip, source).map { it.exists() } shouldBe
+            List(4) { false }
+    }
+
+    @Test
+    fun `an 11MB skeleton never outlives the video it is drawn over`() {
+        // Said separately because it is the reason the skeletons sit with the
+        // video rather than with the tracks. A skeleton with no footage under
+        // it is storage held for a panel that can never open.
+        val cloudSkeleton = write("cloud-skeletons/e1.skel")
+
+        AnalysisFiles.deleteAll(temp.root, "e1", LocalVideoRemoval.VIDEO_ONLY)
+
+        cloudSkeleton.exists() shouldBe false
     }
 
     @Test

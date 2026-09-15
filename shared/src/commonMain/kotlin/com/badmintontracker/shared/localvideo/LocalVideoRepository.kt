@@ -12,12 +12,11 @@ import kotlinx.serialization.json.Json
 /**
  * Why an entry left the registry, which decides how much of it goes with it.
  *
- * The footage is released either way - that part never differed. What differs
- * is everything DERIVED from the video, and the difference is not a detail: a
- * cloud analysis is written against the entry id and the entry is then retired
- * by the very pipeline that produced it, moments later. Treating that as a
- * discard deletes the result the coach waited on a GPU for, seconds after it
- * landed.
+ * The video and the cut clips go either way. What differs is the ANALYSIS, and
+ * the difference is the whole point: only the skeleton needs the footage, so a
+ * coach freeing space keeps the heatmap and the base position while a coach
+ * deleting the match keeps nothing. Collapsing the two turns "get my storage
+ * back" into "lose my analysis", silently.
  */
 enum class LocalVideoRemoval {
     /**
@@ -27,13 +26,15 @@ enum class LocalVideoRemoval {
     DISCARDED,
 
     /**
-     * The pipeline finished and the footage now lives in the cloud.
+     * The coach is freeing the footage, not throwing the match away.
      *
-     * The entry and the file go; the analysis stays. A cloud track and skeleton
-     * ARE the result of this run, so the run that succeeded must not delete
-     * them on its way out.
+     * The video, the cut clips and the SKELETON go - the skeleton is drawn over
+     * playback, so without the file it is an artifact nothing can display. The
+     * tracks stay, because the heatmap and the base position are computed
+     * entirely from them and work with no video at all. That is what
+     * `AnalyticsRowState.READY_NO_VIDEO` is for.
      */
-    RETIRED,
+    VIDEO_ONLY,
 }
 
 /** Registry of on-device recordings, persisted as JSON in Settings. */
@@ -76,13 +77,13 @@ class LocalVideoRepository(
     fun remove(id: String) = drop(id, LocalVideoRemoval.DISCARDED)
 
     /**
-     * The pipeline finished with this video. See [LocalVideoRemoval.RETIRED].
+     * The coach wants the space back. See [LocalVideoRemoval.VIDEO_ONLY].
      *
      * A separate entry point rather than a flag on [remove] because the two are
      * different promises to the coach, and a boolean at the call site reads as a
      * tuning knob rather than as which of the two happened.
      */
-    fun retire(id: String) = drop(id, LocalVideoRemoval.RETIRED)
+    fun freeVideo(id: String) = drop(id, LocalVideoRemoval.VIDEO_ONLY)
 
     private fun drop(id: String, reason: LocalVideoRemoval) {
         val removed = lock.withLock {

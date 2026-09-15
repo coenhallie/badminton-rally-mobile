@@ -57,6 +57,7 @@ import com.badmintontracker.android.ui.icons.ShuttlIcons
 import com.badmintontracker.android.ui.theme.ShuttlRadius
 import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.shared.localvideo.AnalyzeStage
+import com.badmintontracker.shared.analytics.videoRemovalMessage
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.model.RallyClip
 import com.badmintontracker.shared.repo.MediaRepository
@@ -302,7 +303,7 @@ fun ClipListScreen(
     localRemoveTarget?.let { entry ->
         ConfirmDialog(
             title = "Remove video?",
-            message = "Remove this video and its notes from the app? The video itself stays on your phone.",
+            message = videoRemovalMessage(hasAnalysis = hasHeatmap(entry)),
             confirmLabel = "Remove",
             onConfirm = { onLocalRemove(entry); localRemoveTarget = null },
             onDismiss = { localRemoveTarget = null },

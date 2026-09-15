@@ -26,24 +26,27 @@ import java.io.File
 object AnalysisFiles {
 
     /**
-     * What this device's own analysis wrote. Always removed: the entry is
-     * leaving either way, and a local track is only reachable through it.
+     * What goes whatever the reason: the footage, the re-encoded clips beside
+     * it, and both skeletons.
+     *
+     * The skeletons are here rather than with the tracks because a skeleton is
+     * drawn OVER playback. With the video gone it is an artifact nothing can
+     * display - roughly 11MB of it for a 30-minute match - so keeping one past
+     * its video would be storage held for a panel that can never open.
      */
-    private val LOCAL_STORES = listOf(
-        "player-tracks", "skeletons", "local-clips", "local-sources",
+    private val VIDEO_STORES = listOf(
+        "local-clips", "local-sources", "skeletons", "cloud-skeletons",
     )
 
     /**
-     * What a cloud analysis wrote for this entry.
+     * The player tracks, local and cloud.
      *
-     * Removed on a DISCARD and kept on a RETIRE. A cloud artifact costs a
-     * re-download rather than half an hour of device time, which is why it was
-     * once safe to treat it like the local ones - but nothing re-downloads it
-     * today (`CloudPoseCoordinator.install` has one caller, inside the upload
-     * pipeline), so deleting it on the pipeline's own success path loses it for
-     * good.
+     * Kept when the coach is only freeing the footage. The heatmap and the base
+     * position are computed entirely from these and need no video at all, which
+     * is what `AnalyticsRowState.READY_NO_VIDEO` exists for - so taking them
+     * here would turn "get my storage back" into "lose my analysis".
      */
-    private val CLOUD_STORES = listOf("cloud-tracks", "cloud-skeletons")
+    private val TRACK_STORES = listOf("player-tracks", "cloud-tracks")
 
     /**
      * Two shapes: a directory named for the entry (the clips) and a file named
@@ -56,8 +59,8 @@ object AnalysisFiles {
     /** Removes what this video left on disk, as much of it as [reason] allows. */
     fun deleteAll(filesDir: File, entryId: String, reason: LocalVideoRemoval) {
         val stores = when (reason) {
-            LocalVideoRemoval.DISCARDED -> LOCAL_STORES + CLOUD_STORES
-            LocalVideoRemoval.RETIRED -> LOCAL_STORES
+            LocalVideoRemoval.DISCARDED -> VIDEO_STORES + TRACK_STORES
+            LocalVideoRemoval.VIDEO_ONLY -> VIDEO_STORES
         }
         for (store in stores) {
             val base = File(filesDir, store)

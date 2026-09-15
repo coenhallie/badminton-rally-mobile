@@ -51,8 +51,43 @@ struct MatchesList: View {
     /// and `AnalyticsListView`'s own note on the same trap.
     @State private var localClipCounts: [String: Int] = [:]
     @State private var storedTrackIds: Set<String> = []
+    /// The video the coach has asked to remove, held until they confirm.
+    ///
+    /// androidApp has had a confirm dialog on this since it shipped; iOS
+    /// removed on the tap. That was survivable while removal only cost the
+    /// footage, and is not now that it also drops the skeleton - a destructive
+    /// action with a consequence worth stating needs a beat to read it.
+    @State private var removeTarget: LocalVideoEntry? = nil
 
     var body: some View {
+        // Split from `listBody` rather than chained onto it: the existing chain
+        // was already at the type-checker's limit, and one more modifier tipped
+        // it into "unable to type-check this expression in reasonable time".
+        listBody.alert(
+            "Remove video?",
+            isPresented: Binding(
+                get: { removeTarget != nil },
+                set: { if !$0 { removeTarget = nil } }
+            ),
+            presenting: removeTarget
+        ) { entry in
+            Button("Remove", role: .destructive) {
+                intake.remove(entry: entry)
+                thumbnails.evict(id: entry.id)
+                removeTarget = nil
+            }
+            Button("Cancel", role: .cancel) { removeTarget = nil }
+        } message: { entry in
+            // The shared wording, so both phones say the same thing about what
+            // a removal costs. `storedTrackIds` already answers "is there an
+            // analysis to lose" for this list, with no extra disk read.
+            Text(AnalysisCapabilityKt.videoRemovalMessage(
+                hasAnalysis: storedTrackIds.contains(entry.id)
+            ))
+        }
+    }
+
+    private var listBody: some View {
         content(model)
         .task { await model.start() }
         .task {
@@ -162,10 +197,7 @@ struct MatchesList: View {
                             device: localAnalysis?.state(for: entry.id) ?? .idle,
                             onTap: { onLocalPlayer(LocalPlayerRoute(entryId: entry.id)) },
                             onAnalyze: { analyzeAction(entry) },
-                            onRemove: {
-                                intake.remove(entry: entry)
-                                thumbnails.evict(id: entry.id)
-                            },
+                            onRemove: { removeTarget = entry },
                             onEditDetails: {
                                 detailsTarget = MatchDetailsTarget(entry: entry, autoOpened: false)
                             },
@@ -185,8 +217,7 @@ struct MatchesList: View {
                                 device: localAnalysis?.state(for: entry.id) ?? .idle
                             ) {
                                 Button(role: .destructive) {
-                                    intake.remove(entry: entry)
-                                    thumbnails.evict(id: entry.id)
+                                    removeTarget = entry
                                 } label: {
                                     Label("Remove", systemImage: "trash")
                                 }

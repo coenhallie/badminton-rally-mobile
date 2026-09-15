@@ -71,8 +71,13 @@ class LocalVideoListViewModel(
         localVideos.entries.value.map { it.toRow(null, deviceStates.value[it.id] ?: LocalAnalysisState.Idle) },
     )
 
+    /**
+     * The drawer's "Remove video": the coach wants the space back, not the
+     * match gone. `freeVideo` keeps the tracks, so the heatmap and the base
+     * position survive - see [com.badmintontracker.shared.localvideo.LocalVideoRemoval].
+     */
     fun remove(id: String) {
-        localVideos.remove(id)
+        localVideos.freeVideo(id)
         localAnnotations.removeAllFor(id)
     }
 

@@ -43,21 +43,24 @@ enum AnalysisFiles {
         return url
     }
 
-    /// What this device's own analysis wrote. Always removed: the entry is
-    /// leaving either way, and a local track is only reachable through it.
-    private static let localStores = [
-        "player-tracks", "skeletons", "local-clips", "local-sources",
+    /// What goes whatever the reason: the footage, the re-encoded clips beside
+    /// it, and both skeletons.
+    ///
+    /// The skeletons are here rather than with the tracks because a skeleton is
+    /// drawn OVER playback. With the video gone it is an artifact nothing can
+    /// display - roughly 11MB of it for a 30-minute match - so keeping one past
+    /// its video would be storage held for a panel that can never open.
+    private static let videoStores = [
+        "local-clips", "local-sources", "skeletons", "cloud-skeletons",
     ]
 
-    /// What a cloud analysis wrote for this entry.
+    /// The player tracks, local and cloud.
     ///
-    /// Removed on a discard and kept on a retire. A cloud artifact costs a
-    /// re-download rather than half an hour of device time, which is why it was
-    /// once safe to treat it like the local ones - but nothing re-downloads it
-    /// today (`CloudPoseCoordinator.install` has one caller, inside the upload
-    /// pipeline), so deleting it on the pipeline's own success path loses it
-    /// for good.
-    private static let cloudStores = ["cloud-tracks", "cloud-skeletons"]
+    /// Kept when the coach is only freeing the footage. The heatmap and the
+    /// base position are computed entirely from these and need no video at all,
+    /// which is what `AnalyticsRowState.readyNoVideo` exists for - so taking
+    /// them here would turn "get my storage back" into "lose my analysis".
+    private static let trackStores = ["player-tracks", "cloud-tracks"]
 
     /// Removes what this video left on disk, as much of it as `reason` allows.
     ///
@@ -68,7 +71,7 @@ enum AnalysisFiles {
     /// Mirrors Android's `AnalysisFiles.deleteAll`, over the same six names and
     /// the same rule.
     static func deleteAll(entryId: String, reason: LocalVideoRemoval) {
-        let stores = reason == .discarded ? localStores + cloudStores : localStores
+        let stores = reason == .discarded ? videoStores + trackStores : videoStores
         for store in stores {
             let base = directory.appendingPathComponent(store, isDirectory: true)
             // Two shapes: a directory named for the entry (clips) and a file

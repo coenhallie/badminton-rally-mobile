@@ -54,6 +54,24 @@ val panelCapabilities: List<PanelCapability> = listOf(
 )
 
 /**
+ * What the coach is told before removing a video that has been analysed.
+ *
+ * Only the skeleton actually needs the footage. The heatmap and the base
+ * position are computed entirely from the stored track, so they survive - and
+ * saying so is the difference between "I free some space" and "I lose my
+ * analysis", which are very different decisions.
+ *
+ * @param hasAnalysis false for a video nothing has analysed yet, where the
+ *   whole paragraph would describe something that does not exist.
+ */
+fun videoRemovalMessage(hasAnalysis: Boolean): String = if (hasAnalysis) {
+    "Frees the video and the cut clips. The skeleton is drawn over the video, so it goes too. " +
+        "The heatmap and base position stay - they read the stored track."
+} else {
+    "Remove this video and its notes from the app? The video itself stays on your phone."
+}
+
+/**
  * The line above the metric picker.
  *
  * Names the device run, because the picker only drives that one: the cloud

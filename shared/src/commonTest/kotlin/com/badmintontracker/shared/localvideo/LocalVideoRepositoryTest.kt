@@ -114,10 +114,10 @@ class LocalVideoRepositoryTest {
     }
 
     @Test
-    fun retire_reports_the_entry_as_retired_and_still_releases_the_file() {
-        // The pipeline tidying up after itself. The footage goes - it lives in
-        // the cloud now - but a cloud analysis keyed to this id must survive,
-        // which is what the reason lets the cleanup hook tell apart.
+    fun freeVideo_reports_the_entry_as_video_only_and_still_releases_the_file() {
+        // The coach wants the space back. The footage goes, but the tracks must
+        // survive so the heatmap and base position keep working, which is what
+        // the reason lets the cleanup hook tell apart.
         val released = mutableListOf<String>()
         val reasons = mutableListOf<LocalVideoRemoval>()
         val repo = LocalVideoRepository(
@@ -126,20 +126,20 @@ class LocalVideoRepositoryTest {
         )
         repo.add(entry("a"))
 
-        repo.retire("a")
+        repo.freeVideo("a")
 
         repo.get("a").shouldBeNull()
         released shouldBe listOf("a")
-        reasons shouldBe listOf(LocalVideoRemoval.RETIRED)
+        reasons shouldBe listOf(LocalVideoRemoval.VIDEO_ONLY)
     }
 
     @Test
-    fun retiring_an_unknown_id_does_not_fire_the_cleanup_hook() {
+    fun freeing_an_unknown_id_does_not_fire_the_cleanup_hook() {
         val removed = mutableListOf<LocalVideoEntry>()
         val repo = LocalVideoRepository(MapSettings(), onRemoved = { e, _ -> removed += e })
         repo.add(entry("a"))
 
-        repo.retire("nope")
+        repo.freeVideo("nope")
 
         removed shouldBe emptyList()
     }
