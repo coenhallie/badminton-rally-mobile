@@ -21,6 +21,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
@@ -200,10 +201,19 @@ fun AuthGate(
             // with that; the recomposition happens before the effect is
             // consulted. Mapping to the finished set and dropping duplicates
             // upstream means the body below runs twice per run instead.
-            LaunchedEffect(localAnalysis, nav) {
+            LaunchedEffect(localAnalysis, coordinator, nav) {
                 var seen = emptySet<String>()
-                localAnalysis.state
-                    .map { states -> states.filterValues { it is LocalAnalysisState.Done }.keys }
+                // Both pipelines, not just the device one. A cloud run ends by
+                // retiring its entry, so the coach watching Home saw the row
+                // vanish and nothing else - no result, and nothing saying where
+                // it had gone. The two sets are unioned rather than announced
+                // separately so one rule decides, and a video analysed both
+                // ways announces once.
+                combine(
+                    localAnalysis.state
+                        .map { states -> states.filterValues { it is LocalAnalysisState.Done }.keys },
+                    coordinator.finishedRuns,
+                ) { device, cloud -> device + cloud }
                     .distinctUntilChanged()
                     .collect { finished ->
                         val announcement = announceFinishedRuns(

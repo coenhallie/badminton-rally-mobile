@@ -276,6 +276,37 @@ class AnalyzeCoordinatorTest {
     }
 
     @Test
+    fun a_finished_run_announces_itself_so_the_coach_can_be_taken_to_it() = runTest {
+        // A device run that lands pulls the coach to Analytics; a cloud run
+        // landed in silence, and the entry it had been watching simply vanished
+        // from the list. Same rule, same screen - announceFinishedRuns decides
+        // whether to navigate, this only says a run finished.
+        localVideos.add(entry())
+        clips.clips.value = listOf(clipFor("e1"))
+        val c = coordinator()
+        c.finishedRuns.value shouldBe emptySet()
+
+        c.startAnalysis("e1", keypoints())
+        runCurrent()
+
+        c.finishedRuns.value shouldBe setOf("e1")
+    }
+
+    @Test
+    fun a_failed_run_announces_nothing() = runTest {
+        // There is nothing to take the coach to. The row's own failure message
+        // is where a failure is reported.
+        localVideos.add(entry())
+        videos.processingUpdates = listOf(ProcessingUpdate("failed_phase1", null, "no court detected"))
+        val c = coordinator()
+
+        c.startAnalysis("e1", keypoints())
+        runCurrent()
+
+        c.finishedRuns.value shouldBe emptySet()
+    }
+
+    @Test
     fun a_successful_analysis_retires_the_entry_rather_than_discarding_it() = runTest {
         val reasons = mutableListOf<LocalVideoRemoval>()
         val registry = LocalVideoRepository(MapSettings(), onRemoved = { _, reason -> reasons += reason })

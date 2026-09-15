@@ -199,6 +199,16 @@ struct HomeView: View {
                 )
             }
         }
+        // A CLOUD run that lands does the same. It ends by retiring its entry,
+        // so without this the coach watching Home saw the row vanish and
+        // nothing else - no result, and nothing saying where it had gone. The
+        // two sets are unioned into one announcement so a video analysed both
+        // ways announces once. Mirrors androidApp's `combine` above its NavHost.
+        .task {
+            for await finishedInCloud in analyze.finishedRuns {
+                announce(cloudFinished: Set(finishedInCloud))
+            }
+        }
         // A device run that lands takes the coach to the Analytics list.
         // androidApp does the same from above its NavHost; `announceFinishedRuns`
         // in shared is the rule both follow, and a change to when this fires is a
@@ -212,16 +222,7 @@ struct HomeView: View {
         // finished ones back out does need `states`, but a read inside the
         // action closure is not tracked.
         .onChange(of: localAnalysis?.settledRuns) { _, _ in
-            let finished = (localAnalysis?.states ?? [:]).compactMap { id, state -> String? in
-                if case .done = state { return id } else { return nil }
-            }
-            let announcement = RunAnnouncementKt.announceFinishedRuns(
-                finished: Set(finished),
-                seen: announcedRuns,
-                onHome: isOnHome
-            )
-            announcedRuns = announcement.seen
-            if announcement.openAnalytics { showAnalytics = true }
+            announce(cloudFinished: Set(analyze.finishedRuns.value as? [String] ?? []))
         }
         // Inside the stack, because every destination that carries the indicator
         // is inside it and the routes this dismisses are Home's.
@@ -379,6 +380,27 @@ struct HomeView: View {
     /// for the reason this dismisses every route: the indicator is reachable
     /// from any of them, and without this a tap from two screens deep would
     /// silently do nothing.
+    /// One announcement for both pipelines.
+    ///
+    /// `announceFinishedRuns` in shared owns the rule - it gates on being on
+    /// Home and keeps its own seen set, so a run that landed while the coach was
+    /// elsewhere does not ambush them later. This only gathers the two sets of
+    /// finished ids. Reading `localAnalysis?.states` here rather than in a body
+    /// is deliberate: a tracked read would redraw Home at the progress bar's
+    /// rate. See the `settledRuns` comment above.
+    private func announce(cloudFinished: Set<String>) {
+        let onDevice = (localAnalysis?.states ?? [:]).compactMap { id, state -> String? in
+            if case .done = state { return id } else { return nil }
+        }
+        let announcement = RunAnnouncementKt.announceFinishedRuns(
+            finished: Set(onDevice).union(cloudFinished),
+            seen: announcedRuns,
+            onHome: isOnHome
+        )
+        announcedRuns = announcement.seen
+        if announcement.openAnalytics { showAnalytics = true }
+    }
+
     private func goToMatches() {
         courtMarkingRoute = nil
         matchRoute = nil

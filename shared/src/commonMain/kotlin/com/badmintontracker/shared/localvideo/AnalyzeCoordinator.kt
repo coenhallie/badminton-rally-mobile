@@ -63,6 +63,26 @@ class AnalyzeCoordinator(
     private val _hasActiveUpload = MutableStateFlow(false)
     val hasActiveUpload: StateFlow<Boolean> = _hasActiveUpload.asStateFlow()
 
+    private val _finishedRuns = MutableStateFlow<Set<String>>(emptySet())
+
+    /**
+     * Cloud runs that have finished successfully, for the announcement rule a
+     * device run already goes through.
+     *
+     * The device runner is asked the same question through its own states, and
+     * `announceFinishedRuns` decides whether finishing should pull the coach to
+     * Analytics. A cloud run had no way to answer it at all: it ends by
+     * retiring its entry, so the only thing the list could observe was a row
+     * disappearing. The coach was left on Home with no result and nothing
+     * saying where it went.
+     *
+     * Accumulates rather than being assigned, because the entry is gone by the
+     * time this is set and there is no later state to clear it from. That is
+     * the shape `announceFinishedRuns` already expects: it keeps its own seen
+     * set and announces a run once.
+     */
+    val finishedRuns: StateFlow<Set<String>> = _finishedRuns.asStateFlow()
+
     // Guarded by itself: mutated from concurrent pipeline coroutines on scope.
     private val activeLock = SyncLock()
     private val active = mutableSetOf<String>()
@@ -220,6 +240,11 @@ class AnalyzeCoordinator(
         // away mid-run would otherwise leave the finished artifact with no
         // entry to land against.
         measureMovement(entryId)
+
+        // Before the branch below, because that branch retires the entry and
+        // the announcement is about the RUN, not about whether its video
+        // happened to survive.
+        _finishedRuns.update { it + entryId }
 
         if (localAnnotations.hasAnnotations(entryId)) {
             // Keep annotated videos so the notes survive; mark them Analyzed.

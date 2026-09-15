@@ -60,6 +60,23 @@ class CloudPoseCoordinatorTest {
     )
 
     @Test
+    fun a_video_with_no_artifact_says_so_in_the_log() = runTest {
+        // The silence that cost a logcat pull to diagnose. install() returning
+        // false is an ORDINARY outcome, so nothing threw and nothing logged -
+        // and a coach who waited through Phase 2 got clips, no heatmap, and no
+        // line anywhere saying whether the fetch broke, the worker published
+        // nothing, or the app never asked. A run that produces nothing has to
+        // say which nothing it produced.
+        val lines = mutableListOf<String>()
+
+        val result = CloudPoseCoordinator(FakeRepository(artifact = null), log = { lines += it })
+            .install("v1") {}
+
+        result.getOrNull() shouldBe false
+        lines.any { it.contains("no pose artifact") } shouldBe true
+    }
+
+    @Test
     fun a_video_the_cloud_has_no_artifact_for_installs_nothing() = runTest {
         // The ordinary case for every video analysed before this shipped, and
         // for every video whose Phase 2 artifact upload failed - which is

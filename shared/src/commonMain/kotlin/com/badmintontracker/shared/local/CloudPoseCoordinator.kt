@@ -39,7 +39,17 @@ class CloudPoseCoordinator(
         // as a parameter: a match uploaded from another of this coach's
         // phones has no LocalVideoEntry here and so no local copy of them,
         // and that match is exactly what READY_NO_VIDEO exists for.
-        val artifact = repository.artifact(videoId).getOrThrow() ?: return@runCatching false
+        val artifact = repository.artifact(videoId).getOrThrow()
+            ?: run {
+                // Said out loud, because this is the one outcome that is
+                // neither a success nor a failure and so is reported nowhere
+                // else. A coach who waited through Phase 2 and got clips but no
+                // heatmap is looking at exactly this line, and without it the
+                // only way to tell "the worker published nothing" from "the app
+                // never asked" is a logcat pull and a reading of this file.
+                log("video $videoId: no pose artifact in results_meta, nothing to install")
+                return@runCatching false
+            }
         log("cloud pose: ${artifact.frameCount} frames at ${artifact.storagePath}")
 
         // Clamped below 1.0 by the repository: completion is this
