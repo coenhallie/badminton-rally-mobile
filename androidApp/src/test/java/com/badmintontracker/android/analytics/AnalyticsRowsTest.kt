@@ -307,6 +307,45 @@ class AnalyticsRowsTest {
     }
 
     @Test
+    fun a_cloud_analysed_match_whose_video_has_gone_still_opens() {
+        // What a finished cloud run leaves behind: the entry is retired, the
+        // footage with it, and the cloud track stays on disk. The row must open
+        // the heatmap the coach waited for - it used to come out inert, with
+        // "Not on this phone" under a match that had just been analysed.
+        val row = rows(
+            owned = listOf(MatchRow.Video(videoMatch("v1"))),
+            tracks = setOf("v1"),
+        ).single()
+
+        row.state shouldBe AnalyticsRowState.READY_NO_VIDEO
+        // Null here is what made the row unopenable even once the state was
+        // right: AnalyticsScreen navigates on the id.
+        row.entryId shouldBe "v1"
+    }
+
+    @Test
+    fun a_shared_match_with_a_track_opens_too() {
+        // Same story for a match another coach shared: no local entry here
+        // either, and the panels read only the stored track.
+        val row = rows(shared = listOf(videoMatch("v1")), tracks = setOf("v1")).single()
+
+        row.state shouldBe AnalyticsRowState.READY_NO_VIDEO
+        row.entryId shouldBe "v1"
+    }
+
+    @Test
+    fun a_match_with_neither_a_video_nor_a_track_stays_inert_and_idless() {
+        // The guard on the line above: only a row with something to show earns
+        // an id. Two matches that are merely both absent must not collapse into
+        // each other in the dedupe, which is what a shared non-null id would do
+        // if it were ever the same for two rows.
+        val row = rows(owned = listOf(MatchRow.Video(videoMatch("v1")))).single()
+
+        row.state shouldBe AnalyticsRowState.NOT_ON_DEVICE
+        row.entryId shouldBe null
+    }
+
+    @Test
     fun a_shared_match_is_never_on_this_phone() {
         val row = rows(shared = listOf(videoMatch("v1"))).single()
         row.group shouldBe AnalyticsGroup.SHARED

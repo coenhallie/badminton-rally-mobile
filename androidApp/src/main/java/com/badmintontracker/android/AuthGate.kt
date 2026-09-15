@@ -43,6 +43,7 @@ import com.badmintontracker.android.analytics.VideoTitle
 import com.badmintontracker.android.analytics.AnalyticsScreen
 import com.badmintontracker.android.analytics.buildAnalyticsRows
 import com.badmintontracker.android.cliplist.ClipListViewModel
+import com.badmintontracker.android.cliplist.MatchRow
 import com.badmintontracker.android.cliplist.MatchSummaryViewModel
 import com.badmintontracker.android.home.HomeScreen
 import com.badmintontracker.android.match.MatchScreen
@@ -390,8 +391,22 @@ fun AuthGate(
                     // fractional progress), and only a run settling into Done can
                     // change the answer.
                     val doneEntryIds = liveAnalysisStates.filterValues { it is LocalAnalysisState.Done }.keys
-                    val storedTrackIds = remember(localEntries, doneEntryIds) {
-                        localEntries.mapNotNull { it.id.takeIf { id -> localAnalysis.hasStoredTrack(id) } }.toSet()
+                    // Every id the list can draw a row for, not just the ids
+                    // with a local entry. A finished cloud run retires its
+                    // entry and keeps its track, so asking only about entries
+                    // made that track invisible and the match came out inert -
+                    // which is READY_NO_VIDEO's whole case.
+                    val trackCandidateIds = remember(localEntries, clipListState) {
+                        buildSet {
+                            localEntries.forEach { add(it.id) }
+                            clipListState.ownedRows.forEach { row ->
+                                if (row is MatchRow.Video) add(row.match.videoId)
+                            }
+                            clipListState.sharedMatches.forEach { add(it.videoId) }
+                        }
+                    }
+                    val storedTrackIds = remember(trackCandidateIds, doneEntryIds) {
+                        trackCandidateIds.filterTo(mutableSetOf()) { localAnalysis.hasStoredTrack(it) }
                     }
                     val rows = buildAnalyticsRows(
                         standaloneLocalRows = standaloneLocalRows,

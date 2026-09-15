@@ -91,7 +91,7 @@ struct AnalyticsListView: View {
             // fires on a CHANGE, and by the time this view appears the entries
             // are usually already loaded, so the first render read an empty set
             // and every analysed match showed as never analysed.
-            await refreshStoredTracks(model.localEntries.map(\.id))
+            await refreshStoredTracks(trackCandidateIds)
         }
         .task {
             for await map in analyze.progress {
@@ -99,7 +99,7 @@ struct AnalyticsListView: View {
             }
         }
         .refreshable { await model.refresh() }
-        .onChange(of: model.localEntries.map(\.id)) { _, ids in
+        .onChange(of: trackCandidateIds) { _, ids in
             Task { await refreshStoredTracks(ids) }
         }
         // Also when a run settles: a track appears on disk without the entry
@@ -111,7 +111,7 @@ struct AnalyticsListView: View {
         // forty reads per redraw that `storedTrackIds` exists to avoid. A set of
         // ids moves exactly on the transitions that can write a track.
         .onChange(of: settledRuns) { _, _ in
-            Task { await refreshStoredTracks(model.localEntries.map(\.id)) }
+            Task { await refreshStoredTracks(trackCandidateIds) }
         }
         .navigationDestination(item: $courtMarkingRoute) { route in
             CourtMarkingView(
@@ -447,6 +447,19 @@ private extension AnalyticsListView {
     /// `nonisolated` so it need not be. The list redraws when the set lands,
     /// one hop later. What must not happen is calling it per row or per
     /// progress tick; see `settledRuns`.
+    /// Every id the list can draw a row for, not just the ids with a local
+    /// entry.
+    ///
+    /// A finished cloud run retires its entry and keeps its track, so asking
+    /// only about entries made that track invisible and the match came out
+    /// inert. Mirrors androidApp's `trackCandidateIds`.
+    var trackCandidateIds: [String] {
+        var ids = model.localEntries.map(\.id)
+        ids.append(contentsOf: model.ownedRows.compactMap(\.videoId))
+        ids.append(contentsOf: model.shared.map(\.videoId))
+        return Array(Set(ids)).sorted()
+    }
+
     func refreshStoredTracks(_ ids: [String]) async {
         guard let localAnalysis else {
             storedTrackIds = []

@@ -233,7 +233,11 @@ func buildAnalyticsRows(
         let entry = entryId.flatMap { id in localEntries.first { $0.id == id } }
         let state = analyticsRowState(
             hasLocalEntry: entry != nil,
-            hasStoredTrack: entry.map { storedTrackIds.contains($0.id) } ?? false
+            // Asked of the id, not of the entry. A finished cloud run retires
+            // its entry and keeps its track, so gating this on a local entry
+            // made that track invisible and the match came out inert - which is
+            // exactly the case `readyNoVideo` exists for.
+            hasStoredTrack: entryId.map { storedTrackIds.contains($0) } ?? false
         )
         var affordance = AnalyseAffordance.ready
         // Only an analysable row reads liveness. A ready row keeps its dot while
@@ -252,9 +256,11 @@ func buildAnalyticsRows(
         }
         return AnalyticsRow(
             key: key,
-            // Not on this phone and inert either way once there is no entry, so
-            // there is nothing for a nil id to act on.
-            entryId: entry?.id,
+            // The id survives without a local entry when there is a stored
+            // track, because that row OPENS. Nil only when the row is inert, so
+            // two matches that are merely both absent still keep their own rows
+            // rather than collapsing onto a shared id.
+            entryId: entry?.id ?? (state == .readyNoVideo ? entryId : nil),
             group: group,
             title: title,
             subtitle: subtitle,

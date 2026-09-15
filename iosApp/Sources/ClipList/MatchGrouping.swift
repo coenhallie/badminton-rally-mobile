@@ -109,6 +109,17 @@ enum MatchRow: Identifiable {
         }
     }
 
+    /// The video this row is about, if it is about one.
+    ///
+    /// A score row has none until a video is attached, and `AnalyticsRows`
+    /// pairs those through the local entry that claims the log instead.
+    var videoId: String? {
+        switch self {
+        case .video(let match):   return match.videoId
+        case .score:              return nil
+        }
+    }
+
     var sortAtEpochMs: Int64 {
         switch self {
         case .video(let match):   return match.latestCreatedAtMillis

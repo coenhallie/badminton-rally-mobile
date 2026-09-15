@@ -79,18 +79,20 @@ final class AnalyticsRowsTests: XCTestCase {
         localEntries: [LocalVideoEntry] = [],
         ownedRows: [MatchRow] = [],
         sharedMatches: [MatchSummary] = [],
-        progress: [String: AnalyzeProgress] = [:]
+        progress: [String: AnalyzeProgress] = [:],
+        tracks: Set<String> = []
     ) -> [AnalyticsRow] {
         buildAnalyticsRows(
             localEntries: localEntries,
             ownedRows: ownedRows,
             sharedMatches: sharedMatches,
-            progressByEntryId: progress
+            progressByEntryId: progress,
+            storedTrackIds: tracks
         )
     }
 
-    /// Rows built by hand, for the one state `buildAnalyticsRows` cannot produce
-    /// on this platform yet.
+    /// Rows built by hand, for the legend cases that need a state without
+    /// building the whole list that would produce it.
     private func row(_ state: AnalyticsRowState, key: String = "k") -> AnalyticsRow {
         AnalyticsRow(
             key: key, entryId: state == .notOnDevice ? nil : "e-\(key)",
@@ -196,6 +198,38 @@ final class AnalyticsRowsTests: XCTestCase {
 
     /// Every inert row has a nil entry id, so the dedupe key must fall back to
     /// the row's own key or two unrelated absent matches would collapse into one.
+    func testACloudAnalysedMatchWhoseVideoHasGoneStillOpens() {
+        // What a finished cloud run leaves behind: the entry is retired, the
+        // footage with it, and the cloud track stays on disk. The row must open
+        // the heatmap the coach waited for - it used to come out inert, with
+        // "Not on this phone" under a match that had just been analysed.
+        let built = rows(ownedRows: [.video(videoMatch("v1"))], tracks: ["v1"])
+
+        XCTAssertEqual(built.count, 1)
+        XCTAssertEqual(built[0].state, .readyNoVideo)
+        // Nil here is what made the row unopenable even once the state was
+        // right: the list navigates on the id.
+        XCTAssertEqual(built[0].entryId, "v1")
+    }
+
+    func testASharedMatchWithATrackOpensToo() {
+        // Same story for a match another coach shared: no local entry here
+        // either, and the panels read only the stored track.
+        let built = rows(sharedMatches: [videoMatch("v1")], tracks: ["v1"])
+
+        XCTAssertEqual(built[0].state, .readyNoVideo)
+        XCTAssertEqual(built[0].entryId, "v1")
+    }
+
+    func testAMatchWithNeitherAVideoNorATrackStaysInertAndIdless() {
+        // The guard on the line above: only a row with something to show earns
+        // an id, so two matches that are merely both absent keep their own rows.
+        let built = rows(ownedRows: [.video(videoMatch("v1"))])
+
+        XCTAssertEqual(built[0].state, .notOnDevice)
+        XCTAssertNil(built[0].entryId)
+    }
+
     func testTwoMatchesThatAreBothAbsentDoNotCollapseIntoOne() {
         let built = rows(sharedMatches: [videoMatch("v1"), videoMatch("v2")])
         XCTAssertEqual(built.count, 2)

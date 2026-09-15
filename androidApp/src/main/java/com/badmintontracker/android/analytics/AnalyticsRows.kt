@@ -150,9 +150,12 @@ internal fun buildAnalyticsRows(
         }
         return AnalyticsRow(
             key = key,
-            // Not on this phone and inert either way once there is no entry,
-            // so there is nothing for a null id to navigate to.
-            entryId = entry?.id,
+            // The id survives without a local entry when there is a stored
+            // track, because that row OPENS: a finished cloud run retires the
+            // entry and leaves the track, and AnalyticsScreen navigates on this
+            // id. Null only when the row is inert, so the dedupe below still
+            // falls back to the key for rows with nothing to show.
+            entryId = entry?.id ?: entryId.takeIf { hasStoredTrack },
             group = group,
             title = title,
             subtitle = subtitle,
