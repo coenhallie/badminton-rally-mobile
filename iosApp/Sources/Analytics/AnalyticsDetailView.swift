@@ -121,6 +121,9 @@ struct AnalyticsDetailView: View {
     let rally: RallyApp
     let localAnalysis: LocalAnalysisRunner?
     let entryId: String
+    /// The list's name for this match, for when there is no entry to read one
+    /// from - which is every cloud-analysed match, since the run retires it.
+    var fallbackTitle: String? = nil
 
     @State private var chosen: AnalyticsPanel = .heatmap
 
@@ -245,7 +248,7 @@ struct AnalyticsDetailView: View {
                 VStack(spacing: 0) {
                     // The list's own naming: the coach's title, else the file
                     // name.
-                    Text(entry?.title ?? entry?.displayName ?? "Analysis")
+                    Text(entry?.title ?? entry?.displayName ?? fallbackTitle ?? "Analysis")
                         .shuttlType(ShuttlType.titleMedium)
                         .foregroundStyle(Shuttl.textHeading)
                         .lineLimit(1)

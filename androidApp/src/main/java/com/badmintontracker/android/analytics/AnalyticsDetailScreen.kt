@@ -111,6 +111,11 @@ fun AnalyticsDetailScreen(
      * never appear for one, however good its track.
      */
     cloudClips: List<RallyClip>,
+    /**
+     * The list's name for this match, for when there is no entry to read one
+     * from - which is every cloud-analysed match, since the run retires it.
+     */
+    fallbackTitle: String? = null,
     onBack: () -> Unit,
 ) {
     val hasSkeleton = remember(entryId) { localAnalysis.hasStoredSkeleton(entryId) }
@@ -144,7 +149,7 @@ fun AnalyticsDetailScreen(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { VideoTitle(entry = entry, fallback = "Analysis") },
+                title = { VideoTitle(entry = entry, fallback = fallbackTitle ?: "Analysis") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")

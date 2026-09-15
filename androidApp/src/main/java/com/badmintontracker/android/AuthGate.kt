@@ -420,7 +420,9 @@ fun AuthGate(
 
                     AnalyticsScreen(
                         rows = rows,
-                        onOpenDetail = { row -> row.entryId?.let { nav.navigate(Route.AnalyticsDetail(it)) } },
+                        onOpenDetail = { row ->
+                            row.entryId?.let { nav.navigate(Route.AnalyticsDetail(it, row.title)) }
+                        },
                         onAnalyse = { row ->
                             row.entryId
                                 ?.let { id -> localEntries.firstOrNull { it.id == id } }
@@ -728,6 +730,7 @@ fun AuthGate(
                         playbackPrefs = rally.playbackPrefs,
                         racketArmPrefs = rally.racketArmPrefs,
                         cloudClips = cloudClips,
+                        fallbackTitle = args.title,
                         onBack = { nav.popBackStack() },
                     )
                 }

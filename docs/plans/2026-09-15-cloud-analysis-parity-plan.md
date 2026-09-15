@@ -58,12 +58,12 @@ Reproduced by `scratchpad/repro/ZzCloudArtifactRepro.kt`, which goes in as the f
 - Modify `iosApp/Sources/LocalAnalysis/AnalysisFiles.swift`
 - Test `shared/.../localvideo/AnalyzeCoordinatorTest.kt`, `LocalVideoRepositoryTest.kt`, `iosApp/Tests/LocalVideoCleanupWiringTests.swift`
 
-- [ ] Step 1: failing tests - a retired entry keeps its cloud stores; a discarded one does not; the video is released either way
-- [ ] Step 2: watch them fail
-- [ ] Step 3: `LocalVideoRemoval { DISCARDED, RETIRED }`; `remove(id)` and `retire(id)`; hook takes both
-- [ ] Step 4: `AnalysisFiles.deleteAll(reason)` - `RETIRED` skips `cloud-tracks` and `cloud-skeletons`
-- [ ] Step 5: `AnalyzeCoordinator` success path calls `retire`
-- [ ] Step 6: run everything, commit
+- [x] Step 1: failing tests - a retired entry keeps its cloud stores; a discarded one does not; the video is released either way
+- [x] Step 2: watch them fail
+- [x] Step 3: `LocalVideoRemoval { DISCARDED, RETIRED }`; `remove(id)` and `retire(id)`; hook takes both
+- [x] Step 4: `AnalysisFiles.deleteAll(reason)` - `RETIRED` skips `cloud-tracks` and `cloud-skeletons`
+- [x] Step 5: `AnalyzeCoordinator` success path calls `retire`
+- [x] Step 6: run everything, commit
 
 ## Task 2: One resolved source per entry (defects 4 and, with Task 3, 2)
 
@@ -73,10 +73,10 @@ Reproduced by `scratchpad/repro/ZzCloudArtifactRepro.kt`, which goes in as the f
 - Mirror in `iosApp/Sources/LocalAnalysis/PlayerTrackStore.swift` and the iOS source resolution
 - Test `androidApp/.../localanalysis/HeatmapSourceTest.kt` and its iOS twin
 
-- [ ] Step 1: failing test - a stored CLOUD track outranks an in-memory `Done`; a stored LOCAL track does not
-- [ ] Step 2: watch it fail
-- [ ] Step 3: implement on both platforms
-- [ ] Step 4: run everything, commit
+- [x] Step 1: failing test - a stored CLOUD track outranks an in-memory `Done`; a stored LOCAL track does not
+- [x] Step 2: watch it fail
+- [x] Step 3: implement on both platforms
+- [x] Step 4: run everything, commit
 
 ## Task 3: Base for a cloud run (defect 2)
 
@@ -86,10 +86,10 @@ Reproduced by `scratchpad/repro/ZzCloudArtifactRepro.kt`, which goes in as the f
 - Modify `iosApp/Sources/Analytics/AnalyticsDetailView.swift` and `BasePositionPanel.swift`
 - Test a new `shared/.../analytics/RallyWindowsTest.kt` plus the two detail-screen tests
 
-- [ ] Step 1: failing test - a video with cloud clips and a cloud track offers Base; the windows are 1-based and carry the clips' bounds
-- [ ] Step 2: watch it fail
-- [ ] Step 3: implement; windows follow the resolved source from Task 2
-- [ ] Step 4: run everything, commit
+- [x] Step 1: failing test - a video with cloud clips and a cloud track offers Base; the windows are 1-based and carry the clips' bounds
+- [x] Step 2: watch it fail
+- [x] Step 3: implement; windows follow the resolved source from Task 2
+- [x] Step 4: run everything, commit
 
 ## Task 4: The row is reachable (defect 3)
 
@@ -101,19 +101,19 @@ Reproduced by `scratchpad/repro/ZzCloudRepro.kt`.
 - Modify `iosApp/Sources/Analytics/AnalyticsRows.swift` and `AnalyticsListView.swift` - the same two
 - Test `androidApp/.../analytics/AnalyticsRowsTest.kt` and `iosApp/Tests/AnalyticsRowsTests.swift`
 
-- [ ] Step 1: failing tests - a match with a stored track and no entry is `READY_NO_VIDEO`, tappable, and carries its video id; the owned/shared dedupe is unchanged
-- [ ] Step 2: watch them fail
-- [ ] Step 3: implement on both platforms
-- [ ] Step 4: check the `distinctBy` behaviour against `two_matches_that_are_both_off_this_phone_keep_their_own_rows`
-- [ ] Step 5: run everything, commit
+- [x] Step 1: failing tests - a match with a stored track and no entry is `READY_NO_VIDEO`, tappable, and carries its video id; the owned/shared dedupe is unchanged
+- [x] Step 2: watch them fail
+- [x] Step 3: implement on both platforms
+- [x] Step 4: check the `distinctBy` behaviour against `two_matches_that_are_both_off_this_phone_keep_their_own_rows`
+- [x] Step 5: run everything, commit
 
-## Task 5: Say what is true (copy)
+## Task 5: Say what is true (copy) - DONE
 
 `panelCapabilities` and `cloudNotes` are audited against the four fixes. `cloudNotes[2]` ("works even on a phone that never held the video") stays only if Task 4 makes it so for a match this phone uploaded; a match uploaded from ANOTHER phone still has no producer, because `CloudPoseCoordinator.install` has one caller inside the upload pipeline. Either wire that or soften the line - do not leave it claiming something with no code behind it.
 
-- [ ] Step 1: decide and implement
-- [ ] Step 2: `AnalysisCapabilityTest` still pins the table to `AnalyticsPanel.entries`
-- [ ] Step 3: commit
+- [x] Step 1: `cloudNotes[2]` replaced. The old line claimed a heatmap on a phone that never held the video; nothing fetches an artifact except the phone that uploaded, so it described a feature. The new line says the video leaves and what that costs, which is the promise a coach acts on before starting.
+- [x] Step 2: `AnalysisCapabilityTest` still pins the table to `AnalyticsPanel.entries`
+- [x] Step 3: commit
 
 ## Task 6: End to end, on a real match - NEEDS THE OWNER
 

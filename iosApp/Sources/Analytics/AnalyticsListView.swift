@@ -121,7 +121,8 @@ struct AnalyticsListView: View {
         }
         .navigationDestination(item: $detailRoute) { route in
             AnalyticsDetailView(
-                rally: rally, localAnalysis: localAnalysis, entryId: route.entryId
+                rally: rally, localAnalysis: localAnalysis, entryId: route.entryId,
+                fallbackTitle: route.title
             )
         }
     }
@@ -285,7 +286,7 @@ struct AnalyticsListView: View {
         .onTapGesture {
             guard AnalyticsRowStateKt.opensAnalytics(state: row.state),
                   let entryId = row.entryId else { return }
-            detailRoute = AnalyticsDetailRoute(entryId: entryId)
+            detailRoute = AnalyticsDetailRoute(entryId: entryId, title: row.title)
         }
         .accessibilityAddTraits(AnalyticsRowStateKt.opensAnalytics(state: row.state) ? .isButton : [])
     }
@@ -429,6 +430,13 @@ private extension View {
 /// Which analysis the detail screen should open.
 struct AnalyticsDetailRoute: Hashable {
     let entryId: String
+    /// The list's own name for this match, carried so the bar can head the
+    /// screen with it.
+    ///
+    /// Needed because a cloud-analysed match has no local entry to read a title
+    /// from - the run retires it - and heading that screen "Analysis" while the
+    /// row one tap back says "Thu League" reads as two matches.
+    var title: String? = nil
 }
 
 private extension AnalyticsListView {

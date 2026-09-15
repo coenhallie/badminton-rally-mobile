@@ -22,7 +22,18 @@ sealed interface Route {
      * exactly how that path breaks unnoticed. Both draw with the same
      * HeatmapPanel, so there is nothing to drift.
      */
-    @Serializable data class AnalyticsDetail(val entryId: String) : Route
+    @Serializable data class AnalyticsDetail(
+        val entryId: String,
+        /**
+         * The list's own name for this match, carried so the bar can head the
+         * screen with it.
+         *
+         * Needed because a cloud-analysed match has no local entry to read a
+         * title from - the run retires it - and heading that screen "Analysis"
+         * while the row one tap back says "Thu League" reads as two matches.
+         */
+        val title: String? = null,
+    ) : Route
 
     /**
      * One match, however it was made. At least one of the two ids is non-null: a

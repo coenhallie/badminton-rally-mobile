@@ -44,7 +44,9 @@ val panelCapabilities: List<PanelCapability> = listOf(
     ),
     PanelCapability(
         // The one row where the two are not symmetric, and the asymmetry is
-        // real: the skeleton is drawn over playback, so it needs the file.
+        // real: the skeleton is drawn over playback, so it needs the file. A
+        // cloud run releases the footage when it finishes, so "if" is the
+        // ordinary case rather than the corner - see cloudNotes.
         panel = AnalyticsPanel.Skeleton,
         cloud = "Both players, if the video is here",
         device = "The near player",
@@ -64,7 +66,13 @@ const val CAPABILITY_SHARED_LINE: String =
 val cloudNotes: List<String> = listOf(
     "Runs on a GPU, so a long match is not limited by this phone.",
     "Measures movement automatically once the clips are ready. That is a second pass, and it takes as long as it takes.",
-    "The heatmap and base position work even on a phone that never held the video.",
+    // Says the storage trade and the skeleton caveat in one line, because they
+    // are one fact. The earlier wording - "works even on a phone that never
+    // held the video" - promised something with no code behind it: an artifact
+    // is only ever fetched by the phone that uploaded, so a match analysed from
+    // a coach's OTHER phone still arrives here with no track. That is a
+    // follow-up, not a claim this sheet gets to make in the meantime.
+    "The video leaves this phone when it finishes. The heatmap and base position stay; the skeleton needs the footage, so it goes with it.",
 )
 
 /** The same, for a run on this phone. */

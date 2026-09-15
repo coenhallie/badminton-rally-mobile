@@ -50,4 +50,18 @@ class AnalysisCapabilityTest {
         // sheet must not contradict it with a duration.
         cloudNotes.any { it.contains("takes as long as it takes") } shouldBe true
     }
+
+    @Test
+    fun the_cloud_notes_say_the_video_leaves_and_what_that_costs() {
+        // The one promise on this sheet a coach acts on before starting: a
+        // cloud run frees the footage. That is the reason to pick it and the
+        // reason the skeleton row carries an "if", so the sheet has to say it
+        // rather than let the coach discover it when the tab is missing.
+        cloudNotes.any { it.contains("leaves this phone") } shouldBe true
+
+        // And it must not go back to claiming a phone that never held the
+        // video gets a heatmap. Nothing fetches an artifact except the phone
+        // that uploaded, so that sentence described a feature, not the app.
+        cloudNotes.any { it.contains("never held") } shouldBe false
+    }
 }
