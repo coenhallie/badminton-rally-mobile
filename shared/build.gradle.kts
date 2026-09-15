@@ -99,7 +99,11 @@ kotlin {
 
 android {
     namespace = "com.badmintontracker.shared"
-    compileSdk = 35
+    // 36, matching androidApp. Not a nicety: supabase-auth pulls
+    // androidx.browser, whose 1.9.0 AAR metadata refuses any consumer compiled
+    // against less, so a module left at 35 fails checkDebugAarMetadata and no
+    // APK is produced at all. The three modules move together for that reason.
+    compileSdk = 36
     defaultConfig { minSdk = 26 }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
