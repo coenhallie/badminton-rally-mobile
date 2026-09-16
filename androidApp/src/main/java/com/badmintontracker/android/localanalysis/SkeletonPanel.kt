@@ -151,7 +151,9 @@ fun SkeletonPanel(
                     "No skeleton was kept for this video. Run the analysis again with " +
                         "\"Skeleton playback\" ticked.",
                 )
-                source == null -> PanelMessage("The video this skeleton was measured on is no longer on this phone.")
+                source == null -> PanelMessage(
+                    "The video this skeleton was measured on is no longer on this phone.",
+                )
                 l.stored.tracks.none { it.poses.isNotEmpty() } -> PanelMessage(
                     "No skeleton was kept for this video. Run the analysis again with " +
                         "\"Skeleton playback\" ticked.",
@@ -203,7 +205,7 @@ internal fun PanelMessage(text: String) {
  */
 @Composable
 private fun SkeletonPlayer(
-    source: File,
+    source: String,
     stored: SkeletonStore.Stored,
     /** The shown side's joints. Not `stored.poses`, which is always the near list. */
     poses: List<PlayerPose>,
@@ -246,7 +248,7 @@ private fun SkeletonPlayer(
         }
     }
     LaunchedEffect(source) {
-        player.setMediaItem(MediaItem.fromUri(android.net.Uri.fromFile(source)))
+        player.setMediaItem(MediaItem.fromUri(source))
         player.prepare()
         player.playWhenReady = false
     }

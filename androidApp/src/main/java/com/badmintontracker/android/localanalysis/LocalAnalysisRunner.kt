@@ -21,6 +21,31 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.File
 
+/**
+ * Which handle the skeleton is played from, given what is on disk and what the
+ * grant still allows.
+ *
+ * Pure, and separate from [LocalAnalysisRunner], so the rule can be tested
+ * without an Android Context - the reason the cloud case went unnoticed is that
+ * nothing could exercise this decision at all.
+ *
+ * Order matters and mirrors `materialise`: it returns the direct file when that
+ * is readable and only copies otherwise, so the direct file is what a device
+ * analysis decoded. The content grant comes last because only a cloud run
+ * leaves nothing else.
+ */
+internal fun analysedSourceUri(
+    entryUri: String,
+    direct: File?,
+    copy: File?,
+    contentReadable: Boolean,
+): String? = when {
+    direct != null -> direct.toURI().toString()
+    copy != null -> copy.toURI().toString()
+    contentReadable -> entryUri
+    else -> null
+}
+
 /** Where a local analysis has got to, per video. */
 sealed interface LocalAnalysisState {
     data object Idle : LocalAnalysisState
@@ -168,19 +193,43 @@ class LocalAnalysisRunner(
     }
 
     /**
-     * The file the analysis actually decoded, if it is still there.
+     * The video the analysis actually decoded, as a URI the player can open, or
+     * null when it is genuinely not reachable any more.
      *
-     * A skeleton is indexed by the frames of THIS file. The entry's own URI may
-     * be a content grant that has since been revoked, and a copy made by
-     * another app may be re-encoded; neither shares the analysed frames. Null
-     * when the copy was never made or has been cleaned up, in which case the
-     * skeleton has no video to sit on and the panel says so.
+     * A skeleton is indexed by the frames of ONE file, so this is not "find any
+     * copy of the video". A copy made by another app may be re-encoded and
+     * would not share the analysed frames.
+     *
+     * Returns a URI rather than a File because the two pipelines leave
+     * different handles. A device run copies a gallery pick into `local-sources`
+     * and decodes that. A CLOUD run copies nothing - it streams the upload
+     * straight from the gallery grant - so its only handle is the entry's own
+     * `content://` URI, which is not a File at all. Resolving to a File
+     * therefore always failed for a cloud analysis, and the panel told the
+     * coach the video was "no longer on this phone" while it sat in their
+     * gallery. ExoPlayer opens either scheme.
      */
-    fun analysedSource(entryId: String, videoUri: String): File? {
-        val direct = File(videoUri.removePrefix("file://"))
-        if (direct.isFile && direct.canRead()) return direct
-        return File(context.filesDir, "local-sources/$entryId.mp4").takeIf { it.isFile && it.length() > 0 }
-    }
+    fun analysedSource(entryId: String, videoUri: String): String? = analysedSourceUri(
+        entryUri = videoUri,
+        direct = File(videoUri.removePrefix("file://")).takeIf { it.isFile && it.canRead() },
+        copy = File(context.filesDir, "local-sources/$entryId.mp4")
+            .takeIf { it.isFile && it.length() > 0 },
+        contentReadable = canOpenContent(videoUri),
+    )
+
+    /**
+     * Whether the picker's grant on [videoUri] still opens.
+     *
+     * Asked rather than assumed: `VideoIntake` takes a persistable read
+     * permission, but the user can revoke it, and the gallery item itself can
+     * be deleted. Opening a descriptor is the only honest test, and it is one
+     * cheap call on a screen that is being opened, not per frame.
+     */
+    private fun canOpenContent(videoUri: String): Boolean = runCatching {
+        val uri = Uri.parse(videoUri)
+        if (uri.scheme != "content") return@runCatching false
+        context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { true } ?: false
+    }.getOrDefault(false)
 
     private val states = MutableStateFlow<Map<String, LocalAnalysisState>>(emptyMap())
     val state: StateFlow<Map<String, LocalAnalysisState>> = states
