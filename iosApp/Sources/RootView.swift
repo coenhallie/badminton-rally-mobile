@@ -22,6 +22,8 @@ struct RootView: View {
     @State private var authState: AuthState? = nil
     @State private var themeMode: ThemeMode = .light
     @State private var uploading = false
+    /// Where the scoring board says it is on screen. See `KeepAwake`.
+    @State private var keepAwake = KeepAwake()
 
     /// Both models are made here, once, as `HomeView` makes its own: they need
     /// `rally`, which a property initialiser cannot see, and a second instance
@@ -71,11 +73,18 @@ struct RootView: View {
                 uploading = active.boolValue
             }
         }
-        // One writer for the whole app. An upload and an on-device run both
-        // need the screen awake, and setting this from two places means
-        // whichever finishes first turns the lock back on under the other -
-        // which for a 20-minute analysis is the run dying at the lock screen.
-        .onChange(of: uploading || (localAnalysis?.isRunning ?? false)) { _, awake in
+        // One writer for the whole app. An upload, an on-device run and the
+        // scoring board all need the screen awake, and setting this from two
+        // places means whichever finishes first turns the lock back on under
+        // the other - which for a 20-minute analysis is the run dying at the
+        // lock screen. The board was such a second writer until `KeepAwake`;
+        // it reports there now and the rule is `shouldKeepAwake`.
+        .environment(keepAwake)
+        .onChange(of: shouldKeepAwake(keepAwakeReasons(
+            uploading: uploading,
+            analysing: localAnalysis?.isRunning ?? false,
+            boardsOnScreen: keepAwake.boardsOnScreen.count
+        ))) { _, awake in
             UIApplication.shared.isIdleTimerDisabled = awake
         }
         .onChange(of: scenePhase) { _, phase in

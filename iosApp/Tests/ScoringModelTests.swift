@@ -216,4 +216,49 @@ final class ScoringModelTests: XCTestCase {
         XCTAssertTrue(model.canScore)
         XCTAssertEqual(model.match?.points.count, 0)
     }
+
+    // MARK: - start() and the `.task` that runs it
+
+    func testLeavingTheBoardStopsEveryLoopItStarted() async {
+        // With a labels repository - which is what the app hands over and what
+        // `fixture` does not - start() spawned two unstructured `Task {}` loops
+        // that nothing cancelled, and `ScoringView` built a fresh model on every
+        // run of its `.task`, so each return to the board left two more behind.
+        // See `MatchModelTests` for why a released model is the probe.
+        //
+        // A real `RallyApp` for the repository: shared has no double for it, and
+        // both flows read are its local cache, so nothing reaches the network.
+        let rally = RallyAppIosKt.createRallyApp(
+            url: "https://test.supabase.co",
+            anonKey: "test-anon-key",
+            deleteLocalVideoFile: { _ in },
+            deleteLocalAnalysis: { _, _ in }
+        )
+        let (repo, id, _) = fixture()
+        var m: ScoringModel? = ScoringModel(scoreLogs: repo, labelsRepository: rally.labels, scoreLogId: id)
+        weak var released = m
+
+        let returned = await ObservationLifecycle.runAndCancel { [m] in await m?.start() }
+        XCTAssertTrue(returned, "start() did not return after its task was cancelled")
+
+        m = nil
+        let gone = await ObservationLifecycle.wait { released == nil }
+        XCTAssertTrue(gone, "a loop start() spawned is still running and still holds the model")
+    }
+
+    func testComingBackToTheBoardFollowsTheStoreAgain() async {
+        let (repo, id, model) = fixture()
+
+        let returned = await ObservationLifecycle.runAndCancel { await model.start() }
+        XCTAssertTrue(returned, "start() did not return after its task was cancelled")
+
+        let again = Task { await model.start() }
+        defer { again.cancel() }
+        // Straight to the store, not through the model, so only the loop can
+        // have carried it across.
+        repo.replaceEvents(id: id, events: [ScoreEventPointTo(side: .home)])
+
+        let noticed = await ObservationLifecycle.wait { model.match?.currentGame.home == 1 }
+        XCTAssertTrue(noticed, "the second start() did not pick the store back up")
+    }
 }

@@ -251,4 +251,49 @@ final class MatchModelTests: XCTestCase {
         XCTAssertNil(m.log)
         XCTAssertFalse(m.canAddVideo)
     }
+
+    // MARK: - start() and the `.task` that runs it
+
+    func testLeavingThePageStopsEveryLoopItStarted() async {
+        // `MatchView`'s `.task` is cancelled when the page leaves the screen and
+        // runs again on the way back. Three of start()'s four loops were
+        // unstructured `Task {}`s, so cancelling stopped one loop and left three
+        // running for good, and every return to the page added three more - each
+        // re-folding the whole match on every emission of its flow. A loop that
+        // never ends also never lets go of the model it captured, which is how
+        // this sees them: the model must be released once the page has gone.
+        let store = store()
+        let log = newMatch(store)
+        var m: MatchModel? = model(scoreLogs: store, scoreLogId: log.id)
+        weak var released = m
+
+        let returned = await ObservationLifecycle.runAndCancel { [m] in await m?.start() }
+        XCTAssertTrue(returned, "start() did not return after its task was cancelled")
+
+        m = nil
+        let gone = await ObservationLifecycle.wait { released == nil }
+        XCTAssertTrue(gone, "a loop start() spawned is still running and still holds the model")
+    }
+
+    func testComingBackToThePageFollowsTheStoreAgain() async throws {
+        let store = store()
+        let log = newMatch(store)
+        store.finish(id: log.id)
+        let videos = IosTestDoublesKt.testLocalVideoRepository()
+        let m = model(scoreLogs: store, scoreLogId: log.id, localVideos: videos)
+
+        let returned = await ObservationLifecycle.runAndCancel { await m.start() }
+        XCTAssertTrue(returned, "start() did not return after its task was cancelled")
+        XCTAssertTrue(m.canAddVideo)
+
+        let again = Task { await m.start() }
+        defer { again.cancel() }
+        // Through the entries flow rather than the score log: `readStore` reads
+        // the log directly on any emission, so only a change that arrives
+        // THROUGH a loop proves that loop is running again.
+        videos.add(entry: entry(scoreLogId: log.id))
+
+        let noticed = await ObservationLifecycle.wait { !m.canAddVideo }
+        XCTAssertTrue(noticed, "the second start() did not pick the entries flow back up")
+    }
 }

@@ -155,4 +155,22 @@ final class CloudAnalysisPanelsTests: XCTestCase {
             [.heatmap, .base, .skeleton]
         )
     }
+
+    @MainActor
+    func testTheListSeesACloudOnlyTrack() throws {
+        // The match list asks the runner `storedTrackIds` for the whole list at
+        // once, and that asked the store's `has` with its default source -
+        // `.local`. A cloud run writes only under the cloud subtree, so a
+        // finished cloud analysis read as never analysed on the list while the
+        // detail screen, which asks `hasStoredTrack`, could open it.
+        try installCloudAnalysis()
+        let runner = LocalAnalysisRunner()
+
+        XCTAssertTrue(runner.hasStoredTrack(entryId: entryId))
+        XCTAssertEqual(
+            runner.storedTrackIds(among: [entryId, "never-analysed"]),
+            [entryId],
+            "the list and the detail screen disagree about whether this entry has a track"
+        )
+    }
 }

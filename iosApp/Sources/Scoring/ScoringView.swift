@@ -34,17 +34,21 @@ struct ScoringView: View {
     let onFinished: (AttachIntent?) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    /// Optional so a board built outside `RootView` - a preview, a test - draws
+    /// rather than trapping on a missing environment object.
+    @Environment(KeepAwake.self) private var keepAwake: KeepAwake?
+    /// This board, as `KeepAwake` knows it. See there for why an id.
+    @State private var boardId = UUID()
     @State private var model: ScoringModel?
     @State private var confirming: Confirmation?
     @State private var noteOpen = false
 
-    // Fires on the transition to un-scoreable, from either exit: the Done button
-    // once the rules end it, and "Finish match" in the menu. `addVideoAsked` is
-    // plain view state, scoped to this ScoringView instance's lifetime the same
-    // way Android's board scopes its flag to the composition - so undo-then-
-    // refinish does not re-nag, but leaving and coming back to the board (a new
-    // instance, since it's pushed fresh each time) asks again.
-    @State private var addVideoAsked = false
+    // Fires on the transition to un-scoreable, from either exit: the last point
+    // the rules allow, and "Finish match" in the menu. The rule is shared with
+    // Android; see `FinishPrompt` for why a board opened on a match that is
+    // ALREADY over must not ask. View state, so one per visit to the board; nil
+    // until the first evaluation, which is when the log is first in hand.
+    @State private var finishPrompt: FinishPrompt?
     @State private var addVideoOpen = false
 
     var body: some View {
@@ -66,14 +70,19 @@ struct ScoringView: View {
         }
         .navigationBarBackButtonHidden(true)
         .task {
-            let m = ScoringModel(rally: rally, scoreLogId: scoreLogId)
+            // Built once and kept. This `.task` runs again on every return to
+            // the board, and a fresh model each time threw away the open tag row
+            // (`pendingTagOrdinal` lives on the model) along with the old one.
+            let m = model ?? ScoringModel(rally: rally, scoreLogId: scoreLogId)
             model = m
-            // Kept awake for as long as the board is on screen, matching RootView's
-            // existing use of the same flag.
-            UIApplication.shared.isIdleTimerDisabled = true
             await m.start()
         }
-        .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
+        // Kept awake for as long as the board is on screen - by saying so to
+        // `KeepAwake`, not by writing `isIdleTimerDisabled`. This view used to
+        // write it, and clearing it on the way out turned the lock back on under
+        // any upload or analysis still running. `RootView` is the one writer.
+        .onAppear { keepAwake?.boardAppeared(boardId) }
+        .onDisappear { keepAwake?.boardDisappeared(boardId) }
     }
 
     @ViewBuilder
@@ -96,12 +105,12 @@ struct ScoringView: View {
         // from the menu can leave `match.isOver` false (the rules never ended it)
         // while `log.status` moves off LIVE, and that exit must raise the prompt
         // too. `.task(id:)` runs on first appearance as well as on a changed key,
-        // matching Android's `LaunchedEffect(match.isOver, log.status)` - a board
-        // opened on a match that is already un-scoreable asks immediately.
+        // matching Android's `LaunchedEffect(match.isOver, log.status)`, and that
+        // first run is what tells `FinishPrompt` how the board was found.
         .task(id: FinishPromptKey(isOver: match.isOver, status: log.status)) {
-            guard !addVideoAsked, !log.isPlayable() else { return }
-            addVideoAsked = true
-            addVideoOpen = true
+            let prompt = finishPrompt ?? FinishPrompt(playableOnEntry: log.isPlayable())
+            finishPrompt = prompt
+            if prompt.shouldAsk(isPlayable: log.isPlayable()) { addVideoOpen = true }
         }
         .confirmationDialog(
             confirming?.title ?? "",
@@ -414,12 +423,9 @@ struct ScoringView: View {
                 // lives in the menu behind a confirm: a call to action beside a
                 // board being tapped every rally is a match ended by accident.
                 if match.isOver {
-                    // In practice this fires only after the prompt above has
-                    // already been answered once this visit - it appears the
-                    // instant the match becomes un-scoreable, covering the board
-                    // before Done is reachable - but it stays wired the same way
-                    // Android's does, for the undo-then-refinish case the comment
-                    // on `addVideoAsked` describes.
+                    // Reachable two ways: on a board opened on a match that was
+                    // already won, which `FinishPrompt` does not ask about, and
+                    // after undo-then-refinish, which it does not ask about twice.
                     Button(action: { deliverFinish(nil) }) {
                         Text("Done")
                             .shuttlType(ShuttlType.titleLarge)

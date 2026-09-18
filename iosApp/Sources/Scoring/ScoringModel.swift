@@ -57,24 +57,35 @@ final class ScoringModel {
         self.init(scoreLogs: rally.scoreLogs, labelsRepository: rally.labels, scoreLogId: scoreLogId)
     }
 
+    /// Runs for as long as the board is on screen, as structured children of
+    /// `ScoringView`'s `.task` - the same shape as `BackgroundWorkModel.observe`.
+    /// The two palette loops used to be unstructured `Task {}`s, which
+    /// cancellation cannot reach, so every run of that `.task` left two behind.
+    ///
+    /// The palette is read from the cache and never refreshed on entry - a
+    /// sports hall has no signal.
     func start() async {
-        // Its own task: the store loop below never returns, so anything after it
-        // would never run. The palette is read from the cache and never refreshed
-        // on entry - a sports hall has no signal.
-        if let labelsRepository {
-            Task {
-                for await palette in labelsRepository.scoreboardLabels {
-                    labels = palette
+        await withTaskGroup(of: Void.self) { group in
+            if let labelsRepository {
+                group.addTask { @MainActor [weak self] in
+                    guard let self else { return }
+                    for await palette in labelsRepository.scoreboardLabels {
+                        self.labels = palette
+                    }
+                }
+                group.addTask { @MainActor [weak self] in
+                    guard let self else { return }
+                    for await all in labelsRepository.labels {
+                        self.hasAnyLabels = !all.isEmpty
+                    }
                 }
             }
-            Task {
-                for await all in labelsRepository.labels {
-                    hasAnyLabels = !all.isEmpty
+            group.addTask { @MainActor [weak self] in
+                guard let self else { return }
+                for await _ in self.scoreLogs.logs {
+                    self.readStore()
                 }
             }
-        }
-        for await _ in scoreLogs.logs {
-            readStore()
         }
     }
 

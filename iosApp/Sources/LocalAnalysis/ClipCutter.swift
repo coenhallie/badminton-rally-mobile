@@ -135,11 +135,21 @@ struct ClipCutter {
             // Rebase to the clip's own zero, as Android does. A clip that kept
             // the source's timestamps would start playing at minute nine.
             let presentation = CMTimeSubtract(CMSampleBufferGetPresentationTimeStamp(sample), startTime)
-            while !input.isReadyForMoreMediaData {
-                // Busy-waiting, because the alternative here is the callback
-                // form. The writer drains in microseconds at this bitrate and
-                // the queue this runs on has nothing else waiting.
-                usleep(500)
+            do {
+                try Self.waitUntilReady(
+                    name: out.lastPathComponent,
+                    isReady: { input.isReadyForMoreMediaData },
+                    status: { writer.status },
+                    error: { writer.error }
+                )
+            } catch {
+                // The writer's error rather than the one thrown: everything
+                // that ends this loop is wrapped once, below, and wrapping a
+                // `writeFailed` in a `writeFailed` reads "couldn't write x:
+                // couldn't write x". A writer that stopped without an error
+                // leaves this nil and is caught by the status check below.
+                failure = writer.error
+                break
             }
             guard let timed = Self.retimed(sample, buffer: buffer, to: presentation) else { continue }
             if !input.append(timed) {
@@ -166,6 +176,39 @@ struct ClipCutter {
         guard rendered > 0 else {
             try? FileManager.default.removeItem(at: out)
             throw Failure.noFramesInWindow(source.lastPathComponent, start, end)
+        }
+    }
+
+    /// Blocks until the writer's input will take another sample, or throws once
+    /// it never will.
+    ///
+    /// Busy-waiting, because the alternative here is the callback form. The
+    /// writer drains in microseconds at this bitrate and the queue this runs on
+    /// has nothing else waiting.
+    ///
+    /// The status check is the point of this being a function. The loop used to
+    /// wait on `isReadyForMoreMediaData` alone, and a writer that has stopped -
+    /// AVError -11847 when the app is backgrounded mid-encode is the one that
+    /// happens - never raises that flag again: the analysis queue spun for good
+    /// and the run neither finished nor failed. Anything but `.writing` means
+    /// no sample will ever be accepted, so it ends the wait with the writer's
+    /// own error, which is what `append` returning false would have reported
+    /// had the loop ever got that far.
+    ///
+    /// Closures rather than the writer and its input, so the rule can be tested
+    /// against a writer in a state AVFoundation cannot be put into on demand.
+    static func waitUntilReady(
+        name: String,
+        isReady: () -> Bool,
+        status: () -> AVAssetWriter.Status,
+        error: () -> Error?,
+        pause: () -> Void = { usleep(500) }
+    ) throws {
+        while !isReady() {
+            // Status second: a writer that is ready is by definition writing,
+            // and this order costs the healthy path nothing.
+            guard status() == .writing else { throw Failure.writeFailed(name, error()) }
+            pause()
         }
     }
 

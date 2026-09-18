@@ -24,46 +24,78 @@ final class ClipListModel {
     /// which the card does carry, but also needs to be matched back to its own log id.
     private var scoreLogs: [ScoreLog] = []
     private var progressByEntryId: [String: AnalyzeProgress] = [:]
-    // ClipListView's `.task` calls start() on every reappearance of the list
-    // (returning from the match page, from court marking, etc.) while `model`
-    // itself is created once and kept for the life of the view, so without this
-    // guard each return spawned four more never-returning `for await` loops on
-    // the same model, each calling regroup() on every emission.
-    private var started = false
+    /// Whether the refresh that opens the list has been kicked off. The ONLY
+    /// thing start() does once per model rather than once per appearance - see
+    /// `start()` for why the loops must not share this latch.
+    private var initialRefreshStarted = false
 
     init(rally: RallyApp, analyze: AnalyzeCoordinator) {
         self.rally = rally
         self.analyze = analyze
     }
 
+    /// Runs for as long as the list is on screen: `ClipListView`'s `.task` calls
+    /// this on every appearance and cancels it on every disappearance, and
+    /// opening a match is a disappearance.
+    ///
+    /// This used to latch on a `started` flag, to stop each return to the list
+    /// stacking another set of loops. The latch was covering for the real
+    /// defect - three of the four loops were unstructured `Task {}`s that
+    /// cancellation could not reach - and it made a worse one: the fourth loop,
+    /// the clips one, ran inline and DID end with the cancelled task, and the
+    /// latch then turned every later start() into a no-op. The list stopped
+    /// following the clips flow the first time a match was opened.
     func start() async {
-        guard !started else { return }
-        started = true
-        Task { await refresh() }
-        // Each its own task: the clips loop at the bottom never returns, so
-        // anything sequenced after it would never run.
-        Task {
-            for await logs in rally.scoreLogs.logs {
-                scoreLogs = logs
-                scoreCards = logs.map { ScoreMatchCardKt.buildScoreMatchCard(log: $0) }
-                regroup()
-            }
+        // Once per model, not once per appearance: coming back from a match
+        // must not put the spinner up and re-fetch four things. Unstructured on
+        // purpose, unlike the loops - it is finite, and cancelling it because
+        // the coach opened a match would surface "Couldn't refresh matches" for
+        // a request that was merely abandoned.
+        if !initialRefreshStarted {
+            initialRefreshStarted = true
+            Task { await refresh() }
         }
-        Task {
-            for await entries in rally.localVideos.entries {
-                localEntries = entries
-                regroup()
+        await observe()
+    }
+
+    /// The four loops, as structured children of the caller's task - the same
+    /// shape as `BackgroundWorkModel.observe`. Cancelling the caller stops all
+    /// four, calling again starts all four, and there is never a second set:
+    /// the group does not return until every child has.
+    ///
+    /// Apart from `start()` so the tests can hold the loops to that contract
+    /// without the network refresh riding along.
+    func observe() async {
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { @MainActor [weak self] in
+                guard let self else { return }
+                for await logs in self.rally.scoreLogs.logs {
+                    self.scoreLogs = logs
+                    self.scoreCards = logs.map { ScoreMatchCardKt.buildScoreMatchCard(log: $0) }
+                    self.regroup()
+                }
             }
-        }
-        Task {
-            for await map in analyze.progress {
-                progressByEntryId = map
-                regroup()
+            group.addTask { @MainActor [weak self] in
+                guard let self else { return }
+                for await entries in self.rally.localVideos.entries {
+                    self.localEntries = entries
+                    self.regroup()
+                }
             }
-        }
-        for await latest in rally.clips.observeClips() {
-            clips = latest
-            regroup()
+            group.addTask { @MainActor [weak self] in
+                guard let self else { return }
+                for await map in self.analyze.progress {
+                    self.progressByEntryId = map
+                    self.regroup()
+                }
+            }
+            group.addTask { @MainActor [weak self] in
+                guard let self else { return }
+                for await latest in self.rally.clips.observeClips() {
+                    self.clips = latest
+                    self.regroup()
+                }
+            }
         }
     }
 

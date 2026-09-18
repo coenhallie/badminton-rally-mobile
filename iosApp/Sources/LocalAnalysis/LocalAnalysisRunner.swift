@@ -284,8 +284,14 @@ final class LocalAnalysisRunner {
     /// The list asks once for the whole list rather than once per row, matching
     /// Android's `storedTrackIds`: `has` is a small read, and a list of forty
     /// matches is forty of them on every recomposition otherwise.
+    ///
+    /// Asks `hasStoredTrack` rather than the store. The store's `has` defaults
+    /// to the local subtree, and a cloud run writes only to the cloud one, so
+    /// asking it directly made every finished cloud analysis read as never
+    /// analysed on the list while the detail screen could open it. One rule,
+    /// in one place, is what keeps the two screens from disagreeing again.
     nonisolated func storedTrackIds(among entryIds: [String]) -> Set<String> {
-        Set(entryIds.filter { tracks.has(entryId: $0) })
+        Set(entryIds.filter { hasStoredTrack(entryId: $0) })
     }
 
     /// How many clips each entry has, for the rows that offer to play them.

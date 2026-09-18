@@ -21,7 +21,60 @@ final class LocalPlayerModel {
         observeFailure()
     }
 
-    func loadMetadata() async {
+    /// Whether the label refresh that opens the screen has completed. See
+    /// `start()`.
+    private var labelsRefreshed = false
+
+    /// Runs for as long as the player is on screen: `LocalPlayerView`'s `.task`
+    /// calls this on every appearance and cancels it on every disappearance, and
+    /// pushing court marking is a disappearance.
+    ///
+    /// The loops used to live in that `.task` behind `guard model == nil`, which
+    /// is true exactly once: marking the court cancelled them, and on the way
+    /// back the guard returned before restarting anything, so notes and labels
+    /// stopped updating for the rest of the screen's life.
+    ///
+    /// Everything runs side by side rather than the loads first. They used to be
+    /// awaited ahead of the loops, which held the notes list empty until a
+    /// network request for labels had come back - in a sports hall, until it had
+    /// timed out.
+    func start() async {
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { @MainActor [weak self] in await self?.loadMetadata() }
+            group.addTask { @MainActor [weak self] in await self?.refreshLabelsOnce() }
+            group.addTask { @MainActor [weak self] in await self?.observe() }
+        }
+    }
+
+    /// The two loops, as structured children of the caller's task - the same
+    /// shape as `BackgroundWorkModel.observe`. Apart from `start()` so the tests
+    /// can hold them to that contract without the network refresh riding along.
+    func observe() async {
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { @MainActor [weak self] in
+                guard let self else { return }
+                for await map in self.rally.localAnnotations.byVideoId {
+                    self.annotations = map[self.entry.id] ?? []
+                }
+            }
+            // The clip-scoped subset of labels, for the picker and the badge
+            // lookup. `rally.labels` is a singleton, so this just mirrors its
+            // current value.
+            group.addTask { @MainActor [weak self] in
+                guard let self else { return }
+                for await ls in self.rally.labels.clipLabels {
+                    self.labels = ls
+                }
+            }
+        }
+    }
+
+    /// Frame stepping needs the frame rate and nothing else does. Skipped once
+    /// it is known, and NOT latched on having been tried: a load cancelled by
+    /// the view leaving comes back with nothing, and must be tried again on the
+    /// way back rather than leaving the step buttons dead.
+    private func loadMetadata() async {
+        guard fps == 0 else { return }
         let asset = AVURLAsset(url: LocalVideoFiles.resolve(relativePath: entry.uri))
         if let track = try? await asset.loadTracks(withMediaType: .video).first,
            let rate = try? await track.load(.nominalFrameRate) {
@@ -29,25 +82,16 @@ final class LocalPlayerModel {
         }
     }
 
-    func observeAnnotations() async {
-        for await map in rally.localAnnotations.byVideoId {
-            annotations = map[entry.id] ?? []
-        }
-    }
-
-    /// Streams the clip-scoped subset of labels for the picker and the badge
-    /// lookup. Runs for the lifetime of the screen; `rally.labels` is a
-    /// singleton, so this just mirrors its current value.
-    func observeLabels() async {
-        for await ls in rally.labels.clipLabels {
-            labels = ls
-        }
-    }
-
     /// Kicks a real load off the network so a stale or empty cache catches up.
     /// Errors are swallowed here: the cached/streamed value above still renders.
-    func refreshLabels() async {
+    ///
+    /// Once per model rather than once per appearance - coming back from court
+    /// marking is not a reason to ask the server again - but only a refresh
+    /// that ran to the end counts, for the same reason as `loadMetadata`.
+    private func refreshLabelsOnce() async {
+        guard !labelsRefreshed else { return }
         _ = try? await rally.labels.refreshLabelsOrMessage()
+        if !Task.isCancelled { labelsRefreshed = true }
     }
 
     func currentTimestampSeconds() -> Float {
