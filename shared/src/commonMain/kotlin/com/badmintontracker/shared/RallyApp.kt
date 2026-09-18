@@ -34,6 +34,7 @@ import com.badmintontracker.shared.repo.toAuthState
 import com.badmintontracker.shared.scoring.ScoreLogsRepository
 import com.russhwolf.settings.Settings
 import io.github.jan.supabase.SupabaseClient
+import io.github.jan.supabase.auth.auth
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.CoroutineScope
@@ -160,6 +161,7 @@ class RallyApp(
         log = log,
         localAnnotations = localAnnotations,
         installCloudPoses = installCloudPoses,
+        awaitSession = { client.auth.awaitInitialization() },
         onVideoRowReady = { entryId ->
             // The videos row now exists, so the foreign key can be satisfied. A
             // video-first import has no match and this is a no-op.

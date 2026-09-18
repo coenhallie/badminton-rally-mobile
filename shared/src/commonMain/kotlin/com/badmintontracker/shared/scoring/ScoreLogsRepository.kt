@@ -187,6 +187,15 @@ class ScoreLogsRepository internal constructor(
     }
 
     private fun mutate(transform: (List<StoredLog>) -> List<StoredLog>) = lock.withLock {
+        // A session that has finished restoring since `stored` was read makes the
+        // cache readable, and the write has to land on THAT list. Only this
+        // direction: an owner that has gone away mid-session is handled by
+        // persist, which keeps stamping the one it loaded for.
+        val owner = currentOwnerId()
+        if (owner != null && owner != loadedOwner) {
+            loadedOwner = owner
+            stored = loadStored(owner)
+        }
         persist(transform(stored))
     }
 
@@ -199,9 +208,15 @@ class ScoreLogsRepository internal constructor(
         // permanently unreadable, which is far worse than whatever the write was
         // recording.
         val owner = currentOwnerId() ?: loadedOwner
-        settings.putString(KEY_CACHE, json.encodeToString(
-            CachedLogs.serializer(), CachedLogs(owner, sorted),
-        ))
+        // With nobody to write for, memory is all this touches. `stored` is the
+        // empty list a cold start reads before the session is back, and a payload
+        // with no owner is one loadStored refuses anyway, so writing it could only
+        // ever replace a readable cache with an unreadable one.
+        if (owner != null) {
+            settings.putString(KEY_CACHE, json.encodeToString(
+                CachedLogs.serializer(), CachedLogs(owner, sorted),
+            ))
+        }
         state.value = sorted.map { it.log }
     }
 

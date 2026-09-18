@@ -190,6 +190,45 @@ class ScoreLogsRepositoryTest {
     }
 
     @Test
+    fun a_write_before_the_session_has_restored_does_not_wipe_the_cache() {
+        // A cold start builds this store with nobody signed in, so it holds an
+        // empty list while the real one sits on disk. The analyze pipeline
+        // re-attaches at launch and calls attachVideo before the session is back;
+        // persisting what was in memory replaced every match on the phone with [].
+        val settings = MapSettings()
+        val before = repo(settings, owner = "owner-1").newMatch()
+
+        var owner: String? = null
+        val cold = ScoreLogsRepository(client = null, settings = settings, now = { t0 }, ownerId = { owner })
+        cold.attachVideo(before.id, "video-1")
+        cold.replaceEvents("not-here", listOf(ScoreEvent.PointTo(Side.HOME)))
+
+        owner = "owner-1"
+        val reopened = ScoreLogsRepository(client = null, settings = settings, now = { t0 }, ownerId = { owner })
+        reopened.logs.value.map { it.id } shouldBe listOf(before.id)
+    }
+
+    @Test
+    fun a_write_after_the_session_has_restored_lands_on_the_restored_matches() {
+        // The other ordering of the same race: the session arrives, nothing has
+        // called sync yet, and a write comes in. It has to be applied to what is
+        // on disk for this owner, not to the empty list read at construction.
+        val settings = MapSettings()
+        val first = repo(settings, owner = "owner-1").newMatch()
+        val second = repo(settings, owner = "owner-1", now = { t0 + 1.hours }).newMatch()
+
+        var owner: String? = null
+        val cold = ScoreLogsRepository(client = null, settings = settings, now = { t0 }, ownerId = { owner })
+        owner = "owner-1"
+        cold.attachVideo(first.id, "video-1")
+
+        cold.get(first.id)?.videoId shouldBe "video-1"
+        val reopened = repo(settings, owner = "owner-1")
+        reopened.logs.value.map { it.id } shouldBe listOf(second.id, first.id)
+        reopened.get(first.id)?.status shouldBe ScoreLogStatus.BOUND
+    }
+
+    @Test
     fun an_unreadable_cache_yields_an_empty_list_rather_than_a_crash() {
         // Same contract as LocalVideoRepository.load: a payload this build cannot
         // decode must not take the whole match list down with it.

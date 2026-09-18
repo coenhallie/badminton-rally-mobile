@@ -56,6 +56,16 @@ class AnalyzeCoordinator(
      */
     private val installCloudPoses: suspend (videoId: String, onProgress: (Float) -> Unit) -> Unit =
         { _, _ -> },
+    /**
+     * Returns once the stored session has been restored, whether or not it turned
+     * out to hold anyone.
+     *
+     * [reattachToProcessing] runs at launch and supabase-kt restores the session
+     * asynchronously, so without this the first run of a cold start talks to the
+     * backend as nobody: an interrupted upload fails with "Not signed in", and
+     * [onVideoRowReady] reaches a scoring store that has not read its cache yet.
+     */
+    private val awaitSession: suspend () -> Unit = {},
 ) {
     private val _progress = MutableStateFlow<Map<String, AnalyzeProgress>>(emptyMap())
     val progress: StateFlow<Map<String, AnalyzeProgress>> = _progress.asStateFlow()
@@ -143,6 +153,7 @@ class AnalyzeCoordinator(
     }
 
     private suspend fun runPipeline(entryId: String, startFrom: AnalyzeStep) {
+        awaitSession()
         val entry = localVideos.get(entryId) ?: return
         val keypoints = entry.keypoints
             ?: return fail(entryId, AnalyzeStep.KEYPOINTS, "No court points saved")

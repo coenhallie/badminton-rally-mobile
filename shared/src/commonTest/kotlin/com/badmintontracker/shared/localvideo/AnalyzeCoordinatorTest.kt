@@ -446,6 +446,36 @@ class AnalyzeCoordinatorTest {
     }
 
     @Test
+    fun a_reattached_run_waits_for_the_session_before_it_touches_anything() {
+        // reattachToProcessing runs at launch, and supabase-kt restores the session
+        // asynchronously. A pipeline that ran ahead of it told the scoring store
+        // about a video while that store still held the empty list of a cold
+        // start, and asked the backend for an upload as nobody.
+        runTest {
+            val sessionReady = CompletableDeferred<Unit>()
+            val ready = mutableListOf<String>()
+            localVideos.add(entry().copy(stage = AnalyzeStage.PROCESSING, keypoints = keypoints()))
+            clips.clips.value = listOf(clipFor("e1"))
+            val c = AnalyzeCoordinator(
+                localVideos = localVideos, videos = videos, clips = clips,
+                scope = CoroutineScope(backgroundScope.coroutineContext + UnconfinedTestDispatcher(testScheduler)),
+                openChannel = { _, _ -> ByteReadChannel(ByteArray(0)) },
+                localAnnotations = localAnnotations,
+                onVideoRowReady = { ready += it },
+                awaitSession = { sessionReady.await() },
+            )
+            c.reattachToProcessing()
+            runCurrent()
+            ready shouldBe emptyList()
+            videos.awaitAnalyticsCalls shouldBe emptyList()
+
+            sessionReady.complete(Unit)
+            runCurrent()
+            ready shouldBe listOf("e1")
+        }
+    }
+
+    @Test
     fun the_video_row_hook_fires_on_a_retry_that_resumes_after_create_row() {
         // retry() resumes from the failed step, so a run that failed at TRIGGER
         // never re-enters the CREATE_ROW branch. Hanging the hook off that branch
