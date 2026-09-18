@@ -1,5 +1,6 @@
 package com.badmintontracker.shared.scoring
 
+import com.badmintontracker.shared.repo.selectAllPages
 import com.badmintontracker.shared.util.SyncLock
 import com.badmintontracker.shared.util.randomUuid
 import com.badmintontracker.shared.util.withLock
@@ -51,8 +52,8 @@ class ScoreLogsRepository internal constructor(
      * has, so a caller can reconcile things that point at matches by id.
      *
      * Here rather than at a render site because this is the only moment the set is
-     * AUTHORITATIVE: [sync] pulls every row for the owner with no limit and no
-     * paging, and already drops local logs the server no longer returns. In memory
+     * AUTHORITATIVE: [sync] pulls every row for the owner, page by page until the
+     * server has no more, and already drops local logs the server no longer returns. In memory
      * the set is empty for the whole of a cold start's session restore, so a
      * consumer that asked then would conclude everything had been deleted.
      */
@@ -307,9 +308,13 @@ class ScoreLogsRepository internal constructor(
             if (dirty.isNotEmpty()) {
                 postgrest.from(TABLE).upsert(dirty)
             }
-            val remote = postgrest.from(TABLE)
-                .select { order("created_at", Order.DESCENDING) }
-                .decodeList<ScoreLog>()
+            // Paged, because everything below reads "not in this list" as "deleted
+            // elsewhere": a pull PostgREST had cut off at max_rows would remove the
+            // matches past the cut from the phone.
+            val remote = postgrest.from(TABLE).selectAllPages<ScoreLog> {
+                order("created_at", Order.DESCENDING)
+                order("id", Order.ASCENDING)
+            }
 
             lock.withLock {
                 // Compared by content, not by id. A row that is still byte for byte

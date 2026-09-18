@@ -26,9 +26,11 @@ class ClipsRepositoryImpl(private val client: SupabaseClient) : ClipsRepository 
     private val _clips = MutableStateFlow<List<RallyClip>>(emptyList())
 
     override suspend fun listClips(): List<RallyClip> =
-        client.postgrest.from("rally_clips")
-            .select { order("created_at", Order.DESCENDING) }
-            .decodeList<RallyClip>()
+        client.postgrest.from("rally_clips").selectAllPages {
+            order("created_at", Order.DESCENDING)
+            // The tie-break paging needs: one run's clips share a created_at.
+            order("id", Order.ASCENDING)
+        }
 
     override fun observeClips(): Flow<List<RallyClip>> = _clips.asStateFlow()
 

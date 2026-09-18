@@ -8,13 +8,18 @@ import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.ktor.client.engine.mock.respond
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.TextContent
+import io.ktor.http.headersOf
+import io.ktor.utils.io.ByteReadChannel
 import kotlin.test.Test
 import kotlin.time.Duration.Companion.hours
 import kotlinx.coroutines.test.runTest
 import kotlinx.datetime.Instant
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.jsonArray
@@ -554,5 +559,45 @@ class ScoreLogsRepositoryTest {
         server.failWith = null
         syncingRepo(server, settings).sync().isSuccess shouldBe true
         server.deletedUrls.single().shouldContain(created.id)
+    }
+
+    @Test
+    fun a_pull_longer_than_one_response_does_not_drop_the_matches_past_it() = runTest {
+        // Truncation is worse here than in a read-only list: sync treats a clean
+        // local match the server did not return as deleted elsewhere, removes it,
+        // and reports the shortened set to onSynced, which detaches videos.
+        val total = 1_200
+        val all = (0 until total).map { i ->
+            ScoreLog(
+                id = "log-$i", videoId = null, title = "Match $i",
+                homePlayers = listOf("A"), awayPlayers = listOf("B"),
+                rules = ScoringRules.BWF_21,
+                setup = MatchSetup(doubles = false, firstServer = Side.HOME),
+                events = emptyList(), status = ScoreLogStatus.UNBOUND,
+                createdAt = t0, updatedAt = t0,
+            )
+        }
+        val client = TestSupabase.client { request ->
+            val offset = request.url.parameters["offset"]?.toInt() ?: 0
+            val limit = minOf(request.url.parameters["limit"]?.toInt() ?: 1_000, 1_000)
+            val page = all.drop(offset).take(limit)
+            respond(
+                content = ByteReadChannel(Json.encodeToString(ListSerializer(ScoreLog.serializer()), page)),
+                status = HttpStatusCode.OK,
+                headers = headersOf(
+                    HttpHeaders.ContentType to listOf("application/json"),
+                    HttpHeaders.ContentRange to listOf("$offset-${offset + page.size - 1}/$total"),
+                ),
+            )
+        }
+        var synced: Set<String>? = null
+        val repo = ScoreLogsRepository(
+            client, MapSettings(), now = { t0 }, ownerId = { "owner-1" }, onSynced = { synced = it },
+        )
+
+        repo.sync().isSuccess shouldBe true
+
+        repo.logs.value shouldHaveSize total
+        synced?.size shouldBe total
     }
 }
