@@ -364,8 +364,11 @@ class AnalyzeCoordinatorTest {
         localVideos.get("e1")?.failedStep shouldBe AnalyzeStep.PROCESSING
 
         // The videos row still holds the terminal failed_* status; polling it
-        // again without a new trigger would just re-read the old failure.
-        videos.processingUpdates = listOf(ProcessingUpdate("phase1_complete", 1f, null))
+        // again without a new trigger would just re-read the old failure. The
+        // row only moves once the edge function has been invoked again.
+        videos.onStartProcessing = {
+            videos.processingUpdates = listOf(ProcessingUpdate("phase1_complete", 1f, null))
+        }
         clips.clips.value = listOf(clipFor("e1"))
         c.retry("e1")
         runCurrent()
@@ -677,5 +680,51 @@ class AnalyzeCoordinatorTest {
         runCurrent()
 
         localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED
+    }
+
+    // MARK: - Retrying a run the phone lost touch with
+
+    @Test
+    fun retry_after_losing_the_connection_picks_the_run_up_instead_of_starting_it_again() = runTest {
+        // Three minutes without signal ends the poll with a failure of the
+        // PHONE's, not the backend's. retry() treated every PROCESSING failure
+        // alike and re-triggered, which resets the row to "uploaded" and starts
+        // Phase 1 from scratch: minutes of GPU thrown away, and possibly a second
+        // worker on the same video, for a job that was fine all along.
+        localVideos.add(entry())
+        videos.processingUpdates = listOf(ProcessingUpdate("failed_connection", null, "offline"))
+        val c = coordinator()
+        c.startAnalysis("e1", keypoints())
+        runCurrent()
+        localVideos.get("e1")?.failedStep shouldBe AnalyzeStep.PROCESSING
+
+        // Signal is back, and the job carried on without the phone.
+        videos.processingUpdates = listOf(
+            ProcessingUpdate("processing_phase1", 0.8f, null),
+            ProcessingUpdate("phase1_complete", 1f, null),
+        )
+        clips.clips.value = listOf(clipFor("e1"))
+        c.retry("e1")
+        runCurrent()
+
+        videos.startCalls.size shouldBe 1      // NOT re-triggered
+        localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED
+    }
+
+    @Test
+    fun retry_while_still_offline_fails_again_without_touching_the_run() = runTest {
+        localVideos.add(entry())
+        videos.processingUpdates = listOf(ProcessingUpdate("failed_connection", null, "offline"))
+        val c = coordinator()
+        c.startAnalysis("e1", keypoints())
+        runCurrent()
+
+        c.retry("e1")
+        runCurrent()
+
+        videos.startCalls.size shouldBe 1
+        val entry = localVideos.get("e1").shouldNotBeNull()
+        entry.stage shouldBe AnalyzeStage.FAILED
+        entry.failedStep shouldBe AnalyzeStep.PROCESSING
     }
 }

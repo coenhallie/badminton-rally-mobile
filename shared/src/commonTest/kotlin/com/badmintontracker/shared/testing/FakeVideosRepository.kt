@@ -53,8 +53,16 @@ class FakeVideosRepository : VideosRepository {
         return nextKeypointsResult
     }
 
+    /**
+     * What a successful trigger does to the row, for a test that needs the fake to
+     * behave like the backend across a retry: a failed row STAYS failed until
+     * something re-triggers it, and only then starts reporting progress again.
+     */
+    var onStartProcessing: () -> Unit = {}
+
     override suspend fun startProcessing(videoId: String): Result<Unit> {
         startCalls += videoId
+        if (nextStartResult.isSuccess) onStartProcessing()
         return nextStartResult
     }
 

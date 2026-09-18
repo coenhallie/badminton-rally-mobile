@@ -45,6 +45,15 @@ object VideoStatus {
     const val PHASE1_COMPLETE = "phase1_complete"
     const val PROCESSING_PHASE2 = "processing_phase2"
     const val COMPLETED = "completed"
+
+    /**
+     * Not a status the database has. [VideosRepository.observeProcessing] reports
+     * it when the PHONE could not reach the row for long enough to give up, which
+     * says nothing about the job: it starts with "failed" so that every consumer
+     * treats it as the end of the wait, and has a name so that the one consumer
+     * who must tell the two apart can.
+     */
+    const val FAILED_CONNECTION = "failed_connection"
 }
 
 /**
@@ -334,7 +343,7 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
                     val message = e.userFacingMessage("Lost connection while checking progress")
                     emit(
                         ProcessingUpdate(
-                            status = "failed_connection",
+                            status = VideoStatus.FAILED_CONNECTION,
                             progress = null,
                             error = message,
                         )

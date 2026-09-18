@@ -117,15 +117,37 @@ class AnalyzeCoordinator(
     }
 
     fun retry(entryId: String) {
-        val step = when (val failed = localVideos.get(entryId)?.failedStep) {
-            // A PROCESSING failure leaves the videos row in a terminal failed_*
-            // status; resuming at PROCESSING would only re-read that row and fail
-            // again instantly. Re-trigger the edge function instead.
-            AnalyzeStep.PROCESSING -> AnalyzeStep.TRIGGER
-            null -> AnalyzeStep.UPLOAD
-            else -> failed
+        when (val failed = localVideos.get(entryId)?.failedStep) {
+            AnalyzeStep.PROCESSING -> launch(entryId) { retryProcessing(entryId) }
+            null -> launchPipeline(entryId, AnalyzeStep.UPLOAD)
+            else -> launchPipeline(entryId, failed)
         }
-        launchPipeline(entryId, step)
+    }
+
+    /**
+     * A PROCESSING failure is one of two very different things, and only the
+     * videos row can say which.
+     *
+     * The backend's job failed: the row sits in a terminal failed_* status, and
+     * resuming at PROCESSING would re-read it and fail again at once, so the edge
+     * function has to be re-triggered.
+     *
+     * Or the PHONE lost the server for three minutes while the job carried on.
+     * Re-triggering that resets the row to "uploaded" and starts Phase 1 again
+     * from nothing, possibly beside the worker still finishing the first run.
+     * That one only needs its poll resumed.
+     */
+    private suspend fun retryProcessing(entryId: String) {
+        awaitSession()
+        // Spinning before the read rather than after: with no signal the read
+        // takes as long to give up as the poll did, and a Retry that leaves the
+        // row looking untouched for three minutes reads as a dead button.
+        localVideos.update(entryId) {
+            it.copy(stage = AnalyzeStage.PROCESSING, failedStep = null, failureMessage = null)
+        }
+        val row = videos.observeProcessing(entryId).first()
+        val backendFailed = row.isFailure && row.status != VideoStatus.FAILED_CONNECTION
+        runPipeline(entryId, if (backendFailed) AnalyzeStep.TRIGGER else AnalyzeStep.PROCESSING)
     }
 
     /** Re-attach to backend jobs that kept running while the app was dead. */
