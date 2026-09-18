@@ -607,4 +607,75 @@ class AnalyzeCoordinatorTest {
 
         localVideos.get("e1")?.stage shouldBe AnalyzeStage.ANALYZED
     }
+
+    // MARK: - A run that died while measuring movement
+
+    private fun measuringEntry() = entry().copy(stage = AnalyzeStage.MEASURING, keypoints = keypoints())
+
+    @Test
+    fun a_run_killed_before_phase_two_started_starts_it_on_relaunch() = runTest {
+        // MEASURING counts as running, so the row can be neither removed nor
+        // retried. Reattach ignored the stage, and Phase 2 takes minutes on a
+        // phone that kills backgrounded apps: the row span "Measuring movement"
+        // for ever.
+        localVideos.add(measuringEntry())
+        videos.processingUpdates = listOf(ProcessingUpdate("phase1_complete", 1f, null))
+        val installed = mutableListOf<String>()
+
+        coordinator(installCloudPoses = { id, _ -> installed += id }).reattachToProcessing()
+        runCurrent()
+
+        videos.startAnalyticsCalls shouldBe listOf("e1")
+        installed shouldBe listOf("e1")
+        localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED
+    }
+
+    @Test
+    fun a_run_killed_while_phase_two_was_going_waits_for_it_rather_than_starting_another() = runTest {
+        // start-analytics answers 409 to a row already in processing_phase2, and
+        // measureMovement treats a refused start as "no heatmap this time". Asking
+        // again would have thrown away a Phase 2 that was about to finish.
+        localVideos.add(measuringEntry())
+        videos.processingUpdates = listOf(
+            ProcessingUpdate("processing_phase2", 0.4f, null),
+            ProcessingUpdate("completed", 1f, null),
+        )
+        videos.nextStartAnalyticsResult = Result.failure(IllegalStateException("HTTP 409"))
+        val installed = mutableListOf<String>()
+
+        coordinator(installCloudPoses = { id, _ -> installed += id }).reattachToProcessing()
+        runCurrent()
+
+        videos.startAnalyticsCalls shouldBe emptyList()
+        installed shouldBe listOf("e1")
+        localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED
+    }
+
+    @Test
+    fun a_run_killed_after_phase_two_finished_only_has_the_artifact_left_to_fetch() = runTest {
+        localVideos.add(measuringEntry())
+        videos.processingUpdates = listOf(ProcessingUpdate("completed", 1f, null))
+        videos.nextStartAnalyticsResult = Result.failure(IllegalStateException("HTTP 409"))
+        val installed = mutableListOf<String>()
+
+        coordinator(installCloudPoses = { id, _ -> installed += id }).reattachToProcessing()
+        runCurrent()
+
+        videos.startAnalyticsCalls shouldBe emptyList()
+        installed shouldBe listOf("e1")
+        localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED
+    }
+
+    @Test
+    fun a_relaunch_that_cannot_reach_the_server_still_frees_the_row() = runTest {
+        // Phase 1 succeeded long ago. Whatever happens to the heatmap, the entry
+        // must come out of MEASURING, or the coach can never remove it.
+        localVideos.add(measuringEntry())
+        videos.processingUpdates = listOf(ProcessingUpdate("failed_connection", null, "offline"))
+
+        coordinator().reattachToProcessing()
+        runCurrent()
+
+        localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED
+    }
 }

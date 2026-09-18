@@ -3,6 +3,7 @@ package com.badmintontracker.shared.localvideo
 import com.badmintontracker.shared.model.CourtKeypoints
 import com.badmintontracker.shared.repo.ClipsRepository
 import com.badmintontracker.shared.repo.UploadState
+import com.badmintontracker.shared.repo.VideoStatus
 import com.badmintontracker.shared.repo.VideosRepository
 import com.badmintontracker.shared.util.SyncLock
 import com.badmintontracker.shared.util.withLock
@@ -12,6 +13,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -135,16 +137,25 @@ class AnalyzeCoordinator(
                 // resumable and the later steps tolerate re-runs, so restart the
                 // pipeline instead of leaving the entry stuck on a spinner.
                 AnalyzeStage.UPLOADING -> launchPipeline(entry.id, AnalyzeStep.UPLOAD)
+                // Phase 1 is done and its clips exist; only the movement pass was
+                // cut short. MEASURING counts as running, so an entry left here can
+                // be neither removed nor retried, and nothing else would ever move
+                // it on.
+                AnalyzeStage.MEASURING -> launch(entry.id) { resumeMeasuring(entry.id) }
                 else -> Unit
             }
         }
     }
 
-    private fun launchPipeline(entryId: String, startFrom: AnalyzeStep) {
+    private fun launchPipeline(entryId: String, startFrom: AnalyzeStep) =
+        launch(entryId) { runPipeline(entryId, startFrom) }
+
+    /** One run per entry at a time, whichever kind of run it is. */
+    private fun launch(entryId: String, run: suspend () -> Unit) {
         if (!activeLock.withLock { active.add(entryId) }) return
         scope.launch {
             try {
-                runPipeline(entryId, startFrom)
+                run()
             } finally {
                 activeLock.withLock { active.remove(entryId) }
                 _progress.update { it - entryId }
@@ -250,11 +261,29 @@ class AnalyzeCoordinator(
         // what makes canRemoveLocalVideo false: a coach who swiped the row
         // away mid-run would otherwise leave the finished artifact with no
         // entry to land against.
-        measureMovement(entryId)
+        measureMovement(entryId, terminalStatus)
+        finish(entryId)
+    }
 
-        // Before the branch below, because that branch retires the entry and
-        // the announcement is about the RUN, not about whether its video
-        // happened to survive.
+    /**
+     * Picks a run up from MEASURING after the process died in it.
+     *
+     * The row is read first because what is left to do depends on how far the
+     * backend got on its own, and [measureMovement] cannot find that out by
+     * trying: start-analytics answers 409 to a row that is already running or
+     * done, and a refused start reads as "no heatmap this time".
+     */
+    private suspend fun resumeMeasuring(entryId: String) {
+        awaitSession()
+        if (localVideos.get(entryId) == null) return
+        val status = videos.observeProcessing(entryId).first().status
+        measureMovement(entryId, status)
+        finish(entryId)
+    }
+
+    private fun finish(entryId: String) {
+        // Before the update below, and about the RUN, not about whether its
+        // video happened to survive.
         _finishedRuns.update { it + entryId }
 
         // The entry is KEPT, always, and this must not become conditional again.
@@ -289,26 +318,42 @@ class AnalyzeCoordinator(
      * accepts), Phase 2 runs and cannot upload its artifact (non-fatal on the
      * worker, so results_meta carries a null path), or the download breaks.
      */
-    private suspend fun measureMovement(entryId: String) {
+    private suspend fun measureMovement(entryId: String, rowStatus: String) {
         localVideos.update(entryId) { it.copy(stage = AnalyzeStage.MEASURING) }
         setProgress(entryId) { it.copy(pipelineProgress = null) }
 
-        videos.startAnalytics(entryId).onFailure {
-            log("video $entryId phase 2 not started: ${it.message}")
-            return
+        // [rowStatus] is where the videos row stands now. Straight after Phase 1
+        // that is phase1_complete; a run picked up after the process died can find
+        // Phase 2 already going, or already done.
+        when (rowStatus) {
+            VideoStatus.COMPLETED -> Unit
+            VideoStatus.PROCESSING_PHASE2 -> if (!awaitPhaseTwo(entryId)) return
+            VideoStatus.PHASE1_COMPLETE, FAILED_PHASE2 -> {
+                videos.startAnalytics(entryId).onFailure {
+                    log("video $entryId phase 2 not started: ${it.message}")
+                    return
+                }
+                if (!awaitPhaseTwo(entryId)) return
+            }
+            else -> {
+                log("video $entryId phase 2 skipped: row is $rowStatus")
+                return
+            }
         }
+
+        runCatching { installCloudPoses(entryId) { p -> setProgress(entryId) { s -> s.copy(pipelineProgress = p) } } }
+            .onFailure { log("video $entryId pose artifact not installed: ${it.message}") }
+    }
+
+    /** False when Phase 2 ended in a failure, which is logged and goes no further. */
+    private suspend fun awaitPhaseTwo(entryId: String): Boolean {
         var failed: String? = null
         videos.observeProcessing(entryId, awaitAnalytics = true).collect { update ->
             setProgress(entryId) { it.copy(pipelineProgress = update.progress) }
             if (update.isFailure) failed = update.error ?: "Phase 2 failed"
         }
-        failed?.let {
-            log("video $entryId phase 2 failed: $it")
-            return
-        }
-
-        runCatching { installCloudPoses(entryId) { p -> setProgress(entryId) { s -> s.copy(pipelineProgress = p) } } }
-            .onFailure { log("video $entryId pose artifact not installed: ${it.message}") }
+        failed?.let { log("video $entryId phase 2 failed: $it") }
+        return failed == null
     }
 
     private fun fail(entryId: String, step: AnalyzeStep, message: String) {
@@ -326,5 +371,8 @@ class AnalyzeCoordinator(
 private fun Throwable.isDuplicateKey(): Boolean =
     message?.contains("duplicate key") == true || message?.contains("23505") == true
 
+// The status start-analytics leaves behind when Phase 2 fails, and one of the two
+// it accepts a (re)start from.
+private const val FAILED_PHASE2 = "failed_phase2"
 private const val CLIP_COUNT_ATTEMPTS = 3
 private const val CLIP_COUNT_RETRY_MS = 2_000L
