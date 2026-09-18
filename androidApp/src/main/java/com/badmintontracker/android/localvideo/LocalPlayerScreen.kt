@@ -43,8 +43,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.SeekParameters
 import com.badmintontracker.android.clipdetail.AddAnnotationSheet
 import com.badmintontracker.android.clipdetail.AnnotationRow
 import com.badmintontracker.android.clipdetail.NotesHeader
@@ -56,6 +54,7 @@ import com.badmintontracker.android.clipdetail.rememberPlaybackPosition
 import com.badmintontracker.android.ui.components.FullscreenEffect
 import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlButtonVariant
+import com.badmintontracker.android.ui.components.frameExactPlayer
 import com.badmintontracker.shared.localvideo.LocalAnnotation
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.prefs.PlaybackPreferenceRepository
@@ -82,9 +81,7 @@ fun LocalPlayerScreen(
     val annotations by vm.state.collectAsStateWithLifecycle()
     val labelOptions by vm.labelOptions.collectAsStateWithLifecycle()
     val labelErrorMessage by vm.errorMessage.collectAsStateWithLifecycle()
-    val player = remember {
-        ExoPlayer.Builder(ctx).build().apply { setSeekParameters(SeekParameters.EXACT) }
-    }
+    val player = remember { frameExactPlayer(ctx) }
     var isFullscreen by remember { mutableStateOf(false) }
     var addDialog by remember { mutableStateOf<Float?>(null) }
     var pendingDelete by remember { mutableStateOf<LocalAnnotation?>(null) }

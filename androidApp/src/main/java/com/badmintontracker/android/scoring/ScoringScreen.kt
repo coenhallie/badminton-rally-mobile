@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -471,6 +472,7 @@ private fun GamesWonBox(games: Int) {
  * outside the wrapping area: it used to be the last chip in a scrolling row,
  * which is exactly why it became unreachable.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ControlBar(
     match: MatchState,

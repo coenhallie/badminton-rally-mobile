@@ -1,11 +1,10 @@
 package com.badmintontracker.android.ui.components
 
-import android.app.Activity
 import android.content.pm.ActivityInfo
+import androidx.activity.compose.LocalActivity
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.ui.platform.LocalContext
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -13,7 +12,9 @@ import androidx.core.view.WindowInsetsControllerCompat
 /** Locks landscape + hides system bars while [isFullscreen]; restores on exit/dispose. */
 @Composable
 fun FullscreenEffect(isFullscreen: Boolean) {
-    val activity = LocalContext.current as? Activity
+    // LocalActivity, not a cast of LocalContext: the context is a wrapper as soon
+    // as anything themes or localises it, and the cast then quietly yields null.
+    val activity = LocalActivity.current
 
     LaunchedEffect(isFullscreen, activity) {
         val a = activity ?: return@LaunchedEffect

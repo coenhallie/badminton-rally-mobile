@@ -234,5 +234,19 @@ val copyTestOnlyOnnxModels by tasks.registering(Sync::class) {
 
 android.sourceSets.getByName("main").assets.srcDir(onnxAssetsDir)
 android.sourceSets.getByName("androidTest").assets.srcDir(onnxTestAssetsDir)
-tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }
-    .configureEach { dependsOn(copyOnnxModels, copyTestOnlyOnnxModels) }
+// Lint is here alongside the asset merge because it builds its own model of the
+// variant, assets included, so it reads this directory too. Without the edge,
+// Gradle fails the task with "uses this output of task ':androidApp:copyOnnxModels'
+// without declaring an explicit or implicit dependency".
+//
+// It only ever bit RELEASE builds, and that is why it went unnoticed: lintVital
+// runs as part of `assembleRelease` and not of `assembleDebug`, so every debug
+// build on every developer machine passed while `assembleRelease` could not
+// complete at all.
+tasks.matching {
+    // ignoreCase because the two families are capitalised differently:
+    // `generateReleaseLintVitalReportModel` and `lintVitalAnalyzeRelease`.
+    // Matching "Lint" alone silently misses every task of the second kind.
+    (it.name.startsWith("merge") && it.name.endsWith("Assets")) ||
+        it.name.contains("lint", ignoreCase = true)
+}.configureEach { dependsOn(copyOnnxModels, copyTestOnlyOnnxModels) }

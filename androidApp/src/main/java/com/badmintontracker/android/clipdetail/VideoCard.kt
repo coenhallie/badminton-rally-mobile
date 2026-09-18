@@ -1,6 +1,7 @@
 package com.badmintontracker.android.clipdetail
 
 import android.view.LayoutInflater
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -110,6 +111,7 @@ fun rememberPlaybackPosition(player: ExoPlayer): State<PlaybackPosition> {
  * square card and sit pillarboxed in it rather than a card taller than the
  * screen.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun VideoCard(
     player: ExoPlayer,

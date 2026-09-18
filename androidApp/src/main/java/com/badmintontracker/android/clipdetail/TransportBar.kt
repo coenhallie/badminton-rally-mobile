@@ -1,5 +1,6 @@
 package com.badmintontracker.android.clipdetail
 
+import androidx.annotation.OptIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -37,6 +38,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import com.badmintontracker.android.ui.icons.ShuttlIcons
 import com.badmintontracker.android.ui.theme.ShuttlRadius
@@ -266,6 +268,9 @@ private fun Modifier.transportSurface(shape: Shape, pressed: Boolean, accent: Bo
  *      EXACT seek lands inside that frame's display interval, not on
  *      the boundary with the previous frame.
  */
+// videoFormat is an unstable media3 API; it is the only source of the real
+// frame rate the player has.
+@OptIn(UnstableApi::class)
 internal fun ExoPlayer.seekFrames(delta: Int) {
     val fps = videoFormat?.frameRate?.takeIf { it > 0f } ?: 30f
     val frameDurMs = 1000.0 / fps

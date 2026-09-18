@@ -32,7 +32,6 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.SeekParameters
 import com.badmintontracker.analysis.geometry.Matrix3x3
 import com.badmintontracker.analysis.geometry.homography
 import com.badmintontracker.analysis.geometry.maxResidualM
@@ -47,6 +46,7 @@ import com.badmintontracker.android.clipdetail.PlaybackSettingsSheet
 import com.badmintontracker.android.clipdetail.TransportBar
 import com.badmintontracker.android.clipdetail.VideoCard
 import com.badmintontracker.android.clipdetail.rememberPlaybackPosition
+import com.badmintontracker.android.ui.components.frameExactPlayer
 import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.shared.local.CourtFit
 import com.badmintontracker.shared.local.MetricSample
@@ -228,9 +228,7 @@ private fun SkeletonPlayer(
     }
 
     val context = LocalContext.current
-    val player = remember {
-        ExoPlayer.Builder(context).build().apply { setSeekParameters(SeekParameters.EXACT) }
-    }
+    val player = remember { frameExactPlayer(context) }
     var playbackError by remember { mutableStateOf<String?>(null) }
     DisposableEffect(player) {
         // Mirrors LocalPlayerScreen: the analysed file can be moved or

@@ -45,12 +45,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.SeekParameters
 import com.badmintontracker.android.localanalysis.BackgroundWorkAction
 import com.badmintontracker.android.ui.components.FullscreenEffect
 import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlButtonVariant
+import com.badmintontracker.android.ui.components.frameExactPlayer
 import com.badmintontracker.android.ui.theme.ShuttlVideoOverlay
 import com.badmintontracker.shared.model.RallyAnnotation
 import com.badmintontracker.shared.prefs.PlaybackPreferenceRepository
@@ -65,11 +64,7 @@ fun ClipDetailScreen(
     val state by vm.state.collectAsStateWithLifecycle()
     val ctx = LocalContext.current
     val orientation = LocalConfiguration.current.orientation
-    val player = remember {
-        ExoPlayer.Builder(ctx).build().apply {
-            setSeekParameters(SeekParameters.EXACT)
-        }
-    }
+    val player = remember { frameExactPlayer(ctx) }
     val snackbar = remember { SnackbarHostState() }
     var addDialog by remember { mutableStateOf<Float?>(null) }
     var pendingDelete by remember { mutableStateOf<RallyAnnotation?>(null) }
