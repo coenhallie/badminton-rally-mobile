@@ -57,6 +57,7 @@ import com.badmintontracker.android.ui.theme.ShuttlRadius
 import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.shared.model.AnnotationLabel
 import com.badmintontracker.shared.model.LabelColor
+import com.badmintontracker.shared.scoring.FinishPrompt
 import com.badmintontracker.shared.scoring.MatchState
 import com.badmintontracker.shared.scoring.PairPlayer
 import com.badmintontracker.shared.scoring.ScoreLog
@@ -101,17 +102,14 @@ fun ScoringScreen(
     var confirming by remember { mutableStateOf<Confirmation?>(null) }
     var noteOpen by remember { mutableStateOf(false) }
 
-    // Fires on the transition to un-scoreable, from either exit: the Done button
-    // once the rules end it, and "Finish match" in the overflow. Asked once per
-    // visit to the board, so a coach who says "not now" and then undoes a rally to
-    // fix the last point is not asked again the moment he re-finishes.
-    var addVideoAsked by remember { mutableStateOf(false) }
+    // Fires on the transition to un-scoreable, from either exit: the last point
+    // the rules allow, and "Finish match" in the overflow. The rule is shared
+    // with iOS; see FinishPrompt for why a board opened on a match that is
+    // ALREADY over must not ask.
+    val finishPrompt = remember { FinishPrompt(playableOnEntry = log.isPlayable()) }
     var addVideoOpen by remember { mutableStateOf(false) }
     LaunchedEffect(match.isOver, log.status) {
-        if (!addVideoAsked && !log.isPlayable()) {
-            addVideoAsked = true
-            addVideoOpen = true
-        }
+        if (finishPrompt.shouldAsk(log.isPlayable())) addVideoOpen = true
     }
 
     Column(Modifier.fillMaxSize().safeDrawingPadding()) {
