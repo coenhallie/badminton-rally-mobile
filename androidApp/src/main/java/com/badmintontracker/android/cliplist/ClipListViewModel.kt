@@ -240,9 +240,10 @@ class ClipListViewModel(
      * before the second half ever runs, so the video and its clips are left
      * completely untouched, not merely undeleted on the server. Saying only
      * "it's gone from this phone" is true of the match and silent about that,
-     * which reads as the whole gesture having landed. With the score_logs
-     * migration currently unapplied on the server this is not a rare failure:
-     * it is the only outcome a bound match's delete has today.
+     * which reads as the whole gesture having landed. It fails whenever the
+     * phone has no signal, which courtside is often. (The delete itself is not
+     * lost: ScoreLogsRepository keeps it pending and sends it again on the next
+     * sync.)
      */
     private suspend fun deleteScoreLog(scoreLogId: String, hasVideo: Boolean = false): Boolean {
         val result = scoreLogs.delete(scoreLogId)
