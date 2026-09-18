@@ -15,6 +15,11 @@ import kotlin.test.Test
 import kotlin.time.Duration.Companion.hours
 import kotlinx.coroutines.test.runTest
 import kotlinx.datetime.Instant
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 class ScoreLogsRepositoryTest {
 
@@ -295,16 +300,28 @@ class ScoreLogsRepositoryTest {
          *  unacknowledged match looks like from the client's side. */
         var echoPosts: Boolean = true
         val requests = mutableListOf<Pair<String, String>>()
+        val deletedUrls = mutableListOf<String>()
 
         fun client() = TestSupabase.client { request ->
             val body = (request.body as? TextContent)?.text ?: ""
             requests += request.method.value to body
+            if (request.method == HttpMethod.Delete) deletedUrls += request.url.toString()
             val failure = failWith
             when {
                 failure != null -> jsonResponse("""{"message":"nope"}""", status = failure)
                 request.method == HttpMethod.Get -> jsonResponse(rows)
                 request.method == HttpMethod.Post -> {
                     if (echoPosts) rows = body
+                    jsonResponse("[]")
+                }
+                request.method == HttpMethod.Delete -> {
+                    // Honest about what a delete does, or a confirmed delete would
+                    // come straight back in the pull that follows it.
+                    val url = request.url.toString()
+                    val kept = Json.parseToJsonElement(rows).jsonArray.filterNot {
+                        url.contains(it.jsonObject.getValue("id").jsonPrimitive.content)
+                    }
+                    rows = JsonArray(kept).toString()
                     jsonResponse("[]")
                 }
                 else -> jsonResponse("[]")
@@ -478,5 +495,64 @@ class ScoreLogsRepositoryTest {
         repo.delete(created.id).isFailure shouldBe true
         repo.logs.value.shouldBeEmpty()
         repo.get(created.id).shouldBeNull()
+    }
+
+    @Test
+    fun a_match_deleted_without_signal_stays_deleted_after_the_next_sync() = runTest {
+        // The delete gesture removes the match from the phone whether or not the
+        // server heard about it. The pull then re-added it, because to the merge a
+        // server row with no local copy is simply a match this device has not seen.
+        val server = FakeScoreLogsServer()
+        val settings = MapSettings()
+        val repo = syncingRepo(server, settings)
+        val created = repo.newMatch()
+        repo.sync().isSuccess shouldBe true
+
+        server.failWith = HttpStatusCode.InternalServerError
+        repo.delete(created.id).isFailure shouldBe true
+
+        server.failWith = null
+        repo.sync().isSuccess shouldBe true
+
+        repo.logs.value.shouldBeEmpty()
+        // And it survives a relaunch, which is the form the coach actually meets.
+        syncingRepo(server, settings).logs.value.shouldBeEmpty()
+    }
+
+    @Test
+    fun a_delete_the_server_never_heard_is_sent_again_on_the_next_sync() = runTest {
+        val server = FakeScoreLogsServer()
+        val repo = syncingRepo(server)
+        val created = repo.newMatch()
+        repo.sync().isSuccess shouldBe true
+
+        server.failWith = HttpStatusCode.InternalServerError
+        repo.delete(created.id)
+        server.deletedUrls.clear()
+
+        server.failWith = null
+        repo.sync().isSuccess shouldBe true
+        server.deletedUrls.single().shouldContain(created.id)
+
+        // Once acknowledged it is not sent a third time.
+        server.deletedUrls.clear()
+        repo.sync().isSuccess shouldBe true
+        server.deletedUrls.shouldBeEmpty()
+    }
+
+    @Test
+    fun a_pending_delete_is_retried_by_a_relaunched_app() = runTest {
+        val server = FakeScoreLogsServer()
+        val settings = MapSettings()
+        val repo = syncingRepo(server, settings)
+        val created = repo.newMatch()
+        repo.sync().isSuccess shouldBe true
+        server.failWith = HttpStatusCode.InternalServerError
+        repo.delete(created.id)
+        server.deletedUrls.clear()
+
+        server.failWith = null
+        syncingRepo(server, settings).sync().isSuccess shouldBe true
+        server.deletedUrls.single().shouldContain(created.id)
     }
 }
