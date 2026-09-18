@@ -29,6 +29,9 @@ class SessionStorageTest {
             error("no requests expected")
         }
 
+        // After initialisation, or the restore that finds nothing can land after
+        // the import and clear it. See VideosRepositoryUploadTest.signInAs.
+        client.auth.awaitInitialization()
         client.auth.importSession(session, autoRefresh = false)
 
         sessionStore.getStringOrNull(SESSION_KEY).shouldContain("test-refresh")
