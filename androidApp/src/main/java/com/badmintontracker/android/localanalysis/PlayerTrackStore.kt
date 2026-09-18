@@ -46,8 +46,9 @@ class PlayerTrackStore(private val root: File) {
      * every other build would refuse.
      */
     fun save(entryId: String, track: PlayerTrack, fps: Double) {
-        val file = fileFor(entryId).apply { parentFile?.mkdirs() }
-        file.writeText(
+        // Atomically, like every other store here: this is the product of a run
+        // that took the better part of an hour.
+        fileFor(entryId).writeTextAtomically(
             buildString {
                 append(VERSION).append(' ').append(fps).append(' ')
                     .append(track.framesWithPose).append('\n')
@@ -94,16 +95,7 @@ class PlayerTrackStore(private val root: File) {
                 }
             }
         }
-        val tmp = File(file.parentFile, file.name + ".tmp")
-        try {
-            tmp.writeText(text)
-            if (!tmp.renameTo(file)) {
-                throw java.io.IOException("Failed to rename ${tmp.absolutePath} to ${file.absolutePath}")
-            }
-        } catch (e: Exception) {
-            tmp.delete()
-            throw e
-        }
+        file.writeTextAtomically(text)
     }
 
     /**
@@ -122,9 +114,8 @@ class PlayerTrackStore(private val root: File) {
      * unloadable. Recovery is through the drawer, whose Analyze button is
      * gated on the stage rather than on the track.
      *
-     * Still weaker than `load(id) != null` for a file truncated after its
-     * header, which would need the process killed inside a single writeText
-     * of a track that was just held whole in memory. Accepted.
+     * A header is enough because every save goes through writeAtomically: a
+     * file that exists under this name was written whole.
      */
     fun has(entryId: String, source: TrackSource = TrackSource.LOCAL): Boolean {
         val file = fileFor(entryId, source)
@@ -208,8 +199,7 @@ class PlayerTrackStore(private val root: File) {
      */
     fun saveClips(entryId: String, clips: List<ClipCutter.Clip>) {
         if (clips.isEmpty()) return
-        val file = clipIndexFor(entryId).apply { parentFile?.mkdirs() }
-        file.writeText(
+        clipIndexFor(entryId).writeTextAtomically(
             buildString {
                 append(VERSION).append('\n')
                 clips.forEach {

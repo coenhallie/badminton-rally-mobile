@@ -65,7 +65,12 @@ object AnalysisFiles {
         for (store in stores) {
             val base = File(filesDir, store)
             File(base, entryId).deleteRecursively()
-            for (suffix in SUFFIXES) File(base, entryId + suffix).delete()
+            for (suffix in SUFFIXES) {
+                File(base, entryId + suffix).delete()
+                // What writeAtomically leaves when the process dies between the
+                // write and the rename.
+                File(base, entryId + suffix + TMP_SUFFIX).delete()
+            }
         }
     }
 }

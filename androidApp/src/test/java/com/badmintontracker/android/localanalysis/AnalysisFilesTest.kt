@@ -98,4 +98,18 @@ class AnalysisFilesTest {
     fun `a video that was never analysed is not an error`() {
         AnalysisFiles.deleteAll(temp.root, "never-run", LocalVideoRemoval.DISCARDED)
     }
+
+    @Test
+    fun `deletes what a write left behind when the process died inside it`() {
+        // Every store writes to a sibling and renames it. A kill between the two
+        // leaves the sibling, which carries the entry's name but none of the
+        // suffixes the cleanup looked for.
+        val track = write("player-tracks/e1.track.tmp")
+        val skeleton = write("skeletons/e1.skel.tmp")
+        val source = write("local-sources/e1.mp4.tmp")
+
+        AnalysisFiles.deleteAll(temp.root, "e1", LocalVideoRemoval.DISCARDED)
+
+        listOf(track, skeleton, source).map { it.exists() } shouldBe List(3) { false }
+    }
 }

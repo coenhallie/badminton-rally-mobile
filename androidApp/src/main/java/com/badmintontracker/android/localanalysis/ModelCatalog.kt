@@ -65,13 +65,20 @@ object ModelCatalog {
      * the test package's assets but cannot write to its data directory, so the
      * file has to be read from one package and staged into the other's.
      */
-    fun path(context: Context, asset: String, assets: AssetManager = context.assets): String {
-        val out = File(context.filesDir, "onnx/${asset.substringAfterLast('/')}")
-        if (out.exists() && out.length() > 0) return out.path
-        out.parentFile?.mkdirs()
-        assets.open(asset).use { input ->
-            out.outputStream().use { input.copyTo(it) }
-        }
-        return out.path
-    }
+    fun path(context: Context, asset: String, assets: AssetManager = context.assets): String =
+        stageModel(
+            root = File(context.filesDir, "onnx"),
+            versionKey = installKey(context),
+            name = asset.substringAfterLast('/'),
+        ) { assets.open(asset) }.path
+
+    /**
+     * Changes whenever the APK does. lastUpdateTime rather than the version code
+     * or [VERSION]: a development build keeps its version code across installs,
+     * and [VERSION] is derived from the weights, so a graph re-exported from the
+     * same weights changes neither. "Every install extracts again" costs one
+     * copy of a few tens of megabytes and cannot be wrong.
+     */
+    private fun installKey(context: Context): String =
+        "install-" + context.packageManager.getPackageInfo(context.packageName, 0).lastUpdateTime
 }

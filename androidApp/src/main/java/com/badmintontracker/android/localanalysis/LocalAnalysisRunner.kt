@@ -376,10 +376,15 @@ class LocalAnalysisRunner(
         val direct = File(videoUri.removePrefix("file://"))
         if (direct.isFile && direct.canRead()) return direct
         val out = File(context.filesDir, "local-sources/$entryId.mp4")
+        // Present means whole: copyAtomicallyFrom is the only thing that creates
+        // it. "Exists and is not empty" used to be the test, and a copy of a 2GB
+        // match killed partway passed it, so every later run analysed the first
+        // part of the match without complaint. The length is still checked for
+        // the one case that predates this: a build before it could leave an empty
+        // file behind, and that one at least is recognisable.
         if (out.isFile && out.length() > 0) return out
-        out.parentFile?.mkdirs()
         context.contentResolver.openInputStream(Uri.parse(videoUri))
-            ?.use { input -> out.outputStream().use { input.copyTo(it) } }
+            ?.use { out.copyAtomicallyFrom(it) }
             ?: error("Video file is missing or access was revoked")
         return out
     }
