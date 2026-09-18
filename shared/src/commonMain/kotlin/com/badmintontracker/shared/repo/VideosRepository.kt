@@ -424,6 +424,19 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
         val thumbnailPaths = clipRows.mapNotNull { it.thumbnailPath }
         if (thumbnailPaths.isNotEmpty()) runCatching { client.storage.from("thumbnails").delete(thumbnailPaths) }
         if (videoPath != null) runCatching { client.storage.from("videos").delete(listOf(videoPath)) }
+        // What the analysis itself left behind, which this delete predates: the
+        // worker writes under results/{owner}/{video}/, and since Phase 2 that
+        // includes a pose artifact holding every frame of the players' bodies.
+        // Listed rather than named, so whatever the worker adds next is covered
+        // too. The owner comes off the video's own path, the one thing here that
+        // records it. Best effort like the rest: see the design note on why an
+        // orphaned file beats a match that cannot be removed.
+        if (videoPath != null) runCatching {
+            val folder = "${videoPath.substringBefore('/')}/$videoId"
+            val results = client.storage.from("results")
+            val left = results.list(folder).map { "$folder/${it.name}" }
+            if (left.isNotEmpty()) results.delete(left)
+        }
 
         client.postgrest.rpc("delete_match", DeleteMatchArgs(videoId))
         Unit
