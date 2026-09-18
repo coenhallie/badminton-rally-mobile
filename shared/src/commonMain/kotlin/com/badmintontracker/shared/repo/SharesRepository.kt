@@ -19,6 +19,12 @@ interface SharesRepository {
     suspend fun share(videoId: String, email: String): Result<Unit>
     suspend fun unshare(videoId: String, userId: String): Result<Unit>
     suspend fun listShares(videoId: String): Result<List<MatchShare>>
+    /**
+     * Throws when the request fails. Declared, because Swift can only catch what
+     * is: an undeclared exception out of a suspend function terminates the iOS
+     * app instead of reaching the `catch` beside the call.
+     */
+    @Throws(Exception::class)
     suspend fun listReceived(): List<ReceivedShare>
     /** Recipient removes a received share so the match leaves their list. */
     suspend fun leaveShare(videoId: String): Result<Unit>

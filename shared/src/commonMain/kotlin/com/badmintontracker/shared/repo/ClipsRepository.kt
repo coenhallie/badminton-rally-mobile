@@ -11,8 +11,15 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.Serializable
 
 interface ClipsRepository {
+    /**
+     * Throws when the request fails. Declared, because Swift can only catch what
+     * is: an undeclared exception out of a suspend function terminates the iOS
+     * app instead of reaching the `catch` beside the call.
+     */
+    @Throws(Exception::class)
     suspend fun listClips(): List<RallyClip>
     fun observeClips(): Flow<List<RallyClip>>
+    @Throws(Exception::class)
     suspend fun refresh()
     suspend fun updateTitle(clipId: String, title: String?): Result<Unit>
     /** Count this video's rally clips directly on the server, bypassing the cache. */

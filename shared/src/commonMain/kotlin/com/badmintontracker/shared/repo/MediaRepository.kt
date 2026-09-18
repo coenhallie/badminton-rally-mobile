@@ -6,6 +6,12 @@ import io.github.jan.supabase.storage.storage
 import kotlin.time.Duration.Companion.hours
 
 interface MediaRepository {
+    /**
+     * Throws when the request fails. Declared, because Swift can only catch what
+     * is: an undeclared exception out of a suspend function terminates the iOS
+     * app instead of reaching the `catch` beside the call.
+     */
+    @Throws(Exception::class)
     suspend fun signedClipUrl(clip: RallyClip): String
     suspend fun signedThumbnailUrl(clip: RallyClip): String?
 }

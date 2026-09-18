@@ -41,6 +41,7 @@
 		3144DD38FA7D5B4B6C6739E7 /* ScoringBoardUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EADBE4DF5FC5144E7AC1BDF /* ScoringBoardUITests.swift */; };
 		34CAF7EBABBE17BD0D9F7633 /* FramePreprocessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FDAAA15B0E6D9178584AAA9 /* FramePreprocessor.swift */; };
 		35856BEAD6E5AE44F2B15811 /* ShuttlStatTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A014CD4B3CFF04C915C82C4 /* ShuttlStatTile.swift */; };
+		39C3563A29B0C742C993740C /* KotlinThrowBridgingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C653800D88FDA4EFB8C42457 /* KotlinThrowBridgingTests.swift */; };
 		3AD1A4C1F76FB329D882B424 /* ScoreLogDeleteMessageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F86CA7E3C3A9EBC8035FF98 /* ScoreLogDeleteMessageTests.swift */; };
 		4175AE2A684D5C4E22D3025F /* PointsFacet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70E5927A0FF5276512DACA06 /* PointsFacet.swift */; };
 		42C49DD9F9F50EE8F0D89FA1 /* AnalyticsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FBB549CA3203C05EA69EA75 /* AnalyticsListView.swift */; };
@@ -280,6 +281,7 @@
 		C2B6C5DE171A479978CF2184 /* OnnxSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnnxSessionTests.swift; sourceTree = "<group>"; };
 		C31833453FB35FF6A77236BF /* LabelSwatchGridUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabelSwatchGridUITests.swift; sourceTree = "<group>"; };
 		C59114F647E69202552CE362 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		C653800D88FDA4EFB8C42457 /* KotlinThrowBridgingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KotlinThrowBridgingTests.swift; sourceTree = "<group>"; };
 		C8F0982C6053F4BFEB29954C /* LabelsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabelsView.swift; sourceTree = "<group>"; };
 		C930D6A6291A278327ECE0CE /* LabelBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabelBadge.swift; sourceTree = "<group>"; };
 		C9F2370F7CE20C2A273FC7CD /* ClipListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipListView.swift; sourceTree = "<group>"; };
@@ -416,6 +418,7 @@
 				4286940271954B590D973976 /* DrawerDragMathTests.swift */,
 				5026EBA3635DDA8388C31BB6 /* FramePreprocessorTests.swift */,
 				A02D8B89ABF94AD30304E3A5 /* FrameStepMathTests.swift */,
+				C653800D88FDA4EFB8C42457 /* KotlinThrowBridgingTests.swift */,
 				2773B3FC4873D44B5C253B68 /* LabelsLogicTests.swift */,
 				B0119C7C5331221AC41B89A6 /* LocalAnalysisRunnerTests.swift */,
 				6093A611B1252121829D52E0 /* LocalClipsTests.swift */,
@@ -922,6 +925,7 @@
 				C6B5BD04AF8238C3F4C523D5 /* DrawerDragMathTests.swift in Sources */,
 				708E420E7D68695C33009DC9 /* FramePreprocessorTests.swift in Sources */,
 				240133B2EF631DC8B1C2979F /* FrameStepMathTests.swift in Sources */,
+				39C3563A29B0C742C993740C /* KotlinThrowBridgingTests.swift in Sources */,
 				A7F76CE03E6A6D6ECA3A84B0 /* LabelsLogicTests.swift in Sources */,
 				8B8018837BA09FD76C11D957 /* LocalAnalysisRunnerTests.swift in Sources */,
 				AAAA151F4C7186DBC81294B6 /* LocalClipsTests.swift in Sources */,

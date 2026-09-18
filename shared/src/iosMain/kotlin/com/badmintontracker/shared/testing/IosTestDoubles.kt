@@ -110,6 +110,16 @@ fun testRacketArmPreferences(): RacketArmPreferenceRepository {
  */
 fun testClipsRepository(): ClipsRepository = InMemoryClipsRepository()
 
+/**
+ * A [ClipsRepository] with no signal: every call that reaches the network throws,
+ * which is what supabase-kt does. For the one thing only the iOS bundle can
+ * check, that such a throw arrives in Swift as an error and not as an abort.
+ */
+fun testOfflineClipsRepository(): ClipsRepository = object : ClipsRepository by InMemoryClipsRepository() {
+    override suspend fun listClips(): List<RallyClip> = throw IllegalStateException("offline")
+    override suspend fun refresh() { throw IllegalStateException("offline") }
+}
+
 /** A [VideosRepository] the iOS test bundle can build. See [RecordingVideosRepository]. */
 fun testVideosRepository(): RecordingVideosRepository = RecordingVideosRepository()
 
