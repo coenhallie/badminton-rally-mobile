@@ -39,6 +39,7 @@ import io.ktor.client.engine.HttpClientEngine
 import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlin.time.Clock
 
@@ -73,7 +74,10 @@ class RallyApp(
     val videos:      VideosRepository      = VideosRepositoryImpl(client)
     val cloudPoses:  CloudPoseRepository   = CloudPoseRepositoryImpl(client)
 
-    val authState: Flow<AuthState> = auth.sessionFlow.map { it.toAuthState() }
+    // distinct, because several statuses now share a value: a refresh that fails
+    // and then succeeds is AUTHENTICATED three times over, and no screen should be
+    // told the session changed when it did not.
+    val authState: Flow<AuthState> = auth.sessionFlow.map { it.toAuthState() }.distinctUntilChanged()
 
     // On-device local video registry + annotations (shared persistence, native UI).
     val localVideos:      LocalVideoRepository         = LocalVideoRepository(settings, onLocalVideoRemoved)

@@ -60,7 +60,10 @@ import com.badmintontracker.android.localvideo.court.loadFirstFrame
 import com.badmintontracker.android.localvideo.rememberVideoIntake
 import com.badmintontracker.android.labels.LabelsScreen
 import com.badmintontracker.android.labels.LabelsViewModel
+import com.badmintontracker.android.nav.AuthRedirect
 import com.badmintontracker.android.nav.Route
+import com.badmintontracker.android.nav.authRedirect
+import com.badmintontracker.android.nav.authStartDestination
 import com.badmintontracker.android.scoring.AttachIntent
 import com.badmintontracker.android.scoring.NewMatchScreen
 import com.badmintontracker.android.scoring.NewMatchViewModel
@@ -75,8 +78,8 @@ import com.badmintontracker.shared.localvideo.canResumeFailedAnalysis
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.RallyApp
+import com.badmintontracker.shared.repo.AuthState
 import com.badmintontracker.shared.scoring.ScoreLogStatus
-import io.github.jan.supabase.auth.status.SessionStatus
 import com.badmintontracker.android.localanalysis.LocalAnalysisState
 import com.badmintontracker.android.localanalysis.isDeviceRunInFlight
 import com.badmintontracker.android.localanalysis.HeatmapPanel
@@ -104,31 +107,35 @@ fun AuthGate(
     throughput: DeviceThroughputRepository,
     localAnnotations: LocalAnnotationsRepository,
 ) {
-    val session by rally.auth.sessionFlow.collectAsStateWithLifecycle(initialValue = null)
+    // The shared projection rather than the raw SessionStatus, so both phones
+    // agree on what counts as signed in. Reading the status here used to file
+    // Initializing and RefreshFailure under "signed out": SignIn flashed on every
+    // cold start, and a token refresh with no signal replaced a live scoring
+    // board with the sign-in screen.
+    val auth by rally.authState.collectAsStateWithLifecycle(initialValue = AuthState.LOADING)
 
-    when (val s = session) {
-        null -> Splash()
+    when (auth) {
+        AuthState.LOADING -> Splash()
         else -> {
             val nav = rememberNavController()
-            val start: Route = if (s is SessionStatus.Authenticated) Route.Home else Route.SignIn
+            // Remembered: see authStartDestination. Later changes of session are
+            // navigations, below, never a new graph.
+            val start: Route = remember { authStartDestination(auth) }
 
-            LaunchedEffect(s) {
-                val onSignIn = nav.currentDestination?.route?.contains("SignIn") == true
-                when {
+            LaunchedEffect(auth) {
+                val onSignIn = nav.currentDestination?.hasRoute<Route.SignIn>() == true
+                when (authRedirect(auth, onSignIn)) {
                     // Session ended anywhere in the app (sign-out, token revocation):
                     // clear the whole back stack and land on SignIn.
-                    s is SessionStatus.NotAuthenticated && !onSignIn -> {
-                        nav.navigate(Route.SignIn) {
-                            popUpTo(nav.graph.id) { inclusive = true }
-                        }
+                    AuthRedirect.TO_SIGN_IN -> nav.navigate(Route.SignIn) {
+                        popUpTo(nav.graph.id) { inclusive = true }
                     }
                     // Session arrived while on SignIn (e.g. a session restored via
                     // deep link, so SignInViewModel never sees the completed sign-in).
-                    s is SessionStatus.Authenticated && onSignIn -> {
-                        nav.navigate(Route.Home) {
-                            popUpTo(Route.SignIn) { inclusive = true }
-                        }
+                    AuthRedirect.TO_HOME -> nav.navigate(Route.Home) {
+                        popUpTo(Route.SignIn) { inclusive = true }
                     }
+                    null -> Unit
                 }
             }
 
