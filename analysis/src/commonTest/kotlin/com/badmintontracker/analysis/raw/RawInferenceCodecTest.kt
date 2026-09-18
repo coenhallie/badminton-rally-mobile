@@ -98,6 +98,47 @@ class RawInferenceCodecTest {
         }
     }
 
+    /** Where the frame count sits: after the fixed header and the model version string. */
+    private fun frameCountOffset(): Int =
+        4 + 4 + 8 + 4 + 4 + 4 + 4 + sample.header.modelVersion.encodeToByteArray().size
+
+    private fun ByteArray.withIntAt(offset: Int, value: Int): ByteArray = copyOf().also {
+        for (i in 0 until 4) it[offset + i] = ((value ushr (8 * i)) and 0xFF).toByte()
+    }
+
+    @Test
+    fun a_corrupt_count_is_rejected_before_anything_is_allocated_for_it() {
+        // These bytes come off the network: the cloud pose artifact is tens of
+        // megabytes, downloaded on a phone. A flipped count used to reach
+        // ArrayList(n) and List(n) unchecked, so the truncation guard only got
+        // its say after an allocation of two billion slots had already taken
+        // the app down with OutOfMemoryError.
+        val bytes = RawInferenceCodec.encode(sample)
+        assertFailsWith<IllegalArgumentException> {
+            RawInferenceCodec.decode(bytes.withIntAt(frameCountOffset(), Int.MAX_VALUE))
+        }
+    }
+
+    @Test
+    fun a_negative_count_is_rejected_by_name() {
+        val bytes = RawInferenceCodec.encode(sample)
+        val failure = assertFailsWith<IllegalArgumentException> {
+            RawInferenceCodec.decode(bytes.withIntAt(frameCountOffset(), -1))
+        }
+        failure.message!!.contains("RawInference") shouldBe true
+    }
+
+    @Test
+    fun a_length_that_overflows_the_position_is_still_a_truncation() {
+        // pos + n wraps negative for a large enough n, and a wrapped sum passed
+        // the bounds check. The model version's length is the first one read.
+        val bytes = RawInferenceCodec.encode(sample)
+        val failure = assertFailsWith<IllegalArgumentException> {
+            RawInferenceCodec.decode(bytes.withIntAt(4 + 4 + 8 + 4 + 4 + 4, Int.MAX_VALUE))
+        }
+        failure.message!!.contains("truncated") shouldBe true
+    }
+
     @Test
     fun an_absent_shuttle_is_distinct_from_an_invisible_one() {
         // Two different facts: the model produced no output for this frame,

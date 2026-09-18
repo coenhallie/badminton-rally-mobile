@@ -78,7 +78,7 @@ object RawInferenceCodec {
             videoHeight = r.int(),
             modelVersion = r.string(),
         )
-        val frameCount = r.int()
+        val frameCount = r.count(FRAME_MIN_BYTES)
         val frames = ArrayList<RawFrame>(frameCount)
         repeat(frameCount) {
             val frame = r.int()
@@ -87,16 +87,24 @@ object RawInferenceCodec {
                 x = r.float(), y = r.float(), confidence = r.float(),
                 visible = r.byte().toInt() != 0,
             )
-            val boxes = List(r.int()) { r.box() }
-            val persons = List(r.int()) {
+            val boxes = List(r.count(BOX_BYTES)) { r.box() }
+            val persons = List(r.count(PERSON_MIN_BYTES)) {
                 val box = r.box()
-                RawPerson(box, List(r.int()) { RawKeypoint(r.float(), r.float(), r.float()) })
+                RawPerson(box, List(r.count(KEYPOINT_BYTES)) { RawKeypoint(r.float(), r.float(), r.float()) })
             }
             frames.add(RawFrame(frame, timestamp, shuttle, boxes, persons))
         }
         return RawInference(header, frames)
     }
 
+
+    // The least each record can occupy, for [Reader.count].
+    private const val BOX_BYTES = 4 + 5 * 4
+    private const val KEYPOINT_BYTES = 3 * 4
+    /** A box and a keypoint count. */
+    private const val PERSON_MIN_BYTES = BOX_BYTES + 4
+    /** Frame index, timestamp, the shuttle flag, and the two counts. */
+    private const val FRAME_MIN_BYTES = 4 + 8 + 1 + 4 + 4
     private class Writer {
         private var buf = ByteArray(1024)
         private var size = 0
@@ -148,12 +156,31 @@ object RawInferenceCodec {
         // decoding a half-written file into a plausible shorter video would
         // move every rally boundary with nothing reporting why.
         private fun take(n: Int): Int {
-            require(pos + n <= buf.size) {
+            // n against what is LEFT, not pos + n against the size: that sum wraps
+            // negative for a large n, and a wrapped sum passes.
+            require(n >= 0 && n <= buf.size - pos) {
                 "truncated RawInference stream: wanted $n bytes at $pos, have ${buf.size}"
             }
             val at = pos
             pos += n
             return at
+        }
+
+        /**
+         * A count of records that follow, each at least [minRecordBytes] long.
+         *
+         * Checked against the bytes that are actually left BEFORE anyone sizes a
+         * list by it. These streams come off the network, and an unchecked count
+         * reaches an allocation: a flipped one asked for two billion slots, and
+         * the app died of OutOfMemoryError before [take] could call it truncated.
+         */
+        fun count(minRecordBytes: Int): Int {
+            val n = int()
+            require(n >= 0 && n.toLong() * minRecordBytes <= buf.size - pos) {
+                "truncated RawInference stream: $n records of at least $minRecordBytes bytes " +
+                    "claimed at $pos, have ${buf.size}"
+            }
+            return n
         }
 
         fun byte(): Byte = buf[take(1)]
