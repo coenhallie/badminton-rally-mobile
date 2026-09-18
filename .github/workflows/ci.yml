@@ -6,9 +6,21 @@ on:
     tags: ["v*"]
   pull_request:
 
+# Read-only: nothing here publishes, comments or tags.
+permissions:
+  contents: read
+
+# A push to a branch supersedes the run for the push before it. The two macOS
+# jobs are the expensive ones and were running to completion for every commit.
+# Not on main or a tag: those runs are the record of what shipped.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   shared-tests:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -16,10 +28,16 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
+      # ANALYSIS_REQUIRE_CORPUS: the golden tests skip themselves when their
+      # fixtures are missing, and a skip reports green. The fixtures are
+      # committed, so here a skip is a failure.
       - run: ./gradlew :shared:jvmTest :analysis:jvmTest
+        env:
+          ANALYSIS_REQUIRE_CORPUS: "1"
 
   ios-framework:
     runs-on: macos-14
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -35,6 +53,7 @@ jobs:
 
   android-tests:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -43,9 +62,14 @@ jobs:
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
       - run: ./gradlew :androidApp:testDebugUnitTest
+      # The instrumented tests need a device and the models, neither of which is
+      # here, but they can at least be kept compiling.
+      - run: ./gradlew :androidApp:compileDebugAndroidTestKotlin -PonnxModelsOptional=true
+      - run: tools/check-container-colors.sh
 
   android-assemble:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -58,11 +82,17 @@ jobs:
       # here. This job proves the app compiles and packages; the APK it produces
       # has no models in it and cannot analyse a video.
       - run: ./gradlew :androidApp:assembleDebug -PonnxModelsOptional=true
+      # Lint, and the RELEASE variant, because neither ran anywhere. Lint had
+      # eleven errors, two of them crashes on API 26-28, and assembleRelease had
+      # stopped completing at all: lintVital is part of it and not of
+      # assembleDebug, so every debug build on every machine stayed green.
+      - run: ./gradlew :androidApp:lintDebug :androidApp:assembleRelease -PonnxModelsOptional=true
 
   ios-app:
     # macos-15+: the committed pbxproj uses project format 77, unreadable by
     # macos-14's Xcode 15.
     runs-on: macos-15
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
