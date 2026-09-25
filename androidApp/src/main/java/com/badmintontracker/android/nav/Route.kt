@@ -31,9 +31,12 @@ sealed interface Route {
          * Needed because a READY_NO_VIDEO row - a stored track with no local
          * entry to read a title from - has no other name to head the screen
          * with: a cloud run finishing keeps its entry at ANALYZED rather than
-         * retiring it (since f96d78c), so the video-less case is the coach
-         * freeing the file's space afterwards (`freeVideo` drops the entry but
-         * keeps the track) or a match analysed on another phone. Either way,
+         * retiring it (since f96d78c), so the video-less case is a match
+         * analysed on another phone, or the coach freeing the file's space
+         * afterwards on a match that has cloud clips (`freeVideo` drops the
+         * entry but keeps the track, and the cloud row lists it). Freeing a
+         * match that is only on this phone leaves no row at all: nothing is
+         * left to list the kept track. Either way,
          * heading the screen "Analysis" while the row one tap back says
          * "Thu League" reads as two matches.
          */

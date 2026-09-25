@@ -32,7 +32,10 @@ enum class LocalVideoRemoval {
      * playback, so without the file it is an artifact nothing can display. The
      * tracks stay, because the heatmap and the base position are computed
      * entirely from them and work with no video at all. That is what
-     * `AnalyticsRowState.READY_NO_VIDEO` is for.
+     * `AnalyticsRowState.READY_NO_VIDEO` is for - for a match that also has a
+     * cloud copy, whose row lists the kept track. A match only on this phone
+     * leaves the match list with its entry, so nothing lists its track again
+     * (`MatchListCopy.removeFromPhoneDetail` tells the coach so).
      */
     VIDEO_ONLY,
 }

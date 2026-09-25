@@ -1,6 +1,19 @@
 package com.badmintontracker.shared.matchlist
 
+import com.badmintontracker.shared.localvideo.AnalyzeStage
+import com.badmintontracker.shared.localvideo.LocalVideoEntry
+import com.badmintontracker.shared.model.RallyClip
+import com.badmintontracker.shared.scoring.MatchSetup
+import com.badmintontracker.shared.scoring.ScoreEvent
+import com.badmintontracker.shared.scoring.ScoreLog
+import com.badmintontracker.shared.scoring.ScoreLogStatus
+import com.badmintontracker.shared.scoring.ScoringRules
+import com.badmintontracker.shared.scoring.Side
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
+import kotlinx.datetime.Instant
+import kotlinx.datetime.TimeZone
 import kotlin.test.Test
 
 class MatchListCopyTest {
@@ -33,10 +46,9 @@ class MatchListCopyTest {
         )
         val produced = listOf(
             MatchListCopy.menuDeviceClips(0), MatchListCopy.menuDeviceClips(7),
-            MatchListCopy.choiceRemoveDetail(MatchDelete.SCORE_MATCH),
-            MatchListCopy.choiceRemoveDetail(MatchDelete.VIDEO_MATCH),
-            MatchListCopy.choiceRemoveDetail(MatchDelete.BOUND_MATCH),
-        ) + listOf(true, false).flatMap { onThisPhone ->
+        ) + removableRows().flatMap { item ->
+            listOf(MatchListCopy.removeFromPhoneDetail(item), MatchListCopy.choiceMessage(item))
+        } + listOf(true, false).flatMap { onThisPhone ->
             MatchDelete.entries.flatMap { kind ->
                 listOfNotNull(
                     MatchListCopy.choiceDeleteDetail(kind, onThisPhone),
@@ -81,6 +93,114 @@ class MatchListCopyTest {
         MatchListCopy.choiceDeleteDetail(MatchDelete.SCORE_MATCH, onThisPhone = true) shouldBe
             "Deletes this match and every point you scored, and removes its video and analysis from this app. " +
             "This can't be undone."
+    }
+
+    // --- removing the video: what goes and what stays, per row ---
+
+    private val t = Instant.parse("2026-09-08T10:00:00Z")
+
+    private fun entry(id: String, stage: AnalyzeStage = AnalyzeStage.LOCAL, scoreLogId: String? = null) = LocalVideoEntry(
+        id = id, uri = "content://x/$id", displayName = "$id.mp4", durationMs = 48_000, sizeBytes = 10,
+        addedAtEpochMs = t.toEpochMilliseconds(), stage = stage, scoreLogId = scoreLogId,
+    )
+
+    private fun clip(videoId: String) = RallyClip(
+        id = "$videoId-1", videoId = videoId, ownerId = "me", rallyIndex = 1,
+        startTimestamp = 0f, endTimestamp = 1f, durationSeconds = 1f,
+        clipStoragePath = "clips/$videoId/1.mp4", annotationCount = 0, createdAt = t,
+    )
+
+    private fun log(id: String, videoId: String? = null, points: Int = 0) = ScoreLog(
+        id = id, videoId = videoId, title = "Thu League",
+        rules = ScoringRules.BWF_21, setup = MatchSetup(firstServer = Side.HOME),
+        events = List(points) { ScoreEvent.PointTo(Side.HOME) },
+        status = if (videoId != null) ScoreLogStatus.BOUND else ScoreLogStatus.UNBOUND,
+        createdAt = t, updatedAt = t,
+    )
+
+    /** The one row the builder makes of these, as the drawer would get it. */
+    private fun row(
+        entries: List<LocalVideoEntry>,
+        clips: List<RallyClip> = emptyList(),
+        logs: List<ScoreLog> = emptyList(),
+        tracks: Set<String> = emptySet(),
+        skeletons: Set<String> = emptySet(),
+        deviceClips: Map<String, Int> = emptyMap(),
+    ): MatchListItem = buildMatchList(
+        MatchListInput(
+            clips = clips, currentUserId = "me", sharerByVideoId = emptyMap(), metadataByVideoId = emptyMap(),
+            scoreLogs = logs, localEntries = entries, cloudProgress = emptyMap(), deviceRuns = emptyMap(),
+            storedTrackIds = tracks, storedSkeletonIds = skeletons, deviceClipCounts = deviceClips,
+        ),
+        TimeZone.UTC,
+    ).mine.single().also { it.canRemoveFromPhone shouldBe true }
+
+    private fun removableRows() = listOf(
+        row(listOf(entry("e1"))),
+        row(listOf(entry("e1")), tracks = setOf("e1"), skeletons = setOf("e1"), deviceClips = mapOf("e1" to 7)),
+        row(listOf(entry("v1", AnalyzeStage.ANALYZED)), clips = listOf(clip("v1")), tracks = setOf("v1"), skeletons = setOf("v1")),
+        row(listOf(entry("e1", scoreLogId = "l1")), logs = listOf(log("l1", points = 3))),
+        row(listOf(entry("v1", AnalyzeStage.ANALYZED)), clips = listOf(clip("v1")), logs = listOf(log("l1", videoId = "v1", points = 3))),
+    )
+
+    @Test
+    fun a_video_only_on_this_phone_says_it_leaves_the_list() {
+        MatchListCopy.removeFromPhoneDetail(row(listOf(entry("e1")))) shouldBe
+            "Removes the video and its notes from this app. The match is only on this phone, so it leaves your list."
+    }
+
+    /**
+     * The track stays on disk, but with no cloud copy nothing lists it again:
+     * as far as the coach can tell the heatmap is gone, and the old promise
+     * that it stays was not true for this row.
+     */
+    @Test
+    fun a_device_run_with_no_cloud_copy_names_everything_it_had_as_going() {
+        val item = row(listOf(entry("e1")), tracks = setOf("e1"), skeletons = setOf("e1"), deviceClips = mapOf("e1" to 7))
+        MatchListCopy.removeFromPhoneDetail(item) shouldBe
+            "Removes the video, its notes, the rallies cut on this phone, the skeleton and the heatmap from this app. " +
+            "The match is only on this phone, so it leaves your list."
+    }
+
+    /** The cloud row lists the heatmap once the file is gone; it stays, though not "in the cloud". */
+    @Test
+    fun a_match_also_in_the_cloud_keeps_its_rallies_there_and_its_heatmap() {
+        val item = row(
+            listOf(entry("v1", AnalyzeStage.ANALYZED)), clips = listOf(clip("v1")),
+            tracks = setOf("v1"), skeletons = setOf("v1"),
+        )
+        MatchListCopy.removeFromPhoneDetail(item) shouldBe
+            "Removes the video, its notes and the skeleton from this app. " +
+            "The match and its rallies stay in the cloud. The heatmap stays too."
+    }
+
+    @Test
+    fun a_scored_match_keeps_its_points_whether_or_not_it_is_in_the_cloud() {
+        MatchListCopy.removeFromPhoneDetail(row(listOf(entry("e1", scoreLogId = "l1")), logs = listOf(log("l1", points = 3)))) shouldBe
+            "Removes the video and its notes from this app. The match and every point you scored stay."
+        MatchListCopy.removeFromPhoneDetail(
+            row(listOf(entry("v1", AnalyzeStage.ANALYZED)), clips = listOf(clip("v1")), logs = listOf(log("l1", videoId = "v1", points = 3))),
+        ) shouldBe
+            "Removes the video and its notes from this app. The match, every point you scored and its rallies stay in the cloud."
+        MatchListCopy.removeFromPhoneDetail(row(listOf(entry("e1", scoreLogId = "l1")), logs = listOf(log("l1")))) shouldBe
+            "Removes the video and its notes from this app. The match stays."
+    }
+
+    @Test
+    fun only_a_row_with_a_cloud_copy_mentions_the_cloud() {
+        removableRows().forEach { item ->
+            val detail = MatchListCopy.removeFromPhoneDetail(item)
+            if (item.where == MatchWhere.BOTH) detail shouldContain "in the cloud" else detail shouldNotContain "cloud"
+        }
+    }
+
+    /** iOS's choice dialog has one message, so it carries both options' details. */
+    @Test
+    fun the_choice_message_explains_both_options() {
+        val item = row(listOf(entry("v1", AnalyzeStage.ANALYZED)), clips = listOf(clip("v1")))
+        MatchListCopy.choiceMessage(item) shouldBe
+            "${MatchListCopy.CHOICE_REMOVE}\n${MatchListCopy.removeFromPhoneDetail(item)}\n\n" +
+            "${MatchListCopy.CHOICE_DELETE}\n${MatchListCopy.choiceDeleteDetail(item.delete, onThisPhone = true)}"
     }
 
     // Built from a code point rather than a literal, so this file itself never

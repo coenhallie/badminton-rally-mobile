@@ -46,7 +46,6 @@ import com.badmintontracker.android.ui.components.ConfirmDialog
 import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlEmptyState
 import com.badmintontracker.android.ui.icons.ShuttlIcons
-import com.badmintontracker.shared.analytics.videoRemovalMessage
 import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.matchlist.MatchAction
@@ -386,10 +385,10 @@ fun ClipListScreen(
     removeTarget?.let { item ->
         ConfirmDialog(
             title = "Remove video?",
-            // The stored track, as before, not "has any analysis": the message
-            // promises the heatmap stays, which is only true when there is one,
-            // and a row whose only analysis is its rallies or its score has none.
-            message = videoRemovalMessage(hasAnalysis = item.heatmapId != null),
+            // Per row: what goes and what stays depends on whether the match
+            // has a cloud copy, which is the only thing that lists a kept
+            // track again once the file is gone.
+            message = MatchListCopy.removeFromPhoneDetail(item),
             confirmLabel = "Remove",
             onConfirm = { removeTarget = null; item.entryId?.let(onRemoveFromPhone) },
             onDismiss = { removeTarget = null },

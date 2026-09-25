@@ -373,7 +373,10 @@ private extension MatchesList {
             }
             Button(MatchListCopy.shared.CHOICE_CANCEL, role: .cancel) { choiceTarget = nil }
         } message: { item in
-            Text(MatchListCopy.shared.choiceDeleteDetail(delete: item.delete, onThisPhone: item.entryId != nil))
+            // Both options' details, not only the delete's: the dialog has one
+            // message and no line under each button, and "Remove video from
+            // this phone" needs its own consequences said as much as the delete.
+            Text(MatchListCopy.shared.choiceMessage(item: item))
         }
         // The single confirmation. The message is shared copy, which also says
         // when the video in this app goes with the match: a delete is only
@@ -404,10 +407,10 @@ private extension MatchesList {
             }
             Button("Cancel", role: .cancel) { removeTarget = nil }
         } message: { item in
-            // The stored track, not "has any analysis": the message promises
-            // the heatmap stays, which is only true when there is one, and a
-            // row whose only analysis is its rallies or its score has none.
-            Text(AnalysisCapabilityKt.videoRemovalMessage(hasAnalysis: item.heatmapId != nil))
+            // Per row: what goes and what stays depends on whether the match
+            // has a cloud copy, which is the only thing that lists a kept
+            // track again once the file is gone.
+            Text(MatchListCopy.shared.removeFromPhoneDetail(item: item))
         }
     }
 

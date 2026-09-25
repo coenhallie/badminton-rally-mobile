@@ -52,11 +52,55 @@ object MatchListCopy {
     const val CHOICE_DELETE = "Delete match everywhere"
     const val CHOICE_CANCEL = "Cancel"
 
-    /** Under "Remove video from this phone" in the choice sheet. */
-    fun choiceRemoveDetail(delete: MatchDelete): String = when (delete) {
-        MatchDelete.SCORE_MATCH -> "The match and every point you scored stay."
-        else -> "The match, its rallies and its analysis stay in the cloud."
+    /**
+     * What removing the video from this phone does to [item]: the "Remove
+     * video?" dialog's message, and the choice sheet's line under "Remove video
+     * from this phone". One function for both, so the two ways to the same
+     * gesture cannot promise different things.
+     *
+     * Removing frees the entry (`freeVideo`): the file, its notes, the clips a
+     * device run cut and the skeleton go; the player tracks stay on disk. Only
+     * a row with a cloud copy is still listed afterwards, as the cloud row, and
+     * only there is a kept track reachable again: that row lists it when the
+     * track is keyed by the cloud video's id. A match only on this phone
+     * leaves the list altogether, so its heatmap is gone as far as the coach
+     * can tell, and saying it stays (what this copy used to say) was not true.
+     * A scored match keeps its row whatever happens to the video.
+     *
+     * "From this app", as [deleteMessage] says it: on Android the original
+     * stays in the gallery, which the app only points at.
+     */
+    fun removeFromPhoneDetail(item: MatchListItem): String {
+        val heatmapStays = item.heatmapId != null && item.heatmapId == item.videoId
+        val goes = buildList {
+            add("the video")
+            add("its notes")
+            if (item.deviceClipCount > 0) add("the rallies cut on this phone")
+            if (MatchAnalysis.SKELETON in item.analyses) add("the skeleton")
+            if (item.heatmapId != null && !heatmapStays) add("the heatmap")
+        }
+        val scored = MatchAnalysis.SCORE in item.analyses
+        val stays = when {
+            item.where == MatchWhere.BOTH -> {
+                val kept = listOfNotNull("The match", "every point you scored".takeIf { scored }, "its rallies")
+                "${listed(kept)} stay in the cloud." + if (heatmapStays) " The heatmap stays too." else ""
+            }
+            item.scoreLogId != null && scored -> "The match and every point you scored stay."
+            item.scoreLogId != null -> "The match stays."
+            else -> "The match is only on this phone, so it leaves your list."
+        }
+        return "Removes ${listed(goes)} from this app. $stays"
     }
+
+    /**
+     * The choice dialog's whole message, for a platform whose dialog has one
+     * message and no room under each option (iOS's confirmation dialog): each
+     * option's name, then what it does. Android's sheet shows the same two
+     * details under their own options instead.
+     */
+    fun choiceMessage(item: MatchListItem): String =
+        "$CHOICE_REMOVE\n${removeFromPhoneDetail(item)}\n\n" +
+            "$CHOICE_DELETE\n${choiceDeleteDetail(item.delete, onThisPhone = item.entryId != null)}"
 
     /**
      * Under "Delete match everywhere" in the choice sheet: the same promise as
@@ -88,10 +132,12 @@ object MatchListCopy {
             MatchDelete.BOUND_MATCH -> listOf("this match", "every point you scored", "all its rally clips")
             else -> listOf("this match", "all its rally clips")
         }
-        val listed = if (match.size == 2) "${match[0]} and ${match[1]}"
-                     else "${match[0]}, ${match[1]} and ${match[2]}"
-        return if (onThisPhone) "$listed, and $removeVerb its video and analysis from this app" else listed
+        return if (onThisPhone) "${listed(match)}, and $removeVerb its video and analysis from this app" else listed(match)
     }
+
+    /** "a", "a and b", "a, b and c". */
+    private fun listed(items: List<String>): String =
+        if (items.size <= 1) items.joinToString() else items.dropLast(1).joinToString(", ") + " and " + items.last()
 }
 
 private fun analysisWord(a: MatchAnalysis): String = when (a) {

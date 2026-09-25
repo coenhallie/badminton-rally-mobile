@@ -59,7 +59,9 @@ enum AnalysisFiles {
     /// Kept when the coach is only freeing the footage. The heatmap and the
     /// base position are computed entirely from these and need no video at all,
     /// which is what `AnalyticsRowState.readyNoVideo` exists for - so taking
-    /// them here would turn "get my storage back" into "lose my analysis".
+    /// them here would turn "get my storage back" into "lose my analysis". Only
+    /// a match with a cloud copy is listed again afterwards; one only on this
+    /// phone leaves the list with its entry, and its kept track with it.
     private static let trackStores = ["player-tracks", "cloud-tracks"]
 
     /// Removes what this video left on disk, as much of it as `reason` allows.

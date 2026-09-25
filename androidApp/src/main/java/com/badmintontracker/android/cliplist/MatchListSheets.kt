@@ -122,7 +122,7 @@ internal fun DeleteChoiceSheet(
             Text(item.title, style = MaterialTheme.typography.titleLarge, maxLines = 2)
             ChoiceCard(
                 label = MatchListCopy.CHOICE_REMOVE,
-                detail = MatchListCopy.choiceRemoveDetail(item.delete),
+                detail = MatchListCopy.removeFromPhoneDetail(item),
                 labelColor = MaterialTheme.colorScheme.onSurface,
                 onClick = { hideThen(onRemoveFromPhone) },
             )
