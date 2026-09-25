@@ -301,6 +301,12 @@ final class AnalyticsRowsTests: XCTestCase {
     }
 
     func testADeviceRunSpeaksOverASettledCloudStage() {
+        // The reason isDeviceRunInFlight exists: a device run never moves
+        // LocalVideoEntry.stage, so a row reading the cloud stage alone shows a
+        // live "Analyze" button over a run already in progress. Pressing it
+        // walks the coach through marking the court again and then returns
+        // immediately, because the entry is already running - twelve taps, no
+        // effect, no explanation, which is what Android shipped.
         XCTAssertEqual(
             analyseAffordance(
                 for: entry(id: "e1", stage: .local), progress: nil,
@@ -313,11 +319,16 @@ final class AnalyticsRowsTests: XCTestCase {
                 for: entry(id: "e1", stage: .local), progress: nil,
                 device: .cutting(done: 2, total: 9)
             ),
+            // No percentage: done/total counts clips, not frames, so rendering
+            // it as the analysis percentage would show the bar restarting near
+            // the end of a run.
             .inProgress(phase: "Cutting clips")
         )
     }
 
     func testADeviceRunSpeaksOverAStaleCloudFailure() {
+        // A cloud attempt that failed last week must not describe a device run
+        // happening now.
         XCTAssertEqual(
             analyseAffordance(
                 for: entry(id: "e1", stage: .failed, failureMessage: "Upload failed"),
@@ -328,6 +339,8 @@ final class AnalyticsRowsTests: XCTestCase {
     }
 
     func testASuspendedRunIsNotAFailure() {
+        // iOS has no foreground service, so a run stops making progress when the
+        // app does. That is not a failure and the control must not say "Retry".
         XCTAssertEqual(
             analyseAffordance(
                 for: entry(id: "e1", stage: .local), progress: nil,
@@ -338,6 +351,9 @@ final class AnalyticsRowsTests: XCTestCase {
     }
 
     func testAPauseWithNoFractionDoesNotInventAZero() {
+        // A run can be frozen while preparing, or while cutting clips, and
+        // neither reports an analysis fraction. "Paused at 0%" over a run three
+        // clips from the end would be worse than saying nothing.
         XCTAssertEqual(
             analyseAffordance(
                 for: entry(id: "e1", stage: .local), progress: nil,
@@ -347,7 +363,20 @@ final class AnalyticsRowsTests: XCTestCase {
         )
     }
 
+    func testASuspendedRunIsStillInFlight() {
+        // It was never cancelled: the system freezes the process and thaws it,
+        // and the pass carries on from the frame it was on. A row that counted
+        // it as finished would offer an "Analyze" button that start() refuses on
+        // its own guard - the same dead button the cloud stage used to give.
+        XCTAssertTrue(isDeviceRunInFlight(.paused(.analysing(fraction: 0.37))))
+        // And nothing to light in the chrome, which is only on screen when the
+        // app is active - by which point the state is already gone.
+        XCTAssertNil(toDeviceWork(entryId: "e1", state: .paused(.analysing(fraction: 0.37))))
+    }
+
     func testAFinishedDeviceRunFallsThroughToTheCloudStage() {
+        // .done and .idle both stay in the runner's map after a run, and
+        // neither is work: a row must not spin over either.
         XCTAssertEqual(
             analyseAffordance(for: entry(id: "e1", stage: .local), progress: nil, device: .idle),
             .ready
@@ -395,15 +424,23 @@ final class AnalyticsRowsTests: XCTestCase {
         XCTAssertEqual(legend.text, "None of these matches are on this phone yet.")
     }
 
+    /// Videos on this phone with live buttons and nothing analysed yet. The
+    /// all-inert line would be false here, and so would a legend explaining a
+    /// dot that cannot render.
     func testALiveButtonAndNoDotGetsTheLineAboutTheButton() {
         let legend = analyticsLegend(for: [row(.analysable, key: "a"), row(.notOnDevice, key: "b")])
         XCTAssertEqual(legend, .analyseButton)
+        // Both targets named: court marking offers cloud AND on device, and it
+        // is the on-device run that writes the track a row needs to turn ready.
         XCTAssertEqual(legend.text, "Analyze cuts a video into rallies, on this phone or in the cloud.")
     }
 
     func testAStoredTrackGetsTheDotLineAndTheDotPromisesATap() {
         let legend = analyticsLegend(for: [row(.ready, key: "a"), row(.analysable, key: "b")])
         XCTAssertEqual(legend, .dot)
+        // "- tap to view" is a promise this list can keep now that a ready row
+        // opens the detail screen. It was dropped while there was nothing to
+        // open, which is the same defect as a comment outliving its code.
         XCTAssertEqual(legend.text, "Analyzed on this phone - tap to view")
     }
 }
