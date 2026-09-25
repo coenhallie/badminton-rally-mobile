@@ -37,15 +37,41 @@ import com.badmintontracker.shared.matchlist.MatchListItem
 import kotlinx.coroutines.launch
 
 /**
- * The glyph beside each [MatchListCopy.LEGEND] row, by position: the two
- * where-glyphs first, then the analyses in the order the status line draws
- * them. Built from the same icons the status line uses so the legend cannot
- * name a glyph the rows do not draw.
+ * Which glyph explains one row of [MatchListCopy.LEGEND]. Not an [ImageVector]
+ * directly: a kind is what a test can compare, and [icon] is the one place that
+ * turns it into the glyph the status line and its legend both draw. Mirrors
+ * iOS's `LegendGlyphKind`.
  */
-private val legendGlyphs: List<Pair<ImageVector, Boolean>> = listOf(
-    ShuttlIcons.Smartphone to true,
-    ShuttlIcons.Cloud to true,
-) + MatchAnalysis.entries.map { it.icon() to false }
+internal sealed interface LegendGlyphKind {
+    data object WherePhone : LegendGlyphKind
+    data object WhereCloud : LegendGlyphKind
+    data class Analysis(val analysis: MatchAnalysis) : LegendGlyphKind
+
+    /** The where-glyphs are drawn bare, the analyses on a chip, as on a row. */
+    val isWhere: Boolean get() = this !is Analysis
+
+    val icon: ImageVector get() = when (this) {
+        WherePhone -> ShuttlIcons.Smartphone
+        WhereCloud -> ShuttlIcons.Cloud
+        is Analysis -> analysis.icon()
+    }
+}
+
+/**
+ * The glyph a legend row's own label names, keyed on the label rather than on
+ * the row's position in [MatchListCopy.LEGEND]: pairing by index still
+ * compiles and still runs after the shared list is reordered or grows, and
+ * then shows the wrong glyph beside the right words.
+ */
+internal fun legendGlyphKind(label: String): LegendGlyphKind? = when (label) {
+    MatchListCopy.WHERE_PHONE -> LegendGlyphKind.WherePhone
+    MatchListCopy.WHERE_CLOUD -> LegendGlyphKind.WhereCloud
+    MatchListCopy.ANALYSIS_RALLIES -> LegendGlyphKind.Analysis(MatchAnalysis.RALLIES)
+    MatchListCopy.ANALYSIS_HEATMAP -> LegendGlyphKind.Analysis(MatchAnalysis.HEATMAP)
+    MatchListCopy.ANALYSIS_SKELETON -> LegendGlyphKind.Analysis(MatchAnalysis.SKELETON)
+    MatchListCopy.ANALYSIS_SCORE -> LegendGlyphKind.Analysis(MatchAnalysis.SCORE)
+    else -> null
+}
 
 /** Names the status line's glyphs. The match page says the same things in words. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -66,14 +92,22 @@ internal fun MatchLegendSheet(onDismiss: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(MatchListCopy.LEGEND_TITLE, style = MaterialTheme.typography.titleLarge)
-            MatchListCopy.LEGEND.zip(legendGlyphs).forEach { (copy, glyph) ->
-                val (label, detail) = copy
-                val (icon, isWhere) = glyph
+            MatchListCopy.LEGEND.forEach { (label, detail) ->
+                // The row always draws, glyph or not: a row whose glyph this
+                // file has not been taught must not hide the explanation the
+                // coach opened the sheet for. MatchLegendTest pins that every
+                // label maps to one.
+                val kind = legendGlyphKind(label)
                 Row(verticalAlignment = Alignment.Top) {
                     // One 18dp slot for both kinds, so the labels line up down
-                    // the sheet whether the glyph beside them is bare or chipped.
+                    // the sheet whether the glyph beside them is bare, chipped
+                    // or (a bug notwithstanding) empty.
                     Box(Modifier.padding(top = 1.dp).size(18.dp), contentAlignment = Alignment.Center) {
-                        if (isWhere) WhereGlyph(icon) else AnalysisChip(icon)
+                        when {
+                            kind == null -> Unit
+                            kind.isWhere -> WhereGlyph(kind.icon)
+                            else -> AnalysisChip(kind.icon)
+                        }
                     }
                     Spacer(Modifier.width(DrawerList.gap))
                     Column {
