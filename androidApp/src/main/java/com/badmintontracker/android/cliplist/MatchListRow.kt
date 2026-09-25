@@ -1,7 +1,12 @@
 package com.badmintontracker.android.cliplist
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,7 +29,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -203,55 +207,67 @@ private fun RowMenu(menu: List<RowMenuItem>) {
 
 /**
  * The file on this phone first (its own frame, no network), then the cloud's
- * cover clip, then the score, then a plain tile: first source that exists wins.
+ * cover clip, then the score, then a plain tile: first source that exists
+ * AND loads wins. A local frame that fails (the gallery file deleted, the
+ * permission revoked) falls through to the cover clip rather than leaving a
+ * hole in a row that has a perfectly good cloud thumbnail.
+ *
+ * Every state sits on the same tile: a fill one step off the row's own
+ * surface and a 1dp ring, drawn behind the picture. While a picture loads the
+ * tile reads as an empty slot; once every source has failed it carries the
+ * score or a glyph. On the raised card the fill is the page colour: the card
+ * is bgTertiary itself, and a slot in outlineVariant there all but vanished
+ * in dark (1A1D1E on 161819).
  */
 @Composable
 private fun MatchThumbnail(item: MatchListItem, media: MediaRepository) {
     val shape = RoundedCornerShape(ShuttlRadius.small)
-    val frame = Modifier
-        .size(DrawerList.thumbWidth, DrawerList.thumbHeight)
-        .clip(shape)
-    // A thumbnail that has not decoded yet would otherwise be a card-coloured
-    // hole; this reads as an empty slot instead.
-    val slot = frame.background(MaterialTheme.colorScheme.outlineVariant)
-    val localUri = item.localUri
+    val tileFill = if (item.isRaised) MaterialTheme.colorScheme.background else ShuttlTheme.extended.bgTertiary
+    val ring = MaterialTheme.colorScheme.outline
+    var localFailed by remember(item.localUri) { mutableStateOf(false) }
     val cover = item.coverClip
-    val scoreText = item.scoreText
-    when {
-        localUri != null -> AsyncImage(
-            model = localUri,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = slot,
-        )
-        cover != null -> CloudThumbnail(cover, media, slot)
-        else -> {
-            // A tile, not a slot: nothing is loading into it. On the raised
-            // card bgTertiary would be the card itself, so the tile takes the
-            // page colour there to still read as a tile.
-            val tileFill = if (item.isRaised) MaterialTheme.colorScheme.background else ShuttlTheme.extended.bgTertiary
-            Box(
-                frame
-                    .background(tileFill)
-                    .border(1.dp, MaterialTheme.colorScheme.outline, shape),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (scoreText != null) {
-                    Text(
-                        scoreText,
-                        style = MaterialTheme.typography.titleSmall.copy(fontFeatureSettings = "tnum"),
-                        color = MaterialTheme.colorScheme.onBackground,
-                        maxLines = 1,
-                    )
-                } else {
-                    Icon(
-                        ShuttlIcons.Hash,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
+    var coverFailed by remember(cover?.thumbnailStoragePath) { mutableStateOf(false) }
+    val localUri = item.localUri?.takeUnless { localFailed }
+    val coverToLoad = cover?.takeUnless { coverFailed || it.thumbnailStoragePath == null }
+    Box(
+        Modifier
+            .size(DrawerList.thumbWidth, DrawerList.thumbHeight)
+            .clip(shape)
+            .drawBehind {
+                drawRect(tileFill)
+                val stroke = 1.dp.toPx()
+                val radius = ShuttlRadius.small.toPx() - stroke / 2
+                drawRoundRect(
+                    color = ring,
+                    topLeft = Offset(stroke / 2, stroke / 2),
+                    size = Size(size.width - stroke, size.height - stroke),
+                    cornerRadius = CornerRadius(radius, radius),
+                    style = Stroke(width = stroke),
+                )
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        when {
+            localUri != null -> AsyncImage(
+                model = localUri,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                onError = { localFailed = true },
+                modifier = Modifier.matchParentSize(),
+            )
+            coverToLoad != null -> CloudThumbnail(coverToLoad, media, onFailed = { coverFailed = true })
+            item.scoreText != null -> Text(
+                item.scoreText.orEmpty(),
+                style = MaterialTheme.typography.titleSmall.copy(fontFeatureSettings = "tnum"),
+                color = MaterialTheme.colorScheme.onBackground,
+                maxLines = 1,
+            )
+            else -> Icon(
+                ShuttlIcons.Hash,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -259,16 +275,18 @@ private fun MatchThumbnail(item: MatchListItem, media: MediaRepository) {
 /**
  * The cover clip's thumbnail. Cached by its storage path, not by the URL:
  * the signed URL changes every hour, and keyed on it Coil would fetch the same
- * picture again each time the signature rolled over.
+ * picture again each time the signature rolled over. [onFailed] when there is
+ * no URL to be had or the picture does not load.
  */
 @Composable
-private fun CloudThumbnail(clip: RallyClip, media: MediaRepository, modifier: Modifier) {
+private fun BoxScope.CloudThumbnail(clip: RallyClip, media: MediaRepository, onFailed: () -> Unit) {
     val path = clip.thumbnailStoragePath
     val context = LocalPlatformContext.current
-    val url by produceState<String?>(initialValue = null, path) {
+    var url by remember(path) { mutableStateOf<String?>(null) }
+    LaunchedEffect(path) {
         // Never throws: a thumbnail is decorative, and the repository returns
         // null for anything that goes wrong.
-        value = media.signedThumbnailUrl(clip)
+        media.signedThumbnailUrl(clip)?.let { url = it } ?: onFailed()
     }
     val request = remember(url, path) {
         url?.let {
@@ -279,10 +297,13 @@ private fun CloudThumbnail(clip: RallyClip, media: MediaRepository, modifier: Mo
                 .build()
         }
     }
-    AsyncImage(
-        model = request,
-        contentDescription = null,
-        contentScale = ContentScale.Crop,
-        modifier = modifier,
-    )
+    if (request != null) {
+        AsyncImage(
+            model = request,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            onError = { onFailed() },
+            modifier = Modifier.matchParentSize(),
+        )
+    }
 }
