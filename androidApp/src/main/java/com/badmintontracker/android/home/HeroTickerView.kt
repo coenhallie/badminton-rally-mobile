@@ -42,8 +42,8 @@ import kotlinx.coroutines.isActive
  */
 @Composable
 fun HeroTickerView(
-    /** Paused while the drawer covers the screen: an animation nobody can see
-     * still costs a wake per tick. */
+    /** Paused while the Add sheet covers the screen (see ClipListScreen's
+     * heroPaused): an animation nobody can see still costs a wake per tick. */
     isPaused: Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -67,7 +67,7 @@ fun HeroTickerView(
         // exists to switch off.
         if (reduceMotion || isPaused) return@LaunchedEffect
         // This effect can be cancelled between `leaving = true` and
-        // `leaving = false` (the drawer opening mid-transition does exactly
+        // `leaving = false` (the Add sheet opening mid-transition does exactly
         // that). Without this reset, a cancellation caught there leaves the
         // second line invisible until the next full dwell-and-transition
         // cycle completes.

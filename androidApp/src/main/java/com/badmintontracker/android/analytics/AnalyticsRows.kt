@@ -31,17 +31,18 @@ internal fun affordanceFor(
     progress: AnalyzeProgress?,
 ): AnalyseAffordance = when (live) {
     // Through [deviceWorkLabel] rather than three literals of its own, which is
-    // what these used to be: the drawer's row and the chrome indicator already
-    // go through it, and a fourth hand-written copy is how this screen kept a
-    // spelling the rest of the app had left behind. No fraction, matching the
-    // drawer's row - see its comment for why the number is left off a list line.
+    // what these used to be: the Matches tab's row and the chrome indicator
+    // already go through it, and a fourth hand-written copy is how this screen
+    // kept a spelling the rest of the app had left behind. No fraction, matching
+    // the Matches tab's row - see its comment for why the number is left off a
+    // list line.
     is LocalAnalysisState.Preparing -> AnalyseAffordance.InProgress(deviceWorkLabel(DevicePhase.PREPARING, null))
     is LocalAnalysisState.Analysing -> AnalyseAffordance.InProgress(deviceWorkLabel(DevicePhase.ANALYSING, null))
     is LocalAnalysisState.Cutting -> AnalyseAffordance.InProgress(deviceWorkLabel(DevicePhase.CUTTING, null))
     is LocalAnalysisState.Failed -> AnalyseAffordance.Failed(live.message)
     // No device run in flight or failed: fall back to the cloud pipeline's own
-    // liveness for this entry, in the shared wording the drawer's row for this
-    // same video uses. It used to say "Uploading" and "Processing in the cloud"
+    // liveness for this entry, in the shared wording the Matches tab's row for
+    // this same video uses. It used to say "Uploading" and "Processing in the cloud"
     // here, which is the chrome indicator's vocabulary and dropped the
     // percentage - so one tap apart the same run read two ways, and iOS's port
     // of this screen had already gone the other way.
@@ -89,9 +90,9 @@ internal fun analyticsLegend(rows: List<AnalyticsRow>): AnalyticsLegend = when {
 }
 
 /**
- * Builds the Analytics list's rows: one per [MatchListItem] in [matchList],
+ * Builds the Analytics tab's rows: one per [MatchListItem] in [matchList],
  * the coach's own matches first and shared ones after - the same rows, in the
- * same order, the drawer draws, because both read the one [MatchList] the
+ * same order, the Matches tab draws, because both read the one [MatchList] the
  * shared builder produces from the same inputs.
  *
  * A video-first import the cloud has finished clipping used to reach this
@@ -113,7 +114,7 @@ internal fun analyticsLegend(rows: List<AnalyticsRow>): AnalyticsLegend = when {
  * for. A READY row's own liveness is not lost by skipping it here: it already
  * reaches the screen through the item's own `action`/`statusText`, which
  * [com.badmintontracker.android.cliplist.MatchStatusLine] draws for every row,
- * the same component the drawer uses for the same fields.
+ * the same component the Matches tab uses for the same fields.
  */
 internal fun buildAnalyticsRows(
     matchList: MatchList,

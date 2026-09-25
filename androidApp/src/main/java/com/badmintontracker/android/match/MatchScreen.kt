@@ -537,7 +537,7 @@ private fun MatchVideoDialog(
  * page itself: §4.9 of the 2026-08-28 design requires the page to say so and offer
  * the same actions, not leave the coach reading a page that says nothing while
  * "Add video" is also gone with no explanation. Same text, same three actions
- * (Mark court / Retry / a spinner) as the drawer's row for this match
+ * (Mark court / Retry / a spinner) as the Matches tab's row for this match
  * ([com.badmintontracker.android.cliplist.MatchListRow]), both derived from the
  * one shared attach status so the two cannot say different things.
  */

@@ -31,7 +31,7 @@ import androidx.compose.ui.unit.dp
  * not show square corners from behind its own silhouette while it slides.
  * [contentBackground] is the opaque backing that keeps the red hidden until the
  * swipe: it has to be the colour the row itself sits on, which for a filled
- * card is the card's fill and not the page. Callers in the drawer go through
+ * card is the card's fill and not the page. Callers go through
  * `DrawerRowContainer`, which states all three together.
  */
 @Composable
@@ -45,11 +45,11 @@ fun SwipeToRemoveRow(
 ) {
     // The state is remembered once per row, and its confirmValueChange with it:
     // passed onSwiped directly, a row went on calling the callback of its first
-    // composition, closed over whatever that composition knew. A drawer row is
-    // first composed before the stored results are read, so its swipe opened
-    // "Remove video?" for the row as it was then, without the rallies and the
-    // heatmap it was by then drawing. Read through rememberUpdatedState, the
-    // swipe always calls the latest callback.
+    // composition, closed over whatever that composition knew. A row on the
+    // Matches tab's list is first composed before the stored results are read,
+    // so its swipe opened "Remove video?" for the row as it was then, without
+    // the rallies and the heatmap it was by then drawing. Read through
+    // rememberUpdatedState, the swipe always calls the latest callback.
     val currentOnSwiped by rememberUpdatedState(onSwiped)
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->

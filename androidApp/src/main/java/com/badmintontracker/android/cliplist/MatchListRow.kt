@@ -55,11 +55,11 @@ import com.badmintontracker.shared.repo.MediaRepository
 data class RowMenuItem(val label: String, val onClick: () -> Unit)
 
 /**
- * One match in the drawer: thumbnail, title, detail, players, the status line,
- * then whatever the match is asking of the coach.
+ * One match on the Matches tab's list: thumbnail, title, detail, players, the
+ * status line, then whatever the match is asking of the coach.
  *
- * The drawer keeps exactly one raised surface, and since the list became one
- * list it marks "needs something from you" ([MatchListItem.isRaised]) rather
+ * The list keeps exactly one raised surface, and since it became one list it
+ * marks "needs something from you" ([MatchListItem.isRaised]) rather
  * than "on this phone", which the status line now says. Every other row is
  * the quiet inset box, transparent until pressed.
  *

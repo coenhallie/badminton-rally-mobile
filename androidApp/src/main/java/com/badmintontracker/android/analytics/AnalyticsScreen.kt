@@ -7,11 +7,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -20,7 +17,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -45,15 +41,16 @@ import com.badmintontracker.shared.home.HomeCopy
 import com.badmintontracker.shared.matchlist.MatchListItem
 
 /**
- * Which of the drawer's own two sections a row belongs to, in display order.
+ * Which of the Matches tab's own two sections a row belongs to, in display
+ * order.
  *
- * Two, not the drawer's earlier three: the shared builder already folds a
+ * Two, not the drawer era's earlier three: the shared builder already folds a
  * match's local video and its cloud clips into one [MatchListItem] regardless
  * of where the file is, so "on this phone" versus "my matches" was never a
  * distinction between two different *matches* here, only between two ways the
  * same row's [MatchStatusLine] draws its where-glyphs. [label] is the section
- * header text, or null for [MINE], which draws none - the drawer does not
- * label its own matches either, only the shared ones.
+ * header text, or null for [MINE], which draws none - the Matches tab's list
+ * does not label its own matches either, only the shared ones.
  */
 enum class AnalyticsGroup(val label: String?) {
     MINE(null),
@@ -76,7 +73,7 @@ sealed interface AnalyseAffordance {
 
     /**
      * A run is under way. [phase] is the shared label for that stage, so this
-     * row and the drawer's row for the same video say the same words:
+     * row and the Matches tab's row for the same video say the same words:
      * `deviceWorkLabel` for the device run, `cloudAnalysisStatus` for the cloud
      * one.
      */
@@ -203,19 +200,6 @@ fun AnalyticsTab(
     }
 }
 
-/**
- * The pre-tabs entry point, kept only until the tab host (next task) replaces
- * `Route.Analytics` outright. [onBack] is unused here: the system back gesture
- * still pops this route on its own, and the tab host will not carry one at
- * all.
- */
-@Composable
-fun AnalyticsScreen(rows: List<AnalyticsRow>, onOpenDetail: (AnalyticsRow) -> Unit, onAnalyse: (AnalyticsRow) -> Unit, onBack: () -> Unit) {
-    Surface(color = MaterialTheme.colorScheme.background) {
-        AnalyticsTab(rows, onOpenDetail, onAnalyse, WindowInsets.navigationBars.asPaddingValues())
-    }
-}
-
 /** The page gutter the mock lays every card in. */
 private val GUTTER = 24.dp
 
@@ -241,7 +225,7 @@ private fun DotLegend() {
 
 /**
  * A section's label: 12sp, secondary, sentence case - the same label the
- * drawer draws for its own shared section
+ * Matches tab's list draws for its own shared section
  * ([com.badmintontracker.android.cliplist.DrawerSectionLabel]), and today the
  * only label either screen draws: "Shared with me".
  *
@@ -250,7 +234,7 @@ private fun DotLegend() {
  * anywhere, so that was a Material holdover from before the redesign - and it
  * had followed this layout across to iPhone as well.
  *
- * Not DrawerSectionLabel itself: that bakes in the drawer's own 4dp label gap,
+ * Not DrawerSectionLabel itself: that bakes in the list's own 4dp label gap,
  * and this screen states its spacing here. The two want one shared component;
  * see the note in DrawerList.kt.
  */
@@ -303,9 +287,9 @@ private fun AnalyticsRowItem(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = 4.dp),
             )
-            // Absent until somebody is named, the same rule the drawer's own
-            // row follows (MatchListRow.kt) - "Home vs Away" on every row would
-            // say nothing.
+            // Absent until somebody is named, the same rule the Matches tab's
+            // own row follows (MatchListRow.kt) - "Home vs Away" on every row
+            // would say nothing.
             row.item.playersLine?.let { players ->
                 Text(
                     players,

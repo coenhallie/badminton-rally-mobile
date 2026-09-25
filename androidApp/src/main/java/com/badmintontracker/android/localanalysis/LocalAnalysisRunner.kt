@@ -121,7 +121,7 @@ internal fun toDeviceWork(entryId: String, state: LocalAnalysisState): DeviceWor
  *
  * Exhaustive over [LocalAnalysisState] for the same reason [isDeviceRunInFlight]
  * is: a new state must fail to compile here rather than quietly vanish from the
- * drawer. Android has no paused run; only iOS's runner can report one.
+ * list. Android has no paused run; only iOS's runner can report one.
  */
 internal fun toDeviceRun(state: LocalAnalysisState): DeviceRun? = when (state) {
     is LocalAnalysisState.Preparing -> DeviceRun(DeviceRunKind.RUNNING, DevicePhase.PREPARING)
