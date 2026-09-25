@@ -206,7 +206,6 @@ fun AnalyticsScreen(
                     items(groupRows, key = { it.key }) { row ->
                         AnalyticsRowItem(
                             row = row,
-                            showNotOnDeviceSubtitle = legend.showsNotOnDeviceSubtitle,
                             onClick = { onOpenDetail(row) },
                             onAnalyse = { onAnalyse(row) },
                         )
@@ -273,7 +272,6 @@ private fun SectionHeader(text: String) {
 @Composable
 private fun AnalyticsRowItem(
     row: AnalyticsRow,
-    showNotOnDeviceSubtitle: Boolean,
     onClick: () -> Unit,
     onAnalyse: () -> Unit,
 ) {
@@ -320,13 +318,9 @@ private fun AnalyticsRowItem(
             if (row.item.hasStatusLine) {
                 MatchStatusLine(row.item, Modifier.padding(top = 6.dp))
             }
-            if (row.state == AnalyticsRowState.NOT_ON_DEVICE && showNotOnDeviceSubtitle) {
-                Text(
-                    "Not on this phone",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = ShuttlTheme.extended.textTertiary,
-                )
-            }
+            // No "Not on this phone" line under an inert row: the status line
+            // above already says where the video is, and for a scored match
+            // with no video at all the words were simply wrong.
             // Ready says nothing here, and InProgress does not repeat itself
             // either: the status line above already reports the same run, from
             // the very fields (item.action/statusText) this row's own

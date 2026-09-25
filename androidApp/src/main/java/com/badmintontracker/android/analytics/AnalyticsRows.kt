@@ -77,21 +77,12 @@ internal enum class AnalyticsLegend {
 
     /** Whether any row draws the availability dot the [DOT] line explains. */
     val showsDot: Boolean get() = this == DOT
-
-    /**
-     * Whether an inert row spells out "Not on this phone" for itself.
-     *
-     * False only when the legend already said it once for the whole list. Kept
-     * here rather than in the view so the legend and the rows cannot disagree
-     * about which of them is doing the explaining.
-     */
-    val showsNotOnDeviceSubtitle: Boolean get() = this != NOTHING_ON_THIS_PHONE
 }
 
 internal fun analyticsLegend(rows: List<AnalyticsRow>): AnalyticsLegend = when {
     rows.isEmpty() -> AnalyticsLegend.SILENT
-    // Repeating "Not on this phone" down the whole list would say the same thing
-    // as many times as there are rows.
+    // Each row's status line already says where its video is; when none of
+    // them is here, one line above the list says why nothing opens.
     rows.all { it.state == AnalyticsRowState.NOT_ON_DEVICE } -> AnalyticsLegend.NOTHING_ON_THIS_PHONE
     rows.any { opensAnalytics(it.state) } -> AnalyticsLegend.DOT
     else -> AnalyticsLegend.ANALYSE_BUTTON
