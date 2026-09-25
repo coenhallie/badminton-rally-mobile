@@ -131,8 +131,10 @@ and reports changes. On iOS it is `@State` on `HomeView`, next to the routes.
 **Tab state survives a switch.** On Android each tab's content sits in a
 `SaveableStateHolder` keyed by tab, and the Matches list's `LazyListState` is hoisted
 to the tab host (the Add button reads it too). Leaving Matches for Settings and
-coming back keeps the filter, the scroll position, and anything open in the list. On
-iOS both tabs stay mounted inside `TabView`, which gives the same result.
+coming back keeps the filter and the scroll position. (A sheet or dialog open in the
+list cannot be left by hand: it is modal over the bar. The one automatic switch, a
+finished run, is gated on no overlay being open; see 2.8.) On iOS both tabs stay
+mounted inside `TabView`, which gives the same result.
 
 ### 2.3 Matches tab
 
