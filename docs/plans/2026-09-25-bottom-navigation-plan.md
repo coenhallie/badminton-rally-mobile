@@ -124,7 +124,7 @@ class HomeCopyTest {
     )
 
     @Test fun no_em_dash_anywhere() {
-        all.forEach { assertFalse('—' in it, it) }
+        all.forEach { assertFalse('\u2014' in it, it) }
     }
 
     @Test fun the_version_line_names_name_and_code() {
