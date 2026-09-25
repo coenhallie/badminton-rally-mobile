@@ -146,6 +146,12 @@ struct MatchesList: View {
         }
         .refreshable { await model.refresh() }
         .onChange(of: overlayOpen, initial: true) { _, open in onOverlayChange(open) }
+        // If this list is torn down while one of its own sheets or dialogs is
+        // still open (a tab switch that unmounts it, say), the `onChange`
+        // above never fires false and the flag it reported upward would
+        // stick open for good, permanently blocking "nothing above the
+        // tabs". This is the reset for exactly that case.
+        .onDisappear { onOverlayChange(false) }
     }
 
     private var content: some View {
@@ -220,8 +226,10 @@ struct MatchesList: View {
         }
         // Room at the foot so the last row clears the Add button and the tab
         // bar, both of which float over the list rather than reserving space
-        // in its layout.
-        .safeAreaPadding(.bottom, 72)
+        // in its layout. 88, not the button's own 56: the button also floats
+        // 16pt off the bottom and casts a 12pt shadow, and the last row needs
+        // air past the shadow, not just past the button's edge.
+        .safeAreaPadding(.bottom, 88)
         // Over the list rather than in it: the hero needs the full available
         // height to top-align itself, which a row cannot do, and the list
         // underneath keeps `.refreshable` working.

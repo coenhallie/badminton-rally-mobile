@@ -57,19 +57,26 @@ struct AnalyticsListView: View {
         }
         .background(Shuttl.bg)
         .task {
+            // `start()` ends by awaiting `observe()`, whose task group does
+            // not return until every one of its five loops is cancelled -
+            // which only happens when THIS task is torn down, i.e. when the
+            // tab disappears. A `refresh()` placed after `await
+            // model.start()` would therefore only ever run at that point,
+            // inside an already-cancelled task, which is not a pull at all
+            // (and can surface "Couldn't refresh matches" for a request
+            // abandoned before it starts). Spawning it unstructured first -
+            // the same way `start()` kicks off its own one-time initial
+            // refresh - means leaving the tab cannot cancel it: this is the
+            // pull "opening this tab pulls fresh data" (review focus 7) rests
+            // on, for a cloud run that finished, or a match a colleague
+            // shared, while the tab was off screen. `start()` itself is
+            // idempotent (see its own doc comment: repeated calls only
+            // restart the five observing loops, latched behind
+            // `initialRefreshStarted` so the one-time network refresh it
+            // kicks off cannot fire twice), so calling it again on every
+            // reappearance costs nothing.
+            Task { await model.refresh() }
             await model.start()
-            // Android used to build a fresh ClipListViewModel per entry to its
-            // Analytics screen and its init refreshed, so opening it there
-            // always pulled. Here `model` is the one instance HomeView owns
-            // for the whole app, and `start()` is idempotent (see its own doc
-            // comment: repeated calls only restart its five observing loops,
-            // latched behind `initialRefreshStarted` so the one-time network
-            // refresh it kicks off cannot fire twice) - so without the
-            // explicit refresh() below, reopening this tab after a cloud run
-            // finished, or after a colleague shared a match, while it was off
-            // screen would pull nothing at all. This task runs again every
-            // time the tab reappears.
-            await model.refresh()
         }
         // Device runs and stored results are fed into `model` once, from
         // `HomeView`'s own `NavigationStack` - the common parent of this

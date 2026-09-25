@@ -42,7 +42,11 @@ struct HeroTickerView: View {
             // below), so the sizing set is just that one phrase - reserving
             // room for every phrase would hold open space for a rotation a
             // coach with that setting will never see.
-            ZStack(alignment: .leading) {
+            // .topLeading, not .leading: .leading centres a one-line phrase
+            // vertically in a slot sized for the tallest (two-line) one,
+            // which visibly shifts the single line down. Android's Box (the
+            // same technique, see the comment above) is top-start.
+            ZStack(alignment: .topLeading) {
                 ForEach(
                     reduceMotion ? [HeroTicker.shared.phrases[0]] : HeroTicker.shared.phrases,
                     id: \.self
