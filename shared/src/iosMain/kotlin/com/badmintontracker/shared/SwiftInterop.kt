@@ -60,7 +60,10 @@ suspend fun VideosRepository.deleteMatchOrMessage(videoId: String): String? =
 const val DELETE_MATCH_FAILED_MESSAGE = "Couldn't delete the match. Please try again."
 
 suspend fun SharesRepository.leaveShareOrMessage(videoId: String): String? =
-    leaveShare(videoId).exceptionOrNull()?.let { "Couldn't remove the shared match. Please try again." }
+    leaveShare(videoId).exceptionOrNull()?.let { LEAVE_SHARE_FAILED_MESSAGE }
+
+/** [leaveShareOrMessage]'s message, also for the caller's own catch, as [DELETE_MATCH_FAILED_MESSAGE] is. */
+const val LEAVE_SHARE_FAILED_MESSAGE = "Couldn't remove the shared match. Please try again."
 
 class AddAnnotationOutcome(val annotation: RallyAnnotation?, val errorMessage: String?)
 

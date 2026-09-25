@@ -118,6 +118,7 @@ final class ClipListModelTests: XCTestCase {
         let annotations: LocalAnnotationsRepository
         let videos: RecordingVideosRepository
         let scoreLogs: ScoreLogsRepository
+        let shares: RecordingSharesRepository
     }
 
     /// `liveDeviceRuns` defaults to "nothing running", matching a build with no
@@ -128,14 +129,19 @@ final class ClipListModelTests: XCTestCase {
         let videos = IosTestDoublesKt.testVideosRepository()
         let scoreLogs = SwiftInteropKt.testScoreLogsRepository(now: t0, ownerId: "owner-1")
         let clips = IosTestDoublesKt.testClipsRepository()
+        let shares = IosTestDoublesKt.testSharesRepository()
         let model = ClipListModel(
             rally: rally,
             analyze: IosTestDoublesKt.testAnalyzeCoordinator(localVideos: localVideos, clips: clips),
             clips: clips, videos: videos, scoreLogs: scoreLogs,
             localVideos: localVideos, localAnnotations: annotations,
+            shares: shares,
             liveDeviceRuns: liveDeviceRuns
         )
-        return Rig(model: model, localVideos: localVideos, annotations: annotations, videos: videos, scoreLogs: scoreLogs)
+        return Rig(
+            model: model, localVideos: localVideos, annotations: annotations,
+            videos: videos, scoreLogs: scoreLogs, shares: shares
+        )
     }
 
     private func analyzedEntry(id: String, scoreLogId: String? = nil) -> LocalVideoEntry {
@@ -193,6 +199,19 @@ final class ClipListModelTests: XCTestCase {
         XCTAssertNotNil(r.localVideos.get(id: "v1"), "a delete that threw discarded the file")
         XCTAssertTrue(r.annotations.hasAnnotations(videoId: "v1"))
         XCTAssertEqual(r.model.error, SwiftInteropKt.DELETE_MATCH_FAILED_MESSAGE)
+    }
+
+    func testLeavingAShareThatThrowsSaysItFailed() async {
+        // The same bug class as a match delete: `try?` read a throw as the
+        // call's success (nil), pruned the match from this phone's cache and
+        // said nothing, though the server had confirmed nothing.
+        let r = rig()
+        r.shares.cancelLeaveShare = true
+
+        await r.model.leaveShare(videoId: "v1")
+
+        XCTAssertEqual(r.shares.leftVideoIds, ["v1"])
+        XCTAssertEqual(r.model.error, SwiftInteropKt.LEAVE_SHARE_FAILED_MESSAGE)
     }
 
     func testAScoredMatchDeleteDiscardsTheEntryItOrphansWhateverTheServerSays() async {

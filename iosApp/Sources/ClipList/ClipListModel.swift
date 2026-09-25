@@ -62,6 +62,7 @@ final class ClipListModel {
     private let scoreLogsRepo: ScoreLogsRepository
     private let localVideos: LocalVideoRepository
     private let localAnnotations: LocalAnnotationsRepository
+    private let shares: SharesRepository
 
     init(
         rally: RallyApp,
@@ -71,6 +72,7 @@ final class ClipListModel {
         scoreLogs: ScoreLogsRepository? = nil,
         localVideos: LocalVideoRepository? = nil,
         localAnnotations: LocalAnnotationsRepository? = nil,
+        shares: SharesRepository? = nil,
         liveDeviceRuns: @escaping @MainActor () -> [String: DeviceRun] = { [:] }
     ) {
         self.rally = rally
@@ -80,6 +82,7 @@ final class ClipListModel {
         self.scoreLogsRepo = scoreLogs ?? rally.scoreLogs
         self.localVideos = localVideos ?? rally.localVideos
         self.localAnnotations = localAnnotations ?? rally.localAnnotations
+        self.shares = shares ?? rally.shares
         self.liveDeviceRuns = liveDeviceRuns
     }
 
@@ -165,7 +168,7 @@ final class ClipListModel {
             self.error = "Couldn't refresh matches. Pull to try again."
         }
         // Soft failure: leave sharerByVideoId untouched, no user-facing error (matches Android).
-        if let received = try? await rally.shares.listReceived() {
+        if let received = try? await shares.listReceived() {
             sharerByVideoId = Dictionary(
                 uniqueKeysWithValues: received.compactMap { r in
                     r.sharerEmail.map { (r.videoId, $0) }
@@ -236,8 +239,15 @@ final class ClipListModel {
     }
 
     func leaveShare(videoId: String) async {
-        if let message = try? await SwiftInteropKt.leaveShareOrMessage(rally.shares, videoId: videoId) {
-            error = message
+        // do/catch, not `try?`: a throw read as nil, the call's success, and
+        // pruned a share the server never confirmed leaving. See `deleteMatch`.
+        do {
+            if let message = try await SwiftInteropKt.leaveShareOrMessage(shares, videoId: videoId) {
+                error = message
+                return
+            }
+        } catch {
+            self.error = SwiftInteropKt.LEAVE_SHARE_FAILED_MESSAGE
             return
         }
         clipsRepo.pruneVideo(videoId: videoId)

@@ -5,10 +5,13 @@ import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.model.CourtKeypoints
 import com.badmintontracker.shared.model.MatchMetadata
+import com.badmintontracker.shared.model.MatchShare
 import com.badmintontracker.shared.model.RallyClip
 import com.badmintontracker.shared.prefs.RacketArmPreferenceRepository
 import com.badmintontracker.shared.repo.ClipsRepository
 import com.badmintontracker.shared.repo.ProcessingUpdate
+import com.badmintontracker.shared.repo.ReceivedShare
+import com.badmintontracker.shared.repo.SharesRepository
 import com.badmintontracker.shared.repo.UploadState
 import com.badmintontracker.shared.repo.VideosRepository
 import com.badmintontracker.shared.scoring.MatchFormat
@@ -157,6 +160,33 @@ fun testOfflineClipsRepository(): ClipsRepository = object : ClipsRepository by 
 
 /** A [VideosRepository] the iOS test bundle can build. See [RecordingVideosRepository]. */
 fun testVideosRepository(): RecordingVideosRepository = RecordingVideosRepository()
+
+/**
+ * A [SharesRepository] that records what was left and can refuse or throw on
+ * cue: [failLeaveShare] makes the server say no, [cancelLeaveShare] throws a
+ * cancellation, the one exception that bridges into Swift from a suspend
+ * function without `@Throws`. Everything else succeeds with nothing.
+ */
+class RecordingSharesRepository internal constructor() : SharesRepository {
+    var failLeaveShare: Boolean = false
+    var cancelLeaveShare: Boolean = false
+
+    /** What [leaveShare] was called with, in order, as a plain Swift array. */
+    val leftVideoIds: List<String> get() = left.toList()
+    private val left = mutableListOf<String>()
+
+    override suspend fun share(videoId: String, email: String): Result<Unit> = Result.success(Unit)
+    override suspend fun unshare(videoId: String, userId: String): Result<Unit> = Result.success(Unit)
+    override suspend fun listShares(videoId: String): Result<List<MatchShare>> = Result.success(emptyList())
+    override suspend fun listReceived(): List<ReceivedShare> = emptyList()
+    override suspend fun leaveShare(videoId: String): Result<Unit> {
+        left += videoId
+        if (cancelLeaveShare) throw CancellationException("cancelled")
+        return if (failLeaveShare) Result.failure(IllegalStateException("refused")) else Result.success(Unit)
+    }
+}
+
+fun testSharesRepository(): RecordingSharesRepository = RecordingSharesRepository()
 
 /**
  * A [LocalAnnotationsRepository] the iOS test bundle can build, scoped to its own
