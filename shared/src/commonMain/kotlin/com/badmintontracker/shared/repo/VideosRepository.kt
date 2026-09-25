@@ -2,6 +2,7 @@ package com.badmintontracker.shared.repo
 
 import com.badmintontracker.shared.model.CourtKeypoints
 import com.badmintontracker.shared.model.MatchMetadata
+import com.badmintontracker.shared.scoring.MatchFormat
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.exceptions.RestException
@@ -20,12 +21,15 @@ import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonNull
@@ -180,12 +184,41 @@ interface VideosRepository {
     ): Flow<UploadState>
 
     /**
-     * Title and description for every match the user can see, owned or shared,
-     * from the list_match_metadata RPC. An RPC rather than a select on videos:
-     * that table's SELECT policy is owner-only, and widening it would also hand
-     * share recipients storage_path, results_meta and player_labels.
+     * Title, description, players and format for every match the user can see,
+     * owned or shared, from the list_match_metadata RPC. An RPC rather than a
+     * select on videos: that table's SELECT policy is owner-only, and widening it
+     * would also hand share recipients storage_path, results_meta and
+     * player_labels.
+     *
+     * A success also replaces what [observeMatchMetadata] holds. A failure leaves
+     * it alone: the caller's contract is "on failure keep the previous titles",
+     * because emptying the map would visibly wipe every name on a blip.
      */
     suspend fun listMatchMetadata(): Result<List<MatchMetadata>>
+
+    /**
+     * The last metadata this process fetched or wrote, keyed by video id. One
+     * cache rather than one per screen: the match list is built three times over
+     * on Android and the match page fetches its own on iOS, and a rename made on
+     * the page has to show on every row the moment it lands, not on the next
+     * pull to refresh.
+     */
+    fun observeMatchMetadata(): Flow<Map<String, MatchMetadata>>
+
+    /**
+     * Rewrites a video-born match's details, which live on its videos row. The
+     * title, description, format and the two player lists are the columns the
+     * database grants the owner an UPDATE on (20260922000000); every other column
+     * stays out of the phone's reach. On success the cached row is replaced too.
+     */
+    suspend fun updateMatchDetails(
+        videoId: String,
+        title: String?,
+        description: String?,
+        format: MatchFormat?,
+        homePlayers: List<String>,
+        awayPlayers: List<String>,
+    ): Result<Unit>
 
     /**
      * Permanently delete an owned match: best-effort storage cleanup (clips,
@@ -238,6 +271,24 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
     @Serializable
     private data class DeleteMatchArgs(@SerialName("p_video_id") val videoId: String)
 
+    /**
+     * Every column the details editor can change, in one write. Nulls are sent
+     * as nulls on purpose: clearing the description is "description = null", and
+     * a patch that left the key out would keep the old one.
+     */
+    @Serializable
+    private data class MatchDetailsPatch(
+        val title: String?,
+        val description: String?,
+        val format: MatchFormat?,
+        @SerialName("home_players") val homePlayers: List<String>,
+        @SerialName("away_players") val awayPlayers: List<String>,
+    )
+
+    private val metadata = MutableStateFlow<Map<String, MatchMetadata>>(emptyMap())
+
+    override fun observeMatchMetadata(): Flow<Map<String, MatchMetadata>> = metadata.asStateFlow()
+
     override suspend fun createVideo(
         videoId: String,
         filename: String,
@@ -264,6 +315,25 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
 
     override suspend fun listMatchMetadata(): Result<List<MatchMetadata>> = runCatching {
         client.postgrest.rpc("list_match_metadata").decodeList<MatchMetadata>()
+            .also { rows -> metadata.value = rows.associateBy { it.videoId } }
+    }.annotateHttpStatus()
+
+    override suspend fun updateMatchDetails(
+        videoId: String,
+        title: String?,
+        description: String?,
+        format: MatchFormat?,
+        homePlayers: List<String>,
+        awayPlayers: List<String>,
+    ): Result<Unit> = runCatching {
+        client.postgrest.from("videos")
+            .update(MatchDetailsPatch(title, description, format, homePlayers, awayPlayers)) {
+                filter { eq("id", videoId) }
+            }
+        // Written into the cache rather than re-fetched: the write is the truth
+        // now, and a round trip would only add a window in which the page shows
+        // the old name after Save.
+        metadata.update { it + (videoId to MatchMetadata(videoId, title, description, homePlayers, awayPlayers, format)) }
     }.annotateHttpStatus()
 
     override suspend fun setCourtKeypoints(videoId: String, keypoints: CourtKeypoints): Result<Unit> =
@@ -448,7 +518,7 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
         }
 
         client.postgrest.rpc("delete_match", DeleteMatchArgs(videoId))
-        Unit
+        metadata.update { it - videoId }
     }.annotateHttpStatus()
 
     companion object {

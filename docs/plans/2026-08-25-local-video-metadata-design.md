@@ -80,6 +80,11 @@ uses this shape for share scoped reads in `list_received_match_shares`,
 
 ## Why editing stops at LOCAL
 
+> **Amended 2026-09-22** by `2026-09-22-video-match-details-design.md`: the UPDATE grant
+> this section says was withheld now exists, and a video-born match is renamed from the
+> match page, server first, with `mirrorVideoDetails` following on the local entry. The
+> LOCAL-only window below is unchanged for entries that have not uploaded yet.
+
 `0008_video_title.sql` in the web repo deliberately omits
 `grant update (title) on public.videos to authenticated`, because `0002` revokes
 UPDATE and re-grants column by column. Title is insert only by design, and

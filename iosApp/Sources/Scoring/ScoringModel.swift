@@ -27,8 +27,31 @@ final class ScoringModel {
     /// between the coach and the next rally.
     private(set) var pendingTagOrdinal: Int? = nil
 
+    /// The last undo, until it is redone or dismissed. Only offered while the
+    /// scorer can still redo it: see `undone`.
+    private var lastUndo: UndoneRally? = nil
+
     var canScore: Bool { match?.isOver == false }
-    var canUndo: Bool { !(log?.events.isEmpty ?? true) }
+    var canUndo: Bool { (match?.points.count ?? 0) > 0 }
+
+    /// The last undo while it can still be put back, nil otherwise. Read against
+    /// the log rather than cleared by each caller, so a change from anywhere - a
+    /// rally, a tag, a sync - retires the redo with it. Reads `log` first so the
+    /// view is re-asked when it changes.
+    var undone: UndoneRally? {
+        guard log != nil, let lastUndo, scorer.canRedo(undone: lastUndo) else { return nil }
+        return lastUndo
+    }
+
+    /// "Point to Home undone" while the last undo can still be put back. Undo asks
+    /// no question, so a mis-tap on it is answered here.
+    var undoneNotice: String? {
+        guard let undone, let log else { return nil }
+        return log.undoneNotice(undone: undone)
+    }
+    /// True until the first point: the window in which the board can hand the
+    /// opening serve across. Reads `log` first so the view is re-asked when it changes.
+    var canSwitchFirstServer: Bool { log != nil && scorer.canSwitchFirstServer() }
 
     private let scoreLogs: ScoreLogsRepository
     private let scorer: MatchScorer
@@ -96,9 +119,9 @@ final class ScoringModel {
     /// One tap. The tag row follows to the rally just played.
     func score(_ side: Side) {
         scorer.score(side: side)
+        lastUndo = nil
         readStore()
-        let count = match?.pointCount ?? 0
-        pendingTagOrdinal = count > 0 ? Int(count) - 1 : nil
+        pendingTagOrdinal = lastOrdinal
     }
 
     /// Adds `label` to the rally, or takes it off again if it is already there. The
@@ -115,9 +138,9 @@ final class ScoringModel {
     }
 
     /// The longer thought, written between rallies or at the interval. Committed
-    /// once rather than per keystroke: `tagPoint` appends and undo drops the last
-    /// entry, so typing straight through would make undo take a note back a letter
-    /// at a time instead of taking back the rally.
+    /// once rather than per keystroke: `tagPoint` appends, so typing straight
+    /// through would add one log entry per character to a log that is stored and
+    /// synced whole.
     func setComment(ordinal: Int, text: String) {
         guard let point = point(at: ordinal) else { return }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -125,19 +148,49 @@ final class ScoringModel {
         readStore()
     }
 
-    func undo() {
-        scorer.undo()
+    func updateDetails(title: String, format: MatchFormat?, homePlayers: [String], awayPlayers: [String]) {
+        scorer.updateDetails(title: title, format: format, homePlayers: homePlayers, awayPlayers: awayPlayers)
         readStore()
+    }
+
+    func switchFirstServer() {
+        scorer.switchFirstServer()
+        readStore()
+    }
+
+    /// Takes back the last rally. The tag row goes back to the rally before it, so
+    /// the board looks exactly as it did the moment that rally was scored.
+    func undo() {
+        guard let taken = scorer.undo() else { return }
+        lastUndo = taken
+        readStore()
+        pendingTagOrdinal = lastOrdinal
+    }
+
+    /// Puts back what the last undo took, as long as nothing has happened since.
+    func redo() {
+        guard let undone else { lastUndo = nil; return }
+        lastUndo = nil
+        scorer.redo(undone: undone)
+        readStore()
+        pendingTagOrdinal = lastOrdinal
+    }
+
+    /// The notice timed out. The undo stands.
+    func dismissUndoNotice() {
+        lastUndo = nil
     }
 
     func resetCurrentGame() {
         scorer.resetCurrentGame()
+        lastUndo = nil
         pendingTagOrdinal = nil
         readStore()
     }
 
     func finish() {
         scorer.finish()
+        lastUndo = nil
         pendingTagOrdinal = nil
         readStore()
     }
@@ -145,6 +198,11 @@ final class ScoringModel {
     /// The rally the tag row is on, or nil when there is not one.
     var pendingPoint: ScoredPoint? {
         pendingTagOrdinal.flatMap { point(at: $0) }
+    }
+
+    private var lastOrdinal: Int? {
+        let count = match?.points.count ?? 0
+        return count > 0 ? count - 1 : nil
     }
 
     private func point(at ordinal: Int) -> ScoredPoint? {

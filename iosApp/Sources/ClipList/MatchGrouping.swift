@@ -35,6 +35,17 @@ struct MatchSummary: Equatable {
     let title: String?
     /// Match description, from videos.description. Phone-only; the web app has no field.
     let description: String?
+    /// Who played and what kind of match it was, from the videos row: the same
+    /// optional details a score log carries, kept on the video for a match that
+    /// was only ever filmed. Edited from the match page.
+    var homePlayers: [String] = []
+    var awayPlayers: [String] = []
+    var format: MatchFormat? = nil
+
+    /// "Coen vs Marco", or nil while nobody is named; the same rule as a score card's.
+    var playersLine: String? {
+        MatchDetailsKt.playersLine(homePlayers: homePlayers, awayPlayers: awayPlayers)
+    }
 }
 
 /// The match name the web app stamps onto every clip of a video at cut time.
@@ -74,7 +85,10 @@ enum MatchGrouping {
                     // videos.title is authoritative; the clip-stamped copy is the
                     // fallback that keeps names on screen when the RPC is unreachable.
                     title: metadataByVideoId[videoId]?.title ?? matchTitle(of: list),
-                    description: metadataByVideoId[videoId]?.description_
+                    description: metadataByVideoId[videoId]?.description_,
+                    homePlayers: metadataByVideoId[videoId]?.homePlayers ?? [],
+                    awayPlayers: metadataByVideoId[videoId]?.awayPlayers ?? [],
+                    format: metadataByVideoId[videoId]?.format
                 )
             }
             .sorted { $0.latestCreatedAtMillis > $1.latestCreatedAtMillis }

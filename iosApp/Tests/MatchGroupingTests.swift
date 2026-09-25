@@ -141,12 +141,34 @@ final class MatchGroupingTests: XCTestCase {
         let result = MatchGrouping.matches(
             from: clips, currentUserId: "me", sharerByVideoId: [:],
             metadataByVideoId: [
-                "v1": MatchMetadata(videoId: "v1", title: "Thu League vs Marco", description: "Indoor court 2.")
+                "v1": MatchMetadata(
+                    videoId: "v1", title: "Thu League vs Marco", description: "Indoor court 2.",
+                    homePlayers: [], awayPlayers: [], format: nil
+                )
             ]
         )
 
         XCTAssertEqual(result.owned.first?.title, "Thu League vs Marco")
         XCTAssertEqual(result.owned.first?.description, "Indoor court 2.")
+    }
+
+    func testMatchTakesItsPlayersAndFormatFromTheMetadataMap() {
+        // A match that was only ever filmed keeps these on its videos row, and
+        // its list row must read them the way a scored match's does.
+        let clips = [titledClip(id: "a", videoId: "v1", rallyIndex: 0, title: nil)]
+
+        let result = MatchGrouping.matches(
+            from: clips, currentUserId: "me", sharerByVideoId: [:],
+            metadataByVideoId: [
+                "v1": MatchMetadata(
+                    videoId: "v1", title: "Club final", description: nil,
+                    homePlayers: ["Coen", "Ana"], awayPlayers: ["Marco", "Li"], format: .mixedDoubles
+                )
+            ]
+        )
+
+        XCTAssertEqual(result.owned.first?.playersLine, "Coen / Ana vs Marco / Li")
+        XCTAssertEqual(result.owned.first?.format, .mixedDoubles)
     }
 
     func testVideoAbsentFromTheMapFallsBackToTheClipStampedName() {
@@ -160,6 +182,7 @@ final class MatchGroupingTests: XCTestCase {
 
         XCTAssertEqual(result.owned.first?.title, "Thu League vs Marco")
         XCTAssertNil(result.owned.first?.description)
+        XCTAssertNil(result.owned.first?.playersLine)
     }
 
     func testMatchWithNeitherSourceKeepsItsDateHeadline() {
@@ -211,7 +234,7 @@ final class MatchGroupingTests: XCTestCase {
             videoId: videoId,
             title: "Thu League",
             createdAtEpochMs: atMillis,
-            playersLine: "Coen vs Marco",
+            playersLine: nil,
             scoreLine: "11-9",
             statusLine: "Scoring",
             isLive: true,

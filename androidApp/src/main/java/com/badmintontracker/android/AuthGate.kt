@@ -64,6 +64,7 @@ import com.badmintontracker.android.nav.AuthRedirect
 import com.badmintontracker.android.nav.Route
 import com.badmintontracker.android.nav.authRedirect
 import com.badmintontracker.android.nav.authStartDestination
+import com.badmintontracker.android.scoring.AndroidPlaceNames
 import com.badmintontracker.android.scoring.AttachIntent
 import com.badmintontracker.android.scoring.NewMatchScreen
 import com.badmintontracker.android.scoring.NewMatchViewModel
@@ -468,8 +469,11 @@ fun AuthGate(
                     )
                 }
                 composable<Route.NewMatch> {
+                    val appContext = LocalContext.current.applicationContext
                     val vm: NewMatchViewModel = viewModel(
-                        factory = viewModelFactory { initializer { NewMatchViewModel(rally.scoreLogs) } }
+                        factory = viewModelFactory {
+                            initializer { NewMatchViewModel(rally.scoreLogs, AndroidPlaceNames(appContext)) }
+                        }
                     )
                     NewMatchScreen(
                         vm = vm,

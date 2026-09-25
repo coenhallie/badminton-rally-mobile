@@ -64,7 +64,7 @@ final class AnalyticsRowsTests: XCTestCase {
                 videoId: videoId,
                 title: "Thu League",
                 createdAtEpochMs: 1_784_980_800_000,
-                playersLine: "Coen vs Marco",
+                playersLine: nil,
                 scoreLine: "11-9",
                 statusLine: "Scoring",
                 isLive: false,

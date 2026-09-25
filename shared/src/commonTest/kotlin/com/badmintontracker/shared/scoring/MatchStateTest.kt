@@ -6,7 +6,7 @@ import kotlin.test.Test
 
 class MatchStateTest {
 
-    private val singles = MatchSetup(doubles = false, firstServer = Side.HOME)
+    private val singles = MatchSetup(firstServer = Side.HOME)
 
     private fun fold(events: List<ScoreEvent>, rules: ScoringRules = ScoringRules.BWF_21) =
         foldMatchState(rules, singles, events)
@@ -40,7 +40,7 @@ class MatchStateTest {
         state.gamesWon shouldBe SideScore.ZERO
         state.completedGames.shouldBeEmpty()
         state.points.shouldBeEmpty()
-        state.server shouldBe Side.HOME     // the coin toss, from MatchSetup
+        state.server shouldBe Side.HOME     // the first server, from MatchSetup
         state.winner shouldBe null
         state.isOver shouldBe false
     }
@@ -152,7 +152,10 @@ class MatchStateTest {
 
     @Test
     fun a_straight_race_needs_no_lead_at_all() {
-        val state = fold(toScore(14, 14) + ScoreEvent.PointTo(Side.HOME), ScoringRules.STRAIGHT_15)
+        // Not a rule set the form offers, which is the point: the rules are a
+        // parameter, and the fold plays whatever it is handed.
+        val straight = ScoringRules(pointsToWin = 15, winBy = 1, cap = null, intervalAt = 8, gamesToWin = 2, changeEndsAt = 8)
+        val state = fold(toScore(14, 14) + ScoreEvent.PointTo(Side.HOME), straight)
         state.completedGames shouldBe listOf(SideScore(15, 14))
         state.gamesWon shouldBe SideScore(home = 1, away = 0)
     }
@@ -195,7 +198,7 @@ class MatchStateTest {
         // state has to be indistinguishable from having never scored that point,
         // serve and all, not merely to show the right number.
         val log = toScore(5, 3)
-        val undone = foldMatchState(ScoringRules.BWF_21, singles, log.undoLast())
+        val undone = foldMatchState(ScoringRules.BWF_21, singles, log.undoLastPoint())
         undone.currentGame shouldBe SideScore(4, 3)
         undone shouldBe foldMatchState(ScoringRules.BWF_21, singles, toScore(4, 3))
     }
@@ -205,7 +208,7 @@ class MatchStateTest {
         // The point that took the game is undone like any other, and the board goes
         // back to the game that was still being played. Nothing has to remember that
         // a game ended, because nothing recorded that it did.
-        val state = fold(toScore(21, 19).undoLast())
+        val state = fold(toScore(21, 19).undoLastPoint())
         state.gameIndex shouldBe 0
         state.currentGame shouldBe SideScore(20, 19)
         state.completedGames.shouldBeEmpty()

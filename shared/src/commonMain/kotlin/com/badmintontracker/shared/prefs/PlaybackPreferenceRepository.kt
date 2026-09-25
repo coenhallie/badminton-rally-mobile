@@ -1,5 +1,6 @@
 package com.badmintontracker.shared.prefs
 
+import com.badmintontracker.shared.playback.PanelAnchor
 import com.russhwolf.settings.Settings
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -71,6 +72,20 @@ class PlaybackPreferenceRepository(private val settings: Settings) {
         metricsExpandedState.value = expanded
     }
 
+    /**
+     * Where the fullscreen player's floating label window was left. Remembered for
+     * the reason the grid above is: a coach who drags it clear of the far court
+     * should not have to do it again on every rally.
+     */
+    private val labelPanelAnchorState = MutableStateFlow(loadLabelPanelAnchor())
+    val labelPanelAnchor: StateFlow<PanelAnchor> = labelPanelAnchorState.asStateFlow()
+
+    fun setLabelPanelAnchor(anchor: PanelAnchor) {
+        val next = PanelAnchor(anchor.x.coerceIn(0f, 1f), anchor.y.coerceIn(0f, 1f))
+        settings.putString(KEY_LABEL_PANEL_ANCHOR, "${next.x},${next.y}")
+        labelPanelAnchorState.value = next
+    }
+
     fun setSkipSeconds(seconds: Int) {
         val next = nearest(seconds.toFloat(), PlaybackOptions.skipSecondsOptions.map { it.toFloat() })
             .toInt()
@@ -95,6 +110,19 @@ class PlaybackPreferenceRepository(private val settings: Settings) {
             ?: PlaybackOptions.DEFAULT_SPEED
 
     /**
+     * Two fractions, comma separated. Anything else - a value from a build that
+     * stored it differently, a NaN - is the default rather than a panel placed by
+     * whatever half of it happened to parse.
+     */
+    private fun loadLabelPanelAnchor(): PanelAnchor {
+        val parts = settings.getStringOrNull(KEY_LABEL_PANEL_ANCHOR)?.split(",")?.map { it.toFloatOrNull() }
+        val x = parts?.getOrNull(0)
+        val y = parts?.getOrNull(1)
+        if (parts?.size != 2 || x == null || y == null || x.isNaN() || y.isNaN()) return PanelAnchor.DEFAULT
+        return PanelAnchor(x.coerceIn(0f, 1f), y.coerceIn(0f, 1f))
+    }
+
+    /**
      * Snap to the closest offered value rather than rejecting to the default, so
      * a preference written by a build with a different option set degrades to the
      * neighbouring value instead of silently resetting the user's choice.
@@ -106,5 +134,6 @@ class PlaybackPreferenceRepository(private val settings: Settings) {
         const val KEY_SKIP = "playback_skip_seconds"
         const val KEY_SPEED = "playback_speed"
         const val KEY_METRICS_EXPANDED = "skeleton_metrics_expanded"
+        const val KEY_LABEL_PANEL_ANCHOR = "replay_label_panel_anchor"
     }
 }

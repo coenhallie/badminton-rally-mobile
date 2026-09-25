@@ -3,6 +3,9 @@ import Shared
 
 @main
 struct RallyIOSApp: App {
+    /// Only for `supportedInterfaceOrientations`: the app is portrait except while a
+    /// video plays fullscreen, and UIKit asks the delegate. See `OrientationLock`.
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     let rally: RallyApp
     let analyze: AnalyzeCoordinator
     /// The stores a fetched cloud analysis lands in. Held here rather than

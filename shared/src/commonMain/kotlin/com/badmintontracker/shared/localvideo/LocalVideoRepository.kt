@@ -129,11 +129,24 @@ fun LocalVideoRepository.acknowledgeResult(id: String) =
  *
  * A no-op once the entry has left LOCAL. Both platforms hide the edit affordance
  * by then, but the window is a data integrity rule rather than a UI convention:
- * the values ride on the videos INSERT and no UPDATE grant exists on either
- * column, so a late write would leave the app showing a name the database does
- * not have, with no way to reconcile it. See [canEditLocalVideoDetails].
+ * the values ride on the videos INSERT, so a write here after CREATE_ROW would
+ * leave the app showing a name the database does not have. Once the row exists
+ * the videos row is the record, and it is edited from the match page, which
+ * writes the server first and then [mirrorVideoDetails] here. See
+ * [canEditLocalVideoDetails].
  */
 fun LocalVideoRepository.setDetails(id: String, title: String?, description: String?) =
     update(id) {
         if (canEditLocalVideoDetails(it.stage)) it.copy(title = title, description = description) else it
     }
+
+/**
+ * Follows a rename that has already landed on the videos row, so the entry that
+ * uploaded that video (its id is the videos row's id) and the match built from
+ * the row cannot show two names. No stage check, on purpose: the server has
+ * already accepted the value, which is the one thing [setDetails]'s window is
+ * there to guarantee. Only ever called after `updateVideoMatchDetailsOrMessage`
+ * succeeds.
+ */
+fun LocalVideoRepository.mirrorVideoDetails(videoId: String, title: String?, description: String?) =
+    update(videoId) { it.copy(title = title, description = description) }

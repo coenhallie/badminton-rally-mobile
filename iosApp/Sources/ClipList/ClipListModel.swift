@@ -58,9 +58,9 @@ final class ClipListModel {
         await observe()
     }
 
-    /// The four loops, as structured children of the caller's task - the same
+    /// The five loops, as structured children of the caller's task - the same
     /// shape as `BackgroundWorkModel.observe`. Cancelling the caller stops all
-    /// four, calling again starts all four, and there is never a second set:
+    /// five, calling again starts all five, and there is never a second set:
     /// the group does not return until every child has.
     ///
     /// Apart from `start()` so the tests can hold the loops to that contract
@@ -96,6 +96,15 @@ final class ClipListModel {
                     self.regroup()
                 }
             }
+            // The repository's cache rather than a map of this model's: a rename
+            // made on the match page has to reach every row the moment it lands.
+            group.addTask { @MainActor [weak self] in
+                guard let self else { return }
+                for await map in self.rally.videos.observeMatchMetadata() {
+                    self.metadataByVideoId = map
+                    self.regroup()
+                }
+            }
         }
     }
 
@@ -115,11 +124,10 @@ final class ClipListModel {
                 }
             )
         }
-        // Same soft-failure contract as the shares lookup: a nil result leaves the
+        // A success lands in the repository's cache, which `observe()` follows.
+        // Same soft-failure contract as the shares lookup: a failure leaves the
         // previous map alone rather than blanking every name the user can see.
-        if let rows = try? await SwiftInteropKt.listMatchMetadataOrNull(rally.videos) {
-            metadataByVideoId = Dictionary(uniqueKeysWithValues: rows.map { ($0.videoId, $0) })
-        }
+        _ = try? await SwiftInteropKt.listMatchMetadataOrNull(rally.videos)
         // Soft failure, same contract as the shares and metadata reads: the matches
         // are all still on this phone, so there is nothing to say and nothing for
         // the user to do about it.

@@ -33,7 +33,7 @@ class MatchRowMergeTest {
         videoId = videoId,
         title = "Thu League",
         createdAtEpochMs = atMillis,
-        playersLine = "Coen vs Marco",
+        playersLine = null,
         scoreLine = "11-9",
         statusLine = "Scoring",
         isLive = true,

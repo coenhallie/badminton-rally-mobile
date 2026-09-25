@@ -200,7 +200,8 @@ internal fun buildAnalyticsRows(
                 entryId = localEntries.firstOrNull { it.scoreLogId == row.card.scoreLogId }?.id,
                 group = AnalyticsGroup.OWNED_MATCHES,
                 title = row.card.title,
-                subtitle = row.card.playersLine,
+                // Who played when anyone has been named, and the score until then.
+                subtitle = row.card.playersLine ?: row.card.scoreLine,
             )
         }
     }

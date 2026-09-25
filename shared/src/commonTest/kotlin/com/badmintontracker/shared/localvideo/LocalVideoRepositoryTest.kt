@@ -216,4 +216,31 @@ class LocalVideoRepositoryTest {
         repo.get("a")?.title shouldBe "Thu League"
         repo.get("a")?.description shouldBe "notes"
     }
+
+    @Test
+    fun mirrorVideoDetails_follows_a_rename_that_landed_on_the_server_at_any_stage() {
+        // The match page renames the videos row; the entry that uploaded it must
+        // not go on showing the old name in "On this phone".
+        val repo = LocalVideoRepository(MapSettings())
+        repo.add(entry("a"))
+        repo.setDetails("a", "Thu League", "notes")
+        repo.update("a") { it.copy(stage = AnalyzeStage.ANALYZED) }
+
+        repo.mirrorVideoDetails("a", "Club final", null)
+
+        repo.get("a")?.title shouldBe "Club final"
+        repo.get("a")?.description.shouldBeNull()
+    }
+
+    @Test
+    fun mirrorVideoDetails_ignores_a_video_this_phone_never_held() {
+        // A match filmed on the web app or another phone has no entry here.
+        val repo = LocalVideoRepository(MapSettings())
+        repo.add(entry("a"))
+
+        repo.mirrorVideoDetails("elsewhere", "Club final", null)
+
+        repo.entries.value.map { it.id } shouldBe listOf("a")
+        repo.get("a")?.title.shouldBeNull()
+    }
 }

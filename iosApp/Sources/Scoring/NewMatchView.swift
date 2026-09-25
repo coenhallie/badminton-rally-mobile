@@ -1,80 +1,64 @@
 import SwiftUI
 import Shared
 
-/// The match a coach creates before there is any video. Every rule it enforces
-/// comes from `createMatchProblem`, which Android's form calls too - the two cannot
-/// disagree about what a complete match is.
+/// The match a coach creates before there is any video. It asks only for what the
+/// fold cannot guess - how long a game is and how many sets - and the name arrives
+/// filled in with the time and, where the phone will say, the place, so the form can
+/// be submitted the moment it opens. Every rule it enforces comes from
+/// `createMatchProblem`, which Android's form calls too.
 struct NewMatchView: View {
     let rally: RallyApp
     let onCreated: (String) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var title = ""
-    @State private var doubles = false
-    /// Always two per side; the second is ignored in singles rather than cleared,
-    /// so toggling the format twice does not destroy what was typed.
-    @State private var homePlayers = ["", ""]
-    @State private var awayPlayers = ["", ""]
-    @State private var rulesIndex = 0
-    @State private var firstServer: Side = .home
-    @State private var touched = false
+    /// Read once: the name says when the form was opened, not when the place came back.
+    @State private var openedAtMs: Int64
+    @State private var title: String
+    /// Once the user has typed a name it is theirs, and a place arriving late must
+    /// not overwrite it. Also what holds the error back until anyone has typed.
+    @State private var titleEdited = false
+    @State private var points: GamePoints = .companion.DEFAULT
+    @State private var sets: MatchSets = .companion.DEFAULT
+    @State private var places = PlaceNames()
 
-    private var presets: [ScoringRules] { ScoringRules.companion.PRESETS }
-    private var rules: ScoringRules { presets[rulesIndex] }
+    init(rally: RallyApp, onCreated: @escaping (String) -> Void) {
+        self.rally = rally
+        self.onCreated = onCreated
+        // Filled in here rather than in `.task`, so the form never draws a frame
+        // with an empty name and a disabled Create.
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        _openedAtMs = State(initialValue: now)
+        _title = State(initialValue: DefaultMatchTitleKt.defaultMatchTitle(epochMs: now, place: nil))
+    }
 
-    private var submittedHome: [String] { Array(homePlayers.prefix(doubles ? 2 : 1)) }
-    private var submittedAway: [String] { Array(awayPlayers.prefix(doubles ? 2 : 1)) }
+    private var problem: String? { ScoreLogKt.createMatchProblem(title: title) }
 
-    private var problem: String? {
-        ScoreLogKt.createMatchProblem(
-            title: title, homePlayers: submittedHome, awayPlayers: submittedAway, doubles: doubles
-        )
+    /// Writes to `title` from the form itself, which `titleEdited` must not count.
+    private var typedTitle: Binding<String> {
+        Binding(get: { title }, set: { title = $0; titleEdited = true })
     }
 
     var body: some View {
         Form {
             Section {
-                TextField("Match name", text: $title)
-                    .onChange(of: title) { touched = true }
+                TextField("Match name", text: typedTitle)
             }
 
-            Section("Format") {
-                Picker("Format", selection: $doubles) {
-                    Text("Singles").tag(false)
-                    Text("Doubles").tag(true)
+            Section("Points") {
+                Picker("Points", selection: $points) {
+                    ForEach(GamePoints.allCases, id: \.self) { Text("\($0.pointsToWin)").tag($0) }
                 }
                 .pickerStyle(.segmented)
             }
 
-            Section("Players") {
-                TextField("Home player", text: $homePlayers[0]).onChange(of: homePlayers[0]) { touched = true }
-                if doubles {
-                    TextField("Home partner", text: $homePlayers[1])
-                }
-                TextField("Away player", text: $awayPlayers[0]).onChange(of: awayPlayers[0]) { touched = true }
-                if doubles {
-                    TextField("Away partner", text: $awayPlayers[1])
-                }
-            }
-
-            Section("Scoring") {
-                Picker("Scoring", selection: $rulesIndex) {
-                    ForEach(presets.indices, id: \.self) { i in
-                        Text(label(for: presets[i])).tag(i)
-                    }
+            Section("Sets") {
+                Picker("Sets", selection: $sets) {
+                    ForEach(MatchSets.allCases, id: \.self) { Text("\($0.sets)").tag($0) }
                 }
                 .pickerStyle(.segmented)
             }
 
-            Section("Coin toss") {
-                Picker("First serve", selection: $firstServer) {
-                    Text("Home serves").tag(Side.home)
-                    Text("Away serves").tag(Side.away)
-                }
-                .pickerStyle(.segmented)
-            }
-
-            if touched, let problem {
+            if titleEdited, let problem {
                 Section {
                     // Shuttl.error rather than a literal red: it is the same
                     // token Android reaches for (colorScheme.error) for this line.
@@ -93,29 +77,21 @@ struct NewMatchView: View {
                     .disabled(problem != nil)
             }
         }
+        .task {
+            guard let place = await places.current(), !titleEdited else { return }
+            title = DefaultMatchTitleKt.defaultMatchTitle(epochMs: openedAtMs, place: place)
+        }
     }
 
     private func create() {
         guard problem == nil else { return }
         let log = rally.scoreLogs.create(
             title: title,
-            homePlayers: submittedHome,
-            awayPlayers: submittedAway,
-            rules: rules,
-            setup: MatchSetup(
-                doubles: doubles,
-                firstServer: firstServer,
-                homeStartsRight: .first,
-                awayStartsRight: .first
-            )
+            rules: ScoringRules.companion.of(points: points, sets: sets),
+            // Home, because the form no longer asks: the board lets it be switched
+            // until the first point is scored.
+            setup: MatchSetup(firstServer: .home)
         )
         onCreated(log.id)
-    }
-
-    /// The presets are shared so both platforms offer the same rule sets; the
-    /// wording is per-platform copy.
-    private func label(for rules: ScoringRules) -> String {
-        if rules.pointsToWin == 21 { return "21 points" }
-        return rules.winBy == 1 ? "15 straight" : "15 points"
     }
 }

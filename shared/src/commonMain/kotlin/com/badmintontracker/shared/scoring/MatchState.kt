@@ -10,18 +10,6 @@ import kotlinx.serialization.Serializable
 enum class ServiceCourt { RIGHT, LEFT }
 
 /**
- * Which member of a pair. An enum rather than an index because a nullable Kotlin
- * Int reaches Swift as KotlinInt?, and "which of the two" is not arithmetic.
- */
-@Serializable
-enum class PairPlayer {
-    @SerialName("first")  FIRST,
-    @SerialName("second") SECOND;
-
-    val other: PairPlayer get() = if (this == FIRST) SECOND else FIRST
-}
-
-/**
  * A pair of per-side integers: points within a game, or games won within a match.
  * One type for both because they are the same shape and the same accessor, and two
  * near-identical pair types is two places to get [of] backwards.
@@ -50,26 +38,16 @@ data class SideFlags(val home: Boolean, val away: Boolean) {
 
 /**
  * What a match needs beyond its rules before a point can be scored. Deliberately
- * not the match's name, its players or its date: those belong to the match record
+ * not the match's name or its date: those belong to the match record
  * that L1 creates, and the fold must not need any of them to produce a score.
  */
 @Serializable
 data class MatchSetup(
-    val doubles: Boolean,
-    /** The side serving the first point of the first game. The coin toss sets this. */
-    @SerialName("first_server") val firstServer: Side,
     /**
-     * Doubles only: which player of each side starts a game in the right service
-     * court. Reset at every game start, because a pair may rearrange between games
-     * and the app has no way to know that it did - a stale arrangement is a wrong
-     * name on screen, and resetting keeps it from also being a wrong name in the
-     * game after that.
-     *
-     * These are the one place this package allows a default argument: they are
-     * meaningless in singles. Swift has no defaults and passes all four.
+     * The side serving the first point of the first game. A new match starts with
+     * home serving, and the board lets that be flipped until a point is scored.
      */
-    @SerialName("home_starts_right") val homeStartsRight: PairPlayer = PairPlayer.FIRST,
-    @SerialName("away_starts_right") val awayStartsRight: PairPlayer = PairPlayer.FIRST,
+    @SerialName("first_server") val firstServer: Side,
 )
 
 /**
@@ -113,9 +91,6 @@ data class MatchState(
     val server: Side?,
     /** Null once the match is over. */
     val serviceCourt: ServiceCourt?,
-    /** Doubles only. Null in singles, and null once the match is over. */
-    val servingPlayer: PairPlayer?,
-    val receivingPlayer: PairPlayer?,
     /**
      * The point just played took a side to the interval score without ending the
      * game. An edge rather than durable state: it is re-derived from the log on
@@ -163,14 +138,6 @@ fun gameWinner(score: SideScore, rules: ScoringRules): Side? {
 }
 
 /**
- * Which member of a pair stands in [court], given which member is currently in
- * that pair's right service court. The pair occupies both courts, so the other
- * player is in the other one - that is the whole rule.
- */
-private fun playerIn(court: ServiceCourt, rightCourtPlayer: PairPlayer): PairPlayer =
-    if (court == ServiceCourt.RIGHT) rightCourtPlayer else rightCourtPlayer.other
-
-/**
  * Folds a log into the score. The only way a [MatchState] is ever produced: there
  * is no mutable score anywhere in this package, so undo (re-fold a shorter log)
  * and replay (fold from scratch) cannot disagree with the forward path.
@@ -198,8 +165,6 @@ fun foldMatchState(
     val completedGames = ArrayList<SideScore>()
     var gamesWon = SideScore.ZERO
     var server = setup.firstServer
-    var homeRight = setup.homeStartsRight
-    var awayRight = setup.awayStartsRight
     var endsSwapCount = 0
     var isIntervalPoint = false
     var isChangeEndsPoint = false
@@ -228,15 +193,6 @@ fun foldMatchState(
                     comment = tag?.comment,
                 )
 
-                // The serving pair swaps service courts only when it wins the rally,
-                // which is exactly why the same player then serves again from the
-                // other court. The receiving pair never swaps on winning: the new
-                // server is simply whoever is standing in the court their new score
-                // calls for.
-                if (setup.doubles && event.side == server) {
-                    if (server == Side.HOME) homeRight = homeRight.other else awayRight = awayRight.other
-                }
-
                 // Rally point scoring: the side that wins the rally serves the next one.
                 server = event.side
                 currentGame = scoreAfter
@@ -258,8 +214,6 @@ fun foldMatchState(
                         gameIndex += 1
                         currentGame = SideScore.ZERO
                         server = wonGame
-                        homeRight = setup.homeStartsRight
-                        awayRight = setup.awayStartsRight
                         endsSwapCount += 1
                         isChangeEndsPoint = true
                         intervalTakenThisGame = false
@@ -291,15 +245,6 @@ fun foldMatchState(
     val court = servingSide?.let {
         if (currentGame.of(it) % 2 == 0) ServiceCourt.RIGHT else ServiceCourt.LEFT
     }
-    // A serve crosses diagonally, so the receiver stands in the same-named court on
-    // the other side of the net.
-    val servingPlayer = if (!setup.doubles || servingSide == null || court == null) null else {
-        playerIn(court, if (servingSide == Side.HOME) homeRight else awayRight)
-    }
-    val receivingPlayer = if (!setup.doubles || servingSide == null || court == null) null else {
-        playerIn(court, if (servingSide.other == Side.HOME) homeRight else awayRight)
-    }
-
     // "One point from the game" asked of the rule that decides games, rather than
     // spelled out a second time here where it could drift from gameWinner.
     val gamePoint = if (winner != null) SideFlags.NONE else SideFlags(
@@ -321,8 +266,6 @@ fun foldMatchState(
         points = points,
         server = servingSide,
         serviceCourt = court,
-        servingPlayer = servingPlayer,
-        receivingPlayer = receivingPlayer,
         isIntervalPoint = winner == null && isIntervalPoint,
         endsSwapCount = endsSwapCount,
         isChangeEndsPoint = winner == null && isChangeEndsPoint,
@@ -330,22 +273,4 @@ fun foldMatchState(
         matchPoint = matchPoint,
         winner = winner,
     )
-}
-
-/**
- * Which member of [side]'s pair is standing in the right service court. Null in
- * singles, and null once the match is over - there is no serve left to place
- * anyone from.
- *
- * Derived rather than folded, because the fold already names the one player on each
- * side whose court is known: the server and the receiver both stand in
- * [MatchState.serviceCourt], and a pair occupies both courts, so the partner is in
- * the other one. Shared rather than written on each surface, because two platforms
- * deriving court geometry separately is two chances to draw a name on the wrong
- * side of the court.
- */
-fun MatchState.rightCourtPlayer(side: Side): PairPlayer? {
-    val court = serviceCourt ?: return null
-    val placed = (if (side == server) servingPlayer else receivingPlayer) ?: return null
-    return if (court == ServiceCourt.RIGHT) placed else placed.other
 }

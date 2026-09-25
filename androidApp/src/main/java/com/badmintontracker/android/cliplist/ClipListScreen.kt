@@ -422,6 +422,17 @@ private fun VideoMatchRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            // Same line, same place as on a scored match's row, and absent until
+            // somebody is named for the same reason.
+            match.playersLine?.let { players ->
+                Text(
+                    text = players,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             match.description?.let { description ->
                 Text(
                     text = description,
@@ -573,13 +584,17 @@ private fun ScoreMatchRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                text = card.playersLine,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            // Absent until somebody is named: the new match form does not ask, and
+            // "Home vs Away" on every row would say nothing.
+            card.playersLine?.let { players ->
+                Text(
+                    text = players,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             row.attach?.let { attach ->
                 Text(
                     text = attach.text,

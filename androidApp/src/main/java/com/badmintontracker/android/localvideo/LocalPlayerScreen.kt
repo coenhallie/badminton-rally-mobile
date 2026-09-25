@@ -45,11 +45,15 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import com.badmintontracker.android.clipdetail.AddAnnotationSheet
 import com.badmintontracker.android.clipdetail.AnnotationRow
+import com.badmintontracker.android.clipdetail.FullscreenLabels
 import com.badmintontracker.android.clipdetail.NotesHeader
 import com.badmintontracker.android.clipdetail.PlaybackErrorOverlay
 import com.badmintontracker.android.clipdetail.PlaybackSettingsSheet
+import com.badmintontracker.android.clipdetail.ReplayLabelRow
 import com.badmintontracker.android.clipdetail.TransportBar
 import com.badmintontracker.android.clipdetail.VideoCard
+import com.badmintontracker.android.clipdetail.quickTagConfirmation
+import com.badmintontracker.android.clipdetail.rememberQuickTagMessage
 import com.badmintontracker.android.clipdetail.rememberPlaybackPosition
 import com.badmintontracker.android.ui.components.FullscreenEffect
 import com.badmintontracker.android.ui.components.ShuttlButton
@@ -57,6 +61,7 @@ import com.badmintontracker.android.ui.components.ShuttlButtonVariant
 import com.badmintontracker.android.ui.components.frameExactPlayer
 import com.badmintontracker.shared.localvideo.LocalAnnotation
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
+import com.badmintontracker.shared.model.AnnotationLabel
 import com.badmintontracker.shared.prefs.PlaybackPreferenceRepository
 
 private const val ANNOTATION_STORAGE_NOTE =
@@ -92,6 +97,8 @@ fun LocalPlayerScreen(
     // overlays with an opaque Box - showing it while isFullscreen is true
     // would burn the message invisibly. Hold it and re-check when fullscreen
     // exits instead of firing once and losing it.
+    val tagMessage = rememberQuickTagMessage()
+
     LaunchedEffect(labelErrorMessage, isFullscreen) {
         if (isFullscreen) return@LaunchedEffect
         val msg = labelErrorMessage ?: return@LaunchedEffect
@@ -137,12 +144,17 @@ fun LocalPlayerScreen(
     val skipSeconds by playbackPrefs.skipSeconds.collectAsStateWithLifecycle()
     var showSettings by remember { mutableStateOf(false) }
 
+    val tag: (AnnotationLabel) -> Unit = { label ->
+        val positionMs = player.currentPosition.coerceAtLeast(0L)
+        vm.addAnnotation(positionMs / 1000f, "", label)
+        tagMessage.show(quickTagConfirmation(label, positionMs))
+    }
+
     val video: @Composable (Boolean) -> Unit = { fullscreen ->
         VideoCard(
             player = player,
             position = position,
-            speed = speed,
-            onSpeedTap = { showSettings = true },
+            onSettingsTap = { showSettings = true },
             fullscreen = fullscreen,
             onFullscreenToggle = { isFullscreen = !isFullscreen },
             error = playbackError?.let { message ->
@@ -204,6 +216,12 @@ fun LocalPlayerScreen(
                     onSettings = { showSettings = true },
                     modifier = Modifier.padding(top = 16.dp),
                 )
+                ReplayLabelRow(
+                    labels = labelOptions,
+                    message = tagMessage.text,
+                    onTag = tag,
+                    modifier = Modifier.padding(top = 16.dp),
+                )
                 entry.description?.let { description ->
                     Text(
                         text = description,
@@ -244,7 +262,9 @@ fun LocalPlayerScreen(
                 prefs = playbackPrefs,
                 onSettings = { showSettings = true },
                 modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 24.dp),
+                overVideo = true,
             )
+            FullscreenLabels(labels = labelOptions, prefs = playbackPrefs, message = tagMessage.text, onTag = tag)
         }
     }
 

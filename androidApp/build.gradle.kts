@@ -15,6 +15,15 @@ val localProperties = Properties().apply {
 val supabaseUrl     = (localProperties["SUPABASE_URL"] as? String).orEmpty()
 val supabaseAnonKey = (localProperties["SUPABASE_ANON_KEY"] as? String).orEmpty()
 
+// The release signing key, from local.properties or the environment, never from
+// the repo: a build handed to anyone outside the team has to be installable, and
+// an unsigned release APK is not. Absent on a machine without the key (CI, a
+// fresh checkout), the release build type simply stays unsigned rather than fail,
+// so `assembleRelease` still works as a compile check there.
+fun releaseSecret(name: String): String? =
+    (localProperties[name] as? String)?.takeIf { it.isNotBlank() } ?: System.getenv(name)?.takeIf { it.isNotBlank() }
+val releaseStoreFile = releaseSecret("RELEASE_STORE_FILE")?.let { file(it.replaceFirst("~", System.getProperty("user.home"))) }
+
 // Shared Android/iOS version source — see Config/Version.xcconfig.
 val versionConfig: Map<String, String> = rootProject.file("Config/Version.xcconfig")
     .readLines()
@@ -78,9 +87,21 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    signingConfigs {
+        if (releaseStoreFile != null) {
+            create("release") {
+                storeFile = releaseStoreFile
+                storePassword = releaseSecret("RELEASE_STORE_PASSWORD")
+                keyAlias = releaseSecret("RELEASE_KEY_ALIAS")
+                keyPassword = releaseSecret("RELEASE_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 }

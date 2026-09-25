@@ -12,8 +12,10 @@ import com.badmintontracker.shared.repo.AuthRepository
 import com.badmintontracker.shared.repo.ClipsRepository
 import com.badmintontracker.shared.repo.SharesRepository
 import com.badmintontracker.shared.repo.VideosRepository
+import com.badmintontracker.shared.scoring.MatchFormat
 import com.badmintontracker.shared.scoring.ScoreLogsRepository
 import com.badmintontracker.shared.scoring.buildScoreMatchCard
+import com.badmintontracker.shared.scoring.playersLine
 import com.badmintontracker.shared.scoring.scoreLogAttachStatus
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -36,7 +38,18 @@ data class MatchSummary(
     val title: String? = null,
     /** Match description, from videos.description. Phone-only; the web app has no field. */
     val description: String? = null,
-)
+    /**
+     * Who played and what kind of match it was, from the videos row: the same
+     * optional details a score log carries, kept on the video for a match that
+     * was only ever filmed. Edited from the match page.
+     */
+    val homePlayers: List<String> = emptyList(),
+    val awayPlayers: List<String> = emptyList(),
+    val format: MatchFormat? = null,
+) {
+    /** "Coen vs Marco", or null while nobody is named; the same rule as a score card's. */
+    val playersLine: String? get() = playersLine(homePlayers, awayPlayers)
+}
 
 data class ClipListState(
     val clips: List<RallyClip> = emptyList(),
@@ -92,6 +105,9 @@ internal fun List<RallyClip>.toMatches(
                 // fallback that keeps names on screen when the RPC is unreachable.
                 title = metadataByVideoId[videoId]?.title ?: list.matchTitle(),
                 description = metadataByVideoId[videoId]?.description,
+                homePlayers = metadataByVideoId[videoId]?.homePlayers.orEmpty(),
+                awayPlayers = metadataByVideoId[videoId]?.awayPlayers.orEmpty(),
+                format = metadataByVideoId[videoId]?.format,
             )
         }
         .sortedByDescending { it.latestCreatedAt }
@@ -109,7 +125,10 @@ class ClipListViewModel(
     private val refreshing      = MutableStateFlow(true)
     private val errors          = MutableStateFlow<String?>(null)
     private val sharerByVideoId = MutableStateFlow<Map<String, String>>(emptyMap())
-    private val metadataByVideoId = MutableStateFlow<Map<String, MatchMetadata>>(emptyMap())
+    // The repository's own cache rather than a map of this view model's: this
+    // class is built once per screen that lists matches, and a rename made on
+    // the match page has to reach every one of them the moment it lands.
+    private val metadataByVideoId = videos.observeMatchMetadata()
 
     private val scoreCards = scoreLogs.logs.map { logs -> logs.map(::buildScoreMatchCard) }
 
@@ -176,12 +195,12 @@ class ClipListViewModel(
                         // Soft failure: leave sharerByVideoId untouched, no user-facing error.
                 }
                 val metadataJob = async {
+                    // A success lands in the repository's cache on its own. Soft
+                    // failure, same contract as the shares lookup: the previous map
+                    // stays and nothing is said. A missing title degrades to
+                    // "Match · <date>", which is not worth interrupting for, and
+                    // emptying the map would visibly wipe every name on a blip.
                     videos.listMatchMetadata()
-                        .onSuccess { rows -> metadataByVideoId.value = rows.associateBy { it.videoId } }
-                    // Soft failure, same contract as the shares lookup: leave the
-                    // previous map alone and say nothing. A missing title degrades
-                    // to "Match · <date>", which is not worth interrupting for —
-                    // and emptying the map would visibly wipe every name on a blip.
                 }
                 val scoreLogsJob = async {
                     // Soft failure, same contract as the shares and metadata reads:

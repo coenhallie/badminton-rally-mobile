@@ -5,8 +5,8 @@ import SwiftUI
 /// preference so a choice made on any player is the one every player uses next.
 ///
 /// Lived inside `PlaybackControlBar.swift` until that file was replaced by
-/// `ShuttlTransportBar`. It is reached from the speed chip on the video card,
-/// which is where the mock puts it, and from holding either skip pill.
+/// `ShuttlTransportBar`. It is reached from the gear on the video card, from the
+/// speed readout at the end of the transport row, and from holding either skip pill.
 struct PlaybackSettingsSheet: View {
     let skipSeconds: Int
     let speed: Float

@@ -27,6 +27,7 @@ import com.badmintontracker.shared.scoring.ScoreMatchCard
 import com.badmintontracker.shared.scoring.ScoreTagSummary
 import com.badmintontracker.shared.scoring.ScoredPoint
 import com.badmintontracker.shared.scoring.Side
+import com.badmintontracker.shared.scoring.sideName
 
 /**
  * The points half of a match: the score header, the tag tally and one row per
@@ -56,9 +57,14 @@ fun LazyListScope.pointsFacet(
                 fontSize = 28.sp,
                 fontWeight = FontWeight.SemiBold,
             )
-            Text(card?.playersLine.orEmpty(), style = MaterialTheme.typography.bodyMedium)
+            // The legend for the score above it: which number is whose. Always drawn,
+            // unlike the list row's players line, so it falls back to Home vs Away.
             Text(
-                text = "${card?.statusLine.orEmpty()} · ${log.rules.summary()}",
+                "${log.sideName(Side.HOME)} vs ${log.sideName(Side.AWAY)}",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                text = listOfNotNull(card?.statusLine, log.format?.label, log.rules.summary()).joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -94,11 +100,7 @@ fun LazyListScope.pointsFacet(
     } else {
         // Newest first: courtside, the rally you care about is the last one.
         items(points.reversed(), key = { "point-${it.ordinal}" }) { point ->
-            PointRow(
-                point = point,
-                homeName = log.homePlayers.joinToString(" / "),
-                awayName = log.awayPlayers.joinToString(" / "),
-            )
+            PointRow(point, winner = log.sideName(point.wonBy))
             HorizontalDivider()
         }
     }
@@ -127,7 +129,7 @@ private fun TagTally(tally: ScoreTagSummary) {
 }
 
 @Composable
-private fun PointRow(point: ScoredPoint, homeName: String, awayName: String) {
+private fun PointRow(point: ScoredPoint, winner: String) {
     Column(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -141,7 +143,7 @@ private fun PointRow(point: ScoredPoint, homeName: String, awayName: String) {
                 fontWeight = FontWeight.Medium,
             )
             Text(
-                text = if (point.wonBy == Side.HOME) homeName else awayName,
+                text = winner,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

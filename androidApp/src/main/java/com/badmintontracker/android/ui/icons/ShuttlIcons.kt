@@ -30,6 +30,9 @@ object ShuttlIcons {
     val Video: ImageVector by lazy { buildLucide("ShuttlVideo") { video() } }
     val ListOrdered: ImageVector by lazy { buildLucide("ShuttlListOrdered") { listOrdered() } }
     val Tag: ImageVector by lazy { buildLucide("ShuttlTag") { tag() } }
+    // The scoring board's Undo. Lucide's undo-2 at its stock stroke, drawn at
+    // 18dp beside the label like ShuttlButton's leading icon.
+    val Undo: ImageVector by lazy { buildLucide("ShuttlUndo") { undo() } }
 
     // The transport glyphs, traced from the Rally Analysis mock's own SVGs:
     // 14-unit chevrons and steps at a 1.4 stroke, an 18-unit filled play and
@@ -42,6 +45,41 @@ object ShuttlIcons {
     // Corner brackets pointing out, and in: the fullscreen toggle on the video card.
     val Maximize: ImageVector by lazy { buildStroked("ShuttlMaximize") { moveTo(2f, 5.5f); lineTo(2f, 2f); lineTo(5.5f, 2f); moveTo(8.5f, 2f); lineTo(12f, 2f); lineTo(12f, 5.5f); moveTo(12f, 8.5f); lineTo(12f, 12f); lineTo(8.5f, 12f); moveTo(5.5f, 12f); lineTo(2f, 12f); lineTo(2f, 8.5f) } }
     val Minimize: ImageVector by lazy { buildStroked("ShuttlMinimize") { moveTo(2f, 5.5f); lineTo(5.5f, 5.5f); lineTo(5.5f, 2f); moveTo(8.5f, 2f); lineTo(8.5f, 5.5f); lineTo(12f, 5.5f); moveTo(12f, 8.5f); lineTo(8.5f, 8.5f); lineTo(8.5f, 12f); moveTo(5.5f, 12f); lineTo(5.5f, 8.5f); lineTo(2f, 8.5f) } }
+    /**
+     * The settings gear on the video card, where the speed chip used to be. Drawn
+     * rather than imported for the reason at the top of this file, and computed
+     * rather than traced: eight teeth are sixteen flanks, and a loop cannot get one
+     * of them wrong. Same 14-unit, 1.4 stroke family as the chips beside it.
+     */
+    val Settings: ImageVector by lazy {
+        buildStroked("ShuttlSettings") {
+            val centre = 7f
+            val tip = 5.9f
+            val root = 4.4f
+            fun at(radius: Float, degrees: Float): Pair<Float, Float> {
+                val radians = Math.toRadians(degrees.toDouble())
+                return centre + radius * kotlin.math.cos(radians).toFloat() to centre + radius * kotlin.math.sin(radians).toFloat()
+            }
+            for (tooth in 0 until 8) {
+                val angle = tooth * 45f
+                val points = listOf(at(root, angle - 14f), at(tip, angle - 8f), at(tip, angle + 8f), at(root, angle + 14f))
+                points.forEachIndexed { index, (x, y) ->
+                    if (tooth == 0 && index == 0) moveTo(x, y) else lineTo(x, y)
+                }
+            }
+            close()
+            // The hub, as two half turns: one arc cannot return to its own start.
+            moveTo(centre + 1.9f, centre)
+            arcTo(1.9f, 1.9f, 0f, isMoreThanHalf = true, isPositiveArc = true, x1 = centre - 1.9f, y1 = centre)
+            arcTo(1.9f, 1.9f, 0f, isMoreThanHalf = true, isPositiveArc = true, x1 = centre + 1.9f, y1 = centre)
+        }
+    }
+    /** The floating label window's title bar: a six-dot grip says "drag me", and a pair of chevrons folds it. */
+    val Grip: ImageVector by lazy { buildStroked("ShuttlGrip") { for (x in listOf(5f, 9f)) for (y in listOf(3.5f, 7f, 10.5f)) { moveTo(x, y); lineTo(x + 0.01f, y) } } }
+    val ChevronUp: ImageVector by lazy { buildStroked("ShuttlChevronUp") { moveTo(3f, 9f); lineTo(7f, 5f); lineTo(11f, 9f) } }
+    val ChevronDown: ImageVector by lazy { buildStroked("ShuttlChevronDown") { moveTo(3f, 5f); lineTo(7f, 9f); lineTo(11f, 5f) } }
+    /** Two opposed arrows: the scoring board's "hand the serve across" mark. Same 14-unit, 1.4 stroke family. */
+    val Swap: ImageVector by lazy { buildStroked("ShuttlSwap") { moveTo(2f, 4.5f); lineTo(12f, 4.5f); moveTo(9.5f, 2f); lineTo(12f, 4.5f); lineTo(9.5f, 7f); moveTo(12f, 9.5f); lineTo(2f, 9.5f); moveTo(4.5f, 7f); lineTo(2f, 9.5f); lineTo(4.5f, 12f) } }
     val Play: ImageVector by lazy { buildFilled("ShuttlPlay") { moveTo(5f, 3f); lineTo(15f, 9f); lineTo(5f, 15f); close() } }
     val Pause: ImageVector by lazy {
         buildFilled("ShuttlPause") {
@@ -304,4 +342,14 @@ private fun androidx.compose.ui.graphics.vector.PathBuilder.tag() {
     arcTo(0.5f, 0.5f, 0f, true, true, 8f, 7.5f)
     arcTo(0.5f, 0.5f, 0f, true, true, 7f, 7.5f)
     close()
+}
+
+private fun androidx.compose.ui.graphics.vector.PathBuilder.undo() {
+    // <path d="M9 14 4 9l5-5"/>
+    moveTo(9f, 14f); lineTo(4f, 9f); lineTo(9f, 4f)
+    // <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/>
+    moveTo(4f, 9f); lineTo(14.5f, 9f)
+    arcToRelative(5.5f, 5.5f, 0f, false, true, 5.5f, 5.5f)
+    arcToRelative(5.5f, 5.5f, 0f, false, true, -5.5f, 5.5f)
+    lineTo(11f, 20f)
 }

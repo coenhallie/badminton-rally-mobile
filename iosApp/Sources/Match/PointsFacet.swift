@@ -23,10 +23,13 @@ struct PointsFacet: View {
                 Text(card?.scoreLine ?? "")
                     .shuttlType(ShuttlType.headlineMedium)
                     .foregroundStyle(Shuttl.text)
-                Text(card?.playersLine ?? "")
+                // The legend for the score above it: which number is whose. Always
+                // drawn, unlike the list row's players line, so it falls back to
+                // Home vs Away.
+                Text("\(log.sideName(side: .home)) vs \(log.sideName(side: .away))")
                     .shuttlType(ShuttlType.bodyLarge)
                     .foregroundStyle(Shuttl.text)
-                Text("\(card?.statusLine ?? "") · \(rulesSummary(log.rules))")
+                Text([card?.statusLine, log.format?.label, rulesSummary(log.rules)].compactMap { $0 }.joined(separator: " · "))
                     .shuttlType(ShuttlType.bodySmall)
                     .foregroundStyle(Shuttl.textSecondary)
                 // Absent rather than disabled on a finished match: there is
@@ -103,9 +106,7 @@ struct PointsFacet: View {
                 Text("\(point.scoreAfter.home)-\(point.scoreAfter.away)")
                     .shuttlType(ShuttlType.titleMedium)
                     .foregroundStyle(Shuttl.text)
-                Text(point.wonBy == .home
-                     ? ScoreMatchCardKt.sideLabel(players: log.homePlayers)
-                     : ScoreMatchCardKt.sideLabel(players: log.awayPlayers))
+                Text(log.sideName(side: point.wonBy))
                     .shuttlType(ShuttlType.bodyLarge)
                     .foregroundStyle(Shuttl.textSecondary)
             }

@@ -21,7 +21,7 @@ enum class ScoreLogStatus {
 }
 
 /**
- * One match: who played, under what rules, and every point as it was scored.
+ * One match: what it was called, under what rules, and every point as it was scored.
  *
  * The score is not stored. [state] folds it on demand, so a match read back out of
  * the database and the same match still being scored cannot disagree about what
@@ -33,9 +33,15 @@ data class ScoreLog(
     /** Null until L2 attaches a video, and null again if that video is deleted. */
     @SerialName("video_id")     val videoId: String?,
     val title: String,
-    /** One name for singles, two for doubles. Index 0 starts in the right service court. */
-    @SerialName("home_players") val homePlayers: List<String>,
-    @SerialName("away_players") val awayPlayers: List<String>,
+    /**
+     * Optional, and never asked for when the match is created: they are filled in
+     * from the details editor. One name for singles, up to two for doubles.
+     * Defaulted so a row or a cache written without them still decodes.
+     */
+    @SerialName("home_players") val homePlayers: List<String> = emptyList(),
+    @SerialName("away_players") val awayPlayers: List<String> = emptyList(),
+    /** Null until someone says. See [MatchFormat]. */
+    val format: MatchFormat? = null,
     val rules: ScoringRules,
     val setup: MatchSetup,
     val events: List<ScoreEvent>,
@@ -47,7 +53,6 @@ data class ScoreLog(
 }
 
 const val MAX_MATCH_TITLE = 80
-const val MAX_PLAYER_NAME = 40
 
 /**
  * The one place a new match's own rules are spelled out, so the Android form, the
@@ -55,26 +60,11 @@ const val MAX_PLAYER_NAME = 40
  * what is complete. Returns a ready to display sentence, or null when the match can
  * be created.
  */
-fun createMatchProblem(
-    title: String,
-    homePlayers: List<String>,
-    awayPlayers: List<String>,
-    doubles: Boolean,
-): String? {
-    val named = { side: List<String> -> side.map { it.trim() }.filter { it.isNotEmpty() } }
-    val home = named(homePlayers)
-    val away = named(awayPlayers)
-    val expected = if (doubles) 2 else 1
-    return when {
-        title.trim().isEmpty() -> "Give the match a name."
-        title.trim().length > MAX_MATCH_TITLE -> "The match name can be up to $MAX_MATCH_TITLE characters."
-        (home + away).any { it.length > MAX_PLAYER_NAME } ->
-            "A player name can be up to $MAX_PLAYER_NAME characters."
-        home.isEmpty() || away.isEmpty() -> "Name both players."
-        doubles && (home.size != expected || away.size != expected) ->
-            "Doubles needs two players on each side."
-        !doubles && (home.size != expected || away.size != expected) ->
-            "Singles has one player on each side."
-        else -> null
-    }
+fun createMatchProblem(title: String): String? = createMatchProblem(title, MAX_MATCH_TITLE)
+
+/** [createMatchProblem] against a record's own cap. An overload, not a default: Swift sees no defaults. */
+fun createMatchProblem(title: String, cap: Int): String? = when {
+    title.trim().isEmpty() -> "Give the match a name."
+    title.trim().length > cap -> "The match name can be up to $cap characters."
+    else -> null
 }

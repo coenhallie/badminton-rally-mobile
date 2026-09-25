@@ -9,7 +9,9 @@ import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.scoring.AttachKind
 import com.badmintontracker.shared.scoring.MATCH_VIDEO_REMOVE_FAILED_MESSAGE
+import com.badmintontracker.shared.scoring.MatchFormat
 import com.badmintontracker.shared.scoring.MatchSetup
+import com.badmintontracker.shared.scoring.VIDEO_DETAILS_SAVE_FAILED_MESSAGE
 import com.badmintontracker.shared.scoring.ScoreLogsRepository
 import com.badmintontracker.shared.scoring.ScoringRules
 import com.badmintontracker.shared.scoring.Side
@@ -50,10 +52,8 @@ class MatchViewModelTest {
 
     private fun ScoreLogsRepository.newMatch() = create(
         title = "Thu League",
-        homePlayers = listOf("Coen"),
-        awayPlayers = listOf("Marco"),
         rules = ScoringRules.BWF_21,
-        setup = MatchSetup(doubles = false, firstServer = Side.HOME),
+        setup = MatchSetup(firstServer = Side.HOME),
     )
 
     /**
@@ -263,6 +263,53 @@ class MatchViewModelTest {
         removed shouldBe false
         vm.state.value.error shouldBe MATCH_VIDEO_REMOVE_FAILED_MESSAGE
         vm.state.value.log?.videoId shouldBe "vid-1"
+    }
+
+    @Test
+    fun a_video_born_match_saves_its_details_onto_the_video_and_its_local_entry() = runTest {
+        // No score log at all: cloudia, uploaded from this phone and never scored.
+        val videos = FakeVideosRepository()
+        val localVideos = localVideos().apply {
+            add(LocalVideoEntry(
+                id = "vid-1", uri = "content://x/1", displayName = "m.mp4",
+                durationMs = 1000, sizeBytes = 10, addedAtEpochMs = 0,
+                title = "cloudia", stage = AnalyzeStage.ANALYZED,
+            ))
+        }
+        val vm = matchViewModel(store(), scoreLogId = null, localVideos = localVideos, videos = videos)
+
+        vm.updateVideoDetails(
+            "vid-1", title = "Club final", description = "", format = MatchFormat.DOUBLES,
+            homePlayers = listOf("Coen", "Ana"), awayPlayers = listOf("Marco", "Li"),
+        )
+        dispatcher.scheduler.advanceUntilIdle()
+
+        val written = videos.updateDetailsCalls.single()
+        written.title shouldBe "Club final"
+        written.homePlayers shouldBe listOf("Coen", "Ana")
+        written.format shouldBe MatchFormat.DOUBLES
+        localVideos.get("vid-1")?.title shouldBe "Club final"
+        vm.state.value.error shouldBe null
+    }
+
+    @Test
+    fun a_refused_details_save_surfaces_a_message_and_leaves_the_local_entry_alone() = runTest {
+        val videos = FakeVideosRepository()
+        videos.nextUpdateDetailsResult = Result.failure(IllegalStateException("HTTP 403"))
+        val localVideos = localVideos().apply {
+            add(LocalVideoEntry(
+                id = "vid-1", uri = "content://x/1", displayName = "m.mp4",
+                durationMs = 1000, sizeBytes = 10, addedAtEpochMs = 0,
+                title = "cloudia", stage = AnalyzeStage.ANALYZED,
+            ))
+        }
+        val vm = matchViewModel(store(), scoreLogId = null, localVideos = localVideos, videos = videos)
+
+        vm.updateVideoDetails("vid-1", "Club final", "", null, emptyList(), emptyList())
+        dispatcher.scheduler.advanceUntilIdle()
+
+        vm.state.value.error shouldBe VIDEO_DETAILS_SAVE_FAILED_MESSAGE
+        localVideos.get("vid-1")?.title shouldBe "cloudia"
     }
 
     @Test

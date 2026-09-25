@@ -414,6 +414,14 @@ struct MatchesList: View {
                         .shuttlType(ShuttlType.bodySmall)
                         .foregroundStyle(Shuttl.textSecondary)
                         .lineLimit(1)
+                    // Same line, same place as on a scored match's row, and absent
+                    // until somebody is named for the same reason.
+                    if let players = match.playersLine {
+                        Text(players)
+                            .shuttlType(ShuttlType.bodySmall)
+                            .foregroundStyle(Shuttl.textSecondary)
+                            .lineLimit(1)
+                    }
                     if let description = match.description {
                         Text(description)
                             .shuttlType(ShuttlType.bodySmall)
@@ -474,10 +482,14 @@ struct MatchesList: View {
                         .shuttlType(ShuttlType.bodySmall)
                         .foregroundStyle(Shuttl.textSecondary)
                         .lineLimit(1)
-                    Text(card.playersLine)
-                        .shuttlType(ShuttlType.bodySmall)
-                        .foregroundStyle(Shuttl.textSecondary)
-                        .lineLimit(1)
+                    // Absent until somebody is named: the new match form does not
+                    // ask, and "Home vs Away" on every row would say nothing.
+                    if let players = card.playersLine {
+                        Text(players)
+                            .shuttlType(ShuttlType.bodySmall)
+                            .foregroundStyle(Shuttl.textSecondary)
+                            .lineLimit(1)
+                    }
                     if let attach = content.attach {
                         Text(attach.text)
                             .shuttlType(ShuttlType.bodySmall)

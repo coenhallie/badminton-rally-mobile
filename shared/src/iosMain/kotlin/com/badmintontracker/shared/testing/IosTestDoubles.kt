@@ -11,6 +11,7 @@ import com.badmintontracker.shared.repo.ClipsRepository
 import com.badmintontracker.shared.repo.ProcessingUpdate
 import com.badmintontracker.shared.repo.UploadState
 import com.badmintontracker.shared.repo.VideosRepository
+import com.badmintontracker.shared.scoring.MatchFormat
 import com.russhwolf.settings.NSUserDefaultsSettings
 import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.CoroutineScope
@@ -49,26 +50,51 @@ private open class NoopVideosRepository : VideosRepository {
         videoId: String, sizeBytes: Long, channelProvider: suspend (offset: Long) -> ByteReadChannel,
     ): Flow<UploadState> = emptyFlow()
     override suspend fun listMatchMetadata(): Result<List<MatchMetadata>> = Result.success(emptyList())
+    override fun observeMatchMetadata(): Flow<Map<String, MatchMetadata>> = MutableStateFlow(emptyMap())
+    override suspend fun updateMatchDetails(
+        videoId: String, title: String?, description: String?, format: MatchFormat?,
+        homePlayers: List<String>, awayPlayers: List<String>,
+    ): Result<Unit> = Result.success(Unit)
     override suspend fun deleteMatch(videoId: String): Result<Unit> = Result.success(Unit)
 }
 
 /**
  * The one double here that does more than satisfy a constructor: it records what
- * was deleted, and [failDeleteMatch] makes the server refuse, which is the branch
- * that must abort a removal before it touches anything local.
+ * was deleted and what details were written, and [failDeleteMatch] /
+ * [failUpdateDetails] make the server refuse, which is the branch that must abort
+ * before anything local is touched.
  */
 class RecordingVideosRepository internal constructor() : VideosRepository by NoopVideosRepository() {
     var failDeleteMatch: Boolean = false
+    var failUpdateDetails: Boolean = false
 
     /** What [deleteMatch] was called with, in order. A read-only List, not the
      *  MutableList behind it: Swift sees this one as a plain array. */
     val deletedVideoIds: List<String> get() = calls.toList()
 
+    /** What [updateMatchDetails] was called with, in order, as the row it would produce. */
+    val detailUpdates: List<MatchMetadata> get() = updates.toList()
+
     private val calls = mutableListOf<String>()
+    private val updates = mutableListOf<MatchMetadata>()
+    private val metadata = MutableStateFlow<Map<String, MatchMetadata>>(emptyMap())
+
+    override fun observeMatchMetadata(): Flow<Map<String, MatchMetadata>> = metadata
 
     override suspend fun deleteMatch(videoId: String): Result<Unit> {
         calls += videoId
         return if (failDeleteMatch) Result.failure(IllegalStateException("refused")) else Result.success(Unit)
+    }
+
+    override suspend fun updateMatchDetails(
+        videoId: String, title: String?, description: String?, format: MatchFormat?,
+        homePlayers: List<String>, awayPlayers: List<String>,
+    ): Result<Unit> {
+        val row = MatchMetadata(videoId, title, description, homePlayers, awayPlayers, format)
+        updates += row
+        if (failUpdateDetails) return Result.failure(IllegalStateException("refused"))
+        metadata.value = metadata.value + (videoId to row)
+        return Result.success(Unit)
     }
 }
 

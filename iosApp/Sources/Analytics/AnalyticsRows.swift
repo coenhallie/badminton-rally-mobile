@@ -305,7 +305,8 @@ func buildAnalyticsRows(
                 entryId: localEntries.first { $0.scoreLogId == content.card.scoreLogId }?.id,
                 group: .ownedMatches,
                 title: content.card.title,
-                subtitle: content.card.playersLine
+                // Who played when anyone has been named, and the score until then.
+                subtitle: content.card.playersLine ?? content.card.scoreLine
             )
         }
     }

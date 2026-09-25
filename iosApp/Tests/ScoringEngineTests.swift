@@ -7,23 +7,51 @@ import Shared
 /// what is tested here is that the types survive the bridge.
 final class ScoringEngineTests: XCTestCase {
 
-    private let doubles = MatchSetup(
-        doubles: true,
-        firstServer: .home,
-        homeStartsRight: .first,
-        awayStartsRight: .first
-    )
+    private let homeServes = MatchSetup(firstServer: .home)
 
     private func fold(_ events: [ScoreEvent]) -> MatchState {
-        foldMatchState(rules: ScoringRules.companion.BWF_21, setup: doubles, events: events)
+        foldMatchState(rules: ScoringRules.companion.BWF_21, setup: homeServes, events: events)
     }
 
     func testAPresetCrossesTheBridge() {
         XCTAssertEqual(ScoringRules.companion.BWF_21.pointsToWin, 21)
-        XCTAssertEqual(ScoringRules.companion.PRESETS.count, 3)
     }
 
-    func testFoldingADoublesLogGivesTheServeAndTheScore() {
+    func testTheFormsOptionsCrossTheBridgeInPickerOrder() {
+        XCTAssertEqual(GamePoints.allCases.map(\.pointsToWin), [15, 21, 11])
+        XCTAssertEqual(MatchSets.allCases.map(\.sets), [3, 1])
+        XCTAssertEqual(GamePoints.companion.DEFAULT, .twentyOne)
+        XCTAssertEqual(MatchSets.companion.DEFAULT, .three)
+        let rules = ScoringRules.companion.of(points: .eleven, sets: .one)
+        XCTAssertEqual(rules.pointsToWin, 11)
+        XCTAssertEqual(rules.gamesToWin, 1)
+    }
+
+    func testTheDefaultNameCrossesTheBridge() {
+        // The zone is the machine's, so only the shape is pinned here; the Kotlin
+        // suite pins the text against a fixed zone.
+        let name = DefaultMatchTitleKt.defaultMatchTitle(epochMs: 1_789_907_400_000, place: "Amsterdam")
+        XCTAssertTrue(name.hasSuffix(" - Amsterdam"), name)
+        XCTAssertNil(ScoreLogKt.createMatchProblem(title: name))
+    }
+
+    func testTheDetailsEditorsRulesCrossTheBridge() {
+        XCTAssertEqual(MatchFormat.allCases.map(\.shortLabel), ["Singles", "Doubles", "Mixed"])
+        XCTAssertEqual(MatchDetailsKt.playersPerSide(format: nil), 1)
+        XCTAssertEqual(MatchDetailsKt.playersPerSide(format: .doubles), 2)
+        XCTAssertNil(MatchDetailsKt.matchDetailsProblem(title: "Thu", homePlayers: [], awayPlayers: []))
+        XCTAssertEqual(
+            MatchDetailsKt.matchDetailsProblem(title: " ", homePlayers: ["Coen"], awayPlayers: []),
+            "Give the match a name."
+        )
+    }
+
+    func testASideIsNamedForWhereItStands() {
+        XCTAssertEqual(Side.home.label, "Home")
+        XCTAssertEqual(Side.away.label, "Away")
+    }
+
+    func testFoldingALogGivesTheServeAndTheScore() {
         let state = fold([
             ScoreEventPointTo(side: .home),
             ScoreEventPointTo(side: .home),
@@ -33,8 +61,6 @@ final class ScoringEngineTests: XCTestCase {
         XCTAssertEqual(state.currentGame.away, 1)
         XCTAssertEqual(state.server, .away)
         XCTAssertEqual(state.serviceCourt, .left)
-        XCTAssertEqual(state.servingPlayer, .second)
-        XCTAssertEqual(state.receivingPlayer, .second)
         XCTAssertEqual(state.pointCount, 3)
         XCTAssertFalse(state.isOver)
     }
@@ -78,8 +104,8 @@ final class ScoringEngineTests: XCTestCase {
         ]
         let undone = foldMatchState(
             rules: ScoringRules.companion.BWF_21,
-            setup: doubles,
-            events: ScoreEventKt.undoLast(log)
+            setup: homeServes,
+            events: ScoreEventKt.undoLastPoint(log)
         )
         XCTAssertEqual(undone.currentGame.home, 1)
     }

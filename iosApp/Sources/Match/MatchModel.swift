@@ -83,6 +83,39 @@ final class MatchModel {
     /// caller can go straight to the picker the page already owns. Mirrors
     /// Android's `MatchViewModel.removeVideo`.
     @discardableResult
+    /// The details editor's save. Local-first like every other edit to a match;
+    /// sync carries it.
+    func updateDetails(title: String, format: MatchFormat?, homePlayers: [String], awayPlayers: [String]) {
+        guard let scoreLogId else { return }
+        scoreLogs.updateDetails(
+            id: scoreLogId, title: title, format: format, homePlayers: homePlayers, awayPlayers: awayPlayers
+        )
+        readStore()
+    }
+
+    /// The details editor's save for a match that was only ever filmed, whose
+    /// details live on its videos row rather than on a score log. Server first,
+    /// then the local entry that uploaded it: the ordering, and the message on
+    /// failure, are `updateVideoMatchDetailsOrMessage`'s. The page reads the
+    /// result back through the repository's metadata cache, so nothing here has
+    /// to hand it over. Mirrors Android's `MatchViewModel.updateVideoDetails`.
+    func updateVideoDetails(
+        videoId: String, title: String, description: String, format: MatchFormat?,
+        homePlayers: [String], awayPlayers: [String]
+    ) async {
+        error = nil
+        do {
+            let message = try await VideoMatchDetailsKt.updateVideoMatchDetailsOrMessage(
+                videos: videos, localVideos: localVideos, videoId: videoId,
+                title: title, description: description, format: format,
+                homePlayers: homePlayers, awayPlayers: awayPlayers
+            )
+            if let message { error = message }
+        } catch {
+            self.error = VideoMatchDetailsKt.VIDEO_DETAILS_SAVE_FAILED_MESSAGE
+        }
+    }
+
     func removeVideo() async -> Bool {
         guard let scoreLogId else { return false }
         // A previous failure must not sit over a fresh attempt: the banner has no

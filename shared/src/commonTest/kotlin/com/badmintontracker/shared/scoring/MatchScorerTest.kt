@@ -20,10 +20,8 @@ class MatchScorerTest {
     ): Pair<ScoreLogsRepository, MatchScorer> {
         val log = repo.create(
             title = "Thu League",
-            homePlayers = listOf("Coen"),
-            awayPlayers = listOf("Marco"),
             rules = rules,
-            setup = MatchSetup(doubles = false, firstServer = Side.HOME),
+            setup = MatchSetup(firstServer = Side.HOME),
         )
         return repo to MatchScorer(repo, log.id)
     }
@@ -42,6 +40,36 @@ class MatchScorerTest {
         scorer.undo()
         scorer.finish()
         scorer.state().shouldBeNull()
+    }
+
+    @Test
+    fun the_first_serve_can_be_handed_over_before_a_point_is_scored() {
+        // The form no longer asks who won the toss, so home serves by default and
+        // the board is where that gets corrected.
+        val (_, scorer) = scorer()
+        scorer.canSwitchFirstServer() shouldBe true
+        scorer.switchFirstServer()
+        scorer.state()?.server shouldBe Side.AWAY
+        scorer.switchFirstServer()
+        scorer.state()?.server shouldBe Side.HOME
+    }
+
+    @Test
+    fun the_first_serve_is_settled_once_a_point_is_scored_and_open_again_after_undo() {
+        val (_, scorer) = scorer()
+        scorer.score(Side.AWAY)
+        scorer.canSwitchFirstServer() shouldBe false
+        scorer.switchFirstServer()
+        scorer.state()?.setup?.firstServer shouldBe Side.HOME
+        scorer.undo()
+        scorer.canSwitchFirstServer() shouldBe true
+    }
+
+    @Test
+    fun a_match_finished_before_it_started_cannot_have_its_serve_switched() {
+        val (_, scorer) = scorer()
+        scorer.finish()
+        scorer.canSwitchFirstServer() shouldBe false
     }
 
     @Test
@@ -64,16 +92,87 @@ class MatchScorerTest {
     }
 
     @Test
-    fun undoing_a_tag_leaves_the_point_it_named() {
-        // The log is append-only, so a tag is its own entry and undo takes it first.
-        // Two taps to remove a tagged point is correct rather than surprising: the
-        // coach watches the tag go, then the point.
+    fun undo_takes_back_a_tagged_rally_in_one_tap() {
+        // It used to take the tag first and the rally on a second tap, and the
+        // first tap changed nothing on the board, so a mis-scored point looked
+        // impossible to take back.
         val (_, scorer) = scorer()
         scorer.score(Side.HOME)
-        scorer.tagPoint(0, listOf(PointTag("Forced error", "amber")), null)
+        scorer.score(Side.AWAY)
+        scorer.tagPoint(1, listOf(PointTag("Forced error", "amber")), "net")
         scorer.undo()
-        scorer.state()?.points?.first()?.tags?.shouldBeEmpty()
         scorer.state()?.currentGame shouldBe SideScore(home = 1, away = 0)
+        scorer.state()?.points?.single()?.tags?.shouldBeEmpty()
+    }
+
+    @Test
+    fun undo_says_which_rally_it_took_back() {
+        val (_, scorer) = scorer()
+        scorer.score(Side.HOME)
+        scorer.score(Side.AWAY)
+        val undone = scorer.undo()
+        undone?.side shouldBe Side.AWAY
+        undone?.scoreAfter shouldBe SideScore(home = 1, away = 1)
+    }
+
+    @Test
+    fun there_is_nothing_to_undo_until_a_rally_is_scored() {
+        val (_, scorer) = scorer()
+        scorer.canUndo() shouldBe false
+        scorer.undo().shouldBeNull()
+        scorer.score(Side.HOME)
+        scorer.canUndo() shouldBe true
+    }
+
+    @Test
+    fun undo_takes_back_the_rally_the_board_shows_even_on_an_overlong_log() {
+        // A log from another device can carry points past the end of the match,
+        // which the fold ignores. Undo must take back the last rally the board
+        // shows - the one its notice names - not an invisible one after it.
+        val (repo, scorer) = scorer()
+        val id = repo.logs.value.first().id
+        repo.replaceEvents(id, List(43) { ScoreEvent.PointTo(Side.HOME) })
+        scorer.state()!!.pointCount shouldBe 42
+        val undone = scorer.undo()!!
+        undone.scoreAfter shouldBe SideScore(home = 21, away = 0)
+        scorer.state()!!.pointCount shouldBe 41
+        scorer.state()!!.isOver shouldBe false
+    }
+
+    @Test
+    fun redo_puts_back_the_rally_and_its_tags() {
+        // Undo asks no question, so a mis-tap on it has to be recoverable, tags
+        // and note included - re-scoring the rally would not bring those back.
+        val (repo, scorer) = scorer()
+        scorer.score(Side.HOME)
+        scorer.tagPoint(0, listOf(PointTag("Good shot", "green")), "smash")
+        val before = repo.logs.value.first().events
+        val undone = scorer.undo()!!
+        scorer.canRedo(undone) shouldBe true
+        scorer.redo(undone)
+        repo.logs.value.first().events shouldBe before
+        scorer.canRedo(undone) shouldBe false
+    }
+
+    @Test
+    fun redo_is_gone_once_the_match_has_moved_on() {
+        // Putting the old log back after another rally would silently erase that
+        // rally, so any change after the undo retires the redo.
+        val (_, scorer) = scorer()
+        scorer.score(Side.HOME)
+        val undone = scorer.undo()!!
+        scorer.score(Side.AWAY)
+        scorer.canRedo(undone) shouldBe false
+        scorer.redo(undone)
+        scorer.state()!!.points.map { it.wonBy } shouldBe listOf(Side.AWAY)
+    }
+
+    @Test
+    fun the_undo_notice_names_the_side_whose_rally_went() {
+        val (repo, scorer) = scorer()
+        scorer.score(Side.AWAY)
+        val undone = scorer.undo()!!
+        repo.logs.value.first().undoneNotice(undone) shouldBe "Point to Away undone"
     }
 
     @Test

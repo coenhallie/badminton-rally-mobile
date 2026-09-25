@@ -11,6 +11,7 @@ import com.badmintontracker.shared.model.RallyClip
 import com.badmintontracker.shared.repo.ClipsRepository
 import com.badmintontracker.shared.repo.VideosRepository
 import com.badmintontracker.shared.scoring.AttachStatus
+import com.badmintontracker.shared.scoring.MatchFormat
 import com.badmintontracker.shared.scoring.MatchState
 import com.badmintontracker.shared.scoring.ScoreLog
 import com.badmintontracker.shared.scoring.ScoreLogsRepository
@@ -22,6 +23,7 @@ import com.badmintontracker.shared.scoring.isPlayable
 import com.badmintontracker.shared.scoring.removeMatchVideoOrMessage
 import com.badmintontracker.shared.scoring.scoreLogAttachStatus
 import com.badmintontracker.shared.scoring.scoreLogCanRemoveVideo
+import com.badmintontracker.shared.scoring.updateVideoMatchDetailsOrMessage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.SharingStarted
@@ -121,6 +123,43 @@ class MatchViewModel(
                 localAnnotations = localAnnotations,
             )
             if (message == null) onRemoved() else errors.value = message
+        }
+    }
+
+    /** The details editor's save. Local-first like every other edit to a match; sync carries it. */
+    fun updateDetails(title: String, format: MatchFormat?, homePlayers: List<String>, awayPlayers: List<String>) {
+        val id = scoreLogId ?: return
+        scoreLogs.updateDetails(id, title, format, homePlayers, awayPlayers)
+    }
+
+    /**
+     * The details editor's save for a match that was only ever filmed, whose
+     * details live on its videos row rather than on a score log. Server first,
+     * then the local entry that uploaded it: the ordering, and the message on
+     * failure, are [updateVideoMatchDetailsOrMessage]'s. The page reads the
+     * result back through the repository's metadata cache, so nothing here has
+     * to hand it over.
+     */
+    fun updateVideoDetails(
+        videoId: String,
+        title: String,
+        description: String,
+        format: MatchFormat?,
+        homePlayers: List<String>,
+        awayPlayers: List<String>,
+    ) {
+        viewModelScope.launch {
+            val message = updateVideoMatchDetailsOrMessage(
+                videos = videos,
+                localVideos = localVideos,
+                videoId = videoId,
+                title = title,
+                description = description,
+                format = format,
+                homePlayers = homePlayers,
+                awayPlayers = awayPlayers,
+            )
+            if (message != null) errors.value = message
         }
     }
 

@@ -286,8 +286,7 @@ private fun SkeletonPlayer(
         VideoCard(
             player = player,
             position = position,
-            speed = speed,
-            onSpeedTap = { showSettings = true },
+            onSettingsTap = { showSettings = true },
             aspectRatio = stored.videoWidth.toFloat() / stored.videoHeight.toFloat(),
         ) {
             if (pose != null) {
@@ -318,29 +317,15 @@ private fun SkeletonPlayer(
         )
     }
     if (error == null) {
-        // The frame is the one fact read per frame; the speed sits opposite
-        // it, as the mock lays the line out, and opens the same sheet the
-        // transport's hold gesture does.
-        Row(
+        // The frame is the one fact read per frame. The speed used to sit opposite
+        // it; it is read out in the transport row now, on every player, and saying
+        // it twice a few lines apart would be noise.
+        Text(
+            skeletonFooter(pose?.frame),
+            style = MaterialTheme.typography.bodySmall,
+            color = ShuttlTheme.extended.textTertiary,
             modifier = Modifier.fillMaxWidth().padding(start = GUTTER, end = GUTTER, top = 22.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                skeletonFooter(pose?.frame),
-                style = MaterialTheme.typography.bodySmall,
-                color = ShuttlTheme.extended.textTertiary,
-                modifier = Modifier.weight(1f),
-            )
-            Text(
-                "${PlaybackOptions.formatSpeed(speed)} speed",
-                style = MaterialTheme.typography.bodySmall,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .clickable(role = Role.Button, onClick = { showSettings = true })
-                    .padding(vertical = 4.dp),
-            )
-        }
+        )
         // With the strip rather than above it, so one row of controls does not
         // become two. Absent entirely on a device run, which only ever has the
         // near player.

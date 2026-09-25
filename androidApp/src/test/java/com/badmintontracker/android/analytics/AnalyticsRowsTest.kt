@@ -57,7 +57,7 @@ class AnalyticsRowsTest {
         videoId = videoId,
         title = "Thu League",
         createdAtEpochMs = 2_000,
-        playersLine = "Coen vs Marco",
+        playersLine = null,
         scoreLine = "11-9",
         statusLine = "Finished",
         isLive = false,
@@ -271,6 +271,14 @@ class AnalyticsRowsTest {
             live = mapOf("e1" to LocalAnalysisState.Analysing(0.2f)),
         ).single()
         row.affordance shouldBe AnalyseAffordance.InProgress("Analyzing on device")
+    }
+
+    @Test
+    fun a_score_match_row_names_its_players_once_it_has_any_and_shows_the_score_until_then() {
+        val unnamed = rows(owned = listOf(MatchRow.Score(scoreCard())))
+        unnamed.single().subtitle shouldBe "11-9"
+        val named = rows(owned = listOf(MatchRow.Score(scoreCard().copy(playersLine = "Coen vs Marco"))))
+        named.single().subtitle shouldBe "Coen vs Marco"
     }
 
     @Test

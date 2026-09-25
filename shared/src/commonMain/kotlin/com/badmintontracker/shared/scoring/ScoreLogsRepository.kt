@@ -144,8 +144,6 @@ class ScoreLogsRepository internal constructor(
 
     fun create(
         title: String,
-        homePlayers: List<String>,
-        awayPlayers: List<String>,
         rules: ScoringRules,
         setup: MatchSetup,
     ): ScoreLog {
@@ -154,8 +152,6 @@ class ScoreLogsRepository internal constructor(
             id = randomUuid(),
             videoId = null,
             title = title.trim(),
-            homePlayers = homePlayers.map { it.trim() }.filter { it.isNotEmpty() },
-            awayPlayers = awayPlayers.map { it.trim() }.filter { it.isNotEmpty() },
             rules = rules,
             setup = setup,
             events = emptyList(),
@@ -170,8 +166,40 @@ class ScoreLogsRepository internal constructor(
     fun replaceEvents(id: String, events: List<ScoreEvent>) =
         edit(id) { it.copy(events = events) }
 
-    fun rename(id: String, title: String) =
-        edit(id) { it.copy(title = title.trim()) }
+    /**
+     * Everything the details editor can change, in one write. The names are
+     * normalised here rather than trusted from the caller, so a partner typed into
+     * a match that was then switched to singles is not stored: see [submittedPlayers].
+     */
+    fun updateDetails(
+        id: String,
+        title: String,
+        format: MatchFormat?,
+        homePlayers: List<String>,
+        awayPlayers: List<String>,
+    ) = edit(id) {
+        it.copy(
+            title = title.trim(),
+            format = format,
+            homePlayers = submittedPlayers(homePlayers, format),
+            awayPlayers = submittedPlayers(awayPlayers, format),
+        )
+    }
+
+    /**
+     * Who serves the first point. Only until a point has been scored: after that the
+     * serve is a consequence of the log, and rewriting its seed would silently
+     * re-attribute every serve already played.
+     */
+    fun setFirstServer(id: String, side: Side) {
+        // Asked before editing, because edit() marks the row dirty and restamps it
+        // whether or not anything changed.
+        val log = get(id) ?: return
+        if (log.events.isNotEmpty() || log.setup.firstServer == side) return
+        edit(id) {
+            if (it.events.isEmpty()) it.copy(setup = it.setup.copy(firstServer = side)) else it
+        }
+    }
 
     fun finish(id: String) =
         edit(id) { it.copy(status = ScoreLogStatus.UNBOUND) }

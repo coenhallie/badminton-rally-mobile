@@ -42,6 +42,7 @@ struct ScoringView: View {
     @State private var model: ScoringModel?
     @State private var confirming: Confirmation?
     @State private var noteOpen = false
+    @State private var editingDetails = false
 
     // Fires on the transition to un-scoreable, from either exit: the last point
     // the rules allow, and "Finish match" in the menu. The rule is shared with
@@ -111,6 +112,25 @@ struct ScoringView: View {
             let prompt = finishPrompt ?? FinishPrompt(playableOnEntry: log.isPlayable())
             finishPrompt = prompt
             if prompt.shouldAsk(isPlayable: log.isPlayable()) { addVideoOpen = true }
+        }
+        // Keyed on the undo rather than on its words, so a second undo of the same
+        // side's rally gets the full time to be put back too. Cancelled, and so
+        // never dismissing anything, when a redo or the next rally replaces it.
+        .task(id: model.undone) {
+            guard model.undone != nil else { return }
+            if let notice = model.undoneNotice {
+                UIAccessibility.post(notification: .announcement, argument: notice)
+            }
+            try? await Task.sleep(for: Self.undoNoticeDuration)
+            if !Task.isCancelled { model.dismissUndoNotice() }
+        }
+        .sheet(isPresented: $editingDetails) {
+            EditMatchDetailsSheet(initial: MatchDetailsDraft(log: log), titleCap: Int(ScoreLogKt.MAX_MATCH_TITLE)) { draft in
+                model.updateDetails(
+                    title: draft.title, format: draft.format,
+                    homePlayers: draft.homePlayers, awayPlayers: draft.awayPlayers
+                )
+            }
         }
         .confirmationDialog(
             confirming?.title ?? "",
@@ -193,12 +213,22 @@ struct ScoringView: View {
         }
     }
 
+    /// How long "Point to Home undone" and its Redo stay up. Long enough to notice
+    /// a mis-tapped undo from the court and reach back for it, short enough that
+    /// the strip is back to calling game point before the next rally is over.
+    static let undoNoticeDuration: Duration = .seconds(5)
+
     /// The one line the coach glances up at. An announcement outranks the running
     /// summary, because "match point" is the only thing here worth looking away
     /// from the court for.
+    ///
+    /// An undo outranks both for a few seconds. It is the one thing the coach did
+    /// that the board cannot show on its own - the number going down does not say
+    /// whose rally went - and it is where Redo lives, clear of the halves that score.
     @ViewBuilder
     private func statusStrip(_ model: ScoringModel, _ log: ScoreLog, _ match: MatchState) -> some View {
-        let announcement = Self.announcement(log, match)
+        let undoneNotice = model.undoneNotice
+        let announcement = undoneNotice ?? Self.announcement(log, match)
         HStack {
             Button { dismiss() } label: {
                 Image(systemName: "chevron.left").shuttlType(ShuttlType.titleLarge)
@@ -219,7 +249,18 @@ struct ScoringView: View {
                 .lineLimit(1)
             Spacer()
 
+            if undoneNotice != nil {
+                Button("Redo") { model.redo() }
+                    .shuttlType(ShuttlType.titleMedium)
+                    .foregroundStyle(Shuttl.accent)
+                    .padding(.trailing, 8)
+            }
+
             Menu {
+                // Names and format are not asked for when the match is created, so
+                // courtside, between games, is one of the places they get filled
+                // in. Never disabled: it does not touch the score.
+                Button("Edit details") { editingDetails = true }
                 Button("Reset game") { confirming = .resetGame }
                     .disabled(match.isOver)
                 Button("Finish match") { confirming = .finish }
@@ -245,7 +286,6 @@ struct ScoringView: View {
         _ match: MatchState,
         _ model: ScoringModel
     ) -> some View {
-        let players = side == .home ? log.homePlayers : log.awayPlayers
         let serving = match.server == side
 
         GeometryReader { geo in
@@ -255,20 +295,22 @@ struct ScoringView: View {
             let numeral = min(geo.size.height * 0.40, geo.size.width * 0.75)
 
             VStack(spacing: 6) {
-                Text(players.joined(separator: " / "))
+                // The side's players, or "Home" / "Away" while nobody has been named.
+                Text(log.sideName(side: side))
                     .shuttlType(ShuttlType.titleLarge)
                     .foregroundStyle(.white)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
 
-                if match.setup.doubles {
-                    playerChips(side, players, match)
-                } else {
-                    // Held rather than hidden on the receiving side, so the games
-                    // and the score below line up across the two halves instead of
-                    // stepping down on whichever side happens to be serving.
-                    servePill(match.serviceCourt).opacity(serving ? 1 : 0)
-                }
+                // Held rather than hidden on the receiving side, so the games and
+                // the score below line up across the two halves instead of stepping
+                // down on whichever side happens to be serving. Only the visible
+                // pill switches the serve: the hidden one must not take taps.
+                servePill(
+                    match.serviceCourt,
+                    onSwitch: serving && model.canSwitchFirstServer ? { model.switchFirstServer() } : nil
+                )
+                .opacity(serving ? 1 : 0)
 
                 if match.rules.gamesToWin > 1 {
                     gamesWonBox(Int(match.gamesWon.of(side: side)))
@@ -300,52 +342,39 @@ struct ScoringView: View {
         }
     }
 
-    /// Both names of a pair, each marked with the service court it is standing in,
-    /// and the one about to serve filled in. All three facts come from the fold.
+    /// The side itself carries the serve and its court, there being no player to mark.
+    ///
+    /// `onSwitch` is non-nil only until the first point is scored. The form does not
+    /// ask who won the toss, so a new match opens with home serving, and this is
+    /// where that is corrected: the pill grows a swap icon and hands the serve across
+    /// when tapped. It sits inside the half that scores on a tap, so its own tap is
+    /// claimed here or switching the serve would also score a point.
     @ViewBuilder
-    private func playerChips(_ side: Side, _ players: [String], _ match: MatchState) -> some View {
-        let rightCourt = match.rightCourtPlayer(side: side)
-        let serving = match.server == side ? match.servingPlayer : nil
-
-        HStack(spacing: 6) {
-            ForEach(Array(players.prefix(2).enumerated()), id: \.offset) { index, name in
-                let member: PairPlayer = index == 0 ? .first : .second
-                let court: ServiceCourt? = rightCourt.map { $0 == member ? .right : .left }
-                playerChip(name: name, court: court, isServing: member == serving)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func playerChip(name: String, court: ServiceCourt?, isServing: Bool) -> some View {
-        HStack(spacing: 5) {
-            if let court {
-                Text(court == .right ? "R" : "L")
+    private func servePill(_ court: ServiceCourt?, onSwitch: (() -> Void)?) -> some View {
+        let label = HStack(spacing: 5) {
+            if onSwitch != nil {
+                Image(systemName: "arrow.left.arrow.right")
                     .shuttlType(ShuttlType.labelSmall)
-                    .foregroundStyle(isServing ? Color.black.opacity(0.45) : Color.white.opacity(0.6))
+                    // No height of its own: the symbol measures a point taller than
+                    // the text, and the pill on the other half has no symbol, so the
+                    // games boxes below would sit at different heights.
+                    .frame(height: 0)
             }
-            Text(name)
-                .shuttlType(ShuttlType.bodyMedium)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .foregroundStyle(isServing ? Color.black : Color.white)
+            Text("SERVE" + (court == nil ? "" : (court == .right ? " R" : " L")))
+                .shuttlType(ShuttlType.labelMedium)
         }
+        .foregroundStyle(Color.black)
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
-        .background(isServing ? Color.white : Color.white.opacity(0.14))
+        .background(Color.white)
         .clipShape(RoundedRectangle(cornerRadius: ShuttlRadius.extraSmall))
-    }
-
-    /// Singles has no player to mark, so the side itself carries the serve and its court.
-    @ViewBuilder
-    private func servePill(_ court: ServiceCourt?) -> some View {
-        Text("SERVE" + (court == nil ? "" : (court == .right ? " R" : " L")))
-            .shuttlType(ShuttlType.labelMedium)
-            .foregroundStyle(Color.black)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Color.white)
-            .clipShape(RoundedRectangle(cornerRadius: ShuttlRadius.extraSmall))
+        // A child's tap wins over the half's own, which is what keeps this from
+        // scoring a rally.
+        label
+            .gesture(onSwitch.map { action in TapGesture().onEnded { action() } })
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(onSwitch == nil ? [] : .isButton)
+            .accessibilityHint(onSwitch == nil ? "" : "Switches who serves first")
     }
 
     @ViewBuilder
@@ -407,17 +436,33 @@ struct ScoringView: View {
             }
 
             HStack(spacing: 8) {
-                Button("Undo") { model.undo() }
-                    .disabled(!model.canUndo)
+                // Outlined rather than plain text like Note beside it: this is the
+                // control reached for in a hurry after a mis-tap, so it has to read
+                // as a button at a glance. It takes the whole last rally back.
+                Button { model.undo() } label: {
+                    // Not a `Label`: its icon gap is wider than this pill wants.
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.uturn.backward")
+                        Text("Undo")
+                    }
+                }
+                .accessibilityLabel("Undo")
+                .buttonStyle(OutlinedPillButtonStyle())
+                .disabled(!model.canUndo)
                 Text(Self.caption(match, model.pendingTagOrdinal))
                     .shuttlType(ShuttlType.bodySmall)
                     .foregroundStyle(Shuttl.textSecondary)
-                    .lineLimit(1)
+                    // Two lines: the opening hint does not fit beside the Undo
+                    // pill on a narrow phone, and cut short it loses "server".
+                    .lineLimit(2)
                 Spacer()
                 // Outside the wrapping area on purpose: it used to be the last
                 // chip in a horizontally scrolling row, which is exactly why it
                 // became unreachable once a few labels existed.
                 Button("Note") { noteOpen.toggle() }
+                    // Accent like Undo beside it, and like Android's Note, rather
+                    // than the system blue it fell back to.
+                    .tint(Shuttl.accent)
                     .disabled(point == nil)
                 // Only once the match is actually over. While it is live, finishing
                 // lives in the menu behind a confirm: a call to action beside a
@@ -481,7 +526,9 @@ struct ScoringView: View {
     static func caption(_ match: MatchState, _ pendingTagOrdinal: Int?) -> String {
         if match.isOver { return "Match over" }
         guard let ordinal = pendingTagOrdinal,
-              ordinal >= 0, ordinal < match.points.count else { return "Tap a side to score" }
+              ordinal >= 0, ordinal < match.points.count else {
+            return match.points.isEmpty ? "Tap a side to score, or SERVE to switch server" : "Tap a side to score"
+        }
         let point = match.points[ordinal]
         return "Point \(point.ordinal + 1): \(point.scoreAfter.home)-\(point.scoreAfter.away)"
     }
@@ -489,9 +536,7 @@ struct ScoringView: View {
     /// The announcement the point just played earned, or nil. Order is by how much
     /// it matters courtside, and match point outranks game point because it is one.
     static func announcement(_ log: ScoreLog, _ match: MatchState) -> String? {
-        func name(_ side: Side) -> String {
-            (side == .home ? log.homePlayers : log.awayPlayers).joined(separator: " / ")
-        }
+        func name(_ side: Side) -> String { log.sideName(side: side) }
         func both(_ flags: SideFlags, _ what: String) -> String {
             if flags.home && flags.away { return "\(what) - both" }
             return flags.home ? "\(what) - \(name(.home))" : "\(what) - \(name(.away))"
@@ -545,10 +590,30 @@ struct ScoringView: View {
     }
 }
 
+/// The board's Undo: accent text on the app's secondary fill and outline (the
+/// outline alone all but disappears in dark), the partner
+/// to the filled Done pill beside it. The visible pill is shorter than the 44pt
+/// tap target it sits in, like the rest of the row.
+private struct OutlinedPillButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .shuttlType(ShuttlType.titleMedium)
+            .foregroundStyle(Shuttl.accent)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Shuttl.bgTertiary, in: Capsule())
+            .overlay(Capsule().strokeBorder(Shuttl.borderSecondary, lineWidth: 1))
+            .opacity(configuration.isPressed ? 0.6 : (isEnabled ? 1 : 0.4))
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+    }
+}
+
 /// The note on one rally, committed once when the field goes away rather than per
-/// keystroke. `tagPoint` appends and undo drops the last entry, so typing straight
-/// through would make undo take a note back a letter at a time instead of taking
-/// back the rally.
+/// keystroke. `tagPoint` appends, so typing straight through would add one log
+/// entry per character to a log that is stored and synced whole.
 private struct NoteField: View {
     let ordinal: Int
     let original: String

@@ -45,10 +45,8 @@ class ScoreLogsRepositoryTest {
 
     private fun ScoreLogsRepository.newMatch() = create(
         title = "Thu League",
-        homePlayers = listOf("Coen"),
-        awayPlayers = listOf("Marco"),
         rules = ScoringRules.BWF_21,
-        setup = MatchSetup(doubles = false, firstServer = Side.HOME),
+        setup = MatchSetup(firstServer = Side.HOME),
     )
 
     @Test
@@ -91,18 +89,112 @@ class ScoreLogsRepositoryTest {
     }
 
     @Test
-    fun renaming_trims_and_keeps_everything_else() {
+    fun the_first_server_can_be_flipped_until_a_point_is_scored() {
         val repo = repo()
         val created = repo.newMatch()
-        repo.rename(created.id, "  Club night  ")
-        repo.get(created.id)?.title shouldBe "Club night"
+        repo.setFirstServer(created.id, Side.AWAY)
+        repo.get(created.id)?.setup?.firstServer shouldBe Side.AWAY
+        repo.get(created.id)?.state()?.server shouldBe Side.AWAY
+    }
+
+    @Test
+    fun the_first_server_is_fixed_once_a_point_has_been_scored() {
+        // The serve is folded from this seed, so flipping it under a scored log
+        // would re-attribute every serve already played.
+        val repo = repo()
+        val created = repo.newMatch()
+        repo.replaceEvents(created.id, listOf(ScoreEvent.PointTo(Side.HOME)))
+        repo.setFirstServer(created.id, Side.AWAY)
+        repo.get(created.id)?.setup?.firstServer shouldBe Side.HOME
+    }
+
+    @Test
+    fun setting_the_first_server_to_what_it_already_is_changes_nothing() {
+        var clock = t0
+        val repo = repo(now = { clock })
+        val created = repo.newMatch()
+        clock = t0.plus(kotlin.time.Duration.parse("1m"))
+        repo.setFirstServer(created.id, Side.HOME)
+        repo.get(created.id)?.updatedAt shouldBe t0
+    }
+
+    @Test
+    fun a_new_match_names_nobody_and_has_no_format() {
+        // The form does not ask. These arrive later, from the details editor.
+        val created = repo().newMatch()
+        created.homePlayers.shouldBeEmpty()
+        created.awayPlayers.shouldBeEmpty()
+        created.format.shouldBeNull()
+    }
+
+    @Test
+    fun updating_details_trims_and_keeps_everything_else() {
+        val repo = repo()
+        val created = repo.newMatch()
+        repo.replaceEvents(created.id, listOf(ScoreEvent.PointTo(Side.HOME)))
+        repo.updateDetails(
+            created.id, title = "  Club night  ", format = MatchFormat.SINGLES,
+            homePlayers = listOf("  Coen "), awayPlayers = listOf("Marco"),
+        )
+        val updated = repo.get(created.id)
+        updated?.title shouldBe "Club night"
+        updated?.format shouldBe MatchFormat.SINGLES
+        updated?.homePlayers shouldBe listOf("Coen")
+        updated?.awayPlayers shouldBe listOf("Marco")
+        updated?.rules shouldBe ScoringRules.BWF_21
+        updated?.events shouldBe listOf(ScoreEvent.PointTo(Side.HOME))
+    }
+
+    @Test
+    fun a_partner_typed_into_a_singles_match_is_not_stored() {
+        // The editor keeps the partner on screen while the format is switched back
+        // and forth, so what it hands over can hold more names than the format has.
+        val repo = repo()
+        val created = repo.newMatch()
+        repo.updateDetails(
+            created.id, title = "Thu", format = MatchFormat.SINGLES,
+            homePlayers = listOf("Coen", "Ana"), awayPlayers = listOf("", "Li"),
+        )
         repo.get(created.id)?.homePlayers shouldBe listOf("Coen")
+        repo.get(created.id)?.awayPlayers shouldBe emptyList()
+    }
+
+    @Test
+    fun a_doubles_match_keeps_both_names_on_a_side() {
+        val repo = repo()
+        val created = repo.newMatch()
+        repo.updateDetails(
+            created.id, title = "Thu", format = MatchFormat.MIXED_DOUBLES,
+            homePlayers = listOf("Coen", "Ana"), awayPlayers = listOf("Marco", " "),
+        )
+        repo.get(created.id)?.homePlayers shouldBe listOf("Coen", "Ana")
+        repo.get(created.id)?.awayPlayers shouldBe listOf("Marco")
+    }
+
+    @Test
+    fun details_can_be_cleared_again() {
+        val repo = repo()
+        val created = repo.newMatch()
+        repo.updateDetails(created.id, "Thu", MatchFormat.DOUBLES, listOf("A", "B"), listOf("C", "D"))
+        repo.updateDetails(created.id, "Thu", null, listOf("", ""), listOf("", ""))
+        repo.get(created.id)?.format.shouldBeNull()
+        repo.get(created.id)?.homePlayers.shouldBeEmpty()
+    }
+
+    @Test
+    fun updated_details_survive_a_restart() {
+        val settings = MapSettings()
+        val created = repo(settings).newMatch()
+        repo(settings).updateDetails(created.id, "Thu", MatchFormat.DOUBLES, listOf("A", "B"), listOf("C", "D"))
+        val reread = repo(settings).get(created.id)
+        reread?.format shouldBe MatchFormat.DOUBLES
+        reread?.homePlayers shouldBe listOf("A", "B")
     }
 
     @Test
     fun mutating_a_match_that_is_gone_is_a_no_op() {
         val repo = repo()
-        repo.rename("nope", "x")
+        repo.updateDetails("nope", "x", null, emptyList(), emptyList())
         repo.replaceEvents("nope", listOf(ScoreEvent.PointTo(Side.HOME)))
         repo.finish("nope")
         repo.logs.value.shouldBeEmpty()
@@ -419,9 +511,8 @@ class ScoreLogsRepositoryTest {
         val server = FakeScoreLogsServer()
         server.rows = """
             [{"id":"remote-1","video_id":null,"title":"Club night",
-              "home_players":["Coen"],"away_players":["Marco"],
               "rules":{"points_to_win":21,"win_by":2,"cap":30,"interval_at":11,"games_to_win":2,"change_ends_at":11},
-              "setup":{"doubles":false,"first_server":"home"},
+              "setup":{"first_server":"home"},
               "events":[{"type":"point","side":"home"}],
               "status":"unbound",
               "created_at":"2026-08-26T18:00:00Z","updated_at":"2026-08-26T18:00:00Z"}]
@@ -570,9 +661,8 @@ class ScoreLogsRepositoryTest {
         val all = (0 until total).map { i ->
             ScoreLog(
                 id = "log-$i", videoId = null, title = "Match $i",
-                homePlayers = listOf("A"), awayPlayers = listOf("B"),
                 rules = ScoringRules.BWF_21,
-                setup = MatchSetup(doubles = false, firstServer = Side.HOME),
+                setup = MatchSetup(firstServer = Side.HOME),
                 events = emptyList(), status = ScoreLogStatus.UNBOUND,
                 createdAt = t0, updatedAt = t0,
             )

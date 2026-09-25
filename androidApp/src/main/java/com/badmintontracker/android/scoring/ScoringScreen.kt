@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -26,7 +28,9 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -48,31 +52,35 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.delay
+import com.badmintontracker.android.ui.icons.ShuttlIcons
 import com.badmintontracker.android.ui.theme.ShuttlRadius
 import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.shared.model.AnnotationLabel
 import com.badmintontracker.shared.model.LabelColor
 import com.badmintontracker.shared.scoring.FinishPrompt
+import com.badmintontracker.shared.scoring.MAX_MATCH_TITLE
 import com.badmintontracker.shared.scoring.MatchState
-import com.badmintontracker.shared.scoring.PairPlayer
 import com.badmintontracker.shared.scoring.ScoreLog
 import com.badmintontracker.shared.scoring.ServiceCourt
 import com.badmintontracker.shared.scoring.Side
 import com.badmintontracker.shared.scoring.isPlayable
-import com.badmintontracker.shared.scoring.rightCourtPlayer
+import com.badmintontracker.shared.scoring.sideName
 
 /**
  * The courtside board. One tap on a side scores the rally it just won; a second tap
  * on a label tags it.
  *
  * Everything on it is read from [MatchState], which is folded from the log - the
- * serve, the service court, who stands where in a doubles pair, and which end each
- * side is on. Nothing here computes a rule.
+ * serve, the service court, and which end each side is on. Nothing here computes a rule.
  */
 @Composable
 fun ScoringScreen(
@@ -101,6 +109,7 @@ fun ScoringScreen(
 
     var confirming by remember { mutableStateOf<Confirmation?>(null) }
     var noteOpen by remember { mutableStateOf(false) }
+    var editingDetails by remember { mutableStateOf(false) }
 
     // Fires on the transition to un-scoreable, from either exit: the last point
     // the rules allow, and "Finish match" in the overflow. The rule is shared
@@ -112,11 +121,23 @@ fun ScoringScreen(
         if (finishPrompt.shouldAsk(log.isPlayable())) addVideoOpen = true
     }
 
+    // Keyed on the undo rather than on its words, so a second undo of the same
+    // side's rally gets the full time to be put back too.
+    LaunchedEffect(state.undone) {
+        if (state.undone != null) {
+            delay(UNDO_NOTICE_MILLIS)
+            vm.dismissUndoNotice()
+        }
+    }
+
     Column(Modifier.fillMaxSize().safeDrawingPadding()) {
         StatusStrip(
             log = log,
             match = match,
+            undoneNotice = state.undoneNotice,
+            onRedo = vm::redo,
             onBack = onBack,
+            onEditDetails = { editingDetails = true },
             onResetGame = { confirming = Confirmation.ResetGame },
             onFinish = { confirming = Confirmation.Finish },
         )
@@ -125,22 +146,25 @@ fun ScoringScreen(
         // over with the players so it still matches the court the coach is watching.
         val homeOnLeft = match.endsSwapCount % 2 == 0
         val left = if (homeOnLeft) Side.HOME else Side.AWAY
+        val switchServer: (() -> Unit)? = if (state.canSwitchFirstServer) vm::switchFirstServer else null
 
         Row(Modifier.fillMaxWidth().weight(1f)) {
             SideZone(
                 side = left,
-                log = log,
+                name = log.sideName(left),
                 match = match,
                 enabled = state.canScore,
                 onScore = { vm.score(left) },
+                onSwitchServer = switchServer,
                 modifier = Modifier.weight(1f).fillMaxHeight(),
             )
             SideZone(
                 side = left.other,
-                log = log,
+                name = log.sideName(left.other),
                 match = match,
                 enabled = state.canScore,
                 onScore = { vm.score(left.other) },
+                onSwitchServer = switchServer,
                 modifier = Modifier.weight(1f).fillMaxHeight(),
             )
         }
@@ -204,7 +228,26 @@ fun ScoringScreen(
             },
         )
     }
+
+    if (editingDetails) {
+        EditMatchDetailsDialog(
+            initial = log.detailsDraft(),
+            titleCap = MAX_MATCH_TITLE,
+            onDismiss = { editingDetails = false },
+            onSave = { draft ->
+                vm.updateDetails(draft.title, draft.format, draft.homePlayers, draft.awayPlayers)
+                editingDetails = false
+            },
+        )
+    }
 }
+
+/**
+ * How long "Point to Home undone" and its Redo stay up. Long enough to notice a
+ * mis-tapped undo from the court and reach back for it, short enough that the
+ * strip is back to calling game point before the next rally is over.
+ */
+private const val UNDO_NOTICE_MILLIS = 5_000L
 
 /** Where finishing a match can take the coach next, chosen on the "add the video?" prompt. */
 enum class AttachIntent { Import, Record }
@@ -227,17 +270,24 @@ private enum class Confirmation(val title: String, val body: String, val confirm
  * The one line the coach glances up at: what just happened, or where the match is.
  * An announcement outranks the running summary, because "match point" is the only
  * thing on this strip worth looking away from the court for.
+ *
+ * An undo outranks both for a few seconds. It is the one thing the coach did that
+ * the board cannot show on its own - the number going down does not say whose
+ * rally went - and it is where Redo lives, clear of the halves that score.
  */
 @Composable
 private fun StatusStrip(
     log: ScoreLog,
     match: MatchState,
+    undoneNotice: String?,
+    onRedo: () -> Unit,
     onBack: () -> Unit,
+    onEditDetails: () -> Unit,
     onResetGame: () -> Unit,
     onFinish: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
-    val announcement = announcementFor(log, match)
+    val announcement = undoneNotice ?: announcementFor(log, match)
 
     Surface(color = MaterialTheme.colorScheme.surface) {
         Row(
@@ -249,20 +299,35 @@ private fun StatusStrip(
             }
             Text(
                 text = announcement ?: runningSummary(log, match),
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    // Read out as it changes, so a screen reader hears the undo
+                    // notice (and the game point calls) without moving focus.
+                    .semantics { liveRegion = LiveRegionMode.Polite },
                 textAlign = TextAlign.Center,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = if (announcement != null) FontWeight.Bold else FontWeight.Normal,
                 color =
                     if (announcement != null) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (undoneNotice != null) {
+                TextButton(onClick = onRedo) { Text("Redo") }
+            }
             Box {
                 IconButton(onClick = { menuOpen = true }) {
                     Icon(Icons.Default.MoreVert, contentDescription = "Match options")
                 }
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    // Names and format are not asked for when the match is created,
+                    // so courtside, between games, is one of the places they get
+                    // filled in. Never disabled: it does not touch the score.
+                    DropdownMenuItem(
+                        text = { Text("Edit details") },
+                        onClick = { menuOpen = false; onEditDetails() },
+                    )
                     DropdownMenuItem(
                         text = { Text("Reset game") },
                         enabled = !match.isOver,
@@ -286,16 +351,18 @@ private fun StatusStrip(
 @Composable
 private fun SideZone(
     side: Side,
-    log: ScoreLog,
+    /** The side's players, or "Home" / "Away" while nobody has been named. */
+    name: String,
     match: MatchState,
     enabled: Boolean,
     onScore: () -> Unit,
+    /** Null once the first serve is settled. */
+    onSwitchServer: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     val haptics = LocalHapticFeedback.current
     val background =
         if (side == Side.HOME) ShuttlTheme.extended.sideHome else ShuttlTheme.extended.sideAway
-    val players = if (side == Side.HOME) log.homePlayers else log.awayPlayers
     val serving = match.server == side
 
     BoxWithConstraints(
@@ -328,7 +395,7 @@ private fun SideZone(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Text(
-                    text = players.joinToString(" / "),
+                    text = name,
                     color = Color.White,
                     textAlign = TextAlign.Center,
                     maxLines = 2,
@@ -336,17 +403,16 @@ private fun SideZone(
                     fontWeight = FontWeight.Bold,
                 )
 
-                if (match.setup.doubles) {
-                    PlayerChips(side = side, players = players, match = match)
-                } else {
-                    // Held rather than hidden on the receiving side, so the games
-                    // and the score below line up across the two halves instead of
-                    // stepping down on whichever side happens to be serving.
-                    ServePill(
-                        court = match.serviceCourt,
-                        modifier = Modifier.alpha(if (serving) 1f else 0f),
-                    )
-                }
+                // Held rather than hidden on the receiving side, so the games and
+                // the score below line up across the two halves instead of stepping
+                // down on whichever side happens to be serving.
+                ServePill(
+                    court = match.serviceCourt,
+                    // Only the visible pill: the receiving side's is drawn at zero
+                    // alpha to hold the layout, and must not take taps it cannot show.
+                    onSwitch = onSwitchServer.takeIf { serving },
+                    modifier = Modifier.alpha(if (serving) 1f else 0f),
+                )
 
                 if (match.rules.gamesToWin > 1) {
                     GamesWonBox(match.gamesWon.of(side))
@@ -371,72 +437,45 @@ private fun SideZone(
 }
 
 /**
- * Both names of a pair, each marked with the service court it is standing in, and
- * the one about to serve filled in. All three facts come from the fold.
+ * The side itself carries the serve and its court, there being no player to mark.
+ *
+ * [onSwitch] is non-null only until the first point is scored. The form does not ask
+ * who won the toss, so a new match opens with home serving, and this is where that
+ * is corrected: the pill grows a swap icon and hands the serve across when tapped.
+ * It sits inside the half that scores on a tap, so its own tap has to be claimed
+ * here or switching the serve would also score a point.
  */
 @Composable
-private fun PlayerChips(side: Side, players: List<String>, match: MatchState) {
-    val rightCourt = match.rightCourtPlayer(side)
-    val serving = if (match.server == side) match.servingPlayer else null
-
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        listOf(PairPlayer.FIRST, PairPlayer.SECOND).forEachIndexed { index, member ->
-            val name = players.getOrNull(index) ?: return@forEachIndexed
-            val court = when (rightCourt) {
-                null -> null
-                member -> ServiceCourt.RIGHT
-                else -> ServiceCourt.LEFT
-            }
-            PlayerChip(name = name, court = court, isServing = member == serving)
-        }
-    }
-}
-
-@Composable
-private fun PlayerChip(name: String, court: ServiceCourt?, isServing: Boolean) {
+private fun ServePill(court: ServiceCourt?, onSwitch: (() -> Unit)?, modifier: Modifier = Modifier) {
     Surface(
+        modifier = modifier
+            .then(
+                if (onSwitch == null) Modifier
+                else Modifier.clickable(onClickLabel = "Switch who serves first", onClick = onSwitch)
+            ),
         shape = RoundedCornerShape(ShuttlRadius.extraSmall),
-        color = if (isServing) Color.White else Color.White.copy(alpha = 0.14f),
+        color = Color.White,
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(5.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (court != null) {
-                Text(
-                    text = if (court == ServiceCourt.RIGHT) "R" else "L",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isServing) Color.Black.copy(alpha = 0.45f) else Color.White.copy(alpha = 0.6f),
-                )
+            if (onSwitch != null) {
+                // Decorative: the click label on the pill already says what it does.
+                Icon(ShuttlIcons.Swap, contentDescription = null, tint = Color.Black, modifier = Modifier.size(12.dp))
             }
             Text(
-                text = name,
-                style = MaterialTheme.typography.labelLarge,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                color = if (isServing) Color.Black else Color.White,
+                text = "SERVE" + when (court) {
+                    ServiceCourt.RIGHT -> " R"
+                    ServiceCourt.LEFT -> " L"
+                    null -> ""
+                },
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color.Black,
             )
         }
-    }
-}
-
-/** Singles has no player to mark, so the side itself carries the serve and its court. */
-@Composable
-private fun ServePill(court: ServiceCourt?, modifier: Modifier = Modifier) {
-    Surface(modifier = modifier, shape = RoundedCornerShape(ShuttlRadius.extraSmall), color = Color.White) {
-        Text(
-            text = "SERVE" + when (court) {
-                ServiceCourt.RIGHT -> " R"
-                ServiceCourt.LEFT -> " L"
-                null -> ""
-            },
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.Bold,
-            color = Color.Black,
-        )
     }
 }
 
@@ -528,9 +567,8 @@ private fun ControlBar(
                 var draft by remember(ordinal) { mutableStateOf(original) }
                 // Committed once, when the field goes away - the note moves to
                 // another rally, the row closes, or the screen leaves. Committing
-                // per keystroke would append one log entry per character, and undo
-                // is defined as dropping the last entry, so it would then take a
-                // note back a letter at a time instead of taking back the rally.
+                // per keystroke would append one log entry per character to a log
+                // that is stored and synced whole.
                 DisposableEffect(ordinal) {
                     onDispose { if (draft != original) onSetComment(ordinal, draft) }
                 }
@@ -553,13 +591,37 @@ private fun ControlBar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                TextButton(onClick = onUndo, enabled = canUndo) { Text("Undo") }
+                // Outlined and filled rather than a text button like Note: this is
+                // the control reached for in a hurry after a mis-tap, so it has to
+                // read as a button at a glance. It takes the whole last rally back.
+                OutlinedButton(
+                    onClick = onUndo,
+                    enabled = canUndo,
+                    contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
+                    // Filled like ShuttlButton's Secondary: the outline alone all
+                    // but disappears against the dark theme's bar.
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = ShuttlTheme.extended.bgTertiary,
+                        disabledContainerColor = ShuttlTheme.extended.bgTertiary.copy(alpha = 0.5f),
+                    ),
+                ) {
+                    Icon(
+                        ShuttlIcons.Undo,
+                        contentDescription = null,
+                        modifier = Modifier.size(ButtonDefaults.IconSize),
+                    )
+                    Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+                    Text("Undo")
+                }
                 Text(
                     text = tagRowCaption(match, pendingTagOrdinal),
                     modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
+                    // Two lines: the opening hint does not fit beside the Undo
+                    // button on a narrow phone, and cut short it loses "server".
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 TextButton(onClick = onToggleNote, enabled = point != null) { Text("Note") }
                 // Only once the match is actually over. While it is live, finishing
@@ -608,7 +670,8 @@ private fun TagChip(
 /** What the tag row is pointing at, so a tap on a chip is never a guess. */
 private fun tagRowCaption(match: MatchState, pendingTagOrdinal: Int?): String {
     if (match.isOver) return "Match over"
-    val point = pendingTagOrdinal?.let { match.points.getOrNull(it) } ?: return "Tap a side to score"
+    val point = pendingTagOrdinal?.let { match.points.getOrNull(it) }
+        ?: return if (match.points.isEmpty()) "Tap a side to score, or SERVE to switch server" else "Tap a side to score"
     return "Point ${point.ordinal + 1}: ${point.scoreAfter.home}-${point.scoreAfter.away}"
 }
 
@@ -617,9 +680,7 @@ private fun tagRowCaption(match: MatchState, pendingTagOrdinal: Int?): String {
  * matters courtside, and match point outranks game point because it is one.
  */
 private fun announcementFor(log: ScoreLog, match: MatchState): String? {
-    val name = { side: Side ->
-        (if (side == Side.HOME) log.homePlayers else log.awayPlayers).joinToString(" / ")
-    }
+    val name = { side: Side -> log.sideName(side) }
     val both = { flags: com.badmintontracker.shared.scoring.SideFlags, what: String ->
         when {
             flags.home && flags.away -> "$what - both"

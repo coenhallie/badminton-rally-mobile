@@ -81,7 +81,6 @@ final class SkeletonPanelModel {
     /// see `selected`.
     var chosen: MetricKind = .elbowRight
     var expanded = false
-    var speed = PlaybackOptions.shared.DEFAULT_SPEED
     var playbackError: String? = nil
     private(set) var player: AVPlayer?
     /// The video's own frame rate, for whole-frame stepping. Read from the
@@ -381,16 +380,14 @@ struct SkeletonPanel: View {
                     }
                 }
             )
-            // The frame is the one fact read per frame; the speed sits opposite
-            // it, as the mock lays the line out.
+            // The frame is the one fact read per frame. The speed used to sit
+            // opposite it; it is read out in the transport row now, on every
+            // player, and saying it twice a few lines apart would be noise.
             HStack(alignment: .firstTextBaseline) {
                 Text(SkeletonSummaryKt.skeletonFooter(frame: pose.map { KotlinInt(int: $0.frame) }))
                     .shuttlType(ShuttlType.bodySmall)
                     .foregroundStyle(Shuttl.textTertiary)
                 Spacer(minLength: 8)
-                Text("\(PlaybackOptions.shared.formatSpeed(speed: model.speed)) speed")
-                    .shuttlType(ShuttlType.bodySmall)
-                    .foregroundStyle(Shuttl.textSecondary)
             }
             .padding(.horizontal, ShuttlGutter.page)
             .padding(.top, 22)
@@ -443,11 +440,6 @@ struct SkeletonPanel: View {
                     .padding(.vertical, 12)
             }
             Spacer(minLength: ShuttlGutter.page)
-        }
-        .task {
-            for await value in prefs.speed {
-                model.speed = value.floatValue
-            }
         }
     }
 }

@@ -15,8 +15,8 @@ data class ScoreMatchCard(
     val videoId: String?,
     val title: String,
     val createdAtEpochMs: Long,
-    /** "Coen vs Marco", or "Coen / Ana vs Marco / Li". */
-    val playersLine: String,
+    /** "Coen vs Marco", or null while nobody has been named. */
+    val playersLine: String?,
     /** "Not started", "11-9", "21-18, 5-3". */
     val scoreLine: String,
     /** "Scoring" while playable, "<winner> won" once decided, "Ended early" if closed without one. */
@@ -25,9 +25,6 @@ data class ScoreMatchCard(
     /** True once a video is attached; false again if it is unbound. */
     val hasVideo: Boolean,
 )
-
-/** One name for a singles side, both names for a pair. */
-fun sideLabel(players: List<String>): String = players.joinToString(" / ")
 
 /**
  * The match's score as one line: every completed game, then the game in progress.
@@ -64,11 +61,10 @@ fun buildScoreMatchCard(log: ScoreLog): ScoreMatchCard {
         videoId = log.videoId,
         title = log.title,
         createdAtEpochMs = log.createdAt.toEpochMilliseconds(),
-        playersLine = "${sideLabel(log.homePlayers)} vs ${sideLabel(log.awayPlayers)}",
+        playersLine = log.playersLine(),
         scoreLine = scoreLine(state),
         statusLine = when {
-            winner == Side.HOME -> "${sideLabel(log.homePlayers)} won"
-            winner == Side.AWAY -> "${sideLabel(log.awayPlayers)} won"
+            winner != null -> "${log.sideName(winner)} won"
             log.isPlayable() -> "Scoring"
             // Closed by hand before anyone won. The score line above already says
             // where it stopped, so this only has to say that it did.

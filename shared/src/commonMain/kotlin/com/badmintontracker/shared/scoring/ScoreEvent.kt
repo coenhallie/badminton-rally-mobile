@@ -13,6 +13,13 @@ enum class Side {
     @SerialName("away") AWAY;
 
     val other: Side get() = if (this == HOME) AWAY else HOME
+
+    /**
+     * What the side is called while nobody has named its players. Here rather than
+     * per platform so the two cannot disagree. Surfaces ask [sideName] rather than
+     * this, so that a named side is called by its players.
+     */
+    val label: String get() = if (this == HOME) "Home" else "Away"
 }
 
 /**
@@ -34,7 +41,8 @@ data class PointTag(
  *
  * Append-only. A tag names an already played point by ordinal rather than being
  * carried on the point itself, which keeps replay-from-scratch valid for a later
- * live-sync layer and makes undo mean "drop the last thing I did".
+ * live-sync layer. Undo cuts by ordinal (see [undoLastPoint]), so it takes a
+ * rally back together with its tags.
  *
  * The SerialName on each entry is the stored wire format of every match a coach
  * has ever scored. Treat it as a schema: rename the Kotlin class freely, never
@@ -52,7 +60,7 @@ sealed interface ScoreEvent {
      * Sets the tags and the comment on the point at [pointOrdinal], replacing
      * whatever an earlier TagPoint for the same ordinal set - the fold reads the
      * last entry for an ordinal, so re-tagging is another append rather than an
-     * edit. An ordinal naming no point, which undo leaves behind, is ignored.
+     * edit. An ordinal naming no point, which a log from elsewhere may carry, is ignored.
      */
     @Serializable
     @SerialName("tag")
@@ -74,14 +82,23 @@ sealed interface ScoreEvent {
 }
 
 /**
- * Drops the last entry. Undo is defined as re-folding a shorter log rather than as
- * an inverse operation on the score, so it can never drift from the forward path.
+ * Takes back the last rally, together with every tag and note naming it. Undo is
+ * defined as re-folding a shorter log rather than as an inverse operation on the
+ * score, so it can never drift from the forward path.
  *
- * An empty log comes back unchanged rather than throwing. The control that calls
- * this is disabled on an empty log, and if that ever slips, a no-op is a much
+ * By rally rather than by entry. Undoing the last entry made a tagged rally take
+ * two taps to remove, and the first one changed nothing on the board. A tag is
+ * taken off by tapping its chip again, so undo has no need to handle one. Tags on
+ * earlier rallies stay wherever they sit in the log, because the cut is by ordinal.
+ *
+ * A log with no rally in it comes back unchanged rather than throwing. The control
+ * that calls this is disabled then, and if that ever slips, a no-op is a much
  * better answer courtside than a crash.
  */
-fun List<ScoreEvent>.undoLast(): List<ScoreEvent> = if (isEmpty()) this else dropLast(1)
+fun List<ScoreEvent>.undoLastPoint(): List<ScoreEvent> {
+    val points = count { it is ScoreEvent.PointTo }
+    return if (points == 0) this else dropPointsFrom(points - 1)
+}
 
 /**
  * Appends the tags and comment for [pointOrdinal]. Named rather than left as a

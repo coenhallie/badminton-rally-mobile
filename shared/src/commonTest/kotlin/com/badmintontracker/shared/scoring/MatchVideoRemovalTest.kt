@@ -120,10 +120,8 @@ class MatchVideoRemovalTest {
 
     private fun ScoreLogsRepository.newMatch() = create(
         title = "Thu League",
-        homePlayers = listOf("Coen"),
-        awayPlayers = listOf("Marco"),
         rules = ScoringRules.BWF_21,
-        setup = MatchSetup(doubles = false, firstServer = Side.HOME),
+        setup = MatchSetup(firstServer = Side.HOME),
     )
 
     private class Fixture {
@@ -151,10 +149,8 @@ class MatchVideoRemovalTest {
     private fun Fixture.boundMatch(stage: AnalyzeStage? = AnalyzeStage.FAILED): String {
         val log = scoreLogs.create(
             title = "Thu League",
-            homePlayers = listOf("Coen"),
-            awayPlayers = listOf("Marco"),
             rules = ScoringRules.BWF_21,
-            setup = MatchSetup(doubles = false, firstServer = Side.HOME),
+            setup = MatchSetup(firstServer = Side.HOME),
         )
         scoreLogs.finish(log.id)
         scoreLogs.attachVideo(log.id, "vid-1")
@@ -213,10 +209,8 @@ class MatchVideoRemovalTest {
         val f = Fixture()
         val log = f.scoreLogs.create(
             title = "Thu League",
-            homePlayers = listOf("Coen"),
-            awayPlayers = listOf("Marco"),
             rules = ScoringRules.BWF_21,
-            setup = MatchSetup(doubles = false, firstServer = Side.HOME),
+            setup = MatchSetup(firstServer = Side.HOME),
         )
         f.scoreLogs.finish(log.id)
         f.localVideos.add(
@@ -256,10 +250,8 @@ class MatchVideoRemovalTest {
         val f = Fixture()
         val log = f.scoreLogs.create(
             title = "Thu League",
-            homePlayers = listOf("Coen"),
-            awayPlayers = listOf("Marco"),
             rules = ScoringRules.BWF_21,
-            setup = MatchSetup(doubles = false, firstServer = Side.HOME),
+            setup = MatchSetup(firstServer = Side.HOME),
         )
 
         f.remove(log.id).shouldBeNull()

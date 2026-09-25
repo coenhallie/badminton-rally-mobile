@@ -64,6 +64,12 @@ struct LocalPlayerView: View {
                 player: model.player,
                 prefs: rally.playbackPrefs,
                 step: { model.stepFrames($0) },
+                labels: model.labels,
+                onTag: { label, positionMs in
+                    model.add(label: label, body: "", atSeconds: Float(positionMs) / 1000)
+                },
+                tagError: model.actionError,
+                allowsFullscreen: true,
                 overlay: { EmptyView() },
                 errorContent: {
                     if let error = model.playbackError {

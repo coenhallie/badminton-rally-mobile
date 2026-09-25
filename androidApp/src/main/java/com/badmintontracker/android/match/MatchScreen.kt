@@ -53,6 +53,9 @@ import com.badmintontracker.android.cliplist.formatDate
 import com.badmintontracker.android.cliplist.topRallyName
 import com.badmintontracker.android.localanalysis.BackgroundWorkAction
 import com.badmintontracker.android.scoring.AttachIntent
+import com.badmintontracker.android.scoring.EditMatchDetailsDialog
+import com.badmintontracker.android.scoring.MatchDetailsDraft
+import com.badmintontracker.android.scoring.detailsDraft
 import com.badmintontracker.android.share.ShareSheet
 import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlPillTabs
@@ -66,9 +69,13 @@ import com.badmintontracker.shared.repo.MediaRepository
 import com.badmintontracker.shared.repo.SharesRepository
 import com.badmintontracker.shared.scoring.AttachKind
 import com.badmintontracker.shared.scoring.AttachStatus
+import com.badmintontracker.shared.scoring.MAX_MATCH_TITLE
 import com.badmintontracker.shared.scoring.MatchVideoAction
+import com.badmintontracker.shared.scoring.VIDEO_MATCH_TITLE_CAP
 import com.badmintontracker.shared.scoring.exportMatchText
+import com.badmintontracker.shared.scoring.matchDetailsLine
 import com.badmintontracker.shared.scoring.matchVideoPrompt
+import com.badmintontracker.shared.scoring.playersLine
 
 /** Which half of a match page is on screen. Only meaningful when the match has both. */
 private enum class Facet { Points, Rallies }
@@ -116,6 +123,7 @@ fun MatchScreen(
     // Which of the two video gestures is awaiting its confirm, or null. Both are
     // irreversible, and both are behind the same dialog - see MatchVideoDialog.
     var videoAction by remember { mutableStateOf<MatchVideoAction?>(null) }
+    var editingDetails by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     // A summary that goes away while its sheet is open must close the sheet, not
@@ -266,18 +274,30 @@ fun MatchScreen(
                             )
                         }
                     }
-                    if (log != null) {
+                    // A scored match, or a filmed one that is the coach's own: both
+                    // have details to edit. A shared match has neither an editor nor
+                    // an export, so it gets no menu at all.
+                    if (log != null || match?.isOwned == true) {
                         IconButton(onClick = { overflowOpen = true }) {
                             Icon(Icons.Default.MoreVert, contentDescription = "Match options")
                         }
                         DropdownMenu(expanded = overflowOpen, onDismissRequest = { overflowOpen = false }) {
+                            // First, because it is the one a coach comes here for:
+                            // the new match form asks for none of this, and a video
+                            // is uploaded with a name at most.
                             DropdownMenuItem(
-                                text = { Text("Export as text") },
-                                onClick = {
-                                    overflowOpen = false
-                                    shareText(context, log.title, exportMatchText(log))
-                                },
+                                text = { Text("Edit details") },
+                                onClick = { overflowOpen = false; editingDetails = true },
                             )
+                            if (log != null) {
+                                DropdownMenuItem(
+                                    text = { Text("Export as text") },
+                                    onClick = {
+                                        overflowOpen = false
+                                        shareText(context, log.title, exportMatchText(log))
+                                    },
+                                )
+                            }
                             // Offered whenever this match has a video and nothing
                             // is in flight for it - not only when the analysis
                             // disappointed. A video that found no rallies is the
@@ -355,6 +375,13 @@ fun MatchScreen(
                             clips = clipsForMatch,
                             summary = summary,
                             matchTitle = match?.title,
+                            // The score log's details when there is one, the
+                            // video's own otherwise: a scored match that was later
+                            // filmed keeps the log as its record.
+                            details = matchDetailsLine(
+                                playersLine = log?.playersLine() ?: match?.playersLine,
+                                format = log?.format ?: match?.format,
+                            ),
                             description = match?.description,
                             media = media,
                             isRefreshing = state.isRefreshing,
@@ -376,6 +403,44 @@ fun MatchScreen(
             }
         } else {
             pageBody(Modifier.padding(padding))
+        }
+    }
+
+    if (editingDetails) {
+        when {
+            log != null -> EditMatchDetailsDialog(
+                initial = log.detailsDraft(),
+                titleCap = MAX_MATCH_TITLE,
+                onDismiss = { editingDetails = false },
+                onSave = { draft ->
+                    matchVm.updateDetails(draft.title, draft.format, draft.homePlayers, draft.awayPlayers)
+                    editingDetails = false
+                },
+            )
+            match != null -> EditMatchDetailsDialog(
+                // Every field the video carries, the description included: it was
+                // typed at upload and this is the only place it can change since.
+                initial = MatchDetailsDraft(
+                    title = match.title.orEmpty(),
+                    description = match.description.orEmpty(),
+                    format = match.format,
+                    homePlayers = match.homePlayers,
+                    awayPlayers = match.awayPlayers,
+                ),
+                titleCap = VIDEO_MATCH_TITLE_CAP,
+                onDismiss = { editingDetails = false },
+                onSave = { draft ->
+                    matchVm.updateVideoDetails(
+                        videoId = match.videoId,
+                        title = draft.title,
+                        description = draft.description.orEmpty(),
+                        format = draft.format,
+                        homePlayers = draft.homePlayers,
+                        awayPlayers = draft.awayPlayers,
+                    )
+                    editingDetails = false
+                },
+            )
         }
     }
 

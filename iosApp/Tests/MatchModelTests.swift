@@ -24,10 +24,8 @@ final class MatchModelTests: XCTestCase {
     private func newMatch(_ store: ScoreLogsRepository) -> ScoreLog {
         store.create(
             title: "Thu League",
-            homePlayers: ["Coen"],
-            awayPlayers: ["Marco"],
             rules: ScoringRules.companion.BWF_21,
-            setup: MatchSetup(doubles: false, firstServer: .home, homeStartsRight: .first, awayStartsRight: .first)
+            setup: MatchSetup(firstServer: .home)
         )
     }
 
@@ -273,6 +271,52 @@ final class MatchModelTests: XCTestCase {
         m = nil
         let gone = await ObservationLifecycle.wait { released == nil }
         XCTAssertTrue(gone, "a loop start() spawned is still running and still holds the model")
+    }
+
+    private func uploadedEntry(id: String, title: String) -> LocalVideoEntry {
+        LocalVideoEntry(
+            id: id, uri: "file://\(id)", displayName: "m.mp4",
+            durationMs: 1000, sizeBytes: 10, addedAtEpochMs: 0,
+            title: title, description: nil, keypoints: nil,
+            stage: .analyzed, failedStep: nil, failureMessage: nil, resultSeen: false,
+            scoreLogId: nil
+        )
+    }
+
+    func testAVideoBornMatchSavesItsDetailsOntoTheVideoAndItsLocalEntry() async {
+        // No score log at all: cloudia, uploaded from this phone and never scored.
+        let videos = IosTestDoublesKt.testVideosRepository()
+        let localVideos = IosTestDoublesKt.testLocalVideoRepository()
+        localVideos.add(entry: uploadedEntry(id: "vid-1", title: "cloudia"))
+        let m = model(scoreLogs: store(), scoreLogId: nil, localVideos: localVideos, videos: videos)
+
+        await m.updateVideoDetails(
+            videoId: "vid-1", title: "Club final", description: "", format: .doubles,
+            homePlayers: ["Coen", "Ana"], awayPlayers: ["Marco", "Li"]
+        )
+
+        let written = videos.detailUpdates.first
+        XCTAssertEqual(written?.title, "Club final")
+        XCTAssertEqual(written?.homePlayers, ["Coen", "Ana"])
+        XCTAssertEqual(written?.format, .doubles)
+        XCTAssertEqual(localVideos.get(id: "vid-1")?.title, "Club final")
+        XCTAssertNil(m.error)
+    }
+
+    func testARefusedDetailsSaveSurfacesAMessageAndLeavesTheLocalEntryAlone() async {
+        let videos = IosTestDoublesKt.testVideosRepository()
+        videos.failUpdateDetails = true
+        let localVideos = IosTestDoublesKt.testLocalVideoRepository()
+        localVideos.add(entry: uploadedEntry(id: "vid-1", title: "cloudia"))
+        let m = model(scoreLogs: store(), scoreLogId: nil, localVideos: localVideos, videos: videos)
+
+        await m.updateVideoDetails(
+            videoId: "vid-1", title: "Club final", description: "", format: nil,
+            homePlayers: [], awayPlayers: []
+        )
+
+        XCTAssertEqual(m.error, VideoMatchDetailsKt.VIDEO_DETAILS_SAVE_FAILED_MESSAGE)
+        XCTAssertEqual(localVideos.get(id: "vid-1")?.title, "cloudia")
     }
 
     func testComingBackToThePageFollowsTheStoreAgain() async throws {
