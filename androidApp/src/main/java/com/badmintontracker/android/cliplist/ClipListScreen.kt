@@ -49,6 +49,7 @@ import com.badmintontracker.android.ui.icons.ShuttlIcons
 import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.matchlist.MatchAction
+import com.badmintontracker.shared.matchlist.MatchConfirmation
 import com.badmintontracker.shared.matchlist.MatchDelete
 import com.badmintontracker.shared.matchlist.MatchListCopy
 import com.badmintontracker.shared.matchlist.MatchListFilter
@@ -121,11 +122,13 @@ fun ClipListScreen(
     var choiceKey by remember { mutableStateOf<String?>(null) }
     var deleteKey by remember { mutableStateOf<String?>(null) }
     var removeKey by remember { mutableStateOf<String?>(null) }
-    val choiceTarget = choiceKey?.let(state.matchList::itemWithKey)
-    val deleteTarget = deleteKey?.let(state.matchList::itemWithKey)
-    val removeTarget = removeKey?.let(state.matchList::itemWithKey)
-    // A row that left the list takes its confirmation with it, rather than
-    // leaving a key that would reopen the dialog if the row came back.
+    val choiceTarget = choiceKey?.let { state.matchList.confirmationTarget(it, MatchConfirmation.CHOICE) }
+    val deleteTarget = deleteKey?.let { state.matchList.confirmationTarget(it, MatchConfirmation.DELETE) }
+    val removeTarget = removeKey?.let { state.matchList.confirmationTarget(it, MatchConfirmation.REMOVE) }
+    // A row that left the list, or no longer offers what its dialog confirms,
+    // takes the confirmation with it for good, rather than leaving a key that
+    // would reopen the dialog if the row came back. iOS clears its keys on the
+    // same rule.
     LaunchedEffect(choiceTarget, deleteTarget, removeTarget) {
         if (choiceTarget == null) choiceKey = null
         if (deleteTarget == null) deleteKey = null

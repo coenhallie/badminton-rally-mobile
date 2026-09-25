@@ -60,9 +60,15 @@ struct MatchesList: View {
     /// worth stating needs a beat to read it.
     @State private var removeKey: String? = nil
 
-    private var choiceTarget: MatchListItem? { choiceKey.flatMap(model.matchList.itemWithKey(key:)) }
-    private var deleteTarget: MatchListItem? { deleteKey.flatMap(model.matchList.itemWithKey(key:)) }
-    private var removeTarget: MatchListItem? { removeKey.flatMap(model.matchList.itemWithKey(key:)) }
+    private var choiceTarget: MatchListItem? { target(choiceKey, .choice) }
+    private var deleteTarget: MatchListItem? { target(deleteKey, .delete) }
+    private var removeTarget: MatchListItem? { target(removeKey, .remove) }
+
+    /// The row a held key's dialog is for, while it still offers what the
+    /// dialog confirms: the shared rule (`confirmationTarget`) Android uses.
+    private func target(_ key: String?, _ kind: MatchConfirmation) -> MatchListItem? {
+        key.flatMap { model.matchList.confirmationTarget(key: $0, kind: kind) }
+    }
 
     var body: some View {
         // Split into stages rather than one chain: the list's modifier chain is
@@ -360,12 +366,15 @@ struct MatchesList: View {
 private extension MatchesList {
     func dialogs(_ list: some View) -> some View {
         list
+        // The list is rebuilt under an open dialog; a row that went or no
+        // longer offers the action closes its dialog for good.
+        .onChange(of: model.matchList) { _, _ in dropStaleConfirmations() }
         // A swipe on a row with both a file here and a match to delete: two
         // different things, so the coach picks. The one that cannot lose data
         // is listed first.
         .confirmationDialog(
             choiceTarget?.title ?? "",
-            isPresented: presence($choiceKey),
+            isPresented: presence($choiceKey, .choice),
             titleVisibility: .visible,
             presenting: choiceTarget
         ) { item in
@@ -390,7 +399,7 @@ private extension MatchesList {
         // file is free to discard).
         .confirmationDialog(
             deleteTarget.flatMap { MatchListCopy.shared.deleteTitle(delete: $0.delete) } ?? "",
-            isPresented: presence($deleteKey),
+            isPresented: presence($deleteKey, .delete),
             titleVisibility: .visible,
             presenting: deleteTarget
         ) { item in
@@ -405,7 +414,7 @@ private extension MatchesList {
         }
         .alert(
             MatchListCopy.shared.REMOVE_VIDEO_TITLE,
-            isPresented: presence($removeKey),
+            isPresented: presence($removeKey, .remove),
             presenting: removeTarget
         ) { item in
             Button(MatchListCopy.shared.CONFIRM_REMOVE, role: .destructive) {
@@ -421,13 +430,23 @@ private extension MatchesList {
         }
     }
 
-    /// A dialog's `isPresented`: its row is set and still in the list. A row
-    /// that left the list takes its confirmation with it.
-    func presence(_ key: Binding<String?>) -> Binding<Bool> {
+    /// A dialog's `isPresented`: its key is held and its row still offers what
+    /// the dialog confirms. The setter runs only on a dismiss; a row that goes
+    /// away, or stops offering the action, has its key cleared by `dialogs`'
+    /// `onChange` instead, so it cannot reopen the dialog by coming back.
+    func presence(_ key: Binding<String?>, _ kind: MatchConfirmation) -> Binding<Bool> {
         Binding(
-            get: { key.wrappedValue.flatMap(model.matchList.itemWithKey(key:)) != nil },
+            get: { target(key.wrappedValue, kind) != nil },
             set: { if !$0 { key.wrappedValue = nil } }
         )
+    }
+
+    /// Clears every held key whose dialog has lost its row, as Android's
+    /// drawer does in its `LaunchedEffect`. Same rule on both.
+    func dropStaleConfirmations() {
+        if choiceKey != nil && choiceTarget == nil { choiceKey = nil }
+        if deleteKey != nil && deleteTarget == nil { deleteKey = nil }
+        if removeKey != nil && removeTarget == nil { removeKey = nil }
     }
 }
 

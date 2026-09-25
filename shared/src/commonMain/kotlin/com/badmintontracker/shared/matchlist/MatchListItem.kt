@@ -89,4 +89,29 @@ data class MatchList(
      */
     fun itemWithKey(key: String): MatchListItem? =
         mine.firstOrNull { it.key == key } ?: shared.firstOrNull { it.key == key }
+
+    /**
+     * The row an open [kind] confirmation is for, as drawn now, or null when
+     * the dialog must close for good: the row has gone, or it no longer offers
+     * what the dialog confirms (a device run that starts under the dialog holds
+     * the file, so neither removing it nor deleting the match is offered any
+     * more). Both platforms clear the held key on null, rather than only hiding
+     * the dialog, so a row that comes back does not reopen it on its own.
+     */
+    fun confirmationTarget(key: String, kind: MatchConfirmation): MatchListItem? =
+        itemWithKey(key)?.takeIf { item ->
+            when (kind) {
+                MatchConfirmation.CHOICE ->
+                    item.canRemoveFromPhone && item.delete != MatchDelete.NONE && item.delete != MatchDelete.LEAVE_SHARE
+                MatchConfirmation.DELETE -> item.delete != MatchDelete.NONE
+                MatchConfirmation.REMOVE -> item.canRemoveFromPhone
+            }
+        }
 }
+
+/**
+ * The drawer's three confirmations: the two-way choice (remove the video, or
+ * delete the match everywhere), the single delete (or leave, for a shared
+ * match), and "Remove video?".
+ */
+enum class MatchConfirmation { CHOICE, DELETE, REMOVE }
