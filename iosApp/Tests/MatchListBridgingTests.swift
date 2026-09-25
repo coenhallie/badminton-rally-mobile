@@ -118,11 +118,9 @@ final class MatchListBridgingTests: XCTestCase {
     func testAPausedRunSaysWhatTheOldRowSaid() {
         let run = LocalVideoStatus.deviceRun(for: .paused(.cutting(done: 1, total: 4)))
         XCTAssertEqual(run, DeviceRun(kind: .paused, phase: .cutting, message: "Paused - keep Shuttl open"))
-        // One wording for both lists, not a second copy of it.
-        XCTAssertEqual(
-            LocalVideoStatus.rowStatus(stage: .local, progress: nil, device: .paused(.analysing(fraction: 0.1))),
-            run?.message
-        )
+        // One wording for every list, not a second copy of it: the shared
+        // builder's own status line reads this same constant.
+        XCTAssertEqual(run?.message, LocalVideoStatus.pausedText)
     }
 
     func testAFailedRunCarriesItsReason() {

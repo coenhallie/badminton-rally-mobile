@@ -23,52 +23,22 @@ enum LocalVideoStatus {
         (stage == .local || stage == .failed) && !isDeviceRunInFlight(device)
     }
 
-    /// What this row's status line says.
-    ///
-    /// The device speaks first when it has anything to say, the same precedence
-    /// the Analytics list's `analyseAffordance` uses and for the same reason:
-    /// this row's own button starts the device run, so that is the run it has to
-    /// account for, and a cloud stage left over from an earlier attempt must not
-    /// describe a device run happening now.
-    ///
-    /// Ports Android's `LocalVideoEntry.toRow`, down to dropping the
-    /// percentage: the drawer leaves this line about 115pt, "Analyzing on
-    /// device" fills that on its own, and appending a number truncated the one
-    /// part of the label that changes. Home's banner and the chrome indicator
-    /// both have room and both show it.
-    static func rowStatus(
-        stage: AnalyzeStage, progress: AnalyzeProgress?, device: LocalAnalysisState
-    ) -> String? {
-        switch device {
-        case .failed(let message):
-            // A device failure has no dialog of its own: the result dialog is
-            // gated on stage == FAILED and a device run never moves the stage,
-            // so this row is the only place a coach learns it broke.
-            return "Analysis failed: \(message)"
-        case .paused:
-            return pausedText
-        case .idle, .done:
-            return text(stage: stage, progress: progress)
-        case .preparing, .analysing, .cutting:
-            guard let work = toDeviceWork(entryId: "", state: device) else {
-                return text(stage: stage, progress: progress)
-            }
-            return BackgroundWorkKt.deviceWorkLabel(phase: work.phase, fraction: nil) + "…"
-        }
-    }
-
-    /// What a paused device run says, on this row and on the match list's.
+    /// What a paused device run says. `deviceRun(for:)` below hands this to the
+    /// shared builder, which is what actually reaches a row's status line now
+    /// (`MatchStatusLine`, via `MatchListItem.statusText`), so this is the one
+    /// place that wording lives rather than a second copy at a call site that
+    /// used to format its own row directly.
     static let pausedText = "Paused - keep Shuttl open"
 
     /// A device run as the shared match list sees it, or nil when there is no
     /// run to speak of: idle, or done, in which case the files it left say
     /// what it produced.
     ///
-    /// The one reduction from this platform's run state to the list's, next to
-    /// `rowStatus` so the two cannot word a run differently: the builder turns
-    /// FAILED into the same "Analysis failed: ..." line and PAUSED into this
-    /// message. A paused run keeps the phase it was frozen in, although the
-    /// list shows only the message for it.
+    /// The one reduction from this platform's run state to the list's: the
+    /// builder turns FAILED into the same "Analysis failed: ..." line and
+    /// PAUSED into `pausedText`, so a row's status line and this file cannot
+    /// word a run differently. A paused run keeps the phase it was frozen in,
+    /// although the list shows only the message for it.
     static func deviceRun(for state: LocalAnalysisState) -> DeviceRun? {
         switch state {
         case .idle, .done:
@@ -85,17 +55,6 @@ enum LocalVideoStatus {
         case .failed(let message):
             return DeviceRun(kind: .failed, phase: .analysing, message: message)
         }
-    }
-
-    /// Removal deletes the entry, its file and everything an analysis of it
-    /// wrote; blocked while either pipeline is working on it.
-    ///
-    /// The shared rule covers the cloud one. The device run is asked separately
-    /// for the same reason `canAnalyze` asks: it never moves the stage, and a
-    /// removal mid-run deletes the source copy out from under a live decoder and
-    /// the clips directory out from under a live encoder.
-    static func canRemove(stage: AnalyzeStage, device: LocalAnalysisState = .idle) -> Bool {
-        LocalVideoEntryKt.canRemoveLocalVideo(stage: stage) && !isDeviceRunInFlight(device)
     }
 
     /// Title and description ride along on the videos INSERT and the database
