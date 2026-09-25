@@ -24,4 +24,50 @@ final class MatchListRowViewTests: XCTestCase {
         // all.
         XCTAssertEqual(thumbnailFallback(hasVideo: false, hasScore: false), .scoreGlyph)
     }
+
+    // MARK: - CoverRetryKey
+
+    /// Whether a failed cover clip deserves another try. `thumbnailStoragePath`
+    /// alone cannot say so - it is a stable backend key for the clip, not a
+    /// token for the fetch attempt, so a coach who fails once offline and then
+    /// pulls to refresh once back online is still looking at the same path on
+    /// the same clip. `refreshGeneration` is the half of the key that actually
+    /// moves when that happens.
+    func testTheKeyChangesWhenTheClipChanges() {
+        XCTAssertNotEqual(
+            CoverRetryKey(path: "a", refreshGeneration: 1),
+            CoverRetryKey(path: "b", refreshGeneration: 1)
+        )
+    }
+
+    func testTheKeyChangesWhenARefreshCompletesEvenOnTheSameClip() {
+        // The case this key exists for: the same cover, offline once, then a
+        // refresh - nothing about `path` moved, but the generation did.
+        XCTAssertNotEqual(
+            CoverRetryKey(path: "a", refreshGeneration: 1),
+            CoverRetryKey(path: "a", refreshGeneration: 2)
+        )
+    }
+
+    func testTheKeyIsStableWhenNeitherHalfMoved() {
+        // No spurious reset: an unrelated re-render must not flip `coverFailed`
+        // back to false while nothing this key cares about has changed.
+        XCTAssertEqual(
+            CoverRetryKey(path: "a", refreshGeneration: 1),
+            CoverRetryKey(path: "a", refreshGeneration: 1)
+        )
+    }
+
+    func testANilPathIsItsOwnStableValue() {
+        // A match with no cover at all: nil equals nil, so a row that never
+        // had a cover does not look like a change on every redraw either.
+        XCTAssertEqual(
+            CoverRetryKey(path: nil, refreshGeneration: 1),
+            CoverRetryKey(path: nil, refreshGeneration: 1)
+        )
+        XCTAssertNotEqual(
+            CoverRetryKey(path: nil, refreshGeneration: 1),
+            CoverRetryKey(path: "a", refreshGeneration: 1)
+        )
+    }
 }

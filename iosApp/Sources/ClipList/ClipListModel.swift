@@ -20,6 +20,14 @@ final class ClipListModel {
     private(set) var localEntries: [LocalVideoEntry] = []
     /// Ids (entry or cloud video) with a stored player track: a heatmap to open.
     private(set) var storedTrackIds: Set<String> = []
+    /// How many pulls-to-refresh have completed. Read by a row's thumbnail to
+    /// decide whether a cover clip that failed to load deserves another try:
+    /// `RallyClip.thumbnailStoragePath` is a stable backend key that does not
+    /// change just because a fetch failed, so a coach who goes offline, fails
+    /// once, then pulls to refresh once back online sees the same path with
+    /// nothing to observe a change on - `refreshGeneration` is that signal
+    /// instead. See `MatchThumbnail.CoverRetryKey`.
+    private(set) var refreshGeneration = 0
     var isRefreshing = false
     var error: String? = nil
     private var sharerByVideoId: [String: String] = [:]
@@ -177,6 +185,17 @@ final class ClipListModel {
         // the user to do about it.
         _ = try? await scoreLogsRepo.syncScoreLogsOrMessage()
         regroup()
+        // Unconditionally, even when `clipsRepo.refresh()` above threw: every
+        // one of this method's four requests fails softly on its own (the
+        // clips failure is the only one that sets `error`, and the other
+        // three just leave their caches alone), so "the pull failed" is not
+        // one clean outcome to gate this on - a cover clip's own fetch is a
+        // fifth, independent request that this generation exists to let retry,
+        // and it can succeed even when the clips list itself did not change at
+        // all. A retry that finds nothing new costs one redundant signed-URL
+        // fetch; refusing one that would have worked leaves a coach staring at
+        // a glyph tile his next pull-to-refresh was supposed to fix.
+        refreshGeneration += 1
         isRefreshing = false
     }
 

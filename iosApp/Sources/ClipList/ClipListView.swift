@@ -221,6 +221,7 @@ struct MatchesList: View {
             item: item,
             thumbnails: thumbnails,
             media: rally.media,
+            refreshGeneration: model.refreshGeneration,
             menu: menu(for: item),
             onTap: { open(item) },
             onAction: { act(item) }

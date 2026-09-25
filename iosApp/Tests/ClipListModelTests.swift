@@ -89,6 +89,21 @@ final class ClipListModelTests: XCTestCase {
         let gone = await ObservationLifecycle.wait { released == nil }
         XCTAssertTrue(gone, "a loop observe() spawned is still running and still holds the model")
     }
+
+    func testRefreshIncrementsTheGenerationEveryTime() async {
+        // `MatchThumbnail.CoverRetryKey` reads this to decide whether a failed
+        // cover clip deserves another try. It has to move on every completed
+        // pull, not just the ones that changed something, since a coach who
+        // was offline for one failed fetch and is back online for the next
+        // pull sees the exact same clips either way.
+        let m = model()
+        XCTAssertEqual(m.refreshGeneration, 0)
+        await m.refresh()
+        XCTAssertEqual(m.refreshGeneration, 1)
+        await m.refresh()
+        XCTAssertEqual(m.refreshGeneration, 2)
+    }
+
     // MARK: - Deletes act on the row's own entry
 
     // 2026-08-28T18:00:00Z. Fixed, because the store stamps created_at from it.

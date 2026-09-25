@@ -28,6 +28,10 @@ struct MatchListRowView: View {
     let item: MatchListItem
     let thumbnails: LocalThumbnails
     let media: MediaRepository
+    /// `ClipListModel.refreshGeneration`, threaded down to the thumbnail so a
+    /// cover clip that failed to load gets another try on the next
+    /// pull-to-refresh. See `MatchThumbnail.CoverRetryKey`.
+    let refreshGeneration: Int
     let menu: [RowMenuItem]
     let onTap: () -> Void
     let onAction: () -> Void
@@ -37,7 +41,7 @@ struct MatchListRowView: View {
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 0) {
-                    MatchThumbnail(item: item, thumbnails: thumbnails, media: media)
+                    MatchThumbnail(item: item, thumbnails: thumbnails, media: media, refreshGeneration: refreshGeneration)
                         .padding(.trailing, DrawerList.gap)
                     VStack(alignment: .leading, spacing: 3) {
                         rowText(item.title, primary: true)
@@ -151,6 +155,8 @@ private struct MatchThumbnail: View {
     let item: MatchListItem
     let thumbnails: LocalThumbnails
     let media: MediaRepository
+    /// `ClipListModel.refreshGeneration`. See `CoverRetryKey`.
+    let refreshGeneration: Int
     @State private var coverFailed = false
 
     var body: some View {
@@ -160,6 +166,15 @@ private struct MatchThumbnail: View {
         // `thumbnails.failed` is keyed by entry id and shared across every row
         // that draws this entry, the same cache `images` already is; a row
         // with no entry has no local frame to try in the first place.
+        //
+        // Not reset by a refresh, unlike `coverFailed` below: this failure is
+        // about a FILE ON THIS PHONE (missing, revoked permission, a codec
+        // that cannot decode it), and `ClipListModel.refresh()` pulls the
+        // cloud's clips, shares and score logs - none of which touches
+        // anything on local disk. A file that is gone is still gone after a
+        // pull-to-refresh; giving this the same generation-keyed retry as the
+        // cover clip would just repeat a decode that fails for the same
+        // reason every time.
         let localFailed = item.entryId.map { thumbnails.failed.contains($0) } ?? true
         let cover = item.coverClip
         let coverToLoad = coverFailed || cover?.thumbnailStoragePath == nil ? nil : cover
@@ -205,16 +220,41 @@ private struct MatchThumbnail: View {
         // nil exactly when `coverFailed` is true - the one moment this reset
         // is needed. An `.onChange` scoped to `CloudThumbnail` is torn down
         // the instant the cover fails, so it is not there to observe the
-        // later path change that should undo the failure; a cover lost while
-        // offline stayed stuck on the glyph tile forever, even after a
-        // refresh brought back a valid signed URL for it. The outer ZStack is
-        // mounted in every state this view can be in, so it is always there
-        // to catch the path changing regardless of whether `coverFailed`
-        // happens to be true or false at the time.
-        .onChange(of: cover?.thumbnailStoragePath) { _, _ in coverFailed = false }
+        // change that should undo the failure. The outer ZStack is mounted in
+        // every state this view can be in, so it is always there to catch it.
+        //
+        // Keyed on `CoverRetryKey`, not on the path alone: `thumbnailStoragePath`
+        // is a stable backend key for the clip, not a token for the fetch
+        // attempt, so it does not change just because that attempt failed -
+        // and the signed-URL cache remembers only successes, never a failure.
+        // A coach who goes offline, fails once, then pulls to refresh once
+        // back online would still see the SAME path on the SAME clip, with
+        // nothing for a path-only `onChange` to fire on, and stay stuck on the
+        // glyph tile forever despite doing exactly what the fallback asks.
+        // `refreshGeneration` is the second half of the key for that reason:
+        // it changes on every completed pull whether or not the path did, so
+        // a failed cover gets one more try per refresh.
+        .onChange(of: CoverRetryKey(path: cover?.thumbnailStoragePath, refreshGeneration: refreshGeneration)) { _, _ in
+            coverFailed = false
+        }
         .frame(width: DrawerList.thumbWidth, height: DrawerList.thumbHeight)
         .clipShape(shape)
     }
+}
+
+/// What decides whether a failed cover clip deserves another try: its own
+/// storage path, paired with how many pulls-to-refresh have completed since.
+/// A plain value type rather than the comparison inlined at the one
+/// `.onChange` call site, so `CoverRetryKeyTests` can pin the two properties
+/// that make this reset fire without needing a hosted view: `Equatable`'s
+/// synthesized implementation already does the right thing on its own - two
+/// keys differ, and the reset fires, the moment either the clip itself
+/// changes (a different `path`) or a refresh has completed since the last
+/// time this key was read (a different `refreshGeneration`), and agree, and
+/// the reset stays silent, only when neither has.
+struct CoverRetryKey: Equatable {
+    let path: String?
+    let refreshGeneration: Int
 }
 
 /// What a thumbnail tile shows once every picture has failed or there was
