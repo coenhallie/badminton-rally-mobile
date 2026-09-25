@@ -244,6 +244,13 @@ Decided during implementation (`docs/plans/2026-09-25-unified-match-list-plan.md
 - **Analytics:** the per-row "Not on this phone" line is gone; the status line
   carries where the video is.
 - **US spelling** ("Not analyzed") as in the rest of the app.
+- **Row 6 of the table in 2.2 ("track kept, file removed, no cloud") is not
+  built.** Removing the video frees the entry, and the list is built from
+  entries, logs and clips, so a phone-only analysis has nothing left to hang a
+  row on: the track stays on disk and nothing lists it. It behaved this way
+  before this change too. The removal copy now says so for a match with no
+  cloud copy, instead of promising the heatmap stays. Making those tracks
+  reachable (where they list, how to delete them) needs its own design.
 
 ## 6. Deliberately not in this pass
 
