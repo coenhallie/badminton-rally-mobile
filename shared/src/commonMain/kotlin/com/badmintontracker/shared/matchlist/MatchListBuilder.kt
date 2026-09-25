@@ -35,9 +35,23 @@ internal fun buildMatchList(input: MatchListInput, timeZone: TimeZone): MatchLis
     val claimed = mutableSetOf<String>()
     val mine = mutableListOf<MatchListItem>()
 
+    // Every log id in this input, so the shared-id fallback below can tell "no
+    // entry names this log yet" apart from "some entry names a *different* log
+    // in this same input" - the latter must not be borrowed just because its id
+    // happens to equal this log's video id, or it would be listed under both.
+    val logIds = input.scoreLogs.map { it.id }.toSet()
+
     // Scored matches first: a video filmed for a match belongs to that match's row.
     for (log in input.scoreLogs) {
+        // scoreLogId is the primary link; the shared id is a fallback for a
+        // video-first import later bound to a log by video_id alone, where the
+        // entry itself was never told which log claimed it. Preferring
+        // scoreLogId when both could match keeps an entry that does carry the
+        // right scoreLogId from ever being shadowed by a coincidental id match,
+        // and excluding an entry already spoken for by another log in this same
+        // input (logIds) is what keeps that entry from being listed twice.
         val entry = input.localEntries.firstOrNull { it.scoreLogId == log.id }
+            ?: input.localEntries.firstOrNull { it.id == log.videoId && (it.scoreLogId == null || it.scoreLogId !in logIds) }
         val videoId = log.videoId ?: entry?.id
         val clips = ownedVideo(videoId)
         listOfNotNull(entry?.id, log.videoId).forEach { claimed += it }
@@ -49,7 +63,22 @@ internal fun buildMatchList(input: MatchListInput, timeZone: TimeZone): MatchLis
     // a cold start, and falling back here would flash every attached video in and
     // out of the list (see orphanedLocalVideoIds for the real orphans).
     for (entry in input.localEntries) {
-        if (entry.scoreLogId != null || entry.id in claimed) continue
+        if (entry.scoreLogId != null) {
+            // Claimed here even when the log this entry names is not (yet) in the
+            // list: the same cold-start window review focus 1 covers for the case
+            // with no clips - the score-log cache starts empty on a cold start, and
+            // an entry naming a log not in the list yet is that window, not an
+            // orphan. Without also claiming entry.id here, the entry's own clips
+            // would surface through the cloud-clips loop below as an orphaned
+            // CLOUD row that knows nothing about the entry, then jump to a
+            // different key once the log loads. orphanedLocalVideoIds is what
+            // releases a *true* orphan - a log deleted or no longer visible to
+            // this account - once an authoritative sync confirms it; this fold
+            // never has that authority, so it only hides the row, it never drops it.
+            claimed += entry.id
+            continue
+        }
+        if (entry.id in claimed) continue
         claimed += entry.id
         mine += videoItem(entry, ownedVideo(entry.id), input, timeZone)
     }

@@ -154,6 +154,55 @@ class MatchListBuilderTest {
     }
 
     @Test
+    fun an_entry_naming_a_missing_log_also_claims_its_own_clips() {
+        // The same cold-start window as the test above, but the video already has
+        // clips: without claiming entry.id too, those clips would surface as an
+        // orphaned CLOUD row that knows nothing about the entry sitting on the
+        // phone, then jump to a different key entirely once the log loads.
+        val list = build(input(
+            entries = listOf(entry("v1", scoreLogId = "l-missing")),
+            clips = listOf(clip("v1", 1)),
+        ))
+        list.mine.shouldBeEmpty()
+        list.shared.shouldBeEmpty()
+    }
+
+    @Test
+    fun a_score_logs_entry_is_found_by_shared_id_when_its_own_scoreLogId_is_unset() {
+        // A video-first import later bound to a log by video_id, without the
+        // entry itself ever being told scoreLogId. Falling back to the shared id
+        // is what keeps this from being the "appears nowhere" class
+        // orphanedLocalVideoIds documents: the log claims v1 by videoId, and the
+        // entry must be found by the same id rather than left stranded.
+        val list = build(input(
+            logs = listOf(log("l1", videoId = "v1")),
+            entries = listOf(entry("v1", AnalyzeStage.ANALYZED, scoreLogId = null)),
+            clips = listOf(clip("v1", 1)),
+        ))
+        val item = list.mine.single()
+        item.key shouldBe "score-l1"
+        item.entryId shouldBe "v1"
+        item.where shouldBe MatchWhere.BOTH
+    }
+
+    @Test
+    fun the_shared_id_fallback_does_not_borrow_an_entry_another_log_already_owns() {
+        // Refinement of the shared-id fallback above: the entry belongs to l2 by
+        // scoreLogId, so l1 (which merely happens to share its video id) must not
+        // also pick it up - or entryId "v1" would sit on two rows at once, which
+        // is exactly what review focus 2's invariant exists to rule out, across
+        // every log in the input rather than just within one.
+        val list = build(input(
+            logs = listOf(log("l1", videoId = "v1"), log("l2")),
+            entries = listOf(entry("v1", scoreLogId = "l2")),
+        ))
+        val ids = list.mine.mapNotNull { it.entryId }
+        ids.size shouldBe ids.toSet().size
+        list.mine.first { it.key == "score-l2" }.entryId shouldBe "v1"
+        list.mine.first { it.key == "score-l1" }.entryId.shouldBeNull()
+    }
+
+    @Test
     fun no_id_is_ever_listed_twice() {
         // Review focus 2, as an invariant over every kind of row at once.
         val list = build(input(
