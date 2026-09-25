@@ -48,13 +48,21 @@ struct MatchesList: View {
     @State private var filter: MatchListFilter = .all
     // A row the coach asked to delete or remove, waiting on a confirmation:
     // the two-way choice when a swipe finds both a file here and a match to
-    // delete, the single dialog otherwise.
-    @State private var choiceTarget: MatchListItem? = nil
-    @State private var deleteTarget: MatchListItem? = nil
-    /// The video the coach has asked to remove, held until they confirm: a
-    /// destructive action with a consequence worth stating needs a beat to
-    /// read it.
-    @State private var removeTarget: MatchListItem? = nil
+    // delete, the single dialog otherwise. Held by key and looked up in the
+    // list as it is now (`itemWithKey`), not as the item the gesture saw: the
+    // list is rebuilt under an open dialog (stored results land, a run
+    // settles, clips sync), and the dialog has to say what removing or
+    // deleting the row does as it is drawn now. Android's drawer showed the
+    // stale version; this is the same rule on both.
+    @State private var choiceKey: String? = nil
+    @State private var deleteKey: String? = nil
+    /// Held until the coach confirms: a destructive action with a consequence
+    /// worth stating needs a beat to read it.
+    @State private var removeKey: String? = nil
+
+    private var choiceTarget: MatchListItem? { choiceKey.flatMap(model.matchList.itemWithKey(key:)) }
+    private var deleteTarget: MatchListItem? { deleteKey.flatMap(model.matchList.itemWithKey(key:)) }
+    private var removeTarget: MatchListItem? { removeKey.flatMap(model.matchList.itemWithKey(key:)) }
 
     var body: some View {
         // Split into stages rather than one chain: the list's modifier chain is
@@ -231,9 +239,9 @@ struct MatchesList: View {
             if let swipe = RowSwipe(item) {
                 Button {
                     switch swipe {
-                    case .choose: choiceTarget = item
-                    case .delete, .leave: deleteTarget = item
-                    case .remove: removeTarget = item
+                    case .choose: choiceKey = item.key
+                    case .delete, .leave: deleteKey = item.key
+                    case .remove: removeKey = item.key
                     }
                 } label: {
                     Label(swipe.label, systemImage: "trash")
@@ -311,16 +319,16 @@ struct MatchesList: View {
             items.append(RowMenuItem(label: copy.MENU_ANALYZE_AGAIN) { analyzeAction(entryId: entryId) })
         }
         if item.canRemoveFromPhone {
-            items.append(RowMenuItem(label: copy.MENU_REMOVE_FROM_PHONE, role: .destructive) { removeTarget = item })
+            items.append(RowMenuItem(label: copy.MENU_REMOVE_FROM_PHONE, role: .destructive) { removeKey = item.key })
         }
         // Straight to the one confirmation, not the choice: removing the file
         // alone is already its own item just above.
         switch item.delete {
         case .none: break
         case .leaveShare:
-            items.append(RowMenuItem(label: copy.MENU_LEAVE_SHARE, role: .destructive) { deleteTarget = item })
+            items.append(RowMenuItem(label: copy.MENU_LEAVE_SHARE, role: .destructive) { deleteKey = item.key })
         case .videoMatch, .scoreMatch, .boundMatch:
-            items.append(RowMenuItem(label: copy.MENU_DELETE, role: .destructive) { deleteTarget = item })
+            items.append(RowMenuItem(label: copy.MENU_DELETE, role: .destructive) { deleteKey = item.key })
         }
         return items
     }
@@ -357,19 +365,19 @@ private extension MatchesList {
         // is listed first.
         .confirmationDialog(
             choiceTarget?.title ?? "",
-            isPresented: presence($choiceTarget),
+            isPresented: presence($choiceKey),
             titleVisibility: .visible,
             presenting: choiceTarget
         ) { item in
             Button(MatchListCopy.shared.CHOICE_REMOVE) {
-                choiceTarget = nil
+                choiceKey = nil
                 removeFromPhone(item)
             }
             Button(MatchListCopy.shared.CHOICE_DELETE, role: .destructive) {
-                choiceTarget = nil
+                choiceKey = nil
                 Task { await deleteEverywhere(item) }
             }
-            Button(MatchListCopy.shared.CHOICE_CANCEL, role: .cancel) { choiceTarget = nil }
+            Button(MatchListCopy.shared.CHOICE_CANCEL, role: .cancel) { choiceKey = nil }
         } message: { item in
             // Both options' details, not only the delete's: the dialog has one
             // message and no line under each button, and "Remove video from
@@ -382,29 +390,29 @@ private extension MatchesList {
         // file is free to discard).
         .confirmationDialog(
             deleteTarget.flatMap { MatchListCopy.shared.deleteTitle(delete: $0.delete) } ?? "",
-            isPresented: presence($deleteTarget),
+            isPresented: presence($deleteKey),
             titleVisibility: .visible,
             presenting: deleteTarget
         ) { item in
             Button(MatchListCopy.shared.deleteConfirmLabel(delete: item.delete) ?? MatchListCopy.shared.CONFIRM_DELETE,
                    role: .destructive) {
-                deleteTarget = nil
+                deleteKey = nil
                 Task { await deleteEverywhere(item) }
             }
-            Button(MatchListCopy.shared.CHOICE_CANCEL, role: .cancel) { deleteTarget = nil }
+            Button(MatchListCopy.shared.CHOICE_CANCEL, role: .cancel) { deleteKey = nil }
         } message: { item in
             Text(MatchListCopy.shared.deleteMessage(delete: item.delete, onThisPhone: item.entryId != nil) ?? "")
         }
         .alert(
             MatchListCopy.shared.REMOVE_VIDEO_TITLE,
-            isPresented: presence($removeTarget),
+            isPresented: presence($removeKey),
             presenting: removeTarget
         ) { item in
             Button(MatchListCopy.shared.CONFIRM_REMOVE, role: .destructive) {
-                removeTarget = nil
+                removeKey = nil
                 removeFromPhone(item)
             }
-            Button(MatchListCopy.shared.CHOICE_CANCEL, role: .cancel) { removeTarget = nil }
+            Button(MatchListCopy.shared.CHOICE_CANCEL, role: .cancel) { removeKey = nil }
         } message: { item in
             // Per row: what goes and what stays depends on whether the match
             // has a cloud copy, which is the only thing that lists a kept
@@ -413,9 +421,13 @@ private extension MatchesList {
         }
     }
 
-    /// A dialog's `isPresented`, driven by whether its target is set.
-    func presence<T>(_ target: Binding<T?>) -> Binding<Bool> {
-        Binding(get: { target.wrappedValue != nil }, set: { if !$0 { target.wrappedValue = nil } })
+    /// A dialog's `isPresented`: its row is set and still in the list. A row
+    /// that left the list takes its confirmation with it.
+    func presence(_ key: Binding<String?>) -> Binding<Bool> {
+        Binding(
+            get: { key.wrappedValue.flatMap(model.matchList.itemWithKey(key:)) != nil },
+            set: { if !$0 { key.wrappedValue = nil } }
+        )
     }
 }
 

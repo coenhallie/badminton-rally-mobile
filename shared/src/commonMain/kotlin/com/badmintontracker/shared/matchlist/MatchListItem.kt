@@ -76,4 +76,17 @@ data class MatchListItem(
 data class MatchList(
     val mine: List<MatchListItem>,
     val shared: List<MatchListItem>,
-)
+) {
+    /**
+     * The row with [key] as this list draws it now, or null once it is gone.
+     *
+     * What a confirmation holds while it waits, rather than the item itself: the
+     * list is rebuilt whenever anything under it changes (stored results arrive
+     * off the main thread after the first build, a run settles, clips sync), and
+     * an item captured at swipe time describes the row as it was then. The
+     * "Remove video?" dialog read such an item and left out the rallies and
+     * heatmap the row itself was drawing.
+     */
+    fun itemWithKey(key: String): MatchListItem? =
+        mine.firstOrNull { it.key == key } ?: shared.firstOrNull { it.key == key }
+}

@@ -222,6 +222,40 @@ class MatchListCopyTest {
         }
     }
 
+    /**
+     * The shape the emulator check found: a video only on this phone, cut into
+     * 3 rallies by a device run, with its track under the entry id. The list
+     * is first built before the stored results are read (they arrive off the
+     * main thread), then again with them. A dialog opened from the row must
+     * read the row as it is now, found by its key, and say that the rallies
+     * and the heatmap go too; the first build's item says neither.
+     */
+    @Test
+    fun a_row_found_by_its_key_is_the_one_drawn_now_not_the_one_first_built() {
+        fun build(withStored: Boolean) = buildMatchList(
+            MatchListInput(
+                clips = emptyList(), currentUserId = "me", sharerByVideoId = emptyMap(), metadataByVideoId = emptyMap(),
+                scoreLogs = emptyList(), localEntries = listOf(entry("club")), cloudProgress = emptyMap(),
+                deviceRuns = emptyMap(),
+                storedTrackIds = if (withStored) setOf("club") else emptySet(),
+                storedSkeletonIds = emptySet(),
+                deviceClipCounts = if (withStored) mapOf("club" to 3) else emptyMap(),
+            ),
+            TimeZone.UTC,
+        )
+        val first = build(withStored = false).mine.single()
+        MatchListCopy.removeFromPhoneDetail(first) shouldBe
+            "Removes the video and its notes from this app. The match is only on this phone, so it leaves your list."
+
+        val now = build(withStored = true).itemWithKey(first.key)
+        now?.deviceClipCount shouldBe 3
+        now?.heatmapId shouldBe "club"
+        MatchListCopy.removeFromPhoneDetail(now!!) shouldBe
+            "Removes the video, its notes, the rallies cut on this phone and the heatmap from this app. " +
+            "The match is only on this phone, so it leaves your list."
+        build(withStored = true).itemWithKey("video-gone") shouldBe null
+    }
+
     /** iOS's choice dialog has one message, so it carries both options' details. */
     @Test
     fun the_choice_message_explains_both_options() {

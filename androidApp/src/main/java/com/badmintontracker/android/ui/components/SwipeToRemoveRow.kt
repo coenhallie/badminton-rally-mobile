@@ -12,6 +12,8 @@ import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -41,9 +43,17 @@ fun SwipeToRemoveRow(
     contentBackground: Color = MaterialTheme.colorScheme.background,
     content: @Composable () -> Unit,
 ) {
+    // The state is remembered once per row, and its confirmValueChange with it:
+    // passed onSwiped directly, a row went on calling the callback of its first
+    // composition, closed over whatever that composition knew. A drawer row is
+    // first composed before the stored results are read, so its swipe opened
+    // "Remove video?" for the row as it was then, without the rallies and the
+    // heatmap it was by then drawing. Read through rememberUpdatedState, the
+    // swipe always calls the latest callback.
+    val currentOnSwiped by rememberUpdatedState(onSwiped)
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
-            if (value == SwipeToDismissBoxValue.EndToStart) onSwiped() else false
+            if (value == SwipeToDismissBoxValue.EndToStart) currentOnSwiped() else false
         },
     )
     SwipeToDismissBox(

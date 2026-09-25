@@ -114,9 +114,23 @@ fun ClipListScreen(
     var legendOpen by remember { mutableStateOf(false) }
     // A row the coach asked to delete, waiting on a confirmation: the choice
     // sheet when it has two things to delete, the single dialog otherwise.
-    var choiceTarget by remember { mutableStateOf<MatchListItem?>(null) }
-    var deleteTarget by remember { mutableStateOf<MatchListItem?>(null) }
-    var removeTarget by remember { mutableStateOf<MatchListItem?>(null) }
+    // Held by key and looked up in the list as it is now (itemWithKey), not
+    // as the item the gesture saw: the list is rebuilt under an open dialog
+    // (stored results land, a run settles, clips sync), and the dialog has to
+    // say what removing or deleting the row does as it is drawn now.
+    var choiceKey by remember { mutableStateOf<String?>(null) }
+    var deleteKey by remember { mutableStateOf<String?>(null) }
+    var removeKey by remember { mutableStateOf<String?>(null) }
+    val choiceTarget = choiceKey?.let(state.matchList::itemWithKey)
+    val deleteTarget = deleteKey?.let(state.matchList::itemWithKey)
+    val removeTarget = removeKey?.let(state.matchList::itemWithKey)
+    // A row that left the list takes its confirmation with it, rather than
+    // leaving a key that would reopen the dialog if the row came back.
+    LaunchedEffect(choiceTarget, deleteTarget, removeTarget) {
+        if (choiceTarget == null) choiceKey = null
+        if (deleteTarget == null) deleteKey = null
+        if (removeTarget == null) removeKey = null
+    }
 
     var filter by rememberSaveable { mutableStateOf(MatchListFilter.ALL) }
     val mine = state.matchList.mine
@@ -217,13 +231,13 @@ fun ClipListScreen(
             }
         }
         if (item.canAnalyzeAgain && entryId != null) add(RowMenuItem(MatchListCopy.MENU_ANALYZE_AGAIN) { onAnalyze(entryId) })
-        if (item.canRemoveFromPhone) add(RowMenuItem(MatchListCopy.MENU_REMOVE_FROM_PHONE) { removeTarget = item })
+        if (item.canRemoveFromPhone) add(RowMenuItem(MatchListCopy.MENU_REMOVE_FROM_PHONE) { removeKey = item.key })
         // Straight to the one confirmation, not the choice sheet: removing the
         // file alone is already its own item just above.
         when (item.delete) {
             MatchDelete.NONE -> Unit
-            MatchDelete.LEAVE_SHARE -> add(RowMenuItem(MatchListCopy.MENU_LEAVE_SHARE) { deleteTarget = item })
-            else -> add(RowMenuItem(MatchListCopy.MENU_DELETE) { deleteTarget = item })
+            MatchDelete.LEAVE_SHARE -> add(RowMenuItem(MatchListCopy.MENU_LEAVE_SHARE) { deleteKey = item.key })
+            else -> add(RowMenuItem(MatchListCopy.MENU_DELETE) { deleteKey = item.key })
         }
     }
 
@@ -240,9 +254,9 @@ fun ClipListScreen(
                 refreshGeneration = state.refreshGeneration,
                 onSwiped = {
                     when (swipe) {
-                        Swipe.CHOOSE -> choiceTarget = item
-                        Swipe.DELETE, Swipe.LEAVE -> deleteTarget = item
-                        Swipe.REMOVE -> removeTarget = item
+                        Swipe.CHOOSE -> choiceKey = item.key
+                        Swipe.DELETE, Swipe.LEAVE -> deleteKey = item.key
+                        Swipe.REMOVE -> removeKey = item.key
                         null -> Unit
                     }
                 },
@@ -372,9 +386,9 @@ fun ClipListScreen(
     choiceTarget?.let { item ->
         DeleteChoiceSheet(
             item = item,
-            onRemoveFromPhone = { choiceTarget = null; item.entryId?.let(onRemoveFromPhone) },
-            onDeleteEverywhere = { choiceTarget = null; deleteEverywhere(item) },
-            onDismiss = { choiceTarget = null },
+            onRemoveFromPhone = { choiceKey = null; item.entryId?.let(onRemoveFromPhone) },
+            onDeleteEverywhere = { choiceKey = null; deleteEverywhere(item) },
+            onDismiss = { choiceKey = null },
         )
     }
 
@@ -386,8 +400,8 @@ fun ClipListScreen(
             // track again once the file is gone.
             message = MatchListCopy.removeFromPhoneDetail(item),
             confirmLabel = MatchListCopy.CONFIRM_REMOVE,
-            onConfirm = { removeTarget = null; item.entryId?.let(onRemoveFromPhone) },
-            onDismiss = { removeTarget = null },
+            onConfirm = { removeKey = null; item.entryId?.let(onRemoveFromPhone) },
+            onDismiss = { removeKey = null },
         )
     }
 
@@ -401,8 +415,8 @@ fun ClipListScreen(
             title = title,
             message = message,
             confirmLabel = confirm,
-            onConfirm = { deleteTarget = null; deleteEverywhere(item) },
-            onDismiss = { deleteTarget = null },
+            onConfirm = { deleteKey = null; deleteEverywhere(item) },
+            onDismiss = { deleteKey = null },
         )
     }
 }
