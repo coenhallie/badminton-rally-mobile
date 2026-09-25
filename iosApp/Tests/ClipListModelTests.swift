@@ -119,6 +119,7 @@ final class ClipListModelTests: XCTestCase {
         let videos: RecordingVideosRepository
         let scoreLogs: ScoreLogsRepository
         let shares: RecordingSharesRepository
+        let clips: InMemoryClipsRepository
     }
 
     /// `liveDeviceRuns` defaults to "nothing running", matching a build with no
@@ -140,7 +141,7 @@ final class ClipListModelTests: XCTestCase {
         )
         return Rig(
             model: model, localVideos: localVideos, annotations: annotations,
-            videos: videos, scoreLogs: scoreLogs, shares: shares
+            videos: videos, scoreLogs: scoreLogs, shares: shares, clips: clips
         )
     }
 
@@ -212,6 +213,7 @@ final class ClipListModelTests: XCTestCase {
 
         XCTAssertEqual(r.shares.leftVideoIds, ["v1"])
         XCTAssertEqual(r.model.error, SwiftInteropKt.LEAVE_SHARE_FAILED_MESSAGE)
+        XCTAssertEqual(r.clips.prunedVideoIds, [], "a leave that threw pruned the match from this phone")
     }
 
     func testAScoredMatchDeleteDiscardsTheEntryItOrphansWhateverTheServerSays() async {

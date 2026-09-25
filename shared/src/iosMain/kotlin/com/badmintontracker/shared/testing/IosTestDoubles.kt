@@ -110,8 +110,17 @@ class RecordingVideosRepository internal constructor() : VideosRepository by Noo
     }
 }
 
-private class InMemoryClipsRepository : ClipsRepository {
+/**
+ * Clips held in memory, recording which videos were pruned so a test can check
+ * that a refused or thrown call left the cache alone.
+ */
+class InMemoryClipsRepository internal constructor() : ClipsRepository {
     val clips = MutableStateFlow<List<RallyClip>>(emptyList())
+
+    /** What [pruneVideo] was called with, in order, as a plain Swift array. */
+    val prunedVideoIds: List<String> get() = pruned.toList()
+    private val pruned = mutableListOf<String>()
+
     override suspend fun listClips(): List<RallyClip> = clips.value
     override fun observeClips(): Flow<List<RallyClip>> = clips
     override suspend fun refresh() = Unit
@@ -119,6 +128,7 @@ private class InMemoryClipsRepository : ClipsRepository {
     override suspend fun countClipsForVideo(videoId: String): Result<Int> =
         Result.success(clips.value.count { it.videoId == videoId })
     override fun pruneVideo(videoId: String) {
+        pruned += videoId
         clips.value = clips.value.filterNot { it.videoId == videoId }
     }
 }
@@ -146,7 +156,7 @@ fun testRacketArmPreferences(): RacketArmPreferenceRepository {
  * comment). Mutate `clips.value` directly through the same [InMemoryClipsRepository]
  * instance to seed clips for a test.
  */
-fun testClipsRepository(): ClipsRepository = InMemoryClipsRepository()
+fun testClipsRepository(): InMemoryClipsRepository = InMemoryClipsRepository()
 
 /**
  * A [ClipsRepository] with no signal: every call that reaches the network throws,
