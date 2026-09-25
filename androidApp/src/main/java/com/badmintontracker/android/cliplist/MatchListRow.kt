@@ -46,7 +46,7 @@ import com.badmintontracker.android.ui.components.ShuttlButtonVariant
 import com.badmintontracker.android.ui.icons.ShuttlIcons
 import com.badmintontracker.android.ui.theme.ShuttlRadius
 import com.badmintontracker.android.ui.theme.ShuttlTheme
-import com.badmintontracker.shared.matchlist.MatchAction
+import com.badmintontracker.shared.matchlist.MatchListCopy
 import com.badmintontracker.shared.matchlist.MatchListItem
 import com.badmintontracker.shared.model.RallyClip
 import com.badmintontracker.shared.repo.MediaRepository
@@ -149,7 +149,7 @@ private fun MatchListRowContent(
                 ),
             )
         }
-        actionLabel(item.action)?.let { label ->
+        MatchListCopy.actionLabel(item.action)?.let { label ->
             // Its own line, not a trailing pill: beside the overflow menu a pill
             // left the title about four characters wide. Full width is also how
             // Home states its two primary actions, so the card reads as one
@@ -164,18 +164,6 @@ private fun MatchListRowContent(
             )
         }
     }
-}
-
-/**
- * The button for what the row asks. A failed run is "Retry" even when it will
- * resume without court marking: the caller decides what retrying does.
- */
-private fun actionLabel(action: MatchAction): String? = when (action) {
-    MatchAction.ANALYZE -> "Analyze"
-    MatchAction.RETRY -> "Retry"
-    MatchAction.MARK_COURT -> "Mark court"
-    // Running and paused speak through the status line; nothing to press.
-    MatchAction.NONE, MatchAction.RUNNING, MatchAction.PAUSED -> null
 }
 
 @Composable
@@ -196,7 +184,7 @@ private fun RowMenu(menu: List<RowMenuItem>) {
     // relative to its parent, not the IconButton.
     Box {
         IconButton(onClick = { open = true }) {
-            Icon(Icons.Default.MoreVert, contentDescription = "Match menu")
+            Icon(Icons.Default.MoreVert, contentDescription = MatchListCopy.MATCH_MENU)
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             menu.forEach { entry ->

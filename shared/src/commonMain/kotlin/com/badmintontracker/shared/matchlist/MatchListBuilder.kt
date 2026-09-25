@@ -139,12 +139,12 @@ private data class Asks(val action: MatchAction, val text: String?, val isError:
 private fun entryAsks(entry: LocalVideoEntry, input: MatchListInput, hasRunResults: Boolean): Asks {
     val run = input.deviceRuns[entry.id]
     return when {
-        run?.kind == DeviceRunKind.FAILED -> Asks(MatchAction.RETRY, "Analysis failed: ${run.message ?: "Unknown error"}", true)
-        run?.kind == DeviceRunKind.PAUSED -> Asks(MatchAction.PAUSED, run.message ?: "Paused", false)
+        run?.kind == DeviceRunKind.FAILED -> Asks(MatchAction.RETRY, MatchListCopy.analysisFailed(run.message), true)
+        run?.kind == DeviceRunKind.PAUSED -> Asks(MatchAction.PAUSED, run.message ?: MatchListCopy.PAUSED, false)
         run?.kind == DeviceRunKind.RUNNING -> Asks(MatchAction.RUNNING, deviceWorkLabel(run.phase, null) + "…", false)
         isAnalysisRunning(entry.stage) ->
             Asks(MatchAction.RUNNING, cloudAnalysisStatus(entry.stage, input.cloudProgress[entry.id]) ?: "Analyzing…", false)
-        entry.stage == AnalyzeStage.FAILED -> Asks(MatchAction.RETRY, entry.failureMessage ?: "Analysis failed", true)
+        entry.stage == AnalyzeStage.FAILED -> Asks(MatchAction.RETRY, entry.failureMessage ?: MatchListCopy.ANALYSIS_FAILED, true)
         hasRunResults -> Asks(MatchAction.NONE, null, false)
         // Finished in the cloud, but this phone has not seen the clips: offline,
         // or deleted elsewhere. Asking to analyze it again would be a button that
@@ -207,7 +207,7 @@ private fun videoItem(
             ?: "Match · ${formatMatchDate(sortAt, timeZone)}",
         detail = detail,
         playersLine = meta?.playersLine(),
-        sharedBy = sharer?.let { "Shared by $it" },
+        sharedBy = sharer?.let(MatchListCopy::sharedBy),
         where = where,
         analyses = analyses,
         statusText = asks.text,

@@ -28,6 +28,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.badmintontracker.android.ui.icons.ShuttlIcons
@@ -63,7 +65,12 @@ internal fun MatchFilterRow(
                     // One line at the drawer's width; at a large font scale it
                     // scrolls rather than wrapping into a second row of chips.
                     .horizontalScroll(rememberScrollState())
-                    .selectableGroup(),
+                    // One named group, not three unlabelled choices: without
+                    // the name TalkBack reads the three pills with nothing to
+                    // say they are one control choosing one filter. The same
+                    // label iOS gives its group.
+                    .selectableGroup()
+                    .semantics { contentDescription = MatchListCopy.FILTER_GROUP },
                 horizontalArrangement = Arrangement.spacedBy(PillGap),
             ) {
                 FilterPill(MatchListCopy.FILTER_ALL, selected == MatchListFilter.ALL) { onSelect(MatchListFilter.ALL) }

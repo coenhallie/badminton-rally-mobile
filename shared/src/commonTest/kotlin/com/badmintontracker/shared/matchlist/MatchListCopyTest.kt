@@ -43,12 +43,18 @@ class MatchListCopyTest {
             MatchListCopy.MENU_HEATMAP, MatchListCopy.MENU_REMOVE_FROM_PHONE, MatchListCopy.MENU_DELETE,
             MatchListCopy.MENU_LEAVE_SHARE, MatchListCopy.SWIPE_DELETE, MatchListCopy.SWIPE_REMOVE,
             MatchListCopy.CHOICE_REMOVE, MatchListCopy.CHOICE_DELETE, MatchListCopy.CHOICE_CANCEL,
+            MatchListCopy.REMOVE_VIDEO_TITLE, MatchListCopy.CONFIRM_REMOVE, MatchListCopy.CONFIRM_DELETE,
+            MatchListCopy.MATCH_MENU, MatchListCopy.FILTER_GROUP, MatchListCopy.PAUSED,
+            MatchListCopy.ANALYSIS_FAILED, MatchListCopy.analysisFailed(null), MatchListCopy.analysisFailed("x"),
+            MatchListCopy.sharedBy("coach@club.es"),
         )
         val produced = listOf(
             MatchListCopy.menuDeviceClips(0), MatchListCopy.menuDeviceClips(7),
         ) + removableRows().flatMap { item ->
             listOf(MatchListCopy.removeFromPhoneDetail(item), MatchListCopy.choiceMessage(item))
-        } + listOf(true, false).flatMap { onThisPhone ->
+        } + MatchAction.entries.mapNotNull { MatchListCopy.actionLabel(it) } +
+            MatchDelete.entries.flatMap { listOfNotNull(MatchListCopy.deleteTitle(it), MatchListCopy.deleteConfirmLabel(it)) } +
+            listOf(true, false).flatMap { onThisPhone ->
             MatchDelete.entries.flatMap { kind ->
                 listOfNotNull(
                     MatchListCopy.choiceDeleteDetail(kind, onThisPhone),
@@ -93,6 +99,28 @@ class MatchListCopyTest {
         MatchListCopy.choiceDeleteDetail(MatchDelete.SCORE_MATCH, onThisPhone = true) shouldBe
             "Deletes this match and every point you scored, and removes its video and analysis from this app. " +
             "This can't be undone."
+    }
+
+    @Test
+    fun a_row_asks_by_its_action_and_only_actions_with_something_to_press_have_a_label() {
+        MatchListCopy.actionLabel(MatchAction.ANALYZE) shouldBe "Analyze"
+        MatchListCopy.actionLabel(MatchAction.RETRY) shouldBe "Retry"
+        MatchListCopy.actionLabel(MatchAction.MARK_COURT) shouldBe "Mark court"
+        listOf(MatchAction.NONE, MatchAction.RUNNING, MatchAction.PAUSED).forEach {
+            MatchListCopy.actionLabel(it) shouldBe null
+        }
+    }
+
+    @Test
+    fun the_delete_confirmation_is_titled_and_confirmed_per_kind() {
+        listOf(MatchDelete.VIDEO_MATCH, MatchDelete.SCORE_MATCH, MatchDelete.BOUND_MATCH).forEach {
+            MatchListCopy.deleteTitle(it) shouldBe "Delete match?"
+            MatchListCopy.deleteConfirmLabel(it) shouldBe "Delete"
+        }
+        MatchListCopy.deleteTitle(MatchDelete.LEAVE_SHARE) shouldBe "Remove shared match?"
+        MatchListCopy.deleteConfirmLabel(MatchDelete.LEAVE_SHARE) shouldBe "Remove"
+        MatchListCopy.deleteTitle(MatchDelete.NONE) shouldBe null
+        MatchListCopy.deleteConfirmLabel(MatchDelete.NONE) shouldBe null
     }
 
     // --- removing the video: what goes and what stays, per row ---

@@ -378,34 +378,35 @@ private extension MatchesList {
             // this phone" needs its own consequences said as much as the delete.
             Text(MatchListCopy.shared.choiceMessage(item: item))
         }
-        // The single confirmation. The message is shared copy, which also says
-        // when the video in this app goes with the match: a delete is only
-        // offered on such a row once the file is free to discard.
+        // The single confirmation, titled and worded as Android's dialog: the
+        // message is shared copy, which also says when the video in this app
+        // goes with the match (a delete is only offered on such a row once the
+        // file is free to discard).
         .confirmationDialog(
-            deleteTarget.flatMap {
-                MatchListCopy.shared.deleteMessage(delete: $0.delete, onThisPhone: $0.entryId != nil)
-            } ?? "",
+            deleteTarget.flatMap { MatchListCopy.shared.deleteTitle(delete: $0.delete) } ?? "",
             isPresented: presence($deleteTarget),
             titleVisibility: .visible,
             presenting: deleteTarget
         ) { item in
-            Button(item.delete == .leaveShare ? MatchListCopy.shared.SWIPE_REMOVE : MatchListCopy.shared.SWIPE_DELETE,
+            Button(MatchListCopy.shared.deleteConfirmLabel(delete: item.delete) ?? MatchListCopy.shared.CONFIRM_DELETE,
                    role: .destructive) {
                 deleteTarget = nil
                 Task { await deleteEverywhere(item) }
             }
             Button(MatchListCopy.shared.CHOICE_CANCEL, role: .cancel) { deleteTarget = nil }
+        } message: { item in
+            Text(MatchListCopy.shared.deleteMessage(delete: item.delete, onThisPhone: item.entryId != nil) ?? "")
         }
         .alert(
-            "Remove video?",
+            MatchListCopy.shared.REMOVE_VIDEO_TITLE,
             isPresented: presence($removeTarget),
             presenting: removeTarget
         ) { item in
-            Button("Remove", role: .destructive) {
+            Button(MatchListCopy.shared.CONFIRM_REMOVE, role: .destructive) {
                 removeTarget = nil
                 removeFromPhone(item)
             }
-            Button("Cancel", role: .cancel) { removeTarget = nil }
+            Button(MatchListCopy.shared.CHOICE_CANCEL, role: .cancel) { removeTarget = nil }
         } message: { item in
             // Per row: what goes and what stays depends on whether the match
             // has a cloud copy, which is the only thing that lists a kept

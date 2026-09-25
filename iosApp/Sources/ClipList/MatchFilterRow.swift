@@ -27,7 +27,7 @@ struct MatchFilterRow: View {
                     // button. Not analyzed, button." with nothing to say the
                     // three of them are one control choosing one filter.
                     .accessibilityElement(children: .contain)
-                    .accessibilityLabel("Filter")
+                    .accessibilityLabel(MatchListCopy.shared.FILTER_GROUP)
                 }
                 .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
             } else {

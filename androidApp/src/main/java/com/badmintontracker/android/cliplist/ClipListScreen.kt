@@ -384,19 +384,20 @@ fun ClipListScreen(
 
     removeTarget?.let { item ->
         ConfirmDialog(
-            title = "Remove video?",
+            title = MatchListCopy.REMOVE_VIDEO_TITLE,
             // Per row: what goes and what stays depends on whether the match
             // has a cloud copy, which is the only thing that lists a kept
             // track again once the file is gone.
             message = MatchListCopy.removeFromPhoneDetail(item),
-            confirmLabel = "Remove",
+            confirmLabel = MatchListCopy.CONFIRM_REMOVE,
             onConfirm = { removeTarget = null; item.entryId?.let(onRemoveFromPhone) },
             onDismiss = { removeTarget = null },
         )
     }
 
     deleteTarget?.let { item ->
-        val (title, confirm) = deleteConfirmation(item.delete) ?: return@let
+        val title = MatchListCopy.deleteTitle(item.delete) ?: return@let
+        val confirm = MatchListCopy.deleteConfirmLabel(item.delete) ?: return@let
         // The file goes too whenever the row has one: a delete is only offered
         // on such a row once the file is free to discard.
         val message = MatchListCopy.deleteMessage(item.delete, onThisPhone = item.entryId != null) ?: return@let
@@ -433,17 +434,6 @@ private fun swipeFor(item: MatchListItem): Swipe? = when {
     item.delete != MatchDelete.NONE -> Swipe.DELETE
     item.canRemoveFromPhone -> Swipe.REMOVE
     else -> null
-}
-
-/**
- * The single confirmation's title and button per kind; the message is shared
- * copy ([MatchListCopy.deleteMessage]), which also says when the video in this
- * app goes with the match.
- */
-private fun deleteConfirmation(kind: MatchDelete): Pair<String, String>? = when (kind) {
-    MatchDelete.VIDEO_MATCH, MatchDelete.SCORE_MATCH, MatchDelete.BOUND_MATCH -> "Delete match?" to "Delete"
-    MatchDelete.LEAVE_SHARE -> "Remove shared match?" to "Remove"
-    MatchDelete.NONE -> null
 }
 
 private val MONTHS = listOf(

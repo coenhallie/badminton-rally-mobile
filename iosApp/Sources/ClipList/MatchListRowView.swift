@@ -70,7 +70,7 @@ struct MatchListRowView: View {
                         .padding(.top, 4)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                if let label = actionLabel(item.action) {
+                if let label = MatchListCopy.shared.actionLabel(action: item.action) {
                     // Its own line, not a trailing pill: beside the overflow
                     // menu a pill left the title about four characters wide.
                     // Full width is also how Home states its two primary
@@ -122,19 +122,7 @@ struct MatchListRowView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
-        .accessibilityLabel("Match menu")
-    }
-
-    /// The button for what the row asks. A failed run is "Retry" even when it
-    /// will resume without court marking: the caller decides what retrying does.
-    private func actionLabel(_ action: MatchAction) -> String? {
-        switch action {
-        case .analyze: return "Analyze"
-        case .retry: return "Retry"
-        case .markCourt: return "Mark court"
-        // Running and paused speak through the status line; nothing to press.
-        case .none, .running, .paused: return nil
-        }
+        .accessibilityLabel(MatchListCopy.shared.MATCH_MENU)
     }
 }
 

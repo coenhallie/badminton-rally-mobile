@@ -15,6 +15,33 @@ object MatchListCopy {
     const val SHARED_SECTION = "Shared with me"
     const val LEGEND_BUTTON = "What the icons mean"
     const val LEGEND_TITLE = "What the icons mean"
+    /** What a screen reader calls the three filter chips, as one control. */
+    const val FILTER_GROUP = "Filter"
+    /** The row's overflow button, to a screen reader. */
+    const val MATCH_MENU = "Match menu"
+
+    /** The status line's own words, as the builder writes them. */
+    const val PAUSED = "Paused"
+    const val ANALYSIS_FAILED = "Analysis failed"
+    fun analysisFailed(message: String?) = "$ANALYSIS_FAILED: ${message ?: "Unknown error"}"
+    fun sharedBy(email: String) = "Shared by $email"
+
+    const val ACTION_ANALYZE = "Analyze"
+    const val ACTION_RETRY = "Retry"
+    const val ACTION_MARK_COURT = "Mark court"
+
+    /**
+     * The button for what the row asks, or null when there is nothing to press:
+     * running and paused speak through the status line. A failed run is "Retry"
+     * even when it will resume without court marking: the caller decides what
+     * retrying does.
+     */
+    fun actionLabel(action: MatchAction): String? = when (action) {
+        MatchAction.ANALYZE -> ACTION_ANALYZE
+        MatchAction.RETRY -> ACTION_RETRY
+        MatchAction.MARK_COURT -> ACTION_MARK_COURT
+        MatchAction.NONE, MatchAction.RUNNING, MatchAction.PAUSED -> null
+    }
 
     const val WHERE_PHONE = "On this phone"
     const val WHERE_CLOUD = "In the cloud"
@@ -47,6 +74,24 @@ object MatchListCopy {
 
     const val SWIPE_DELETE = "Delete"
     const val SWIPE_REMOVE = "Remove"
+
+    const val REMOVE_VIDEO_TITLE = "Remove video?"
+    const val CONFIRM_REMOVE = "Remove"
+    const val CONFIRM_DELETE = "Delete"
+
+    /** The single delete confirmation's title; the message is [deleteMessage]. */
+    fun deleteTitle(delete: MatchDelete): String? = when (delete) {
+        MatchDelete.VIDEO_MATCH, MatchDelete.SCORE_MATCH, MatchDelete.BOUND_MATCH -> "Delete match?"
+        MatchDelete.LEAVE_SHARE -> "Remove shared match?"
+        MatchDelete.NONE -> null
+    }
+
+    /** The single delete confirmation's button. */
+    fun deleteConfirmLabel(delete: MatchDelete): String? = when (delete) {
+        MatchDelete.VIDEO_MATCH, MatchDelete.SCORE_MATCH, MatchDelete.BOUND_MATCH -> CONFIRM_DELETE
+        MatchDelete.LEAVE_SHARE -> CONFIRM_REMOVE
+        MatchDelete.NONE -> null
+    }
 
     const val CHOICE_REMOVE = "Remove video from this phone"
     const val CHOICE_DELETE = "Delete match everywhere"
