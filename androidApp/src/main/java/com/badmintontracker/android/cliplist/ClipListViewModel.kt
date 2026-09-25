@@ -25,9 +25,7 @@ import com.badmintontracker.shared.repo.VideosRepository
 import com.badmintontracker.shared.scoring.MatchFormat
 import com.badmintontracker.shared.scoring.ScoreLog
 import com.badmintontracker.shared.scoring.ScoreLogsRepository
-import com.badmintontracker.shared.scoring.buildScoreMatchCard
 import com.badmintontracker.shared.scoring.playersLine
-import com.badmintontracker.shared.scoring.scoreLogAttachStatus
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -72,12 +70,6 @@ data class MatchSummary(
 data class ClipListState(
     val clips: List<RallyClip> = emptyList(),
     val ownedMatches: List<MatchSummary> = emptyList(),
-    /**
-     * What the owned section actually renders: video-backed matches and
-     * courtside-scored ones interleaved by date. [ownedMatches] stays as it is so
-     * nothing that already reads it has to change.
-     */
-    val ownedRows: List<MatchRow> = emptyList(),
     val sharedMatches: List<MatchSummary> = emptyList(),
     val isRefreshing: Boolean = false,
     val error: String? = null,
@@ -160,28 +152,6 @@ class ClipListViewModel(
     private val metadataByVideoId = videos.observeMatchMetadata()
 
     /**
-     * What each scored match's video is doing, keyed by score log id. Built here
-     * because it needs four sources at once: the score logs themselves, each
-     * match's local entry, the coordinator's transient progress, and how many
-     * clips the match already has.
-     */
-    private val attachStatuses = combine(
-        localVideos.entries,
-        coordinator.progress,
-        scoreLogs.logs,
-        clips.observeClips(),
-    ) { entries, progress, logs, allClips ->
-        logs.mapNotNull { log ->
-            scoreLogAttachStatus(
-                log = log,
-                entries = entries,
-                progress = progress,
-                clipCount = allClips.count { it.videoId == log.videoId },
-            )?.let { log.id to it }
-        }.toMap()
-    }
-
-    /**
      * Device runs as the list sees them. A run reports progress several times
      * a second, but the list draws only its phase (the percentage lives on
      * Home's banner and the chrome indicator), so equal maps are dropped here
@@ -258,14 +228,13 @@ class ClipListViewModel(
         ::PhoneSnapshot,
     )
 
-    val state = combine(cloud, phone, attachStatuses) { c, p, attach ->
+    val state = combine(cloud, phone) { c, p ->
         val userId = auth.currentUserId()
         val matches = c.clips.toMatches(userId, c.sharerByVideoId, c.metadataByVideoId)
         val (owned, shared) = matches.partition { it.isOwned }
         ClipListState(
             clips = c.clips,
             ownedMatches = owned,
-            ownedRows = mergeMatchRows(owned, p.logs.map(::buildScoreMatchCard), attach),
             sharedMatches = shared,
             isRefreshing = c.isRefreshing,
             error = c.error,

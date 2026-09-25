@@ -1,12 +1,6 @@
 package com.badmintontracker.android.analytics
 
-import com.badmintontracker.android.cliplist.MatchRow
-import com.badmintontracker.android.cliplist.MatchSummary
-import com.badmintontracker.android.cliplist.formatDate
-import com.badmintontracker.android.cliplist.matchRowPrimary
-import com.badmintontracker.android.cliplist.matchRowSecondary
 import com.badmintontracker.android.localanalysis.LocalAnalysisState
-import com.badmintontracker.android.localvideo.LocalVideoRow
 import com.badmintontracker.shared.analytics.AnalyticsRowState
 import com.badmintontracker.shared.analytics.analyticsRowState
 import com.badmintontracker.shared.analytics.opensAnalytics
@@ -17,7 +11,8 @@ import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.cloudAnalysisStatus
 import com.badmintontracker.shared.localvideo.deviceWorkLabel
 import com.badmintontracker.shared.localvideo.isAnalysisRunning
-import kotlinx.datetime.Instant
+import com.badmintontracker.shared.matchlist.MatchList
+import com.badmintontracker.shared.matchlist.MatchListItem
 
 /**
  * Which of the two pipelines a row's control should speak for.
@@ -103,42 +98,47 @@ internal fun analyticsLegend(rows: List<AnalyticsRow>): AnalyticsLegend = when {
 }
 
 /**
- * Builds the Analytics list's rows, grouped like the drawer: local videos, then
- * owned matches, then shared. [analyticsRowState] alone decides READY /
- * ANALYSABLE / NOT_ON_DEVICE - this only gathers its two booleans per match
- * and, for an ANALYSABLE one, reads both pipelines' own liveness via
- * [affordanceFor] so the row can show progress or a failure instead of a live
- * "Analyze" button. `hasStoredTrack` alone cannot tell a run in flight, or one
- * that just failed, from one never attempted.
+ * Builds the Analytics list's rows: one per [MatchListItem] in [matchList],
+ * the coach's own matches first and shared ones after - the same rows, in the
+ * same order, the drawer draws, because both read the one [MatchList] the
+ * shared builder produces from the same inputs.
  *
- * [storedTrackIds] is a caller-computed set rather than a per-row disk probe:
- * this function runs on every recomposition, including the several-times-a-
- * second ones an in-flight analysis's progress causes.
+ * A video-first import the cloud has finished clipping used to reach this
+ * screen as two candidate rows - a standalone local video and an owned match -
+ * that this function then picked one of by a `distinctBy` on entry id. The
+ * shared builder now folds those into a single [MatchListItem] before this
+ * ever runs (see `MatchListBuilder.videoItem`), so there are never two
+ * candidates here to choose between.
+ *
+ * [analyticsRowState] alone decides READY / READY_NO_VIDEO / ANALYSABLE /
+ * NOT_ON_DEVICE, from the same two facts the item already carries - whether it
+ * has a local entry ([MatchListItem.entryId]) and whether it has a stored
+ * track ([MatchListItem.heatmapId]) - so this function only re-reads those two
+ * fields. For an ANALYSABLE row it also reads both pipelines' own liveness via
+ * [affordanceFor], so the row's control can show progress or a failure instead
+ * of a live "Analyze" label; `hasStoredTrack` alone cannot tell a run in
+ * flight, or one that just failed, from one never attempted, and that is the
+ * one distinction [MatchListItem.action] does not carry a matching affordance
+ * for. A READY row's own liveness is not lost by skipping it here: it already
+ * reaches the screen through the item's own `action`/`statusText`, which
+ * [com.badmintontracker.android.cliplist.MatchStatusLine] draws for every row,
+ * the same component the drawer uses for the same fields.
  */
 internal fun buildAnalyticsRows(
-    standaloneLocalRows: List<LocalVideoRow>,
-    ownedRows: List<MatchRow>,
-    sharedMatches: List<MatchSummary>,
+    matchList: MatchList,
     localEntries: List<LocalVideoEntry>,
     liveAnalysisStates: Map<String, LocalAnalysisState>,
     progressByEntryId: Map<String, AnalyzeProgress>,
-    storedTrackIds: Set<String>,
 ): List<AnalyticsRow> {
-    fun rowFor(key: String, entryId: String?, group: AnalyticsGroup, title: String, subtitle: String): AnalyticsRow {
-        val entry = entryId?.let { id -> localEntries.firstOrNull { it.id == id } }
-        val hasStoredTrack = entryId != null && entryId in storedTrackIds
-        val state = analyticsRowState(hasLocalEntry = entry != null, hasStoredTrack = hasStoredTrack)
-        // Only an ANALYSABLE row reads liveness, and that is a decision rather
-        // than an oversight. A READY row whose second run is in flight keeps its
-        // dot and stays tappable, because the track the first run produced still
-        // opens - swapping the dot for a spinner would take away a working
-        // affordance to report a run whose result the row does not need yet.
-        // LocalVideoRowItem spins whenever isAnalysisRunning; it has no stored
-        // result to offer instead, so it has nothing to lose by doing that.
-        //
-        // entry is never null here: ANALYSABLE requires hasLocalEntry, which is
-        // exactly `entry != null` above. The null check stays as a guard, not a
-        // second source of truth, so this cannot throw if that ever changes.
+    fun rowFor(item: MatchListItem, group: AnalyticsGroup): AnalyticsRow {
+        val entry = item.entryId?.let { id -> localEntries.firstOrNull { it.id == id } }
+        val trackId = item.heatmapId
+        val state = analyticsRowState(hasLocalEntry = item.entryId != null, hasStoredTrack = trackId != null)
+        // entry is never null here when state is ANALYSABLE: ANALYSABLE
+        // requires hasLocalEntry, which is exactly `item.entryId != null`
+        // above, and entry is looked up by that same id. The null check stays
+        // as a guard, not a second source of truth, so this cannot throw if
+        // that relationship ever changes.
         val affordance = if (state == AnalyticsRowState.ANALYSABLE && entry != null) {
             affordanceFor(
                 entry,
@@ -149,82 +149,20 @@ internal fun buildAnalyticsRows(
             AnalyseAffordance.Ready
         }
         return AnalyticsRow(
-            key = key,
-            // The id survives without a local entry when there is a stored
-            // track, because that row OPENS: a finished cloud run retires the
-            // entry and leaves the track, and AnalyticsScreen navigates on this
-            // id. Null only when the row is inert, so the dedupe below still
-            // falls back to the key for rows with nothing to show.
-            entryId = entry?.id ?: entryId.takeIf { hasStoredTrack },
+            key = item.key,
+            // The track's own id stands in once there is no local entry to
+            // open instead: AnalyticsRowState.READY_NO_VIDEO is exactly this
+            // case, and this row still has to open on a tap.
+            entryId = item.entryId ?: trackId,
             group = group,
-            title = title,
-            subtitle = subtitle,
+            title = item.title,
+            subtitle = item.detail,
             state = state,
             affordance = affordance,
+            item = item,
         )
     }
 
-    val localVideoRows = standaloneLocalRows.map { row ->
-        rowFor(
-            key = "local-${row.entry.id}",
-            entryId = row.entry.id,
-            group = AnalyticsGroup.LOCAL_VIDEOS,
-            title = row.primaryText,
-            // Sentence case, as the mock has it ("1:05 · Sep 2"). This screen
-            // used to uppercase its match rows and not its local video rows, so
-            // one list drew "0:02 · Sep 4, 2026" directly over
-            // "2 RALLIES · SEP 1, 2026"; the answer turned out to be neither.
-            subtitle = "${row.durationText} · " +
-                formatDate(Instant.fromEpochMilliseconds(row.entry.addedAtEpochMs)),
-        )
-    }
-
-    val ownedMatchRows = ownedRows.map { row ->
-        when (row) {
-            is MatchRow.Video -> rowFor(
-                key = row.key,
-                entryId = row.match.videoId,
-                group = AnalyticsGroup.OWNED_MATCHES,
-                title = matchRowPrimary(row.match),
-                subtitle = matchRowSecondary(row.match),
-            )
-            is MatchRow.Score -> rowFor(
-                key = row.key,
-                // The entry that claims this log, which is how the rest of the
-                // app pairs a scored match to its video (scoreLogAttachStatus
-                // in AttachStatus.kt, and both of AuthGate's attached-video
-                // lookups). Not `card.videoId`: that is written only by the
-                // CLOUD pipeline's CREATE_ROW hook, so a match scored courtside
-                // and filmed on this phone has none, and reading it would call
-                // a video sitting on the phone "Not on this phone" forever.
-                entryId = localEntries.firstOrNull { it.scoreLogId == row.card.scoreLogId }?.id,
-                group = AnalyticsGroup.OWNED_MATCHES,
-                title = row.card.title,
-                // Who played when anyone has been named, and the score until then.
-                subtitle = row.card.playersLine ?: row.card.scoreLine,
-            )
-        }
-    }
-
-    val sharedRows = sharedMatches.map { match ->
-        rowFor(
-            key = "shared-${match.videoId}",
-            entryId = match.videoId,
-            group = AnalyticsGroup.SHARED,
-            title = matchRowPrimary(match),
-            subtitle = matchRowSecondary(match),
-        )
-    }
-
-    // One video, one row. A video-first import the cloud has finished clipping
-    // is both a local video and an owned match, and the two rows carry the same
-    // entry id, the same state and two identical "Analyze" buttons - the drawer
-    // gets away with that because its two rows look nothing alike, and here they
-    // are indistinguishable. The local row wins because it is the stable one: it
-    // exists from import until the file leaves the phone, whereas the owned row
-    // appears only once a cloud run finishes, so keeping that one instead would
-    // make the row jump sections mid-life. Rows with no entry fall back to their
-    // own key, and every NOT_ON_DEVICE row has a null entryId, so two matches
-    // that are merely both absent from this phone never collapse into each other.
-    return (localVideoRows + ownedMatchRows + sharedRows).distinctBy { it.entryId ?: it.key }
+    return matchList.mine.map { rowFor(it, AnalyticsGroup.MINE) } +
+        matchList.shared.map { rowFor(it, AnalyticsGroup.SHARED) }
 }

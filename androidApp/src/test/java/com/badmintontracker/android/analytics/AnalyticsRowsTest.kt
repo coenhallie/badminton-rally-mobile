@@ -1,25 +1,43 @@
 package com.badmintontracker.android.analytics
 
 import com.badmintontracker.analysis.player.PlayerTrack
-import com.badmintontracker.android.cliplist.MatchRow
-import com.badmintontracker.android.cliplist.MatchSummary
-import com.badmintontracker.android.cliplist.matchRowSecondary
 import com.badmintontracker.android.localanalysis.LocalAnalysisState
-import com.badmintontracker.android.localvideo.LocalVideoRow
 import com.badmintontracker.shared.analytics.AnalyticsRowState
 import com.badmintontracker.shared.localvideo.AnalyzeProgress
 import com.badmintontracker.shared.localvideo.AnalyzeStage
+import com.badmintontracker.shared.localvideo.AnalyzeStep
+import com.badmintontracker.shared.localvideo.DevicePhase
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
+import com.badmintontracker.shared.matchlist.DeviceRun
+import com.badmintontracker.shared.matchlist.DeviceRunKind
+import com.badmintontracker.shared.matchlist.MatchList
+import com.badmintontracker.shared.matchlist.MatchListInput
+import com.badmintontracker.shared.matchlist.MatchListItem
+import com.badmintontracker.shared.matchlist.buildMatchList
 import com.badmintontracker.shared.model.RallyClip
-import com.badmintontracker.shared.scoring.ScoreMatchCard
+import com.badmintontracker.shared.scoring.MatchSetup
+import com.badmintontracker.shared.scoring.ScoreEvent
+import com.badmintontracker.shared.scoring.ScoreLog
+import com.badmintontracker.shared.scoring.ScoreLogStatus
+import com.badmintontracker.shared.scoring.ScoringRules
+import com.badmintontracker.shared.scoring.Side
 import io.kotest.matchers.shouldBe
 import kotlinx.datetime.Instant
 import org.junit.Test
 
+private const val ME = "user-me"
+private const val OTHER = "user-other"
+private const val SEP_8 = "2026-09-08T10:00:00Z"
+
 /**
  * The Analytics list's own decisions, which neither [analyticsRowState] nor the
- * screen's layout makes: which local video belongs to which match, and what a
- * row's control says while one of the two pipelines is busy with it.
+ * screen's layout makes: which of the shared [MatchListItem]s the screen shows,
+ * and what a row's control says while one of the two pipelines is busy with it.
+ *
+ * Rows come from [buildMatchList] here the same way they do in the app
+ * ([com.badmintontracker.android.cliplist.ClipListViewModel]), rather than
+ * hand-built [MatchListItem]s, so a test cannot assert something the real join
+ * could never produce.
  */
 class AnalyticsRowsTest {
 
@@ -28,54 +46,96 @@ class AnalyticsRowsTest {
         scoreLogId: String? = null,
         stage: AnalyzeStage = AnalyzeStage.LOCAL,
         failureMessage: String? = null,
+        addedAt: String = SEP_8,
     ) = LocalVideoEntry(
         id = id,
         uri = "content://$id",
         displayName = "$id.mp4",
         durationMs = 60_000,
         sizeBytes = 1_000_000,
-        addedAtEpochMs = 1_000,
+        addedAtEpochMs = Instant.parse(addedAt).toEpochMilliseconds(),
         scoreLogId = scoreLogId,
         stage = stage,
+        failedStep = if (stage == AnalyzeStage.FAILED) AnalyzeStep.PROCESSING else null,
         failureMessage = failureMessage,
     )
 
-    private fun localRow(e: LocalVideoEntry) = LocalVideoRow(
-        entry = e,
-        primaryText = "Court 3",
-        statusText = null,
-        durationText = "1:00",
-        canAnalyze = true,
-        analyzeLabel = "Analyze",
-        canRemove = true,
-        canEditDetails = true,
-        isBusy = false,
+    private fun clip(videoId: String, index: Int = 1, owner: String = ME, at: String = SEP_8) = RallyClip(
+        id = "$videoId-$index", videoId = videoId, ownerId = owner, rallyIndex = index,
+        startTimestamp = 0f, endTimestamp = 1f, durationSeconds = 1f,
+        clipStoragePath = "clips/$videoId/$index.mp4", thumbnailStoragePath = null,
+        title = null, annotationCount = 0, createdAt = Instant.parse(at),
     )
 
-    private fun scoreCard(scoreLogId: String = "log1", videoId: String? = null) = ScoreMatchCard(
-        scoreLogId = scoreLogId,
-        videoId = videoId,
-        title = "Thu League",
-        createdAtEpochMs = 2_000,
-        playersLine = null,
-        scoreLine = "11-9",
-        statusLine = "Finished",
-        isLive = false,
-        hasVideo = videoId != null,
+    private fun log(
+        id: String,
+        videoId: String? = null,
+        points: Int = 0,
+        at: String = SEP_8,
+        homePlayers: List<String> = emptyList(),
+        awayPlayers: List<String> = emptyList(),
+    ) = ScoreLog(
+        id = id, videoId = videoId, title = "Thu League",
+        rules = ScoringRules.BWF_21, setup = MatchSetup(firstServer = Side.HOME),
+        events = List(points) { ScoreEvent.PointTo(Side.HOME) },
+        status = if (videoId != null) ScoreLogStatus.BOUND else ScoreLogStatus.UNBOUND,
+        homePlayers = homePlayers, awayPlayers = awayPlayers,
+        createdAt = Instant.parse(at), updatedAt = Instant.parse(at),
     )
 
-    private fun videoMatch(videoId: String) = MatchSummary(
-        videoId = videoId,
-        rallyCount = 3,
-        latestCreatedAt = Instant.fromEpochMilliseconds(3_000),
-        coverClip = RallyClip(
-            id = "c-$videoId", videoId = videoId, ownerId = "user-self", rallyIndex = 1,
-            startTimestamp = 0f, endTimestamp = 1f, durationSeconds = 1f,
-            clipStoragePath = "p/c-$videoId.mp4", thumbnailStoragePath = null,
-            title = null, annotationCount = 0,
-            createdAt = Instant.fromEpochMilliseconds(3_000),
+    /**
+     * Mirrors [com.badmintontracker.android.localanalysis.toDeviceRun] by hand,
+     * so a test's two device-run inputs - the [MatchList] this builds and the
+     * [LocalAnalysisState] map [buildAnalyticsRows] itself reads - describe the
+     * same run rather than two that happen to agree by coincidence.
+     */
+    private fun deviceRunsFrom(live: Map<String, LocalAnalysisState>): Map<String, DeviceRun> =
+        live.mapNotNull { (id, state) ->
+            val run = when (state) {
+                is LocalAnalysisState.Preparing -> DeviceRun(DeviceRunKind.RUNNING, DevicePhase.PREPARING)
+                is LocalAnalysisState.Analysing -> DeviceRun(DeviceRunKind.RUNNING, DevicePhase.ANALYSING)
+                is LocalAnalysisState.Cutting -> DeviceRun(DeviceRunKind.RUNNING, DevicePhase.CUTTING)
+                is LocalAnalysisState.Failed -> DeviceRun(DeviceRunKind.FAILED, message = state.message)
+                is LocalAnalysisState.Idle, is LocalAnalysisState.Done -> null
+            }
+            run?.let { id to it }
+        }.toMap()
+
+    private fun matchList(
+        clips: List<RallyClip> = emptyList(),
+        logs: List<ScoreLog> = emptyList(),
+        entries: List<LocalVideoEntry> = emptyList(),
+        live: Map<String, LocalAnalysisState> = emptyMap(),
+        tracks: Set<String> = emptySet(),
+        progress: Map<String, AnalyzeProgress> = emptyMap(),
+    ): MatchList = buildMatchList(
+        MatchListInput(
+            clips = clips,
+            currentUserId = ME,
+            sharerByVideoId = emptyMap(),
+            metadataByVideoId = emptyMap(),
+            scoreLogs = logs,
+            localEntries = entries,
+            cloudProgress = progress,
+            deviceRuns = deviceRunsFrom(live),
+            storedTrackIds = tracks,
+            storedSkeletonIds = emptySet(),
+            deviceClipCounts = emptyMap(),
         ),
-        isOwned = true,
+    )
+
+    private fun rows(
+        clips: List<RallyClip> = emptyList(),
+        logs: List<ScoreLog> = emptyList(),
+        entries: List<LocalVideoEntry> = emptyList(),
+        live: Map<String, LocalAnalysisState> = emptyMap(),
+        tracks: Set<String> = emptySet(),
+        progress: Map<String, AnalyzeProgress> = emptyMap(),
+    ) = buildAnalyticsRows(
+        matchList = matchList(clips, logs, entries, live, tracks, progress),
+        localEntries = entries,
+        liveAnalysisStates = live,
+        progressByEntryId = progress,
     )
 
     private val done = LocalAnalysisState.Done(
@@ -83,25 +143,9 @@ class AnalyticsRowsTest {
         elapsedSeconds = 1.0, playerTrack = PlayerTrack(emptyList(), 0, emptyMap()), fps = 30.0,
     )
 
-    private fun rows(
-        standalone: List<LocalVideoRow> = emptyList(),
-        owned: List<MatchRow> = emptyList(),
-        shared: List<MatchSummary> = emptyList(),
-        entries: List<LocalVideoEntry> = emptyList(),
-        live: Map<String, LocalAnalysisState> = emptyMap(),
-        progress: Map<String, AnalyzeProgress> = emptyMap(),
-        tracks: Set<String> = emptySet(),
-    ) = buildAnalyticsRows(
-        standaloneLocalRows = standalone,
-        ownedRows = owned,
-        sharedMatches = shared,
-        localEntries = entries,
-        liveAnalysisStates = live,
-        progressByEntryId = progress,
-        storedTrackIds = tracks,
-    )
-
     // --- affordanceFor: the on-device pipeline's four non-idle states ---
+    // Unchanged by this move: affordanceFor still takes the raw entry, live
+    // state and progress it always did, independent of MatchListItem.
 
     @Test
     fun a_device_run_preparing_says_so() {
@@ -180,7 +224,6 @@ class AnalyticsRowsTest {
     fun a_cloud_runs_progress_reaches_the_row_it_belongs_to() {
         val e = entry(id = "e1", stage = AnalyzeStage.UPLOADING)
         val row = rows(
-            standalone = listOf(localRow(e)),
             entries = listOf(e),
             progress = mapOf("e1" to AnalyzeProgress(entryId = "e1", uploadProgress = 0.25f)),
         ).single()
@@ -233,10 +276,7 @@ class AnalyticsRowsTest {
         // filmed on this phone has none. Reading it would call a video sitting
         // on the phone "Not on this phone", forever, unless the coach uploads.
         val e = entry(id = "e1", scoreLogId = "log1")
-        val row = rows(
-            owned = listOf(MatchRow.Score(card = scoreCard(scoreLogId = "log1", videoId = null))),
-            entries = listOf(e),
-        ).single()
+        val row = rows(logs = listOf(log("log1")), entries = listOf(e)).single()
         row.state shouldBe AnalyticsRowState.ANALYSABLE
         row.entryId shouldBe "e1"
     }
@@ -244,18 +284,18 @@ class AnalyticsRowsTest {
     @Test
     fun a_scored_match_with_a_stored_track_is_ready() {
         val e = entry(id = "e1", scoreLogId = "log1")
-        val row = rows(
-            owned = listOf(MatchRow.Score(card = scoreCard(scoreLogId = "log1"))),
-            entries = listOf(e),
-            tracks = setOf("e1"),
-        ).single()
+        val row = rows(logs = listOf(log("log1")), entries = listOf(e), tracks = setOf("e1")).single()
         row.state shouldBe AnalyticsRowState.READY
     }
 
     @Test
     fun a_scored_match_whose_video_never_touched_this_phone_stays_inert() {
+        // The entry's scoreLogId names a log this input never loaded ("other-log"
+        // is not "log1"), so the builder hides the entry (review focus 1) rather
+        // than showing it as a standalone row; the score row itself comes out
+        // with nothing to point at.
         val row = rows(
-            owned = listOf(MatchRow.Score(card = scoreCard(scoreLogId = "log1"))),
+            logs = listOf(log("log1")),
             entries = listOf(entry(id = "e1", scoreLogId = "other-log")),
         ).single()
         row.state shouldBe AnalyticsRowState.NOT_ON_DEVICE
@@ -266,64 +306,57 @@ class AnalyticsRowsTest {
     fun a_scored_match_row_reports_its_own_entrys_liveness() {
         val e = entry(id = "e1", scoreLogId = "log1")
         val row = rows(
-            owned = listOf(MatchRow.Score(card = scoreCard(scoreLogId = "log1"))),
-            entries = listOf(e),
+            logs = listOf(log("log1")), entries = listOf(e),
             live = mapOf("e1" to LocalAnalysisState.Analysing(0.2f)),
         ).single()
         row.affordance shouldBe AnalyseAffordance.InProgress("Analyzing on device")
     }
 
     @Test
-    fun a_score_match_row_names_its_players_once_it_has_any_and_shows_the_score_until_then() {
-        val unnamed = rows(owned = listOf(MatchRow.Score(scoreCard())))
-        unnamed.single().subtitle shouldBe "11-9"
-        val named = rows(owned = listOf(MatchRow.Score(scoreCard().copy(playersLine = "Coen vs Marco"))))
-        named.single().subtitle shouldBe "Coen vs Marco"
-    }
+    fun a_scored_matchs_players_line_is_carried_on_its_item_once_someone_is_named() {
+        // Subtitle is now item.detail for every row - score, rallies, date - the
+        // same text for a named and an unnamed match alike. The old version of
+        // this test asserted the subtitle ITSELF switched between the players
+        // and the score; that distinction moved to a line of its own
+        // (row.item.playersLine, drawn under the subtitle by AnalyticsScreen the
+        // same way MatchListRow.kt draws it in the drawer) rather than replacing
+        // the score/date line, so this now pins the new split instead.
+        val unnamed = rows(logs = listOf(log("log1", points = 3))).single()
+        unnamed.item.playersLine shouldBe null
+        unnamed.subtitle shouldBe unnamed.item.detail
 
-    @Test
-    fun every_row_describes_itself_in_sentence_case() {
-        // This has flipped twice. The screen once uppercased its match rows and
-        // not its local video rows, so one list drew "1:00 · Jan 1, 1970" over
-        // "3 RALLIES · JAN 1, 1970"; the fix at the time uppercased both. The
-        // mock settles it the other way - "On this phone", "1:05 · Sep 2" - and
-        // the redesign carries no uppercase anywhere, so a transform reappearing
-        // at any of these three call sites is a regression rather than a choice.
-        val e = entry(id = "e1")
-        val out = rows(
-            standalone = listOf(localRow(e)),
-            entries = listOf(e),
-            owned = listOf(MatchRow.Video(match = videoMatch("v1"))),
-            shared = listOf(videoMatch("v2")),
-        )
-        out.map { it.group } shouldBe listOf(
-            AnalyticsGroup.LOCAL_VIDEOS, AnalyticsGroup.OWNED_MATCHES, AnalyticsGroup.SHARED,
-        )
-        // Each subtitle still holds lower case somewhere, which an uppercasing
-        // call site would strip. "3 rallies · Jan 1, 1970" passes; the same
-        // string uppercased does not.
-        out.forEach { row -> row.subtitle.any { it.isLowerCase() } shouldBe true }
-        // Literals, deliberately, and NOT a comparison against the formatters
-        // themselves: `subtitle shouldBe matchRowSecondary(match)` re-derives the
-        // expectation from the code under test, so re-adding `.uppercase()` at
-        // the call site would change both sides and the test would still pass.
-        out.map { it.subtitle } shouldBe listOf(
-            "1:00 · Jan 1, 1970",
-            "3 rallies",
-            "3 rallies",
-        )
-    }
-
-    @Test
-    fun a_cloud_analysed_match_whose_video_has_gone_still_opens() {
-        // What a finished cloud run leaves behind: the entry is retired, the
-        // footage with it, and the cloud track stays on disk. The row must open
-        // the heatmap the coach waited for - it used to come out inert, with
-        // "Not on this phone" under a match that had just been analysed.
-        val row = rows(
-            owned = listOf(MatchRow.Video(videoMatch("v1"))),
-            tracks = setOf("v1"),
+        val named = rows(
+            logs = listOf(log("log1", points = 3, homePlayers = listOf("Coen"), awayPlayers = listOf("Marco"))),
         ).single()
+        named.item.playersLine shouldBe "Coen vs Marco"
+        named.subtitle shouldBe named.item.detail
+    }
+
+    @Test
+    fun title_and_subtitle_are_the_items_own_text_untouched() {
+        // The three-call-site uppercase regression this file used to guard
+        // against (see matchRowSecondary's own KDoc) cannot recur here any
+        // more: this screen no longer formats a row's text itself, title and
+        // subtitle are a straight read of MatchListItem.title/.detail as the
+        // shared builder wrote them, so there is no per-screen call site left
+        // for a transform to hide in.
+        val e = entry(id = "e1")
+        val out = rows(entries = listOf(e), clips = listOf(clip("v9", owner = OTHER)))
+        out.forEach { row ->
+            row.title shouldBe row.item.title
+            row.subtitle shouldBe row.item.detail
+        }
+    }
+
+    @Test
+    fun a_video_removed_from_this_phone_after_analysis_still_opens() {
+        // A track outlives the entry it came from - a device run's own track
+        // stays on disk after the file (and its entry) are gone, and the same
+        // is true of a cloud run's track once the video has left the phone by
+        // some other path. Either way the row must open the heatmap the coach
+        // already has - it used to come out inert, with "Not on this phone"
+        // under a match that had just been analysed.
+        val row = rows(clips = listOf(clip("v1")), tracks = setOf("v1")).single()
 
         row.state shouldBe AnalyticsRowState.READY_NO_VIDEO
         // Null here is what made the row unopenable even once the state was
@@ -340,19 +373,20 @@ class AnalyticsRowsTest {
         // yet. This pins the row logic for when one can - it is not evidence
         // the cross-phone case works, and cloudNotes deliberately does not
         // claim it does.
-        val row = rows(shared = listOf(videoMatch("v1")), tracks = setOf("v1")).single()
+        val row = rows(clips = listOf(clip("v1", owner = OTHER)), tracks = setOf("v1")).single()
 
         row.state shouldBe AnalyticsRowState.READY_NO_VIDEO
         row.entryId shouldBe "v1"
+        row.group shouldBe AnalyticsGroup.SHARED
     }
 
     @Test
     fun a_match_with_neither_a_video_nor_a_track_stays_inert_and_idless() {
         // The guard on the line above: only a row with something to show earns
         // an id. Two matches that are merely both absent must not collapse into
-        // each other in the dedupe, which is what a shared non-null id would do
-        // if it were ever the same for two rows.
-        val row = rows(owned = listOf(MatchRow.Video(videoMatch("v1")))).single()
+        // each other in the shared builder's own join, which is what a shared
+        // non-null id would do if it were ever the same for two rows.
+        val row = rows(clips = listOf(clip("v1"))).single()
 
         row.state shouldBe AnalyticsRowState.NOT_ON_DEVICE
         row.entryId shouldBe null
@@ -360,57 +394,55 @@ class AnalyticsRowsTest {
 
     @Test
     fun a_shared_match_is_never_on_this_phone() {
-        val row = rows(shared = listOf(videoMatch("v1"))).single()
+        val row = rows(clips = listOf(clip("v1", owner = OTHER))).single()
         row.group shouldBe AnalyticsGroup.SHARED
         row.state shouldBe AnalyticsRowState.NOT_ON_DEVICE
     }
 
     @Test
-    fun the_three_groups_come_out_in_display_order() {
+    fun mine_rows_come_before_shared_rows() {
         val e = entry(id = "e1")
-        val out = rows(
-            standalone = listOf(localRow(e)),
-            owned = listOf(MatchRow.Video(videoMatch("v1"))),
-            shared = listOf(videoMatch("v2")),
-            entries = listOf(e),
-        )
-        out.map { it.group } shouldBe listOf(
-            AnalyticsGroup.LOCAL_VIDEOS, AnalyticsGroup.OWNED_MATCHES, AnalyticsGroup.SHARED,
-        )
+        val out = rows(entries = listOf(e), clips = listOf(clip("v9", owner = OTHER)))
+        out.map { it.group } shouldBe listOf(AnalyticsGroup.MINE, AnalyticsGroup.SHARED)
     }
 
     @Test
     fun one_video_produces_one_row_even_once_the_cloud_has_clipped_it() {
-        // A video-first import that finished uploading is both a local video and
-        // an owned match, and its two rows carry the same entry id, the same
-        // state and the same "Analyze" button. Two identical buttons on one
-        // video is a list bug, not a second thing the coach can do.
-        val e = entry(id = "v1")
-        val out = rows(
-            standalone = listOf(localRow(e)),
-            owned = listOf(MatchRow.Video(videoMatch("v1"))),
-            entries = listOf(e),
-        )
-        out.map { it.key } shouldBe listOf("local-v1")
-        out.single().group shouldBe AnalyticsGroup.LOCAL_VIDEOS
+        // A video-first import that finished uploading is both on this phone
+        // and in the cloud. It used to reach this screen as two candidate rows
+        // - a standalone local video and an owned match - deduplicated here by
+        // a `distinctBy` on entry id; the shared builder now folds the two into
+        // a single MatchListItem before buildAnalyticsRows ever runs
+        // (MatchListBuilder.videoItem), so there is nothing left here to
+        // deduplicate.
+        val e = entry(id = "v1", stage = AnalyzeStage.ANALYZED)
+        val out = rows(entries = listOf(e), clips = listOf(clip("v1")))
+        out.map { it.key } shouldBe listOf("video-v1")
+        out.single().group shouldBe AnalyticsGroup.MINE
     }
 
     @Test
     fun two_matches_that_are_both_off_this_phone_keep_their_own_rows() {
-        // The dedupe collapses on entry id, and every NOT_ON_DEVICE row has a
-        // null one. Collapsing those together would hide every cloud match but
-        // the first.
-        val out = rows(shared = listOf(videoMatch("v1"), videoMatch("v2")))
-        out.map { it.key } shouldBe listOf("shared-v1", "shared-v2")
+        val out = rows(
+            clips = listOf(
+                clip("v1", owner = OTHER, at = "2026-09-01T10:00:00Z"),
+                clip("v2", owner = OTHER, at = "2026-09-02T10:00:00Z"),
+            ),
+        )
+        // Newest first, same as every other MatchList ordering.
+        out.map { it.key } shouldBe listOf("video-v2", "video-v1")
+        out.map { it.group } shouldBe listOf(AnalyticsGroup.SHARED, AnalyticsGroup.SHARED)
     }
 
     @Test
     fun a_ready_row_keeps_its_dot_while_a_second_run_is_in_flight() {
         // Deliberate: a READY row's first track still opens, so the row keeps
-        // the affordance that works rather than swapping it for a spinner.
+        // the affordance that works rather than swapping it for a spinner. The
+        // run itself is not lost from the row altogether - it reaches the
+        // screen through MatchStatusLine instead, which AnalyticsRowsTest does
+        // not exercise (it is a Compose concern, not this function's).
         val e = entry(id = "e1")
         val row = rows(
-            standalone = listOf(localRow(e)),
             entries = listOf(e),
             live = mapOf("e1" to LocalAnalysisState.Analysing(0.5f)),
             tracks = setOf("e1"),
@@ -418,6 +450,7 @@ class AnalyticsRowsTest {
         row.state shouldBe AnalyticsRowState.READY
         row.affordance shouldBe AnalyseAffordance.Ready
     }
+
     @Test
     fun a_list_with_a_live_button_and_no_dot_explains_the_button() {
         // The defect this decision exists for. ANALYSABLE fails the all-inert
@@ -469,13 +502,18 @@ class AnalyticsRowsTest {
         AnalyticsLegend.SILENT.showsDot shouldBe false
     }
 
+    // A trivial, valid MatchListItem for the legend tests below, which only
+    // ever read `.state` off a row: hand-writing a 20-odd field data class for
+    // each one would pin nothing the shared builder's own tests do not already.
+    private val dummyItem: MatchListItem = matchList(logs = listOf(log("dummy"))).mine.single()
+
     private fun row(state: AnalyticsRowState) = AnalyticsRow(
         key = "k-${state.name}",
         entryId = if (state == AnalyticsRowState.NOT_ON_DEVICE) null else "e-${state.name}",
-        group = AnalyticsGroup.LOCAL_VIDEOS,
+        group = AnalyticsGroup.MINE,
         title = "t",
         subtitle = "s",
         state = state,
+        item = dummyItem,
     )
-
 }

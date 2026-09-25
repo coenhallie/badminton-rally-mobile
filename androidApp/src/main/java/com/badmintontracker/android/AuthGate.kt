@@ -41,7 +41,6 @@ import com.badmintontracker.android.analytics.VideoTitle
 import com.badmintontracker.android.analytics.AnalyticsScreen
 import com.badmintontracker.android.analytics.buildAnalyticsRows
 import com.badmintontracker.android.cliplist.ClipListViewModel
-import com.badmintontracker.android.cliplist.MatchRow
 import com.badmintontracker.android.cliplist.MatchSummaryViewModel
 import com.badmintontracker.android.cliplist.StoredResults
 import com.badmintontracker.android.cliplist.StoredResultsReader
@@ -364,48 +363,18 @@ fun AuthGate(
                         }
                     )
                     val clipListState by clipListVm.state.collectAsStateWithLifecycle()
-                    val localRows by localVm.rows.collectAsStateWithLifecycle()
-                    val localEntries by localVideos.entries.collectAsStateWithLifecycle()
                     val liveAnalysisStates by localAnalysis.state.collectAsStateWithLifecycle()
                     val cloudProgress by coordinator.progress.collectAsStateWithLifecycle()
+                    // The same snapshot clipListState.matchList was built from,
+                    // rather than a second collection of localVideos.entries:
+                    // the two must never disagree about which entries exist.
+                    val localEntries = clipListState.localEntries
 
-                    val standaloneLocalRows = localRows.filter { it.entry.scoreLogId == null }
-                    // Which videos have a track, asked the cheap way: hasStoredTrack
-                    // stats one file per entry and never parses one, so opening
-                    // Analytics with fifteen analysed videos on the phone costs
-                    // fifteen stats rather than fifteen full track reads.
-                    //
-                    // Still keyed on which runs have *finished* rather than on the
-                    // live states themselves: a run in progress ticks
-                    // `liveAnalysisStates` several times a second (start reports
-                    // fractional progress), and only a run settling into Done can
-                    // change the answer.
-                    val doneEntryIds = liveAnalysisStates.filterValues { it is LocalAnalysisState.Done }.keys
-                    // Every id the list can draw a row for, not just the ids
-                    // with a local entry. A finished cloud run retires its
-                    // entry and keeps its track, so asking only about entries
-                    // made that track invisible and the match came out inert -
-                    // which is READY_NO_VIDEO's whole case.
-                    val trackCandidateIds = remember(localEntries, clipListState) {
-                        buildSet {
-                            localEntries.forEach { add(it.id) }
-                            clipListState.ownedRows.forEach { row ->
-                                if (row is MatchRow.Video) add(row.match.videoId)
-                            }
-                            clipListState.sharedMatches.forEach { add(it.videoId) }
-                        }
-                    }
-                    val storedTrackIds = remember(trackCandidateIds, doneEntryIds) {
-                        trackCandidateIds.filterTo(mutableSetOf()) { localAnalysis.hasStoredTrack(it) }
-                    }
                     val rows = buildAnalyticsRows(
-                        standaloneLocalRows = standaloneLocalRows,
-                        ownedRows = clipListState.ownedRows,
-                        sharedMatches = clipListState.sharedMatches,
+                        matchList = clipListState.matchList,
                         localEntries = localEntries,
                         liveAnalysisStates = liveAnalysisStates,
                         progressByEntryId = cloudProgress,
-                        storedTrackIds = storedTrackIds,
                     )
 
                     AnalyticsScreen(

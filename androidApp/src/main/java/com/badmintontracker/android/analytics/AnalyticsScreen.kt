@@ -32,6 +32,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.badmintontracker.android.cliplist.MatchStatusLine
+import com.badmintontracker.android.cliplist.hasStatusLine
 import com.badmintontracker.android.localanalysis.BackgroundWorkAction
 import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlButtonVariant
@@ -41,11 +43,21 @@ import com.badmintontracker.android.ui.theme.ShuttlRadius
 import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.shared.analytics.AnalyticsRowState
 import com.badmintontracker.shared.analytics.opensAnalytics
+import com.badmintontracker.shared.matchlist.MatchListItem
 
-/** Which of the drawer's own sections a row belongs to, in display order. */
-enum class AnalyticsGroup(val label: String) {
-    LOCAL_VIDEOS("On this phone"),
-    OWNED_MATCHES("My matches"),
+/**
+ * Which of the drawer's own two sections a row belongs to, in display order.
+ *
+ * Two, not the drawer's earlier three: the shared builder already folds a
+ * match's local video and its cloud clips into one [MatchListItem] regardless
+ * of where the file is, so "on this phone" versus "my matches" was never a
+ * distinction between two different *matches* here, only between two ways the
+ * same row's [MatchStatusLine] draws its where-glyphs. [label] is the section
+ * header text, or null for [MINE], which draws none - the drawer does not
+ * label its own matches either, only the shared ones.
+ */
+enum class AnalyticsGroup(val label: String?) {
+    MINE(null),
     SHARED("Shared with me"),
 }
 
@@ -78,8 +90,17 @@ sealed interface AnalyseAffordance {
     data class Failed(val reason: String) : AnalyseAffordance
 }
 
-/** One row of the Analytics list. [entryId] is null only when [state] is NOT_ON_DEVICE
- * with no video to point at (a score-only match, or a shared match) - inert either way. */
+/**
+ * One row of the Analytics list, one per [MatchListItem] in the shared match
+ * list. [entryId] is null only when [state] is NOT_ON_DEVICE with no video to
+ * point at (a score-only match, or a shared match) - inert either way.
+ *
+ * [title] and [subtitle] are [item]'s own `title`/`detail`, carried as their
+ * own fields rather than read off [item] at each use because that is what the
+ * pinned tests already assert on; [item] itself is kept alongside them for
+ * everything else a row draws that the older, screen-specific fields never
+ * had to (the status line, the players line).
+ */
 data class AnalyticsRow(
     val key: String,
     val entryId: String?,
@@ -88,12 +109,13 @@ data class AnalyticsRow(
     val subtitle: String,
     val state: AnalyticsRowState,
     val affordance: AnalyseAffordance = AnalyseAffordance.Ready,
+    val item: MatchListItem,
 )
 
 /**
- * The coach's Analytics list: one section per group mirroring the drawer's own
- * grouping (local videos, owned matches, shared), so the same match shows up in
- * the same place twice.
+ * The coach's Analytics list: the same rows the drawer lists, in the same
+ * order, one row per match whether its video is on this phone, in the cloud or
+ * both - "Shared with me" is the only section either screen still labels.
  *
  * [onOpenDetail] fires for a READY row, opening its analysis, which shows the
  * heatmap; [onAnalyse] fires for an ANALYSABLE row's button whether it reads
@@ -180,7 +202,7 @@ fun AnalyticsScreen(
             AnalyticsGroup.entries.forEach { group ->
                 val groupRows = rows.filter { it.group == group }
                 if (groupRows.isNotEmpty()) {
-                    item(key = "header-${group.name}") { SectionHeader(group.label) }
+                    group.label?.let { label -> item(key = "header-${group.name}") { SectionHeader(label) } }
                     items(groupRows, key = { it.key }) { row ->
                         AnalyticsRowItem(
                             row = row,
@@ -220,12 +242,14 @@ private fun DotLegend() {
 
 /**
  * A section's label: 12sp, secondary, sentence case - the same label the
- * drawer's own sections carry ([com.badmintontracker.android.cliplist.DrawerSectionLabel]).
+ * drawer draws for its own shared section
+ * ([com.badmintontracker.android.cliplist.DrawerSectionLabel]), and today the
+ * only label either screen draws: "Shared with me".
  *
  * It used to be the uppercase tracked `labelSmall` this app's older lists draw.
- * The mock has "On this phone" and "My matches" as plain 12px secondary text and
- * carries no uppercase anywhere, so that was a Material holdover from before the
- * redesign - and it had followed this layout across to iPhone as well.
+ * The mock has it as plain 12px secondary text and carries no uppercase
+ * anywhere, so that was a Material holdover from before the redesign - and it
+ * had followed this layout across to iPhone as well.
  *
  * Not DrawerSectionLabel itself: that bakes in the drawer's own 4dp label gap,
  * and this screen states its spacing here. The two want one shared component;
@@ -281,6 +305,21 @@ private fun AnalyticsRowItem(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = 4.dp),
             )
+            // Absent until somebody is named, the same rule the drawer's own
+            // row follows (MatchListRow.kt) - "Home vs Away" on every row would
+            // say nothing.
+            row.item.playersLine?.let { players ->
+                Text(
+                    players,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = ShuttlTheme.extended.textTertiary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (row.item.hasStatusLine) {
+                MatchStatusLine(row.item, Modifier.padding(top = 6.dp))
+            }
             if (row.state == AnalyticsRowState.NOT_ON_DEVICE && showNotOnDeviceSubtitle) {
                 Text(
                     "Not on this phone",
@@ -288,23 +327,23 @@ private fun AnalyticsRowItem(
                     color = ShuttlTheme.extended.textTertiary,
                 )
             }
+            // Ready says nothing here, and InProgress does not repeat itself
+            // either: the status line above already reports the same run, from
+            // the very fields (item.action/statusText) this row's own
+            // affordance draws its wording from. Failed is the one case the
+            // status line cannot speak for - MatchStatusLine never shows an
+            // error string, on purpose - so this stays the row's only account
+            // of *why* it failed.
             if (row.state == AnalyticsRowState.ANALYSABLE) {
-                when (val a = row.affordance) {
-                    is AnalyseAffordance.InProgress -> Text(
-                        a.phase,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    is AnalyseAffordance.Failed -> Text(
-                        a.reason,
+                val failure = row.affordance as? AnalyseAffordance.Failed
+                failure?.let {
+                    Text(
+                        it.reason,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    AnalyseAffordance.Ready -> Unit
                 }
             }
         }
@@ -321,19 +360,15 @@ private fun AnalyticsRowItem(
             when (row.affordance) {
                 is AnalyseAffordance.InProgress ->
                     // The spinner goes inside the pill, using ShuttlButton's own
-                    // `loading`, rather than beside it. ScoreMatchRow boxes its
-                    // indicator to 48dp for a reason this row does not have
-                    // (ClipListScreen.kt:556-557: to match the IconButton it
-                    // swaps places with), and a bare indicator like
-                    // LocalVideoSection.kt:164 would collapse the slot to 16dp.
-                    // Either would swap a pill for something much narrower every
-                    // time a run starts. One control in all three states leaves
-                    // the slot a pill throughout; what still varies is the label
-                    // (as "Mark court" and "Retry" already do on a ScoreMatchRow)
-                    // plus the 14dp ring and its 8dp spacer while a run is in
-                    // flight. Exact parity would need a reserved width, and a
-                    // hardcoded one cannot be checked without a device and would
-                    // clip a one-line, no-wrap label at large font scales.
+                    // `loading`, rather than beside it: a bare indicator would
+                    // collapse the slot to 16dp and swap a pill for something
+                    // much narrower every time a run starts. One control in all
+                    // three states leaves the slot a pill throughout; what still
+                    // varies is the label plus the 14dp ring and its 8dp spacer
+                    // while a run is in flight. Exact parity would need a
+                    // reserved width, and a hardcoded one cannot be checked
+                    // without a device and would clip a one-line, no-wrap label
+                    // at large font scales.
                     ShuttlButton(
                         text = "Analyze",
                         onClick = onAnalyse,
