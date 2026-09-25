@@ -3,18 +3,30 @@ import XCTest
 @testable import iosApp
 
 /// `RowSwipe`'s three outcomes: a two-way choice, a single confirmation, and
-/// no swipe at all. Built through `buildMatchList`, the same fixtures
+/// no swipe at all; and `DeleteEverywhere`, what a row's delete everywhere
+/// calls. Built through `buildMatchList`, the same fixtures
 /// `MatchListBridgingTests` uses, so a case here cannot assert a combination
-/// the real join could never produce.
+/// the real join could never produce. Mirrors Android's RowGesturesTest.
 final class RowSwipeTests: XCTestCase {
 
-    private func entry(id: String, stage: AnalyzeStage = .local) -> LocalVideoEntry {
+    private func entry(id: String, stage: AnalyzeStage = .local, scoreLogId: String? = nil) -> LocalVideoEntry {
         LocalVideoEntry(
             id: id, uri: "LocalVideos/\(id).mp4", displayName: "m.mp4",
             durationMs: 48_000, sizeBytes: 2, addedAtEpochMs: 1_787_940_000_000,
             title: nil, description: nil, keypoints: nil,
             stage: stage, failedStep: nil, failureMessage: nil, resultSeen: false,
-            scoreLogId: nil
+            scoreLogId: scoreLogId
+        )
+    }
+
+    private func log(id: String, videoId: String? = nil) -> ScoreLog {
+        let at = KotlinInstant.companion.fromEpochMilliseconds(epochMilliseconds: 1_787_940_000_000)
+        return ScoreLog(
+            id: id, videoId: videoId, title: "Thu League",
+            homePlayers: [], awayPlayers: [], format: nil,
+            rules: ScoringRules.companion.BWF_21, setup: MatchSetup(firstServer: .home),
+            events: [], status: videoId != nil ? .bound : .unbound,
+            createdAt: at, updatedAt: at
         )
     }
 
@@ -29,11 +41,12 @@ final class RowSwipeTests: XCTestCase {
     }
 
     private func item(
-        clips: [RallyClip] = [], entries: [LocalVideoEntry] = [], currentUserId: String = "user-self"
+        clips: [RallyClip] = [], entries: [LocalVideoEntry] = [], logs: [ScoreLog] = [],
+        currentUserId: String = "user-self"
     ) -> MatchListItem {
         let input = MatchListInput(
             clips: clips, currentUserId: currentUserId,
-            sharerByVideoId: [:], metadataByVideoId: [:], scoreLogs: [],
+            sharerByVideoId: [:], metadataByVideoId: [:], scoreLogs: logs,
             localEntries: entries, cloudProgress: [:], deviceRuns: [:],
             storedTrackIds: [], storedSkeletonIds: [],
             deviceClipCounts: [:]
@@ -91,5 +104,39 @@ final class RowSwipeTests: XCTestCase {
         XCTAssertEqual(match.delete, .none)
         XCTAssertFalse(match.canRemoveFromPhone)
         XCTAssertNil(RowSwipe(match))
+    }
+
+    // MARK: - Delete everywhere hands over the row's own entry
+
+    func testAVideoMatchOnThisPhoneDeletesWithItsEntry() {
+        let match = item(
+            clips: [clip(1, videoId: "v1", owner: "user-self")],
+            entries: [entry(id: "v1", stage: .analyzed)]
+        )
+        XCTAssertEqual(DeleteEverywhere(match), .videoMatch(videoId: "v1", entryId: "v1"))
+    }
+
+    func testAScoredMatchDeletesWithItsEntry() {
+        let match = item(entries: [entry(id: "e1", scoreLogId: "l1")], logs: [log(id: "l1")])
+        XCTAssertEqual(DeleteEverywhere(match), .scoreMatch(scoreLogId: "l1", entryId: "e1"))
+    }
+
+    func testABoundMatchDeletesWithTheEntryTheListJoinedByVideoId() {
+        // A lookup by scoreLogId would miss this entry, which names no log,
+        // and leave the file behind as a phone-only row of a deleted match.
+        let match = item(
+            clips: [clip(1, videoId: "v1", owner: "user-self")],
+            entries: [entry(id: "v1", stage: .analyzed)],
+            logs: [log(id: "l1", videoId: "v1")]
+        )
+        XCTAssertEqual(DeleteEverywhere(match), .boundMatch(videoId: "v1", scoreLogId: "l1", entryId: "v1"))
+    }
+
+    func testASharedMatchIsLeftAndAMatchWithNothingToDeleteDoesNothing() {
+        XCTAssertEqual(
+            DeleteEverywhere(item(clips: [clip(1, videoId: "v1", owner: "someone-else")])),
+            .leaveShare(videoId: "v1")
+        )
+        XCTAssertNil(DeleteEverywhere(item(entries: [entry(id: "e1")])))
     }
 }

@@ -194,16 +194,12 @@ fun ClipListScreen(
     }
 
     fun deleteEverywhere(item: MatchListItem) {
-        val videoId = item.videoId
-        val scoreLogId = item.scoreLogId
-        when (item.delete) {
-            MatchDelete.VIDEO_MATCH -> videoId?.let { vm.deleteMatch(it, entryId = item.entryId) }
-            MatchDelete.SCORE_MATCH -> scoreLogId?.let { vm.deleteScoreMatch(it, entryId = item.entryId) }
-            MatchDelete.BOUND_MATCH -> if (videoId != null && scoreLogId != null) {
-                vm.deleteBoundMatch(videoId, scoreLogId, entryId = item.entryId)
-            }
-            MatchDelete.LEAVE_SHARE -> videoId?.let(vm::leaveShare)
-            MatchDelete.NONE -> Unit
+        when (val call = deleteEverywhereFor(item)) {
+            is DeleteEverywhere.VideoMatch -> vm.deleteMatch(call.videoId, entryId = call.entryId)
+            is DeleteEverywhere.ScoreMatch -> vm.deleteScoreMatch(call.scoreLogId, entryId = call.entryId)
+            is DeleteEverywhere.BoundMatch -> vm.deleteBoundMatch(call.videoId, call.scoreLogId, entryId = call.entryId)
+            is DeleteEverywhere.LeaveShare -> vm.leaveShare(call.videoId)
+            null -> Unit
         }
     }
 
@@ -414,8 +410,11 @@ fun ClipListScreen(
 /** [autoOpened] switches the sheet's dismiss label between "Skip" and "Cancel". */
 private data class DetailsTarget(val entry: LocalVideoEntry, val autoOpened: Boolean)
 
-/** What a swipe on a row does, and what the revealed label says. */
-private enum class Swipe(val label: String) {
+/**
+ * What a swipe on a row does, and what the revealed label says. Internal, not
+ * private: RowGesturesTest drives it directly, as iOS's RowSwipeTests does.
+ */
+internal enum class Swipe(val label: String) {
     /** Both a file here and a match in the cloud: the choice sheet. */
     CHOOSE(MatchListCopy.SWIPE_DELETE),
     DELETE(MatchListCopy.SWIPE_DELETE),
@@ -428,12 +427,43 @@ private enum class Swipe(val label: String) {
  * Null for a row nothing may be deleted from: a run in flight holds its file,
  * and deleting the match would delete it too.
  */
-private fun swipeFor(item: MatchListItem): Swipe? = when {
+internal fun swipeFor(item: MatchListItem): Swipe? = when {
     item.delete == MatchDelete.LEAVE_SHARE -> Swipe.LEAVE
     item.delete != MatchDelete.NONE && item.canRemoveFromPhone -> Swipe.CHOOSE
     item.delete != MatchDelete.NONE -> Swipe.DELETE
     item.canRemoveFromPhone -> Swipe.REMOVE
     else -> null
+}
+
+/** The view model call a row's delete everywhere makes, with the ids it passes. */
+internal sealed interface DeleteEverywhere {
+    data class VideoMatch(val videoId: String, val entryId: String?) : DeleteEverywhere
+    data class ScoreMatch(val scoreLogId: String, val entryId: String?) : DeleteEverywhere
+    data class BoundMatch(val videoId: String, val scoreLogId: String, val entryId: String?) : DeleteEverywhere
+    data class LeaveShare(val videoId: String) : DeleteEverywhere
+}
+
+/**
+ * What deleting [item] everywhere calls. Always with the row's own entry, never
+ * one looked up again from the match: the builder may have joined the entry to
+ * its log by the log's video id, which a scoreLogId lookup would miss, and the
+ * file would survive as a phone-only row of the match just deleted. Apart from
+ * the screen so RowGesturesTest can hold it to that.
+ */
+internal fun deleteEverywhereFor(item: MatchListItem): DeleteEverywhere? {
+    val videoId = item.videoId
+    val scoreLogId = item.scoreLogId
+    return when (item.delete) {
+        MatchDelete.VIDEO_MATCH -> videoId?.let { DeleteEverywhere.VideoMatch(it, item.entryId) }
+        MatchDelete.SCORE_MATCH -> scoreLogId?.let { DeleteEverywhere.ScoreMatch(it, item.entryId) }
+        MatchDelete.BOUND_MATCH -> if (videoId != null && scoreLogId != null) {
+            DeleteEverywhere.BoundMatch(videoId, scoreLogId, item.entryId)
+        } else {
+            null
+        }
+        MatchDelete.LEAVE_SHARE -> videoId?.let(DeleteEverywhere::LeaveShare)
+        MatchDelete.NONE -> null
+    }
 }
 
 private val MONTHS = listOf(

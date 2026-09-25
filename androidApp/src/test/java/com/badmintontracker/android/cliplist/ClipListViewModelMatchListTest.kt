@@ -246,6 +246,36 @@ class ClipListViewModelMatchListTest {
     }
 
     /**
+     * A device run decodes the file for minutes after the screen that started
+     * it is gone, so every phase of one holds the file: a delete the server
+     * accepts must leave it alone. Android has no paused run; iOS's test covers
+     * that one. Re-asked at discard time, since a run can start between the
+     * confirmation and the server's answer.
+     */
+    @Test
+    fun a_device_run_in_flight_keeps_its_file_through_a_delete_everywhere() = runTest {
+        listOf(
+            LocalAnalysisState.Preparing("Copying video"),
+            LocalAnalysisState.Analysing(0.4f),
+            LocalAnalysisState.Cutting(done = 2, total = 9),
+        ).forEach { run ->
+            localVideos.add(entry("v1", AnalyzeStage.ANALYZED))
+            clips.clips.value = listOf(clip("c1", "v1"))
+            val vm = newViewModel()
+            subscribe(vm)
+            deviceStates.value = mapOf("v1" to run)
+
+            vm.deleteMatch("v1", entryId = "v1")
+            advanceUntilIdle()
+
+            localVideos.get("v1").shouldNotBeNull()
+            localVideos.remove("v1")
+            deviceStates.value = emptyMap()
+        }
+        videos.deleteMatchCalls shouldBe listOf("v1", "v1", "v1")
+    }
+
+    /**
      * A Supabase client over a mock engine that accepts every request, signed in
      * as the owner. Built here rather than through the app's factory: Auth's
      * Android setup registers lifecycle callbacks on the main Looper, which a

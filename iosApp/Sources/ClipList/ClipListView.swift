@@ -326,18 +326,16 @@ struct MatchesList: View {
     }
 
     private func deleteEverywhere(_ item: MatchListItem) async {
-        switch item.delete {
-        case .videoMatch:
-            if let videoId = item.videoId { await model.deleteMatch(videoId: videoId, entryId: item.entryId) }
-        case .scoreMatch:
-            if let scoreLogId = item.scoreLogId { await model.deleteScoreMatch(scoreLogId: scoreLogId, entryId: item.entryId) }
-        case .boundMatch:
-            if let videoId = item.videoId, let scoreLogId = item.scoreLogId {
-                await model.deleteBoundMatch(videoId: videoId, scoreLogId: scoreLogId, entryId: item.entryId)
-            }
-        case .leaveShare:
-            if let videoId = item.videoId { await model.leaveShare(videoId: videoId) }
-        case .none:
+        switch DeleteEverywhere(item) {
+        case .videoMatch(let videoId, let entryId):
+            await model.deleteMatch(videoId: videoId, entryId: entryId)
+        case .scoreMatch(let scoreLogId, let entryId):
+            await model.deleteScoreMatch(scoreLogId: scoreLogId, entryId: entryId)
+        case .boundMatch(let videoId, let scoreLogId, let entryId):
+            await model.deleteBoundMatch(videoId: videoId, scoreLogId: scoreLogId, entryId: entryId)
+        case .leaveShare(let videoId):
+            await model.leaveShare(videoId: videoId)
+        case nil:
             break
         }
     }
@@ -447,6 +445,38 @@ enum RowSwipe {
         switch self {
         case .choose, .delete: return MatchListCopy.shared.SWIPE_DELETE
         case .leave, .remove: return MatchListCopy.shared.SWIPE_REMOVE
+        }
+    }
+}
+
+/// The model call a row's delete everywhere makes, with the ids it passes.
+/// Always the row's own entry, never one looked up again from the match: the
+/// builder may have joined the entry to its log by the log's video id, which a
+/// scoreLogId lookup would miss, and the file would survive as a phone-only
+/// row of the match just deleted. Internal so `RowSwipeTests` can hold it to
+/// that. Mirrors Android's `deleteEverywhereFor`.
+enum DeleteEverywhere: Equatable {
+    case videoMatch(videoId: String, entryId: String?)
+    case scoreMatch(scoreLogId: String, entryId: String?)
+    case boundMatch(videoId: String, scoreLogId: String, entryId: String?)
+    case leaveShare(videoId: String)
+
+    init?(_ item: MatchListItem) {
+        switch item.delete {
+        case .videoMatch:
+            guard let videoId = item.videoId else { return nil }
+            self = .videoMatch(videoId: videoId, entryId: item.entryId)
+        case .scoreMatch:
+            guard let scoreLogId = item.scoreLogId else { return nil }
+            self = .scoreMatch(scoreLogId: scoreLogId, entryId: item.entryId)
+        case .boundMatch:
+            guard let videoId = item.videoId, let scoreLogId = item.scoreLogId else { return nil }
+            self = .boundMatch(videoId: videoId, scoreLogId: scoreLogId, entryId: item.entryId)
+        case .leaveShare:
+            guard let videoId = item.videoId else { return nil }
+            self = .leaveShare(videoId: videoId)
+        case .none:
+            return nil
         }
     }
 }
