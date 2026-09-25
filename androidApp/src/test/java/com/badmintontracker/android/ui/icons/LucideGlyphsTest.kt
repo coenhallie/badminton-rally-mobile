@@ -33,7 +33,7 @@ class LucideGlyphsTest {
     fun every_match_list_glyph_builds_on_a_24_unit_viewport() {
         listOf(
             ShuttlIcons.Smartphone, ShuttlIcons.Cloud, ShuttlIcons.Film,
-            ShuttlIcons.Flame, ShuttlIcons.PersonStanding, ShuttlIcons.Hash,
+            ShuttlIcons.Flame, ShuttlIcons.PersonStanding, ShuttlIcons.Hash, ShuttlIcons.InfoCircle,
         ).forEach { icon ->
             icon.viewportWidth shouldBe 24f
             icon.viewportHeight shouldBe 24f

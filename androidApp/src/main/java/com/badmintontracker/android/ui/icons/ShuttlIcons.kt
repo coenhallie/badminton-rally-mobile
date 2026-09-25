@@ -69,6 +69,13 @@ object ShuttlIcons {
     val PersonStanding: ImageVector by lazy {
         buildLucideSvg("ShuttlPersonStanding", "M13 5a1 1 0 1 1-2 0a1 1 0 1 1 2 0z", "m9 20 3-6 3 6", "m6 8 6 2 6-2", "M12 10v4")
     }
+    /**
+     * The match list's legend button: Lucide's info, a circle with an "i". Not
+     * [Info], which despite its name is the alert "!" ErrorBanner draws.
+     */
+    val InfoCircle: ImageVector by lazy {
+        buildLucideSvg("ShuttlInfoCircle", "M22 12a10 10 0 1 1-20 0a10 10 0 1 1 20 0z", "M12 16v-4", "M12 8h.01")
+    }
     /** Score. */
     val Hash: ImageVector by lazy {
         buildLucideSvg("ShuttlHash", "M4 9h16", "M4 15h16", "M10 3 8 21", "M16 3l-2 18")

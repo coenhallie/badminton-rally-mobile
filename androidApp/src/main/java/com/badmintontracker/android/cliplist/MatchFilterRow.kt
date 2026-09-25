@@ -64,7 +64,7 @@ internal fun MatchFilterRow(
                     // scrolls rather than wrapping into a second row of chips.
                     .horizontalScroll(rememberScrollState())
                     .selectableGroup(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(PillGap),
             ) {
                 FilterPill(MatchListCopy.FILTER_ALL, selected == MatchListFilter.ALL) { onSelect(MatchListFilter.ALL) }
                 FilterPill(MatchListCopy.FILTER_ON_THIS_PHONE, selected == MatchListFilter.ON_THIS_PHONE) {
@@ -79,7 +79,7 @@ internal fun MatchFilterRow(
         }
         IconButton(onClick = onLegend) {
             Icon(
-                ShuttlIcons.Info,
+                ShuttlIcons.InfoCircle,
                 contentDescription = MatchListCopy.LEGEND_BUTTON,
                 modifier = Modifier.size(20.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -116,7 +116,7 @@ private fun FilterPill(text: String, selected: Boolean, onClick: () -> Unit) {
     ) {
         Text(
             text,
-            style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.5.sp),
+            style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp),
             color = if (selected) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
             modifier = Modifier
@@ -126,7 +126,20 @@ private fun FilterPill(text: String, selected: Boolean, onClick: () -> Unit) {
                     else Modifier.border(1.dp, MaterialTheme.colorScheme.outline, shape),
                 )
                 .indication(interactions, ripple())
-                .padding(horizontal = 12.dp, vertical = 7.dp),
+                .padding(horizontal = PillPaddingH, vertical = 7.dp),
         )
     }
 }
+
+/*
+ * Sized to fit the drawer's 330dp at the default font scale, measured rather
+ * than guessed. The row runs from the 24dp side margin to 12dp short of the
+ * other edge (the info IconButton's own padding backed out): 294dp. The three
+ * labels in Archivo SemiBold 12sp with labelMedium's -0.01em tracking measure
+ * 14.2 + 75.0 + 70.4 = 159.5dp (from the font's advance widths). Pills: 159.5
+ * + 6 x 10 padding = 219.5, two 8dp gaps = 235.5, the 48dp button = 283.5,
+ * which leaves about 10dp. At 12.5sp and 12dp padding it came to 298 and the
+ * last pill ran under the button. A larger font scale still scrolls.
+ */
+private val PillPaddingH = 10.dp
+private val PillGap = 8.dp
