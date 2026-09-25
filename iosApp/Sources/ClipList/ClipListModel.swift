@@ -8,13 +8,20 @@ final class ClipListModel {
     private(set) var clips: [RallyClip] = []
     private(set) var owned: [MatchSummary] = []
     private(set) var shared: [MatchSummary] = []
-    /// What the owned section renders: video-backed and courtside-scored matches
-    /// interleaved by date. `owned` stays as it is so nothing that reads it changes.
+    /// What the Analytics picker renders: video-backed and courtside-scored
+    /// matches interleaved by date. The drawer reads `matchList` instead; this
+    /// stays until Analytics moves onto the same list.
     private(set) var ownedRows: [MatchRow] = []
+    /// The drawer's rows: one per match wherever its video is, built by the
+    /// shared `buildMatchList` from everything below, so this list and
+    /// Android's cannot disagree about what a match is or what it has.
+    private(set) var matchList = MatchList(mine: [], shared: [])
     /// The single source of truth for every video on this phone. `ClipListView`
-    /// reads this rather than keeping its own copy, so the "On this phone" list and
-    /// the attach status this model derives from the same entries can never disagree.
+    /// reads this rather than keeping its own copy, so the rows and the attach
+    /// status this model derives from the same entries can never disagree.
     private(set) var localEntries: [LocalVideoEntry] = []
+    /// Ids (entry or cloud video) with a stored player track: a heatmap to open.
+    private(set) var storedTrackIds: Set<String> = []
     var isRefreshing = false
     var error: String? = nil
     private var sharerByVideoId: [String: String] = [:]
@@ -24,14 +31,41 @@ final class ClipListModel {
     /// which the card does carry, but also needs to be matched back to its own log id.
     private var scoreLogs: [ScoreLog] = []
     private var progressByEntryId: [String: AnalyzeProgress] = [:]
+    /// On-device runs, from `LocalAnalysisRunner.deviceRuns` through the view:
+    /// the runner is the view's, not this model's.
+    private var deviceRuns: [String: DeviceRun] = [:]
+    private var storedSkeletonIds: Set<String> = []
+    private var deviceClipCounts: [String: KotlinInt] = [:]
     /// Whether the refresh that opens the list has been kicked off. The ONLY
     /// thing start() does once per model rather than once per appearance - see
     /// `start()` for why the loops must not share this latch.
     private var initialRefreshStarted = false
 
-    init(rally: RallyApp, analyze: AnalyzeCoordinator) {
+    // The stores this model reads and deletes through. `rally`'s own unless a
+    // test hands in a double: a delete's outcome turns on what the server
+    // says, and only a double can say no, or yes, on cue.
+    private let clipsRepo: ClipsRepository
+    private let videos: VideosRepository
+    private let scoreLogsRepo: ScoreLogsRepository
+    private let localVideos: LocalVideoRepository
+    private let localAnnotations: LocalAnnotationsRepository
+
+    init(
+        rally: RallyApp,
+        analyze: AnalyzeCoordinator,
+        clips: ClipsRepository? = nil,
+        videos: VideosRepository? = nil,
+        scoreLogs: ScoreLogsRepository? = nil,
+        localVideos: LocalVideoRepository? = nil,
+        localAnnotations: LocalAnnotationsRepository? = nil
+    ) {
         self.rally = rally
         self.analyze = analyze
+        self.clipsRepo = clips ?? rally.clips
+        self.videos = videos ?? rally.videos
+        self.scoreLogsRepo = scoreLogs ?? rally.scoreLogs
+        self.localVideos = localVideos ?? rally.localVideos
+        self.localAnnotations = localAnnotations ?? rally.localAnnotations
     }
 
     /// Runs for as long as the list is on screen: `ClipListView`'s `.task` calls
@@ -69,7 +103,7 @@ final class ClipListModel {
         await withTaskGroup(of: Void.self) { group in
             group.addTask { @MainActor [weak self] in
                 guard let self else { return }
-                for await logs in self.rally.scoreLogs.logs {
+                for await logs in self.scoreLogsRepo.logs {
                     self.scoreLogs = logs
                     self.scoreCards = logs.map { ScoreMatchCardKt.buildScoreMatchCard(log: $0) }
                     self.regroup()
@@ -77,7 +111,7 @@ final class ClipListModel {
             }
             group.addTask { @MainActor [weak self] in
                 guard let self else { return }
-                for await entries in self.rally.localVideos.entries {
+                for await entries in self.localVideos.entries {
                     self.localEntries = entries
                     self.regroup()
                 }
@@ -91,7 +125,7 @@ final class ClipListModel {
             }
             group.addTask { @MainActor [weak self] in
                 guard let self else { return }
-                for await latest in self.rally.clips.observeClips() {
+                for await latest in self.clipsRepo.observeClips() {
                     self.clips = latest
                     self.regroup()
                 }
@@ -100,7 +134,7 @@ final class ClipListModel {
             // made on the match page has to reach every row the moment it lands.
             group.addTask { @MainActor [weak self] in
                 guard let self else { return }
-                for await map in self.rally.videos.observeMatchMetadata() {
+                for await map in self.videos.observeMatchMetadata() {
                     self.metadataByVideoId = map
                     self.regroup()
                 }
@@ -112,7 +146,7 @@ final class ClipListModel {
         isRefreshing = true
         error = nil
         do {
-            try await rally.clips.refresh()
+            try await clipsRepo.refresh()
         } catch {
             self.error = "Couldn't refresh matches. Pull to try again."
         }
@@ -127,21 +161,30 @@ final class ClipListModel {
         // A success lands in the repository's cache, which `observe()` follows.
         // Same soft-failure contract as the shares lookup: a failure leaves the
         // previous map alone rather than blanking every name the user can see.
-        _ = try? await SwiftInteropKt.listMatchMetadataOrNull(rally.videos)
+        _ = try? await SwiftInteropKt.listMatchMetadataOrNull(videos)
         // Soft failure, same contract as the shares and metadata reads: the matches
         // are all still on this phone, so there is nothing to say and nothing for
         // the user to do about it.
-        _ = try? await rally.scoreLogs.syncScoreLogsOrMessage()
+        _ = try? await scoreLogsRepo.syncScoreLogsOrMessage()
         regroup()
         isRefreshing = false
     }
 
-    func deleteMatch(videoId: String) async {
-        if let message = try? await SwiftInteropKt.deleteMatchOrMessage(rally.videos, videoId: videoId) {
+    /// Deletes the cloud match, and with it the file on this phone when the row
+    /// had one (`entryId`). The file has to go too: the entry outlives its
+    /// analysis at ANALYZED, and a surviving entry would bring the row straight
+    /// back as a phone-only match the coach just deleted everywhere.
+    ///
+    /// Only on success. A failed delete leaves the match in the cloud, and a
+    /// file thrown away under it would turn "nothing happened" into "half of it
+    /// happened". Mirrors Android's `ClipListViewModel.deleteMatchVideo`.
+    func deleteMatch(videoId: String, entryId: String? = nil) async {
+        if let message = try? await SwiftInteropKt.deleteMatchOrMessage(videos, videoId: videoId) {
             error = message
             return
         }
-        rally.clips.pruneVideo(videoId: videoId)
+        if let entryId { discardEntry(entryId) }
+        clipsRepo.pruneVideo(videoId: videoId)
         // The database does this too, through ON DELETE SET NULL and the unbind
         // trigger, but the phone would not learn it until the next sync and
         // would go on advertising clips for a deleted video. Idempotent against
@@ -153,8 +196,8 @@ final class ClipListModel {
         // is here to mirror the trigger above, so that a bound match deleted
         // from the list does not leave a stale binding behind on this phone
         // between the delete and the next sync.
-        for log in rally.scoreLogs.logs.value where log.videoId == videoId {
-            rally.scoreLogs.detachVideo(id: log.id)
+        for log in scoreLogsRepo.logs.value where log.videoId == videoId {
+            scoreLogsRepo.detachVideo(id: log.id)
         }
         await refresh()
     }
@@ -164,45 +207,84 @@ final class ClipListModel {
             error = message
             return
         }
-        rally.clips.pruneVideo(videoId: videoId)
+        clipsRepo.pruneVideo(videoId: videoId)
         await refresh()
     }
 
-    /// No refresh afterwards: the repository has already dropped it locally and its
-    /// flow has pushed the shorter list through `regroup()`.
+    /// Frees the file and keeps the tracks: the coach wants the space back, not
+    /// the match gone, so the heatmap and base position keep working. Mirrors
+    /// androidApp's `LocalVideoListViewModel.remove`. The file goes with the
+    /// entry: the registry's onRemoved hook is wired to LocalVideoFiles.delete
+    /// in createRallyApp, so every removal path cleans up.
+    func removeFromPhone(entryId: String) {
+        localVideos.freeVideo(id: entryId)
+        localAnnotations.removeAllFor(videoId: entryId)
+    }
+
+    /// A scored match with no clips. There is no leaveShare counterpart:
+    /// match_shares is keyed on video_id, so a score-only match cannot be
+    /// shared and therefore cannot be left.
+    func deleteScoreMatch(scoreLogId: String, entryId: String? = nil) async {
+        // The row's entry, if the log did not orphan it (see deleteScoreLog):
+        // only once the server has agreed. A no-op when it is already gone.
+        if await deleteScoreLog(scoreLogId: scoreLogId, hasVideo: false, entryId: entryId), let entryId {
+            discardEntry(entryId)
+        }
+    }
+
+    /// A bound row with clips deletes two things at once, score log first:
+    /// `deleteMatch`'s refresh() syncs score logs, and if that sync landed while
+    /// the score log's own delete was still on the wire, it would pull the row
+    /// back from the server and resurrect the match the coach just deleted.
     ///
+    /// If the score log's server delete fails, the video delete does not run
+    /// at all: the row is already gone from this phone (the failure message
+    /// says so), and the video and its clips are left untouched rather than
+    /// deleted on a best-effort basis while the coach cannot see whether the
+    /// rest of it landed. Mirrors Android's `ClipListViewModel.deleteBoundMatch`.
+    func deleteBoundMatch(videoId: String, scoreLogId: String, entryId: String? = nil) async {
+        if await deleteScoreLog(scoreLogId: scoreLogId, hasVideo: true, entryId: entryId) {
+            // The row's entry goes with the video, on the video's own success:
+            // a file discarded before then would be lost under a cloud match
+            // that could still survive.
+            await deleteMatch(videoId: videoId, entryId: entryId)
+        }
+    }
+
     /// Returns whether the server accepted the delete, not whether the row left
     /// this phone - the repository removes it locally either way, win or lose.
-    /// A caller chaining another mutation after this one (see `ClipListView`'s
-    /// `.deleteBoundMatch`) needs that server outcome to decide whether it is
+    /// `deleteBoundMatch` needs that server outcome to decide whether it is
     /// safe to go on.
-    @discardableResult
-    func deleteScoreMatch(scoreLogId: String, hasVideo: Bool = false) async -> Bool {
+    private func deleteScoreLog(scoreLogId: String, hasVideo: Bool, entryId: String?) async -> Bool {
         // The log is gone from this device either way - ScoreLogsRepository.delete
         // removes it locally unconditionally, win or lose on the server - so an
         // entry pointed at it is orphaned regardless of the outcome below, and
-        // this must not be gated on that outcome. Only when nothing is in flight
-        // for it: canRemoveLocalVideo already exists to protect an active
-        // upload/pipeline, and cancelling one mid-flight is deliberately out of
-        // scope here. Without this a settled entry - most reachably one
-        // AnalyzeCoordinator's zero-rally detection left FAILED - would be
-        // invisible ("On this phone" filters on scoreLogId == nil) and
-        // unremovable. Mirrors Android's ClipListViewModel.deleteScoreLog.
-        // Reads the repository directly rather than the cached `localEntries` -
-        // that cache is only as fresh as `start()`'s loop has delivered so far,
-        // and this must see the current entry even if called before that loop's
-        // first emission lands. Matches Android's `localVideos.entries.value`.
-        if let entry = rally.localVideos.entries.value.first(where: { $0.scoreLogId == scoreLogId }),
-           LocalVideoEntryKt.canRemoveLocalVideo(stage: entry.stage) {
-            rally.localVideos.remove(id: entry.id)
-            rally.localAnnotations.removeAllFor(videoId: entry.id)
+        // this must not be gated on that outcome. Without this a settled entry -
+        // most reachably one AnalyzeCoordinator's zero-rally detection left
+        // FAILED - would be invisible (the match list hides an entry whose match
+        // is not in the list) and unremovable.
+        //
+        // Only an entry this log orphans goes here, win or lose: one whose own
+        // scoreLogId names the log. The match list also joins an entry to its
+        // log by the log's video id (`entryId`, the row's own entry); such an
+        // entry does not point at the log, is not orphaned by its removal, and
+        // would come back as an ordinary video on this phone. Discarding it
+        // before the server has agreed would lose the file while the match
+        // survives in the cloud, so the callers discard it on success instead.
+        // The scoreLogId lookup stays for a caller without a row.
+        //
+        // Reads the repository directly rather than the cached `localEntries`:
+        // that cache is only as fresh as `start()`'s loop has delivered so far.
+        // Mirrors Android's ClipListViewModel.deleteScoreLog.
+        let candidate = entryId ?? localVideos.entries.value.first { $0.scoreLogId == scoreLogId }?.id
+        if let candidate, localVideos.get(id: candidate)?.scoreLogId == scoreLogId {
+            discardEntry(candidate)
         }
         // do/catch, not `try?`: `try?` flattens a thrown error and a nil (success)
         // into the same case, so a throw would return true here and let the caller
         // go on to the irreversible video delete plus a resurrecting refresh().
-        // Mirrors Android's `Result.isSuccess` in ClipListViewModel.deleteScoreLog.
         do {
-            if let message = try await rally.scoreLogs.deleteScoreMatchOrMessage(id: scoreLogId, hasVideo: hasVideo) {
+            if let message = try await scoreLogsRepo.deleteScoreMatchOrMessage(id: scoreLogId, hasVideo: hasVideo) {
                 error = message
                 return false
             }
@@ -211,6 +293,44 @@ final class ClipListModel {
             self.error = SwiftInteropKt.scoreLogDeleteFailedMessage(hasVideo: hasVideo)
             return false
         }
+    }
+
+    /// The entry and its notes, all of it (the tracks and skeleton go with a
+    /// DISCARDED entry). Guarded by the same rule the row's delete is offered
+    /// under, re-asked here because a run can start between the confirmation
+    /// and the server's answer: deleting the file under it would corrupt the
+    /// run and swallow its outcome. The row's match is gone either way; a
+    /// guarded entry simply stays as a video on this phone.
+    private func discardEntry(_ entryId: String) {
+        guard let entry = localVideos.get(id: entryId),
+              LocalVideoEntryKt.canRemoveLocalVideo(stage: entry.stage)
+        else { return }
+        switch deviceRuns[entryId]?.kind {
+        case .running, .paused: return
+        case .failed, nil: break
+        }
+        localVideos.remove(id: entryId)
+        localAnnotations.removeAllFor(videoId: entryId)
+    }
+
+    /// The on-device runs, as `LocalAnalysisRunner.deviceRuns` reduces them.
+    func updateDeviceRuns(_ runs: [String: DeviceRun]) {
+        guard runs != deviceRuns else { return }
+        deviceRuns = runs
+        regroup()
+    }
+
+    /// What earlier runs left on disk: tracks and skeletons keyed by entry or
+    /// video id, and the rallies a device run cut, keyed by entry id.
+    func updateStoredResults(tracks: Set<String>, skeletons: Set<String>, clipCounts: [String: Int]) {
+        let counts = clipCounts.mapValues { KotlinInt(int: Int32($0)) }
+        // Most re-reads find what the last one found; rebuilding the list for
+        // them would redraw every row for nothing.
+        guard tracks != storedTrackIds || skeletons != storedSkeletonIds || counts != deviceClipCounts else { return }
+        storedTrackIds = tracks
+        storedSkeletonIds = skeletons
+        deviceClipCounts = counts
+        regroup()
     }
 
     /// What each scored match's video is doing, keyed by score log id. Calls the
@@ -246,5 +366,18 @@ final class ClipListModel {
             scoreMatches: scoreCards,
             attachByScoreLogId: attachMap()
         )
+        matchList = MatchListBuilderKt.buildMatchList(input: MatchListInput(
+            clips: clips,
+            currentUserId: rally.auth.currentUserId(),
+            sharerByVideoId: sharerByVideoId,
+            metadataByVideoId: metadataByVideoId,
+            scoreLogs: scoreLogs,
+            localEntries: localEntries,
+            cloudProgress: progressByEntryId,
+            deviceRuns: deviceRuns,
+            storedTrackIds: storedTrackIds,
+            storedSkeletonIds: storedSkeletonIds,
+            deviceClipCounts: deviceClipCounts
+        ))
     }
 }

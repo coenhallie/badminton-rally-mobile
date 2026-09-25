@@ -46,7 +46,7 @@ enum LocalVideoStatus {
             // so this row is the only place a coach learns it broke.
             return "Analysis failed: \(message)"
         case .paused:
-            return "Paused - keep Shuttl open"
+            return pausedText
         case .idle, .done:
             return text(stage: stage, progress: progress)
         case .preparing, .analysing, .cutting:
@@ -54,6 +54,36 @@ enum LocalVideoStatus {
                 return text(stage: stage, progress: progress)
             }
             return BackgroundWorkKt.deviceWorkLabel(phase: work.phase, fraction: nil) + "…"
+        }
+    }
+
+    /// What a paused device run says, on this row and on the match list's.
+    static let pausedText = "Paused - keep Shuttl open"
+
+    /// A device run as the shared match list sees it, or nil when there is no
+    /// run to speak of: idle, or done, in which case the files it left say
+    /// what it produced.
+    ///
+    /// The one reduction from this platform's run state to the list's, next to
+    /// `rowStatus` so the two cannot word a run differently: the builder turns
+    /// FAILED into the same "Analysis failed: ..." line and PAUSED into this
+    /// message. A paused run keeps the phase it was frozen in, although the
+    /// list shows only the message for it.
+    static func deviceRun(for state: LocalAnalysisState) -> DeviceRun? {
+        switch state {
+        case .idle, .done:
+            return nil
+        case .preparing:
+            return DeviceRun(kind: .running, phase: .preparing, message: nil)
+        case .analysing:
+            return DeviceRun(kind: .running, phase: .analysing, message: nil)
+        case .cutting:
+            return DeviceRun(kind: .running, phase: .cutting, message: nil)
+        case .paused(let interrupted):
+            let phase = deviceRun(for: interrupted)?.phase ?? .analysing
+            return DeviceRun(kind: .paused, phase: phase, message: pausedText)
+        case .failed(let message):
+            return DeviceRun(kind: .failed, phase: .analysing, message: message)
         }
     }
 

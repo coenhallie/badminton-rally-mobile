@@ -268,9 +268,9 @@ struct HomeView: View {
             // looks exactly as it did before he picked the file. This binding
             // is the auto-open case only (see its declaration), so the row
             // menu's own "Edit details", which already happens with the drawer
-            // open, does not come through here. Entries are stored newest
-            // first, so the new row is the top of "On this phone" with nothing
-            // to scroll to.
+            // open, does not come through here. The list sorts a video on when
+            // it was added, newest first, so the new row is at the top with
+            // nothing to scroll to.
             //
             // Mirrors HomeScreen.kt's `onAutoDetailsClosed`. The two are one
             // rule written twice, with nothing shared to hold them together,

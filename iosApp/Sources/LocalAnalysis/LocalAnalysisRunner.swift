@@ -176,7 +176,20 @@ final class LocalAnalysisRunner {
         } else {
             settledRuns.remove(entryId)
         }
+        // Written only when the reduction moves, never per frame: an analysing
+        // run is RUNNING/ANALYSING at 3% and at 97%, and the match list
+        // rebuilds itself on every change to this map.
+        let run = state.flatMap(LocalVideoStatus.deviceRun(for:))
+        if deviceRuns[entryId] != run {
+            deviceRuns[entryId] = run
+        }
     }
+
+    /// Every run as the shared match list sees it, keyed by entry id. Derived
+    /// in `set(_:for:)` like `settledRuns`, and for the same reason: a list
+    /// observing `states` would redraw at the rate of the progress bar, and
+    /// this changes a handful of times per run.
+    private(set) var deviceRuns: [String: DeviceRun] = [:]
 
     // `nonisolated`, because `analyse` is: both stores are stateless value
     // types over the file system, and the run reaches them from the queue it
@@ -292,6 +305,12 @@ final class LocalAnalysisRunner {
     /// in one place, is what keeps the two screens from disagreeing again.
     nonisolated func storedTrackIds(among entryIds: [String]) -> Set<String> {
         Set(entryIds.filter { hasStoredTrack(entryId: $0) })
+    }
+
+    /// Every id with a skeleton this app can draw, on the same footing as
+    /// `storedTrackIds`: one header check per id, asked once for the list.
+    nonisolated func storedSkeletonIds(among entryIds: [String]) -> Set<String> {
+        Set(entryIds.filter { hasStoredSkeleton(entryId: $0) })
     }
 
     /// How many clips each entry has, for the rows that offer to play them.

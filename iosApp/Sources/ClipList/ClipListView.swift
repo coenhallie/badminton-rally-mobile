@@ -2,7 +2,13 @@ import SwiftUI
 import Shared
 
 /// The list of matches, now the drawer's content rather than the app's front
-/// door. Home owns every navigation destination this list used to register
+/// door: one row per match, wherever its video is, with "Shared with me" below.
+///
+/// Every row comes from the shared builder (`ClipListModel.matchList`); this
+/// view only draws them and turns their taps, menus and swipes into model
+/// calls and the closures below. Mirrors androidApp's ClipListScreen.kt.
+///
+/// Home owns every navigation destination this list used to register
 /// (including `CreateFlowDestination` - see `HomeView.swift`'s own copy of its
 /// doc comment) and hands this view closures instead: `onMatchTap`,
 /// `onCourtMarking` and `onLocalPlayer` report a tap upward so Home can drive
@@ -12,16 +18,14 @@ struct MatchesList: View {
     let analyze: AnalyzeCoordinator
     /// Owned by Home, not here: Home's "Add new match" sheet is what creates
     /// entries now, and `intake.error`/`intake.lastAddedId` are surfaced and
-    /// consumed on Home's screen, not behind a closed drawer. This list only
-    /// ever calls `remove(entry:)`, which is stateless from its point of view.
+    /// consumed on Home's screen, not behind a closed drawer.
     let intake: LocalVideoIntake
     /// Owned by Home, like every destination this list used to register. It has
     /// to be one instance for the whole app rather than one per screen: its own
     /// `localEntries` is documented as "the single source of truth for every
     /// video on this phone", and a second instance would make that false while
     /// doubling four flow subscriptions and four network calls per refresh.
-    /// Analytics reads the same one. This view no longer builds it, so the splash
-    /// it used to show for the one frame before `.task` ran is gone with it.
+    /// Analytics reads the same one.
     let model: ClipListModel
     /// The on-device pipeline, or nil in a build with no models staged. Read for
     /// the same reason Analytics reads it: a device run never moves the entry's
@@ -39,56 +43,33 @@ struct MatchesList: View {
     /// opens its add sheet.
     let onAddMatch: () -> Void
 
-    @State private var shareTarget: MatchSummary? = nil
-    @State private var confirmTarget: PendingMatchAction? = nil
+    @State private var shareTarget: ShareTarget? = nil
     @State private var thumbnails = LocalThumbnails()
-    @State private var progressById: [String: AnalyzeProgress] = [:]
     @State private var resultEntry: LocalVideoEntry? = nil
     @State private var detailsTarget: MatchDetailsTarget? = nil
-    @State private var deleteScoreTarget: ScoreMatchCard? = nil
-    /// What an on-device run left on disk for each row, read for the whole list
-    /// at once rather than per row - see `LocalAnalysisRunner.storedClipCounts`
-    /// and `AnalyticsListView`'s own note on the same trap.
-    @State private var localClipCounts: [String: Int] = [:]
-    @State private var storedTrackIds: Set<String> = []
-    /// The video the coach has asked to remove, held until they confirm.
-    ///
-    /// androidApp has had a confirm dialog on this since it shipped; iOS
-    /// removed on the tap. That was survivable while removal only cost the
-    /// footage, and is not now that it also drops the skeleton - a destructive
-    /// action with a consequence worth stating needs a beat to read it.
-    @State private var removeTarget: LocalVideoEntry? = nil
+    @State private var legendOpen = false
+    /// The chosen filter. What the list applies is `effectiveFilter` of it, so
+    /// a filter whose chips are hidden never filters anything.
+    @State private var filter: MatchListFilter = .all
+    // A row the coach asked to delete or remove, waiting on a confirmation:
+    // the two-way choice when a swipe finds both a file here and a match to
+    // delete, the single dialog otherwise.
+    @State private var choiceTarget: MatchListItem? = nil
+    @State private var deleteTarget: MatchListItem? = nil
+    /// The video the coach has asked to remove, held until they confirm: a
+    /// destructive action with a consequence worth stating needs a beat to
+    /// read it.
+    @State private var removeTarget: MatchListItem? = nil
 
     var body: some View {
-        // Split from `listBody` rather than chained onto it: the existing chain
-        // was already at the type-checker's limit, and one more modifier tipped
-        // it into "unable to type-check this expression in reasonable time".
-        listBody.alert(
-            "Remove video?",
-            isPresented: Binding(
-                get: { removeTarget != nil },
-                set: { if !$0 { removeTarget = nil } }
-            ),
-            presenting: removeTarget
-        ) { entry in
-            Button("Remove", role: .destructive) {
-                intake.remove(entry: entry)
-                thumbnails.evict(id: entry.id)
-                removeTarget = nil
-            }
-            Button("Cancel", role: .cancel) { removeTarget = nil }
-        } message: { entry in
-            // The shared wording, so both phones say the same thing about what
-            // a removal costs. `storedTrackIds` already answers "is there an
-            // analysis to lose" for this list, with no extra disk read.
-            Text(AnalysisCapabilityKt.videoRemovalMessage(
-                hasAnalysis: storedTrackIds.contains(entry.id)
-            ))
-        }
+        // Split into stages rather than one chain: the list's modifier chain is
+        // at the type-checker's limit, and one more modifier tips it into
+        // "unable to type-check this expression in reasonable time".
+        dialogs(listBody)
     }
 
     private var listBody: some View {
-        content(model)
+        content
         .task { await model.start() }
         .task {
             // Drives only the auto-alert side effect. `model.localEntries` (fed by
@@ -97,31 +78,30 @@ struct MatchesList: View {
             // could momentarily disagree with it.
             for await entries in rally.localVideos.entries {
                 if resultEntry == nil {
-                    // A video claimed by a match is that match's row, not a
-                    // standalone one - see `standalone` in `content(_:)`.
+                    // A video claimed by a match fails on its match's row, which
+                    // says so in its own failure line and offers Retry.
                     resultEntry = entries.filter { $0.scoreLogId == nil }
                         .first { $0.stage == .failed && !$0.resultSeen }
                 }
             }
         }
-        .task {
-            for await map in analyze.progress {
-                progressById = map
-            }
+        // `deviceRuns`, never `states`: the runner writes `states` once per
+        // analysed frame, and this list rebuilds on every change it sees.
+        .onChange(of: localAnalysis?.deviceRuns ?? [:], initial: true) { _, runs in
+            model.updateDeviceRuns(runs)
         }
-        .onChange(of: model.localEntries.map(\.id)) { _, ids in
-            Task { await refreshStoredResults(ids) }
+        // Re-read what earlier runs left on disk whenever that could have
+        // changed: an entry arriving or leaving, a stage moving (a cloud run
+        // installs its track before it writes ANALYZED), a cloud video
+        // appearing, or a device run settling - a track and a set of clips
+        // appear on disk without anything else in the list moving. The key is
+        // what changes, not the ids alone: Android found an ids-only key never
+        // showed a finished run's results.
+        .task(id: storedResultsKey) { await refreshStoredResults(storedResultsKey) }
+        .sheet(item: $shareTarget) { target in
+            ShareSheetView(rally: rally, videoId: target.videoId)
         }
-        // Also when a run settles: a track and a set of clips appear on disk
-        // without the entry list moving, so nothing above would notice. Keyed on
-        // which runs have settled rather than on the state map, which moves on
-        // every progress callback - see `settledRuns`.
-        .onChange(of: settledRuns) { _, _ in
-            Task { await refreshStoredResults(model.localEntries.map(\.id)) }
-        }
-        .sheet(item: $shareTarget) { match in
-            ShareSheetView(rally: rally, videoId: match.videoId)
-        }
+        .sheet(isPresented: $legendOpen) { MatchLegendSheet() }
         .sheet(item: $detailsTarget) { target in
             MatchDetailsSheet(
                 entry: target.entry,
@@ -147,7 +127,7 @@ struct MatchesList: View {
             Button("Retry") {
                 rally.localVideos.acknowledgeResult(id: entry.id)
                 resultEntry = nil
-                analyzeAction(entry)
+                analyzeAction(entryId: entry.id)
             }
             Button("Close", role: .cancel) {
                 rally.localVideos.acknowledgeResult(id: entry.id)
@@ -156,145 +136,57 @@ struct MatchesList: View {
         } message: { entry in
             Text(entry.failureMessage ?? "Unknown error")
         }
+        .refreshable { await model.refresh() }
     }
 
-    private func analyzeAction(_ entry: LocalVideoEntry) {
-        // The shared rule, not a sixth hand-written copy. Android had four and
-        // the drift had already happened: its Analytics list shipped without the
-        // keypoints half and sent coaches back to re-mark a court that was
-        // already saved.
-        switch analyseAction(for: entry) {
-        case .resume(let entryId):
-            analyze.retry(entryId: entryId)
-        case .markCourt(let entryId):
-            onCourtMarking(CourtMarkingRoute(entryId: entryId))
-        }
-    }
-
-    @ViewBuilder
-    private func content(_ model: ClipListModel) -> some View {
-        // A video picked for a match is represented by that match's row
-        // (MatchRow.score's `video`). Listing it again here under "On this
-        // phone" would be the same match twice.
-        let standalone = model.localEntries.filter { $0.scoreLogId == nil }
+    private var content: some View {
+        let mine = model.matchList.mine
+        let shared = model.matchList.shared
+        let showChips = MatchListFilterKt.showsFilters(mineCount: Int32(mine.count))
+        let applied = MatchListFilterKt.effectiveFilter(chosen: filter, mineCount: Int32(mine.count))
+        let visible = mine.filter { $0.passes(filter: applied) }
         return List {
-            // The labels are rows INSIDE their section, not `Section(header:)`.
-            // A plain list pins a header to the top and scrolls the rows under
-            // it, which put a blurred card behind "On this phone". Dropping the
-            // sections entirely fixed that but left the list opening scrolled to
-            // its bottom - both verified on the simulator. Keeping the sections
-            // and demoting the labels to ordinary rows gets both: the labels
-            // scroll with the content, and the list opens at the top.
-            if !standalone.isEmpty {
-                Section {
-                    DrawerSectionLabel("On this phone")
-                        .drawerListRow(top: DrawerList.firstSectionGap)
-                    ForEach(standalone) { entry in
-                        LocalVideoRowView(
-                            entry: entry,
-                            thumbnails: thumbnails,
-                            progress: progressById[entry.id],
-                            device: localAnalysis?.state(for: entry.id) ?? .idle,
-                            onTap: { onLocalPlayer(LocalPlayerRoute(entryId: entry.id)) },
-                            onAnalyze: { analyzeAction(entry) },
-                            onRemove: { removeTarget = entry },
-                            onEditDetails: {
-                                detailsTarget = MatchDetailsTarget(entry: entry, autoOpened: false)
-                            },
-                            localClips: localClipCounts[entry.id],
-                            onOpenLocalClips: { onLocalClips(LocalClipsRoute(entryId: entry.id)) },
-                            onOpenHeatmap: storedTrackIds.contains(entry.id)
-                                ? { onAnalyticsDetail(AnalyticsDetailRoute(entryId: entry.id)) }
-                                : nil
-                        )
-                        .drawerListRow()
-                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                            // Hidden mid-pipeline: removing would delete the file
-                            // under the active upload - or under a device run's own
-                            // decoder - and swallow the run's outcome.
-                            if LocalVideoStatus.canRemove(
-                                stage: entry.stage,
-                                device: localAnalysis?.state(for: entry.id) ?? .idle
-                            ) {
-                                Button(role: .destructive) {
-                                    removeTarget = entry
-                                } label: {
-                                    Label("Remove", systemImage: "trash")
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            // Rows, not `Section(header:)`: a plain list pins a header to the
+            // top and scrolls the rows under it, which put a blurred card
+            // behind the label. Ordinary rows scroll with the content, and the
+            // list opens at the top.
+            MatchFilterRow(
+                showChips: showChips,
+                selected: applied,
+                onSelect: { filter = $0 },
+                onLegend: { legendOpen = true }
+            )
+            .listRowInsets(EdgeInsets(
+                top: DrawerList.listTopInset, leading: DrawerList.sideMargin,
+                bottom: DrawerList.rowGap, trailing: MatchFilterRow.trailingInset
+            ))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
             if let error = model.error {
                 ErrorBanner(message: error)
                     .drawerListRow()
             }
-            if !model.ownedRows.isEmpty {
-                Section {
-                    DrawerSectionLabel("My matches")
-                        .drawerListRow(top: DrawerList.sectionGap)
-                    ForEach(model.ownedRows) { listRow in
-                        switch listRow {
-                        case .video(let match):
-                            row(match, model: model)
-                                .drawerListRow()
-                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                    Button {
-                                        confirmTarget = PendingMatchAction(match: match, kind: .deleteMatch)
-                                    } label: {
-                                        Label("Delete", systemImage: "trash")
-                                    }
-                                    // Swipe labels render white on the tint, and white on
-                                    // Shuttl.error is 3.76:1. onError is the pairing that
-                                    // exists for exactly this and gives 5.08:1, so it is
-                                    // stated rather than left to the system default.
-                                    .foregroundStyle(Shuttl.onError)
-                                    .tint(Shuttl.error)
-                                }
-                        case .score(let content):
-                            scoreRow(content, model: model)
-                                .drawerListRow()
-                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                    Button {
-                                        // A row with clips deletes two things, not one: the
-                                        // video and the score log. That case gets its own
-                                        // confirmation so the wording can say so.
-                                        if let video = content.video {
-                                            confirmTarget = PendingMatchAction(
-                                                match: video,
-                                                kind: .deleteBoundMatch(scoreLogId: content.card.scoreLogId)
-                                            )
-                                        } else {
-                                            deleteScoreTarget = content.card
-                                        }
-                                    } label: {
-                                        Label("Delete", systemImage: "trash")
-                                    }
-                                    .foregroundStyle(Shuttl.onError)
-                                    .tint(Shuttl.error)
-                                }
-                        }
-                    }
-                }
+            ForEach(visible, id: \.key) { item in
+                row(item)
             }
-            if !model.shared.isEmpty {
-                Section {
-                    DrawerSectionLabel("Shared with me")
-                        .drawerListRow(top: DrawerList.sectionGap)
-                    ForEach(model.shared, id: \.videoId) { match in
-                        row(match, model: model)
-                            .drawerListRow()
-                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                Button {
-                                    confirmTarget = PendingMatchAction(match: match, kind: .leaveShare)
-                                } label: {
-                                    Label("Remove", systemImage: "trash")
-                                }
-                                .foregroundStyle(Shuttl.onError)
-                                .tint(Shuttl.error)
-                            }
-                    }
+            if visible.isEmpty && !mine.isEmpty {
+                Text(applied == .onThisPhone
+                     ? MatchListCopy.shared.EMPTY_ON_THIS_PHONE
+                     : MatchListCopy.shared.EMPTY_NOT_ANALYZED)
+                    .shuttlType(ShuttlType.bodySmall)
+                    .foregroundStyle(Shuttl.textSecondary)
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .drawerListRow()
+            }
+            if !shared.isEmpty {
+                DrawerSectionLabel(MatchListCopy.shared.SHARED_SECTION)
+                    .drawerListRow(top: DrawerList.sectionGap)
+                // Never filtered: the chips are about the coach's own matches,
+                // and a shared one is neither on this phone nor waiting on this
+                // coach to analyze it.
+                ForEach(shared, id: \.key) { item in
+                    row(item)
                 }
             }
         }
@@ -302,18 +194,24 @@ struct MatchesList: View {
         // The drawer's panel is what should show between the inset rows, not
         // the material `List` paints over it.
         .scrollContentBackground(.hidden)
-        // The gap between two groups is the label's own `sectionGap`; a
-        // section's default spacing would add a second one on top of it.
         .listSectionSpacing(0)
         // A `List` floors every row at ~44pt. A 12pt section label is well under
         // that, so the floor was padding it out and putting 29pt between a label
-        // and its first card where the mock has 10. The cards clear the floor on
-        // their own, so nothing else changes.
+        // and its first card where the mock has 10.
         .environment(\.defaultMinListRowHeight, 0)
+        // Review focus 5: a filter whose chips have gone would go on hiding
+        // matches with nothing on screen to undo it. Reset on the chips going
+        // away, not on their being absent: `onChange` does not fire for the
+        // first value, so the empty list of the first frame cannot wipe a
+        // chosen filter. `effectiveFilter` above already stops it applying
+        // while the chips are hidden; this makes the choice itself forget.
+        .onChange(of: showChips) { wasShown, isShown in
+            if wasShown && !isShown { filter = .all }
+        }
         // Over the list rather than in it: a row cannot centre itself in the
         // panel, and the list underneath keeps `.refreshable` working.
         .overlay {
-            if standalone.isEmpty && model.ownedRows.isEmpty && model.shared.isEmpty && !model.isRefreshing {
+            if mine.isEmpty && shared.isEmpty && !model.isRefreshing {
                 // The control itself, not directions to it: this list sits
                 // behind the drawer, and "tap Add new match on Home" sent a
                 // first-time user back out to find a button they had not
@@ -334,278 +232,286 @@ struct MatchesList: View {
                 }
             }
         }
-        .confirmationDialog(
-            "Delete this match and every point you scored? This can't be undone.",
-            isPresented: Binding(
-                get: { deleteScoreTarget != nil },
-                set: { if !$0 { deleteScoreTarget = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                if let card = deleteScoreTarget {
-                    deleteScoreTarget = nil
-                    Task { await model.deleteScoreMatch(scoreLogId: card.scoreLogId) }
-                }
-            }
-            Button("Cancel", role: .cancel) { deleteScoreTarget = nil }
-        }
-        .confirmationDialog(
-            confirmTarget?.prompt ?? "",
-            isPresented: Binding(
-                get: { confirmTarget != nil },
-                set: { if !$0 { confirmTarget = nil } }
-            ),
-            titleVisibility: .visible,
-            presenting: confirmTarget
-        ) { pending in
-            Button(pending.confirmLabel, role: .destructive) {
-                // Read the target before clearing it: the Task outlives the binding.
-                let videoId = pending.match.videoId
-                let kind = pending.kind
-                confirmTarget = nil
-                Task {
-                    switch kind {
-                    case .deleteMatch: await model.deleteMatch(videoId: videoId)
-                    case .leaveShare: await model.leaveShare(videoId: videoId)
-                    case .deleteBoundMatch(let scoreLogId):
-                        // Score log first, and only go on to the video if that
-                        // succeeded on the server: deleteMatch's refresh() syncs
-                        // score logs, and if that sync landed while the score
-                        // log's own delete was still on the wire, it would pull
-                        // the row back from the server and resurrect the match
-                        // the user just deleted. On failure this stops here -
-                        // the score log is already gone from this phone
-                        // (deleteScoreMatch's error message says so), and the
-                        // video and its clips are left untouched rather than
-                        // deleted with no way for the coach to see whether the
-                        // rest of it landed. Must match Android's
-                        // ClipListViewModel.deleteBoundMatch.
-                        if await model.deleteScoreMatch(scoreLogId: scoreLogId, hasVideo: true) {
-                            await model.deleteMatch(videoId: videoId)
-                        }
-                    }
-                }
-            }
-            Button("Cancel", role: .cancel) { confirmTarget = nil }
-        }
-        .refreshable { await model.refresh() }
     }
 
-    /// An owned or shared match.
-    ///
-    /// No thumbnail and no chevron: the mock gives the drawer exactly one raised
-    /// surface, on "On this phone", and draws these as a quiet text list. In a
-    /// 330pt panel that is also what makes the title readable - a 64pt cover
-    /// plus its gap left a match name about 126pt wide, which ellipsised
-    /// "Vitidsarn vs Axelsen" after a word and a half. Mirrors
-    /// ClipListScreen.kt's VideoMatchRow.
-    private func row(_ match: MatchSummary, model: ClipListModel) -> some View {
-        Button {
-            onMatchTap(MatchRoute(scoreLogId: nil, videoId: match.videoId))
-        } label: {
-            HStack(spacing: DrawerList.gap) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(matchRowPrimary(match))
-                        .shuttlType(ShuttlType.titleMedium)
-                        .foregroundStyle(Shuttl.text)
-                        .lineLimit(1)
-                    Text(matchRowSecondary(match))
-                        .shuttlType(ShuttlType.bodySmall)
-                        .foregroundStyle(Shuttl.textSecondary)
-                        .lineLimit(1)
-                    // Same line, same place as on a scored match's row, and absent
-                    // until somebody is named for the same reason.
-                    if let players = match.playersLine {
-                        Text(players)
-                            .shuttlType(ShuttlType.bodySmall)
-                            .foregroundStyle(Shuttl.textSecondary)
-                            .lineLimit(1)
+    private func row(_ item: MatchListItem) -> some View {
+        MatchListRowView(
+            item: item,
+            thumbnails: thumbnails,
+            media: rally.media,
+            menu: menu(for: item),
+            onTap: { open(item) },
+            onAction: { act(item) }
+        )
+        .drawerListRow()
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            if let swipe = RowSwipe(item) {
+                Button {
+                    switch swipe {
+                    case .choose: choiceTarget = item
+                    case .delete, .leave: deleteTarget = item
+                    case .remove: removeTarget = item
                     }
-                    if let description = match.description {
-                        Text(description)
-                            .shuttlType(ShuttlType.bodySmall)
-                            .foregroundStyle(Shuttl.textSecondary)
-                            .lineLimit(2)
-                    }
-                    if let sharer = match.sharerEmail {
-                        Text("Shared by \(sharer)")
-                            .shuttlType(ShuttlType.bodySmall)
-                            .foregroundStyle(Shuttl.textSecondary)
-                            .lineLimit(1)
-                    }
+                } label: {
+                    Label(swipe.label, systemImage: "trash")
                 }
-                Spacer(minLength: 0)
-                if match.isOwned {
-                    Button {
-                        shareTarget = match
-                    } label: {
-                        Image(systemName: "square.and.arrow.up")
-                            .foregroundStyle(Shuttl.textSecondary)
-                    }
-                    // Same 44x44 as the score row's trailing controls: the two row
-                    // kinds sit adjacent in one list, so their trailing footprints
-                    // must match or the boundary between them reads as a seam.
-                    // Trailing-aligned so the glyph lands the row's own 16pt from
-                    // the edge instead of the box's 22pt.
-                    .frame(width: 44, height: 44, alignment: .trailing)
-                    .buttonStyle(.borderless)
-                }
+                // Swipe labels render white on the tint, and white on
+                // Shuttl.error is 3.76:1. onError is the pairing that exists
+                // for exactly this and gives 5.08:1.
+                .foregroundStyle(Shuttl.onError)
+                .tint(Shuttl.error)
             }
-            .drawerRowBody()
         }
-        .buttonStyle(.plain)
     }
 
-    /// A match scored courtside, with whatever video it has acquired. Same
-    /// insets, the same text lines and the same trailing footprint as
-    /// `row(_:model:)`: a row a few points shorter than its neighbour reads as a
-    /// bug.
-    @ViewBuilder
-    private func scoreRow(_ content: ScoreRowContent, model: ClipListModel) -> some View {
-        let card = content.card
-        // The local entry behind a court-marking / retry action, while it still
-        // exists. Looked up rather than carried on ScoreRowContent because it is a
-        // UI-only need - the merge itself only cares about the attach status text.
-        let entry = model.localEntries.first { $0.scoreLogId == card.scoreLogId }
+    // MARK: - What a row does
 
-        Button {
-            onMatchTap(MatchRoute(scoreLogId: card.scoreLogId, videoId: card.videoId))
-        } label: {
-            HStack(spacing: DrawerList.gap) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(card.title)
-                        .shuttlType(ShuttlType.titleMedium)
-                        .foregroundStyle(Shuttl.text)
-                        .lineLimit(1)
-                    Text("\(card.scoreLine) · \(formatMatchDate(millis: card.createdAtEpochMs))")
-                        .shuttlType(ShuttlType.bodySmall)
-                        .foregroundStyle(Shuttl.textSecondary)
-                        .lineLimit(1)
-                    // Absent until somebody is named: the new match form does not
-                    // ask, and "Home vs Away" on every row would say nothing.
-                    if let players = card.playersLine {
-                        Text(players)
-                            .shuttlType(ShuttlType.bodySmall)
-                            .foregroundStyle(Shuttl.textSecondary)
-                            .lineLimit(1)
-                    }
-                    if let attach = content.attach {
-                        Text(attach.text)
-                            .shuttlType(ShuttlType.bodySmall)
-                            // Shuttl.error rather than a literal red: it is the
-                            // same token Android reaches for (colorScheme.error)
-                            // for this line.
-                            .foregroundStyle(attach.kind == .failed ? Shuttl.error : Shuttl.textSecondary)
-                            .lineLimit(2)
-                    }
-                }
-                Spacer(minLength: 0)
-                switch content.attach?.kind {
-                case .courtNotMarked:
-                    // Padding/background live inside the label, not chained onto
-                    // the Button, so the tappable area is exactly the visible
-                    // pill - matching `chip` in PlaybackSettingsSheet.swift. This row
-                    // is a Button's label; a dead zone here would silently
-                    // open the match instead of marking the court.
-                    Button {
-                        if let entry { onCourtMarking(CourtMarkingRoute(entryId: entry.id)) }
-                    } label: {
-                        Text("Mark court")
-                            .shuttlType(ShuttlType.labelMedium)
-                            .foregroundStyle(Shuttl.onAccent)
-                            .lineLimit(1)
-                            .fixedSize(horizontal: true, vertical: false)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(Shuttl.accent)
-                            .clipShape(Capsule())
-                    }
-                    .buttonStyle(.borderless)
-                case .failed:
-                    Button {
-                        if let entry { analyze.retry(entryId: entry.id) }
-                    } label: {
-                        Text("Retry")
-                            .shuttlType(ShuttlType.labelMedium)
-                            .foregroundStyle(Shuttl.onAccent)
-                            .lineLimit(1)
-                            .fixedSize(horizontal: true, vertical: false)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(Shuttl.accent)
-                            .clipShape(Capsule())
-                    }
-                    .buttonStyle(.borderless)
-                case .uploading, .clipping, .finishingUp:
-                    ProgressView().controlSize(.small)
-                case nil:
-                    // Present but visually muted, with the reason in its
-                    // accessibility label: match_shares is keyed on video_id, so
-                    // a score-only match cannot be shared. Deliberately not
-                    // `.disabled(...)`: verified on-device (task-7 fix round) that
-                    // a `.disabled` Button nested inside this row's own Button
-                    // does not swallow its tap - it passes straight through to
-                    // the row underneath, silently opening the match instead of
-                    // doing nothing. Almost certainly pre-existing, not something
-                    // this row's NavigationLink -> Button conversion introduced: a
-                    // disabled child button falls through the same way inside a
-                    // NavigationLink's label. The action already no-ops with no
-                    // video, so leaving the button enabled and dimming it by hand
-                    // keeps the tap right where it lands - the formal "not
-                    // enabled" trait `.disabled` would have given for free is
-                    // restored via `.accessibilityRepresentation` below, which
-                    // swaps in a `.disabled` proxy Button for what the
-                    // accessibility tree exposes only. That proxy has no effect
-                    // on hit testing, so the real Button above still swallows the
-                    // tap right where it lands instead of falling through.
-                    // (SwiftUI's `AccessibilityTraits` has no public "not
-                    // enabled" member to add directly - `.disabled` is the only
-                    // way to produce that trait, hence the proxy.)
-                    Button {
-                        if let video = content.video { shareTarget = video }
-                    } label: {
-                        Image(systemName: "square.and.arrow.up")
-                            .foregroundStyle(Shuttl.textSecondary)
-                            .opacity(content.video != nil ? 1 : 0.35)
-                    }
-                    .frame(width: 44, height: 44, alignment: .trailing)
-                    .buttonStyle(.borderless)
-                    .accessibilityRepresentation {
-                        Button(
-                            content.video != nil ? "Share match" : "Add a video to share this match"
-                        ) {
-                            if let video = content.video { shareTarget = video }
-                        }
-                        .disabled(content.video == nil)
-                    }
-                }
-            }
-            .drawerRowBody()
+    private func open(_ item: MatchListItem) {
+        if item.opensLocalPlayer, let entryId = item.entryId {
+            onLocalPlayer(LocalPlayerRoute(entryId: entryId))
+        } else if item.scoreLogId != nil || item.videoId != nil {
+            onMatchTap(MatchRoute(scoreLogId: item.scoreLogId, videoId: item.videoId))
         }
-        .buttonStyle(.plain)
+    }
+
+    /// Every action goes by the row's own entry, never by looking it up again
+    /// from the match: the builder may have joined the entry to its log by the
+    /// log's video id, which a scoreLogId lookup would miss, leaving a button
+    /// that does nothing under a status that says why it is there. Retry is
+    /// Analyze: the resume-or-mark-court decision is the same one either way.
+    private func act(_ item: MatchListItem) {
+        guard let entryId = item.entryId else { return }
+        switch item.action {
+        case .analyze, .retry: analyzeAction(entryId: entryId)
+        case .markCourt: onCourtMarking(CourtMarkingRoute(entryId: entryId))
+        case .none, .running, .paused: break
+        }
+    }
+
+    private func analyzeAction(entryId: String) {
+        // Read from the store, not the list's cache: the decision turns on the
+        // entry's saved court points and failed step as they are now.
+        guard let entry = rally.localVideos.get(id: entryId) else { return }
+        // The shared rule, not a hand-written copy. Android had four and the
+        // drift had already happened: its Analytics list shipped without the
+        // keypoints half and sent coaches back to re-mark a court that was
+        // already saved.
+        switch analyseAction(for: entry) {
+        case .resume(let id): analyze.retry(entryId: id)
+        case .markCourt(let id): onCourtMarking(CourtMarkingRoute(entryId: id))
+        }
+    }
+
+    /// The same items in the same order as Android's row menu.
+    private func menu(for item: MatchListItem) -> [RowMenuItem] {
+        var items: [RowMenuItem] = []
+        let copy = MatchListCopy.shared
+        if item.canShare, let videoId = item.videoId {
+            items.append(RowMenuItem(label: copy.MENU_SHARE) { shareTarget = ShareTarget(videoId: videoId) })
+        }
+        if item.deviceClipCount > 0, let entryId = item.entryId {
+            items.append(RowMenuItem(label: copy.menuDeviceClips(count: item.deviceClipCount)) {
+                onLocalClips(LocalClipsRoute(entryId: entryId))
+            })
+        }
+        if let heatmapId = item.heatmapId {
+            items.append(RowMenuItem(label: copy.MENU_HEATMAP) {
+                onAnalyticsDetail(AnalyticsDetailRoute(entryId: heatmapId, title: item.title))
+            })
+        }
+        if item.canEditDetails, let entry = model.localEntries.first(where: { $0.id == item.entryId }) {
+            items.append(RowMenuItem(label: copy.MENU_EDIT_DETAILS) {
+                detailsTarget = MatchDetailsTarget(entry: entry, autoOpened: false)
+            })
+        }
+        if item.canAnalyzeAgain, let entryId = item.entryId {
+            items.append(RowMenuItem(label: copy.MENU_ANALYZE_AGAIN) { analyzeAction(entryId: entryId) })
+        }
+        if item.canRemoveFromPhone {
+            items.append(RowMenuItem(label: copy.MENU_REMOVE_FROM_PHONE, role: .destructive) { removeTarget = item })
+        }
+        // Straight to the one confirmation, not the choice: removing the file
+        // alone is already its own item just above.
+        switch item.delete {
+        case .none: break
+        case .leaveShare:
+            items.append(RowMenuItem(label: copy.MENU_LEAVE_SHARE, role: .destructive) { deleteTarget = item })
+        case .videoMatch, .scoreMatch, .boundMatch:
+            items.append(RowMenuItem(label: copy.MENU_DELETE, role: .destructive) { deleteTarget = item })
+        }
+        return items
+    }
+
+    private func deleteEverywhere(_ item: MatchListItem) async {
+        switch item.delete {
+        case .videoMatch:
+            if let videoId = item.videoId { await model.deleteMatch(videoId: videoId, entryId: item.entryId) }
+        case .scoreMatch:
+            if let scoreLogId = item.scoreLogId { await model.deleteScoreMatch(scoreLogId: scoreLogId, entryId: item.entryId) }
+        case .boundMatch:
+            if let videoId = item.videoId, let scoreLogId = item.scoreLogId {
+                await model.deleteBoundMatch(videoId: videoId, scoreLogId: scoreLogId, entryId: item.entryId)
+            }
+        case .leaveShare:
+            if let videoId = item.videoId { await model.leaveShare(videoId: videoId) }
+        case .none:
+            break
+        }
+    }
+
+    private func removeFromPhone(_ item: MatchListItem) {
+        guard let entryId = item.entryId else { return }
+        model.removeFromPhone(entryId: entryId)
+        thumbnails.evict(id: entryId)
     }
 }
 
-private extension View {
-    /// A match row's inset box: quieter than the "On this phone" card above it,
-    /// and deliberately so. The mock gives the drawer exactly one raised
-    /// surface, on the section that leads somewhere new; these rows are
-    /// transparent, and the rounded shape is what a swipe reveal and a press
-    /// highlight are clipped to.
-    ///
-    /// Without `contentShape` the Button's hit area is only its children's - the
-    /// Spacer in the middle has none of its own - so the empty stretch between
-    /// the text and the trailing control would go dead and silently stop opening
-    /// the match. NavigationLink gave the whole row a hit area for free; a
-    /// Button does not.
-    func drawerRowBody() -> some View {
-        self
-            .padding(.horizontal, DrawerList.rowPaddingH)
-            .padding(.vertical, DrawerList.rowPaddingV)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(RoundedRectangle(cornerRadius: ShuttlRadius.medium))
+// MARK: - Confirmations
+
+private extension MatchesList {
+    func dialogs(_ list: some View) -> some View {
+        list
+        // A swipe on a row with both a file here and a match to delete: two
+        // different things, so the coach picks. The one that cannot lose data
+        // is listed first.
+        .confirmationDialog(
+            choiceTarget?.title ?? "",
+            isPresented: presence($choiceTarget),
+            titleVisibility: .visible,
+            presenting: choiceTarget
+        ) { item in
+            Button(MatchListCopy.shared.CHOICE_REMOVE) {
+                choiceTarget = nil
+                removeFromPhone(item)
+            }
+            Button(MatchListCopy.shared.CHOICE_DELETE, role: .destructive) {
+                choiceTarget = nil
+                Task { await deleteEverywhere(item) }
+            }
+            Button(MatchListCopy.shared.CHOICE_CANCEL, role: .cancel) { choiceTarget = nil }
+        } message: { item in
+            Text(MatchListCopy.shared.choiceDeleteDetail(delete: item.delete, onThisPhone: item.entryId != nil))
+        }
+        // The single confirmation. The message is shared copy, which also says
+        // when the video in this app goes with the match: a delete is only
+        // offered on such a row once the file is free to discard.
+        .confirmationDialog(
+            deleteTarget.flatMap {
+                MatchListCopy.shared.deleteMessage(delete: $0.delete, onThisPhone: $0.entryId != nil)
+            } ?? "",
+            isPresented: presence($deleteTarget),
+            titleVisibility: .visible,
+            presenting: deleteTarget
+        ) { item in
+            Button(item.delete == .leaveShare ? MatchListCopy.shared.SWIPE_REMOVE : MatchListCopy.shared.SWIPE_DELETE,
+                   role: .destructive) {
+                deleteTarget = nil
+                Task { await deleteEverywhere(item) }
+            }
+            Button(MatchListCopy.shared.CHOICE_CANCEL, role: .cancel) { deleteTarget = nil }
+        }
+        .alert(
+            "Remove video?",
+            isPresented: presence($removeTarget),
+            presenting: removeTarget
+        ) { item in
+            Button("Remove", role: .destructive) {
+                removeTarget = nil
+                removeFromPhone(item)
+            }
+            Button("Cancel", role: .cancel) { removeTarget = nil }
+        } message: { item in
+            // The stored track, not "has any analysis": the message promises
+            // the heatmap stays, which is only true when there is one, and a
+            // row whose only analysis is its rallies or its score has none.
+            Text(AnalysisCapabilityKt.videoRemovalMessage(hasAnalysis: item.heatmapId != nil))
+        }
     }
+
+    /// A dialog's `isPresented`, driven by whether its target is set.
+    func presence<T>(_ target: Binding<T?>) -> Binding<Bool> {
+        Binding(get: { target.wrappedValue != nil }, set: { if !$0 { target.wrappedValue = nil } })
+    }
+}
+
+// MARK: - Stored results
+
+private extension MatchesList {
+    /// Everything whose change can mean different files on disk. See the
+    /// `.task(id:)` that reads it.
+    var storedResultsKey: StoredResultsKey {
+        StoredResultsKey(
+            entries: model.localEntries.map { "\($0.id):\($0.stage)" },
+            videoIds: Set(model.clips.map(\.videoId)),
+            settled: localAnalysis?.settledRuns ?? []
+        )
+    }
+
+    /// Re-reads what each row's earlier runs left on disk.
+    ///
+    /// Not cheap: `storedClipCounts` parses a sidecar and stats a file per clip
+    /// for every entry, and the track and skeleton probes are one header read
+    /// per id. Off the main actor for that reason, and every accessor is
+    /// `nonisolated` so it can be. Tracks and skeletons are probed by entry id
+    /// and by every cloud video id, since a cloud run keys them by the video;
+    /// clip counts by entry id only, which is all a device run keys them by.
+    func refreshStoredResults(_ key: StoredResultsKey) async {
+        guard let localAnalysis else {
+            model.updateStoredResults(tracks: [], skeletons: [], clipCounts: [:])
+            return
+        }
+        let entryIds = model.localEntries.map(\.id)
+        let ids = Array(Set(entryIds).union(key.videoIds))
+        let runner = localAnalysis
+        let read = await Task.detached(priority: .userInitiated) {
+            (
+                tracks: runner.storedTrackIds(among: ids),
+                skeletons: runner.storedSkeletonIds(among: ids),
+                counts: runner.storedClipCounts(among: entryIds)
+            )
+        }.value
+        guard !Task.isCancelled else { return }
+        model.updateStoredResults(tracks: read.tracks, skeletons: read.skeletons, clipCounts: read.counts)
+    }
+}
+
+private struct StoredResultsKey: Hashable {
+    let entries: [String]
+    let videoIds: Set<String>
+    let settled: Set<String>
+}
+
+/// What a swipe on a row does, and what the revealed label says. Nil for a row
+/// nothing may be deleted from: a run in flight holds its file, and deleting
+/// the match would delete it too.
+private enum RowSwipe {
+    /// Both a file here and a match to delete: the two-way choice.
+    case choose
+    case delete
+    case leave
+    /// Only the file: the "Remove video?" dialog.
+    case remove
+
+    init?(_ item: MatchListItem) {
+        switch item.delete {
+        case .leaveShare: self = .leave
+        case .none: if item.canRemoveFromPhone { self = .remove } else { return nil }
+        case .videoMatch, .scoreMatch, .boundMatch: self = item.canRemoveFromPhone ? .choose : .delete
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .choose, .delete: return MatchListCopy.shared.SWIPE_DELETE
+        case .leave, .remove: return MatchListCopy.shared.SWIPE_REMOVE
+        }
+    }
+}
+
+/// A match to share, by its cloud video.
+private struct ShareTarget: Identifiable {
+    let videoId: String
+    var id: String { videoId }
 }
 
 /// `autoOpened` switches the sheet's dismiss label between "Skip" and "Cancel".
@@ -613,79 +519,4 @@ struct MatchDetailsTarget: Identifiable {
     let entry: LocalVideoEntry
     let autoOpened: Bool
     var id: String { entry.id }
-}
-
-extension MatchSummary: Identifiable {
-    var id: String { videoId }
-}
-
-/// A destructive match action awaiting confirmation. Both kinds share one
-/// dialog; the swipe only records the target, it never acts on its own.
-private struct PendingMatchAction {
-    enum Kind {
-        case deleteMatch
-        case leaveShare
-        /// A scored match that already has clips: deleting it removes the video
-        /// AND the score log, so the wording below must say both.
-        case deleteBoundMatch(scoreLogId: String)
-    }
-
-    let match: MatchSummary
-    let kind: Kind
-
-    var prompt: String {
-        switch kind {
-        case .deleteMatch:
-            return "Delete this match and all its rally clips? This can't be undone."
-        case .leaveShare:
-            return "Remove this shared match from your list? You'll need the owner to share it again."
-        case .deleteBoundMatch:
-            // Mirrors Android's ClipListScreen.kt wording exactly: a bound
-            // match's delete removes two things at once, the clips and the
-            // scored points, and neither of the wordings above says both.
-            return "Delete this match, every point you scored and all its rally clips? This can't be undone."
-        }
-    }
-
-    var confirmLabel: String {
-        switch kind {
-        case .deleteMatch, .deleteBoundMatch: return "Delete"
-        case .leaveShare: return "Remove"
-        }
-    }
-}
-
-
-private extension MatchesList {
-    /// The runs that have stopped, whichever way they stopped.
-    ///
-    /// The runner's own set, rather than one rebuilt from `states` here. That
-    /// scan ran on every redraw of this list, and it ran because a redraw is
-    /// what a progress callback causes: see `LocalAnalysisRunner.settledRuns`
-    /// for why reading the state map at all subscribes the reader to every
-    /// frame of every run.
-    var settledRuns: Set<String> { localAnalysis?.settledRuns ?? [] }
-
-    /// Re-reads what each row's earlier runs left on disk.
-    ///
-    /// Rare - the list appearing, and a run settling - but not cheap:
-    /// `storedClipCounts` parses a sidecar and stats a file per clip for every
-    /// entry, which on a long list is dozens of file operations. Off the main
-    /// actor for that reason, and both accessors are `nonisolated` so it can
-    /// be. The list redraws when the two values land, one hop later, which
-    /// costs nothing. What must not happen is calling this per row or per
-    /// progress tick.
-    func refreshStoredResults(_ ids: [String]) async {
-        guard let localAnalysis else {
-            storedTrackIds = []
-            localClipCounts = [:]
-            return
-        }
-        let runner = localAnalysis
-        let read = await Task.detached(priority: .userInitiated) {
-            (tracks: runner.storedTrackIds(among: ids), counts: runner.storedClipCounts(among: ids))
-        }.value
-        storedTrackIds = read.tracks
-        localClipCounts = read.counts
-    }
 }

@@ -85,4 +85,124 @@ final class ClipListModelTests: XCTestCase {
         let gone = await ObservationLifecycle.wait { released == nil }
         XCTAssertTrue(gone, "a loop observe() spawned is still running and still holds the model")
     }
+    // MARK: - Deletes act on the row's own entry
+
+    // 2026-08-28T18:00:00Z. Fixed, because the store stamps created_at from it.
+    private let t0 = KotlinInstant.companion.fromEpochMilliseconds(epochMilliseconds: 1_787_940_000_000)
+
+    /// A model over doubles for every store a delete touches. The local-only
+    /// score log store refuses every server delete, which is exactly what
+    /// "the server said no" needs; `RecordingVideosRepository` can say either.
+    private struct Rig {
+        let model: ClipListModel
+        let localVideos: LocalVideoRepository
+        let annotations: LocalAnnotationsRepository
+        let videos: RecordingVideosRepository
+        let scoreLogs: ScoreLogsRepository
+    }
+
+    private func rig() -> Rig {
+        let localVideos = IosTestDoublesKt.testLocalVideoRepository()
+        let annotations = IosTestDoublesKt.testLocalAnnotationsRepository()
+        let videos = IosTestDoublesKt.testVideosRepository()
+        let scoreLogs = SwiftInteropKt.testScoreLogsRepository(now: t0, ownerId: "owner-1")
+        let clips = IosTestDoublesKt.testClipsRepository()
+        let model = ClipListModel(
+            rally: rally,
+            analyze: IosTestDoublesKt.testAnalyzeCoordinator(localVideos: localVideos, clips: clips),
+            clips: clips, videos: videos, scoreLogs: scoreLogs,
+            localVideos: localVideos, localAnnotations: annotations
+        )
+        return Rig(model: model, localVideos: localVideos, annotations: annotations, videos: videos, scoreLogs: scoreLogs)
+    }
+
+    private func analyzedEntry(id: String, scoreLogId: String? = nil) -> LocalVideoEntry {
+        LocalVideoEntry(
+            id: id, uri: "LocalVideos/\(id).mp4", displayName: "m.mp4",
+            durationMs: 1000, sizeBytes: 2, addedAtEpochMs: 1,
+            title: nil, description: nil, keypoints: nil,
+            stage: .analyzed, failedStep: nil, failureMessage: nil, resultSeen: false,
+            scoreLogId: scoreLogId
+        )
+    }
+
+    private func note(on videoId: String, _ r: Rig) {
+        _ = r.annotations.add(videoId: videoId, timestampSeconds: 1, body: "n", label: nil)
+    }
+
+    func testDeletingAMatchEverywhereTheServerAcceptsDiscardsTheFileToo() async {
+        // Review focus 4: the surviving ANALYZED entry would bring the row
+        // straight back as a phone-only match.
+        let r = rig()
+        r.localVideos.add(entry: analyzedEntry(id: "v1"))
+        note(on: "v1", r)
+
+        await r.model.deleteMatch(videoId: "v1", entryId: "v1")
+
+        XCTAssertEqual(r.videos.deletedVideoIds, ["v1"])
+        XCTAssertNil(r.localVideos.get(id: "v1"))
+        XCTAssertFalse(r.annotations.hasAnnotations(videoId: "v1"))
+    }
+
+    func testDeletingAMatchTheServerRefusesKeepsTheFile() async {
+        let r = rig()
+        r.videos.failDeleteMatch = true
+        r.localVideos.add(entry: analyzedEntry(id: "v1"))
+        note(on: "v1", r)
+
+        await r.model.deleteMatch(videoId: "v1", entryId: "v1")
+
+        XCTAssertNotNil(r.localVideos.get(id: "v1"), "a refused delete threw the file away under a surviving match")
+        XCTAssertTrue(r.annotations.hasAnnotations(videoId: "v1"))
+        XCTAssertNotNil(r.model.error)
+    }
+
+    func testAScoredMatchDeleteDiscardsTheEntryItOrphansWhateverTheServerSays() async {
+        // The log leaves this phone win or lose, so an entry naming it would be
+        // invisible and unremovable if it stayed. The local-only store refuses.
+        let r = rig()
+        let log = r.scoreLogs.create(title: "Thu", rules: ScoringRules.companion.BWF_21, setup: MatchSetup(firstServer: .home))
+        r.localVideos.add(entry: analyzedEntry(id: "e1", scoreLogId: log.id))
+
+        await r.model.deleteScoreMatch(scoreLogId: log.id, entryId: "e1")
+
+        XCTAssertNil(r.localVideos.get(id: "e1"))
+        XCTAssertNotNil(r.model.error)
+    }
+
+    func testABoundDeleteTheServerRefusesKeepsAnEntryJoinedOnlyByItsId() async {
+        // The list joins this entry to the log through log.videoId; the entry
+        // does not name the log, so the log's removal does not orphan it, and
+        // the match may yet survive in the cloud.
+        let r = rig()
+        let log = r.scoreLogs.create(title: "Thu", rules: ScoringRules.companion.BWF_21, setup: MatchSetup(firstServer: .home))
+        r.scoreLogs.attachVideo(id: log.id, videoId: "v1")
+        r.localVideos.add(entry: analyzedEntry(id: "v1"))
+
+        await r.model.deleteBoundMatch(videoId: "v1", scoreLogId: log.id, entryId: "v1")
+
+        XCTAssertNotNil(r.localVideos.get(id: "v1"))
+        XCTAssertEqual(r.videos.deletedVideoIds, [], "the video delete ran after the score log's was refused")
+    }
+
+    func testAnEntryARunIsHoldingIsNeverDiscarded() async {
+        let r = rig()
+        r.localVideos.add(entry: analyzedEntry(id: "v1"))
+        r.model.updateDeviceRuns(["v1": DeviceRun(kind: .running, phase: .analysing, message: nil)])
+
+        await r.model.deleteMatch(videoId: "v1", entryId: "v1")
+
+        XCTAssertNotNil(r.localVideos.get(id: "v1"))
+    }
+
+    func testRemovingFromThePhoneFreesTheFileAndItsNotes() {
+        let r = rig()
+        r.localVideos.add(entry: analyzedEntry(id: "v1"))
+        note(on: "v1", r)
+
+        r.model.removeFromPhone(entryId: "v1")
+
+        XCTAssertNil(r.localVideos.get(id: "v1"))
+        XCTAssertFalse(r.annotations.hasAnnotations(videoId: "v1"))
+    }
 }

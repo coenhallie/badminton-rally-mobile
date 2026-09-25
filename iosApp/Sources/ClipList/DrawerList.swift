@@ -4,9 +4,9 @@ import SwiftUI
 ///
 /// The list is an inset one now, not a full-bleed one: rows are cards sitting on
 /// the panel with a margin either side, separated by a gap rather than by a
-/// divider. Everything that renders a row in the drawer - the "On this phone"
-/// card in LocalVideoSection.swift and both match rows in ClipListView.swift -
-/// reads its numbers from here, so the two files cannot drift a point apart.
+/// divider. Everything that renders a row in the drawer - MatchListRowView,
+/// the filter row and the section label - reads its numbers from here, so
+/// they cannot drift a point apart.
 ///
 /// Mirrors androidApp's DrawerList.kt number for number.
 enum DrawerList {

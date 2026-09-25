@@ -77,17 +77,6 @@ final class LocalVideoIntake {
         lastAddedId = id
     }
 
-    func remove(entry: LocalVideoEntry) {
-        // The file goes with the entry: the registry's onRemoved hook is wired to
-        // LocalVideoFiles.delete in createRallyApp, so every removal path cleans up.
-        //
-        // `freeVideo`, not `remove`: this is the coach wanting the space back,
-        // not the match gone, so the tracks stay and the heatmap and base
-        // position keep working. Mirrors androidApp's LocalVideoListViewModel.
-        rally.localVideos.freeVideo(id: entry.id)
-        rally.localAnnotations.removeAllFor(videoId: entry.id)
-    }
-
     /// Best-effort, mirrors Android's runCatching retriever (0 on failure).
     private func loadDurationMs(_ url: URL) async -> Int64 {
         let asset = AVURLAsset(url: url)
