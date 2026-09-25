@@ -85,19 +85,9 @@ struct MatchesList: View {
                 }
             }
         }
-        // `deviceRuns`, never `states`: the runner writes `states` once per
-        // analysed frame, and this list rebuilds on every change it sees.
-        .onChange(of: localAnalysis?.deviceRuns ?? [:], initial: true) { _, runs in
-            model.updateDeviceRuns(runs)
-        }
-        // Re-read what earlier runs left on disk whenever that could have
-        // changed: an entry arriving or leaving, a stage moving (a cloud run
-        // installs its track before it writes ANALYZED), a cloud video
-        // appearing, or a device run settling - a track and a set of clips
-        // appear on disk without anything else in the list moving. The key is
-        // what changes, not the ids alone: Android found an ids-only key never
-        // showed a finished run's results.
-        .task(id: storedResultsKey) { await refreshStoredResults(storedResultsKey) }
+        // Device runs and stored results, in the one place both this list and
+        // Analytics feed the model from. See `MatchListFeed`.
+        .feedsMatchList(model: model, localAnalysis: localAnalysis)
         .sheet(item: $shareTarget) { target in
             ShareSheetView(rally: rally, videoId: target.videoId)
         }
@@ -434,57 +424,13 @@ private extension MatchesList {
     }
 }
 
-// MARK: - Stored results
-
-private extension MatchesList {
-    /// Everything whose change can mean different files on disk. See the
-    /// `.task(id:)` that reads it.
-    var storedResultsKey: StoredResultsKey {
-        StoredResultsKey(
-            entries: model.localEntries.map { "\($0.id):\($0.stage)" },
-            videoIds: Set(model.clips.map(\.videoId)),
-            settled: localAnalysis?.settledRuns ?? []
-        )
-    }
-
-    /// Re-reads what each row's earlier runs left on disk.
-    ///
-    /// Not cheap: `storedClipCounts` parses a sidecar and stats a file per clip
-    /// for every entry, and the track and skeleton probes are one header read
-    /// per id. Off the main actor for that reason, and every accessor is
-    /// `nonisolated` so it can be. Tracks and skeletons are probed by entry id
-    /// and by every cloud video id, since a cloud run keys them by the video;
-    /// clip counts by entry id only, which is all a device run keys them by.
-    func refreshStoredResults(_ key: StoredResultsKey) async {
-        guard let localAnalysis else {
-            model.updateStoredResults(tracks: [], skeletons: [], clipCounts: [:])
-            return
-        }
-        let entryIds = model.localEntries.map(\.id)
-        let ids = Array(Set(entryIds).union(key.videoIds))
-        let runner = localAnalysis
-        let read = await Task.detached(priority: .userInitiated) {
-            (
-                tracks: runner.storedTrackIds(among: ids),
-                skeletons: runner.storedSkeletonIds(among: ids),
-                counts: runner.storedClipCounts(among: entryIds)
-            )
-        }.value
-        guard !Task.isCancelled else { return }
-        model.updateStoredResults(tracks: read.tracks, skeletons: read.skeletons, clipCounts: read.counts)
-    }
-}
-
-private struct StoredResultsKey: Hashable {
-    let entries: [String]
-    let videoIds: Set<String>
-    let settled: Set<String>
-}
-
 /// What a swipe on a row does, and what the revealed label says. Nil for a row
 /// nothing may be deleted from: a run in flight holds its file, and deleting
 /// the match would delete it too.
-private enum RowSwipe {
+///
+/// Internal, not private: `RowSwipeTests` drives it directly, the same way a
+/// swipe reveals the label and picks the confirmation this row's `act` runs.
+enum RowSwipe {
     /// Both a file here and a match to delete: the two-way choice.
     case choose
     case delete
