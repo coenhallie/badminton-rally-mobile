@@ -124,10 +124,24 @@ design adds or moves, so the platforms cannot drift.
 The selected tab survives rotation and process death on Android (`rememberSaveable`)
 and is `@State` on iOS.
 
+**Who owns it.** On Android the selected tab is hoisted to `AuthGate`, above the
+`NavHost`, because the finished-run watcher there needs it. `HomeScreen` receives it
+and reports changes. On iOS it is `@State` on `HomeView`, next to the routes.
+
+**Tab state survives a switch.** On Android each tab's content sits in a
+`SaveableStateHolder` keyed by tab, and the Matches list's `LazyListState` is hoisted
+to the tab host (the Add button reads it too). Leaving Matches for Settings and
+coming back keeps the filter, the scroll position, and anything open in the list. On
+iOS both tabs stay mounted inside `TabView`, which gives the same result.
+
 ### 2.3 Matches tab
 
 - Top bar: the title "Matches" (headline style, as the drawer header was) and
   `BackgroundWorkAction` on the right. No hamburger, no overflow menu, no wordmark.
+- Record and import errors ("Camera is not available", "Couldn't import the
+  video") show here, since Add is only on this tab: iOS moves `ErrorBanner(intake.error)`
+  from above the hero to the top of this tab; Android's intake snackbar moves to the
+  tab host's one `SnackbarHost`.
 - Body: the existing list component, unchanged in behaviour: filter chips, legend,
   rows, swipe, menus, dialogs, pull to refresh, "Shared with me". It gains the
   screen's own background and bottom padding so the last row clears the bar and the
@@ -194,10 +208,39 @@ The sign-in screen's own theme toggle is untouched.
 | "Go to matches" (background-work sheet): go Home, open drawer | pop to the tab host, select Matches |
 | Finished device run while on Home: open Analytics | while the tab host is on screen with nothing pushed or presented **and** Matches is selected: select Analytics. The shared rule (`announceFinishedRuns`) is unchanged. What each platform passes as `onHome` comes from one shared function, `HomeTab.isHomeFront(tab, nothingAbove)` |
 | Scoring finished: pop to Home, push match | unchanged; Home is now the tab host |
-| Android `pendingDrawerOpen` | `pendingTab: HomeTab?`, consumed by the tab host |
+| Android `pendingDrawerOpen` | removed: `AuthGate` owns the selected tab, so "Go to matches" pops to `Route.Home` and sets it |
+| Android `onAutoDetailsClosed` (after a new import's details sheet): open the drawer so the new row shows | nothing to do; the coach is already on the Matches tab looking at the row. The parameter goes |
 | iOS `goToMatches()` | clears routes and sheets as today, selects Matches |
 
-### 2.8 What is deleted
+### 2.8 "Nothing above" on Android
+
+`isHomeFront` needs to know that nothing covers the tab host. On Android that is: the
+current back-stack entry is `Route.Home`, the Add sheet is closed, and no sheet or
+dialog of the list is open. The last one is private state in `ClipListScreen` today
+(share, details, legend, delete confirmations, analyze result). It starts reporting
+one `onOverlayChange(open: Boolean)` upward. Without it a finished run could switch
+tabs under a half-typed details sheet.
+
+On iOS `isOnHome` already lists every sheet and route `HomeView` owns; it gains
+`selectedTab` and loses the entries that are deleted.
+
+### 2.9 Android layout rules
+
+- One outer `Scaffold` in the tab host owns the `NavigationBar`, the Add button and
+  the one `SnackbarHost`. `ClipListScreen`'s own bottom-centred snackbar host moves
+  up into it, or snackbars land under the bar.
+- Tab content has no `Scaffold` of its own (or `contentWindowInsets = WindowInsets(0)`).
+  `AnalyticsScreen` keeping its own would pad the bottom twice.
+- Every colour and shape is set explicitly, not left to Material roles: bar container
+  `bgSecondary` with a top `border` line, indicator `glyphBg`-style accent tint,
+  selected icon `analysisGlyph`, selected label `textHeading`, unselected `textSecondary`;
+  the Add button `accent` fill, `onAccent` content and the pill shape (Material's
+  default FAB has 16dp corners). The unified-list work already found Material's default
+  lavender on menus; this is the same trap.
+- Light theme: `bgInput` and `bgTertiary` are the same colour, so no surface in the tab
+  host stacks one on the other.
+
+### 2.10 What is deleted
 
 - Android: `home/MatchesDrawer.kt`, the `ModalNavigationDrawer` and its width math,
   the hero and pills on Home, the overflow menu, `Route.Analytics`.
