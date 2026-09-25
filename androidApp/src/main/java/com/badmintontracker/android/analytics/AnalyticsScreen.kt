@@ -136,7 +136,13 @@ fun AnalyticsTab(
     Column(Modifier.fillMaxSize()) {
         TabTopBar(HomeCopy.TAB_ANALYTICS) { BackgroundWorkAction() }
         if (rows.isEmpty()) {
-            Box(Modifier.fillMaxSize().padding(bottom = contentPadding.calculateBottomPadding()), contentAlignment = Alignment.Center) {
+            // weight(1f), not fillMaxSize: this Box is measured inside the outer
+            // Column alongside TabTopBar, so fillMaxSize would claim the bar's
+            // own height too and centre the empty state below true centre.
+            Box(
+                Modifier.weight(1f).fillMaxWidth().padding(bottom = contentPadding.calculateBottomPadding()),
+                contentAlignment = Alignment.Center,
+            ) {
                 // No action here: Add lives on the Matches tab, which the body names.
                 ShuttlEmptyState(
                     icon = ShuttlIcons.ChartColumn,
@@ -148,7 +154,9 @@ fun AnalyticsTab(
         }
 
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            // Same reason as the empty state above: weight(1f) leaves the bar
+            // its own height instead of the list overhanging past it.
+            modifier = Modifier.weight(1f).fillMaxWidth(),
             contentPadding = PaddingValues(bottom = GUTTER + contentPadding.calculateBottomPadding()),
         ) {
             // The one line that says what the rows offer, over the list. The

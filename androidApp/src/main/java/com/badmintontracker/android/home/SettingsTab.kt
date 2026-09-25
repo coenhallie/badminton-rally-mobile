@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -52,8 +53,12 @@ fun SettingsTab(
         // The indicator on every tab's bar, as on every other screen's.
         TabTopBar(HomeCopy.TAB_SETTINGS) { BackgroundWorkAction() }
         Column(
+            // weight(1f), not fillMaxSize: this Column is measured inside the
+            // outer one alongside TabTopBar, so fillMaxSize would claim the
+            // bar's own height too and let the scroll area overhang past it.
             Modifier
-                .fillMaxSize()
+                .weight(1f)
+                .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp)
                 .padding(top = 8.dp, bottom = 16.dp + contentPadding.calculateBottomPadding()),
@@ -79,9 +84,11 @@ fun SettingsTab(
                             checkedTrackColor = MaterialTheme.colorScheme.primary,
                             checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
                             checkedBorderColor = MaterialTheme.colorScheme.primary,
-                            uncheckedTrackColor = ShuttlTheme.extended.bgTertiary,
+                            // Not bgTertiary: at 1.07:1 on this card's surfaceVariant in light it is
+                            // invisible; the off state's outline must clear 3:1 on the card.
+                            uncheckedTrackColor = MaterialTheme.colorScheme.background,
                             uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            uncheckedBorderColor = MaterialTheme.colorScheme.outline,
+                            uncheckedBorderColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         ),
                     )
                 }
@@ -109,7 +116,7 @@ fun SettingsTab(
     }
 }
 
-/** bgSecondary on the page's bg: never bgInput on bgTertiary, which are one colour in light. */
+/** surfaceVariant (bgSecondary) on the page's bg: never bgInput on bgTertiary, which are one colour in light. */
 @Composable
 private fun SettingsCard(content: @Composable () -> Unit) {
     Column(
@@ -121,7 +128,7 @@ private fun SettingsCard(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun SettingsRow(onClick: () -> Unit, content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
+private fun SettingsRow(onClick: () -> Unit, content: @Composable RowScope.() -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
