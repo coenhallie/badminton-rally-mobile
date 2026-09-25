@@ -6,10 +6,6 @@ final class ClipListModel {
     let rally: RallyApp
     let analyze: AnalyzeCoordinator
     private(set) var clips: [RallyClip] = []
-    /// Read by `MatchView` and `EditMatchDetailsSheet`, which still work in
-    /// terms of a single video's own match rather than a list row.
-    private(set) var owned: [MatchSummary] = []
-    private(set) var shared: [MatchSummary] = []
     /// The drawer's and Analytics' rows: one per match wherever its video is, built by the
     /// shared `buildMatchList` from everything below, so this list and
     /// Android's cannot disagree about what a match is or what it has.
@@ -384,15 +380,6 @@ final class ClipListModel {
     }
 
     private func regroup() {
-        let infos = clips.map(ClipInfo.init)
-        let result = MatchGrouping.matches(
-            from: infos,
-            currentUserId: rally.auth.currentUserId(),
-            sharerByVideoId: sharerByVideoId,
-            metadataByVideoId: metadataByVideoId
-        )
-        owned = result.owned
-        shared = result.shared
         matchList = MatchListBuilderKt.buildMatchList(input: MatchListInput(
             clips: clips,
             currentUserId: rally.auth.currentUserId(),

@@ -145,9 +145,10 @@ class ClipListViewModel(
     private val coordinator: AnalyzeCoordinator,
     private val localAnnotations: LocalAnnotationsRepository,
     /**
-     * The device runner's state, as a flow rather than the runner itself, for
-     * the reason LocalVideoListViewModel gives: nothing else of it is needed,
-     * and the object would drag a Context into a fold over streams.
+     * The device runner's state, as a flow rather than the runner itself:
+     * nothing else of it is needed, and depending on the object would drag a
+     * Context into a fold over streams. The same call BackgroundWorkMonitor
+     * makes, for the same reason.
      */
     private val deviceStates: StateFlow<Map<String, LocalAnalysisState>>,
     private val storedResults: StoredResultsReader,

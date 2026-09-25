@@ -161,11 +161,11 @@ struct MatchView: View {
         effectiveVideoId.flatMap { metadataByVideoId[$0] }
     }
 
-    // This match's video as the list sees it, when it is the coach's own. Reuses
-    // `MatchGrouping.matches` rather than re-deriving ownership from a clip lookup
-    // here: that function is what `ClipListView`'s own share button already
-    // trusts, and two independent answers to "is this mine" that can disagree is a
-    // defect regardless of which one happens to be right at a given moment.
+    // This match's video, when it is the coach's own, as `MatchGrouping.matches`
+    // folds its clips: the clips' owner decides (every clip of a video has the
+    // same one), the same fact the drawer's shared builder reads for its row's
+    // `isOwned` and so for its share button. `MatchGrouping` stays for this
+    // page's `MatchSummary`; the drawer no longer builds one.
     private var ownedVideo: MatchSummary? {
         guard let effectiveVideoId else { return nil }
         let (owned, _) = MatchGrouping.matches(

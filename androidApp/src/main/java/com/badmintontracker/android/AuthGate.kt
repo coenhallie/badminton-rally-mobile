@@ -297,7 +297,7 @@ fun AuthGate(
                     )
                     val localVm: LocalVideoListViewModel = viewModel(
                         factory = viewModelFactory {
-                            initializer { LocalVideoListViewModel(localVideos, coordinator, localAnnotations, localAnalysis.state) }
+                            initializer { LocalVideoListViewModel(localVideos, coordinator, localAnnotations) }
                         }
                     )
                     HomeScreen(
@@ -359,7 +359,7 @@ fun AuthGate(
                     )
                     val localVm: LocalVideoListViewModel = viewModel(
                         factory = viewModelFactory {
-                            initializer { LocalVideoListViewModel(localVideos, coordinator, localAnnotations, localAnalysis.state) }
+                            initializer { LocalVideoListViewModel(localVideos, coordinator, localAnnotations) }
                         }
                     )
                     val clipListState by clipListVm.state.collectAsStateWithLifecycle()
