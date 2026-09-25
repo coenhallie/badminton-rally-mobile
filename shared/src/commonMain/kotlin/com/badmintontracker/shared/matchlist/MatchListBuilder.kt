@@ -12,6 +12,7 @@ import com.badmintontracker.shared.model.playersLine
 import com.badmintontracker.shared.scoring.AttachKind
 import com.badmintontracker.shared.scoring.ScoreLog
 import com.badmintontracker.shared.scoring.buildScoreMatchCard
+import com.badmintontracker.shared.scoring.entryForLog
 import com.badmintontracker.shared.scoring.scoreLogAttachStatus
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
@@ -35,23 +36,28 @@ internal fun buildMatchList(input: MatchListInput, timeZone: TimeZone): MatchLis
     val claimed = mutableSetOf<String>()
     val mine = mutableListOf<MatchListItem>()
 
-    // Every log id in this input, so the shared-id fallback below can tell "no
-    // entry names this log yet" apart from "some entry names a *different* log
-    // in this same input" - the latter must not be borrowed just because its id
-    // happens to equal this log's video id, or it would be listed under both.
+    // Every log id in this input, so the exclusion below can tell "no entry
+    // names this log yet" apart from "some entry names a *different* log in
+    // this same input" - the latter must not be borrowed by entryForLog's
+    // shared-id fallback just because its id happens to equal this log's video
+    // id, or it would be listed under both.
     val logIds = input.scoreLogs.map { it.id }.toSet()
 
     // Scored matches first: a video filmed for a match belongs to that match's row.
     for (log in input.scoreLogs) {
-        // scoreLogId is the primary link; the shared id is a fallback for a
-        // video-first import later bound to a log by video_id alone, where the
-        // entry itself was never told which log claimed it. Preferring
-        // scoreLogId when both could match keeps an entry that does carry the
-        // right scoreLogId from ever being shadowed by a coincidental id match,
-        // and excluding an entry already spoken for by another log in this same
-        // input (logIds) is what keeps that entry from being listed twice.
-        val entry = input.localEntries.firstOrNull { it.scoreLogId == log.id }
-            ?: input.localEntries.firstOrNull { it.id == log.videoId && (it.scoreLogId == null || it.scoreLogId !in logIds) }
+        // entryForLog is the same scoreLogId-then-shared-id rule
+        // scoreLogAttachStatus and the match page use, so this row and the
+        // status the coach reads on it can never disagree about which entry a
+        // log belongs to. The candidate filter below is builder-only:
+        // entryForLog only sees one log at a time and so cannot know that an
+        // entry is already spoken for by a *different* log in this same input;
+        // excluding that entry here is what keeps this join's own invariant -
+        // one id, one row - even though entryForLog's own contract does not
+        // promise it across a whole list of logs.
+        val candidates = input.localEntries.filter {
+            it.scoreLogId == null || it.scoreLogId == log.id || it.scoreLogId !in logIds
+        }
+        val entry = entryForLog(log, candidates)
         val videoId = log.videoId ?: entry?.id
         val clips = ownedVideo(videoId)
         listOfNotNull(entry?.id, log.videoId).forEach { claimed += it }

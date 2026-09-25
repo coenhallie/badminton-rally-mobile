@@ -359,4 +359,19 @@ class MatchListBuilderTest {
         val item = build(input(entries = listOf(entry("v1", AnalyzeStage.ANALYZED)), clips = listOf(clip("v1", 1)), tracks = setOf("v1"))).mine.single()
         item.accessibilityStatus shouldBe "On this phone and in the cloud. Rallies, heatmap."
     }
+
+    @Test
+    fun a_failed_entry_found_only_through_the_shared_id_fallback_still_reports_its_failure() {
+        // The row's status now comes from the same entryForLog the builder's own
+        // join uses (via scoreLogAttachStatus), so an entry found only through
+        // the shared-id fallback - never told which log claimed it - no longer
+        // gets stuck showing "Finishing up..." forever with no way to retry.
+        val item = build(input(
+            logs = listOf(log("l1", videoId = "v1")),
+            entries = listOf(entry("v1", AnalyzeStage.FAILED, scoreLogId = null, failureMessage = "x")),
+        )).mine.single()
+        item.action shouldBe MatchAction.RETRY
+        item.statusText shouldBe "x"
+        item.statusIsError shouldBe true
+    }
 }

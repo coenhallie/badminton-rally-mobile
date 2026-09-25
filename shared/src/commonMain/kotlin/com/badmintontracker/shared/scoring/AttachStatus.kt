@@ -75,6 +75,26 @@ fun attachStatus(
 }
 
 /**
+ * The local entry filming [log], if it still exists.
+ *
+ * [LocalVideoEntry.scoreLogId] is the primary link; the shared id is a fallback
+ * for a video-first import later bound to a log by video_id alone, where the
+ * entry itself was never told which log claimed it - the same gap
+ * `orphanedLocalVideoIds` (localvideo package) documents as an entry that
+ * appears nowhere. Preferring scoreLogId when both could match keeps an entry
+ * that does carry the right scoreLogId from ever being shadowed by a
+ * coincidental id match.
+ *
+ * Pulled out so every surface that pairs a log to its entry agrees on which one
+ * it is - starting with [scoreLogAttachStatus] and the match list's own join,
+ * so the row and the status it shows can never disagree about which entry a
+ * match's video actually is.
+ */
+fun entryForLog(log: ScoreLog, entries: List<LocalVideoEntry>): LocalVideoEntry? =
+    entries.firstOrNull { it.scoreLogId == log.id }
+        ?: log.videoId?.let { videoId -> entries.firstOrNull { it.id == videoId } }
+
+/**
  * [attachStatus] for one match, from the three sources every surface that shows
  * it needs to combine: the local entry picked for [log] (if it still exists),
  * the coordinator's transient upload progress keyed by entry id, and how many
@@ -91,7 +111,7 @@ fun scoreLogAttachStatus(
     progress: Map<String, AnalyzeProgress>,
     clipCount: Int,
 ): AttachStatus? {
-    val entry = entries.firstOrNull { it.scoreLogId == log.id }
+    val entry = entryForLog(log, entries)
     val uploadPercent = entry
         ?.let { progress[it.id]?.uploadProgress }
         ?.let { (it * 100).toInt() }
