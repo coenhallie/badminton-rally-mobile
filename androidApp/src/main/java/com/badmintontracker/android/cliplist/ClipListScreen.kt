@@ -14,14 +14,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -40,12 +38,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import com.badmintontracker.android.home.MatchesEmptyState
 import com.badmintontracker.android.localvideo.MatchDetailsSheet
 import com.badmintontracker.android.share.ShareSheet
 import com.badmintontracker.android.ui.components.ConfirmDialog
-import com.badmintontracker.android.ui.components.ShuttlButton
-import com.badmintontracker.android.ui.components.ShuttlEmptyState
-import com.badmintontracker.android.ui.icons.ShuttlIcons
 import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.matchlist.MatchAction
@@ -66,7 +62,7 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 
 /**
- * The drawer's list of matches: one row per match, wherever its video is, with
+ * The Matches tab's list: one row per match, wherever its video is, with
  * "Shared with me" below it.
  *
  * Every row comes from the shared builder ([ClipListState.matchList]); this
@@ -97,19 +93,22 @@ fun ClipListScreen(
     /** Entry just imported or recorded: its details sheet opens once, unprompted. */
     autoDetailsEntryId: String? = null,
     onAutoDetailsShown: () -> Unit = {},
+    /** Hoisted to the tab host: the Add button reads it, and it must outlive a tab switch. */
+    listState: LazyListState,
+    /** The tab host's one host, so a snackbar sits above the bar and the Add button, not under them. */
+    snackbarHostState: SnackbarHostState,
     /**
-     * That same sheet closing again, however it was closed: saved, skipped, or
-     * swiped away. Home opens the drawer on this, so the video the coach just
-     * named is on screen instead of a Home screen that looks untouched. Fired
-     * only for the auto-opened sheet - an "Edit details" from the row menu
-     * already happens with the drawer open and in front of the coach.
+     * Whether any sheet or dialog this list owns is open. The tab host folds it
+     * into "nothing above the tabs", which gates a finished run switching tabs:
+     * without it a run could switch tabs under a half-typed details sheet.
      */
-    onAutoDetailsClosed: () -> Unit = {},
-    /** The empty state's own "Add new match": Home closes the drawer and opens its add sheet. */
-    onAddMatch: () -> Unit = {},
+    onOverlayChange: (Boolean) -> Unit = {},
+    /** The empty state's hero ticker stops while the tab is not on screen. */
+    heroPaused: Boolean = false,
+    /** Room at the bottom so the last row and its menu scroll clear of the bar and the Add button. */
+    contentPadding: PaddingValues = PaddingValues(),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
-    val snackbarHostState = remember { SnackbarHostState() }
     var sheetVideoId by remember { mutableStateOf<String?>(null) }
     var detailsTarget by remember { mutableStateOf<DetailsTarget?>(null) }
     var legendOpen by remember { mutableStateOf(false) }
@@ -183,6 +182,10 @@ fun ClipListScreen(
             }
         }
     }
+
+    val overlayOpen = sheetVideoId != null || detailsTarget != null || legendOpen ||
+        choiceTarget != null || deleteTarget != null || removeTarget != null || resultEntry != null
+    LaunchedEffect(overlayOpen) { onOverlayChange(overlayOpen) }
 
     fun open(item: MatchListItem) {
         val entryId = item.entryId
@@ -267,12 +270,10 @@ fun ClipListScreen(
         }
     }
 
-    // No Scaffold: Home owns the bar now, and this content sits inside the
-    // drawer's slot rather than at the top of a screen. A plain Box in place
-    // of Scaffold keeps the one behaviour Scaffold was providing here -
-    // pinning the snackbar host to the bottom of this content - without
-    // dragging its bar/FAB/insets machinery along for a screen that has none
-    // of those anymore.
+    // No Scaffold: the tab host owns the Scaffold, the bar, the Add button and
+    // the one snackbar host. This is tab content, not a screen of its own, so
+    // a plain Box is all it needs to lay its own two states (empty, list) on
+    // top of pull to refresh.
     Box(Modifier.fillMaxSize()) {
         PullToRefreshBox(
             isRefreshing = state.isRefreshing,
@@ -282,31 +283,17 @@ fun ClipListScreen(
             if (mine.isEmpty() && shared.isEmpty() && !state.isRefreshing) {
                 // Scrollable even though nothing scrolls: PullToRefreshBox only
                 // sees the gesture through a nested-scroll child, so without
-                // this a pull on the empty list did nothing.
+                // this a pull on the empty list did nothing. Top-aligned, not
+                // centred: the hero sits at a fixed offset so the cycling line
+                // does not shift the layout.
                 Box(
                     Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
-                    contentAlignment = Alignment.Center,
                 ) {
-                    // The control itself, not directions to it: this list sits
-                    // behind the drawer, and "tap Add new match on Home" sent a
-                    // first-time user back out to find a button they had not
-                    // seen yet.
-                    ShuttlEmptyState(
-                        icon = ShuttlIcons.Trophy,
-                        title = "No matches yet",
-                        body = "Record, import or score a match and it will show up here.",
-                        action = {
-                            ShuttlButton(
-                                text = "Add new match",
-                                onClick = onAddMatch,
-                                leadingIcon = Icons.Default.Add,
-                                compact = true,
-                            )
-                        },
-                    )
+                    MatchesEmptyState(isPaused = heroPaused)
                 }
             } else {
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier.fillMaxSize(),
                     // An inset list, not a full-bleed one: rows are cards on the
                     // panel separated by a gap, so there are no dividers to
@@ -314,7 +301,7 @@ fun ClipListScreen(
                     // the gap above it is the label's plus this spacing.
                     contentPadding = PaddingValues(
                         top = DrawerList.listTopInset,
-                        bottom = DrawerList.sideMargin,
+                        bottom = DrawerList.sideMargin + contentPadding.calculateBottomPadding(),
                     ),
                     verticalArrangement = Arrangement.spacedBy(DrawerList.rowGap),
                 ) {
@@ -348,7 +335,6 @@ fun ClipListScreen(
                 }
             }
         }
-        SnackbarHost(snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
     }
 
     sheetVideoId?.let { vid ->
@@ -370,9 +356,11 @@ fun ClipListScreen(
     }
 
     detailsTarget?.let { target ->
+        // No drawer to open on close: the coach is already looking at the new
+        // row, on the Matches tab, whether this sheet auto-opened or the coach
+        // opened it from a row's menu.
         fun close() {
             detailsTarget = null
-            if (target.autoOpened) onAutoDetailsClosed()
         }
         MatchDetailsSheet(
             initialTitle = target.entry.title,
@@ -491,7 +479,7 @@ private val MONTHS = listOf(
 /**
  * "Sep 8, 2026". Used by [com.badmintontracker.android.match.MatchScreen]'s own
  * headline and by [com.badmintontracker.android.analytics.AnalyticsDetailScreen]'s
- * subtitle; the drawer and the Analytics picker read the shared builder's own
+ * subtitle; the Matches list and the Analytics picker read the shared builder's own
  * `formatMatchDate` instead (`MatchListItem.detail`), which is where
  * `matchRowPrimary`/`matchRowSecondary` used to draw their own headline and
  * sub-line for those two screens before Task 4 moved them onto `MatchListItem`.

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Menu
@@ -222,26 +223,8 @@ fun HomeScreen(
                         onLocalDetailsSaved = onLocalDetailsSaved,
                         autoDetailsEntryId = autoDetailsEntryId,
                         onAutoDetailsShown = onAutoDetailsShown,
-                        // The details sheet for a just-imported video opens over
-                        // a closed drawer, so dismissing it used to drop the
-                        // coach back on a Home screen that looked exactly as it
-                        // did before he picked the file. Opening the drawer as
-                        // the sheet goes away puts the new video on screen -
-                        // the list is newest first and a new video sorts on when
-                        // it was added, so it is the top row with nothing to
-                        // scroll to.
-                        //
-                        // Mirrored by HomeView.swift's `.sheet(item: $detailsTarget,
-                        // onDismiss:)`. The two are one rule written twice, with
-                        // nothing shared to hold them together, so a change here
-                        // is a change there.
-                        onAutoDetailsClosed = { scope.launch { drawerState.open() } },
-                        // The sheet is Home's, composed outside the drawer, so it
-                        // opens over the drawer as it slides shut.
-                        onAddMatch = {
-                            scope.launch { drawerState.close() }
-                            addSheetOpen = true
-                        },
+                        listState = rememberLazyListState(),
+                        snackbarHostState = snackbarHostState,
                     )
                 }
             }
