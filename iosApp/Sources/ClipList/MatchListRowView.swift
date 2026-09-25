@@ -168,16 +168,31 @@ private struct MatchThumbnail: View {
             shape.fill(tileFill)
             shape.strokeBorder(Shuttl.borderSecondary, lineWidth: 1)
             if let entryId = item.entryId, let uri = item.localUri, !localFailed {
-                Group {
+                // `Color.clear`, not a bare `if let image {}` with no `else`:
+                // `.task` attached to a `Group` whose only content is the
+                // `EmptyView` half of that condition never ran at all - no
+                // load, no `failed` entry, no fallback - because SwiftUI
+                // never gave that modifier a real view to hang its lifecycle
+                // off. `Color.clear` is a real view in every frame, loaded or
+                // not, so `.task` below fires reliably and the `Image` simply
+                // draws over it once `thumbnails.images[entryId]` has one.
+                ZStack {
+                    Color.clear
                     if let image = thumbnails.images[entryId] {
                         Image(uiImage: image).resizable().aspectRatio(contentMode: .fill)
                     }
-                    // Nothing else drawn while it decodes: the fill and ring
-                    // above already read as an empty, loading slot.
                 }
                 .task(id: entryId) { await thumbnails.load(id: entryId, relativePath: uri) }
             } else if let coverToLoad {
                 CloudThumbnail(clip: coverToLoad, media: media, onFailed: { coverFailed = true })
+                    // Reset when the cover itself changes, not just when it
+                    // reappears with the same path: a cover lost while
+                    // offline (`coverFailed` latched true) must get another
+                    // try once a refresh brings back a signed URL for it,
+                    // and this id is the only thing that changes when that
+                    // happens - `coverFailed` itself is `@State` and survives
+                    // across body re-evaluations of this same row on purpose.
+                    .onChange(of: cover?.thumbnailStoragePath) { _, _ in coverFailed = false }
             } else {
                 switch thumbnailFallback(hasVideo: hasVideo, hasScore: item.scoreText != nil) {
                 case .score:
@@ -244,7 +259,13 @@ private struct CloudThumbnail: View {
     @State private var url: URL? = nil
 
     var body: some View {
-        Group {
+        // `Color.clear` underneath, always present, for the same reason
+        // `MatchThumbnail`'s local-frame branch needs one: `.task` below has
+        // to be attached to a view that actually renders every time,
+        // including the one frame before `url` exists at all, or it never
+        // fires and the signed URL is never even asked for.
+        ZStack {
+            Color.clear
             if let url {
                 AsyncImage(url: url) { phase in
                     switch phase {
