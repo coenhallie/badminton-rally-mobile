@@ -68,7 +68,14 @@ class MatchMetadataMergeTest {
     }
 
     @Test
-    fun a_match_with_neither_source_keeps_its_date_headline() {
+    fun a_match_with_neither_source_has_no_title() {
+        // The date-headline fallback itself ("Match · <date>") is now each
+        // caller's own concern (MatchScreen.kt, AnalyticsDetailScreen.kt, and
+        // MatchListItem.title in the shared builder) rather than a shared
+        // matchRowPrimary this test could call directly - deleted alongside
+        // matchRowSecondary in Task 4 once neither had a caller left outside
+        // its own tests. What toMatches() itself owes downstream is a null
+        // title to fall back from, which this still pins.
         val matches = listOf(clip("c1", "v1")).toMatches(
             currentUserId = "user-self",
             sharerByVideoId = emptyMap(),
@@ -76,6 +83,5 @@ class MatchMetadataMergeTest {
         )
 
         matches.single().title.shouldBeNull()
-        matchRowPrimary(matches.single()) shouldBe "Match · May 4, 2026"
     }
 }

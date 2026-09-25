@@ -335,7 +335,8 @@ class AnalyticsRowsTest {
     @Test
     fun title_and_subtitle_are_the_items_own_text_untouched() {
         // The three-call-site uppercase regression this file used to guard
-        // against (see matchRowSecondary's own KDoc) cannot recur here any
+        // against (matchRowPrimary/matchRowSecondary and this screen's own
+        // LOCAL_VIDEOS formatting, all since deleted) cannot recur here any
         // more: this screen no longer formats a row's text itself, title and
         // subtitle are a straight read of MatchListItem.title/.detail as the
         // shared builder wrote them, so there is no per-screen call site left

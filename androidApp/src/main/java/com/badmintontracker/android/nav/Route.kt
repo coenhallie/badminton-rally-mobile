@@ -28,9 +28,14 @@ sealed interface Route {
          * The list's own name for this match, carried so the bar can head the
          * screen with it.
          *
-         * Needed because a cloud-analysed match has no local entry to read a
-         * title from - the run retires it - and heading that screen "Analysis"
-         * while the row one tap back says "Thu League" reads as two matches.
+         * Needed because a READY_NO_VIDEO row - a stored track with no local
+         * entry to read a title from - has no other name to head the screen
+         * with: a cloud run finishing keeps its entry at ANALYZED rather than
+         * retiring it (since f96d78c), so the video-less case is the coach
+         * freeing the file's space afterwards (`freeVideo` drops the entry but
+         * keeps the track) or a match analysed on another phone. Either way,
+         * heading the screen "Analysis" while the row one tap back says
+         * "Thu League" reads as two matches.
          */
         val title: String? = null,
     ) : Route

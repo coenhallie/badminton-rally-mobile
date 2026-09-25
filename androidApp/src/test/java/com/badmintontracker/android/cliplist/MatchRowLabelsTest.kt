@@ -6,51 +6,18 @@ import kotlinx.datetime.Instant
 import kotlin.test.Test
 
 /**
- * The sub-line is sentence case now: the drawer's redesign carries no uppercase,
- * and Analytics applies its own `.uppercase()` at the call site in
- * AnalyticsRows.kt, which AnalyticsRowsTest still pins.
+ * [clipRowTitle]'s own fallback: a clip keeps its own title when it has one,
+ * and otherwise falls back to its rally number rather than repeating the match
+ * name every clip already carries.
+ *
+ * Used to also pin `matchRowPrimary`/`matchRowSecondary` (ClipListScreen.kt's
+ * own match-row headline/sub-line formatting). Task 4 moved the Analytics
+ * picker onto `MatchListItem.title`/`.detail` directly, which was
+ * `matchRowPrimary`/`matchRowSecondary`'s last caller outside their own tests,
+ * so those two functions and the five tests that covered them were deleted
+ * together rather than left pinning dead code.
  */
 class MatchRowLabelsTest {
-    private fun match(title: String?, rallyCount: Int = 12) = MatchSummary(
-        videoId = "v",
-        rallyCount = rallyCount,
-        latestCreatedAt = Instant.parse("2026-07-25T12:00:00Z"),
-        coverClip = RallyClip(
-            id = "c", videoId = "v", ownerId = "u", rallyIndex = 0,
-            startTimestamp = 0f, endTimestamp = 1f, durationSeconds = 1f,
-            clipStoragePath = "p/c.mp4", thumbnailStoragePath = null,
-            title = title, annotationCount = 0,
-            createdAt = Instant.parse("2026-07-25T12:00:00Z"),
-        ),
-        isOwned = true,
-        title = title,
-    )
-
-    @Test
-    fun named_match_leads_with_the_match_name() {
-        matchRowPrimary(match("Thu League vs Marco")) shouldBe "Thu League vs Marco"
-    }
-
-    @Test
-    fun named_match_keeps_the_date_beside_the_rally_count() {
-        matchRowSecondary(match("Thu League vs Marco")) shouldBe "12 rallies · Jul 25, 2026"
-    }
-
-    @Test
-    fun unnamed_match_keeps_the_original_date_headline() {
-        matchRowPrimary(match(null)) shouldBe "Match · Jul 25, 2026"
-    }
-
-    @Test
-    fun unnamed_match_secondary_stays_rally_count_only() {
-        matchRowSecondary(match(null)) shouldBe "12 rallies"
-    }
-
-    @Test
-    fun single_rally_is_not_pluralised() {
-        matchRowSecondary(match(null, rallyCount = 1)) shouldBe "1 rally"
-    }
-
     private fun clip(rallyIndex: Int, title: String?) = RallyClip(
         id = "c$rallyIndex", videoId = "v", ownerId = "u", rallyIndex = rallyIndex,
         startTimestamp = 0f, endTimestamp = 1f, durationSeconds = 1f,

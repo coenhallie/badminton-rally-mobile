@@ -113,7 +113,10 @@ fun AnalyticsDetailScreen(
     cloudClips: List<RallyClip>,
     /**
      * The list's name for this match, for when there is no entry to read one
-     * from - which is every cloud-analysed match, since the run retires it.
+     * from. A cloud run finishing does not cause this - the entry stays at
+     * ANALYZED rather than being retired (since f96d78c) - so it is the video
+     * having since left the phone (`freeVideo` drops the entry but keeps the
+     * track) or a match analysed on another phone entirely.
      */
     fallbackTitle: String? = null,
     onBack: () -> Unit,

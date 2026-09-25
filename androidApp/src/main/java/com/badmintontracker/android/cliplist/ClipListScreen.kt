@@ -452,30 +452,13 @@ private val MONTHS = listOf(
 )
 
 /**
- * Headline for a match row. A named match leads with its name; an unnamed one
- * keeps the original date headline.
+ * "Sep 8, 2026". Used by [com.badmintontracker.android.match.MatchScreen]'s own
+ * headline and by [com.badmintontracker.android.analytics.AnalyticsDetailScreen]'s
+ * subtitle; the drawer and the Analytics picker read the shared builder's own
+ * `formatMatchDate` instead (`MatchListItem.detail`), which is where
+ * `matchRowPrimary`/`matchRowSecondary` used to draw their own headline and
+ * sub-line for those two screens before Task 4 moved them onto `MatchListItem`.
  */
-internal fun matchRowPrimary(match: MatchSummary): String =
-    match.title ?: "Match · ${formatDate(match.latestCreatedAt)}"
-
-/**
- * Sub-line for a match row. When the name takes the headline the date moves
- * down here, so it is never lost from the list.
- *
- * Sentence case, not the uppercase this used to return: the drawer's redesign
- * carries no uppercase anywhere. Analytics still wants the old look and applies
- * `.uppercase()` at its own call site in AnalyticsRows.kt, so the casing is a
- * screen's choice rather than something baked into the string.
- */
-internal fun matchRowSecondary(match: MatchSummary): String {
-    val rallies = "${match.rallyCount} ${if (match.rallyCount == 1) "rally" else "rallies"}"
-    return if (match.title != null) {
-        "$rallies · ${formatDate(match.latestCreatedAt)}"
-    } else {
-        rallies
-    }
-}
-
 internal fun formatDate(instant: Instant): String {
     val ldt = instant.toLocalDateTime(TimeZone.currentSystemDefault())
     return "${MONTHS[ldt.monthNumber - 1]} ${ldt.dayOfMonth}, ${ldt.year}"
