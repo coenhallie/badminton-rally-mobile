@@ -48,6 +48,21 @@ internal object ShuttlPalette {
     val onAccent        = Tone(0x04240F, 0x06210F)
     val accentDark      = Tone(0x15803D, 0x22C55E)
 
+    /** An opacity per theme, for a token that is a colour laid over whatever surface is below it. */
+    data class Opacity(val light: Float, val dark: Float)
+
+    /**
+     * The match list's analysis chips: this glyph on [accent] at
+     * [analysisChipOpacity] over the row. The accent itself is 2.4:1 on that
+     * chip in light, under the 3:1 a glyph that alone carries meaning needs,
+     * so light draws the glyph in [accentDark]'s value (3.6:1 on the raised
+     * card) and dark keeps the accent, which is 7.5:1 there. Light's fill is a
+     * step heavier because its tint separates less from the grey card than
+     * dark's does. See ShuttlPaletteTest.analysis_glyph_reads_on_its_chip_on_every_row_surface.
+     */
+    val analysisGlyph   = Tone(0x15803D, 0x3EE27C)
+    val analysisChipOpacity = Opacity(light = 0.20f, dark = 0.16f)
+
     /**
      * The two sides of the scoreboard. Deliberately not the accent green and the
      * info blue: those are interface colours sized for a chip, and these are

@@ -414,8 +414,8 @@ class ClipListViewModel(
         // upload/pipeline, and cancelling one mid-flight is deliberately out of
         // scope here. Without this a settled entry - most reachably one
         // AnalyzeCoordinator's zero-rally detection left FAILED - would be
-        // invisible ("On this phone" filters on scoreLogId == null) and
-        // unremovable.
+        // invisible (the match list hides an entry whose match is not in the
+        // list) and unremovable.
         localVideos.entries.value
             .firstOrNull { it.scoreLogId == scoreLogId }
             ?.takeIf { canRemoveLocalVideo(it.stage) }

@@ -38,7 +38,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
@@ -52,17 +51,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.badmintontracker.android.BuildConfig
 import com.badmintontracker.android.cliplist.ClipListScreen
 import com.badmintontracker.android.cliplist.ClipListViewModel
-import com.badmintontracker.android.cliplist.MatchSummary
 import com.badmintontracker.android.localanalysis.BackgroundWorkAction
-import com.badmintontracker.android.localvideo.LocalVideoRow
 import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlButtonVariant
 import com.badmintontracker.android.ui.theme.ShuttlTypeExtras
-import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.prefs.ThemeMode
 import com.badmintontracker.shared.prefs.ThemePreferenceRepository
+import com.badmintontracker.shared.repo.MediaRepository
 import com.badmintontracker.shared.repo.SharesRepository
-import com.badmintontracker.shared.scoring.ScoreMatchCard
 import kotlinx.coroutines.launch
 
 /**
@@ -82,21 +78,19 @@ import kotlinx.coroutines.launch
 fun HomeScreen(
     vm: ClipListViewModel,
     shares: SharesRepository,
+    media: MediaRepository,
     themePrefs: ThemePreferenceRepository,
-    onMatchClick: (MatchSummary) -> Unit,
-    onScoreMatchClick: (ScoreMatchCard) -> Unit,
+    onMatchClick: (videoId: String) -> Unit,
+    onScoreMatchClick: (scoreLogId: String) -> Unit,
     onNewMatch: () -> Unit,
-    onOpenHeatmap: ((LocalVideoEntry) -> Unit)? = null,
-    hasHeatmap: (LocalVideoEntry) -> Boolean = { false },
-    onOpenLocalClips: ((LocalVideoEntry) -> Unit)? = null,
-    localClipCount: (LocalVideoEntry) -> Int = { 0 },
-    localRows: List<LocalVideoRow> = emptyList(),
+    onOpenHeatmap: (heatmapId: String) -> Unit = {},
+    onOpenLocalClips: (entryId: String) -> Unit = {},
     intakeError: String? = null,
     onIntakeErrorShown: () -> Unit = {},
-    onLocalClick: (LocalVideoEntry) -> Unit = {},
-    onLocalAnalyze: (LocalVideoRow) -> Unit = {},
-    onLocalRemove: (LocalVideoEntry) -> Unit = {},
-    onLocalResultSeen: (LocalVideoEntry) -> Unit = {},
+    onLocalClick: (entryId: String) -> Unit = {},
+    onAnalyze: (entryId: String) -> Unit = {},
+    onRemoveFromPhone: (entryId: String) -> Unit = {},
+    onLocalResultSeen: (entryId: String) -> Unit = {},
     onLocalDetailsSaved: (id: String, title: String, description: String) -> Unit = { _, _, _ -> },
     autoDetailsEntryId: String? = null,
     onAutoDetailsShown: () -> Unit = {},
@@ -104,8 +98,8 @@ fun HomeScreen(
     onImport: () -> Unit = {},
     onLabels: () -> Unit = {},
     onOpenAnalytics: () -> Unit = {},
-    onAttachedMarkCourt: (String) -> Unit = {},
-    onAttachedRetry: (String) -> Unit = {},
+    onMarkCourt: (scoreLogId: String) -> Unit = {},
+    onRetryAttached: (scoreLogId: String) -> Unit = {},
     /** Set by the background-work indicator: its job is to show the run, which
      * lives in the drawer's list, so arriving here also opens the drawer. */
     openDrawerRequested: Boolean = false,
@@ -218,16 +212,16 @@ fun HomeScreen(
                     ClipListScreen(
                         vm = vm,
                         shares = shares,
+                        media = media,
                         onMatchClick = onMatchClick,
                         onScoreMatchClick = onScoreMatchClick,
-                        onOpenHeatmap = onOpenHeatmap,
-                        hasHeatmap = hasHeatmap,
-                        onOpenLocalClips = onOpenLocalClips,
-                        localClipCount = localClipCount,
-                        localRows = localRows,
                         onLocalClick = onLocalClick,
-                        onLocalAnalyze = onLocalAnalyze,
-                        onLocalRemove = onLocalRemove,
+                        onAnalyze = onAnalyze,
+                        onMarkCourt = onMarkCourt,
+                        onRetryAttached = onRetryAttached,
+                        onOpenHeatmap = onOpenHeatmap,
+                        onOpenLocalClips = onOpenLocalClips,
+                        onRemoveFromPhone = onRemoveFromPhone,
                         onLocalResultSeen = onLocalResultSeen,
                         onLocalDetailsSaved = onLocalDetailsSaved,
                         autoDetailsEntryId = autoDetailsEntryId,
@@ -237,16 +231,15 @@ fun HomeScreen(
                         // coach back on a Home screen that looked exactly as it
                         // did before he picked the file. Opening the drawer as
                         // the sheet goes away puts the new video on screen -
-                        // stored newest first, so it is the top row of "On this
-                        // phone" with nothing to scroll to.
+                        // the list is newest first and a new video sorts on when
+                        // it was added, so it is the top row with nothing to
+                        // scroll to.
                         //
                         // Mirrored by HomeView.swift's `.sheet(item: $detailsTarget,
                         // onDismiss:)`. The two are one rule written twice, with
                         // nothing shared to hold them together, so a change here
                         // is a change there.
                         onAutoDetailsClosed = { scope.launch { drawerState.open() } },
-                        onAttachedMarkCourt = onAttachedMarkCourt,
-                        onAttachedRetry = onAttachedRetry,
                         // The sheet is Home's, composed outside the drawer, so it
                         // opens over the drawer as it slides shut.
                         onAddMatch = {

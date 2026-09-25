@@ -18,9 +18,9 @@ import com.badmintontracker.android.ui.components.SwipeToRemoveRow
  *
  * The list is an inset one now, not a full-bleed one: rows are cards sitting on
  * the panel with a margin either side, separated by a gap rather than by a
- * divider. Everything that renders a row in the drawer - the "On this phone"
- * card in LocalVideoSection.kt and both match rows in ClipListScreen.kt - reads
- * its numbers from here, so the two files cannot drift a dp apart.
+ * divider. Everything that renders a row in the drawer - MatchListRow.kt and
+ * the section labels and filter row around it - reads its numbers from here,
+ * so the pieces cannot drift a dp apart.
  *
  * Mirrors iosApp's DrawerList.swift number for number.
  */

@@ -125,6 +125,34 @@ class ShuttlPaletteTest {
         }
     }
 
+    /**
+     * The match list's analysis glyphs are the only thing saying which analysis
+     * a match has, so they are held to the 3:1 non-text floor on their chip, on
+     * both row surfaces: the quiet row (bg) and the raised card (bgTertiary).
+     * The accent itself only makes 2.4:1 there in light, which is why the
+     * glyph is its own token.
+     */
+    @Test
+    fun analysis_glyph_reads_on_its_chip_on_every_row_surface() {
+        fun blend(fg: Long, bg: Long, alpha: Float): Long {
+            fun mix(shift: Int): Long {
+                val f = (fg shr shift) and 0xFF
+                val b = (bg shr shift) and 0xFF
+                return Math.round(alpha * f + (1 - alpha) * b).toLong() shl shift
+            }
+            return mix(16) or mix(8) or mix(0)
+        }
+        val alphas = mapOf("light" to ShuttlPalette.analysisChipOpacity.light, "dark" to ShuttlPalette.analysisChipOpacity.dark)
+        for ((theme, pick) in themes) {
+            for ((surfaceName, surface) in listOf("bg" to pick(ShuttlPalette.bg), "bgTertiary" to pick(ShuttlPalette.bgTertiary))) {
+                val chip = blend(pick(ShuttlPalette.accent), surface, alphas.getValue(theme))
+                withClue("$theme analysisGlyph on its chip on $surfaceName") {
+                    contrast(pick(ShuttlPalette.analysisGlyph), chip).shouldBeGreaterThanOrEqual(3.0)
+                }
+            }
+        }
+    }
+
     @Test
     fun dark_palette_matches_the_mock() {
         ShuttlPalette.bg.dark shouldBe 0x0B0C0DL
