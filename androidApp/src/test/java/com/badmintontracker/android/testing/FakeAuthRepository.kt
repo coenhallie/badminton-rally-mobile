@@ -8,11 +8,14 @@ class FakeAuthRepository : AuthRepository {
     val session = MutableStateFlow<SessionStatus>(SessionStatus.NotAuthenticated(false))
     override val sessionFlow = session
     var currentUserIdValue: String? = "user-self"
+    var currentUserEmailValue: String? = null
     var nextEmailResult: Result<Unit> = Result.success(Unit)
     val emailCalls = mutableListOf<Pair<String, String>>()
     val signOutCalls = mutableListOf<Unit>()
 
     override fun currentUserId(): String? = currentUserIdValue
+
+    override fun currentUserEmail(): String? = currentUserEmailValue
 
     override suspend fun signInEmail(email: String, password: String): Result<Unit> {
         emailCalls += email to password
