@@ -120,12 +120,8 @@ struct HomeView: View {
                         onLocalPlayer: { localPlayerRoute = $0 },
                         onLocalClips: { localClipsRoute = $0 },
                         onAnalyticsDetail: { analyticsDetailRoute = $0 },
-                        // The sheet is Home's, presented outside the drawer, so
-                        // it opens over the drawer as it slides shut.
-                        onAddMatch: {
-                            withAnimation(.snappy(duration: 0.24)) { drawerOpen = false }
-                            showAddSheet = true
-                        }
+                        heroPaused: drawerOpen,
+                        onOverlayChange: { _ in }
                     )
                 }
             }
@@ -149,7 +145,9 @@ struct HomeView: View {
                 // to Home instead of to his list.
                 AnalyticsListView(
                     rally: rally, analyze: analyze,
-                    model: listModel, localAnalysis: localAnalysis
+                    model: listModel, localAnalysis: localAnalysis,
+                    onCourtMarking: { courtMarkingRoute = $0 },
+                    onDetail: { analyticsDetailRoute = $0 }
                 )
             }
             .navigationDestination(item: $matchRoute) { route in

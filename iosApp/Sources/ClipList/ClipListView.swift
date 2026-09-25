@@ -1,24 +1,25 @@
 import SwiftUI
 import Shared
 
-/// The list of matches, now the drawer's content rather than the app's front
-/// door: one row per match, wherever its video is, with "Shared with me" below.
+/// The list of matches, on the Matches tab: one row per match, wherever its
+/// video is, with "Shared with me" below.
 ///
 /// Every row comes from the shared builder (`ClipListModel.matchList`); this
 /// view only draws them and turns their taps, menus and swipes into model
 /// calls and the closures below. Mirrors androidApp's ClipListScreen.kt.
 ///
-/// Home owns every navigation destination this list used to register
+/// HomeView owns every navigation destination this list used to register
 /// (including `CreateFlowDestination` - see `HomeView.swift`'s own copy of its
 /// doc comment) and hands this view closures instead: `onMatchTap`,
-/// `onCourtMarking` and `onLocalPlayer` report a tap upward so Home can drive
+/// `onCourtMarking` and `onLocalPlayer` report a tap upward so it can drive
 /// its own `item:` bindings, the same shape `CreateFlowDestination` depends on.
 struct MatchesList: View {
     let rally: RallyApp
     let analyze: AnalyzeCoordinator
-    /// Owned by Home, not here: Home's "Add new match" sheet is what creates
-    /// entries now, and `intake.error`/`intake.lastAddedId` are surfaced and
-    /// consumed on Home's screen, not behind a closed drawer.
+    /// Owned outside this list, like every destination it used to register.
+    /// The tab's own Add button (`AddMatchButton`, in `MatchesTabView`) is what
+    /// starts a record or import now, and `intake.error`/`intake.lastAddedId`
+    /// are surfaced and consumed on the tab, not behind a closed drawer.
     let intake: LocalVideoIntake
     /// Owned by Home, like every destination this list used to register. It has
     /// to be one instance for the whole app rather than one per screen: its own
@@ -34,9 +35,12 @@ struct MatchesList: View {
     /// upward like every other one this list carries. Home owns them.
     let onLocalClips: (LocalClipsRoute) -> Void
     let onAnalyticsDetail: (AnalyticsDetailRoute) -> Void
-    /// The empty state's own "Add new match": Home closes the drawer and
-    /// opens its add sheet.
-    let onAddMatch: () -> Void
+    /// The empty state's hero ticker stops while this tab is not on screen or
+    /// something is pushed over it.
+    let heroPaused: Bool
+    /// Whether any sheet or dialog this list owns is open. HomeView folds it
+    /// into "nothing above the tabs", which gates a finished run switching tabs.
+    let onOverlayChange: (Bool) -> Void
 
     @State private var shareTarget: ShareTarget? = nil
     @State private var thumbnails = LocalThumbnails()
@@ -52,7 +56,7 @@ struct MatchesList: View {
     // list as it is now (`itemWithKey`), not as the item the gesture saw: the
     // list is rebuilt under an open dialog (stored results land, a run
     // settles, clips sync), and the dialog has to say what removing or
-    // deleting the row does as it is drawn now. Android's drawer showed the
+    // deleting the row does as it is drawn now. Android's list showed the
     // stale version; this is the same rule on both.
     @State private var choiceKey: String? = nil
     @State private var deleteKey: String? = nil
@@ -63,6 +67,14 @@ struct MatchesList: View {
     private var choiceTarget: MatchListItem? { target(choiceKey, .choice) }
     private var deleteTarget: MatchListItem? { target(deleteKey, .delete) }
     private var removeTarget: MatchListItem? { target(removeKey, .remove) }
+
+    /// Any sheet, confirmation or alert this list owns, reported upward
+    /// through `onOverlayChange` so HomeView can fold it into "nothing above
+    /// the tabs" alongside its own sheets and pushes.
+    private var overlayOpen: Bool {
+        shareTarget != nil || detailsTarget != nil || legendOpen || resultEntry != nil
+            || choiceKey != nil || deleteKey != nil || removeKey != nil
+    }
 
     /// The row a held key's dialog is for, while it still offers what the
     /// dialog confirms: the shared rule (`confirmationTarget`) Android uses.
@@ -133,6 +145,7 @@ struct MatchesList: View {
             Text(entry.failureMessage ?? "Unknown error")
         }
         .refreshable { await model.refresh() }
+        .onChange(of: overlayOpen, initial: true) { _, open in onOverlayChange(open) }
     }
 
     private var content: some View {
@@ -187,9 +200,10 @@ struct MatchesList: View {
             }
         }
         .listStyle(.plain)
-        // The drawer's panel is what should show between the inset rows, not
-        // the material `List` paints over it.
+        // The tab's own background is what should show between the inset
+        // rows, not the material `List` paints over it.
         .scrollContentBackground(.hidden)
+        .background(Shuttl.bg)
         .listSectionSpacing(0)
         // A `List` floors every row at ~44pt. A 12pt section label is well under
         // that, so the floor was padding it out and putting 29pt between a label
@@ -204,28 +218,28 @@ struct MatchesList: View {
         .onChange(of: showChips) { wasShown, isShown in
             if wasShown && !isShown { filter = .all }
         }
-        // Over the list rather than in it: a row cannot centre itself in the
-        // panel, and the list underneath keeps `.refreshable` working.
+        // Room at the foot so the last row clears the Add button and the tab
+        // bar, both of which float over the list rather than reserving space
+        // in its layout.
+        .safeAreaPadding(.bottom, 72)
+        // Over the list rather than in it: the hero needs the full available
+        // height to top-align itself, which a row cannot do, and the list
+        // underneath keeps `.refreshable` working.
         .overlay {
             if mine.isEmpty && shared.isEmpty && !model.isRefreshing {
-                // The control itself, not directions to it: this list sits
-                // behind the drawer, and "tap Add new match on Home" sent a
-                // first-time user back out to find a button they had not
-                // seen yet. Mirrors ClipListScreen.kt's own copy.
-                ShuttlEmptyState(
-                    systemImage: "trophy",
-                    title: "No matches yet",
-                    message: "Record, import or score a match and it will show up here."
-                ) {
-                    Button(action: onAddMatch) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "plus")
-                            Text("Add new match")
-                        }
-                    }
-                    .buttonStyle(CompactPillButtonStyle())
-                    .accessibilityLabel("Add new match")
+                // The old Home hero, then what the Add button does. No button of
+                // its own: the Add button is on screen, and two controls doing one
+                // thing is noise. Top aligned so the cycling line never moves it.
+                VStack(alignment: .leading, spacing: 22) {
+                    HeroTickerView(isPaused: heroPaused)
+                    Text(HomeCopy.shared.EMPTY_BODY)
+                        .shuttlType(ShuttlType.bodyLarge)
+                        .foregroundStyle(Shuttl.textSecondary)
+                        .frame(maxWidth: 320, alignment: .leading)
                 }
+                .padding(.horizontal, 24)
+                .padding(.top, 72)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         }
     }
@@ -442,7 +456,7 @@ private extension MatchesList {
     }
 
     /// Clears every held key whose dialog has lost its row, as Android's
-    /// drawer does in its `LaunchedEffect`. Same rule on both.
+    /// list does in its `LaunchedEffect`. Same rule on both.
     func dropStaleConfirmations() {
         if choiceKey != nil && choiceTarget == nil { choiceKey = nil }
         if deleteKey != nil && deleteTarget == nil { deleteKey = nil }

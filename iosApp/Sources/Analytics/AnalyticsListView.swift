@@ -1,10 +1,10 @@
 import Shared
 import SwiftUI
 
-/// The coach's Analytics list: the same rows the drawer lists, in the same
-/// order, one row per match whether its video is on this phone, in the cloud
-/// or both - "Shared with me" is the only section either screen still labels.
-/// Port of Android's `AnalyticsScreen`.
+/// The coach's Analytics tab: the same rows the Matches tab lists, in the
+/// same order, one row per match whether its video is on this phone, in the
+/// cloud or both - "Shared with me" is the only section either screen still
+/// labels. Port of Android's `AnalyticsScreen`.
 struct AnalyticsListView: View {
     let rally: RallyApp
     let analyze: AnalyzeCoordinator
@@ -19,20 +19,16 @@ struct AnalyticsListView: View {
     /// absence is what keeps every row's control honest: with no runner there is
     /// no track store, so nothing can be ready.
     let localAnalysis: LocalAnalysisRunner?
+    /// Reported upward instead of pushed from here: as a tab root this view
+    /// sits at the same depth as the Matches tab, so `HomeView`'s own
+    /// `navigationDestination`s present both of these one deeper, the same way
+    /// it already does for every route `MatchesList` reports.
+    let onCourtMarking: (CourtMarkingRoute) -> Void
+    /// The same shape as `onCourtMarking`, for the row menu's heatmap and a
+    /// ready row's tap.
+    let onDetail: (AnalyticsDetailRoute) -> Void
 
     @State private var progressById: [String: AnalyzeProgress] = [:]
-    @State private var detailRoute: AnalyticsDetailRoute? = nil
-    /// Registered on this view rather than on Home, so court marking stacks ON
-    /// Analytics instead of replacing it.
-    ///
-    /// The rule is about PRESENTATION depth, not registration: Home declares
-    /// seven `navigationDestination`s side by side and they all work. What
-    /// cannot happen is two of them presenting at the same depth. Court marking
-    /// driven from Home's binding would present at the depth Analytics already
-    /// occupies, swapping it out and landing the coach back on Home rather than
-    /// on the list he was working through. Declared here it presents one deeper.
-    /// Android settled the same question the same way.
-    @State private var courtMarkingRoute: CourtMarkingRoute? = nil
 
     var body: some View {
         let rows = buildAnalyticsRows(
@@ -43,44 +39,43 @@ struct AnalyticsListView: View {
         )
         let legend = analyticsLegend(for: rows)
 
-        return Group {
-            if rows.isEmpty {
-                // No action here: matches are added on Home, and this screen's
-                // only way there is its back button, which the body names.
-                ShuttlEmptyState(
-                    systemImage: "chart.bar",
-                    title: "No matches yet",
-                    message: "Add a match on Home and it will be listed here, ready to analyze."
-                ) { EmptyView() }
-                .background(Shuttl.bg)
-            } else {
-                list(rows: rows, legend: legend)
+        return VStack(spacing: 0) {
+            TabHeader(HomeCopy.shared.TAB_ANALYTICS) { BackgroundWorkAction() }
+            Group {
+                if rows.isEmpty {
+                    // No action here: matches are added on the Matches tab,
+                    // which the body names directly.
+                    ShuttlEmptyState(
+                        systemImage: "chart.bar",
+                        title: HomeCopy.shared.ANALYTICS_EMPTY_TITLE,
+                        message: HomeCopy.shared.ANALYTICS_EMPTY_BODY
+                    ) { EmptyView() }
+                } else {
+                    list(rows: rows, legend: legend)
+                }
             }
         }
-        .navigationTitle("Analytics")
-        .navigationBarTitleDisplayMode(.inline)
-        .shuttlNavigationBarBackground()
-        .toolbar {
-            // The chrome indicator, on every bar androidApp puts it on. See
-            // `BackgroundWorkAction`.
-            ToolbarItem(placement: .topBarTrailing) { BackgroundWorkAction() }
-        }
+        .background(Shuttl.bg)
         .task {
             await model.start()
-            // Android builds a fresh ClipListViewModel per entry to
-            // Route.Analytics and its init refreshes, so opening Analytics there
-            // always pulls. Here start() is latched after the first call, so
-            // without this an entry made no network call at all: a cloud run that
-            // finished, or a match a colleague shared, while the app was
-            // backgrounded would simply not be on the list, and the only pull to
-            // refresh in the app is the drawer's.
+            // Android used to build a fresh ClipListViewModel per entry to its
+            // Analytics screen and its init refreshed, so opening it there
+            // always pulled. Here `model` is the one instance HomeView owns
+            // for the whole app, and `start()` is idempotent (see its own doc
+            // comment: repeated calls only restart its five observing loops,
+            // latched behind `initialRefreshStarted` so the one-time network
+            // refresh it kicks off cannot fire twice) - so without the
+            // explicit refresh() below, reopening this tab after a cloud run
+            // finished, or after a colleague shared a match, while it was off
+            // screen would pull nothing at all. This task runs again every
+            // time the tab reappears.
             await model.refresh()
         }
         // Device runs and stored results are fed into `model` once, from
         // `HomeView`'s own `NavigationStack` - the common parent of this
-        // screen and the drawer, which stays mounted the whole time either is
-        // on screen. This screen used to keep its own copy of the same two
-        // probes (`storedTrackIds`, `refreshStoredTracks`, keyed on
+        // screen and the Matches tab, which stays mounted the whole time
+        // either is on screen. This screen used to keep its own copy of the
+        // same two probes (`storedTrackIds`, `refreshStoredTracks`, keyed on
         // `trackCandidateIds` and `settledRuns`); that copy is gone, not
         // moved here, so the two screens do not each run it at once. See
         // `MatchListFeed`.
@@ -90,40 +85,24 @@ struct AnalyticsListView: View {
             }
         }
         .refreshable { await model.refresh() }
-        .navigationDestination(item: $courtMarkingRoute) { route in
-            CourtMarkingView(
-                rally: rally, analyze: analyze,
-                localAnalysis: localAnalysis, entryId: route.entryId
-            )
-        }
-        .navigationDestination(item: $detailRoute) { route in
-            AnalyticsDetailView(
-                rally: rally, localAnalysis: localAnalysis, entryId: route.entryId,
-                fallbackTitle: route.title
-            )
-        }
     }
 
     @ViewBuilder
     private func list(rows: [AnalyticsRow], legend: AnalyticsLegend) -> some View {
         List {
-            // The mock's headline over the list, then the one line saying what
-            // the rows offer.
-            Text("Pick a match")
-                .shuttlType(ShuttlType.headlineLarge)
-                .foregroundStyle(Shuttl.textHeading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .analyticsListRow(top: AnalyticsList.headlineTop)
-
+            // Carries the top inset the mock's own headline used to: the
+            // tab's title is drawn once, in `TabHeader`, above this list now,
+            // so the legend (or the first group's rows, if there is no
+            // legend) is what sits at the list's own top.
             if let text = legend.text {
                 legendRow(text, showsDot: legend.showsDot)
-                    .analyticsListRow(top: AnalyticsList.legendGap, bottom: AnalyticsList.legendGap)
+                    .analyticsListRow(top: AnalyticsList.headlineTop, bottom: AnalyticsList.legendGap)
             }
 
             ForEach(AnalyticsGroup.allCases, id: \.self) { group in
                 let groupRows = rows.filter { $0.group == group }
                 if !groupRows.isEmpty {
-                    // Sentence case at bodySmall, the same label the drawer's
+                    // Sentence case at bodySmall, the same label the Matches tab's
                     // own "Shared with me" section carries
                     // (`DrawerSectionLabel`/`MatchListCopy.SHARED_SECTION`) -
                     // NOT `Shuttl.sectionLabel`, the uppercase tracked
@@ -167,6 +146,9 @@ struct AnalyticsListView: View {
         // the home indicator. Android's LazyColumn spends its contentPadding
         // the same way.
         .contentMargins(.bottom, AnalyticsList.gutter, for: .scrollContent)
+        // Extra room below the page gutter above, so the last card clears the
+        // tab bar rather than sitting flush against it.
+        .safeAreaPadding(.bottom, 16)
     }
 
     @ViewBuilder
@@ -185,7 +167,7 @@ struct AnalyticsListView: View {
     }
 
     /// One match on the mock's card: title over subtitle, the players line and
-    /// the status line (as the drawer draws them), and on the right the
+    /// the status line (as the Matches tab draws them), and on the right the
     /// availability dot for a ready row or the Analyze pill for an analysable
     /// one. A match that is not on this phone draws neither: its status line
     /// already says where the video is, and for a scored match with no video at
@@ -207,7 +189,7 @@ struct AnalyticsListView: View {
                     .foregroundStyle(Shuttl.textTertiary)
                     .lineLimit(1)
                     .padding(.top, AnalyticsList.subtitleGap)
-                // Absent until somebody is named, the same rule the drawer's own
+                // Absent until somebody is named, the same rule the Matches tab's own
                 // row follows: "Home vs Away" on every row would say nothing.
                 if let players = row.item.playersLine {
                     Text(players)
@@ -264,7 +246,7 @@ struct AnalyticsListView: View {
         .onTapGesture {
             guard AnalyticsRowStateKt.opensAnalytics(state: row.state),
                   let entryId = row.entryId else { return }
-            detailRoute = AnalyticsDetailRoute(entryId: entryId, title: row.title)
+            onDetail(AnalyticsDetailRoute(entryId: entryId, title: row.title))
         }
         .accessibilityAddTraits(AnalyticsRowStateKt.opensAnalytics(state: row.state) ? .isButton : [])
     }
@@ -284,7 +266,7 @@ struct AnalyticsListView: View {
             // line above says why it stopped.
             analysePill("Paused", row: row, loading: false, enabled: false)
         case .failed:
-            // "Retry", not the drawer's "Re-analyze": this row already carries
+            // "Retry", not the Matches tab's "Re-analyze": this row already carries
             // the failure reason on the line above, exactly as a scored match's
             // row does, and that row says "Retry" too.
             analysePill("Retry", row: row, loading: false)
@@ -298,7 +280,7 @@ struct AnalyticsListView: View {
         }
     }
 
-    /// The same pill the drawer's row uses, down to the padding: the two
+    /// The same pill the Matches tab's row uses, down to the padding: the two
     /// screens list the same videos and their one action must not look like
     /// two.
     private func analysePill(
@@ -344,14 +326,14 @@ struct AnalyticsListView: View {
         case .resume(let id):
             analyze.retry(entryId: id)
         case .markCourt(let id):
-            courtMarkingRoute = CourtMarkingRoute(entryId: id)
+            onCourtMarking(CourtMarkingRoute(entryId: id))
         }
     }
 }
 
 /// The Analytics list's own metrics, from the `Rally Analysis` mock.
 ///
-/// Deliberately NOT `DrawerList`'s, even though the drawer lists the same videos
+/// Deliberately NOT `DrawerList`'s, even though the Matches tab lists the same videos
 /// one tap away and both are inset cards in a `List`. Those rows carry a
 /// thumbnail and sit tighter (16 by 14, a 6 gap); an Analytics row is text and
 /// one control at a larger size, and the mock gives it its own numbers. What the
