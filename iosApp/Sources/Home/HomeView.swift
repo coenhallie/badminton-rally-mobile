@@ -115,7 +115,6 @@ struct HomeView: View {
                         analyze: analyze,
                         intake: intake,
                         model: listModel,
-                        localAnalysis: localAnalysis,
                         onMatchTap: { matchRoute = $0 },
                         onCourtMarking: { courtMarkingRoute = $0 },
                         onLocalPlayer: { localPlayerRoute = $0 },
@@ -205,6 +204,12 @@ struct HomeView: View {
                 )
             }
         }
+        // Device runs and stored results, fed into `listModel` from here and
+        // nowhere else: this `NavigationStack` is the common parent of the
+        // drawer and Analytics, and it stays mounted for as long as the app
+        // does, regardless of which destination above is pushed on top of it.
+        // See `MatchListFeed`.
+        .feedsMatchList(model: listModel, localAnalysis: localAnalysis)
         // A CLOUD run that lands does the same. It ends by retiring its entry,
         // so without this the coach watching Home saw the row vanish and
         // nothing else - no result, and nothing saying where it had gone. The

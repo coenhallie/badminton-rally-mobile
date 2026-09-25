@@ -2,18 +2,21 @@ import Shared
 import SwiftUI
 
 /// Feeds a `ClipListModel` what the on-device runner is doing and what earlier
-/// runs left on disk, so `model.matchList` never goes stale while either
-/// consumer is on screen.
+/// runs left on disk, so `model.matchList` never goes stale.
 ///
-/// Both `MatchesList` and `AnalyticsListView` apply this, rather than each
-/// keeping its own copy of the same two probes. Before this existed only the
-/// drawer fed the model (`MatchesList`'s own `.onChange`/`.task(id:)`), so a
-/// device run that started or settled while Analytics was the screen on top -
-/// and the drawer was not - left Analytics reading a `matchList` the drawer
-/// had last delivered. Applying the same modifier to both means whichever of
-/// the two is actually on screen keeps the model current, without the model
-/// itself having to bridge `LocalAnalysisRunner`'s `@Observable` properties
-/// into an async sequence of its own.
+/// Applied exactly once, on `HomeView`'s own `NavigationStack` - the common
+/// parent of `MatchesList` and `AnalyticsListView`, which stays mounted for
+/// the app's whole life regardless of which destination is pushed on top of
+/// it. It used to live on `MatchesList` alone, then on both `MatchesList` and
+/// `AnalyticsListView`: the first left the model looking no different when
+/// Analytics pushed on top, because the drawer underneath it never actually
+/// stops running its own modifiers in a `NavigationStack` - so applying it a
+/// second time on `AnalyticsListView` did not fix a staleness problem, it
+/// just ran the same two probes twice at once, redundantly. One instance, on
+/// the one view that is always there, is both correct and cheaper. The model
+/// still does not bridge `LocalAnalysisRunner`'s `@Observable` properties into
+/// an async sequence of its own - see `ClipListModelTests`' loop-lifecycle
+/// tests for why that would be risky.
 extension View {
     func feedsMatchList(model: ClipListModel, localAnalysis: LocalAnalysisRunner?) -> some View {
         modifier(MatchListFeed(model: model, localAnalysis: localAnalysis))

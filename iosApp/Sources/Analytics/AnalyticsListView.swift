@@ -76,15 +76,14 @@ struct AnalyticsListView: View {
             // refresh in the app is the drawer's.
             await model.refresh()
         }
-        // Device runs and stored results, in the one place both this list and
-        // the drawer feed the model from. Before this existed, this screen kept
-        // its own copy of the same two probes (`storedTrackIds`,
-        // `refreshStoredTracks`, keyed on `trackCandidateIds` and
-        // `settledRuns`), and only the drawer's own copy actually ran while
-        // Analytics was the one on screen - so a run that finished while a coach
-        // was looking at this list left its row stale until he went back to the
-        // drawer and returned. See `MatchListFeed`.
-        .feedsMatchList(model: model, localAnalysis: localAnalysis)
+        // Device runs and stored results are fed into `model` once, from
+        // `HomeView`'s own `NavigationStack` - the common parent of this
+        // screen and the drawer, which stays mounted the whole time either is
+        // on screen. This screen used to keep its own copy of the same two
+        // probes (`storedTrackIds`, `refreshStoredTracks`, keyed on
+        // `trackCandidateIds` and `settledRuns`); that copy is gone, not
+        // moved here, so the two screens do not each run it at once. See
+        // `MatchListFeed`.
         .task {
             for await map in analyze.progress {
                 progressById = map
@@ -215,6 +214,7 @@ struct AnalyticsListView: View {
                         .shuttlType(ShuttlType.bodySmall)
                         .foregroundStyle(Shuttl.textTertiary)
                         .lineLimit(1)
+                        .padding(.top, AnalyticsList.subtitleGap)
                 }
                 if row.item.hasStatusLine {
                     MatchStatusLine(item: row.item)

@@ -27,11 +27,6 @@ struct MatchesList: View {
     /// doubling four flow subscriptions and four network calls per refresh.
     /// Analytics reads the same one.
     let model: ClipListModel
-    /// The on-device pipeline, or nil in a build with no models staged. Read for
-    /// the same reason Analytics reads it: a device run never moves the entry's
-    /// stage, so a row asking the stage alone offers Analyze and Remove over a
-    /// run already in flight.
-    let localAnalysis: LocalAnalysisRunner?
     let onMatchTap: (MatchRoute) -> Void
     let onCourtMarking: (CourtMarkingRoute) -> Void
     let onLocalPlayer: (LocalPlayerRoute) -> Void
@@ -85,9 +80,6 @@ struct MatchesList: View {
                 }
             }
         }
-        // Device runs and stored results, in the one place both this list and
-        // Analytics feed the model from. See `MatchListFeed`.
-        .feedsMatchList(model: model, localAnalysis: localAnalysis)
         .sheet(item: $shareTarget) { target in
             ShareSheetView(rally: rally, videoId: target.videoId)
         }
