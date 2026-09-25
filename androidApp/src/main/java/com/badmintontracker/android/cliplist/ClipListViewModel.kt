@@ -2,10 +2,19 @@ package com.badmintontracker.android.cliplist
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.badmintontracker.android.localanalysis.LocalAnalysisState
+import com.badmintontracker.android.localanalysis.isDeviceRunInFlight
+import com.badmintontracker.android.localanalysis.toDeviceRun
 import com.badmintontracker.shared.localvideo.AnalyzeCoordinator
+import com.badmintontracker.shared.localvideo.AnalyzeProgress
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
+import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.localvideo.canRemoveLocalVideo
+import com.badmintontracker.shared.matchlist.DeviceRun
+import com.badmintontracker.shared.matchlist.MatchList
+import com.badmintontracker.shared.matchlist.MatchListInput
+import com.badmintontracker.shared.matchlist.buildMatchList
 import com.badmintontracker.shared.matchlist.matchTitle
 import com.badmintontracker.shared.model.MatchMetadata
 import com.badmintontracker.shared.model.RallyClip
@@ -14,18 +23,26 @@ import com.badmintontracker.shared.repo.ClipsRepository
 import com.badmintontracker.shared.repo.SharesRepository
 import com.badmintontracker.shared.repo.VideosRepository
 import com.badmintontracker.shared.scoring.MatchFormat
+import com.badmintontracker.shared.scoring.ScoreLog
 import com.badmintontracker.shared.scoring.ScoreLogsRepository
 import com.badmintontracker.shared.scoring.buildScoreMatchCard
 import com.badmintontracker.shared.scoring.playersLine
 import com.badmintontracker.shared.scoring.scoreLogAttachStatus
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.datetime.Instant
 
 data class MatchSummary(
@@ -64,6 +81,20 @@ data class ClipListState(
     val sharedMatches: List<MatchSummary> = emptyList(),
     val isRefreshing: Boolean = false,
     val error: String? = null,
+    /**
+     * The drawer's one list: every match once, whether its video is on this
+     * phone, in the cloud or both, with what analysis it has. Built by the
+     * shared builder so the drawer, the Analytics picker and iOS cannot
+     * disagree about which rows exist.
+     */
+    val matchList: MatchList = MatchList(emptyList(), emptyList()),
+    val storedResults: StoredResults = StoredResults(),
+    /**
+     * The videos on this phone, for what a row opens rather than what it
+     * draws: the details sheet needs the entry's own title and description,
+     * and a failed run's result dialog its message.
+     */
+    val localEntries: List<LocalVideoEntry> = emptyList(),
 )
 
 /**
@@ -101,6 +132,7 @@ internal fun List<RallyClip>.toMatches(
         }
         .sortedByDescending { it.latestCreatedAt }
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class ClipListViewModel(
     private val clips: ClipsRepository,
     private val auth: AuthRepository,
@@ -110,6 +142,14 @@ class ClipListViewModel(
     private val localVideos: LocalVideoRepository,
     private val coordinator: AnalyzeCoordinator,
     private val localAnnotations: LocalAnnotationsRepository,
+    /**
+     * The device runner's state, as a flow rather than the runner itself, for
+     * the reason LocalVideoListViewModel gives: nothing else of it is needed,
+     * and the object would drag a Context into a fold over streams.
+     */
+    private val deviceStates: StateFlow<Map<String, LocalAnalysisState>>,
+    private val storedResults: StoredResultsReader,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
     private val refreshing      = MutableStateFlow(true)
     private val errors          = MutableStateFlow<String?>(null)
@@ -118,8 +158,6 @@ class ClipListViewModel(
     // class is built once per screen that lists matches, and a rename made on
     // the match page has to reach every one of them the moment it lands.
     private val metadataByVideoId = videos.observeMatchMetadata()
-
-    private val scoreCards = scoreLogs.logs.map { logs -> logs.map(::buildScoreMatchCard) }
 
     /**
      * What each scored match's video is doing, keyed by score log id. Built here
@@ -143,27 +181,113 @@ class ClipListViewModel(
         }.toMap()
     }
 
-    val state = combine(
+    /**
+     * Device runs as the list sees them. A run reports progress several times
+     * a second, but the list draws only its phase (the percentage lives on
+     * Home's banner and the chrome indicator), so equal maps are dropped here
+     * rather than rebuilding the list for nothing.
+     */
+    private val deviceRuns = deviceStates
+        .map { states -> buildMap<String, DeviceRun> { states.forEach { (id, s) -> toDeviceRun(s)?.let { put(id, it) } } } }
+        .distinctUntilChanged()
+
+    /** Every id a row can be keyed by: the phone's entries and the cloud's videos. */
+    private val candidateIds = combine(localVideos.entries, clips.observeClips()) { entries, allClips ->
+        buildSet {
+            entries.forEach { add(it.id) }
+            allClips.forEach { add(it.videoId) }
+        }
+    }
+
+    /**
+     * Changes exactly when what is on disk can have: a device run stopping
+     * (Failed counts, since the track is written before the clips are cut and
+     * a run that dies in the cut still left one), or an entry's stage moving
+     * (a cloud run installs its track as the stage turns ANALYZED). Progress
+     * ticks leave it equal.
+     */
+    private val settledKey = combine(
+        deviceStates.map { states ->
+            states.filterValues { it is LocalAnalysisState.Done || it is LocalAnalysisState.Failed }.keys
+        },
+        localVideos.entries.map { entries -> entries.map { it.id to it.stage } },
+    ) { settled, stages -> settled to stages }
+
+    /**
+     * What earlier runs left on disk, read once for the whole list and off the
+     * main thread. The key is the ids AND the settled state together: a run
+     * that finishes changes the files but not the ids, and dropping repeats on
+     * the ids alone would never read its results.
+     */
+    private val stored = combine(candidateIds, settledKey) { ids, settled -> ids to settled }
+        .distinctUntilChanged()
+        .mapLatest { (ids, _) -> withContext(ioDispatcher) { storedResults.read(ids) } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StoredResults())
+
+    private data class CloudSnapshot(
+        val clips: List<RallyClip>,
+        val sharerByVideoId: Map<String, String>,
+        val metadataByVideoId: Map<String, MatchMetadata>,
+        val isRefreshing: Boolean,
+        val error: String?,
+    )
+
+    private data class PhoneSnapshot(
+        val logs: List<ScoreLog>,
+        val entries: List<LocalVideoEntry>,
+        val progress: Map<String, AnalyzeProgress>,
+        val deviceRuns: Map<String, DeviceRun>,
+        val stored: StoredResults,
+    )
+
+    private val cloud = combine(
         clips.observeClips(),
         sharerByVideoId,
         metadataByVideoId,
         refreshing,
         errors,
-    ) { list, sharerMap, metadataMap, r, e ->
-        val matches = list.toMatches(auth.currentUserId(), sharerMap, metadataMap)
+        ::CloudSnapshot,
+    )
+
+    private val phone = combine(
+        scoreLogs.logs,
+        localVideos.entries,
+        coordinator.progress,
+        deviceRuns,
+        stored,
+        ::PhoneSnapshot,
+    )
+
+    val state = combine(cloud, phone, attachStatuses) { c, p, attach ->
+        val userId = auth.currentUserId()
+        val matches = c.clips.toMatches(userId, c.sharerByVideoId, c.metadataByVideoId)
         val (owned, shared) = matches.partition { it.isOwned }
         ClipListState(
-            clips = list,
+            clips = c.clips,
             ownedMatches = owned,
+            ownedRows = mergeMatchRows(owned, p.logs.map(::buildScoreMatchCard), attach),
             sharedMatches = shared,
-            isRefreshing = r,
-            error = e,
+            isRefreshing = c.isRefreshing,
+            error = c.error,
+            matchList = buildMatchList(
+                MatchListInput(
+                    clips = c.clips,
+                    currentUserId = userId,
+                    sharerByVideoId = c.sharerByVideoId,
+                    metadataByVideoId = c.metadataByVideoId,
+                    scoreLogs = p.logs,
+                    localEntries = p.entries,
+                    cloudProgress = p.progress,
+                    deviceRuns = p.deviceRuns,
+                    storedTrackIds = p.stored.trackIds,
+                    storedSkeletonIds = p.stored.skeletonIds,
+                    deviceClipCounts = p.stored.clipCounts,
+                ),
+            ),
+            storedResults = p.stored,
+            localEntries = p.entries,
         )
-    }.combine(scoreCards) { base, cards -> base to cards }
-        .combine(attachStatuses) { (base, cards), attach ->
-            base.copy(ownedRows = mergeMatchRows(base.ownedMatches, cards, attach))
-        }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ClipListState())
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ClipListState())
 
     init { refresh() }
 
@@ -209,9 +333,10 @@ class ClipListViewModel(
     fun signOut() = viewModelScope.launch { auth.signOut() }
     fun dismissError() { errors.value = null }
 
-    private suspend fun deleteMatchVideo(videoId: String) {
+    private suspend fun deleteMatchVideo(videoId: String, entryId: String? = null) {
         videos.deleteMatch(videoId)
             .onSuccess {
+                entryId?.let(::discardEntry)
                 clips.pruneVideo(videoId)
                 // The database does this too, through ON DELETE SET NULL and the
                 // unbind trigger, but the phone would not learn it until the next
@@ -232,8 +357,34 @@ class ClipListViewModel(
             .onFailure { errors.value = "Couldn't delete the match. Please try again." }
     }
 
-    fun deleteMatch(videoId: String) {
-        viewModelScope.launch { deleteMatchVideo(videoId) }
+    /**
+     * Deletes the cloud match, and with it the file on this phone when the row
+     * had one ([entryId]). The file has to go too: the entry outlives its
+     * analysis at ANALYZED, and a surviving entry would bring the row straight
+     * back as a phone-only match the coach just deleted everywhere.
+     *
+     * Only on success. A failed delete leaves the match in the cloud, and a
+     * file thrown away under it would turn "nothing happened" into "half of it
+     * happened".
+     */
+    fun deleteMatch(videoId: String, entryId: String? = null) {
+        viewModelScope.launch { deleteMatchVideo(videoId, entryId) }
+    }
+
+    /**
+     * The entry and its notes, all of it (the tracks and skeleton go with a
+     * DISCARDED entry). Guarded by the same rule the row's delete is offered
+     * under, re-asked here because a run can start between the confirmation
+     * and the server's answer: deleting the file under it would corrupt the
+     * run and swallow its outcome. The row's match is gone either way; a guarded
+     * entry simply stays as a video on this phone.
+     */
+    private fun discardEntry(entryId: String) {
+        val entry = localVideos.get(entryId) ?: return
+        val runHoldsFile = isDeviceRunInFlight(deviceStates.value[entryId] ?: LocalAnalysisState.Idle)
+        if (!canRemoveLocalVideo(entry.stage) || runHoldsFile) return
+        localVideos.remove(entryId)
+        localAnnotations.removeAllFor(entryId)
     }
 
     /**

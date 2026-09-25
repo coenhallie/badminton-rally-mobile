@@ -46,6 +46,8 @@ import com.badmintontracker.android.analytics.buildAnalyticsRows
 import com.badmintontracker.android.cliplist.ClipListViewModel
 import com.badmintontracker.android.cliplist.MatchRow
 import com.badmintontracker.android.cliplist.MatchSummaryViewModel
+import com.badmintontracker.android.cliplist.StoredResults
+import com.badmintontracker.android.cliplist.StoredResultsReader
 import com.badmintontracker.android.home.HomeScreen
 import com.badmintontracker.android.match.MatchScreen
 import com.badmintontracker.android.match.MatchViewModel
@@ -172,6 +174,11 @@ fun AuthGate(
                 onError = { intakeError = it },
             )
 
+            // One reader for every screen that builds a ClipListViewModel: the
+            // drawer, the Analytics picker and the match page all show what
+            // earlier runs left on disk, and must probe it the same way.
+            val storedResults = remember(localAnalysis) { storedResultsReader(localAnalysis) }
+
             val work by backgroundWork.work.collectAsStateWithLifecycle()
 
             // A device run that lands takes the coach to the Analytics list.
@@ -282,7 +289,14 @@ fun AuthGate(
                 composable<Route.Home> {
                     val clipListVm: ClipListViewModel = viewModel(
                         factory = viewModelFactory {
-                            initializer { ClipListViewModel(rally.clips, rally.auth, rally.shares, rally.videos, rally.scoreLogs, localVideos, coordinator, localAnnotations) }
+                            initializer {
+                                ClipListViewModel(
+                                    rally.clips, rally.auth, rally.shares, rally.videos, rally.scoreLogs,
+                                    localVideos, coordinator, localAnnotations,
+                                    deviceStates = localAnalysis.state,
+                                    storedResults = storedResults,
+                                )
+                            }
                         }
                     )
                     val localVm: LocalVideoListViewModel = viewModel(
@@ -383,7 +397,14 @@ fun AuthGate(
                     // across routes for one.
                     val clipListVm: ClipListViewModel = viewModel(
                         factory = viewModelFactory {
-                            initializer { ClipListViewModel(rally.clips, rally.auth, rally.shares, rally.videos, rally.scoreLogs, localVideos, coordinator, localAnnotations) }
+                            initializer {
+                                ClipListViewModel(
+                                    rally.clips, rally.auth, rally.shares, rally.videos, rally.scoreLogs,
+                                    localVideos, coordinator, localAnnotations,
+                                    deviceStates = localAnalysis.state,
+                                    storedResults = storedResults,
+                                )
+                            }
                         }
                     )
                     val localVm: LocalVideoListViewModel = viewModel(
@@ -525,7 +546,14 @@ fun AuthGate(
                     val args = entry.toRoute<Route.Match>()
                     val clipListVm: ClipListViewModel = viewModel(
                         factory = viewModelFactory {
-                            initializer { ClipListViewModel(rally.clips, rally.auth, rally.shares, rally.videos, rally.scoreLogs, localVideos, coordinator, localAnnotations) }
+                            initializer {
+                                ClipListViewModel(
+                                    rally.clips, rally.auth, rally.shares, rally.videos, rally.scoreLogs,
+                                    localVideos, coordinator, localAnnotations,
+                                    deviceStates = localAnalysis.state,
+                                    storedResults = storedResults,
+                                )
+                            }
                         }
                     )
                     val logs by rally.scoreLogs.logs.collectAsStateWithLifecycle()
@@ -830,6 +858,19 @@ private data class LocalRunResults(
     val heatmapIds: Set<String> = emptySet(),
     val clipCounts: Map<String, Int> = emptyMap(),
 )
+
+/**
+ * What earlier runs left on disk for a set of ids, as the match list reads it.
+ * `hasStoredTrack` and `hasStoredSkeleton` stat one file each and never parse
+ * one; `storedClips` parses a sidecar, or lists a directory when there is none.
+ */
+private fun storedResultsReader(localAnalysis: LocalAnalysisRunner) = StoredResultsReader { ids ->
+    StoredResults(
+        trackIds = ids.filterTo(mutableSetOf(), localAnalysis::hasStoredTrack),
+        skeletonIds = ids.filterTo(mutableSetOf(), localAnalysis::hasStoredSkeleton),
+        clipCounts = ids.associateWith { localAnalysis.storedClips(it).size }.filterValues { it > 0 },
+    )
+}
 
 @Composable
 private fun Splash() {

@@ -21,6 +21,7 @@ import io.kotest.matchers.shouldBe
 import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -64,6 +65,9 @@ class ClipListViewModelTest {
         return ClipListViewModel(
             clips, auth, shares, videos, scoreLogs, lv, coordinator(lv),
             LocalAnnotationsRepository(MapSettings()),
+            deviceStates = MutableStateFlow(emptyMap()),
+            storedResults = { StoredResults() },
+            ioDispatcher = dispatcher,
         )
     }
 

@@ -25,6 +25,7 @@ import io.kotest.matchers.shouldBe
 import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -67,6 +68,9 @@ class ClipListViewModelDeleteTest {
             FakeClipsRepository(), FakeAuthRepository(), FakeSharesRepository(),
             videos, scoreLogs, localVideos, coordinator(localVideos),
             LocalAnnotationsRepository(MapSettings()),
+            deviceStates = MutableStateFlow(emptyMap()),
+            storedResults = { StoredResults() },
+            ioDispatcher = dispatcher,
         )
     }
 
