@@ -186,31 +186,50 @@ class MatchListBuilderTest {
     }
 
     @Test
-    fun the_shared_id_fallback_does_not_borrow_an_entry_another_log_already_owns() {
-        // Refinement of the shared-id fallback above: the entry belongs to l2 by
-        // scoreLogId, so l1 (which merely happens to share its video id) must not
-        // also pick it up - or entryId "v1" would sit on two rows at once, which
-        // is exactly what review focus 2's invariant exists to rule out, across
-        // every log in the input rather than just within one.
+    fun a_contested_video_id_lands_on_exactly_one_score_row() {
+        // C1. The entry's own scoreLogId points at l2, but l1's server-written
+        // video_id claims v1 first - rule (a)/(b): the server's binding wins
+        // over a cached local scoreLogId that disagrees with it. l1 gets the
+        // file and its clips; l2, which merely used to think it owned this
+        // entry, gets neither.
         val list = build(input(
             logs = listOf(log("l1", videoId = "v1"), log("l2")),
             entries = listOf(entry("v1", scoreLogId = "l2")),
+            clips = listOf(clip("v1", 1)),
         ))
-        val ids = list.mine.mapNotNull { it.entryId }
-        ids.size shouldBe ids.toSet().size
-        list.mine.first { it.key == "score-l2" }.entryId shouldBe "v1"
-        list.mine.first { it.key == "score-l1" }.entryId.shouldBeNull()
+        val l1Item = list.mine.first { it.key == "score-l1" }
+        val l2Item = list.mine.first { it.key == "score-l2" }
+        l1Item.entryId shouldBe "v1"
+        l1Item.videoId shouldBe "v1"
+        l2Item.entryId.shouldBeNull()
+        l2Item.videoId.shouldBeNull()
+    }
+
+    @Test
+    fun two_logs_naming_the_same_video_id_the_first_one_in_input_order_keeps_it() {
+        // Rule (a): two score logs both bound to the same video is a data
+        // anomaly, but the fold resolves it the same deterministic way every
+        // time - by input order - rather than however two independent lookups
+        // happen to race.
+        val list = build(input(
+            logs = listOf(log("l1", videoId = "v1"), log("l2", videoId = "v1")),
+            clips = listOf(clip("v1", 1)),
+        ))
+        list.mine.first { it.key == "score-l1" }.videoId shouldBe "v1"
+        list.mine.first { it.key == "score-l2" }.videoId.shouldBeNull()
     }
 
     @Test
     fun no_id_is_ever_listed_twice() {
-        // Review focus 2, as an invariant over every kind of row at once.
+        // Review focus 2, as an invariant over every kind of row at once,
+        // including a contested video id (l4 names the same video as l2, and
+        // must come away with neither the entry nor the clips l2 already has).
         val list = build(input(
             entries = listOf(
                 entry("a", AnalyzeStage.ANALYZED), entry("b"), entry("c", scoreLogId = "l1"),
                 entry("d", AnalyzeStage.ANALYZED, scoreLogId = "l2"),
             ),
-            logs = listOf(log("l1"), log("l2", videoId = "d"), log("l3")),
+            logs = listOf(log("l1"), log("l2", videoId = "d"), log("l3"), log("l4", videoId = "d")),
             clips = listOf(clip("a", 1), clip("d", 1), clip("e", 1), clip("s", 1, owner = OTHER)),
             sharers = mapOf("s" to "coach@club.es"),
         ))
@@ -219,6 +238,7 @@ class MatchListBuilderTest {
         ids.size shouldBe ids.toSet().size
         all.map { it.key }.toSet().size shouldBe all.size
         list.shared.map { it.videoId } shouldContainExactly listOf("s")
+        list.mine.first { it.key == "score-l4" }.videoId.shouldBeNull()
     }
 
     // --- what it has ---
@@ -320,6 +340,32 @@ class MatchListBuilderTest {
     fun a_video_only_on_this_phone_is_removed_not_deleted() {
         val item = build(input(entries = listOf(entry("v1")))).mine.single()
         item.canRemoveFromPhone shouldBe true
+        item.delete shouldBe MatchDelete.NONE
+    }
+
+    @Test
+    fun i5_a_merged_video_row_offers_no_delete_while_a_cloud_stage_holds_the_file() {
+        // Review focus 4, extended: canRemoveLocalVideo is false for any
+        // pipeline stage still using the file, not just while a device run
+        // holds it - a merged row mid-upload or mid-measurement is exactly as
+        // unsafe to remove from under as one a device run is holding.
+        val item = build(input(
+            entries = listOf(entry("v1", AnalyzeStage.MEASURING)),
+            clips = listOf(clip("v1", 1)),
+        )).mine.single()
+        item.canRemoveFromPhone shouldBe false
+        item.delete shouldBe MatchDelete.NONE
+    }
+
+    @Test
+    fun i5_a_merged_score_row_offers_no_delete_while_a_cloud_stage_holds_the_file() {
+        // Same rule as the videoItem case above, on the scoreItem branch.
+        val item = build(input(
+            logs = listOf(log("l1", videoId = "v1")),
+            entries = listOf(entry("v1", AnalyzeStage.UPLOADING, scoreLogId = "l1")),
+            clips = listOf(clip("v1", 1)),
+        )).mine.single()
+        item.canRemoveFromPhone shouldBe false
         item.delete shouldBe MatchDelete.NONE
     }
 

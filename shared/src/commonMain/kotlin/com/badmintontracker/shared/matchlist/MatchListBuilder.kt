@@ -11,9 +11,8 @@ import com.badmintontracker.shared.model.RallyClip
 import com.badmintontracker.shared.model.playersLine
 import com.badmintontracker.shared.scoring.AttachKind
 import com.badmintontracker.shared.scoring.ScoreLog
+import com.badmintontracker.shared.scoring.attachStatusFor
 import com.badmintontracker.shared.scoring.buildScoreMatchCard
-import com.badmintontracker.shared.scoring.entryForLog
-import com.badmintontracker.shared.scoring.scoreLogAttachStatus
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -35,55 +34,77 @@ internal fun buildMatchList(input: MatchListInput, timeZone: TimeZone): MatchLis
 
     val claimed = mutableSetOf<String>()
     val mine = mutableListOf<MatchListItem>()
-
-    // Every log id in this input, so the exclusion below can tell "no entry
-    // names this log yet" apart from "some entry names a *different* log in
-    // this same input" - the latter must not be borrowed by entryForLog's
-    // shared-id fallback just because its id happens to equal this log's video
-    // id, or it would be listed under both.
     val logIds = input.scoreLogs.map { it.id }.toSet()
+
+    // (a) Every log with a video id claims it, first log in input order wins a
+    // collision - a data anomaly (two logs bound to the same video), but the
+    // fold must still pick one row deterministically rather than let both draw
+    // the same clips (the bug this whole join exists to rule out). log.videoId
+    // is written by the cloud CREATE_ROW step once a match is bound there, and
+    // is the authority over a cached local scoreLogId that might point a
+    // different entry at the same video (see (b)): the server's binding wins
+    // over whatever the phone remembers on its own.
+    val videoClaimedBy = mutableMapOf<String, String>() // video id -> the log.id that claimed it
+    val logVideoId = mutableMapOf<String, String?>() // log.id -> the video id it kept, if any
+    for (log in input.scoreLogs) {
+        val videoId = log.videoId
+        logVideoId[log.id] = if (videoId != null && videoId !in videoClaimedBy) {
+            videoClaimedBy[videoId] = log.id
+            videoId
+        } else {
+            null
+        }
+    }
+
+    // (b)+(c) Each entry is assigned to at most one log: to the log that
+    // claimed its id in (a) above - the server's binding wins over the entry's
+    // own scoreLogId when the two disagree; else to the log its scoreLogId
+    // names, if that log is actually in this input; else it is hidden
+    // (scoreLogId names a log not yet loaded - the same cold-start window
+    // review focus 1 covers) if it does carry a scoreLogId, or standalone if
+    // it does not. A log keeps only the first entry assigned to it in input
+    // order; a later one falls through to standalone if it carries no
+    // scoreLogId of its own, or is hidden alongside the other orphaned kind
+    // otherwise - it must not become a second row for a match another entry
+    // already claimed.
+    val logEntry = mutableMapOf<String, LocalVideoEntry>()
+    val standaloneEntries = mutableListOf<LocalVideoEntry>()
+    for (entry in input.localEntries) {
+        val claimerLogId = videoClaimedBy[entry.id]
+        val targetLogId = claimerLogId ?: entry.scoreLogId?.takeIf { it in logIds }
+        when {
+            targetLogId != null && targetLogId !in logEntry -> logEntry[targetLogId] = entry
+            targetLogId != null -> if (entry.scoreLogId == null) standaloneEntries += entry else claimed += entry.id
+            // scoreLogId names a log not (yet) in the list: hidden rather than
+            // shown as an orphaned row, per review focus 1. Claiming the id
+            // here (without a row) is what stops its clips, if any have
+            // already synced, from surfacing through the cloud-clips loop
+            // below as a row that knows nothing about this entry, then
+            // jumping to a different key once the log loads.
+            // orphanedLocalVideoIds is what releases a *true* orphan - a log
+            // deleted or no longer visible to this account - once an
+            // authoritative sync confirms it; this fold never has that
+            // authority, so it only hides the row, it never drops it.
+            entry.scoreLogId != null -> claimed += entry.id
+            else -> standaloneEntries += entry
+        }
+    }
 
     // Scored matches first: a video filmed for a match belongs to that match's row.
     for (log in input.scoreLogs) {
-        // entryForLog is the same scoreLogId-then-shared-id rule
-        // scoreLogAttachStatus and the match page use, so this row and the
-        // status the coach reads on it can never disagree about which entry a
-        // log belongs to. The candidate filter below is builder-only:
-        // entryForLog only sees one log at a time and so cannot know that an
-        // entry is already spoken for by a *different* log in this same input;
-        // excluding that entry here is what keeps this join's own invariant -
-        // one id, one row - even though entryForLog's own contract does not
-        // promise it across a whole list of logs.
-        val candidates = input.localEntries.filter {
-            it.scoreLogId == null || it.scoreLogId == log.id || it.scoreLogId !in logIds
-        }
-        val entry = entryForLog(log, candidates)
-        val videoId = log.videoId ?: entry?.id
+        val entry = logEntry[log.id]
+        // (d) The log's own claimed video id wins; failing that, its entry's
+        // id stands in, as long as nothing else already claimed it (a log that
+        // lost its own video id to an earlier collision in (a) must not then
+        // also take an id some other row already owns).
+        val videoId = logVideoId[log.id] ?: entry?.id?.takeIf { it !in claimed }
         val clips = ownedVideo(videoId)
-        listOfNotNull(entry?.id, log.videoId).forEach { claimed += it }
+        listOfNotNull(entry?.id, videoId).forEach { claimed += it }
         mine += scoreItem(log, entry, clips, input, timeZone)
     }
 
-    // Videos filmed on their own. An entry naming a match is never one of these,
-    // even when that match is missing from the list: the log cache starts empty on
-    // a cold start, and falling back here would flash every attached video in and
-    // out of the list (see orphanedLocalVideoIds for the real orphans).
-    for (entry in input.localEntries) {
-        if (entry.scoreLogId != null) {
-            // Claimed here even when the log this entry names is not (yet) in the
-            // list: the same cold-start window review focus 1 covers for the case
-            // with no clips - the score-log cache starts empty on a cold start, and
-            // an entry naming a log not in the list yet is that window, not an
-            // orphan. Without also claiming entry.id here, the entry's own clips
-            // would surface through the cloud-clips loop below as an orphaned
-            // CLOUD row that knows nothing about the entry, then jump to a
-            // different key once the log loads. orphanedLocalVideoIds is what
-            // releases a *true* orphan - a log deleted or no longer visible to
-            // this account - once an authoritative sync confirms it; this fold
-            // never has that authority, so it only hides the row, it never drops it.
-            claimed += entry.id
-            continue
-        }
+    // Videos filmed on their own. (e) Skip anything a score row already claimed.
+    for (entry in standaloneEntries) {
         if (entry.id in claimed) continue
         claimed += entry.id
         mine += videoItem(entry, ownedVideo(entry.id), input, timeZone)
@@ -91,6 +112,7 @@ internal fun buildMatchList(input: MatchListInput, timeZone: TimeZone): MatchLis
 
     val shared = mutableListOf<MatchListItem>()
     for ((videoId, clips) in clipsByVideo) {
+        // (e) Skip anything a score row already claimed.
         if (videoId in claimed) continue
         claimed += videoId
         if (clips.first().isOwnedBy(input.currentUserId)) mine += videoItem(null, clips, input, timeZone)
@@ -223,7 +245,11 @@ private fun scoreItem(
     val videoId = clips.firstOrNull()?.videoId
     val (runAnalyses, heatmapId) = analysesFor(entry, videoId, clips.size, input)
     val analyses = if (started) runAnalyses + MatchAnalysis.SCORE else runAnalyses
-    val attach = scoreLogAttachStatus(log, input.localEntries, input.cloudProgress, clips.size)
+    // attachStatusFor with this row's own [entry], not scoreLogAttachStatus's
+    // independent (and narrower) lookup: the row's status must come from the
+    // entry the join above actually assigned it, or the two could disagree
+    // about which entry a log's video is.
+    val attach = attachStatusFor(log, entry, input.cloudProgress, clips.size)
     val asks = when (attach?.kind) {
         AttachKind.COURT_NOT_MARKED -> Asks(MatchAction.MARK_COURT, attach.text, false)
         AttachKind.FAILED -> Asks(MatchAction.RETRY, attach.text, true)

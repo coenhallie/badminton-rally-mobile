@@ -153,34 +153,14 @@ class AttachStatusTest {
     }
 
     @Test
-    fun entryForLog_prefers_scoreLogId_but_falls_back_to_a_shared_id() {
-        // A video-first import later bound to a log by video_id alone, without
-        // the entry itself ever being told scoreLogId - the same gap
-        // orphanedLocalVideoIds documents as "appears nowhere".
-        val bySharedId = entry(id = "vid-1", scoreLogId = null)
-        entryForLog(log(videoId = "vid-1"), listOf(bySharedId)) shouldBe bySharedId
-
-        // scoreLogId still wins when both could match, so an entry that does
-        // carry the right scoreLogId is never shadowed by a coincidental id.
-        val byScoreLogId = entry(id = "other", scoreLogId = "log-1")
-        entryForLog(log(videoId = "vid-1"), listOf(bySharedId, byScoreLogId)) shouldBe byScoreLogId
-
-        // No video on the log at all: nothing to fall back to.
-        entryForLog(log(videoId = null), listOf(bySharedId)).shouldBeNull()
-    }
-
-    @Test
-    fun the_per_log_derivation_uses_the_same_shared_id_fallback_as_entryForLog() {
-        // scoreLogAttachStatus must not have its own, narrower notion of which
-        // entry belongs to a log: the row and the match page read this off the
-        // same function, so they can never disagree about which entry it is.
-        val status = scoreLogAttachStatus(
-            log = log(videoId = "vid-1"),
-            entries = listOf(entry(AnalyzeStage.FAILED, "Out of memory", scoreLogId = null)),
-            progress = emptyMap(),
-            clipCount = 0,
-        )
-        status?.kind shouldBe AttachKind.FAILED
-        status?.text shouldBe "Out of memory"
+    fun attachStatusFor_is_the_same_derivation_scoreLogAttachStatus_delegates_to() {
+        // scoreLogAttachStatus is now a one-line delegate to attachStatusFor
+        // with its own scoreLogId-only lookup; a caller that has already picked
+        // an entry - the match list's builder - calls attachStatusFor directly
+        // with that entry instead, so the two can never derive a different
+        // answer for the same (log, entry) pair.
+        val theEntry = entry(AnalyzeStage.UPLOADING)
+        attachStatusFor(log(), theEntry, emptyMap(), clipCount = 0) shouldBe
+            scoreLogAttachStatus(log(), listOf(theEntry), emptyMap(), clipCount = 0)
     }
 }
