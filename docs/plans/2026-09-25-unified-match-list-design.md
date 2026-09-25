@@ -1,7 +1,7 @@
 # Design: one match list, with where each match lives and what it has
 
 **Date:** 2026-09-25
-**Status:** Proposal, pending approval
+**Status:** Implemented on `feat/unified-match-list` (2026-09-25). Section 5 lists where the shipped version differs from this proposal.
 **Asked for:** "In the matches left panel, the matches have been divided by 'on the
 phone' and 'my matches'. I think you can somehow unify them together, but display
 some extra information such as whether the video is in the cloud or locally,
@@ -94,7 +94,7 @@ in `LocalVideoSection.kt` already says. "On phone · Cloud · Rallies · Heatmap
   it, it has a different owner and a different swipe ("Remove" means leave the
   share), and mixing it in would put rows the coach cannot analyse or delete
   among rows they can.
-- A filter row sits above the list: **All · On this phone · Not analysed**.
+- A filter row sits above the list: **All · On this phone · Not analyzed**.
   "What is taking space on this phone" and "what still needs analysing" were
   the two jobs the old split did well. The filter keeps both one tap away
   without making them the list's structure. Hidden while the list has fewer
@@ -135,7 +135,7 @@ does not move it to the top.
   - **Where:** phone, cloud, or phone+cloud. Always shown.
   - **What:** Rallies, Heatmap, Skeleton, Score. Only what exists is drawn,
     in the accent colour. Nothing greyed out: four grey glyphs on every
-    unanalysed row is noise, and "Not analysed" in words says it better.
+    unanalyzed row is noise, and "Not analyzed" in words says it better.
   - Skeleton is drawn only when the file is on this phone (the `READY` rule).
     A kept track with the file gone shows Heatmap, not Skeleton.
 - **Accessibility:** the status line is one content description: "On this
@@ -149,8 +149,8 @@ does not move it to the top.
 The drawer keeps exactly one raised surface, but it moves from "on this phone"
 to "needs an action":
 
-- Not analysed (local file, nothing run): raised card, status line reads
-  "Not analysed", full-width **Analyze** button, as today.
+- Not analyzed (local file, nothing run): raised card, status line reads
+  "Not analyzed", full-width **Analyze** button, as today.
 - Analysing: raised card, status reads "Analyzing 42%…" (shared
   `cloudAnalysisStatus` / `deviceWorkLabel`), spinner. Glyphs of anything the
   match already has stay visible.
@@ -200,7 +200,7 @@ becomes a projection of `MatchListItem`, so it is no longer computed separately.
 | --- | --- | --- |
 | Structure | One list plus a filter | Keep sections and add badges: leaves the duplicate and the "where is my match" hunt. Tabs (Phone / Cloud): the same split, one tap further away. |
 | Status encoding | Glyphs on one line | Words ("Heatmap · Skeleton"): does not fit 118dp. Colour dots like Analytics: a dot says "something", not which thing. Thumbnail corner badge for *where*: too small at 64x40 to read phone vs cloud, and it hides on score tiles. |
-| Absent analyses | Not drawn | Greyed glyphs: noise on every unanalysed row; "Not analysed" in words is clearer. |
+| Absent analyses | Not drawn | Greyed glyphs: noise on every unanalyzed row; "Not analyzed" in words is clearer. |
 | Shared matches | Separate section | Merged: different owner and swipe meaning. |
 | Raised card | Rows needing an action | Rows on this phone: in one list the card would mark storage, which is now the status line's job. |
 | Cloud Phase 2 visibility | Add a `has_pose` column to `list_match_metadata` (phase 2 of rollout) | Per-row `CloudPoseRepository.artifact`: a network read per row on every drawer open. |
@@ -216,7 +216,36 @@ becomes a projection of `MatchListItem`, so it is no longer computed separately.
 4. The on-device-rallies-as-matches plan lands into this row rather than
    adding a menu item.
 
-## 5. Deliberately not in this pass
+## 5. What shipped differently
+
+Decided during implementation (`docs/plans/2026-09-25-unified-match-list-plan.md`,
+"Changes from the spec", plus review rulings):
+
+- **No outlined "in the cloud" glyph and no `has_pose` column (rollout step 3
+  dropped).** A cloud pose artifact is only downloaded as part of a cloud run
+  started on the same phone (`RallyAndroidApp.kt`, `CloudPoseCoordinator.install`).
+  Nothing would download it for a match analysed elsewhere, so the glyph would
+  promise something the app cannot do. It needs a download path first.
+- **"Clips on this phone (N)" and "Player heatmap" stay in the row menu** until
+  the on-device rallies have a match page (the 2026-09-11 plan).
+- **Where is one or two bare glyphs** (phone, cloud) rather than a combined
+  glyph, which fits the measured text column (Android ~138dp, iOS 130pt).
+- **The description line left drawer rows**; the players line stays.
+- **Deleting a match that is also on this phone discards the local file and
+  its analysis too**, only after the server delete succeeds, and the
+  confirmation says so. Otherwise the surviving entry would bring the row back
+  as phone-only.
+- **Joining rules tightened in review:** a score log's own `video_id` claims
+  its video first; one video id per row; an entry attached to a match that has
+  not loaded yet stays hidden (cold start).
+- **Colour:** the analysis chips use the darker green in light mode (the accent
+  was 2.4:1 on its chip); Android menus and dialogs now draw on the app's own
+  raised surface instead of Material's default lavender (pre-existing, app-wide).
+- **Analytics:** the per-row "Not on this phone" line is gone; the status line
+  carries where the video is.
+- **US spelling** ("Not analyzed") as in the rest of the app.
+
+## 6. Deliberately not in this pass
 
 - Storage size per row. Useful for "what is taking space", but a second number
   on line 2 crowds the rally count. The "On this phone" filter can carry a
@@ -224,7 +253,7 @@ becomes a projection of `MatchListItem`, so it is no longer computed separately.
 - Merging Shared with me.
 - Bulk actions (select several, remove from phone).
 
-## 6. Verification
+## 7. Verification
 
 - Unit tests on the shared `MatchListItem` builder, one per row of the table
   in 2.2, plus the duplicate case from 1.2 as a regression test.
