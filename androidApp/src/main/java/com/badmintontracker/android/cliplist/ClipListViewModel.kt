@@ -90,11 +90,11 @@ data class ClipListState(
      */
     val localEntries: List<LocalVideoEntry> = emptyList(),
     /**
-     * Counts refreshes whose clip read succeeded. A row keys its "the cover
-     * failed to load" memory on this as well as on the thumbnail's path: the
-     * refreshed clip keeps the same path, so keyed on the path alone a cover
-     * that failed once (signing offline) never tried again, though the signed
-     * URL cache never stores a failure and the retry would now work.
+     * Counts completed refreshes, failed ones included. A row keys its "the
+     * cover failed to load" memory on this as well as on the thumbnail's path:
+     * the refreshed clip keeps the same path, so keyed on the path alone a
+     * cover that failed once (signing offline) never tried again, though the
+     * signed URL cache never stores a failure and the retry would now work.
      */
     val refreshGeneration: Int = 0,
 )
@@ -278,9 +278,6 @@ class ClipListViewModel(
             coroutineScope {
                 val clipsJob = async {
                     runCatching { clips.refresh() }
-                        // A failed cover thumbnail tries again once per refresh
-                        // that actually reached the server: see refreshGeneration.
-                        .onSuccess { refreshGeneration.update { it + 1 } }
                         .onFailure { errors.value = "Couldn't refresh matches. Pull to try again." }
                 }
                 val sharesJob = async {
@@ -310,6 +307,14 @@ class ClipListViewModel(
                 metadataJob.await()
                 scoreLogsJob.await()
             }
+            // After all four, and unconditionally, as iOS does: each of them
+            // fails softly on its own, so "the refresh failed" is no single
+            // outcome to gate this on, and a cover's own fetch is a fifth,
+            // independent request that can work when the clip list's did not.
+            // A retry that finds nothing new costs one signed-URL fetch; one
+            // refused would leave the coach looking at a placeholder tile the
+            // pull was meant to fix. See refreshGeneration.
+            refreshGeneration.update { it + 1 }
             refreshing.value = false
         }
     }

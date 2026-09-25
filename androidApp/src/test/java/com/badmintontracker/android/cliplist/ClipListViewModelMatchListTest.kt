@@ -295,12 +295,14 @@ class ClipListViewModelMatchListTest {
     }
 
     /**
-     * A failed cover thumbnail is retried once per refresh that reached the
-     * server: the row keys its failure on this generation, since the refreshed
-     * clip keeps its thumbnail path.
+     * A failed cover thumbnail is retried once per refresh, whatever the refresh
+     * itself managed: the row keys its failure on this generation, since the
+     * refreshed clip keeps its thumbnail path, and the cover's own fetch is a
+     * separate request that can work when the clip list's did not. iOS moves it
+     * the same way.
      */
     @Test
-    fun a_refresh_that_reads_the_clips_moves_the_generation_and_a_failed_one_does_not() = runTest {
+    fun every_refresh_moves_the_generation_including_a_failed_one() = runTest {
         val vm = newViewModel()
         subscribe(vm)
         val start = vm.state.value.refreshGeneration // init already refreshed once
@@ -312,7 +314,7 @@ class ClipListViewModelMatchListTest {
         clips.refreshError = IllegalStateException("offline")
         vm.refresh()
         advanceUntilIdle()
-        vm.state.value.refreshGeneration shouldBe start + 1
+        vm.state.value.refreshGeneration shouldBe start + 2
     }
 
     @Test
