@@ -13,7 +13,10 @@ import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.matchlist.MatchWhere
 import com.badmintontracker.shared.model.RallyClip
+import com.badmintontracker.shared.scoring.MatchSetup
 import com.badmintontracker.shared.scoring.ScoreLogsRepository
+import com.badmintontracker.shared.scoring.ScoringRules
+import com.badmintontracker.shared.scoring.Side
 import com.russhwolf.settings.MapSettings
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.nulls.shouldBeNull
@@ -22,6 +25,7 @@ import io.kotest.matchers.shouldBe
 import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -36,6 +40,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 
 /** The drawer's one list, as the view model folds it together and keeps it current. */
+@OptIn(ExperimentalCoroutinesApi::class)
 class ClipListViewModelMatchListTest {
 
     private val dispatcher = StandardTestDispatcher()
@@ -49,6 +54,8 @@ class ClipListViewModelMatchListTest {
     private val deviceStates = MutableStateFlow<Map<String, LocalAnalysisState>>(emptyMap())
     private val reads = mutableListOf<Set<String>>()
     private val reader = StoredResultsReader { ids -> reads += ids; StoredResults() }
+    private val scoreLogs =
+        ScoreLogsRepository(MapSettings(), now = { Instant.fromEpochMilliseconds(0) }, ownerId = { "user-self" })
 
     private fun newViewModel(): ClipListViewModel {
         val annotations = LocalAnnotationsRepository(MapSettings())
@@ -60,7 +67,7 @@ class ClipListViewModelMatchListTest {
         )
         return ClipListViewModel(
             clips, FakeAuthRepository(), FakeSharesRepository(), videos,
-            ScoreLogsRepository(MapSettings(), now = { Instant.fromEpochMilliseconds(0) }, ownerId = { "user-self" }),
+            scoreLogs,
             localVideos, coordinator, annotations,
             deviceStates = deviceStates,
             storedResults = reader,
@@ -136,6 +143,34 @@ class ClipListViewModelMatchListTest {
         advanceUntilIdle()
 
         localVideos.get("v1").shouldNotBeNull()
+    }
+
+    /**
+     * The builder joins an entry to a scored match by the log's video id as well
+     * as by the entry's own scoreLogId. A delete that looked the entry up again
+     * by scoreLogId would miss this one and leave the file behind as a
+     * phone-only row; the row hands over its own entry instead.
+     */
+    @Test
+    fun a_bound_delete_discards_the_rows_own_entry_even_without_a_score_log_id() = runTest {
+        val log = scoreLogs.create(
+            title = "Thu League",
+            rules = ScoringRules.BWF_21,
+            setup = MatchSetup(firstServer = Side.HOME),
+        )
+        scoreLogs.attachVideo(log.id, "v1")
+        localVideos.add(entry("v1", AnalyzeStage.ANALYZED)) // scoreLogId = null
+        clips.clips.value = listOf(clip("c1", "v1"))
+        val vm = newViewModel()
+        subscribe(vm)
+        val row = vm.state.value.matchList.mine.single()
+        row.scoreLogId shouldBe log.id
+        row.entryId shouldBe "v1"
+
+        vm.deleteBoundMatch("v1", log.id, entryId = row.entryId)
+        advanceUntilIdle()
+
+        localVideos.get("v1").shouldBeNull()
     }
 
     @Test

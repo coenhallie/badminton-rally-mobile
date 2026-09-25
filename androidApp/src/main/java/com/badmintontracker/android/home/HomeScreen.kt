@@ -98,8 +98,7 @@ fun HomeScreen(
     onImport: () -> Unit = {},
     onLabels: () -> Unit = {},
     onOpenAnalytics: () -> Unit = {},
-    onMarkCourt: (scoreLogId: String) -> Unit = {},
-    onRetryAttached: (scoreLogId: String) -> Unit = {},
+    onMarkCourt: (entryId: String) -> Unit = {},
     /** Set by the background-work indicator: its job is to show the run, which
      * lives in the drawer's list, so arriving here also opens the drawer. */
     openDrawerRequested: Boolean = false,
@@ -218,7 +217,6 @@ fun HomeScreen(
                         onLocalClick = onLocalClick,
                         onAnalyze = onAnalyze,
                         onMarkCourt = onMarkCourt,
-                        onRetryAttached = onRetryAttached,
                         onOpenHeatmap = onOpenHeatmap,
                         onOpenLocalClips = onOpenLocalClips,
                         onRemoveFromPhone = onRemoveFromPhone,

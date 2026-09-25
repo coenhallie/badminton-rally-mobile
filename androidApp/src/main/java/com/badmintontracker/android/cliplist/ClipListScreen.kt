@@ -83,8 +83,8 @@ fun ClipListScreen(
     onLocalClick: (entryId: String) -> Unit = {},
     /** Analyze, or analyze again: court marking, or a resume when the run can resume. */
     onAnalyze: (entryId: String) -> Unit = {},
-    onMarkCourt: (scoreLogId: String) -> Unit = {},
-    onRetryAttached: (scoreLogId: String) -> Unit = {},
+    /** Court marking for this entry: a scored match's video that has not been marked yet. */
+    onMarkCourt: (entryId: String) -> Unit = {},
     /** Opens a stored player heatmap, by the id its track is keyed by. */
     onOpenHeatmap: (heatmapId: String) -> Unit = {},
     onOpenLocalClips: (entryId: String) -> Unit = {},
@@ -169,13 +169,15 @@ fun ClipListScreen(
 
     fun act(item: MatchListItem) {
         val entryId = item.entryId
-        val scoreLogId = item.scoreLogId
         when (item.action) {
-            MatchAction.ANALYZE -> entryId?.let(onAnalyze)
-            // A scored match's video goes through its own retry, which finds
-            // the entry from the match; a video filmed on its own is its entry.
-            MatchAction.RETRY -> if (scoreLogId != null) onRetryAttached(scoreLogId) else entryId?.let(onAnalyze)
-            MatchAction.MARK_COURT -> scoreLogId?.let(onMarkCourt)
+            // Every action goes by the row's own entry, never by looking it up
+            // again from the match: the builder may have joined the entry to its
+            // log by the log's video id, which a scoreLogId lookup would miss,
+            // leaving a button that does nothing under a status that says why
+            // it is there. Retry is Analyze: the caller's resume-or-mark-court
+            // decision is the same one either way.
+            MatchAction.ANALYZE, MatchAction.RETRY -> entryId?.let(onAnalyze)
+            MatchAction.MARK_COURT -> entryId?.let(onMarkCourt)
             MatchAction.NONE, MatchAction.RUNNING, MatchAction.PAUSED -> Unit
         }
     }
@@ -185,8 +187,10 @@ fun ClipListScreen(
         val scoreLogId = item.scoreLogId
         when (item.delete) {
             MatchDelete.VIDEO_MATCH -> videoId?.let { vm.deleteMatch(it, entryId = item.entryId) }
-            MatchDelete.SCORE_MATCH -> scoreLogId?.let(vm::deleteScoreMatch)
-            MatchDelete.BOUND_MATCH -> if (videoId != null && scoreLogId != null) vm.deleteBoundMatch(videoId, scoreLogId)
+            MatchDelete.SCORE_MATCH -> scoreLogId?.let { vm.deleteScoreMatch(it, entryId = item.entryId) }
+            MatchDelete.BOUND_MATCH -> if (videoId != null && scoreLogId != null) {
+                vm.deleteBoundMatch(videoId, scoreLogId, entryId = item.entryId)
+            }
             MatchDelete.LEAVE_SHARE -> videoId?.let(vm::leaveShare)
             MatchDelete.NONE -> Unit
         }

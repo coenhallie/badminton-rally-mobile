@@ -404,7 +404,7 @@ class ClipListViewModel(
      * lost: ScoreLogsRepository keeps it pending and sends it again on the next
      * sync.)
      */
-    private suspend fun deleteScoreLog(scoreLogId: String, hasVideo: Boolean = false): Boolean {
+    private suspend fun deleteScoreLog(scoreLogId: String, hasVideo: Boolean = false, entryId: String? = null): Boolean {
         val result = scoreLogs.delete(scoreLogId)
         // The log is gone from this device either way - delete() removes it
         // locally unconditionally, win or lose on the server - so an entry
@@ -416,13 +416,15 @@ class ClipListViewModel(
         // AnalyzeCoordinator's zero-rally detection left FAILED - would be
         // invisible (the match list hides an entry whose match is not in the
         // list) and unremovable.
-        localVideos.entries.value
-            .firstOrNull { it.scoreLogId == scoreLogId }
-            ?.takeIf { canRemoveLocalVideo(it.stage) }
-            ?.let { entry ->
-                localVideos.remove(entry.id)
-                localAnnotations.removeAllFor(entry.id)
-            }
+        //
+        // [entryId] is the row's own entry, when the caller has one: the match
+        // list joins an entry to its log by the log's video id as well as by
+        // the entry's scoreLogId, so looking it up again by scoreLogId alone
+        // could miss the very file the row was showing and leave it behind as
+        // a phone-only row. The scoreLogId lookup stays for callers without a
+        // row (the match page).
+        (entryId ?: localVideos.entries.value.firstOrNull { it.scoreLogId == scoreLogId }?.id)
+            ?.let(::discardEntry)
         result.onFailure {
             errors.value = if (hasVideo) {
                 "Couldn't delete the match everywhere. The match is gone from this phone, but its video and clips are still there."
@@ -437,8 +439,8 @@ class ClipListViewModel(
      * There is no leaveShare counterpart: match_shares is keyed on video_id, so a
      * score-only match cannot be shared and therefore cannot be left.
      */
-    fun deleteScoreMatch(scoreLogId: String) {
-        viewModelScope.launch { deleteScoreLog(scoreLogId) }
+    fun deleteScoreMatch(scoreLogId: String, entryId: String? = null) {
+        viewModelScope.launch { deleteScoreLog(scoreLogId, entryId = entryId) }
     }
 
     /**
@@ -455,9 +457,9 @@ class ClipListViewModel(
      * than deleted on a best-effort basis while the coach cannot see whether
      * the rest of the delete actually landed.
      */
-    fun deleteBoundMatch(videoId: String, scoreLogId: String) {
+    fun deleteBoundMatch(videoId: String, scoreLogId: String, entryId: String? = null) {
         viewModelScope.launch {
-            if (deleteScoreLog(scoreLogId, hasVideo = true)) {
+            if (deleteScoreLog(scoreLogId, hasVideo = true, entryId = entryId)) {
                 deleteMatchVideo(videoId)
             }
         }

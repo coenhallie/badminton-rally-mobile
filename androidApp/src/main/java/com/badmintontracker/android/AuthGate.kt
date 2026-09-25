@@ -332,28 +332,8 @@ fun AuthGate(
                         onImport = { intake.import(null) },
                         onLabels = { nav.navigate(Route.Labels) },
                         onOpenAnalytics = { nav.navigate(Route.Analytics) },
-                        onMarkCourt = { scoreLogId ->
-                            localVideos.entries.value
-                                .firstOrNull { it.scoreLogId == scoreLogId }
-                                ?.let { nav.navigate(Route.CourtMarking(it.id)) }
-                        },
-                        onRetryAttached = { scoreLogId ->
-                            localVideos.entries.value
-                                .firstOrNull { it.scoreLogId == scoreLogId }
-                                ?.let { entry ->
-                                    // A FAILED entry with no saved court points has nothing
-                                    // to resume: retrying it directly just re-fails instantly
-                                    // with "No court points saved"
-                                    // (AnalyzeCoordinator.runPipeline). See
-                                    // canResumeFailedAnalysis for why the `else` is defensive
-                                    // rather than dead.
-                                    if (canResumeFailedAnalysis(entry)) {
-                                        localVm.retry(entry.id)
-                                    } else {
-                                        nav.navigate(Route.CourtMarking(entry.id))
-                                    }
-                                }
-                        },
+                        // By the row's own entry id: see ClipListScreen.act.
+                        onMarkCourt = { entryId -> nav.navigate(Route.CourtMarking(entryId)) },
                         openDrawerRequested = pendingDrawerOpen,
                         onDrawerOpenConsumed = { pendingDrawerOpen = false },
                     )
@@ -437,7 +417,7 @@ fun AuthGate(
                             row.entryId
                                 ?.let { id -> localEntries.firstOrNull { it.id == id } }
                                 ?.let { entry ->
-                                    // The same guard as the drawer's onAnalyze, onRetryAttached and
+                                    // The same guard as the drawer's onAnalyze and
                                     // MatchScreen's onRetry: a cloud run that failed at
                                     // TRIGGER already has this video's four court corners
                                     // saved, and sending the coach back to mark them again
@@ -579,9 +559,9 @@ fun AuthGate(
                                 AttachIntent.Record -> intake.record(target)
                             }
                         },
-                        // Same lookups as the drawer's onMarkCourt/
-                        // onRetryAttached: the match page shows the same status as
-                        // the list row and must offer the same two actions on it.
+                        // The match page's own lookups, by score log id: it has no
+                        // row entry to go by. It shows the same status as the
+                        // drawer's row and must offer the same two actions on it.
                         onMarkCourt = {
                             localVideos.entries.value
                                 .firstOrNull { it.scoreLogId == args.scoreLogId }
