@@ -38,6 +38,16 @@ enum ShuttlPalette {
     /// jump from a dark-only design into a light theme.
     static let onAccent:        Pair = (0x04240F, 0x06210F)
     static let accentDark:      Pair = (0x15803D, 0x22C55E)
+    /// The match list's analysis chips: this glyph on `accent` at
+    /// `analysisChipOpacity` over the row. The accent itself is 2.4:1 on that
+    /// chip in light, under the 3:1 a glyph that alone carries meaning needs,
+    /// so light draws the glyph in `accentDark`'s value (3.6:1 on the raised
+    /// card) and dark keeps the accent, which is 7.5:1 there. Light's fill is a
+    /// step heavier because its tint separates less from the grey card than
+    /// dark's does. Mirrors androidApp's ShuttlPalette.analysisGlyph; see
+    /// ShuttlPaletteTests.testAnalysisGlyphReadsOnItsChipOnEveryRowSurface.
+    static let analysisGlyph:   Pair = (0x15803D, 0x3EE27C)
+    static let analysisChipOpacity: (light: Double, dark: Double) = (0.20, 0.16)
     static let sideHome:        Pair = (0x15803D, 0x14532D)
     static let sideAway:        Pair = (0x1D4ED8, 0x1E3A8A)
     static let error:           Pair = (0xEF4444, 0xEF4444)

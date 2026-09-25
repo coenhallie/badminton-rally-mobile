@@ -44,6 +44,14 @@ enum Shuttl {
     static let accent          = token(ShuttlPalette.accent)
     static let onAccent        = token(ShuttlPalette.onAccent)
     static let accentDark      = token(ShuttlPalette.accentDark)
+    /// The match list's analysis glyph and the chip it sits in. See
+    /// `ShuttlPalette.analysisGlyph` for why the glyph is not plain `accent`.
+    static let analysisGlyph   = token(ShuttlPalette.analysisGlyph)
+    static let analysisChip    = Color(UIColor { trait in
+        let dark = trait.userInterfaceStyle == .dark
+        return UIColor(rgb: dark ? ShuttlPalette.accent.dark : ShuttlPalette.accent.light)
+            .withAlphaComponent(dark ? ShuttlPalette.analysisChipOpacity.dark : ShuttlPalette.analysisChipOpacity.light)
+    })
     static let error           = token(ShuttlPalette.error)
     static let onError         = token(ShuttlPalette.onError)
     static let warning         = token(ShuttlPalette.warning)

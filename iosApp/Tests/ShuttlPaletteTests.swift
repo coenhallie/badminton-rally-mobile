@@ -123,6 +123,39 @@ final class ShuttlPaletteTests: XCTestCase {
         }
     }
 
+    /// The match list's analysis glyphs are the only thing saying which analysis
+    /// a match has, so they are held to the 3:1 non-text floor on their chip, on
+    /// every surface a chip is drawn over: the quiet row and the drawer (bg),
+    /// the raised card (bgTertiary) and the legend sheet (bgSecondary). The
+    /// accent itself only makes 2.4:1 there in light, which is why the glyph is
+    /// its own token. Mirrors androidApp's ShuttlPaletteTest.
+    func testAnalysisGlyphReadsOnItsChipOnEveryRowSurface() {
+        func blend(_ fg: UInt32, _ bg: UInt32, _ alpha: Double) -> UInt32 {
+            func mix(_ shift: UInt32) -> UInt32 {
+                let f = Double((fg >> shift) & 0xFF)
+                let b = Double((bg >> shift) & 0xFF)
+                return UInt32((alpha * f + (1 - alpha) * b).rounded()) << shift
+            }
+            return mix(16) | mix(8) | mix(0)
+        }
+        let alphas = ShuttlPalette.analysisChipOpacity
+        eachTheme { theme, pick in
+            let alpha = theme == "light" ? alphas.light : alphas.dark
+            let surfaces = [
+                ("bg", pick(ShuttlPalette.bg)),
+                ("bgSecondary", pick(ShuttlPalette.bgSecondary)),
+                ("bgTertiary", pick(ShuttlPalette.bgTertiary)),
+            ]
+            for (name, surface) in surfaces {
+                let chip = blend(pick(ShuttlPalette.accent), surface, alpha)
+                XCTAssertGreaterThanOrEqual(
+                    contrast(pick(ShuttlPalette.analysisGlyph), chip), 3.0,
+                    "\(theme) analysisGlyph on its chip on \(name) is below 3:1"
+                )
+            }
+        }
+    }
+
     func testDarkPaletteMatchesTheMock() {
         // The dark values are lifted from Rally Home.dc.html. Pinning them stops
         // a well-meaning tweak from silently drifting away from the design.
