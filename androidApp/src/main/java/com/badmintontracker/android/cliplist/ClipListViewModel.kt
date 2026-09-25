@@ -417,13 +417,16 @@ class ClipListViewModel(
         // invisible (the match list hides an entry whose match is not in the
         // list) and unremovable.
         //
-        // [entryId] is the row's own entry, when the caller has one: the match
-        // list joins an entry to its log by the log's video id as well as by
-        // the entry's scoreLogId, so looking it up again by scoreLogId alone
-        // could miss the very file the row was showing and leave it behind as
-        // a phone-only row. The scoreLogId lookup stays for callers without a
-        // row (the match page).
+        // Only an entry this log orphans goes here, win or lose: one whose own
+        // scoreLogId names the log. The match list also joins an entry to its
+        // log by the log's video id ([entryId], the row's own entry); such an
+        // entry does not point at the log, is not orphaned by its removal, and
+        // would come back as an ordinary video on this phone. Discarding it
+        // before the server has agreed would lose the file while the match
+        // survives in the cloud, so its callers discard it on success instead.
+        // The scoreLogId lookup stays for callers without a row (the match page).
         (entryId ?: localVideos.entries.value.firstOrNull { it.scoreLogId == scoreLogId }?.id)
+            ?.takeIf { localVideos.get(it)?.scoreLogId == scoreLogId }
             ?.let(::discardEntry)
         result.onFailure {
             errors.value = if (hasVideo) {
@@ -440,7 +443,11 @@ class ClipListViewModel(
      * score-only match cannot be shared and therefore cannot be left.
      */
     fun deleteScoreMatch(scoreLogId: String, entryId: String? = null) {
-        viewModelScope.launch { deleteScoreLog(scoreLogId, entryId = entryId) }
+        viewModelScope.launch {
+            // The row's entry, if the log did not orphan it (see deleteScoreLog):
+            // only once the server has agreed. A no-op when it is already gone.
+            if (deleteScoreLog(scoreLogId, entryId = entryId)) entryId?.let(::discardEntry)
+        }
     }
 
     /**
@@ -460,7 +467,10 @@ class ClipListViewModel(
     fun deleteBoundMatch(videoId: String, scoreLogId: String, entryId: String? = null) {
         viewModelScope.launch {
             if (deleteScoreLog(scoreLogId, hasVideo = true, entryId = entryId)) {
-                deleteMatchVideo(videoId)
+                // The row's entry goes with the video, on the video's own success:
+                // a file discarded before then would be lost under a cloud match
+                // that could still survive.
+                deleteMatchVideo(videoId, entryId)
             }
         }
     }

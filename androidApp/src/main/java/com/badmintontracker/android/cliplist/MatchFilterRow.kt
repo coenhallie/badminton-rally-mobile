@@ -1,6 +1,12 @@
 package com.badmintontracker.android.cliplist
 
 import androidx.compose.foundation.background
+import androidx.compose.runtime.remember
+import androidx.compose.material3.ripple
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.indication
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -86,22 +92,41 @@ internal fun MatchFilterRow(
  * One filter, as a pill. Not ShuttlChip: that one sits on a filled raised
  * surface and reads as a button, where these are three radio choices on the
  * panel itself, outlined until chosen.
+ *
+ * The drawn pill is about 30dp tall; the touch target around it is the full
+ * 48dp of the row, taken by a transparent box with the pill centred in it.
+ * The ripple is drawn on the pill itself, through a shared interaction
+ * source, so a press still lights up the pill's shape and not a rectangle.
  */
 @Composable
 private fun FilterPill(text: String, selected: Boolean, onClick: () -> Unit) {
     val shape = RoundedCornerShape(ShuttlRadius.pill)
-    Text(
-        text,
-        style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.5.sp),
-        color = if (selected) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.onSurfaceVariant,
-        maxLines = 1,
+    val interactions = remember { MutableInteractionSource() }
+    Box(
         modifier = Modifier
-            .clip(shape)
-            .then(
-                if (selected) Modifier.background(MaterialTheme.colorScheme.onBackground, shape)
-                else Modifier.border(1.dp, MaterialTheme.colorScheme.outline, shape),
-            )
-            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 7.dp),
-    )
+            .heightIn(min = 48.dp)
+            .selectable(
+                selected = selected,
+                interactionSource = interactions,
+                indication = null,
+                role = Role.RadioButton,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text,
+            style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.5.sp),
+            color = if (selected) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            modifier = Modifier
+                .clip(shape)
+                .then(
+                    if (selected) Modifier.background(MaterialTheme.colorScheme.onBackground, shape)
+                    else Modifier.border(1.dp, MaterialTheme.colorScheme.outline, shape),
+                )
+                .indication(interactions, ripple())
+                .padding(horizontal = 12.dp, vertical = 7.dp),
+        )
+    }
 }

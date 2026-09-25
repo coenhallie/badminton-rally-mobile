@@ -58,11 +58,39 @@ object MatchListCopy {
         else -> "The match, its rallies and its analysis stay in the cloud."
     }
 
-    /** Under "Delete match everywhere": the same promise each single-choice dialog makes today. */
-    fun choiceDeleteDetail(delete: MatchDelete): String = when (delete) {
-        MatchDelete.SCORE_MATCH -> "Deletes this match and every point you scored. This can't be undone."
-        MatchDelete.BOUND_MATCH -> "Deletes this match, every point you scored and all its rally clips. This can't be undone."
-        else -> "Deletes this match and all its rally clips. This can't be undone."
+    /**
+     * Under "Delete match everywhere" in the choice sheet: the same promise as
+     * [deleteMessage], as a statement rather than a question.
+     */
+    fun choiceDeleteDetail(delete: MatchDelete, onThisPhone: Boolean): String =
+        "Deletes ${deletedThings(delete, onThisPhone, removeVerb = "removes")}. This can't be undone."
+
+    /**
+     * The single delete confirmation's message. Each kind says exactly what goes:
+     * a scored match's points, a filmed match's clips, both for a bound one.
+     *
+     * [onThisPhone]: the row also has the video in this app, and deleting the
+     * match discards that too (and whatever analysis the phone holds for it), so
+     * the message has to say so. "From this app", not "from this phone": on
+     * Android the original stays in the gallery, which the app only points at.
+     * Without the file the wording is exactly what each dialog said before the
+     * list was one list.
+     */
+    fun deleteMessage(delete: MatchDelete, onThisPhone: Boolean): String? = when (delete) {
+        MatchDelete.NONE -> null
+        MatchDelete.LEAVE_SHARE -> "Remove this shared match from your list? You'll need the owner to share it again."
+        else -> "Delete ${deletedThings(delete, onThisPhone, removeVerb = "remove")}? This can't be undone."
+    }
+
+    private fun deletedThings(delete: MatchDelete, onThisPhone: Boolean, removeVerb: String): String {
+        val match = when (delete) {
+            MatchDelete.SCORE_MATCH -> listOf("this match", "every point you scored")
+            MatchDelete.BOUND_MATCH -> listOf("this match", "every point you scored", "all its rally clips")
+            else -> listOf("this match", "all its rally clips")
+        }
+        val listed = if (match.size == 2) "${match[0]} and ${match[1]}"
+                     else "${match[0]}, ${match[1]} and ${match[2]}"
+        return if (onThisPhone) "$listed, and $removeVerb its video and analysis from this app" else listed
     }
 }
 

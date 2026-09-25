@@ -31,8 +31,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -121,9 +123,19 @@ fun ClipListScreen(
     val mine = state.matchList.mine
     val shared = state.matchList.shared
     // Review focus 5: a filter whose chips have gone would go on hiding
-    // matches with nothing on screen to undo it.
-    LaunchedEffect(showsFilters(mine.size)) {
-        if (!showsFilters(mine.size)) filter = MatchListFilter.ALL
+    // matches with nothing on screen to undo it. Reset on the chips going
+    // away, not on their being absent: the first frame draws the view model's
+    // empty initial state, and resetting against that would wipe a filter the
+    // coach chose before a rotation or a process restore. effectiveFilter
+    // already stops a filter applying while its chips are hidden; this makes
+    // the choice itself forget once they go.
+    val chipsShown by rememberUpdatedState(showsFilters(mine.size))
+    LaunchedEffect(Unit) {
+        var wereShown = false
+        snapshotFlow { chipsShown }.collect { shown ->
+            if (wereShown && !shown) filter = MatchListFilter.ALL
+            wereShown = shown
+        }
     }
     val applied = effectiveFilter(filter, mine.size)
     val visible = mine.filter { it.passes(applied) }
@@ -384,7 +396,10 @@ fun ClipListScreen(
     }
 
     deleteTarget?.let { item ->
-        val (title, message, confirm) = deleteConfirmation(item.delete) ?: return@let
+        val (title, confirm) = deleteConfirmation(item.delete) ?: return@let
+        // The file goes too whenever the row has one: a delete is only offered
+        // on such a row once the file is free to discard.
+        val message = MatchListCopy.deleteMessage(item.delete, onThisPhone = item.entryId != null) ?: return@let
         ConfirmDialog(
             title = title,
             message = message,
@@ -421,25 +436,13 @@ private fun swipeFor(item: MatchListItem): Swipe? = when {
 }
 
 /**
- * The single confirmation per kind, worded as each was before the list was
- * one list: each says exactly what goes, and the coach who deletes a scored
- * match is told about the points, not about clips it never had.
+ * The single confirmation's title and button per kind; the message is shared
+ * copy ([MatchListCopy.deleteMessage]), which also says when the video in this
+ * app goes with the match.
  */
-private fun deleteConfirmation(kind: MatchDelete): Triple<String, String, String>? = when (kind) {
-    MatchDelete.VIDEO_MATCH ->
-        Triple("Delete match?", "Delete this match and all its rally clips? This can't be undone.", "Delete")
-    MatchDelete.SCORE_MATCH ->
-        Triple("Delete match?", "Delete this match and every point you scored? This can't be undone.", "Delete")
-    MatchDelete.BOUND_MATCH -> Triple(
-        "Delete match?",
-        "Delete this match, every point you scored and all its rally clips? This can't be undone.",
-        "Delete",
-    )
-    MatchDelete.LEAVE_SHARE -> Triple(
-        "Remove shared match?",
-        "Remove this shared match from your list? You'll need the owner to share it again.",
-        "Remove",
-    )
+private fun deleteConfirmation(kind: MatchDelete): Pair<String, String>? = when (kind) {
+    MatchDelete.VIDEO_MATCH, MatchDelete.SCORE_MATCH, MatchDelete.BOUND_MATCH -> "Delete match?" to "Delete"
+    MatchDelete.LEAVE_SHARE -> "Remove shared match?" to "Remove"
     MatchDelete.NONE -> null
 }
 

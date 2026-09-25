@@ -87,9 +87,10 @@ internal fun MatchLegendSheet(onDismiss: () -> Unit) {
 }
 
 /**
- * Swipe or "Delete match" on a row that has both a file on this phone and a
- * match in the cloud: two different things to delete, so the coach picks.
- * The option that cannot lose data is first.
+ * A swipe on a row that has both a file on this phone and a match in the
+ * cloud: two different things to delete, so the coach picks. The option that
+ * cannot lose data is first. The menu does not come here: it lists "Remove
+ * video from this phone" and "Delete match" as two items already.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -127,7 +128,7 @@ internal fun DeleteChoiceSheet(
             )
             ChoiceCard(
                 label = MatchListCopy.CHOICE_DELETE,
-                detail = MatchListCopy.choiceDeleteDetail(item.delete),
+                detail = MatchListCopy.choiceDeleteDetail(item.delete, onThisPhone = item.entryId != null),
                 labelColor = MaterialTheme.colorScheme.error,
                 onClick = { hideThen(onDeleteEverywhere) },
             )

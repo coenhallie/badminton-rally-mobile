@@ -36,13 +36,51 @@ class MatchListCopyTest {
             MatchListCopy.choiceRemoveDetail(MatchDelete.SCORE_MATCH),
             MatchListCopy.choiceRemoveDetail(MatchDelete.VIDEO_MATCH),
             MatchListCopy.choiceRemoveDetail(MatchDelete.BOUND_MATCH),
-            MatchListCopy.choiceDeleteDetail(MatchDelete.SCORE_MATCH),
-            MatchListCopy.choiceDeleteDetail(MatchDelete.BOUND_MATCH),
-            MatchListCopy.choiceDeleteDetail(MatchDelete.VIDEO_MATCH),
-            MatchListCopy.choiceDeleteDetail(MatchDelete.LEAVE_SHARE),
-        )
+        ) + listOf(true, false).flatMap { onThisPhone ->
+            MatchDelete.entries.flatMap { kind ->
+                listOfNotNull(
+                    MatchListCopy.choiceDeleteDetail(kind, onThisPhone),
+                    MatchListCopy.deleteMessage(kind, onThisPhone),
+                )
+            }
+        }
         val legend = MatchListCopy.LEGEND.flatMap { (label, line) -> listOf(label, line) }
         (fixed + produced + legend).forEach { it.containsEmDash() shouldBe false }
+    }
+
+    @Test
+    fun without_a_file_on_this_phone_each_delete_says_what_it_said_before() {
+        MatchListCopy.deleteMessage(MatchDelete.VIDEO_MATCH, onThisPhone = false) shouldBe
+            "Delete this match and all its rally clips? This can't be undone."
+        MatchListCopy.deleteMessage(MatchDelete.SCORE_MATCH, onThisPhone = false) shouldBe
+            "Delete this match and every point you scored? This can't be undone."
+        MatchListCopy.deleteMessage(MatchDelete.BOUND_MATCH, onThisPhone = false) shouldBe
+            "Delete this match, every point you scored and all its rally clips? This can't be undone."
+        MatchListCopy.deleteMessage(MatchDelete.LEAVE_SHARE, onThisPhone = false) shouldBe
+            "Remove this shared match from your list? You'll need the owner to share it again."
+        MatchListCopy.deleteMessage(MatchDelete.NONE, onThisPhone = false) shouldBe null
+        MatchListCopy.choiceDeleteDetail(MatchDelete.VIDEO_MATCH, onThisPhone = false) shouldBe
+            "Deletes this match and all its rally clips. This can't be undone."
+        MatchListCopy.choiceDeleteDetail(MatchDelete.BOUND_MATCH, onThisPhone = false) shouldBe
+            "Deletes this match, every point you scored and all its rally clips. This can't be undone."
+    }
+
+    /**
+     * Deleting a match that is also on this phone discards the video and the
+     * phone's analysis with it, so the confirmation has to say so. "This app",
+     * because on Android the original stays in the gallery.
+     */
+    @Test
+    fun with_a_file_on_this_phone_the_delete_says_the_video_goes_too() {
+        MatchListCopy.deleteMessage(MatchDelete.VIDEO_MATCH, onThisPhone = true) shouldBe
+            "Delete this match and all its rally clips, and remove its video and analysis from this app? " +
+            "This can't be undone."
+        MatchListCopy.deleteMessage(MatchDelete.BOUND_MATCH, onThisPhone = true) shouldBe
+            "Delete this match, every point you scored and all its rally clips, and remove its video and " +
+            "analysis from this app? This can't be undone."
+        MatchListCopy.choiceDeleteDetail(MatchDelete.SCORE_MATCH, onThisPhone = true) shouldBe
+            "Deletes this match and every point you scored, and removes its video and analysis from this app. " +
+            "This can't be undone."
     }
 
     // Built from a code point rather than a literal, so this file itself never

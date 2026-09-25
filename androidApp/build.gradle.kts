@@ -156,6 +156,11 @@ dependencies {
     testImplementation(libs.turbine)
     testImplementation(libs.kotest.assertions)
     testImplementation(libs.settings.test)
+    // A Supabase client over a mock HTTP engine, so a view model test can drive
+    // a score log delete that the server accepts. Postgrest is what the score
+    // log store talks to; the app itself only reaches it through :shared.
+    testImplementation(libs.ktor.client.mock)
+    testImplementation(libs.supabase.postgrest)
 }
 
 // The ONNX graphs ship as assets, but they are NOT in git: they are

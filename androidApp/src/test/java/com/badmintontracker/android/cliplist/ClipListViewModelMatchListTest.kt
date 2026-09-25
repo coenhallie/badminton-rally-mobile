@@ -6,6 +6,22 @@ import com.badmintontracker.android.testing.FakeAuthRepository
 import com.badmintontracker.android.testing.FakeClipsRepository
 import com.badmintontracker.android.testing.FakeSharesRepository
 import com.badmintontracker.android.testing.FakeVideosRepository
+import io.github.jan.supabase.SupabaseClient
+import io.github.jan.supabase.auth.Auth
+import io.github.jan.supabase.auth.minimalConfig
+import io.github.jan.supabase.createSupabaseClient
+import io.github.jan.supabase.postgrest.Postgrest
+import io.github.jan.supabase.auth.auth
+import io.github.jan.supabase.auth.user.UserInfo
+import io.github.jan.supabase.auth.user.UserSession
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.headersOf
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import com.badmintontracker.shared.localvideo.AnalyzeCoordinator
 import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
@@ -57,7 +73,7 @@ class ClipListViewModelMatchListTest {
     private val scoreLogs =
         ScoreLogsRepository(MapSettings(), now = { Instant.fromEpochMilliseconds(0) }, ownerId = { "user-self" })
 
-    private fun newViewModel(): ClipListViewModel {
+    private fun newViewModel(scoreLogs: ScoreLogsRepository = this.scoreLogs): ClipListViewModel {
         val annotations = LocalAnnotationsRepository(MapSettings())
         val coordinator = AnalyzeCoordinator(
             localVideos, FakeVideosRepository(), FakeClipsRepository(),
@@ -146,13 +162,11 @@ class ClipListViewModelMatchListTest {
     }
 
     /**
-     * The builder joins an entry to a scored match by the log's video id as well
-     * as by the entry's own scoreLogId. A delete that looked the entry up again
-     * by scoreLogId would miss this one and leave the file behind as a
-     * phone-only row; the row hands over its own entry instead.
+     * A scored match whose video the list joined by the log's video id: the
+     * entry is the row's, but its own scoreLogId is null, so it does not point
+     * at the log and the log's removal does not orphan it.
      */
-    @Test
-    fun a_bound_delete_discards_the_rows_own_entry_even_without_a_score_log_id() = runTest {
+    private suspend fun boundRowWithAnUnpointedEntry(scoreLogs: ScoreLogsRepository): String {
         val log = scoreLogs.create(
             title = "Thu League",
             rules = ScoringRules.BWF_21,
@@ -161,16 +175,98 @@ class ClipListViewModelMatchListTest {
         scoreLogs.attachVideo(log.id, "v1")
         localVideos.add(entry("v1", AnalyzeStage.ANALYZED)) // scoreLogId = null
         clips.clips.value = listOf(clip("c1", "v1"))
+        return log.id
+    }
+
+    /**
+     * The row hands over its own entry rather than having it looked up again by
+     * scoreLogId, which would miss this one and leave the file behind as a
+     * phone-only row once the match is gone.
+     */
+    @Test
+    fun a_bound_delete_the_server_accepts_discards_the_rows_own_entry() = runTest {
+        val served = ScoreLogsRepository(signedInClient(), MapSettings(), now = { Instant.fromEpochMilliseconds(0) })
+        val logId = boundRowWithAnUnpointedEntry(served)
+        val vm = newViewModel(served)
+        subscribe(vm)
+        val row = vm.state.value.matchList.mine.single()
+        row.scoreLogId shouldBe logId
+        row.entryId shouldBe "v1"
+
+        vm.deleteBoundMatch("v1", logId, entryId = row.entryId)
+        eventually { localVideos.get("v1") == null }
+
+        videos.deleteMatchCalls shouldBe listOf("v1")
+    }
+
+    /**
+     * The same row, with the server refusing the score log's delete. The match
+     * survives in the cloud, and an entry the log did not orphan comes back as
+     * an ordinary video on this phone: throwing its file away here would lose
+     * it for a delete that did not happen.
+     */
+    @Test
+    fun a_bound_delete_the_server_refuses_keeps_an_entry_the_log_did_not_orphan() = runTest {
+        // The local-only store: its server delete always fails.
+        val logId = boundRowWithAnUnpointedEntry(scoreLogs)
         val vm = newViewModel()
         subscribe(vm)
         val row = vm.state.value.matchList.mine.single()
-        row.scoreLogId shouldBe log.id
-        row.entryId shouldBe "v1"
 
-        vm.deleteBoundMatch("v1", log.id, entryId = row.entryId)
+        vm.deleteBoundMatch("v1", logId, entryId = row.entryId)
         advanceUntilIdle()
 
-        localVideos.get("v1").shouldBeNull()
+        localVideos.get("v1").shouldNotBeNull()
+        videos.deleteMatchCalls shouldBe emptyList()
+    }
+
+    /**
+     * A Supabase client over a mock engine that accepts every request, signed in
+     * as the owner. Built here rather than through the app's factory: Auth's
+     * Android setup registers lifecycle callbacks on the main Looper, which a
+     * plain JVM test does not have, and its default stores want a Context.
+     * minimalConfig turns both off and keeps the session in memory.
+     */
+    private suspend fun signedInClient(): SupabaseClient {
+        val client = createSupabaseClient(supabaseUrl = "https://test.supabase.co", supabaseKey = "test-anon-key") {
+            httpEngine = MockEngine {
+                respond(
+                    content = ByteReadChannel("[]"),
+                    status = HttpStatusCode.OK,
+                    headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+                )
+            }
+            install(Auth) { minimalConfig() }
+            install(Postgrest)
+        }
+        // Auth initialises on a coroutine of its own; importing before it has
+        // finished is a race the import can lose.
+        client.auth.awaitInitialization()
+        client.auth.importSession(
+            UserSession(
+                accessToken = "test-token",
+                refreshToken = "test-refresh",
+                expiresIn = 3_600,
+                tokenType = "Bearer",
+                user = UserInfo(aud = "authenticated", id = "user-self"),
+            ),
+            autoRefresh = false,
+        )
+        return client
+    }
+
+    /**
+     * The HTTP call resumes on the client's own threads, which the test
+     * scheduler does not run, so this waits in real time (bounded) while
+     * draining the scheduler between looks.
+     */
+    private suspend fun TestScope.eventually(condition: () -> Boolean) {
+        repeat(500) {
+            advanceUntilIdle()
+            if (condition()) return
+            withContext(Dispatchers.Default) { delay(10) }
+        }
+        error("condition not met within 5s")
     }
 
     @Test
