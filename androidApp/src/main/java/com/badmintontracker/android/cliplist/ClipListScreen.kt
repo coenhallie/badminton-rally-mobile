@@ -242,6 +242,7 @@ fun ClipListScreen(
                 onAction = { act(item) },
                 menu = menuFor(item),
                 swipeLabel = swipe?.label,
+                refreshGeneration = state.refreshGeneration,
                 onSwiped = {
                     when (swipe) {
                         Swipe.CHOOSE -> choiceTarget = item

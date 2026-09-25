@@ -75,6 +75,8 @@ internal fun MatchListRow(
     menu: List<RowMenuItem>,
     swipeLabel: String?,
     onSwiped: () -> Unit,
+    /** [ClipListState.refreshGeneration]: a failed cover tries again when it moves. */
+    refreshGeneration: Int = 0,
 ) {
     DrawerRowContainer(
         shape = RoundedCornerShape(if (item.isRaised) ShuttlRadius.large else ShuttlRadius.medium),
@@ -83,7 +85,7 @@ internal fun MatchListRow(
         // false: the caller confirms first, so the row must spring back.
         onSwiped = { onSwiped(); false },
     ) {
-        MatchListRowContent(item, media, onClick, onAction, menu)
+        MatchListRowContent(item, media, onClick, onAction, menu, refreshGeneration)
     }
 }
 
@@ -94,6 +96,7 @@ private fun MatchListRowContent(
     onClick: () -> Unit,
     onAction: () -> Unit,
     menu: List<RowMenuItem>,
+    refreshGeneration: Int,
 ) {
     val hasMenu = menu.isNotEmpty()
     // An IconButton carries 12dp of its own padding inside a 48dp box. Backing
@@ -114,7 +117,7 @@ private fun MatchListRowContent(
             ),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            MatchThumbnail(item, media)
+            MatchThumbnail(item, media, refreshGeneration)
             Spacer(Modifier.width(DrawerList.gap))
             Column(Modifier.weight(1f)) {
                 RowText(item.title, primary = true)
@@ -221,13 +224,17 @@ private fun RowMenu(menu: List<RowMenuItem>) {
  * in dark (1A1D1E on 161819).
  */
 @Composable
-private fun MatchThumbnail(item: MatchListItem, media: MediaRepository) {
+private fun MatchThumbnail(item: MatchListItem, media: MediaRepository, refreshGeneration: Int) {
     val shape = RoundedCornerShape(ShuttlRadius.small)
     val tileFill = if (item.isRaised) MaterialTheme.colorScheme.background else ShuttlTheme.extended.bgTertiary
     val ring = MaterialTheme.colorScheme.outline
     var localFailed by remember(item.localUri) { mutableStateOf(false) }
     val cover = item.coverClip
-    var coverFailed by remember(cover?.thumbnailStoragePath) { mutableStateOf(false) }
+    // Keyed on the refresh as well as the path: a refresh keeps the path, and
+    // keyed on it alone a cover that failed once (signing offline) would never
+    // be asked for again. The local frame is not retried: its failures (a
+    // deleted file, a revoked permission) do not heal on a refresh.
+    var coverFailed by remember(cover?.thumbnailStoragePath, refreshGeneration) { mutableStateOf(false) }
     val localUri = item.localUri?.takeUnless { localFailed }
     val coverToLoad = cover?.takeUnless { coverFailed || it.thumbnailStoragePath == null }
     Box(

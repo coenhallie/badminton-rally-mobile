@@ -269,6 +269,27 @@ class ClipListViewModelMatchListTest {
         error("condition not met within 5s")
     }
 
+    /**
+     * A failed cover thumbnail is retried once per refresh that reached the
+     * server: the row keys its failure on this generation, since the refreshed
+     * clip keeps its thumbnail path.
+     */
+    @Test
+    fun a_refresh_that_reads_the_clips_moves_the_generation_and_a_failed_one_does_not() = runTest {
+        val vm = newViewModel()
+        subscribe(vm)
+        val start = vm.state.value.refreshGeneration // init already refreshed once
+
+        vm.refresh()
+        advanceUntilIdle()
+        vm.state.value.refreshGeneration shouldBe start + 1
+
+        clips.refreshError = IllegalStateException("offline")
+        vm.refresh()
+        advanceUntilIdle()
+        vm.state.value.refreshGeneration shouldBe start + 1
+    }
+
     @Test
     fun the_reader_is_asked_about_entries_and_cloud_videos_together() = runTest {
         localVideos.add(entry("e1"))

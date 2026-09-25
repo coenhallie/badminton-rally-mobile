@@ -39,6 +39,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.datetime.Instant
@@ -87,6 +88,14 @@ data class ClipListState(
      * and a failed run's result dialog its message.
      */
     val localEntries: List<LocalVideoEntry> = emptyList(),
+    /**
+     * Counts refreshes whose clip read succeeded. A row keys its "the cover
+     * failed to load" memory on this as well as on the thumbnail's path: the
+     * refreshed clip keeps the same path, so keyed on the path alone a cover
+     * that failed once (signing offline) never tried again, though the signed
+     * URL cache never stores a failure and the retry would now work.
+     */
+    val refreshGeneration: Int = 0,
 )
 
 /**
@@ -145,6 +154,7 @@ class ClipListViewModel(
 ) : ViewModel() {
     private val refreshing      = MutableStateFlow(true)
     private val errors          = MutableStateFlow<String?>(null)
+    private val refreshGeneration = MutableStateFlow(0)
     private val sharerByVideoId = MutableStateFlow<Map<String, String>>(emptyMap())
     // The repository's own cache rather than a map of this view model's: this
     // class is built once per screen that lists matches, and a rename made on
@@ -228,7 +238,7 @@ class ClipListViewModel(
         ::PhoneSnapshot,
     )
 
-    val state = combine(cloud, phone) { c, p ->
+    val state = combine(cloud, phone, refreshGeneration) { c, p, generation ->
         val userId = auth.currentUserId()
         val matches = c.clips.toMatches(userId, c.sharerByVideoId, c.metadataByVideoId)
         val (owned, shared) = matches.partition { it.isOwned }
@@ -255,6 +265,7 @@ class ClipListViewModel(
             ),
             storedResults = p.stored,
             localEntries = p.entries,
+            refreshGeneration = generation,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ClipListState())
 
@@ -266,6 +277,9 @@ class ClipListViewModel(
             coroutineScope {
                 val clipsJob = async {
                     runCatching { clips.refresh() }
+                        // A failed cover thumbnail tries again once per refresh
+                        // that actually reached the server: see refreshGeneration.
+                        .onSuccess { refreshGeneration.update { it + 1 } }
                         .onFailure { errors.value = "Couldn't refresh matches. Pull to try again." }
                 }
                 val sharesJob = async {
