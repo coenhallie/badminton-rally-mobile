@@ -60,7 +60,10 @@ fun SettingsTab(
                 .weight(1f)
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp)
+                // 24dp, the tab title's own inset and the Analytics tab's
+                // gutter, so the cards' edges line up under "Settings" as in
+                // the mock rather than sitting 8dp outside it.
+                .padding(horizontal = 24.dp)
                 .padding(top = 8.dp, bottom = 16.dp + contentPadding.calculateBottomPadding()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -110,7 +113,9 @@ fun SettingsTab(
                 style = MaterialTheme.typography.bodySmall,
                 color = ShuttlTheme.extended.textTertiary,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                // The mock sets the version well clear of the last card, as a
+                // footnote rather than a third card's caption.
+                modifier = Modifier.fillMaxWidth().padding(top = 18.dp),
             )
         }
     }

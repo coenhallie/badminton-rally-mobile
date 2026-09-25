@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
@@ -19,6 +20,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.badmintontracker.android.ui.theme.ShuttlTheme
@@ -106,14 +108,29 @@ fun HeroTickerView(
             style = ShuttlTypeExtras.display,
             color = MaterialTheme.colorScheme.onBackground,
         )
-        Text(
-            text = HeroTicker.phrases[index],
-            style = ShuttlTypeExtras.display,
-            color = ShuttlTheme.extended.textMuted,
-            modifier = Modifier
-                .alpha(phraseAlpha)
-                .offset(y = phraseOffset),
-        )
+        // Sized to the tallest phrase, not the current one: some phrases wrap
+        // to two lines on a phone-width screen and some do not, and the empty
+        // Matches tab sets body copy straight under the hero, so a box that
+        // followed the current phrase would jump that copy a line up and down
+        // on every rotation. The invisible copies only take up room; their
+        // semantics are cleared so the merged hero still reads as one line.
+        Box {
+            HeroTicker.phrases.forEach { phrase ->
+                Text(
+                    text = phrase,
+                    style = ShuttlTypeExtras.display,
+                    modifier = Modifier.alpha(0f).clearAndSetSemantics {},
+                )
+            }
+            Text(
+                text = HeroTicker.phrases[index],
+                style = ShuttlTypeExtras.display,
+                color = ShuttlTheme.extended.textMuted,
+                modifier = Modifier
+                    .alpha(phraseAlpha)
+                    .offset(y = phraseOffset),
+            )
+        }
     }
 }
 

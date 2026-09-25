@@ -32,7 +32,12 @@ fun addButtonExpanded(firstVisibleItemIndex: Int): Boolean = firstVisibleItemInd
 fun AddMatchButton(expanded: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     ExtendedFloatingActionButton(
         text = { Text(HomeCopy.ADD_MATCH, style = MaterialTheme.typography.titleMedium) },
-        icon = { Icon(Icons.Default.Add, contentDescription = null) },
+        // The icon names the button in both states. Material 3 (1.3.1) wraps the
+        // label in clearAndSetSemantics and documents the icon as the source of
+        // the button's description, so the visible "Add match" is never read
+        // out: with a null description here the button had no accessible name
+        // at all, expanded or collapsed (uiautomator marked it NAF).
+        icon = { Icon(Icons.Default.Add, contentDescription = HomeCopy.ADD_MATCH) },
         expanded = expanded,
         onClick = onClick,
         shape = RoundedCornerShape(ShuttlRadius.pill),

@@ -43,17 +43,19 @@ fun HomeNavigationBar(selected: HomeTab, onSelect: (HomeTab) -> Unit) {
                 onClick = { onSelect(tab) },
                 icon = { Icon(tab.icon, contentDescription = null) },
                 // No role in this app's type scale is exactly the mock's
-                // 12px/500 (ShuttlType.kt's labelMedium is 13sp SemiBold, and
-                // nothing else is 12sp Medium either), so the size and weight
-                // are overridden here rather than invented as a new global
-                // role for one label. The same one-off pattern
-                // BackgroundWorkAction uses for its ring's own number.
+                // 12px label, 500 unselected and 600 selected (ShuttlType.kt's
+                // labelMedium is 13sp SemiBold, and nothing else is 12sp
+                // either), so the size and weight are overridden here rather
+                // than invented as a new global role for one label. The same
+                // one-off pattern BackgroundWorkAction uses for its ring's own
+                // number. The heavier selected weight is the mock's, so the
+                // selected tab reads by weight as well as by colour.
                 label = {
                     Text(
                         tab.label,
                         style = MaterialTheme.typography.labelMedium.copy(
                             fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
+                            fontWeight = if (tab == selected) FontWeight.SemiBold else FontWeight.Medium,
                         ),
                     )
                 },
