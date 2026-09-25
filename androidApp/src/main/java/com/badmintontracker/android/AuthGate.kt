@@ -127,8 +127,9 @@ fun AuthGate(
             // The selected tab, owned here rather than by HomeScreen: the
             // finished-run watcher below reads it, and the background-work
             // indicator sets it from any screen. Saveable, so rotation and process
-            // death keep it; reset on sign-out below, so a fresh sign-in lands on
-            // Matches.
+            // death keep it; reset on arrival below (Review focus 5), so a fresh
+            // sign-in lands on Matches rather than wherever a previous coach left
+            // it.
             var homeTab by rememberSaveable { mutableStateOf(HomeTab.DEFAULT) }
             // Any sheet or dialog over the tabs, reported by HomeScreen. Part of
             // "nothing above": see isHomeFront.
@@ -138,19 +139,23 @@ fun AuthGate(
                 val onSignIn = nav.currentDestination?.hasRoute<Route.SignIn>() == true
                 when (authRedirect(auth, onSignIn)) {
                     // Session ended anywhere in the app (sign-out, token revocation):
-                    // clear the whole back stack and land on SignIn. The saved tab
-                    // is reset too, so a fresh sign-in lands on Matches rather than
-                    // wherever this coach happened to be (Review focus 5).
-                    AuthRedirect.TO_SIGN_IN -> {
-                        homeTab = HomeTab.DEFAULT
-                        nav.navigate(Route.SignIn) {
-                            popUpTo(nav.graph.id) { inclusive = true }
-                        }
+                    // clear the whole back stack and land on SignIn.
+                    AuthRedirect.TO_SIGN_IN -> nav.navigate(Route.SignIn) {
+                        popUpTo(nav.graph.id) { inclusive = true }
                     }
                     // Session arrived while on SignIn (e.g. a session restored via
                     // deep link, so SignInViewModel never sees the completed sign-in).
-                    AuthRedirect.TO_HOME -> nav.navigate(Route.Home) {
-                        popUpTo(Route.SignIn) { inclusive = true }
+                    // The reset lives here, on arrival, rather than on the way out
+                    // through TO_SIGN_IN above: resetting there would recompose the
+                    // fading Home screen onto Matches mid crossfade, and it also
+                    // misses process death while on Settings followed by an invalid
+                    // session - the start destination is SignIn in that case, so
+                    // TO_SIGN_IN never fires at all.
+                    AuthRedirect.TO_HOME -> {
+                        homeTab = HomeTab.DEFAULT
+                        nav.navigate(Route.Home) {
+                            popUpTo(Route.SignIn) { inclusive = true }
+                        }
                     }
                     null -> Unit
                 }
@@ -284,6 +289,12 @@ fun AuthGate(
                         vm = signInVm,
                         themePrefs = themePrefs,
                         onSignedIn = {
+                            // Reset here too (see the TO_HOME branch above for why
+                            // arrival, not TO_SIGN_IN's way-out, is where this
+                            // belongs): whichever of the two fires first for this
+                            // sign-in, the tab is already Matches by the time
+                            // either lands on Route.Home.
+                            homeTab = HomeTab.DEFAULT
                             nav.navigate(Route.Home) {
                                 popUpTo(Route.SignIn) { inclusive = true }
                             }
@@ -621,10 +632,12 @@ fun AuthGate(
 
                 // The heatmap on its own, which is what a row's "Player heatmap"
                 // menu item opens. Kept alongside Route.AnalyticsDetail rather
-                // than folded into it: this is the destination a coach reaches
-                // straight from a finished run, and it is the only way back to
-                // a result that cost half an hour. Both render HeatmapPanel, so
-                // there is one resolution to keep right rather than two.
+                // than folded into it: the two are reached from two different
+                // taps on the same row (this one from the menu item,
+                // AnalyticsDetail from a READY row's own tap), and folding one
+                // into the other to tidy up is exactly how that path breaks
+                // unnoticed. Both render HeatmapPanel, so there is one
+                // resolution to keep right rather than two.
                 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
                 composable<Route.Heatmap> { entry ->
                     val args = entry.toRoute<Route.Heatmap>()
@@ -706,14 +719,13 @@ fun AuthGate(
                             // A single pop, not popBackStack(Route.X, ...): typed-route
                             // popping matches on the serialized route, and the Match
                             // instance on the stack carries an `attach` argument this
-                            // one would not. Naming a destination is also wrong for a
-                            // video-first run now that there are three ways in - the
-                            // Matches tab, LocalPlayer and the Analytics tab - and
-                            // popping to a named Route.Home would land on whichever tab
-                            // happens to be selected, not necessarily the one the coach
-                            // was working through. Returning to the caller is the same
-                            // answer for both kinds of entry, so there is one branch
-                            // fewer.
+                            // one would not. Naming a destination is also wrong because
+                            // CourtMarking has callers besides Route.Home: LocalPlayer's
+                            // own Analyze/Re-analyze and the Match page's onMarkCourt and
+                            // onRetry all push it directly too, and popping to a named
+                            // Route.Home would skip past whichever of those the coach
+                            // actually came from. Returning to the caller is the same
+                            // answer for every entry point, so there is one branch fewer.
                             //
                             // Safe against a second run being started from the screen
                             // the coach lands back on. Both pipelines refuse re-entry at

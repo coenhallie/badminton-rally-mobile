@@ -143,12 +143,12 @@ private fun FilterPill(text: String, selected: Boolean, onClick: () -> Unit) {
  * measured rather than guessed - comfortably inside the wider row the
  * full-width Matches tab list gives it now. The row runs from the 24dp side
  * margin to 12dp short of the other edge (the info IconButton's own padding
- * backed out): 294dp. The three
- * labels in Archivo SemiBold 12sp with labelMedium's -0.01em tracking measure
- * 14.2 + 75.0 + 70.4 = 159.5dp (from the font's advance widths). Pills: 159.5
- * + 6 x 10 padding = 219.5, two 8dp gaps = 235.5, the 48dp button = 283.5,
- * which leaves about 10dp. At 12.5sp and 12dp padding it came to 298 and the
- * last pill ran under the button. A larger font scale still scrolls.
+ * backed out): 294dp. The three labels in Archivo SemiBold 12sp with
+ * labelMedium's -0.01em tracking measure 14.2 + 75.0 + 70.4 = 159.5dp (from
+ * the font's advance widths). Pills: 159.5 + 6 x 10 padding = 219.5, two 8dp
+ * gaps = 235.5, the 48dp button = 283.5, which leaves about 10dp. At 12.5sp
+ * and 12dp padding it came to 298 and the last pill ran under the button. A
+ * larger font scale still scrolls.
  */
 private val PillPaddingH = 10.dp
 private val PillGap = 8.dp

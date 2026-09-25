@@ -83,7 +83,7 @@ fun VideoTitle(entry: LocalVideoEntry?, fallback: String) {
 
 /**
  * What one analysed match has to show, reached from a READY row on the
- * Analytics list.
+ * Analytics tab.
  *
  * A pill tab row between the heatmap, the per-rally base position and the
  * skeleton, drawn only when more than one of them has content. The earlier
@@ -93,9 +93,9 @@ fun VideoTitle(entry: LocalVideoEntry?, fallback: String) {
  * match page gates its facet selector: a tab must have something behind it.
  *
  * The heatmap itself, and the resolution of which track to draw, are
- * [HeatmapPanel]'s - shared with the standalone route the analysis banner
- * opens, so the two cannot drift. The base position is [BasePositionPanel]'s,
- * on the same track. The skeleton is [SkeletonPanel]'s.
+ * [HeatmapPanel]'s - shared with the standalone route a row's "Player heatmap"
+ * menu item opens, so the two cannot drift. The base position is
+ * [BasePositionPanel]'s, on the same track. The skeleton is [SkeletonPanel]'s.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

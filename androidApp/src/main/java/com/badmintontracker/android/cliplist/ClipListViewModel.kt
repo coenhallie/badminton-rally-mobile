@@ -166,8 +166,8 @@ class ClipListViewModel(
     /**
      * Device runs as the list sees them. A run reports progress several times
      * a second, but the list draws only its phase (the percentage lives on
-     * Home's banner and the chrome indicator), so equal maps are dropped here
-     * rather than rebuilding the list for nothing.
+     * the match page's attach banner and the chrome indicator), so equal maps
+     * are dropped here rather than rebuilding the list for nothing.
      */
     private val deviceRuns = deviceStates
         .map { states -> buildMap<String, DeviceRun> { states.forEach { (id, s) -> toDeviceRun(s)?.let { put(id, it) } } } }

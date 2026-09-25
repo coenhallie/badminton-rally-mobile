@@ -4,7 +4,11 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -80,9 +84,12 @@ fun HomeScreen(
     var addSheetOpen by remember { mutableStateOf(false) }
     var listOverlayOpen by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
-    // Hoisted here, not inside the list: it has to outlive a switch to another
-    // tab (SaveableStateProvider below keeps rememberSaveable state, not this),
-    // and the Add button reads it to decide whether to show its label.
+    // Hoisted here, not inside the list: rememberLazyListState is itself
+    // saveable, so SaveableStateProvider below would keep it fine either way,
+    // but the Add button (in floatingActionButton, a sibling of the
+    // SaveableStateProvider content, not a descendant of it) reads
+    // firstVisibleItemIndex to decide whether to show its label, and can only
+    // do that if the state lives somewhere it can reach.
     val listState = rememberLazyListState()
     val tabs = rememberSaveableStateHolder()
 
@@ -134,7 +141,13 @@ fun HomeScreen(
         // contentWindowInsets = WindowInsets(0) already includes the bar's
         // height, so this only adds the button's own footprint on top of it.
         val bottom = PaddingValues(bottom = padding.calculateBottomPadding() + ADD_BUTTON_CLEARANCE)
-        Box(Modifier.fillMaxSize()) {
+        Box(
+            // contentWindowInsets = WindowInsets(0) above only drops the insets
+            // TabTopBar/NavigationBar already handle (top/bottom); it also zeroes
+            // the horizontal ones, so a landscape cutout or gesture inset would
+            // otherwise cut into content on that side.
+            Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)),
+        ) {
             tabs.SaveableStateProvider(selectedTab.name) {
                 when (selectedTab) {
                     HomeTab.MATCHES -> MatchesTab {
