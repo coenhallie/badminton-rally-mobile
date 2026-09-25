@@ -7,8 +7,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -16,15 +19,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,6 +31,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.badmintontracker.android.cliplist.MatchStatusLine
 import com.badmintontracker.android.cliplist.hasStatusLine
+import com.badmintontracker.android.home.TabTopBar
 import com.badmintontracker.android.localanalysis.BackgroundWorkAction
 import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlButtonVariant
@@ -43,6 +41,7 @@ import com.badmintontracker.android.ui.theme.ShuttlRadius
 import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.shared.analytics.AnalyticsRowState
 import com.badmintontracker.shared.analytics.opensAnalytics
+import com.badmintontracker.shared.home.HomeCopy
 import com.badmintontracker.shared.matchlist.MatchListItem
 
 /**
@@ -113,9 +112,11 @@ data class AnalyticsRow(
 )
 
 /**
- * The coach's Analytics list: the same rows the drawer lists, in the same
+ * The Analytics tab: the same rows the drawer used to list, in the same
  * order, one row per match whether its video is on this phone, in the cloud or
- * both - "Shared with me" is the only section either screen still labels.
+ * both - "Shared with me" is the only section either screen still labels. A
+ * tab root, so no back arrow: the tab host draws the bar under it, and its own
+ * title stands in for the mock's "Pick a match" headline.
  *
  * [onOpenDetail] fires for a READY row, opening its analysis, which shows the
  * heatmap; [onAnalyse] fires for an ANALYSABLE row's button whether it reads
@@ -124,57 +125,35 @@ data class AnalyticsRow(
  * failed, and everything else goes to court marking. NOT_ON_DEVICE rows call
  * neither.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AnalyticsScreen(
+fun AnalyticsTab(
     rows: List<AnalyticsRow>,
     onOpenDetail: (AnalyticsRow) -> Unit,
     onAnalyse: (AnalyticsRow) -> Unit,
-    onBack: () -> Unit,
+    contentPadding: PaddingValues,
 ) {
     val legend = analyticsLegend(rows)
-
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            TopAppBar(
-                title = { Text("Analytics") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                actions = { BackgroundWorkAction() },
-            )
-        },
-    ) { padding ->
+    Column(Modifier.fillMaxSize()) {
+        TabTopBar(HomeCopy.TAB_ANALYTICS) { BackgroundWorkAction() }
         if (rows.isEmpty()) {
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                // No action here: matches are added on Home, and this screen's
-                // only way there is its back arrow, which the body names.
+            Box(Modifier.fillMaxSize().padding(bottom = contentPadding.calculateBottomPadding()), contentAlignment = Alignment.Center) {
+                // No action here: Add lives on the Matches tab, which the body names.
                 ShuttlEmptyState(
                     icon = ShuttlIcons.ChartColumn,
-                    title = "No matches yet",
-                    body = "Add a match on Home and it will be listed here, ready to analyze.",
+                    title = HomeCopy.ANALYTICS_EMPTY_TITLE,
+                    body = HomeCopy.ANALYTICS_EMPTY_BODY,
                 )
             }
-            return@Scaffold
+            return@Column
         }
 
         LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(bottom = GUTTER),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(bottom = GUTTER + contentPadding.calculateBottomPadding()),
         ) {
-            // The mock's headline over the list, then the one line that says
-            // what the rows offer.
-            item(key = "headline") {
-                Text(
-                    "Pick a match",
-                    style = MaterialTheme.typography.headlineLarge,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    modifier = Modifier.padding(start = GUTTER, end = GUTTER, top = 16.dp),
-                )
-            }
+            // The one line that says what the rows offer, over the list. The
+            // mock's own "Pick a match" headline is gone: the tab title above
+            // does that job now.
             item(key = "explainer") {
                 when (legend) {
                     AnalyticsLegend.SILENT -> Unit
@@ -213,6 +192,19 @@ fun AnalyticsScreen(
                 }
             }
         }
+    }
+}
+
+/**
+ * The pre-tabs entry point, kept only until the tab host (next task) replaces
+ * `Route.Analytics` outright. [onBack] is unused here: the system back gesture
+ * still pops this route on its own, and the tab host will not carry one at
+ * all.
+ */
+@Composable
+fun AnalyticsScreen(rows: List<AnalyticsRow>, onOpenDetail: (AnalyticsRow) -> Unit, onAnalyse: (AnalyticsRow) -> Unit, onBack: () -> Unit) {
+    Surface(color = MaterialTheme.colorScheme.background) {
+        AnalyticsTab(rows, onOpenDetail, onAnalyse, WindowInsets.navigationBars.asPaddingValues())
     }
 }
 

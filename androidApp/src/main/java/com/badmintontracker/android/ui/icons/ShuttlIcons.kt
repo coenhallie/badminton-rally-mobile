@@ -30,6 +30,18 @@ object ShuttlIcons {
     // inside ShuttlEmptyState's disc, where the heavier line reads as a blob.
     val Trophy: ImageVector by lazy { buildLucide("ShuttlTrophy") { trophy() } }
     val ChartColumn: ImageVector by lazy { buildLucide("ShuttlChartColumn") { chartColumn() } }
+    /** The Matches tab: two stacked rows, lucide `rows-2`. */
+    val Rows: ImageVector by lazy {
+        buildLucideSvg("ShuttlRows", "M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z", "M3 12h18")
+    }
+    /** The Settings tab, lucide `sliders-horizontal`: the gear above is the video card's. */
+    val SlidersHorizontal: ImageVector by lazy {
+        buildLucideSvg(
+            "ShuttlSlidersHorizontal",
+            "M21 4h-7", "M10 4H3", "M21 12h-9", "M8 12H3", "M21 20h-5", "M12 20H3",
+            "M14 2v4", "M8 10v4", "M16 18v4",
+        )
+    }
     val Video: ImageVector by lazy { buildLucide("ShuttlVideo") { video() } }
     val ListOrdered: ImageVector by lazy { buildLucide("ShuttlListOrdered") { listOrdered() } }
     val Tag: ImageVector by lazy { buildLucide("ShuttlTag") { tag() } }
@@ -125,6 +137,8 @@ object ShuttlIcons {
     val Grip: ImageVector by lazy { buildStroked("ShuttlGrip") { for (x in listOf(5f, 9f)) for (y in listOf(3.5f, 7f, 10.5f)) { moveTo(x, y); lineTo(x + 0.01f, y) } } }
     val ChevronUp: ImageVector by lazy { buildStroked("ShuttlChevronUp") { moveTo(3f, 9f); lineTo(7f, 5f); lineTo(11f, 9f) } }
     val ChevronDown: ImageVector by lazy { buildStroked("ShuttlChevronDown") { moveTo(3f, 5f); lineTo(7f, 9f); lineTo(11f, 5f) } }
+    /** Settings' Labels row, pointing at the screen it opens. */
+    val ChevronRight: ImageVector by lazy { buildStroked("ShuttlChevronRight") { moveTo(5f, 3f); lineTo(9f, 7f); lineTo(5f, 11f) } }
     /** Two opposed arrows: the scoring board's "hand the serve across" mark. Same 14-unit, 1.4 stroke family. */
     val Swap: ImageVector by lazy { buildStroked("ShuttlSwap") { moveTo(2f, 4.5f); lineTo(12f, 4.5f); moveTo(9.5f, 2f); lineTo(12f, 4.5f); lineTo(9.5f, 7f); moveTo(12f, 9.5f); lineTo(2f, 9.5f); moveTo(4.5f, 7f); lineTo(2f, 9.5f); lineTo(4.5f, 12f) } }
     val Play: ImageVector by lazy { buildFilled("ShuttlPlay") { moveTo(5f, 3f); lineTo(15f, 9f); lineTo(5f, 15f); close() } }
