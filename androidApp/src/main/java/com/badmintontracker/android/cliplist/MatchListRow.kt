@@ -34,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -256,20 +257,38 @@ private fun MatchThumbnail(item: MatchListItem, media: MediaRepository) {
                 modifier = Modifier.matchParentSize(),
             )
             coverToLoad != null -> CloudThumbnail(coverToLoad, media, onFailed = { coverFailed = true })
-            item.scoreText != null -> Text(
-                item.scoreText.orEmpty(),
-                style = MaterialTheme.typography.titleSmall.copy(fontFeatureSettings = "tnum"),
-                color = MaterialTheme.colorScheme.onBackground,
-                maxLines = 1,
-            )
-            else -> Icon(
-                ShuttlIcons.Hash,
-                contentDescription = null,
-                modifier = Modifier.size(16.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            else -> when (thumbnailFallback(hasVideo = item.localUri != null || cover != null, hasScore = item.scoreText != null)) {
+                ThumbnailFallback.SCORE -> Text(
+                    item.scoreText.orEmpty(),
+                    style = MaterialTheme.typography.titleSmall.copy(fontFeatureSettings = "tnum"),
+                    color = MaterialTheme.colorScheme.onBackground,
+                    maxLines = 1,
+                )
+                ThumbnailFallback.VIDEO_GLYPH -> TileGlyph(ShuttlIcons.Video)
+                ThumbnailFallback.SCORE_GLYPH -> TileGlyph(ShuttlIcons.Hash)
+            }
         }
     }
+}
+
+/** What a thumbnail tile shows once every picture has failed or there was none. */
+internal enum class ThumbnailFallback { SCORE, VIDEO_GLYPH, SCORE_GLYPH }
+
+/**
+ * A row with a video whose picture would not load is still a video: it gets
+ * the video glyph, never the score's "#", which would read as a scored match.
+ * The score itself wins when there is one (the tile has room for "21-18"), and
+ * "#" is left for a scored match nobody has started, with no video at all.
+ */
+internal fun thumbnailFallback(hasVideo: Boolean, hasScore: Boolean): ThumbnailFallback = when {
+    hasScore -> ThumbnailFallback.SCORE
+    hasVideo -> ThumbnailFallback.VIDEO_GLYPH
+    else -> ThumbnailFallback.SCORE_GLYPH
+}
+
+@Composable
+private fun TileGlyph(icon: ImageVector) {
+    Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 /**
