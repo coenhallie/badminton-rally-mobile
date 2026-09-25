@@ -6,6 +6,7 @@ import com.badmintontracker.shared.localvideo.AnalyzeCoordinator
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.localvideo.canRemoveLocalVideo
+import com.badmintontracker.shared.matchlist.matchTitle
 import com.badmintontracker.shared.model.MatchMetadata
 import com.badmintontracker.shared.model.RallyClip
 import com.badmintontracker.shared.repo.AuthRepository
@@ -64,18 +65,6 @@ data class ClipListState(
     val isRefreshing: Boolean = false,
     val error: String? = null,
 )
-
-/**
- * The match name the web app stamps onto every clip of a video at cut time.
- * Takes the most common non-null title rather than the cover clip's, so
- * retitling a single clip in this app doesn't relabel the whole match.
- */
-internal fun List<RallyClip>.matchTitle(): String? =
-    mapNotNull { it.title }
-        .groupingBy { it }
-        .eachCount()
-        .maxByOrNull { it.value }
-        ?.key
 
 /**
  * Label for a single rally row. Every clip of a match carries the match name,
