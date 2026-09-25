@@ -16,6 +16,19 @@ enum ShuttlPalette {
     static let bgSecondary:     Pair = (0xF5F7F6, 0x121415)
     static let bgTertiary:      Pair = (0xEDF0EE, 0x161819)
     static let bgInput:         Pair = (0xEDF0EE, 0x0E0F10)
+    /// One step above a raised card: a self-drawn menu or dialog sitting over
+    /// `bgTertiary` content needs its own surface, or it reads as the same
+    /// card underneath it. Equal to `bgSecondary` in light, where the palette
+    /// has less room between tones; a shade lighter than either `bgSecondary`
+    /// or `bgTertiary` in dark. Mirrors androidApp's ShuttlPalette.bgRaised,
+    /// which the drawer's menus and dialogs use so they stop drawing
+    /// Material's own lavender container colour.
+    ///
+    /// `textTertiary` reads below the 4.5:1 body floor here in dark
+    /// (4.344:1) - see `ShuttlPaletteTests.testLegendSheetTextClearsAAOnBgRaised`,
+    /// which checks only `text` and `textSecondary`, the two this token is
+    /// actually drawn under today.
+    static let bgRaised:        Pair = (0xF5F7F6, 0x1E2123)
     static let border:          Pair = (0xE3E6E4, 0x1A1D1E)
     static let borderSecondary: Pair = (0xCED3D0, 0x22262A)
     static let textHeading:     Pair = (0x0B0C0D, 0xF2F4F3)

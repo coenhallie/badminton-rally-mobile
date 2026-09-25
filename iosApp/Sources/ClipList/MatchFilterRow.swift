@@ -22,6 +22,12 @@ struct MatchFilterRow: View {
                         pill(MatchListCopy.shared.FILTER_ON_THIS_PHONE, .onThisPhone)
                         pill(MatchListCopy.shared.FILTER_NOT_ANALYZED, .notAnalyzed)
                     }
+                    // One named group, not three unlabelled buttons: without
+                    // this VoiceOver reads "All, button. On this phone,
+                    // button. Not analyzed, button." with nothing to say the
+                    // three of them are one control choosing one filter.
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel("Filter")
                 }
                 .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
             } else {
@@ -78,17 +84,50 @@ struct MatchFilterRow: View {
     }
 }
 
+/// Which glyph explains one row of `MatchListCopy.LEGEND`. Not an `Image`
+/// directly: a case is what a test can compare, and `image` is the one place
+/// that turns it into the glyph the row and its legend both draw.
+enum LegendGlyphKind: Equatable {
+    case wherePhone
+    case whereCloud
+    case analysis(MatchAnalysis)
+
+    var isWhere: Bool {
+        switch self {
+        case .wherePhone, .whereCloud: return true
+        case .analysis: return false
+        }
+    }
+
+    var image: Image {
+        switch self {
+        case .wherePhone: return MatchGlyph.phone
+        case .whereCloud: return MatchGlyph.cloud
+        case .analysis(let analysis): return MatchGlyph.analysis(analysis)
+        }
+    }
+}
+
 /// Names the status line's glyphs. The match page says the same things in
 /// words, so the glyphs are a scan aid, not the only place this is said.
 struct MatchLegendSheet: View {
     @State private var contentHeight: CGFloat = 420
 
-    /// The glyph beside each `MatchListCopy.LEGEND` row, by position: the two
-    /// where-glyphs first, then the analyses in the order the status line
-    /// draws them.
-    private var glyphs: [(image: Image, isWhere: Bool)] {
-        [(MatchGlyph.phone, true), (MatchGlyph.cloud, true)]
-            + MatchAnalysis.allCases.map { (MatchGlyph.analysis($0), false) }
+    /// Which glyph a legend row's own label names, keyed on the label rather
+    /// than on the row's position in `MatchListCopy.LEGEND`: pairing by index
+    /// (a `zip` against a hand-written glyph list) silently mispairs the
+    /// moment a row is added, removed or reordered in the shared copy without
+    /// a matching change here, and nothing would fail to compile or to run.
+    static func glyphKind(forLegendLabel label: String) -> LegendGlyphKind? {
+        switch label {
+        case MatchListCopy.shared.WHERE_PHONE: return .wherePhone
+        case MatchListCopy.shared.WHERE_CLOUD: return .whereCloud
+        case MatchListCopy.shared.ANALYSIS_RALLIES: return .analysis(.rallies)
+        case MatchListCopy.shared.ANALYSIS_HEATMAP: return .analysis(.heatmap)
+        case MatchListCopy.shared.ANALYSIS_SKELETON: return .analysis(.skeleton)
+        case MatchListCopy.shared.ANALYSIS_SCORE: return .analysis(.score)
+        default: return nil
+        }
     }
 
     var body: some View {
@@ -98,27 +137,35 @@ struct MatchLegendSheet: View {
                 Text(MatchListCopy.shared.LEGEND_TITLE)
                     .shuttlType(ShuttlType.titleLarge)
                     .foregroundStyle(Shuttl.text)
-                ForEach(Array(zip(legend, glyphs).enumerated()), id: \.offset) { _, row in
-                    let (copy, glyph) = row
-                    HStack(alignment: .top, spacing: DrawerList.gap) {
-                        // One 18pt slot for both kinds, so the labels line up
-                        // down the sheet whether the glyph is bare or chipped.
-                        Group {
-                            if glyph.isWhere { WhereGlyph(image: glyph.image) } else { AnalysisChip(image: glyph.image) }
+                ForEach(Array(legend.enumerated()), id: \.offset) { _, pair in
+                    let label = pair.first as? String ?? ""
+                    let detail = pair.second as? String ?? ""
+                    if let kind = Self.glyphKind(forLegendLabel: label) {
+                        HStack(alignment: .top, spacing: DrawerList.gap) {
+                            // One 18pt slot for both kinds, so the labels line
+                            // up down the sheet whether the glyph is bare or
+                            // chipped. Hidden from VoiceOver: the label and
+                            // its line already say what the glyph means, and
+                            // reading "iPhone" or "flame" over that would add
+                            // noise rather than information.
+                            Group {
+                                if kind.isWhere { WhereGlyph(image: kind.image) } else { AnalysisChip(image: kind.image) }
+                            }
+                            .frame(width: MatchGlyph.chipSize, height: MatchGlyph.chipSize)
+                            .padding(.top, 2)
+                            .accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(label)
+                                    .shuttlType(ShuttlType.bodyLarge)
+                                    .foregroundStyle(Shuttl.text)
+                                Text(detail)
+                                    .shuttlType(ShuttlType.bodySmall)
+                                    .foregroundStyle(Shuttl.textSecondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
-                        .frame(width: MatchGlyph.chipSize, height: MatchGlyph.chipSize)
-                        .padding(.top, 2)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(copy.first as String? ?? "")
-                                .shuttlType(ShuttlType.bodyLarge)
-                                .foregroundStyle(Shuttl.text)
-                            Text(copy.second as String? ?? "")
-                                .shuttlType(ShuttlType.bodySmall)
-                                .foregroundStyle(Shuttl.textSecondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
+                        .accessibilityElement(children: .combine)
                     }
-                    .accessibilityElement(children: .combine)
                 }
             }
             .padding(.horizontal, 24)
@@ -138,6 +185,9 @@ struct MatchLegendSheet: View {
         // a half-sheet would clip the last rows, a full one would be mostly empty.
         .presentationDetents([.height(contentHeight)])
         .presentationDragIndicator(.visible)
-        .presentationBackground(Shuttl.bgSecondary)
+        // One step above the raised cards it explains: this sheet is a
+        // surface the app draws itself, unlike the row `Menu` above, which is
+        // a system material SwiftUI gives no background to override.
+        .presentationBackground(Shuttl.bgRaised)
     }
 }

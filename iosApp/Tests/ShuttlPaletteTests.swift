@@ -89,6 +89,28 @@ final class ShuttlPaletteTests: XCTestCase {
         }
     }
 
+    /// `bgRaised` sits one step above a raised card, for a self-drawn menu or
+    /// dialog - `MatchLegendSheet` today. Checked against the two foregrounds
+    /// it actually carries there (`text`, `textSecondary`), not the whole
+    /// `testBodyTextClearsAAOnEverySurface` set: dark `textTertiary` reads
+    /// 4.344:1 on `bgRaised.dark`, under the 4.5:1 floor, and nothing draws
+    /// that pairing today. Matches Android's identical value.
+    func testLegendSheetTextClearsAAOnBgRaised() {
+        eachTheme { theme, pick in
+            let bg = pick(ShuttlPalette.bgRaised)
+            let foregrounds = [
+                ("text", pick(ShuttlPalette.text)),
+                ("textSecondary", pick(ShuttlPalette.textSecondary)),
+            ]
+            for (fgName, fg) in foregrounds {
+                XCTAssertGreaterThanOrEqual(
+                    contrast(fg, bg), 4.5,
+                    "\(theme) \(fgName) on bgRaised is below the 4.5:1 body threshold"
+                )
+            }
+        }
+    }
+
     func testAccentCarriesOnAccentText() {
         eachTheme { theme, pick in
             XCTAssertGreaterThanOrEqual(

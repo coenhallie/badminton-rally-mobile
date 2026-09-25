@@ -34,6 +34,9 @@ enum Shuttl {
     static let bgSecondary     = token(ShuttlPalette.bgSecondary)
     static let bgTertiary      = token(ShuttlPalette.bgTertiary)
     static let bgInput         = token(ShuttlPalette.bgInput)
+    /// One step above a raised card, for a self-drawn menu or dialog. See
+    /// `ShuttlPalette.bgRaised`.
+    static let bgRaised        = token(ShuttlPalette.bgRaised)
     static let border          = token(ShuttlPalette.border)
     static let borderSecondary = token(ShuttlPalette.borderSecondary)
     static let textHeading     = token(ShuttlPalette.textHeading)
