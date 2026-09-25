@@ -25,6 +25,7 @@ import com.badmintontracker.shared.repo.VideosRepository
 import com.badmintontracker.shared.scoring.MatchFormat
 import com.badmintontracker.shared.scoring.ScoreLog
 import com.badmintontracker.shared.scoring.ScoreLogsRepository
+import com.badmintontracker.shared.scoring.entryNamingLog
 import com.badmintontracker.shared.scoring.playersLine
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -407,8 +408,10 @@ class ClipListViewModel(
         // would come back as an ordinary video on this phone. Discarding it
         // before the server has agreed would lose the file while the match
         // survives in the cloud, so its callers discard it on success instead.
-        // The scoreLogId lookup stays for callers without a row (the match page).
-        (entryId ?: localVideos.entries.value.firstOrNull { it.scoreLogId == scoreLogId }?.id)
+        // The scoreLogId lookup stays for a row with no entry of its own, minus
+        // any entry that is another log's video (see entryNamingLog): the list
+        // put that one on the other log's row, and it is not this log's to lose.
+        (entryId ?: entryNamingLog(scoreLogId, localVideos.entries.value, scoreLogs.logs.value)?.id)
             ?.takeIf { localVideos.get(it)?.scoreLogId == scoreLogId }
             ?.let(::discardEntry)
         result.onFailure {

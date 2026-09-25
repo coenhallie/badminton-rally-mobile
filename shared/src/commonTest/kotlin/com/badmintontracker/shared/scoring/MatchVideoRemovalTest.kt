@@ -245,6 +245,32 @@ class MatchVideoRemovalTest {
         f.scoreLogs.get(logId)?.videoId shouldBe "vid-1"
     }
 
+    /**
+     * The contested shape: vid-1 names l2 by its own scoreLogId, but l1 is bound
+     * to vid-1 on the server, so the match list puts vid-1 on l1's row. Removing
+     * l2's video must not reach across and take l1's file.
+     */
+    @Test
+    fun removing_a_video_leaves_an_entry_that_is_another_matchs_video() = runTest {
+        val f = Fixture()
+        val l1 = f.scoreLogs.newMatch()
+        f.scoreLogs.attachVideo(l1.id, "vid-1")
+        val l2 = f.scoreLogs.newMatch()
+        f.localVideos.add(
+            LocalVideoEntry(
+                id = "vid-1", uri = "content://media/video/vid-1", displayName = "match.mp4",
+                durationMs = 60_000L, sizeBytes = 1_000L, addedAtEpochMs = 0L,
+                stage = AnalyzeStage.ANALYZED, scoreLogId = l2.id,
+            ),
+        )
+
+        f.remove(l2.id).shouldBeNull()
+
+        f.localVideos.get("vid-1").shouldNotBeNull()
+        f.videos.deleteMatchCalls.shouldBeEmpty()
+        f.scoreLogs.get(l1.id)?.videoId shouldBe "vid-1"
+    }
+
     @Test
     fun a_match_that_has_no_video_is_a_no_op_rather_than_an_error() = runTest {
         val f = Fixture()

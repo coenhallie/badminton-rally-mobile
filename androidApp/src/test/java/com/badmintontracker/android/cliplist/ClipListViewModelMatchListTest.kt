@@ -221,6 +221,31 @@ class ClipListViewModelMatchListTest {
     }
 
     /**
+     * The contested shape: v1 names l2 by its own scoreLogId, but l1 is bound to
+     * v1, so the list puts v1 on l1's row and l2's row has no entry. Deleting l2
+     * must not fall back on v1 by scoreLogId: that would throw away the file of
+     * the match the coach is keeping.
+     */
+    @Test
+    fun deleting_a_scored_match_leaves_an_entry_that_is_another_matchs_video() = runTest {
+        val l1 = scoreLogs.create(title = "Thu League", rules = ScoringRules.BWF_21, setup = MatchSetup(firstServer = Side.HOME))
+        scoreLogs.attachVideo(l1.id, "v1")
+        val l2 = scoreLogs.create(title = "Fri League", rules = ScoringRules.BWF_21, setup = MatchSetup(firstServer = Side.HOME))
+        localVideos.add(entry("v1", AnalyzeStage.ANALYZED).copy(scoreLogId = l2.id))
+        val vm = newViewModel()
+        subscribe(vm)
+        val mine = vm.state.value.matchList.mine
+        mine.first { it.scoreLogId == l1.id }.entryId shouldBe "v1"
+        val l2Row = mine.first { it.scoreLogId == l2.id }
+        l2Row.entryId.shouldBeNull()
+
+        vm.deleteScoreMatch(l2.id, entryId = l2Row.entryId)
+        advanceUntilIdle()
+
+        localVideos.get("v1").shouldNotBeNull()
+    }
+
+    /**
      * A Supabase client over a mock engine that accepts every request, signed in
      * as the owner. Built here rather than through the app's factory: Auth's
      * Android setup registers lifecycle callbacks on the main Looper, which a

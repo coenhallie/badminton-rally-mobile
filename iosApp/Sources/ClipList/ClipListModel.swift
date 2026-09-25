@@ -285,9 +285,28 @@ final class ClipListModel {
     /// `deleteBoundMatch` needs that server outcome to decide whether it is
     /// safe to go on.
     private func deleteScoreLog(scoreLogId: String, hasVideo: Bool, entryId: String?) async -> Bool {
+        // The server first, then the orphaned entry, in Android's order. The
+        // outcome is kept rather than returned early: the discard below must run
+        // either way.
+        //
+        // do/catch, not `try?`: `try?` flattens a thrown error and a nil (success)
+        // into the same case, so a throw would return true here and let the caller
+        // go on to the irreversible video delete plus a resurrecting refresh().
+        let accepted: Bool
+        do {
+            if let message = try await scoreLogsRepo.deleteScoreMatchOrMessage(id: scoreLogId, hasVideo: hasVideo) {
+                error = message
+                accepted = false
+            } else {
+                accepted = true
+            }
+        } catch {
+            self.error = SwiftInteropKt.scoreLogDeleteFailedMessage(hasVideo: hasVideo)
+            accepted = false
+        }
         // The log is gone from this device either way - ScoreLogsRepository.delete
         // removes it locally unconditionally, win or lose on the server - so an
-        // entry pointed at it is orphaned regardless of the outcome below, and
+        // entry pointed at it is orphaned regardless of the outcome above, and
         // this must not be gated on that outcome. Without this a settled entry -
         // most reachably one AnalyzeCoordinator's zero-rally detection left
         // FAILED - would be invisible (the match list hides an entry whose match
@@ -300,28 +319,20 @@ final class ClipListModel {
         // would come back as an ordinary video on this phone. Discarding it
         // before the server has agreed would lose the file while the match
         // survives in the cloud, so the callers discard it on success instead.
-        // The scoreLogId lookup stays for a caller without a row.
+        // The scoreLogId lookup stays for a row with no entry of its own, minus
+        // any entry that is another log's video (see `entryNamingLog`): the list
+        // put that one on the other log's row, and it is not this log's to lose.
         //
-        // Reads the repository directly rather than the cached `localEntries`:
+        // Reads the repositories directly rather than the cached `localEntries`:
         // that cache is only as fresh as `start()`'s loop has delivered so far.
         // Mirrors Android's ClipListViewModel.deleteScoreLog.
-        let candidate = entryId ?? localVideos.entries.value.first { $0.scoreLogId == scoreLogId }?.id
+        let candidate = entryId ?? MatchVideoRemovalKt.entryNamingLog(
+            scoreLogId: scoreLogId, entries: localVideos.entries.value, logs: scoreLogsRepo.logs.value
+        )?.id
         if let candidate, localVideos.get(id: candidate)?.scoreLogId == scoreLogId {
             discardEntry(candidate)
         }
-        // do/catch, not `try?`: `try?` flattens a thrown error and a nil (success)
-        // into the same case, so a throw would return true here and let the caller
-        // go on to the irreversible video delete plus a resurrecting refresh().
-        do {
-            if let message = try await scoreLogsRepo.deleteScoreMatchOrMessage(id: scoreLogId, hasVideo: hasVideo) {
-                error = message
-                return false
-            }
-            return true
-        } catch {
-            self.error = SwiftInteropKt.scoreLogDeleteFailedMessage(hasVideo: hasVideo)
-            return false
-        }
+        return accepted
     }
 
     /// The entry and its notes, all of it (the tracks and skeleton go with a

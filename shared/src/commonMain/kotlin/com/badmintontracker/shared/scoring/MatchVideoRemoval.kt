@@ -37,6 +37,23 @@ fun scoreLogCanRemoveVideo(log: ScoreLog, entries: List<LocalVideoEntry>): Boole
         entry = entries.firstOrNull { it.scoreLogId == log.id },
     )
 
+/**
+ * The entry that names [scoreLogId] by its own scoreLogId, for a caller that has
+ * no match-list row to hand it the entry: the match page's "Remove video", and
+ * the drawer's deletes when the row has none.
+ *
+ * Skips an entry that is another log's video. The match list gives a log's
+ * server binding (its video id) precedence over an entry's own scoreLogId, so
+ * such an entry sits on that other log's row: l1 bound to v1, and v1 naming l2,
+ * puts v1 on l1's row and leaves l2's row with no entry. A plain scoreLogId
+ * lookup for l2 would find v1 and throw away the file of the match the coach is
+ * keeping.
+ */
+fun entryNamingLog(scoreLogId: String, entries: List<LocalVideoEntry>, logs: List<ScoreLog>): LocalVideoEntry? =
+    entries.firstOrNull { entry ->
+        entry.scoreLogId == scoreLogId && logs.none { it.id != scoreLogId && it.videoId == entry.id }
+    }
+
 /** Which of the two gestures a prompt is for. */
 enum class MatchVideoAction { REMOVE, CHANGE }
 
@@ -120,7 +137,7 @@ suspend fun removeMatchVideoOrMessage(
     localAnnotations: LocalAnnotationsRepository,
 ): String? {
     val log = scoreLogs.get(scoreLogId) ?: return MATCH_VIDEO_REMOVE_FAILED_MESSAGE
-    val entry = localVideos.entries.value.firstOrNull { it.scoreLogId == scoreLogId }
+    val entry = entryNamingLog(scoreLogId, localVideos.entries.value, scoreLogs.logs.value)
     if (!canRemoveMatchVideo(hasVideo = log.videoId != null, entry = entry)) {
         // Nothing to remove reads as success: the caller asked for a match with no
         // video and that is what it has. Only a running pipeline is a refusal.

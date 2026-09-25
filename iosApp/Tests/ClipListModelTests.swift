@@ -207,6 +207,22 @@ final class ClipListModelTests: XCTestCase {
         XCTAssertEqual(r.videos.deletedVideoIds, [], "the video delete ran after the score log's was refused")
     }
 
+    func testDeletingAScoredMatchLeavesAnEntryThatIsAnotherMatchsVideo() async {
+        // The contested shape: v1 names l2, but l1 is bound to v1, so the list
+        // puts v1 on l1's row and l2's row has no entry. Deleting l2 must not
+        // fall back on v1 by scoreLogId and throw away the file of the match
+        // the coach is keeping.
+        let r = rig()
+        let l1 = r.scoreLogs.create(title: "Thu", rules: ScoringRules.companion.BWF_21, setup: MatchSetup(firstServer: .home))
+        r.scoreLogs.attachVideo(id: l1.id, videoId: "v1")
+        let l2 = r.scoreLogs.create(title: "Fri", rules: ScoringRules.companion.BWF_21, setup: MatchSetup(firstServer: .home))
+        r.localVideos.add(entry: analyzedEntry(id: "v1", scoreLogId: l2.id))
+
+        await r.model.deleteScoreMatch(scoreLogId: l2.id, entryId: nil)
+
+        XCTAssertNotNil(r.localVideos.get(id: "v1"), "deleting l2 discarded l1's video")
+    }
+
     func testAnEntryARunIsHoldingIsNeverDiscarded() async {
         // The guard reads the injected `liveDeviceRuns` closure directly - the
         // stand-in for `LocalAnalysisRunner.deviceRuns` - and NOT
