@@ -2,12 +2,16 @@ import Shared
 import XCTest
 @testable import iosApp
 
-/// The match list's loops, held to what `ClipListView`'s `.task` does to them.
+/// The match list's loops, held to what `ClipListView`'s `.task` does to them,
+/// and its deletes, held to the row's own entry.
 ///
 /// Built on a real `RallyApp`, because `ClipListModel` takes one and shared has
-/// no doubles for the auth and shares repositories it reads. Nothing here
-/// reaches the network: the model is only ever asked to observe, and every
-/// flow it observes is a local cache.
+/// no doubles for the auth and shares repositories it reads. The loop tests
+/// only observe local caches. The delete tests swap in doubles for every store
+/// a delete writes; the one real call left is the shares lookup in the
+/// `refresh()` a successful video delete runs, which goes to
+/// `test.supabase.co`, a name that does not resolve, so it fails at once. It
+/// is a soft failure the model ignores, and no assertion depends on it.
 @MainActor
 final class ClipListModelTests: XCTestCase {
 
