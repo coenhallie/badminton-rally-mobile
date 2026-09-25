@@ -185,14 +185,6 @@ private struct MatchThumbnail: View {
                 .task(id: entryId) { await thumbnails.load(id: entryId, relativePath: uri) }
             } else if let coverToLoad {
                 CloudThumbnail(clip: coverToLoad, media: media, onFailed: { coverFailed = true })
-                    // Reset when the cover itself changes, not just when it
-                    // reappears with the same path: a cover lost while
-                    // offline (`coverFailed` latched true) must get another
-                    // try once a refresh brings back a signed URL for it,
-                    // and this id is the only thing that changes when that
-                    // happens - `coverFailed` itself is `@State` and survives
-                    // across body re-evaluations of this same row on purpose.
-                    .onChange(of: cover?.thumbnailStoragePath) { _, _ in coverFailed = false }
             } else {
                 switch thumbnailFallback(hasVideo: hasVideo, hasScore: item.scoreText != nil) {
                 case .score:
@@ -208,6 +200,18 @@ private struct MatchThumbnail: View {
                 }
             }
         }
+        // Reset here, on the outer ZStack, not on `CloudThumbnail` above: that
+        // view exists only while `coverToLoad != nil`, and `coverToLoad` is
+        // nil exactly when `coverFailed` is true - the one moment this reset
+        // is needed. An `.onChange` scoped to `CloudThumbnail` is torn down
+        // the instant the cover fails, so it is not there to observe the
+        // later path change that should undo the failure; a cover lost while
+        // offline stayed stuck on the glyph tile forever, even after a
+        // refresh brought back a valid signed URL for it. The outer ZStack is
+        // mounted in every state this view can be in, so it is always there
+        // to catch the path changing regardless of whether `coverFailed`
+        // happens to be true or false at the time.
+        .onChange(of: cover?.thumbnailStoragePath) { _, _ in coverFailed = false }
         .frame(width: DrawerList.thumbWidth, height: DrawerList.thumbHeight)
         .clipShape(shape)
     }
