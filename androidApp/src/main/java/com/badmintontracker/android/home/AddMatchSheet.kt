@@ -25,9 +25,11 @@ fun AddMatchSheet(
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        // Unset, this resolves M3's own surfaceContainerLow default - a
-        // platform colour ShuttlColors.kt never sets. Pinned to the token
-        // that matches iOS's Shuttl.bgSecondary instead. (The scrim is left
+        // Pinned to the token that matches iOS's Shuttl.bgSecondary rather
+        // than left to M3's surfaceContainerLow. ShuttlColors.kt now sets that
+        // role to the same value, but a sheet's colour is a design decision
+        // worth stating at the sheet, not an accident of a role's default.
+        // (The scrim is left
         // at its own default: BottomSheetDefaults.ScrimColor resolves M3's
         // neutral Scrim token, which is black in both schemes already, so
         // there is no platform tint to fix there.)

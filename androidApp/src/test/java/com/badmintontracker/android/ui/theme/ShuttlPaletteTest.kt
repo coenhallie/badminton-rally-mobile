@@ -153,6 +153,36 @@ class ShuttlPaletteTest {
         }
     }
 
+    /**
+     * Menus and dialogs draw text, textHeading (onSurface/onBackground) and
+     * textSecondary (onSurfaceVariant). textTertiary is left off on purpose:
+     * it makes 4.34:1 on the dark value, and lifting bgRaised to clear it
+     * would sink it back into the raised card it has to stand off.
+     */
+    @Test
+    fun raised_surface_carries_the_text_menus_and_dialogs_draw() {
+        for ((theme, pick) in themes) {
+            for ((name, fg) in listOf(
+                "text" to pick(ShuttlPalette.text),
+                "textHeading" to pick(ShuttlPalette.textHeading),
+                "textSecondary" to pick(ShuttlPalette.textSecondary),
+            )) {
+                withClue("$theme $name on bgRaised") {
+                    contrast(fg, pick(ShuttlPalette.bgRaised)).shouldBeGreaterThanOrEqual(4.5)
+                }
+            }
+        }
+    }
+
+    /**
+     * A menu opened from a raised card must not merge into it, and in dark no
+     * shadow does that job. At least one step lighter than the card.
+     */
+    @Test
+    fun raised_surfaces_stand_off_the_raised_card_in_dark() {
+        (luminance(ShuttlPalette.bgRaised.dark) > luminance(ShuttlPalette.bgTertiary.dark)) shouldBe true
+    }
+
     @Test
     fun dark_palette_matches_the_mock() {
         ShuttlPalette.bg.dark shouldBe 0x0B0C0DL

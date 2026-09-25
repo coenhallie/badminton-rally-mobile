@@ -180,10 +180,8 @@ fun HomeScreen(
                             strokeWidth = strokeWidth,
                         )
                     },
-                // M3's own default resolves a surfaceContainer role this
-                // app's ColorScheme never sets, which falls back to
-                // Material's stock tinted grey - a platform colour, not a
-                // token. Pinned explicitly instead.
+                // Pinned rather than left to M3's default surfaceContainerLow:
+                // the panel is the page itself, not a sheet over it.
                 //
                 // `background`, not the `bgInput` this used to be. The mock's
                 // panel is one step below its cards, and bgInput is byte

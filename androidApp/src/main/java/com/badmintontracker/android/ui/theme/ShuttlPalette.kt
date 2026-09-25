@@ -18,6 +18,17 @@ internal object ShuttlPalette {
     val bgSecondary     = Tone(0xF5F7F6, 0x121415)
     val bgTertiary      = Tone(0xEDF0EE, 0x161819)
     val bgInput         = Tone(0xEDF0EE, 0x0E0F10)
+
+    /**
+     * What floats over the page: menus and dialogs (M3's surfaceContainer and
+     * surfaceContainerHigh). Light keeps [bgSecondary]'s value and lets the
+     * menu's shadow lift it. Dark needs its own step, a notch above
+     * [bgTertiary]: a shadow does not read on a near-black page, and a menu in
+     * bgTertiary opened from a raised card in bgTertiary would merge into it.
+     * Carries text, textHeading and textSecondary at AA; not textTertiary,
+     * which is 4.34:1 on the dark value.
+     */
+    val bgRaised        = Tone(0xF5F7F6, 0x1E2123)
     val border          = Tone(0xE3E6E4, 0x1A1D1E)
     val borderSecondary = Tone(0xCED3D0, 0x22262A)
     val textHeading     = Tone(0x0B0C0D, 0xF2F4F3)
