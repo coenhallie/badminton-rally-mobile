@@ -67,9 +67,17 @@ internal fun buildMatchList(input: MatchListInput, timeZone: TimeZone): MatchLis
     // scoreLogId of its own, or is hidden alongside the other orphaned kind
     // otherwise - it must not become a second row for a match another entry
     // already claimed.
+    //
+    // Two passes, so that "first in input order" never decides between the two
+    // kinds of claim: every entry a log's video id names is placed first, then
+    // the rest by scoreLogId. In one pass an entry naming l1 by scoreLogId,
+    // listed before the entry l1's video id names, took l1's row, and the
+    // video's own entry - its id already claimed by l1 below - had no row at
+    // all.
     val logEntry = mutableMapOf<String, LocalVideoEntry>()
     val standaloneEntries = mutableListOf<LocalVideoEntry>()
-    for (entry in input.localEntries) {
+    val (byVideoId, byScoreLogId) = input.localEntries.partition { it.id in videoClaimedBy }
+    for (entry in byVideoId + byScoreLogId) {
         val claimerLogId = videoClaimedBy[entry.id]
         val targetLogId = claimerLogId ?: entry.scoreLogId?.takeIf { it in logIds }
         when {

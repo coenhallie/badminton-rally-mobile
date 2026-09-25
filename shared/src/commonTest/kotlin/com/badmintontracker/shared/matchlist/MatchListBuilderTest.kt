@@ -241,6 +241,38 @@ class MatchListBuilderTest {
         list.mine.first { it.key == "score-l4" }.videoId.shouldBeNull()
     }
 
+    @Test
+    fun the_log_that_claimed_a_video_gets_that_entry_whatever_order_the_entries_come_in() {
+        // E names l1 by its own scoreLogId and is listed first; V is the video
+        // l1's server binding names. The binding wins, as it does when V comes
+        // first: the entries are claimed by video id before anything is
+        // assigned by scoreLogId. Before, E took l1 because it came first, and
+        // V, claimed by l1's video id, was left with no row at all.
+        val entries = listOf(entry("e", scoreLogId = "l1"), entry("v", AnalyzeStage.ANALYZED))
+        listOf(entries, entries.reversed()).forEach { ordered ->
+            val list = build(input(logs = listOf(log("l1", videoId = "v")), entries = ordered))
+            val row = list.mine.single()
+            row.key shouldBe "score-l1"
+            row.entryId shouldBe "v"
+            // E is hidden, not a second row for l1's match: it names a log
+            // another entry already holds.
+            list.mine.none { it.entryId == "e" } shouldBe true
+        }
+    }
+
+    @Test
+    fun an_entry_that_names_one_log_but_is_another_logs_video_sits_on_the_video_logs_row() {
+        // The contested shape the deletes have to respect: v1 names l2, but l1
+        // is bound to v1 on the server, so v1 is on l1's row and l2's row has
+        // no entry at all.
+        val list = build(input(
+            logs = listOf(log("l1", videoId = "v1"), log("l2")),
+            entries = listOf(entry("v1", AnalyzeStage.ANALYZED, scoreLogId = "l2")),
+        ))
+        list.mine.first { it.key == "score-l1" }.entryId shouldBe "v1"
+        list.mine.first { it.key == "score-l2" }.entryId.shouldBeNull()
+    }
+
     // --- what it has ---
 
     @Test
