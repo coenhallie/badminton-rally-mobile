@@ -42,6 +42,8 @@
 3. **Tab switch and back keeps the Matches filter and scroll position** (Android: `SaveableStateHolder` + hoisted `LazyListState`; iOS: `TabView` keeps both tabs mounted). Checked on device in Tasks 5 and 8.
 4. **The scoring board shows no tab bar and no Add button**, and a tap on the lower right of the board scores rather than hitting a leftover button. Because the bar lives under the stack root, this should be free; it is checked by screenshot in Tasks 5 and 8.
 5. **Sign-out from the Settings tab lands on sign-in**, and signing back in lands on Matches, not on Settings (the saved tab must not survive a sign-out on Android: `AuthGate` resets it on `TO_SIGN_IN`). Task 4.
+6. **Android system Back on Analytics or Settings returns to Matches**, and only Back on Matches leaves the app. Task 4 (`BackHandler`), checked in Task 5.
+7. **Opening the Analytics tab pulls fresh data on both platforms** (Android used to, by building a new view model per visit; iOS's `.task` says it matches that). Task 4 refreshes on selecting the tab.
 
 ---
 
@@ -638,7 +640,8 @@ fun SettingsTab(
     contentPadding: PaddingValues,
 ) {
     Column(Modifier.fillMaxSize()) {
-        TabTopBar(HomeCopy.TAB_SETTINGS)
+        // The indicator on every tab's bar, as on every other screen's.
+        TabTopBar(HomeCopy.TAB_SETTINGS) { BackgroundWorkAction() }
         Column(
             Modifier
                 .fillMaxSize()
@@ -879,9 +882,13 @@ fun HomeScreen(
     media: MediaRepository,
     themePrefs: ThemePreferenceRepository,
     email: String?,
-    analyticsRows: List<AnalyticsRow>,
-    onOpenAnalyticsDetail: (AnalyticsRow) -> Unit,
-    onAnalyseFromAnalytics: (AnalyticsRow) -> Unit,
+    /**
+     * The Analytics tab's content, given the bottom padding. A slot built by
+     * AuthGate so the progress flows it collects are read only while that tab
+     * is composed: collected here, every progress tick would recompose the
+     * whole tab host, on Matches and Settings too.
+     */
+    analyticsContent: @Composable (PaddingValues) -> Unit,
     onMatchClick: (videoId: String) -> Unit,
     onScoreMatchClick: (scoreLogId: String) -> Unit,
     onNewMatch: () -> Unit,
@@ -912,6 +919,16 @@ fun HomeScreen(
     val tabs = rememberSaveableStateHolder()
 
     LaunchedEffect(addSheetOpen, listOverlayOpen) { onOverlayChange(addSheetOpen || listOverlayOpen) }
+
+    // Back on Analytics or Settings returns to Matches; only Back on Matches
+    // leaves the app. Without this, Back from any tab fell through to the
+    // NavHost, which has nothing under Route.Home, and closed the app.
+    BackHandler(enabled = selectedTab != HomeTab.MATCHES) { onSelectTab(HomeTab.MATCHES) }
+
+    // Opening Analytics pulls, as every visit to Route.Analytics used to (it
+    // built a fresh ClipListViewModel, whose init refreshes). iOS's Analytics
+    // `.task` refreshes on each appearance for the same reason.
+    LaunchedEffect(selectedTab) { if (selectedTab == HomeTab.ANALYTICS) vm.refresh() }
 
     // Record and import failures. Add is only on the Matches tab, so this is
     // where they come from.
@@ -964,12 +981,7 @@ fun HomeScreen(
                             contentPadding = bottom,
                         )
                     }
-                    HomeTab.ANALYTICS -> AnalyticsTab(
-                        rows = analyticsRows,
-                        onOpenDetail = onOpenAnalyticsDetail,
-                        onAnalyse = onAnalyseFromAnalytics,
-                        contentPadding = PaddingValues(bottom = padding.calculateBottomPadding()),
-                    )
+                    HomeTab.ANALYTICS -> analyticsContent(PaddingValues(bottom = padding.calculateBottomPadding()))
                     HomeTab.SETTINGS -> SettingsTab(
                         themeMode = themeMode,
                         onToggleTheme = themePrefs::toggle,
@@ -1043,18 +1055,8 @@ Notes for the implementer:
                         homeTab = HomeTab.MATCHES
                     }
 ```
-5. In `composable<Route.Home>`: keep the `clipListVm` and `localVm` construction. Move the analytics row building and `onAnalyse` logic from `composable<Route.Analytics>` into it (one `ClipListViewModel` now serves both tabs), and call the new `HomeScreen`:
+5. In `composable<Route.Home>`: keep the `clipListVm` and `localVm` construction. Move the analytics row building and `onAnalyse` logic from `composable<Route.Analytics>` into it (one `ClipListViewModel` now serves both tabs), and call the new `HomeScreen`. The row building goes inside the `analyticsContent` slot, never at `Route.Home` scope: AuthGate's own comments explain why a progress-tick read there recomposes too much. `fun analyze` is a local function; if Kotlin will not take `::analyze` for a local function in your version, use a `val analyze: (String) -> Unit = { ... }` lambda instead:
 ```kotlin
-                    val clipListState by clipListVm.state.collectAsStateWithLifecycle()
-                    val liveAnalysisStates by localAnalysis.state.collectAsStateWithLifecycle()
-                    val cloudProgress by coordinator.progress.collectAsStateWithLifecycle()
-                    val localEntries = clipListState.localEntries
-                    val analyticsRows = buildAnalyticsRows(
-                        matchList = clipListState.matchList,
-                        localEntries = localEntries,
-                        liveAnalysisStates = liveAnalysisStates,
-                        progressByEntryId = cloudProgress,
-                    )
                     // Both the list's Analyze and the Analytics tab's Analyze go
                     // through this one decision: resume a failed cloud run whose
                     // court points are saved, otherwise mark the court.
@@ -1073,9 +1075,24 @@ Notes for the implementer:
                         media = rally.media,
                         themePrefs = themePrefs,
                         email = rally.auth.currentUserEmail(),
-                        analyticsRows = analyticsRows,
-                        onOpenAnalyticsDetail = { row -> row.entryId?.let { nav.navigate(Route.AnalyticsDetail(it, row.title)) } },
-                        onAnalyseFromAnalytics = { row -> row.entryId?.let(::analyze) },
+                        analyticsContent = { bottom ->
+                            // Collected inside the slot, so only while the tab is
+                            // on screen: see HomeScreen's analyticsContent.
+                            val clipListState by clipListVm.state.collectAsStateWithLifecycle()
+                            val liveAnalysisStates by localAnalysis.state.collectAsStateWithLifecycle()
+                            val cloudProgress by coordinator.progress.collectAsStateWithLifecycle()
+                            AnalyticsTab(
+                                rows = buildAnalyticsRows(
+                                    matchList = clipListState.matchList,
+                                    localEntries = clipListState.localEntries,
+                                    liveAnalysisStates = liveAnalysisStates,
+                                    progressByEntryId = cloudProgress,
+                                ),
+                                onOpenDetail = { row -> row.entryId?.let { nav.navigate(Route.AnalyticsDetail(it, row.title)) } },
+                                onAnalyse = { row -> row.entryId?.let(::analyze) },
+                                contentPadding = bottom,
+                            )
+                        },
                         onMatchClick = { nav.navigate(Route.Match(videoId = it)) },
                         onScoreMatchClick = { nav.navigate(Route.Match(scoreLogId = it)) },
                         onNewMatch = { nav.navigate(Route.NewMatch) },
@@ -1139,6 +1156,7 @@ Start `Pixel_9a` with the DNS flags (Global Constraints). Check the session: `ad
 
 Use `e() { adb -s emulator-5554 "$@"; }`. For each shot: navigate with `e shell input tap x y`, capture with `e exec-out screencap -p > /tmp/bn-<name>.png`, **Read the image**, and only then go on. Never chain taps blind. Theme is switched from the Settings tab's "Dark theme" row. Shots, in dark and light:
 - `matches` (top of list, button labelled), `matches-scrolled` (button collapsed to "+", last row and its menu clear of the button and bar), `add-sheet`, `analytics`, `settings`, `scoring` (open a match's board; no bar, no button).
+- Back check (Review focus 6): on Settings, `e shell input keyevent 4` returns to Matches; on Matches it leaves the app. Relaunch after.
 - Tab switch check (Review focus 3): pick "On this phone" (if the chips show), scroll down, go to Settings, come back: filter and scroll position kept.
 - Empty state: only if the account can show it without deleting anything; otherwise say it was not captured.
 
@@ -1255,7 +1273,8 @@ struct SettingsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            TabHeader(HomeCopy.shared.TAB_SETTINGS)
+            // The indicator on every tab's header, as on every other screen's bar.
+            TabHeader(HomeCopy.shared.TAB_SETTINGS) { BackgroundWorkAction() }
             ScrollView {
                 VStack(spacing: 12) {
                     card {
@@ -1525,7 +1544,7 @@ Replace the `ZStack { homeScreen; MatchesDrawer ... }` with:
 - The `analyticsDetailRoute` registration passes `fallbackTitle: route.title` now that Analytics rows push it too.
 - `.sheet(item: $detailsTarget, onDismiss:)`: the body becomes `selectedTab = .matches` with a rewritten comment (the new row is on the Matches tab; the Add button that started this is only on that tab, so this normally changes nothing, and it keeps the promise that the named video is on screen).
 - Delete `homeScreen`, `topBar`, `bottomControls`, `edgeOpenDrag`, `HomePillButtonStyle`, `signOut()` (Settings signs out itself).
-- The tab bar's own label font: set `UITabBarItem.appearance().setTitleTextAttributes([.font: UIFont(name: "Archivo-Medium", size: 10)!], for: .normal)` (and `.selected`) once, in `HomeView.init`, only if the simulator shows iOS honouring it; if iOS 26's bar ignores it, leave the system font and say so in the report.
+- The tab bar's own label font: in `HomeView.init`, `if let font = UIFont(name: "Archivo-Medium", size: 10) { UITabBarItem.appearance().setTitleTextAttributes([.font: font], for: .normal); ... .selected }` (never a force unwrap), kept only if the simulator shows iOS honouring it; if iOS 26's bar ignores it, remove it and say so in the report.
 
 - [ ] **Step 3: Routing**
 
@@ -1585,7 +1604,9 @@ The iPhone 17 Pro simulator (`25A81330-906B-42F9-A880-716162614A46`) may hold a 
 
 - [ ] **Step 2: Capture**
 
-Reach screens with a throwaway XCUITest that taps tabs and holds each screen (`Thread.sleep(forTimeInterval: 8)`), run it in the background, and poll `xcrun simctl io <udid> screenshot /tmp/bn-ios-<n>.png` (delete the target first: simctl refuses to overwrite) until the test ends. Delete the throwaway test and regenerate the project afterwards. Theme: the Settings tab's switch. Shots, dark and light: Matches, Add sheet, Analytics, Settings, and the empty Matches hero if the harness shows it; the scoring board if signed in.
+Reach screens with a throwaway XCUITest that taps tabs and holds each screen (`Thread.sleep(forTimeInterval: 8)`), run it in the background, and poll `xcrun simctl io <udid> screenshot /tmp/bn-ios-<n>.png` (delete the target first: simctl refuses to overwrite) until the test ends. Delete the throwaway test and regenerate the project afterwards.
+
+In the same throwaway test, assert the UI tests' new gate resolves: `XCTAssertTrue(app.tabBars.buttons["Settings"].firstMatch.waitForExistence(timeout: 15))`. If the iOS 26 floating bar does not expose itself as `tabBars`, the four UI tests would skip forever even when signed in: find the query that does resolve (`app.buttons["Settings"]` with the tab trait, for example), fix the four tests to use it, and say so. Also confirm the three tab icons (`rectangle.split.1x2`, `chart.bar`, `slider.horizontal.3`) render: `SystemImageTests` does not check `Label(_, systemImage:)`. Theme: the Settings tab's switch. Shots, dark and light: Matches, Add sheet, Analytics, Settings, and the empty Matches hero if the harness shows it; the scoring board if signed in.
 
 - [ ] **Step 3: Compare against the mock and fix**
 
