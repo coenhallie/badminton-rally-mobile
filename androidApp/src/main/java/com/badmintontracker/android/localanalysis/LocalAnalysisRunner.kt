@@ -10,6 +10,8 @@ import com.badmintontracker.shared.local.skeletonAction
 import com.badmintontracker.shared.local.LocalAnalysisCoordinator
 import com.badmintontracker.shared.localvideo.DevicePhase
 import com.badmintontracker.shared.localvideo.DeviceWork
+import com.badmintontracker.shared.matchlist.DeviceRun
+import com.badmintontracker.shared.matchlist.DeviceRunKind
 import com.badmintontracker.shared.model.CourtKeypoints
 import com.badmintontracker.shared.model.toAnalysis
 import com.badmintontracker.shared.local.CloudPoseOutcome
@@ -110,6 +112,23 @@ internal fun toDeviceWork(entryId: String, state: LocalAnalysisState): DeviceWor
     is LocalAnalysisState.Analysing -> DeviceWork(entryId, DevicePhase.ANALYSING, state.fraction, false)
     is LocalAnalysisState.Cutting -> DeviceWork(entryId, DevicePhase.CUTTING, null, false)
     is LocalAnalysisState.Failed -> DeviceWork(entryId, DevicePhase.ANALYSING, null, failed = true)
+}
+
+/**
+ * A run as the match list sees it, or null when idle or done: a finished run
+ * speaks through the files it left (the track, the skeleton, the clips), which
+ * the list reads for itself, so a Done kept here would only say it twice.
+ *
+ * Exhaustive over [LocalAnalysisState] for the same reason [isDeviceRunInFlight]
+ * is: a new state must fail to compile here rather than quietly vanish from the
+ * drawer. Android has no paused run; only iOS's runner can report one.
+ */
+internal fun toDeviceRun(state: LocalAnalysisState): DeviceRun? = when (state) {
+    is LocalAnalysisState.Preparing -> DeviceRun(DeviceRunKind.RUNNING, DevicePhase.PREPARING)
+    is LocalAnalysisState.Analysing -> DeviceRun(DeviceRunKind.RUNNING, DevicePhase.ANALYSING)
+    is LocalAnalysisState.Cutting -> DeviceRun(DeviceRunKind.RUNNING, DevicePhase.CUTTING)
+    is LocalAnalysisState.Failed -> DeviceRun(DeviceRunKind.FAILED, message = state.message)
+    is LocalAnalysisState.Idle, is LocalAnalysisState.Done -> null
 }
 
 /**

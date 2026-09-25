@@ -55,7 +55,10 @@ class MediaRepositoryImpl(private val client: SupabaseClient) : MediaRepository 
     override suspend fun signedThumbnailUrl(clip: RallyClip): String? {
         val path = clip.thumbnailStoragePath ?: return null
         return thumbnails.get(path) { p ->
-            // Null (placeholder) on failure, as before: see the comment this replaces.
+            // Null (the placeholder) on any failure, a missing object included:
+            // a thumbnail is decorative, and an exception must never propagate
+            // out of here. This function is not @Throws, so on iOS an escaping
+            // exception aborts the app through the Swift bridge.
             runCatching { client.storage.from("thumbnails").createSignedUrl(p, 1.hours) }.getOrNull()
         }
     }

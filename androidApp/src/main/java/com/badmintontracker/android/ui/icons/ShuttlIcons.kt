@@ -5,14 +5,17 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 
 /**
  * Lucide-style outlined icons inlined as [ImageVector]s so the app doesn't
  * pull in `androidx.compose.material:material-icons-extended` (~2-3 MB APK
- * cost). Path data is taken verbatim from the web app reference
- * `badminton-tracker/src/views/LoginView.vue`.
+ * cost). The sun, moon and info glyphs are taken verbatim from the web app
+ * reference `badminton-tracker/src/views/LoginView.vue`; the match list's six
+ * glyphs come from lucide-static 0.460.0, not the web app, which has none of
+ * them.
  *
  * Stroke is a solid color so Icon's ColorFilter.tint can recolor it via
  * SrcIn — Color.Unspecified renders transparent and would not be tinted.
@@ -33,6 +36,43 @@ object ShuttlIcons {
     // The scoring board's Undo. Lucide's undo-2 at its stock stroke, drawn at
     // 18dp beside the label like ShuttlButton's leading icon.
     val Undo: ImageVector by lazy { buildLucide("ShuttlUndo") { undo() } }
+
+    // The match list's status line: where a match's video is, then what
+    // analysis it has. Lucide 0.460.0's own path strings (rects, lines and
+    // circles rewritten as paths), parsed by Compose rather than hand-traced:
+    // the flame and the cloud are arcs a transcription would get subtly wrong.
+    /** On this phone. */
+    val Smartphone: ImageVector by lazy {
+        buildLucideSvg("ShuttlSmartphone", "M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z", "M12 18h.01")
+    }
+    /** In the cloud. */
+    val Cloud: ImageVector by lazy {
+        buildLucideSvg("ShuttlCloud", "M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z")
+    }
+    /** Rallies. */
+    val Film: ImageVector by lazy {
+        buildLucideSvg(
+            "ShuttlFilm",
+            "M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z",
+            "M7 3v18", "M3 7.5h4", "M3 12h18", "M3 16.5h4", "M17 3v18", "M17 7.5h4", "M17 16.5h4",
+        )
+    }
+    /** Heatmap. */
+    val Flame: ImageVector by lazy {
+        buildLucideSvg(
+            "ShuttlFlame",
+            "M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 " +
+                "2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z",
+        )
+    }
+    /** Skeleton. */
+    val PersonStanding: ImageVector by lazy {
+        buildLucideSvg("ShuttlPersonStanding", "M13 5a1 1 0 1 1-2 0a1 1 0 1 1 2 0z", "m9 20 3-6 3 6", "m6 8 6 2 6-2", "M12 10v4")
+    }
+    /** Score. */
+    val Hash: ImageVector by lazy {
+        buildLucideSvg("ShuttlHash", "M4 9h16", "M4 15h16", "M10 3 8 21", "M16 3l-2 18")
+    }
 
     // The transport glyphs, traced from the Rally Analysis mock's own SVGs:
     // 14-unit chevrons and steps at a 1.4 stroke, an 18-unit filled play and
@@ -249,6 +289,27 @@ private fun buildLucide(name: String, pathData: androidx.compose.ui.graphics.vec
                 strokeLineJoin = StrokeJoin.Round,
                 pathBuilder = pathData,
             )
+        }
+        .build()
+
+/**
+ * [buildLucide] from Lucide's own path strings, one per SVG element. Compose's
+ * parser handles the arcs and the implicit linetos after a moveto that some of
+ * these rely on (see LucideGlyphsTest).
+ */
+private fun buildLucideSvg(name: String, vararg d: String): ImageVector =
+    ImageVector.Builder(name = name, defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f)
+        .apply {
+            d.forEach { pathString ->
+                addPath(
+                    pathData = addPathNodes(pathString),
+                    fill = SolidColor(Color.Transparent),
+                    stroke = SolidColor(Color.Black),
+                    strokeLineWidth = 2f,
+                    strokeLineCap = StrokeCap.Round,
+                    strokeLineJoin = StrokeJoin.Round,
+                )
+            }
         }
         .build()
 
