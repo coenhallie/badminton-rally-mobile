@@ -140,32 +140,42 @@ struct MatchLegendSheet: View {
                 ForEach(Array(legend.enumerated()), id: \.offset) { _, pair in
                     let label = pair.first as? String ?? ""
                     let detail = pair.second as? String ?? ""
-                    if let kind = Self.glyphKind(forLegendLabel: label) {
-                        HStack(alignment: .top, spacing: DrawerList.gap) {
-                            // One 18pt slot for both kinds, so the labels line
-                            // up down the sheet whether the glyph is bare or
-                            // chipped. Hidden from VoiceOver: the label and
-                            // its line already say what the glyph means, and
-                            // reading "iPhone" or "flame" over that would add
-                            // noise rather than information.
-                            Group {
+                    let kind = Self.glyphKind(forLegendLabel: label)
+                    // The row always draws, glyph or not: the coach came here
+                    // to read what an icon means, and a row whose icon this
+                    // file has not been taught yet must not vanish along with
+                    // it - that hides the very explanation he opened this
+                    // sheet for. `kind == nil` is a bug to fix in this file
+                    // (`MatchLegendTests` pins that every LEGEND label maps to
+                    // one); it is not a reason to say nothing.
+                    HStack(alignment: .top, spacing: DrawerList.gap) {
+                        // One 18pt slot for both kinds, so the labels line up
+                        // down the sheet whether the glyph is bare, chipped or
+                        // (a bug elsewhere notwithstanding) empty. Hidden from
+                        // VoiceOver: the label and its line already say what
+                        // the glyph means, and reading "iPhone" or "flame"
+                        // over that would add noise rather than information.
+                        Group {
+                            if let kind {
                                 if kind.isWhere { WhereGlyph(image: kind.image) } else { AnalysisChip(image: kind.image) }
-                            }
-                            .frame(width: MatchGlyph.chipSize, height: MatchGlyph.chipSize)
-                            .padding(.top, 2)
-                            .accessibilityHidden(true)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(label)
-                                    .shuttlType(ShuttlType.bodyLarge)
-                                    .foregroundStyle(Shuttl.text)
-                                Text(detail)
-                                    .shuttlType(ShuttlType.bodySmall)
-                                    .foregroundStyle(Shuttl.textSecondary)
-                                    .fixedSize(horizontal: false, vertical: true)
+                            } else {
+                                Color.clear
                             }
                         }
-                        .accessibilityElement(children: .combine)
+                        .frame(width: MatchGlyph.chipSize, height: MatchGlyph.chipSize)
+                        .padding(.top, 2)
+                        .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(label)
+                                .shuttlType(ShuttlType.bodyLarge)
+                                .foregroundStyle(Shuttl.text)
+                            Text(detail)
+                                .shuttlType(ShuttlType.bodySmall)
+                                .foregroundStyle(Shuttl.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
+                    .accessibilityElement(children: .combine)
                 }
             }
             .padding(.horizontal, 24)
