@@ -96,88 +96,6 @@ enum MatchGrouping {
     }
 }
 
-/// A scored match plus whatever video it has acquired. Port of Android's
-/// `MatchRow.Score`.
-struct ScoreRowContent: Identifiable {
-    let card: ScoreMatchCard
-    /// Non-nil once the pipeline has produced clips for this match's video.
-    let video: MatchSummary?
-    /// Non-nil while a video is attached but not yet clipped.
-    let attach: AttachStatus?
-
-    var id: String { card.scoreLogId }
-}
-
-/// One row of the match list, which since live scoring holds two kinds of thing: a
-/// match cut from a video, and a match scored courtside that may never have one.
-/// Port of Android's `MatchRow`.
-enum MatchRow: Identifiable {
-    case video(MatchSummary)
-    case score(ScoreRowContent)
-
-    /// Prefixed: both ids are UUIDs from the same generator and would otherwise collide.
-    var id: String {
-        switch self {
-        case .video(let match):   return "video-\(match.videoId)"
-        case .score(let content): return "score-\(content.card.scoreLogId)"
-        }
-    }
-
-    /// The video this row is about, if it is about one.
-    ///
-    /// A score row has none until a video is attached, and `AnalyticsRows`
-    /// pairs those through the local entry that claims the log instead.
-    var videoId: String? {
-        switch self {
-        case .video(let match):   return match.videoId
-        case .score:              return nil
-        }
-    }
-
-    var sortAtEpochMs: Int64 {
-        switch self {
-        case .video(let match):   return match.latestCreatedAtMillis
-        case .score(let content): return content.card.createdAtEpochMs
-        }
-    }
-}
-
-/// Interleaves the two kinds into one newest-first list, folding a video match into
-/// the score match that claims it. Score logs are owner-only by RLS, so this only
-/// ever builds the owned section.
-///
-/// Sorting a bound row on the score log's createdAt rather than its clips' is
-/// deliberate: the match was created before the video existed and must not jump
-/// down the list when the clips arrive.
-///
-/// The tie-break on `id` is not decoration, and it must match Android's exactly:
-/// the same account on two phones has to produce the same order.
-/// Port of Android's `mergeMatchRows`.
-func mergeMatchRows(
-    videoMatches: [MatchSummary],
-    scoreMatches: [ScoreMatchCard],
-    attachByScoreLogId: [String: AttachStatus]
-) -> [MatchRow] {
-    // uniquingKeysWith rather than uniqueKeysWithValues: a duplicate videoId is
-    // unreachable today, but Kotlin's associateBy silently last-wins on one, and
-    // this must not trap where Android would not.
-    let videoById = Dictionary(videoMatches.map { ($0.videoId, $0) }, uniquingKeysWith: { _, last in last })
-    let claimed = Set(scoreMatches.compactMap(\.videoId))
-    let scoreRows = scoreMatches.map { card in
-        MatchRow.score(ScoreRowContent(
-            card: card,
-            video: card.videoId.flatMap { videoById[$0] },
-            attach: attachByScoreLogId[card.scoreLogId]
-        ))
-    }
-    let videoRows = videoMatches.filter { !claimed.contains($0.videoId) }.map(MatchRow.video)
-    return (videoRows + scoreRows).sorted {
-        $0.sortAtEpochMs != $1.sortAtEpochMs
-            ? $0.sortAtEpochMs > $1.sortAtEpochMs
-            : $0.id < $1.id
-    }
-}
-
 private let matchDateFormatter: DateFormatter = {
     let f = DateFormatter()
     f.locale = Locale(identifier: "en_US_POSIX")
@@ -196,26 +114,6 @@ func formatMatchDate(millis: Int64) -> String {
 func clipRowTitle(_ clip: ClipInfo, matchTitle: String?) -> String {
     if let title = clip.title, title != matchTitle { return title }
     return "Rally #\(clip.rallyIndex)"
-}
-
-/// Headline for a match row. A named match leads with its name; an unnamed one
-/// keeps the original date headline. Port of Android's `matchRowPrimary`.
-func matchRowPrimary(_ match: MatchSummary) -> String {
-    match.title ?? "Match · \(formatMatchDate(millis: match.latestCreatedAtMillis))"
-}
-
-/// Sub-line for a match row. When the name takes the headline the date moves
-/// down here, so it is never lost from the list. Port of Android's
-/// `matchRowSecondary`.
-///
-/// Sentence case, not the uppercase this used to return: the drawer's redesign
-/// carries no uppercase anywhere. Analytics applies `.uppercased()` at its own
-/// call site in AnalyticsRows.swift, so the casing is a screen's choice rather
-/// than something baked into the string.
-func matchRowSecondary(_ match: MatchSummary) -> String {
-    let rallies = "\(match.rallyCount) \(match.rallyCount == 1 ? "rally" : "rallies")"
-    guard match.title != nil else { return rallies }
-    return "\(rallies) · \(formatMatchDate(millis: match.latestCreatedAtMillis))"
 }
 
 /// Name for the most-labelled rally in the summary sheet. Goes through the same

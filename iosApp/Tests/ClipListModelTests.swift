@@ -105,7 +105,9 @@ final class ClipListModelTests: XCTestCase {
         let scoreLogs: ScoreLogsRepository
     }
 
-    private func rig() -> Rig {
+    /// `liveDeviceRuns` defaults to "nothing running", matching a build with no
+    /// on-device runner. Tests that need a run in flight pass their own.
+    private func rig(liveDeviceRuns: @escaping @MainActor () -> [String: DeviceRun] = { [:] }) -> Rig {
         let localVideos = IosTestDoublesKt.testLocalVideoRepository()
         let annotations = IosTestDoublesKt.testLocalAnnotationsRepository()
         let videos = IosTestDoublesKt.testVideosRepository()
@@ -115,7 +117,8 @@ final class ClipListModelTests: XCTestCase {
             rally: rally,
             analyze: IosTestDoublesKt.testAnalyzeCoordinator(localVideos: localVideos, clips: clips),
             clips: clips, videos: videos, scoreLogs: scoreLogs,
-            localVideos: localVideos, localAnnotations: annotations
+            localVideos: localVideos, localAnnotations: annotations,
+            liveDeviceRuns: liveDeviceRuns
         )
         return Rig(model: model, localVideos: localVideos, annotations: annotations, videos: videos, scoreLogs: scoreLogs)
     }
@@ -190,13 +193,40 @@ final class ClipListModelTests: XCTestCase {
     }
 
     func testAnEntryARunIsHoldingIsNeverDiscarded() async {
+        // The guard reads the injected `liveDeviceRuns` closure directly - the
+        // stand-in for `LocalAnalysisRunner.deviceRuns` - and NOT
+        // `updateDeviceRuns`'s own cache, which this test deliberately never
+        // calls. `updateDeviceRuns` only feeds `matchList`; before this fix a
+        // run started on a screen that had not yet fed the model this way
+        // would not block a delete.
+        let r = rig(liveDeviceRuns: { ["v1": DeviceRun(kind: .running, phase: .analysing, message: nil)] })
+        r.localVideos.add(entry: analyzedEntry(id: "v1"))
+
+        await r.model.deleteMatch(videoId: "v1", entryId: "v1")
+
+        XCTAssertNotNil(r.localVideos.get(id: "v1"))
+    }
+
+    func testAPausedRunIsAlsoNeverDiscarded() async {
+        let r = rig(liveDeviceRuns: { ["v1": DeviceRun(kind: .paused, phase: .analysing, message: "Paused - keep Shuttl open")] })
+        r.localVideos.add(entry: analyzedEntry(id: "v1"))
+
+        await r.model.deleteMatch(videoId: "v1", entryId: "v1")
+
+        XCTAssertNotNil(r.localVideos.get(id: "v1"))
+    }
+
+    func testACachedDeviceRunWithNoLiveRunnerDoesNotBlockADelete() async {
+        // `updateDeviceRuns` alone - the old, sole guard - must no longer stop
+        // this delete: the runner itself (via `liveDeviceRuns`, defaulted here
+        // to "nothing running") is what `discardEntry` consults now.
         let r = rig()
         r.localVideos.add(entry: analyzedEntry(id: "v1"))
         r.model.updateDeviceRuns(["v1": DeviceRun(kind: .running, phase: .analysing, message: nil)])
 
         await r.model.deleteMatch(videoId: "v1", entryId: "v1")
 
-        XCTAssertNotNil(r.localVideos.get(id: "v1"))
+        XCTAssertNil(r.localVideos.get(id: "v1"))
     }
 
     func testRemovingFromThePhoneFreesTheFileAndItsNotes() {

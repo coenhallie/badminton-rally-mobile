@@ -96,7 +96,13 @@ struct HomeView: View {
         self.analyze = analyze
         self.localAnalysis = localAnalysis
         _intake = State(initialValue: LocalVideoIntake(rally: rally))
-        _listModel = State(initialValue: ClipListModel(rally: rally, analyze: analyze))
+        _listModel = State(initialValue: ClipListModel(
+            rally: rally, analyze: analyze,
+            // The runner's own live state, not a copy fed through a screen's
+            // `.onChange`: a delete's guard must see a run started on whichever
+            // screen is on top right now, not only the drawer's.
+            liveDeviceRuns: { [localAnalysis] in localAnalysis?.deviceRuns ?? [:] }
+        ))
     }
 
     var body: some View {

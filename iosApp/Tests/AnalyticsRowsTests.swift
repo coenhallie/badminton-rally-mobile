@@ -2,11 +2,20 @@ import Shared
 import XCTest
 @testable import iosApp
 
-/// The Analytics list's decision logic, which is everything except the layout:
-/// which state each match lands in, which control its row offers, where that
-/// control goes and which line explains the list. Android's equivalent shipped
-/// untested inside a Compose file and a Critical was hiding in it.
+/// The Analytics list's own decisions, which neither `analyticsRowState` nor the
+/// screen's layout makes: which of the shared `MatchListItem`s the screen
+/// shows, and what a row's control says while one of the two pipelines is busy
+/// with it.
+///
+/// Rows come from `buildMatchList` here the same way they do in the app
+/// (`ClipListModel.regroup`), rather than hand-built `MatchListItem`s, so a
+/// test cannot assert something the real join could never produce. Mirrors
+/// Android's `AnalyticsRowsTest`.
 final class AnalyticsRowsTests: XCTestCase {
+
+    private let me = "user-self"
+    private let other = "user-other"
+    private let sep8 = KotlinInstant.companion.fromEpochMilliseconds(epochMilliseconds: 1_787_940_000_000)
 
     // MARK: - Fixtures
 
@@ -15,200 +24,167 @@ final class AnalyticsRowsTests: XCTestCase {
         scoreLogId: String? = nil,
         stage: AnalyzeStage = .local,
         keypoints: CourtKeypoints? = nil,
-        failureMessage: String? = nil,
-        title: String? = nil
+        failureMessage: String? = nil
     ) -> LocalVideoEntry {
         LocalVideoEntry(
-            id: id,
-            uri: "LocalVideos/\(id).mp4",
-            displayName: "\(id).mp4",
-            durationMs: 65_000,
-            sizeBytes: 2,
-            addedAtEpochMs: 1_784_980_800_000,
-            title: title,
-            description: nil,
-            keypoints: keypoints,
-            stage: stage,
-            failedStep: nil,
-            failureMessage: failureMessage,
-            resultSeen: false,
-            scoreLogId: scoreLogId
+            id: id, uri: "LocalVideos/\(id).mp4", displayName: "\(id).mp4",
+            durationMs: 60_000, sizeBytes: 1_000_000, addedAtEpochMs: 1_787_940_000_000,
+            title: nil, description: nil, keypoints: keypoints,
+            stage: stage, failedStep: nil, failureMessage: failureMessage,
+            resultSeen: false, scoreLogId: scoreLogId
         )
     }
 
-    /// A saved court. The values do not matter to any rule under test; only
-    /// whether the field is nil does.
-    private func court() -> CourtKeypoints {
-        let p = [KotlinFloat(float: 0), KotlinFloat(float: 0)]
-        return CourtKeypoints(
-            topLeft: p, topRight: p, bottomRight: p, bottomLeft: p,
-            netLeft: p, netRight: p,
-            serviceLineNearLeft: p, serviceLineNearRight: p,
-            serviceLineFarLeft: p, serviceLineFarRight: p,
-            centerNear: p, centerFar: p
+    private func clip(_ videoId: String, index: Int32 = 1, owner: String? = nil) -> RallyClip {
+        RallyClip(
+            id: "\(videoId)-\(index)", videoId: videoId, ownerId: owner ?? me,
+            rallyIndex: index, startTimestamp: 0, endTimestamp: 1, durationSeconds: 1,
+            clipStoragePath: "clips/\(videoId)/\(index).mp4", thumbnailStoragePath: nil,
+            title: nil, annotationCount: 0, createdAt: sep8
         )
     }
 
-    private func videoMatch(_ videoId: String) -> MatchSummary {
-        MatchSummary(
-            videoId: videoId, rallyCount: 3, latestCreatedAtMillis: 1_784_980_800_000,
-            coverClipId: "c-\(videoId)", isOwned: true, sharerEmail: nil,
-            title: "Thu League", description: nil
+    private func log(
+        id: String, videoId: String? = nil, points: Int = 0,
+        homePlayers: [String] = [], awayPlayers: [String] = []
+    ) -> ScoreLog {
+        ScoreLog(
+            id: id, videoId: videoId, title: "Thu League",
+            homePlayers: homePlayers, awayPlayers: awayPlayers, format: nil,
+            rules: ScoringRules.companion.BWF_21, setup: MatchSetup(firstServer: .home),
+            events: (0..<points).map { _ -> ScoreEvent in ScoreEventPointTo(side: .home) },
+            status: videoId != nil ? .bound : .unbound,
+            createdAt: sep8, updatedAt: sep8
         )
     }
 
-    private func scoreRow(scoreLogId: String, videoId: String? = nil) -> MatchRow {
-        .score(ScoreRowContent(
-            card: ScoreMatchCard(
-                scoreLogId: scoreLogId,
-                videoId: videoId,
-                title: "Thu League",
-                createdAtEpochMs: 1_784_980_800_000,
-                playersLine: nil,
-                scoreLine: "11-9",
-                statusLine: "Scoring",
-                isLive: false,
-                hasVideo: videoId != nil
-            ),
-            video: nil,
-            attach: nil
+    private func matchList(
+        clips: [RallyClip] = [], logs: [ScoreLog] = [], entries: [LocalVideoEntry] = [],
+        deviceRuns: [String: DeviceRun] = [:], tracks: Set<String> = [],
+        progress: [String: AnalyzeProgress] = [:]
+    ) -> MatchList {
+        MatchListBuilderKt.buildMatchList(input: MatchListInput(
+            clips: clips, currentUserId: me,
+            sharerByVideoId: [:], metadataByVideoId: [:], scoreLogs: logs,
+            localEntries: entries, cloudProgress: progress, deviceRuns: deviceRuns,
+            storedTrackIds: tracks, storedSkeletonIds: [], deviceClipCounts: [:]
         ))
     }
 
     private func rows(
-        localEntries: [LocalVideoEntry] = [],
-        ownedRows: [MatchRow] = [],
-        sharedMatches: [MatchSummary] = [],
-        progress: [String: AnalyzeProgress] = [:],
-        tracks: Set<String> = []
+        clips: [RallyClip] = [], logs: [ScoreLog] = [], entries: [LocalVideoEntry] = [],
+        deviceStates: [String: LocalAnalysisState] = [:], tracks: Set<String> = [],
+        progress: [String: AnalyzeProgress] = [:]
     ) -> [AnalyticsRow] {
-        buildAnalyticsRows(
-            localEntries: localEntries,
-            ownedRows: ownedRows,
-            sharedMatches: sharedMatches,
+        let deviceRuns = Dictionary(uniqueKeysWithValues: deviceStates.compactMap { id, state in
+            LocalVideoStatus.deviceRun(for: state).map { (id, $0) }
+        })
+        return buildAnalyticsRows(
+            matchList: matchList(
+                clips: clips, logs: logs, entries: entries,
+                deviceRuns: deviceRuns, tracks: tracks, progress: progress
+            ),
+            localEntries: entries,
             progressByEntryId: progress,
-            storedTrackIds: tracks
+            deviceStates: deviceStates
         )
     }
 
-    /// Rows built by hand, for the legend cases that need a state without
-    /// building the whole list that would produce it.
+    /// A trivial, valid `MatchListItem` for the legend tests below, which only
+    /// ever read `.state` off a row: hand-writing every one of its fields for
+    /// each case would pin nothing the shared builder's own tests do not
+    /// already.
+    private lazy var dummyItem: MatchListItem = matchList(logs: [log(id: "dummy")]).mine[0]
+
     private func row(_ state: AnalyticsRowState, key: String = "k") -> AnalyticsRow {
         AnalyticsRow(
             key: key, entryId: state == .notOnDevice ? nil : "e-\(key)",
-            group: .ownedMatches, title: "Thu League", subtitle: "3 rallies",
-            state: state, affordance: .ready
+            group: .mine, title: "Thu League", subtitle: "3 rallies",
+            state: state, affordance: .ready, item: dummyItem
         )
     }
 
     // MARK: - buildAnalyticsRows
 
-    func testAVideoOnThisPhoneWithNoTrackIsAnalysable() {
-        let built = rows(localEntries: [entry(id: "e1")])
+    func testAScoredMatchFindsItsVideoThroughTheEntryThatClaimsTheLog() {
+        // The defect this guards: the score card's own `videoId` is written
+        // only when the CLOUD pipeline creates the videos row, so a match
+        // scored courtside and filmed on this phone has none. Reading it would
+        // call a video sitting on the phone "Not on this phone" forever, unless
+        // the coach uploads.
+        let e = entry(id: "e1", scoreLogId: "log1")
+        let built = rows(logs: [log(id: "log1")], entries: [e])
         XCTAssertEqual(built.count, 1)
-        XCTAssertEqual(built[0].group, .localVideos)
-        XCTAssertEqual(built[0].entryId, "e1")
-        // Never READY: iOS has no track store, so `hasStoredTrack` is false for
-        // every row and the classifier can only reach ANALYSABLE from here.
         XCTAssertEqual(built[0].state, .analysable)
-        XCTAssertEqual(built[0].affordance, .ready)
+        XCTAssertEqual(built[0].entryId, "e1")
     }
 
-    func testAMatchWithNoVideoOnThisPhoneIsInertAndHasNoEntryToActOn() {
-        let built = rows(ownedRows: [.video(videoMatch("v9"))])
+    func testAScoredMatchWithAStoredTrackIsReady() {
+        let e = entry(id: "e1", scoreLogId: "log1")
+        let built = rows(logs: [log(id: "log1")], entries: [e], tracks: ["e1"])
+        XCTAssertEqual(built[0].state, .ready)
+    }
+
+    func testAScoredMatchWhoseVideoNeverTouchedThisPhoneStaysInert() {
+        // The entry's scoreLogId names a log this input never loaded
+        // ("other-log" is not "log1"), so the builder hides the entry rather
+        // than showing it as a standalone row; the score row itself comes out
+        // with nothing to point at.
+        let built = rows(logs: [log(id: "log1")], entries: [entry(id: "e1", scoreLogId: "other-log")])
         XCTAssertEqual(built.count, 1)
         XCTAssertEqual(built[0].state, .notOnDevice)
         XCTAssertNil(built[0].entryId)
-        XCTAssertEqual(built[0].group, .ownedMatches)
     }
 
-    func testEveryRowDescribesItselfInSentenceCase() {
-        // This has flipped twice. Analytics uppercased its subtitles while the
-        // drawer beside it had already stopped, and Android was talked into
-        // uppercasing to match. The mock settles it the other way - "On this
-        // phone", "1:05 · Sep 2" - and the redesign carries no uppercase
-        // anywhere, so a `.uppercased()` reappearing at any of these three call
-        // sites is a regression rather than a choice.
-        let out = rows(
-            localEntries: [entry(id: "e1")],
-            ownedRows: [.video(videoMatch("v1"))],
-            sharedMatches: [videoMatch("v2")]
+    func testAScoredMatchRowReportsItsOwnEntrysLiveness() {
+        let e = entry(id: "e1", scoreLogId: "log1")
+        let built = rows(
+            logs: [log(id: "log1")], entries: [e],
+            deviceStates: ["e1": .analysing(fraction: 0.2)]
         )
-        XCTAssertEqual(out.map(\.group), [.localVideos, .ownedMatches, .shared])
-        // Each subtitle still holds lower case somewhere, which an uppercasing
-        // call site would strip.
+        XCTAssertEqual(built[0].affordance, .inProgress(phase: "Analyzing on device 20%"))
+    }
+
+    func testAScoredMatchsPlayersLineIsCarriedOnItsItemOnceSomeoneIsNamed() {
+        // Subtitle is `item.detail` for every row - score, rallies, date - the
+        // same text for a named and an unnamed match alike. The players line
+        // is its own field on the item (`playersLine`, drawn under the
+        // subtitle the same way the drawer draws it) rather than replacing the
+        // score/date line.
+        let unnamed = rows(logs: [log(id: "log1", points: 3)])
+        XCTAssertNil(unnamed[0].item.playersLine)
+        XCTAssertEqual(unnamed[0].subtitle, unnamed[0].item.detail)
+
+        let named = rows(logs: [log(id: "log1", points: 3, homePlayers: ["Coen"], awayPlayers: ["Marco"])])
+        XCTAssertEqual(named[0].item.playersLine, "Coen vs Marco")
+        XCTAssertEqual(named[0].subtitle, named[0].item.detail)
+    }
+
+    func testTitleAndSubtitleAreTheItemsOwnTextUntouched() {
+        // Title and subtitle are a straight read of `MatchListItem.title`/
+        // `.detail` as the shared builder wrote them: `row.subtitle ==
+        // row.item.detail` catches a call-site transform reappearing at
+        // `buildAnalyticsRows`'s one use of `item.detail`, which is the only
+        // place left one could hide.
+        let out = rows(clips: [clip("v9", owner: other)], entries: [entry(id: "e1")])
         for row in out {
-            XCTAssertTrue(
-                row.subtitle.contains(where: { $0.isLowercase }),
-                "subtitle came out uppercased: \(row.subtitle)"
-            )
+            XCTAssertEqual(row.title, row.item.title)
+            XCTAssertEqual(row.subtitle, row.item.detail)
         }
-        // Literals, deliberately, and NOT a comparison against the formatters
-        // themselves: `subtitle == matchRowSecondary(match)` re-derives the
-        // expectation from the code under test, so re-adding `.uppercased()` at
-        // the call site would change both sides and the test would still pass.
-        XCTAssertEqual(
-            out.map(\.subtitle),
-            ["1:05 · Jul 25, 2026", "3 rallies · Jul 25, 2026", "3 rallies · Jul 25, 2026"]
-        )
     }
 
-    func testASharedMatchIsInertAndLandsInItsOwnSection() {
-        let built = rows(sharedMatches: [videoMatch("v9")])
-        XCTAssertEqual(built.map(\.group), [.shared])
-        XCTAssertEqual(built.map(\.state), [.notOnDevice])
-    }
-
-    /// The join Android shipped as `card.videoId` and had to fix as a Critical: a
-    /// match scored courtside and filmed on this phone read "Not on this phone"
-    /// and was inert forever. `card.videoId` is written only by the cloud
-    /// pipeline, so this match has none.
-    func testAScoredMatchFindsItsVideoByScoreLogIdNotVideoId() {
-        let built = rows(
-            localEntries: [entry(id: "e1", scoreLogId: "s1")],
-            ownedRows: [scoreRow(scoreLogId: "s1")]
-        )
-        XCTAssertEqual(built.count, 1)
-        XCTAssertEqual(built[0].entryId, "e1")
-        XCTAssertEqual(built[0].state, .analysable)
-    }
-
-    /// A video picked for a match is that match's row, not a second standalone
-    /// one, exactly as the drawer's own "On this phone" section filters it.
-    func testAVideoClaimedByAMatchIsNotAlsoAStandaloneRow() {
-        let built = rows(
-            localEntries: [entry(id: "e1", scoreLogId: "s1")],
-            ownedRows: [scoreRow(scoreLogId: "s1")]
-        )
-        XCTAssertEqual(built.map(\.group), [.ownedMatches])
-    }
-
-    /// One video, one row - and the local row is the one that survives, because
-    /// it is alive from import until the file leaves the phone whereas the owned
-    /// row only appears once a cloud run has clipped.
-    func testAVideoTheCloudHasClippedStillShowsOnceUnderOnThisPhone() {
-        let built = rows(
-            localEntries: [entry(id: "v1")],
-            ownedRows: [.video(videoMatch("v1"))]
-        )
-        XCTAssertEqual(built.count, 1)
-        XCTAssertEqual(built[0].group, .localVideos)
-        XCTAssertEqual(built[0].key, "local-v1")
-    }
-
-    /// Every inert row has a nil entry id, so the dedupe key must fall back to
-    /// the row's own key or two unrelated absent matches would collapse into one.
-    func testACloudAnalysedMatchWhoseVideoHasGoneStillOpens() {
-        // What a finished cloud run leaves behind: the entry is retired, the
-        // footage with it, and the cloud track stays on disk. The row must open
-        // the heatmap the coach waited for - it used to come out inert, with
-        // "Not on this phone" under a match that had just been analysed.
-        let built = rows(ownedRows: [.video(videoMatch("v1"))], tracks: ["v1"])
-
+    func testAVideoRemovedFromThisPhoneAfterAnalysisStillOpens() {
+        // A track outlives the entry it came from - a device run's own track
+        // stays on disk after the file (and its entry) are gone, and the same
+        // is true of a cloud run's track once the video has left the phone by
+        // some other path. Either way the row must open the heatmap the coach
+        // already has - it used to come out inert, with "Not on this phone"
+        // under a match that had just been analysed.
+        let built = rows(clips: [clip("v1")], tracks: ["v1"])
         XCTAssertEqual(built.count, 1)
         XCTAssertEqual(built[0].state, .readyNoVideo)
         // Nil here is what made the row unopenable even once the state was
-        // right: the list navigates on the id.
+        // right: `AnalyticsListView` navigates on the id.
         XCTAssertEqual(built[0].entryId, "v1")
     }
 
@@ -217,47 +193,71 @@ final class AnalyticsRowsTests: XCTestCase {
         // either, and the panels read only the stored track.
         // NOTE: synthetic. Nothing fetches a pose artifact except the phone
         // that uploaded, so a shared match cannot actually have a track here
-        // yet. This pins the row logic for when one can - it is not evidence
-        // the cross-phone case works, and cloudNotes deliberately does not
-        // claim it does.
-        let built = rows(sharedMatches: [videoMatch("v1")], tracks: ["v1"])
-
+        // yet. This pins the row logic for when one can.
+        let built = rows(clips: [clip("v1", owner: other)], tracks: ["v1"])
         XCTAssertEqual(built[0].state, .readyNoVideo)
         XCTAssertEqual(built[0].entryId, "v1")
+        XCTAssertEqual(built[0].group, .shared)
     }
 
     func testAMatchWithNeitherAVideoNorATrackStaysInertAndIdless() {
         // The guard on the line above: only a row with something to show earns
-        // an id, so two matches that are merely both absent keep their own rows.
-        let built = rows(ownedRows: [.video(videoMatch("v1"))])
-
+        // an id. Two matches that are merely both absent must not collapse
+        // into each other in the shared builder's own join.
+        let built = rows(clips: [clip("v1")])
         XCTAssertEqual(built[0].state, .notOnDevice)
         XCTAssertNil(built[0].entryId)
     }
 
-    func testTwoMatchesThatAreBothAbsentDoNotCollapseIntoOne() {
-        let built = rows(sharedMatches: [videoMatch("v1"), videoMatch("v2")])
-        XCTAssertEqual(built.count, 2)
+    func testASharedMatchIsNeverOnThisPhone() {
+        let built = rows(clips: [clip("v1", owner: other)])
+        XCTAssertEqual(built[0].group, .shared)
+        XCTAssertEqual(built[0].state, .notOnDevice)
     }
 
-    func testSectionsKeepTheDrawersOrderLocalThenOwnedThenShared() {
+    func testMineRowsComeBeforeSharedRows() {
+        let built = rows(clips: [clip("v9", owner: other)], entries: [entry(id: "e1")])
+        XCTAssertEqual(built.map(\.group), [.mine, .shared])
+    }
+
+    func testOneVideoProducesOneRowEvenOnceTheCloudHasClippedIt() {
+        // A video-first import that finished uploading is both on this phone
+        // and in the cloud. The shared builder folds the two into a single
+        // `MatchListItem`, so there is nothing left here to deduplicate.
+        let e = entry(id: "v1", stage: .analyzed)
+        let out = rows(clips: [clip("v1")], entries: [e])
+        XCTAssertEqual(out.map(\.key), ["video-v1"])
+        XCTAssertEqual(out[0].group, .mine)
+    }
+
+    func testTwoMatchesThatAreBothOffThisPhoneKeepTheirOwnRows() {
+        let out = rows(clips: [clip("v1", owner: other), clip("v2", owner: other)])
+        XCTAssertEqual(out.count, 2)
+        XCTAssertEqual(out.map(\.group), [.shared, .shared])
+    }
+
+    func testACloudRunsProgressReachesTheRowItBelongsTo() {
+        let e = entry(id: "e1", stage: .uploading)
         let built = rows(
-            localEntries: [entry(id: "e1")],
-            ownedRows: [.video(videoMatch("v9"))],
-            sharedMatches: [videoMatch("v8")]
+            entries: [e],
+            progress: ["e1": AnalyzeProgress(entryId: "e1", uploadProgress: 0.25, pipelineProgress: nil)]
         )
-        XCTAssertEqual(built.map(\.group), [.localVideos, .ownedMatches, .shared])
+        XCTAssertEqual(built[0].affordance, .inProgress(phase: "Uploading 25%…"))
     }
 
-    func testARunInFlightReachesTheRowItBelongsTo() {
-        let built = rows(
-            localEntries: [entry(id: "e1", stage: .uploading)],
-            progress: ["e1": AnalyzeProgress(entryId: "e1", uploadProgress: 0.42, pipelineProgress: nil)]
-        )
-        XCTAssertEqual(built[0].affordance, .inProgress(phase: "Uploading 42%…"))
+    func testAReadyRowKeepsItsDotWhileASecondRunIsInFlight() {
+        // Deliberate: a READY row's first track still opens, so the row keeps
+        // the affordance that works rather than swapping it for a spinner. The
+        // run itself still reaches the screen through `MatchStatusLine`, which
+        // this test does not exercise (it is a SwiftUI concern, not this
+        // function's).
+        let e = entry(id: "e1")
+        let built = rows(entries: [e], deviceStates: ["e1": .analysing(fraction: 0.5)], tracks: ["e1"])
+        XCTAssertEqual(built[0].state, .ready)
+        XCTAssertEqual(built[0].affordance, .ready)
     }
 
-    // MARK: - analyseAffordance
+    // MARK: - analyseAffordance (independent of buildAnalyticsRows)
 
     func testAnUploadingRunSpeaksInTheDrawersOwnWording() {
         XCTAssertEqual(
@@ -300,15 +300,7 @@ final class AnalyticsRowsTests: XCTestCase {
         XCTAssertEqual(analyseAffordance(for: entry(id: "e1", stage: .analyzed), progress: nil, device: .idle), .ready)
     }
 
-    // MARK: - The device's own liveness
-
     func testADeviceRunSpeaksOverASettledCloudStage() {
-        // The reason isDeviceRunInFlight exists: a device run never moves
-        // LocalVideoEntry.stage, so a row reading the cloud stage alone shows a
-        // live "Analyze" button over a run already in progress. Pressing it
-        // walks the coach through marking the court again and then returns
-        // immediately, because the entry is already running - twelve taps, no
-        // effect, no explanation, which is what Android shipped.
         XCTAssertEqual(
             analyseAffordance(
                 for: entry(id: "e1", stage: .local), progress: nil,
@@ -321,16 +313,11 @@ final class AnalyticsRowsTests: XCTestCase {
                 for: entry(id: "e1", stage: .local), progress: nil,
                 device: .cutting(done: 2, total: 9)
             ),
-            // No percentage: done/total counts clips, not frames, so rendering
-            // it as the analysis percentage would show the bar restarting near
-            // the end of a run.
             .inProgress(phase: "Cutting clips")
         )
     }
 
     func testADeviceRunSpeaksOverAStaleCloudFailure() {
-        // A cloud attempt that failed last week must not describe a device run
-        // happening now.
         XCTAssertEqual(
             analyseAffordance(
                 for: entry(id: "e1", stage: .failed, failureMessage: "Upload failed"),
@@ -341,8 +328,6 @@ final class AnalyticsRowsTests: XCTestCase {
     }
 
     func testASuspendedRunIsNotAFailure() {
-        // iOS has no foreground service, so a run stops making progress when the
-        // app does. That is not a failure and the control must not say "Retry".
         XCTAssertEqual(
             analyseAffordance(
                 for: entry(id: "e1", stage: .local), progress: nil,
@@ -353,9 +338,6 @@ final class AnalyticsRowsTests: XCTestCase {
     }
 
     func testAPauseWithNoFractionDoesNotInventAZero() {
-        // A run can be frozen while preparing, or while cutting clips, and
-        // neither reports an analysis fraction. "Paused at 0%" over a run three
-        // clips from the end would be worse than saying nothing.
         XCTAssertEqual(
             analyseAffordance(
                 for: entry(id: "e1", stage: .local), progress: nil,
@@ -365,67 +347,25 @@ final class AnalyticsRowsTests: XCTestCase {
         )
     }
 
-    func testASuspendedRunIsStillInFlight() {
-        // It was never cancelled: the system freezes the process and thaws it,
-        // and the pass carries on from the frame it was on. A row that counted
-        // it as finished would offer an "Analyze" button that start() refuses on
-        // its own guard - the same dead button the cloud stage used to give.
-        XCTAssertTrue(isDeviceRunInFlight(.paused(.analysing(fraction: 0.37))))
-        // And nothing to light in the chrome, which is only on screen when the
-        // app is active - by which point the state is already gone.
-        XCTAssertNil(toDeviceWork(entryId: "e1", state: .paused(.analysing(fraction: 0.37))))
-    }
-
     func testAFinishedDeviceRunFallsThroughToTheCloudStage() {
-        // .done and .idle both stay in the runner's map after a run, and
-        // neither is work: a row must not spin over either.
-        for device in [LocalAnalysisState.idle] {
-            XCTAssertEqual(
-                analyseAffordance(for: entry(id: "e1", stage: .local), progress: nil, device: device),
-                .ready
-            )
-        }
-    }
-
-    func testAStoredTrackTurnsARowReady() {
-        // The line that was hardcoded false while no track store existed. A
-        // ready row is the only one this list opens.
-        let built = buildAnalyticsRows(
-            localEntries: [entry(id: "e1")],
-            ownedRows: [],
-            sharedMatches: [],
-            progressByEntryId: [:],
-            storedTrackIds: ["e1"]
+        XCTAssertEqual(
+            analyseAffordance(for: entry(id: "e1", stage: .local), progress: nil, device: .idle),
+            .ready
         )
-        XCTAssertEqual(built.map(\.state), [.ready])
-        // A ready row keeps its dot while a second run is in flight, because
-        // the track the first run produced is still there.
-        let reRunning = buildAnalyticsRows(
-            localEntries: [entry(id: "e1")],
-            ownedRows: [],
-            sharedMatches: [],
-            progressByEntryId: [:],
-            storedTrackIds: ["e1"],
-            deviceStates: ["e1": .analysing(fraction: 0.5)]
-        )
-        XCTAssertEqual(reRunning.map(\.state), [.ready])
-        XCTAssertEqual(reRunning.map(\.affordance), [.ready])
-    }
-
-    func testTheDotLegendAppearsOnlyOnceARowIsReady() {
-        let analysable = buildAnalyticsRows(
-            localEntries: [entry(id: "e1")], ownedRows: [], sharedMatches: [],
-            progressByEntryId: [:]
-        )
-        XCTAssertEqual(analyticsLegend(for: analysable), .analyseButton)
-        let ready = buildAnalyticsRows(
-            localEntries: [entry(id: "e1")], ownedRows: [], sharedMatches: [],
-            progressByEntryId: [:], storedTrackIds: ["e1"]
-        )
-        XCTAssertEqual(analyticsLegend(for: ready), .dot)
     }
 
     // MARK: - analyseAction
+
+    private func court() -> CourtKeypoints {
+        let p = [KotlinFloat(float: 0), KotlinFloat(float: 0)]
+        return CourtKeypoints(
+            topLeft: p, topRight: p, bottomRight: p, bottomLeft: p,
+            netLeft: p, netRight: p,
+            serviceLineNearLeft: p, serviceLineNearRight: p,
+            serviceLineFarLeft: p, serviceLineFarRight: p,
+            centerNear: p, centerFar: p
+        )
+    }
 
     func testAFailedRunWithItsCourtAlreadySavedResumesFromTheFailedStep() {
         XCTAssertEqual(
@@ -435,10 +375,7 @@ final class AnalyticsRowsTests: XCTestCase {
     }
 
     func testAFailedRunWithNoCourtMustBeMarkedAgain() {
-        XCTAssertEqual(
-            analyseAction(for: entry(id: "e1", stage: .failed)),
-            .markCourt(entryId: "e1")
-        )
+        XCTAssertEqual(analyseAction(for: entry(id: "e1", stage: .failed)), .markCourt(entryId: "e1"))
     }
 
     func testAFreshVideoStartsAtCourtMarking() {
@@ -458,23 +395,15 @@ final class AnalyticsRowsTests: XCTestCase {
         XCTAssertEqual(legend.text, "None of these matches are on this phone yet.")
     }
 
-    /// Videos on this phone with live buttons and nothing analysed yet. The
-    /// all-inert line would be false here, and so would a legend explaining a
-    /// dot that cannot render.
     func testALiveButtonAndNoDotGetsTheLineAboutTheButton() {
         let legend = analyticsLegend(for: [row(.analysable, key: "a"), row(.notOnDevice, key: "b")])
         XCTAssertEqual(legend, .analyseButton)
-        // Both targets named: court marking offers cloud AND on device, and it
-        // is the on-device run that writes the track a row needs to turn ready.
         XCTAssertEqual(legend.text, "Analyze cuts a video into rallies, on this phone or in the cloud.")
     }
 
     func testAStoredTrackGetsTheDotLineAndTheDotPromisesATap() {
         let legend = analyticsLegend(for: [row(.ready, key: "a"), row(.analysable, key: "b")])
         XCTAssertEqual(legend, .dot)
-        // "- tap to view" is a promise this list can keep now that a ready row
-        // opens the detail screen. It was dropped while there was nothing to
-        // open, which is the same defect as a comment outliving its code.
         XCTAssertEqual(legend.text, "Analyzed on this phone - tap to view")
     }
 }

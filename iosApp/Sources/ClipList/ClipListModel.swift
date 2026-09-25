@@ -6,13 +6,11 @@ final class ClipListModel {
     let rally: RallyApp
     let analyze: AnalyzeCoordinator
     private(set) var clips: [RallyClip] = []
+    /// Read by `MatchView` and `EditMatchDetailsSheet`, which still work in
+    /// terms of a single video's own match rather than a list row.
     private(set) var owned: [MatchSummary] = []
     private(set) var shared: [MatchSummary] = []
-    /// What the Analytics picker renders: video-backed and courtside-scored
-    /// matches interleaved by date. The drawer reads `matchList` instead; this
-    /// stays until Analytics moves onto the same list.
-    private(set) var ownedRows: [MatchRow] = []
-    /// The drawer's rows: one per match wherever its video is, built by the
+    /// The drawer's and Analytics' rows: one per match wherever its video is, built by the
     /// shared `buildMatchList` from everything below, so this list and
     /// Android's cannot disagree about what a match is or what it has.
     private(set) var matchList = MatchList(mine: [], shared: [])
@@ -26,14 +24,25 @@ final class ClipListModel {
     var error: String? = nil
     private var sharerByVideoId: [String: String] = [:]
     private var metadataByVideoId: [String: MatchMetadata] = [:]
-    private var scoreCards: [ScoreMatchCard] = []
-    /// Kept alongside `scoreCards` because `attachStatus` needs each log's `videoId`,
-    /// which the card does carry, but also needs to be matched back to its own log id.
     private var scoreLogs: [ScoreLog] = []
     private var progressByEntryId: [String: AnalyzeProgress] = [:]
-    /// On-device runs, from `LocalAnalysisRunner.deviceRuns` through the view:
-    /// the runner is the view's, not this model's.
+    /// On-device runs, from `LocalAnalysisRunner.deviceRuns` via `.feedsMatchList`:
+    /// the runner is owned by the app, not this model, and either screen that
+    /// applies the modifier keeps this current.
     private var deviceRuns: [String: DeviceRun] = [:]
+    /// The runner's own live device runs, read fresh at the moment a delete
+    /// runs rather than through `deviceRuns` above.
+    ///
+    /// `deviceRuns` is fed by whichever screen's `.feedsMatchList` last ran,
+    /// which is enough for building `matchList` - a card a beat out of date
+    /// just redraws again once the feed catches up - but not for a delete's
+    /// own guard: a run that started on a screen this model has not yet been
+    /// fed for must still hold its file. Reading the runner's live state
+    /// directly, the way Android's `discardEntry` reads `deviceStates.value`,
+    /// closes that gap. Defaults to "nothing running" so a build with no
+    /// on-device models staged, or a test that supplies no runner, behaves as
+    /// it always has.
+    private let liveDeviceRuns: @MainActor () -> [String: DeviceRun]
     private var storedSkeletonIds: Set<String> = []
     private var deviceClipCounts: [String: KotlinInt] = [:]
     /// Whether the refresh that opens the list has been kicked off. The ONLY
@@ -57,7 +66,8 @@ final class ClipListModel {
         videos: VideosRepository? = nil,
         scoreLogs: ScoreLogsRepository? = nil,
         localVideos: LocalVideoRepository? = nil,
-        localAnnotations: LocalAnnotationsRepository? = nil
+        localAnnotations: LocalAnnotationsRepository? = nil,
+        liveDeviceRuns: @escaping @MainActor () -> [String: DeviceRun] = { [:] }
     ) {
         self.rally = rally
         self.analyze = analyze
@@ -66,6 +76,7 @@ final class ClipListModel {
         self.scoreLogsRepo = scoreLogs ?? rally.scoreLogs
         self.localVideos = localVideos ?? rally.localVideos
         self.localAnnotations = localAnnotations ?? rally.localAnnotations
+        self.liveDeviceRuns = liveDeviceRuns
     }
 
     /// Runs for as long as the list is on screen: `ClipListView`'s `.task` calls
@@ -105,7 +116,6 @@ final class ClipListModel {
                 guard let self else { return }
                 for await logs in self.scoreLogsRepo.logs {
                     self.scoreLogs = logs
-                    self.scoreCards = logs.map { ScoreMatchCardKt.buildScoreMatchCard(log: $0) }
                     self.regroup()
                 }
             }
@@ -305,7 +315,7 @@ final class ClipListModel {
         guard let entry = localVideos.get(id: entryId),
               LocalVideoEntryKt.canRemoveLocalVideo(stage: entry.stage)
         else { return }
-        switch deviceRuns[entryId]?.kind {
+        switch liveDeviceRuns()[entryId]?.kind {
         case .running, .paused: return
         case .failed, nil: break
         }
@@ -313,7 +323,9 @@ final class ClipListModel {
         localAnnotations.removeAllFor(videoId: entryId)
     }
 
-    /// The on-device runs, as `LocalAnalysisRunner.deviceRuns` reduces them.
+    /// The on-device runs, as `LocalAnalysisRunner.deviceRuns` reduces them, for
+    /// building `matchList`. Not what `discardEntry` guards a delete on; see
+    /// `liveDeviceRuns`.
     func updateDeviceRuns(_ runs: [String: DeviceRun]) {
         guard runs != deviceRuns else { return }
         deviceRuns = runs
@@ -333,24 +345,6 @@ final class ClipListModel {
         regroup()
     }
 
-    /// What each scored match's video is doing, keyed by score log id. Calls the
-    /// same shared derivation the match page's own status uses
-    /// (`AttachStatusKt.scoreLogAttachStatus`, mirrored by Android's
-    /// `ClipListViewModel.attachStatuses`), so the list row and the match page
-    /// cannot quietly disagree about the same match.
-    private func attachMap() -> [String: AttachStatus] {
-        var result: [String: AttachStatus] = [:]
-        for log in scoreLogs {
-            let clipCount = clips.filter { $0.videoId == log.videoId }.count
-            if let status = AttachStatusKt.scoreLogAttachStatus(
-                log: log, entries: localEntries, progress: progressByEntryId, clipCount: Int32(clipCount)
-            ) {
-                result[log.id] = status
-            }
-        }
-        return result
-    }
-
     private func regroup() {
         let infos = clips.map(ClipInfo.init)
         let result = MatchGrouping.matches(
@@ -361,11 +355,6 @@ final class ClipListModel {
         )
         owned = result.owned
         shared = result.shared
-        ownedRows = mergeMatchRows(
-            videoMatches: owned,
-            scoreMatches: scoreCards,
-            attachByScoreLogId: attachMap()
-        )
         matchList = MatchListBuilderKt.buildMatchList(input: MatchListInput(
             clips: clips,
             currentUserId: rally.auth.currentUserId(),
