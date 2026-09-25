@@ -208,8 +208,16 @@ final class ClipListModel {
     /// file thrown away under it would turn "nothing happened" into "half of it
     /// happened". Mirrors Android's `ClipListViewModel.deleteMatchVideo`.
     func deleteMatch(videoId: String, entryId: String? = nil) async {
-        if let message = try? await SwiftInteropKt.deleteMatchOrMessage(videos, videoId: videoId) {
-            error = message
+        // do/catch, not `try?`: `try?` reads a throw as nil, which is this call's
+        // success, and went on to discard the file under a match the server
+        // never confirmed deleting. Same reasoning as `deleteScoreLog`.
+        do {
+            if let message = try await SwiftInteropKt.deleteMatchOrMessage(videos, videoId: videoId) {
+                error = message
+                return
+            }
+        } catch {
+            self.error = SwiftInteropKt.DELETE_MATCH_FAILED_MESSAGE
             return
         }
         if let entryId { discardEntry(entryId) }

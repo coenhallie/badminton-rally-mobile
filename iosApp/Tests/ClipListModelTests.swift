@@ -179,6 +179,22 @@ final class ClipListModelTests: XCTestCase {
         XCTAssertNotNil(r.model.error)
     }
 
+    func testADeleteThatThrowsKeepsTheFileAndSaysSo() async {
+        // A throw is not a success: with `try?` it read as one, and the file,
+        // its notes and the cached clips went while the server had confirmed
+        // nothing.
+        let r = rig()
+        r.videos.cancelDeleteMatch = true
+        r.localVideos.add(entry: analyzedEntry(id: "v1"))
+        note(on: "v1", r)
+
+        await r.model.deleteMatch(videoId: "v1", entryId: "v1")
+
+        XCTAssertNotNil(r.localVideos.get(id: "v1"), "a delete that threw discarded the file")
+        XCTAssertTrue(r.annotations.hasAnnotations(videoId: "v1"))
+        XCTAssertEqual(r.model.error, SwiftInteropKt.DELETE_MATCH_FAILED_MESSAGE)
+    }
+
     func testAScoredMatchDeleteDiscardsTheEntryItOrphansWhateverTheServerSays() async {
         // The log leaves this phone win or lose, so an entry naming it would be
         // invisible and unremovable if it stayed. The local-only store refuses.

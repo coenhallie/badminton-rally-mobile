@@ -50,7 +50,14 @@ suspend fun AnnotationsRepository.listForClipsOrNull(clipIds: List<String>): Lis
     listForClips(clipIds).getOrNull()
 
 suspend fun VideosRepository.deleteMatchOrMessage(videoId: String): String? =
-    deleteMatch(videoId).exceptionOrNull()?.let { "Couldn't delete the match. Please try again." }
+    deleteMatch(videoId).exceptionOrNull()?.let { DELETE_MATCH_FAILED_MESSAGE }
+
+/**
+ * [deleteMatchOrMessage]'s message, also for the caller's own catch: a throw out
+ * of that call (only a cancellation can bridge into Swift) has not been
+ * confirmed by the server either, and says the same thing.
+ */
+const val DELETE_MATCH_FAILED_MESSAGE = "Couldn't delete the match. Please try again."
 
 suspend fun SharesRepository.leaveShareOrMessage(videoId: String): String? =
     leaveShare(videoId).exceptionOrNull()?.let { "Couldn't remove the shared match. Please try again." }

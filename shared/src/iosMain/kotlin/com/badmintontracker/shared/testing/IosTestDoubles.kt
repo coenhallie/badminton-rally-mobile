@@ -14,6 +14,7 @@ import com.badmintontracker.shared.repo.VideosRepository
 import com.badmintontracker.shared.scoring.MatchFormat
 import com.russhwolf.settings.NSUserDefaultsSettings
 import io.ktor.utils.io.ByteReadChannel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -68,6 +69,13 @@ class RecordingVideosRepository internal constructor() : VideosRepository by Noo
     var failDeleteMatch: Boolean = false
     var failUpdateDetails: Boolean = false
 
+    /**
+     * Makes [deleteMatch] throw rather than return a failure. A cancellation, the
+     * one exception a suspend function without `@Throws` bridges into Swift as an
+     * error rather than terminating the process (see KotlinThrowBridgingTests).
+     */
+    var cancelDeleteMatch: Boolean = false
+
     /** What [deleteMatch] was called with, in order. A read-only List, not the
      *  MutableList behind it: Swift sees this one as a plain array. */
     val deletedVideoIds: List<String> get() = calls.toList()
@@ -83,6 +91,7 @@ class RecordingVideosRepository internal constructor() : VideosRepository by Noo
 
     override suspend fun deleteMatch(videoId: String): Result<Unit> {
         calls += videoId
+        if (cancelDeleteMatch) throw CancellationException("cancelled")
         return if (failDeleteMatch) Result.failure(IllegalStateException("refused")) else Result.success(Unit)
     }
 
