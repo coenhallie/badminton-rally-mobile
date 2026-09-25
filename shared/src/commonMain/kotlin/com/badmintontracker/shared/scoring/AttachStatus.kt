@@ -105,12 +105,12 @@ fun attachStatusFor(
  * the same rule this function has always used.
  *
  * Deliberately not the match list's own richer join (a log's video id can also
- * pick up an entry that was never told which log claimed it): every existing
- * caller of this function (`ClipListViewModel.attachStatuses`,
- * `ClipListModel.attachMap()`, `MatchViewModel`, `MatchModel`) was written
+ * pick up an entry that was never told which log claimed it): its callers, the
+ * match page on each platform (`MatchViewModel`, `MatchModel`), were written
  * against this narrower rule, and widening it out from under them would change
  * what they show without anyone deciding it should. A caller that has already
- * resolved a richer pairing of its own calls [attachStatusFor] directly instead.
+ * resolved a richer pairing of its own - the match list's builder - calls
+ * [attachStatusFor] directly instead.
  */
 fun scoreLogAttachStatus(
     log: ScoreLog,

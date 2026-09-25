@@ -440,8 +440,8 @@ class MatchListBuilderTest {
 
     @Test
     fun a_failed_entry_found_only_through_the_shared_id_fallback_still_reports_its_failure() {
-        // The row's status now comes from the same entryForLog the builder's own
-        // join uses (via scoreLogAttachStatus), so an entry found only through
+        // The row's status comes from attachStatusFor with the entry the
+        // builder's own join assigned the row, so an entry found only through
         // the shared-id fallback - never told which log claimed it - no longer
         // gets stuck showing "Finishing up..." forever with no way to retry.
         val item = build(input(

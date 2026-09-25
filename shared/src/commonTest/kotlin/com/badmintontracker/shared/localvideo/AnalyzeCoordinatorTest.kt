@@ -259,8 +259,8 @@ class AnalyzeCoordinatorTest {
     @Test
     fun a_successful_analysis_keeps_the_cloud_analysis_it_just_installed() = runTest {
         // The run downloads a pose artifact, selects both players from it and
-        // writes two stores - and then retires the entry. Retiring releases the
-        // footage (the clips live in the cloud now) but must NOT take the
+        // writes two stores. The entry is then kept at ANALYZED rather than
+        // retired (since f96d78c), and nothing on the way there may take the
         // analysis with it: that is the whole result the coach waited for.
         val cloudArtifacts = mutableSetOf<String>()
         val registry = LocalVideoRepository(
@@ -278,7 +278,7 @@ class AnalyzeCoordinatorTest {
         runCurrent()
 
         registry.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED  // kept, with its analysis
-        cloudArtifacts shouldBe setOf("e1")        // the heatmap is not
+        cloudArtifacts shouldBe setOf("e1")        // and so is its analysis
     }
 
     @Test
