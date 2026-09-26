@@ -128,13 +128,21 @@ fun HomeScreen(
         // insets are NavigationBar's.
         contentWindowInsets = WindowInsets(0),
         bottomBar = { HomeNavigationBar(selected = selectedTab, onSelect = onSelectTab) },
+        // The Add button and the snackbar sit outside the content Box below, so
+        // its horizontal inset does not reach them: each takes its own, or a
+        // landscape cutout or side gesture inset would clip the button's edge
+        // and the snackbar's.
         floatingActionButton = {
             if (selectedTab == HomeTab.MATCHES) {
                 val expanded by remember { derivedStateOf { addButtonExpanded(listState.firstVisibleItemIndex) } }
-                AddMatchButton(expanded = expanded, onClick = { addSheetOpen = true })
+                AddMatchButton(
+                    expanded = expanded,
+                    onClick = { addSheetOpen = true },
+                    modifier = Modifier.windowInsetsPadding(HorizontalSafeDrawing),
+                )
             }
         },
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = { SnackbarHost(snackbarHostState, Modifier.windowInsetsPadding(HorizontalSafeDrawing)) },
     ) { padding ->
         // Room for the Add button above the bar: the last row and its menu must
         // scroll clear of both. The Scaffold's own `padding` from
@@ -146,7 +154,7 @@ fun HomeScreen(
             // TabTopBar/NavigationBar already handle (top/bottom); it also zeroes
             // the horizontal ones, so a landscape cutout or gesture inset would
             // otherwise cut into content on that side.
-            Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)),
+            Modifier.fillMaxSize().windowInsetsPadding(HorizontalSafeDrawing),
         ) {
             tabs.SaveableStateProvider(selectedTab.name) {
                 when (selectedTab) {
@@ -195,6 +203,14 @@ fun HomeScreen(
         )
     }
 }
+
+/**
+ * The side insets contentWindowInsets = WindowInsets(0) drops, for the three
+ * things in the tab host that have to take them back: content, the Add button
+ * and the snackbar.
+ */
+private val HorizontalSafeDrawing: WindowInsets
+    @Composable get() = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)
 
 /** The 56dp button, its 16dp margin, and 16dp of air above the last row. */
 private val ADD_BUTTON_CLEARANCE = 88.dp
