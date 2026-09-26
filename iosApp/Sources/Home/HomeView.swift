@@ -124,7 +124,7 @@ struct HomeView: View {
                     onOverlayChange: { listOverlayOpen = $0 },
                     onAdd: { showAddSheet = true }
                 )
-                .tabItem { Label(HomeCopy.shared.TAB_MATCHES, systemImage: "rectangle.split.1x2") }
+                .tabItem { tabLabel(HomeCopy.shared.TAB_MATCHES, systemImage: "rectangle.split.1x2", tab: .matches) }
                 .tag(HomeTab.matches)
 
                 AnalyticsListView(
@@ -132,11 +132,11 @@ struct HomeView: View {
                     onCourtMarking: { courtMarkingRoute = $0 },
                     onDetail: { analyticsDetailRoute = $0 }
                 )
-                .tabItem { Label(HomeCopy.shared.TAB_ANALYTICS, systemImage: "chart.bar") }
+                .tabItem { tabLabel(HomeCopy.shared.TAB_ANALYTICS, systemImage: "chart.bar", tab: .analytics) }
                 .tag(HomeTab.analytics)
 
                 SettingsView(rally: rally, onLabels: { showLabels = true })
-                    .tabItem { Label(HomeCopy.shared.TAB_SETTINGS, systemImage: "slider.horizontal.3") }
+                    .tabItem { tabLabel(HomeCopy.shared.TAB_SETTINGS, systemImage: "slider.horizontal.3", tab: .settings) }
                     .tag(HomeTab.settings)
             }
             .tint(Shuttl.analysisGlyph)
@@ -315,6 +315,15 @@ struct HomeView: View {
             guard entry.scoreLogId == nil else { return }
             detailsTarget = MatchDetailsTarget(entry: entry, autoOpened: true)
         }
+    }
+
+    /// A tab's icon and name, outlined unless it is the selected tab. The
+    /// bar fills every symbol on its own, which drew all three tabs solid; the
+    /// mock and Android fill only the selected one. `slider.horizontal.3` has no
+    /// fill form, so Settings keeps its outline either way, as on Android.
+    private func tabLabel(_ title: String, systemImage: String, tab: HomeTab) -> some View {
+        Label(title, systemImage: systemImage)
+            .environment(\.symbolVariants, selectedTab == tab ? .fill : .none)
     }
 
     /// Lands on the match page rather than the list once the board is done,

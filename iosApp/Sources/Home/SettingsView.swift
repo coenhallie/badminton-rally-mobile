@@ -78,7 +78,9 @@ struct SettingsView: View {
                         .foregroundStyle(Shuttl.textTertiary)
                         .padding(.top, 6)
                 }
-                .padding(.horizontal, 16)
+                // The page gutter, so each card's edge sits under the tab's
+                // title as on Analytics and on Android.
+                .padding(.horizontal, ShuttlGutter.page)
                 .padding(.top, 8)
                 .padding(.bottom, 24)
             }
