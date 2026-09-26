@@ -56,6 +56,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.badmintontracker.android.R
 import com.badmintontracker.android.localvideo.formatDuration
+import com.badmintontracker.android.match.MatchPageGutter
 import com.badmintontracker.android.ui.icons.ShuttlIcons
 import com.badmintontracker.android.ui.theme.ShuttlRadius
 import com.badmintontracker.android.ui.theme.ShuttlVideoOverlay
@@ -153,12 +154,14 @@ fun VideoCard(
     val ratio = (aspectRatio ?: measured ?: (16f / 9f)).coerceAtLeast(1f)
 
     val shape = RoundedCornerShape(ShuttlRadius.large)
+    // The match page's gutter, which the rally page and the skeleton panel
+    // share: the card lines up with the page's other rows on all three.
     val frame = when {
         fullscreen -> modifier.fillMaxSize()
-        maxHeight == null -> modifier.padding(horizontal = 24.dp).fillMaxWidth().aspectRatio(ratio).clip(shape)
+        maxHeight == null -> modifier.padding(horizontal = MatchPageGutter).fillMaxWidth().aspectRatio(ratio).clip(shape)
         // wrapContentWidth lets aspectRatio pick the width the height allows
         // (it tries the full width first, then the height's), centred.
-        else -> modifier.padding(horizontal = 24.dp).fillMaxWidth().wrapContentWidth()
+        else -> modifier.padding(horizontal = MatchPageGutter).fillMaxWidth().wrapContentWidth()
             .heightIn(max = maxHeight).aspectRatio(ratio).clip(shape)
     }
 

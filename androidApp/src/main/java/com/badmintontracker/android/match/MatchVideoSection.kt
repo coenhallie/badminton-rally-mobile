@@ -202,7 +202,7 @@ fun MatchVideoSection(
                 text = label,
                 onClick = onAnalyze,
                 variant = ShuttlButtonVariant.Primary,
-                modifier = Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 16.dp),
+                modifier = Modifier.fillMaxWidth().padding(start = MatchPageGutter, end = MatchPageGutter, top = 16.dp),
             )
         }
     }
@@ -220,7 +220,7 @@ fun MatchVideoSection(
                 text = description,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 22.dp),
+                modifier = Modifier.padding(start = MatchPageGutter, end = MatchPageGutter, top = 22.dp),
             )
         }
         // The caption doubles as the notes' heading: where they live is
@@ -241,7 +241,7 @@ fun MatchVideoSection(
                 onClick = { vm.onAnnotationTap(a) },
                 onDelete = { pendingDelete = a },
             )
-            HorizontalDivider(modifier = Modifier.padding(horizontal = 24.dp))
+            HorizontalDivider(modifier = Modifier.padding(horizontal = MatchPageGutter))
         }
     }
 
