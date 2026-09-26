@@ -76,10 +76,10 @@ data class ClipListState(
     val isRefreshing: Boolean = false,
     val error: String? = null,
     /**
-     * The Matches tab's one list: every match once, whether its video is on
-     * this phone, in the cloud or both, with what analysis it has. Built by the
-     * shared builder so the Matches tab, the Analytics tab and iOS cannot
-     * disagree about which rows exist.
+     * The one match list: every match once, whether its video is on this
+     * phone, in the cloud or both, with what analysis it has. Built by the
+     * shared builder so the list, the match page and iOS cannot disagree about
+     * which rows exist.
      */
     val matchList: MatchList = MatchList(emptyList(), emptyList()),
     val storedResults: StoredResults = StoredResults(),

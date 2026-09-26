@@ -1,12 +1,13 @@
-package com.badmintontracker.android.home
+package com.badmintontracker.android.settings
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -14,16 +15,24 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -33,38 +42,67 @@ import com.badmintontracker.android.ui.icons.ShuttlIcons
 import com.badmintontracker.android.ui.theme.ShuttlRadius
 import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.shared.home.HomeCopy
+import com.badmintontracker.shared.matchpage.MatchPageCopy
 import com.badmintontracker.shared.prefs.ThemeMode
 
 /**
- * Everything Home's overflow menu and the drawer's footer used to hold, in one
- * place: the version line used to be drawn twice, from two string templates.
- * The sign-in screen keeps its own theme toggle; it is outside the tabs.
+ * Everything the drawer's footer and Home's overflow once held, now behind the
+ * list's gear. The version line used to be drawn twice, from two string
+ * templates; it is drawn once, here. The sign-in screen keeps its own theme
+ * toggle: it is reached before there is a list to put a gear on.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsTab(
+fun SettingsScreen(
     themeMode: ThemeMode,
     onToggleTheme: () -> Unit,
     email: String?,
     onLabels: () -> Unit,
     onSignOut: () -> Unit,
-    contentPadding: PaddingValues,
+    onBack: () -> Unit,
 ) {
-    Column(Modifier.fillMaxSize()) {
-        // The indicator on every tab's bar, as on every other screen's.
-        TabTopBar(HomeCopy.TAB_SETTINGS) { BackgroundWorkAction() }
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            TopAppBar(
+                title = { Text(MatchPageCopy.SETTINGS) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = { BackgroundWorkAction() },
+                // Pinned to what the other pushed screens' bars draw by
+                // default (surface is the page's bg in both themes), so this
+                // bar cannot drift from theirs if Material's defaults move.
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    scrolledContainerColor = MaterialTheme.colorScheme.background,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onBackground,
+                    titleContentColor = MaterialTheme.colorScheme.onBackground,
+                    actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                ),
+            )
+        },
+    ) { padding ->
+        val layoutDirection = LocalLayoutDirection.current
         Column(
-            // weight(1f), not fillMaxSize: this Column is measured inside the
-            // outer one alongside TabTopBar, so fillMaxSize would claim the
-            // bar's own height too and let the scroll area overhang past it.
             Modifier
-                .weight(1f)
-                .fillMaxWidth()
+                .fillMaxSize()
+                // The bar's height and the side insets outside the scroll; the
+                // bottom inset inside it, so the version line scrolls clear of
+                // the gesture bar rather than being clipped under it.
+                .padding(top = padding.calculateTopPadding())
+                .padding(
+                    start = padding.calculateStartPadding(layoutDirection),
+                    end = padding.calculateEndPadding(layoutDirection),
+                )
                 .verticalScroll(rememberScrollState())
-                // 24dp, the tab title's own inset and the Analytics tab's
-                // gutter, so the cards' edges line up under "Settings" as in
-                // the mock rather than sitting 8dp outside it.
+                // 24dp, the page gutter: the list and the match page's
+                // sections sit on the same line, so the cards do not jump
+                // sideways against the screen the coach just left.
                 .padding(horizontal = 24.dp)
-                .padding(top = 8.dp, bottom = 16.dp + contentPadding.calculateBottomPadding()),
+                .padding(top = 8.dp, bottom = 16.dp + padding.calculateBottomPadding()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             SettingsCard {

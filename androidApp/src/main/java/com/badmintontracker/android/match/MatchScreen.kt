@@ -95,7 +95,8 @@ import com.badmintontracker.shared.scoring.playersLine
 
 /**
  * One match, however it was made, and every way into it: a row's tap on the
- * Matches tab opens this page whatever the match has. It shows the match's
+ * list opens this page whatever the match has, and so does a finished run's
+ * View. It shows the match's
  * sections (Points, Match, Rallies, Analysis), decided by the shared
  * [matchPageSections] rule from the list's own row, with a toggle row between
  * them when there is more than one. [summaryVm] is nullable because a match
@@ -577,7 +578,7 @@ private fun MatchVideoDialog(
  * page itself: §4.9 of the 2026-08-28 design requires the page to say so and offer
  * the same actions, not leave the coach reading a page that says nothing while
  * "Add video" is also gone with no explanation. Same text, same three actions
- * (Mark court / Retry / a spinner) as the Matches tab's row for this match
+ * (Mark court / Retry / a spinner) as the list's row for this match
  * ([com.badmintontracker.android.cliplist.MatchListRow]), both derived from the
  * one shared attach status so the two cannot say different things.
  */

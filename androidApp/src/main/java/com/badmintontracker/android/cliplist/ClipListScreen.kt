@@ -62,7 +62,7 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 
 /**
- * The Matches tab's list: one row per match, wherever its video is, with
+ * The match list: one row per match, wherever its video is, with
  * "Shared with me" below it.
  *
  * Every row comes from the shared builder ([ClipListState.matchList]); this
@@ -89,19 +89,19 @@ fun ClipListScreen(
     /** Entry just imported or recorded: its details sheet opens once, unprompted. */
     autoDetailsEntryId: String? = null,
     onAutoDetailsShown: () -> Unit = {},
-    /** Hoisted to the tab host: the Add button reads it, and it must outlive a tab switch. */
+    /** Hoisted to HomeScreen: the Add button reads it, and it is not inside the list. */
     listState: LazyListState,
-    /** The tab host's one host, so a snackbar sits above the bar and the Add button, not under them. */
+    /** HomeScreen's one host, so a snackbar sits above the Add button, not under it. */
     snackbarHostState: SnackbarHostState,
     /**
-     * Whether any sheet or dialog this list owns is open. The tab host folds it
-     * into "nothing above the tabs", which gates a finished run switching tabs:
-     * without it a run could switch tabs under a half-typed details sheet.
+     * Whether any sheet or dialog this list owns is open. HomeScreen folds it
+     * into "nothing above the list", which gates a finished run's snackbar:
+     * without it a run could offer View over a half-typed details sheet.
      */
     onOverlayChange: (Boolean) -> Unit = {},
-    /** The empty state's hero ticker stops while the tab is not on screen. */
+    /** The empty state's hero ticker stops while the add sheet covers it. */
     heroPaused: Boolean = false,
-    /** Room at the bottom so the last row and its menu scroll clear of the bar and the Add button. */
+    /** Room at the bottom so the last row and its menu scroll clear of the gesture bar and the Add button. */
     contentPadding: PaddingValues = PaddingValues(),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -251,9 +251,9 @@ fun ClipListScreen(
         }
     }
 
-    // No Scaffold: the tab host owns the Scaffold, the bar, the Add button and
-    // the one snackbar host. This is tab content, not a screen of its own, so
-    // a plain Box is all it needs to lay its own two states (empty, list) on
+    // No Scaffold: HomeScreen owns the Scaffold, the title bar, the Add button
+    // and the one snackbar host. This is its content, not a screen of its own,
+    // so a plain Box is all it needs to lay its own two states (empty, list) on
     // top of pull to refresh.
     Box(Modifier.fillMaxSize()) {
         PullToRefreshBox(
@@ -338,7 +338,7 @@ fun ClipListScreen(
 
     detailsTarget?.let { target ->
         // No drawer to open on close: the coach is already looking at the new
-        // row, on the Matches tab, whether this sheet auto-opened or the coach
+        // row, on the list, whether this sheet auto-opened or the coach
         // opened it from a row's menu.
         fun close() {
             detailsTarget = null
@@ -459,11 +459,10 @@ private val MONTHS = listOf(
 
 /**
  * "Sep 8, 2026". Used by [com.badmintontracker.android.match.MatchScreen]'s own
- * headline and by [com.badmintontracker.android.analytics.AnalyticsDetailScreen]'s
- * subtitle; the Matches list and the Analytics picker read the shared builder's own
- * `formatMatchDate` instead (`MatchListItem.detail`), which is where
- * `matchRowPrimary`/`matchRowSecondary` used to draw their own headline and
- * sub-line for those two screens before Task 4 moved them onto `MatchListItem`.
+ * headline; the match list reads the shared builder's own `formatMatchDate`
+ * instead (`MatchListItem.detail`), which is where `matchRowPrimary` and
+ * `matchRowSecondary` used to draw its headline and sub-line before they moved
+ * onto `MatchListItem`.
  */
 internal fun formatDate(instant: Instant): String {
     val ldt = instant.toLocalDateTime(TimeZone.currentSystemDefault())

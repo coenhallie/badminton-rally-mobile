@@ -14,7 +14,7 @@ import androidx.compose.ui.unit.dp
 import com.badmintontracker.shared.home.HomeCopy
 
 /**
- * An empty Matches tab: the old Home hero, then one line saying what the Add
+ * An empty match list: the old Home hero, then one line saying what the Add
  * button does. It still tells a new coach what the app is for, and gets out of
  * the way once there is a match to list.
  *

@@ -111,7 +111,7 @@ class PlayerTrackStore(private val root: File) {
      * and must not be offered - the v1 tracks were built on a homography that
      * could be metres off and on hip positions two to three metres off, and a
      * row offering one would offer a heatmap that is wrong rather than merely
-     * unloadable. Recovery is through the Matches tab's list, whose Analyze
+     * unloadable. Recovery is through the match list, whose Analyze
      * button is gated on the stage rather than on the track.
      *
      * A header is enough because every save goes through writeAtomically: a

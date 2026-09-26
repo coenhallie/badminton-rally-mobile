@@ -1,4 +1,4 @@
-package com.badmintontracker.android.analytics
+package com.badmintontracker.android.match
 
 import com.badmintontracker.analysis.geometry.Point
 import com.badmintontracker.analysis.player.CourtSide
@@ -20,7 +20,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
 /**
- * What AnalyticsDetailScreen composes, driven through the same pieces in the
+ * What AnalysisSection composes, driven through the same pieces in the
  * same order.
  *
  * The Base tab's absence for a cloud analysis was a WIRING defect, not a logic
@@ -71,7 +71,7 @@ class CloudAnalysisPanelsTest {
         return store
     }
 
-    /** The panel set the detail screen builds, from the inputs it builds them from. */
+    /** The panel set AnalysisSection builds, from the inputs it builds them from. */
     private fun panelsFor(
         store: PlayerTrackStore,
         cloudClips: List<RallyClip>,

@@ -14,8 +14,8 @@ import androidx.compose.ui.unit.dp
 import com.badmintontracker.android.ui.components.SwipeToRemoveRow
 
 /**
- * The Matches tab list's shared metrics, from the `Rally Drawer` mock (the
- * list's home before the bottom bar replaced the drawer it sat in).
+ * The match list's shared metrics, from the `Rally Drawer` mock (the list's
+ * home before it became the root screen).
  *
  * The list is an inset one now, not a full-bleed one: rows are cards sitting on
  * the panel with a margin either side, separated by a gap rather than by a
@@ -49,9 +49,7 @@ internal object DrawerList {
  *
  * Deliberately not the uppercase tracked `labelSmall` the app's older lists
  * use: the mocks for this redesign carry no uppercase and no positive tracking
- * anywhere. AnalyticsScreen.kt's SectionHeader has since moved to this form and
- * states its own spacing, so it draws the label itself rather than calling this;
- * the two want one shared component.
+ * anywhere.
  */
 @Composable
 internal fun DrawerSectionLabel(text: String) {

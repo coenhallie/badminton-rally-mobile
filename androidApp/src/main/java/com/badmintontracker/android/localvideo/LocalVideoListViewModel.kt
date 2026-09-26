@@ -9,7 +9,7 @@ import com.badmintontracker.shared.localvideo.normalizeTitle
 import com.badmintontracker.shared.localvideo.setDetails
 
 /**
- * What the Matches tab and the Analytics tab do to a video on this phone. The
+ * What the match list does to a video on this phone. The
  * rows themselves come from the shared match list (`ClipListState.matchList`);
  * this class keeps only the actions, which need the coordinator and the stores.
  */
@@ -20,7 +20,7 @@ class LocalVideoListViewModel(
 ) : ViewModel() {
 
     /**
-     * The Matches tab's "Remove video": the coach wants the space back, not the
+     * The list's "Remove video": the coach wants the space back, not the
      * match gone. `freeVideo` keeps the tracks, so a match with a cloud copy
      * keeps its heatmap and base position - see
      * [com.badmintontracker.shared.localvideo.LocalVideoRemoval] and

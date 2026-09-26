@@ -29,19 +29,6 @@ object ShuttlIcons {
     // and moon carry over from the web app: these are only ever drawn at 28dp
     // inside ShuttlEmptyState's disc, where the heavier line reads as a blob.
     val Trophy: ImageVector by lazy { buildLucide("ShuttlTrophy") { trophy() } }
-    val ChartColumn: ImageVector by lazy { buildLucide("ShuttlChartColumn") { chartColumn() } }
-    /** The Matches tab: two stacked rows, lucide `rows-2`. */
-    val Rows: ImageVector by lazy {
-        buildLucideSvg("ShuttlRows", "M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z", "M3 12h18")
-    }
-    /** The Settings tab, lucide `sliders-horizontal`: the gear above is the video card's. */
-    val SlidersHorizontal: ImageVector by lazy {
-        buildLucideSvg(
-            "ShuttlSlidersHorizontal",
-            "M21 4h-7", "M10 4H3", "M21 12h-9", "M8 12H3", "M21 20h-5", "M12 20H3",
-            "M14 2v4", "M8 10v4", "M16 18v4",
-        )
-    }
     val Video: ImageVector by lazy { buildLucide("ShuttlVideo") { video() } }
     val ListOrdered: ImageVector by lazy { buildLucide("ShuttlListOrdered") { listOrdered() } }
     val Tag: ImageVector by lazy { buildLucide("ShuttlTag") { tag() } }
@@ -105,10 +92,11 @@ object ShuttlIcons {
     val Maximize: ImageVector by lazy { buildStroked("ShuttlMaximize") { moveTo(2f, 5.5f); lineTo(2f, 2f); lineTo(5.5f, 2f); moveTo(8.5f, 2f); lineTo(12f, 2f); lineTo(12f, 5.5f); moveTo(12f, 8.5f); lineTo(12f, 12f); lineTo(8.5f, 12f); moveTo(5.5f, 12f); lineTo(2f, 12f); lineTo(2f, 8.5f) } }
     val Minimize: ImageVector by lazy { buildStroked("ShuttlMinimize") { moveTo(2f, 5.5f); lineTo(5.5f, 5.5f); lineTo(5.5f, 2f); moveTo(8.5f, 2f); lineTo(8.5f, 5.5f); lineTo(12f, 5.5f); moveTo(12f, 8.5f); lineTo(8.5f, 8.5f); lineTo(8.5f, 12f); moveTo(5.5f, 12f); lineTo(5.5f, 8.5f); lineTo(2f, 8.5f) } }
     /**
-     * The settings gear on the video card, where the speed chip used to be. Drawn
-     * rather than imported for the reason at the top of this file, and computed
-     * rather than traced: eight teeth are sixteen flanks, and a loop cannot get one
-     * of them wrong. Same 14-unit, 1.4 stroke family as the chips beside it.
+     * The settings gear: on the video card, where the speed chip used to be, and
+     * on the list's title bar, where it opens Settings. Drawn rather than
+     * imported for the reason at the top of this file, and computed rather than
+     * traced: eight teeth are sixteen flanks, and a loop cannot get one of them
+     * wrong. Same 14-unit, 1.4 stroke family as the video card's chips.
      */
     val Settings: ImageVector by lazy {
         buildStroked("ShuttlSettings") {
@@ -358,17 +346,6 @@ private fun androidx.compose.ui.graphics.vector.PathBuilder.trophy() {
     arcToRelative(6f, 6f, 0f, false, false, 12f, 0f)
     lineTo(18f, 2f)
     close()
-}
-
-private fun androidx.compose.ui.graphics.vector.PathBuilder.chartColumn() {
-    // <path d="M3 3v16a2 2 0 0 0 2 2h16"/>
-    moveTo(3f, 3f); lineTo(3f, 19f)
-    arcToRelative(2f, 2f, 0f, false, false, 2f, 2f)
-    lineTo(21f, 21f)
-    // <path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>
-    moveTo(18f, 17f); lineTo(18f, 9f)
-    moveTo(13f, 17f); lineTo(13f, 5f)
-    moveTo(8f, 17f); lineTo(8f, 14f)
 }
 
 private fun androidx.compose.ui.graphics.vector.PathBuilder.video() {

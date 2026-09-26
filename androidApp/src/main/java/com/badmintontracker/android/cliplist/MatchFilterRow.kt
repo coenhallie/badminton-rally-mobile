@@ -62,7 +62,7 @@ internal fun MatchFilterRow(
             Row(
                 modifier = Modifier
                     .weight(1f)
-                    // One line at the tab's width; at a large font scale it
+                    // One line at the list's width; at a large font scale it
                     // scrolls rather than wrapping into a second row of chips.
                     .horizontalScroll(rememberScrollState())
                     // One named group, not three unlabelled choices: without
@@ -141,7 +141,7 @@ private fun FilterPill(text: String, selected: Boolean, onClick: () -> Unit) {
 /*
  * Sized to fit the drawer's former 330dp panel at the default font scale,
  * measured rather than guessed - comfortably inside the wider row the
- * full-width Matches tab list gives it now. The row runs from the 24dp side
+ * full-width match list gives it now. The row runs from the 24dp side
  * margin to 12dp short of the other edge (the info IconButton's own padding
  * backed out): 294dp. The three labels in Archivo SemiBold 12sp with
  * labelMedium's -0.01em tracking measure 14.2 + 75.0 + 70.4 = 159.5dp (from

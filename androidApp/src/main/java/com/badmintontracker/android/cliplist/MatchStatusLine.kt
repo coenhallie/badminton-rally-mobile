@@ -36,7 +36,7 @@ import com.badmintontracker.shared.matchlist.MatchWhere
  * Sized against the drawer's former ~138dp text column: two bare 14dp
  * where-glyphs, a divider, and up to four 18dp analysis chips is 127dp - the
  * floor this line was built to fit, comfortably inside the wider column the
- * full-width Matches tab list gives it now.
+ * full-width match list gives it now.
  */
 @Composable
 fun MatchStatusLine(item: MatchListItem, modifier: Modifier = Modifier) {

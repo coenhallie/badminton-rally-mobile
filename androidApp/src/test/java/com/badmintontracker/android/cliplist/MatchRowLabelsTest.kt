@@ -11,10 +11,9 @@ import kotlin.test.Test
  * name every clip already carries.
  *
  * Used to also pin `matchRowPrimary`/`matchRowSecondary` (ClipListScreen.kt's
- * own match-row headline/sub-line formatting). Task 4 moved the Analytics
- * picker onto `MatchListItem.title`/`.detail` directly, which was
- * `matchRowPrimary`/`matchRowSecondary`'s last caller outside their own tests,
- * so those two functions and the five tests that covered them were deleted
+ * own match-row headline/sub-line formatting). Once every list read
+ * `MatchListItem.title`/`.detail` directly, those two had no caller outside
+ * their own tests, so they and the five tests that covered them were deleted
  * together rather than left pinning dead code.
  */
 class MatchRowLabelsTest {

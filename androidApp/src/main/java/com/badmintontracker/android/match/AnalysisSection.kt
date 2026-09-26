@@ -32,8 +32,7 @@ import com.badmintontracker.shared.prefs.RacketArmPreferenceRepository
 
 /**
  * The Analysis section: what one analysed match has to show, on the match
- * page's Analysis toggle and, until the Analytics tab goes, on
- * AnalyticsDetailScreen, its wrapper here.
+ * page's Analysis toggle.
  *
  * A pill tab row between the heatmap, the per-rally base position and the
  * skeleton, drawn only when more than one of them has content. The earlier
@@ -46,9 +45,9 @@ import com.badmintontracker.shared.prefs.RacketArmPreferenceRepository
  * [HeatmapPanel]'s. The base position is [BasePositionPanel]'s, on the same
  * track. The skeleton is [SkeletonPanel]'s.
  *
- * Moved out of AnalyticsDetailScreen unchanged, rules and all: which panels
- * exist is still `availablePanels`, and the rally windows still come from
- * whichever run the heatmap draws.
+ * Which panels exist is `availablePanels`, and the rally windows come from
+ * whichever run the heatmap draws (CloudAnalysisPanelsTest pins the two
+ * together).
  *
  * [analysisId] is `analysisId(item)`: the heatmap's own id, else the entry.
  */
