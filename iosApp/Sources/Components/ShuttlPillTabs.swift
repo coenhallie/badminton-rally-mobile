@@ -100,6 +100,10 @@ struct ShuttlPillTabs: View {
         .onChange(of: fit.labelPoints, initial: true) { _, points in
             ceilingFor?.points = points
         }
+        // A row that goes (the match page drops its section row when one
+        // section is left) must not go on holding the rows under it to the
+        // size it last drew at.
+        .onDisappear { ceilingFor?.points = .infinity }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(accessibilityLabel ?? "")
     }
