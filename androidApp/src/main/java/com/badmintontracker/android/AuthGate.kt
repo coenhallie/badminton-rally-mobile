@@ -311,7 +311,10 @@ fun AuthGate(
                             onHome = nothingAbove,
                         )
                         seen = announcement.seen
-                        if (announcement.announce.isNotEmpty()) announced = announcement.announce
+                        // Merged, not replaced: two runs can land on consecutive
+                        // collections before HomeScreen's effect has read and
+                        // cleared the first, and a plain assignment dropped it.
+                        if (announcement.announce.isNotEmpty()) announced = announced + announcement.announce
                     }
             }
             // Provided around the NavHost so every destination's bar can show it
