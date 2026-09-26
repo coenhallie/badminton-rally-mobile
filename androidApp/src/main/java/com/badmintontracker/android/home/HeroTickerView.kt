@@ -36,7 +36,11 @@ import kotlinx.coroutines.isActive
  * height: Compose's line height applies to a whole paragraph and cannot
  * tighten below Archivo's natural leading the way stacking two separate
  * lines can, and the mock's hero is 1.08. Stacking sidesteps line height
- * entirely and hits the figure exactly. Mirrors iosApp's HeroTickerView.swift.
+ * entirely and hits the figure exactly.
+ *
+ * Mirrors iosApp's HeroTickerView.swift: the same stacking, the same slot
+ * sized to the tallest phrase, and the same Reduce Motion rule (the first
+ * phrase only, and only its height reserved).
  *
  * The second line is [ShuttlTheme.extended.textMuted], which is the only
  * place that token is allowed: it clears the 3:1 large-text threshold at this
@@ -114,8 +118,11 @@ fun HeroTickerView(
         // followed the current phrase would jump that copy a line up and down
         // on every rotation. The invisible copies only take up room; their
         // semantics are cleared so the merged hero still reads as one line.
+        // Under Reduce Motion only the first phrase ever shows (see the effect
+        // above), so only its height is reserved: room for the others would
+        // hold open space for a rotation that coach never sees.
         Box {
-            HeroTicker.phrases.forEach { phrase ->
+            (if (reduceMotion) HeroTicker.phrases.take(1) else HeroTicker.phrases).forEach { phrase ->
                 Text(
                     text = phrase,
                     style = ShuttlTypeExtras.display,
