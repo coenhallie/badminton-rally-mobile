@@ -26,6 +26,8 @@ import kotlinx.coroutines.flow.map
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -177,6 +179,16 @@ fun AuthGate(
                     // and nowhere to change it later.
                     if (entry.scoreLogId == null) {
                         autoDetailsEntryId = entry.id
+                        // The naming sheet is drawn by the Matches tab's list and
+                        // nowhere else, so that has to be the tab showing when the
+                        // coach comes back from the camera or picker. Add lives on
+                        // that tab, so this normally changes nothing. It makes the
+                        // promise hold whatever moved the tab in the meantime,
+                        // rather than resting on every such path (the run watcher
+                        // below is one) remembering to hold off; iOS selects
+                        // Matches from the details sheet's onDismiss for the same
+                        // reason.
+                        homeTab = HomeTab.MATCHES
                     } else {
                         // The coach already said he wants this video analysed;
                         // making him find an Analyze button afterwards is a second
@@ -193,6 +205,13 @@ fun AuthGate(
             val storedResults = remember(localAnalysis) { storedResultsReader(localAnalysis) }
 
             val work by backgroundWork.work.collectAsStateWithLifecycle()
+
+            // The activity's, not a destination's: read above the NavHost, so it
+            // goes below RESUMED while the camera or the photo picker (another
+            // activity) is in front of ours. Read inside the watcher below
+            // rather than keyed on, since restarting that effect would reset
+            // its seen-set.
+            val activityLifecycle = LocalLifecycleOwner.current.lifecycle
 
             // A device run that lands switches the coach to the Analytics tab.
             //
@@ -216,10 +235,10 @@ fun AuthGate(
             // One recreation does reset it, and is left alone deliberately: a
             // SYSTEM dark-mode flip, uiMode not being in that configChanges
             // list. A run that landed while the coach was away would then
-            // announce itself on the next visit to Home. It needs the system
-            // theme to change inside that window - the app's own toggle does
-            // not go through uiMode - and the cost of being wrong is one
-            // screen the coach was heading for anyway.
+            // announce itself on the next visit to the Matches tab. It needs
+            // the system theme to change inside that window - the app's own
+            // toggle does not go through uiMode - and the cost of being wrong
+            // is one screen the coach was heading for anyway.
             //
             // Collected here rather than read as composition state on purpose.
             // `collectAsStateWithLifecycle` would put a snapshot read in THIS
@@ -232,7 +251,7 @@ fun AuthGate(
             LaunchedEffect(localAnalysis, coordinator, nav) {
                 var seen = emptySet<String>()
                 // Both pipelines, not just the device one. A cloud run ends by
-                // retiring its entry, so the coach watching Home saw the row
+                // retiring its entry, so the coach watching the list saw the row
                 // vanish and nothing else - no result, and nothing saying where
                 // it had gone. The two sets are unioned rather than announced
                 // separately so one rule decides, and a video analysed both
@@ -244,14 +263,28 @@ fun AuthGate(
                 ) { device, cloud -> device + cloud }
                     .distinctUntilChanged()
                     .collect { finished ->
+                        // "Nothing above" is more than the back stack and the
+                        // list's own overlays. The back-stack entry is still
+                        // Route.Home while the camera or picker is open, and this
+                        // collector keeps running with our activity stopped, so
+                        // without the RESUMED check a run landing then switched
+                        // tabs out of sight. And a video just added with no match
+                        // has its naming sheet pending (autoDetailsEntryId) until
+                        // the Matches tab's list opens it, which it can only do
+                        // on that tab: switching away then strands the sheet.
+                        //
+                        // The seen-set rule does not change: a run that lands
+                        // while the app is in the background is marked seen and
+                        // does not announce itself later, as for any run that
+                        // lands while the coach is elsewhere.
+                        val nothingAbove = activityLifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) &&
+                            autoDetailsEntryId == null &&
+                            !homeOverlayOpen &&
+                            nav.currentBackStackEntry?.destination?.hasRoute<Route.Home>() == true
                         val announcement = announceFinishedRuns(
                             finished = finished,
                             seen = seen,
-                            onHome = isHomeFront(
-                                tab = homeTab,
-                                nothingAbove = !homeOverlayOpen && nav.currentBackStackEntry
-                                    ?.destination?.hasRoute<Route.Home>() == true,
-                            ),
+                            onHome = isHomeFront(tab = homeTab, nothingAbove = nothingAbove),
                         )
                         seen = announcement.seen
                         if (announcement.openAnalytics) homeTab = HomeTab.ANALYTICS
