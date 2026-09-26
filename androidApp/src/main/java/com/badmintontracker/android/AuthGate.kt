@@ -94,11 +94,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.Scaffold
-import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.TextButton
-import com.badmintontracker.android.localanalysis.LocalClipPlayerDialog
-import com.badmintontracker.android.localanalysis.ClipCutter
+import com.badmintontracker.android.match.DeviceRalliesSection
 
 @Composable
 fun AuthGate(
@@ -618,9 +615,6 @@ fun AuthGate(
                 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
                 composable<Route.LocalClips> { entry ->
                     val args = entry.toRoute<Route.LocalClips>()
-                    val clips = remember(args.entryId) { localAnalysis.storedClips(args.entryId) }
-                    var playing by remember { mutableStateOf<ClipCutter.Clip?>(null) }
-                    playing?.let { LocalClipPlayerDialog(clip = it, onDismiss = { playing = null }) }
                     Scaffold(
                         topBar = {
                             TopAppBar(
@@ -634,32 +628,11 @@ fun AuthGate(
                             )
                         },
                     ) { padding ->
-                        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-                            if (clips.isEmpty()) {
-                                Text(
-                                    "No clips are stored for this video.",
-                                    modifier = Modifier.padding(16.dp),
-                                )
-                            }
-                            clips.forEach { clip ->
-                                TextButton(onClick = { playing = clip }) {
-                                    // Bounds are unknown for clips recovered by
-                                    // filename, and a fabricated "0.0s - 0.0s"
-                                    // would read as a broken clip rather than
-                                    // as missing bookkeeping.
-                                    Text(
-                                        if (clip.endSeconds > clip.startSeconds) {
-                                            "Rally ${clip.index}  " +
-                                                "${"%.1f".format(clip.startSeconds)}s - " +
-                                                "${"%.1f".format(clip.endSeconds)}s  " +
-                                                "(${"%.1f".format(clip.endSeconds - clip.startSeconds)}s)"
-                                        } else {
-                                            "Rally ${clip.index}"
-                                        },
-                                    )
-                                }
-                            }
-                        }
+                        DeviceRalliesSection(
+                            entryId = args.entryId,
+                            localAnalysis = localAnalysis,
+                            modifier = Modifier.padding(padding),
+                        )
                     }
                 }
 
