@@ -7,6 +7,9 @@ import Shared
 struct MatchRoute: Hashable {
     let scoreLogId: String?
     let videoId: String?
+    /// A video only on this phone has no cloud id and no score log: this is how
+    /// the page finds it.
+    var entryId: String? = nil
     /// The intent carried from the board's "Add the video?" prompt - "Import" or
     /// "Record" chosen there, or nil (either "Not now", or a route pushed by
     /// something other than that prompt, e.g. a plain row tap). Not part of a
@@ -14,13 +17,24 @@ struct MatchRoute: Hashable {
     /// pops or re-pushes a `MatchRoute` by reconstructing one, so two instances
     /// for the same match carrying different `attach` values is fine.
     var attach: AttachIntent? = nil
+    /// The section to open on, from a finished run's View; nil opens the
+    /// default.
+    var section: MatchPageSection? = nil
 }
 
-/// Which half of a match page is on screen. Only meaningful when the match has
-/// both. Port of Android's private `Facet` enum in `MatchScreen.kt`.
-private enum Facet {
-    case points
-    case rallies
+/// The match page's vertical rhythm, androidApp's `MatchSectionGap` and
+/// `MatchRowInset`. The side margin is `ShuttlGutter.page`, the same 24pt for
+/// every section.
+enum MatchPageLayout {
+    /// Between the section row (or the bar, on a page with one section) and
+    /// the first thing the section draws, the same for every section: each
+    /// draws from its own top edge. 16 is what the Analysis section already
+    /// had between its two pill rows.
+    static let sectionGap: CGFloat = 16
+    /// The top inset of a list section's first row (a rally row's, the Points
+    /// header's, the label strip's), counted into `sectionGap` so a list's
+    /// first line lands where the video card and the panel row do.
+    static let rowInset: CGFloat = 14
 }
 
 /// A confirmed answer to the video confirm, distinct from "not answered yet":
@@ -29,9 +43,9 @@ private struct ConfirmedVideoRemoval {
     let intent: AttachIntent?
 }
 
-/// `navigationDestination(item:)` needs an Identifiable, and the summary sheet's
-/// "most labelled" row pushes a clip programmatically rather than through a
-/// NavigationLink.
+/// `navigationDestination(item:)` needs an Identifiable. Every push of a rally
+/// goes through it: a rally row's tap in the Rallies section, and the summary
+/// sheet's "most labelled" row.
 private struct ClipRoute: Identifiable, Hashable {
     let id: String
 }
@@ -49,16 +63,21 @@ private enum MatchSheet: Identifiable, Hashable {
     var id: Self { self }
 }
 
-/// One match, however it was made: a video-first or shared match shows only the
-/// rallies facet, a scored match with no video shows only the points facet, and a
-/// match with both gets a selector between them. Replaces `MatchClipsView` and
-/// `ScoreMatchView`.
+/// One match, however it was made, and every way into it: a row's tap on the
+/// list opens this page whatever the match has. It shows the match's sections
+/// (Points, Match, Rallies, Analysis), decided by the shared `matchPageSections`
+/// rule from the list's own row, with a toggle row between them when there is
+/// more than one. Replaces `MatchClipsView`, `ScoreMatchView` and the separate
+/// screens a video on this phone had for its player, its device clips and its
+/// heatmap. Mirrors androidApp's `MatchScreen`.
 struct MatchView: View {
     let rally: RallyApp
     let analyze: AnalyzeCoordinator
     /// Routed through only so the court marking this page can push offers the
     /// same two targets it offers everywhere else.
     let localAnalysis: LocalAnalysisRunner?
+    /// The app's one list model (Home's): the page finds its row in it.
+    let listModel: ClipListModel
     let route: MatchRoute
 
     @State private var matchModel: MatchModel
@@ -113,48 +132,66 @@ struct MatchView: View {
     // see `confirmedVideoRemoval` and the onChange that acts on it. nil means it
     // was cancelled, which is why the answer cannot just be the intent.
     @State private var confirmedVideoRemoval: ConfirmedVideoRemoval? = nil
-    // Held for the life of this view, not re-keyed on hasPoints/hasRallies: the
-    // clip list briefly empties during a refresh, and re-keying on that would
-    // silently snap a reader on the rallies facet back to Points mid-read.
-    @State private var chosenFacet: Facet
+    /// Held for the life of this page and never cleared: a section can go
+    /// while on screen, and `shownSection` falls back without forgetting it.
+    /// Also never re-keyed on the sections themselves: the clip list briefly
+    /// empties during a refresh, and re-keying on that would snap a reader on
+    /// Rallies back to Points mid-read.
+    @State private var chosenSection: MatchPageSection?
 
     init(
         rally: RallyApp,
         analyze: AnalyzeCoordinator,
         localAnalysis: LocalAnalysisRunner?,
+        listModel: ClipListModel,
         route: MatchRoute
     ) {
         self.rally = rally
         self.analyze = analyze
         self.localAnalysis = localAnalysis
+        self.listModel = listModel
         self.route = route
-        let model = MatchModel(rally: rally, analyze: analyze, scoreLogId: route.scoreLogId)
-        _matchModel = State(initialValue: model)
-        _chosenFacet = State(initialValue: model.log != nil ? .points : .rallies)
+        _matchModel = State(initialValue: MatchModel(rally: rally, analyze: analyze, scoreLogId: route.scoreLogId))
+        _chosenSection = State(initialValue: route.section)
         _intake = State(initialValue: LocalVideoIntake(rally: rally))
     }
 
-    // The score log is authoritative: a match bound after this page was opened
-    // must start showing its rallies without a re-entry.
-    private var effectiveVideoId: String? { route.videoId ?? matchModel.log?.videoId }
+    /// The row this page is for, from the list the Matches screen draws, and
+    /// its sections by the one shared rule: the chips on that row are the
+    /// toggles here.
+    private var item: MatchListItem? {
+        listModel.matchList.matchPageItem(
+            scoreLogId: route.scoreLogId,
+            videoId: route.videoId ?? matchModel.log?.videoId,
+            entryId: route.entryId
+        )
+    }
+
+    private var sections: [MatchPageSection] {
+        item.map { MatchPageSectionKt.matchPageSections(item: $0) } ?? []
+    }
+
+    /// What the page draws: the coach's choice while it still exists, else the
+    /// default. Read everywhere the page decides what to show; `chosenSection`
+    /// is only ever written.
+    private var section: MatchPageSection? {
+        MatchPageSectionKt.shownSection(chosen: chosenSection, sections: sections)
+    }
+
+    /// Under the player only for a video with no score log: a scored match's
+    /// video asks through `AttachStatusBanner` already, and two buttons for
+    /// one question is the kind of drift the shared rule exists to stop.
+    private var analyzeLabel: String? {
+        guard let item, item.scoreLogId == nil, item.action == .analyze || item.action == .retry else { return nil }
+        return MatchListCopy.shared.actionLabel(action: item.action)
+    }
+
+    // The list's row first, then the score log: a match bound after this page
+    // was opened must start showing its rallies without a re-entry.
+    private var effectiveVideoId: String? { item?.videoId ?? route.videoId ?? matchModel.log?.videoId }
 
     private var clipsForMatch: [RallyClip] {
         sort.sorted(allClips.filter { $0.videoId == effectiveVideoId })
-    }
-
-    // Shown only when the match has both. A selector over one facet is a control
-    // that does nothing, and a match that has only rallies must look exactly like
-    // it did before this page existed.
-    private var hasPoints: Bool { matchModel.log != nil }
-    private var hasRallies: Bool { !clipsForMatch.isEmpty }
-
-    // What actually renders: the user's choice when it is still available, else
-    // whichever facet the match currently has.
-    private var facet: Facet {
-        if chosenFacet == .points && hasPoints { return .points }
-        if chosenFacet == .rallies && hasRallies { return .rallies }
-        if hasPoints { return .points }
-        return .rallies
     }
 
     private var metadata: MatchMetadata? {
@@ -194,28 +231,48 @@ struct MatchView: View {
         metadata?.title ?? matchTitle(of: clipsForMatch.map(ClipInfo.init))
     }
 
-    // Precedence matches Android's `MatchScreen`: a resolved video match owns its
-    // title first, then a score log's title, then the bare "RALLIES" fallback -
-    // never the other order. A match the coach named on the phone and then
-    // attached a video to must keep showing that name while the video's clips and
-    // metadata are still loading, not flash "RALLIES" in between.
+    // Precedence matches Android's `MatchScreen`. The list's own name for this
+    // match first, so the page and the row one tap back cannot read as two
+    // matches, set as the row sets it. Until the row arrives, a match with a
+    // video owns its title (the builder's own order: the name, else the date),
+    // then a score log's. A match the coach named on the phone and then attached
+    // a video to must keep showing that name while the video's clips and
+    // metadata are still loading. Nothing at all for a match that is gone: the
+    // body says so, and a title would name a match that is not there.
     private var title: String {
-        if let name = matchName { return name.uppercased() }
+        if isMissing { return "" }
+        if let item { return item.title }
+        if let name = matchName { return name }
         if let latest = clipsForMatch.map({ $0.createdAt.toEpochMilliseconds() }).max() {
-            return "MATCH · \(formatMatchDate(millis: latest).uppercased())"
+            return "Match · \(formatMatchDate(millis: latest))"
         }
-        // Score-only, or a video match whose clips/metadata have not loaded yet:
-        // same title as the screen this page replaced.
         if let log = matchModel.log { return log.title }
-        return "RALLIES"
+        return ""
     }
 
-    // The score log this page was opened for is gone - deleted elsewhere while it
-    // was open, or never synced to this device. A video-first match with no log at
-    // all is not this state: `hasPoints` is false for it and it falls straight
-    // through to the rallies facet, same as before this page existed.
+    /// Whether the page's own reads still find the match its route names. They
+    /// need no network and are current on the first frame, where the list's
+    /// rows can trail them: the list's loops stop while a page is pushed over
+    /// it, so a match made under a push (New match, the board, then this page)
+    /// is not in `matchList` for the moment this page's own `start()` takes to
+    /// deliver. Without this the page would say "no longer on this phone", for
+    /// that moment, about a match it had just been handed.
+    private var foundDirectly: Bool {
+        if route.scoreLogId != nil { return matchModel.log != nil }
+        return route.entryId.map { rally.localVideos.get(id: $0) != nil } ?? false
+    }
+
+    /// Gone (deleted elsewhere, a share left, or the file removed from a match
+    /// that was only on this phone), rather than not listed yet. The list is
+    /// Home's, so once it has finished one refresh (`refreshGeneration` counts
+    /// completed ones, failed included) a row it lacks is not coming: the list
+    /// holds everything it knows about. Before that, only the lookups that need
+    /// no network can tell. Mirrors androidApp's `gone`.
     private var isMissing: Bool {
-        route.scoreLogId != nil && matchModel.log == nil && effectiveVideoId == nil
+        guard item == nil, !foundDirectly else { return false }
+        return listModel.refreshGeneration > 0
+            || (route.scoreLogId != nil && effectiveVideoId == nil)
+            || (route.scoreLogId == nil && route.videoId == nil && route.entryId != nil)
     }
 
     /// `supersede` is for the triggers that must never be swallowed: a changed clip
@@ -256,8 +313,11 @@ struct MatchView: View {
             Group {
                 if isMissing {
                     VStack {
-                        Text("This match is no longer on this phone.")
+                        Text(MatchPageCopy.shared.MISSING)
+                            .shuttlType(ShuttlType.bodyLarge)
                             .foregroundStyle(Shuttl.textSecondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, ShuttlGutter.page)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
@@ -274,28 +334,65 @@ struct MatchView: View {
                                 onRetry: { attachRetry() }
                             )
                         }
-                        if hasPoints && hasRallies {
-                            // Reads the derived facet, writes the chosen one: the
-                            // control shows what is actually on screen, but a later
-                            // fallback (rallies emptying mid-refresh) must not overwrite
-                            // what the user picked - see `chosenFacet`'s own comment.
+                        // A row over one section is a control that does nothing,
+                        // and a match with one section must look like a page, not
+                        // a picker. Reads the shown section, writes the chosen
+                        // one: the row shows what is on screen, but a fallback
+                        // (a section going) must not overwrite what the coach
+                        // picked - see `chosenSection`.
+                        if sections.count > 1, let section {
                             ShuttlPillTabs(
-                                labels: ["Points", "Rallies"],
-                                selectedIndex: facet == .points ? 0 : 1,
-                                onSelect: { chosenFacet = $0 == 0 ? .points : .rallies },
-                                accessibilityLabel: "Facet"
+                                labels: sections.map(\.label),
+                                selectedIndex: sections.firstIndex(of: section) ?? 0,
+                                onSelect: { chosenSection = sections[$0] },
+                                accessibilityLabel: MatchPageCopy.shared.SECTIONS,
+                                // The secondary rows in the sections below
+                                // (Analysis's panels, Near and Far) draw no larger
+                                // than this row. See ShuttlPillTabs.
+                                setsCeiling: true
                             )
-                            .padding(.horizontal)
-                            .padding(.vertical, 8)
+                            .padding(.horizontal, ShuttlGutter.page)
+                            .padding(.top, 8)
                         }
-                        listContent
+                        sectionContent
+                            // The gap under the section row (or the bar, on a
+                            // page with one section), the same for every section.
+                            // Points and Rallies are lists whose first row holds
+                            // its first line `rowInset` off its own top, so they
+                            // get the rest of it. Two first rows sit a little
+                            // lower, as on Android: the rally sort control, whose
+                            // label is centred in its touch target, and "No
+                            // rallies yet", which is centred in the section rather
+                            // than hung from its top.
+                            .padding(.top, sectionIsList
+                                ? MatchPageLayout.sectionGap - MatchPageLayout.rowInset
+                                : MatchPageLayout.sectionGap)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     }
+                    // Collects the section row's label size for the secondary
+                    // pill rows inside `sectionContent`.
+                    .pillLabelCeilingHost()
                 }
             }
         }
+        // The page's own background behind every section, the lists included,
+        // so toggling between them never changes it, and on the bar, so a
+        // section scrolled under it does not show through the title.
+        .background(Shuttl.bg)
+        .shuttlNavigationBarBackground()
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbarContent }
+        // The section first shown counts as chosen. Without this, a section
+        // appearing moves the page: a video only on this phone opens on Match
+        // alone, and when the run started from under its player lands, Rallies
+        // becomes the default and the player is released mid-watch. The app
+        // does not change the screen on its own (a finished run is announced,
+        // not opened), and a section arriving is the same kind of jump. A
+        // route's own `section` is already the choice, so it is never replaced.
+        .onChange(of: section, initial: true) { _, shown in
+            if chosenSection == nil, let shown { chosenSection = shown }
+        }
         // A summary that goes away while its sheet is open must close the sheet,
         // not leave it standing over data that no longer exists.
         .onChange(of: summary?.isEmpty) { _, isEmpty in
@@ -443,6 +540,18 @@ struct MatchView: View {
             attachVideo(attach)
         }
         .task { await matchModel.start() }
+        // The list's loops, run by this page while it is on screen. The root
+        // list's `.task { await model.start() }` stops while a page is pushed
+        // over it (seen on the simulator: the list's `start()` returns as the
+        // push lands), and without loops `matchList` would freeze, so a run
+        // finishing while this page is open could not make Analysis appear.
+        // `start()` runs its own set of loops per call. Each set is cancelled
+        // when its view is covered (this page's too, when it pushes a rally or
+        // court marking), so one set runs at a time apart from a push or pop
+        // transition, where the two overlap for its length (about 0.6s
+        // measured). The overlap is harmless: both sets read the same flows
+        // and write the same values.
+        .task { await listModel.start() }
         // Soft failure: no metadata just means the date headline, as before. Keyed
         // on the effective video id, not a bare `.task`: a score-only match that
         // acquires a video after this page opens must pick up its metadata without
@@ -472,10 +581,60 @@ struct MatchView: View {
         }
     }
 
+    /// Only the section on screen is built: leaving Match releases its player,
+    /// so two players never run at once. A section with nothing to draw yet
+    /// (its row has not arrived) draws nothing rather than another section.
+    @ViewBuilder
+    private var sectionContent: some View {
+        switch section {
+        case .points:
+            listContent
+        case .match:
+            if let entryId = item?.entryId {
+                MatchVideoSection(rally: rally, entryId: entryId, analyzeLabel: analyzeLabel) {
+                    analyzeEntry(entryId)
+                }
+            }
+        case .rallies:
+            // Rallies a device run cut and nothing in the cloud: those clips
+            // never leave the phone, so they are drawn from its disk rather
+            // than from rally_clips. When both exist the cloud clips win, the
+            // rule the row's rally count follows.
+            if clipsForMatch.isEmpty, let item, item.deviceClipCount > 0, let entryId = item.entryId {
+                DeviceRalliesSection(localAnalysis: localAnalysis, entryId: entryId)
+            } else {
+                listContent
+            }
+        case .analysis:
+            if let item, let id = MatchPageSectionKt.analysisId(item: item) {
+                AnalysisSection(rally: rally, localAnalysis: localAnalysis, analysisId: id)
+            }
+        case nil:
+            EmptyView()
+        }
+    }
+
+    /// Whether the section on screen is a list whose first row carries
+    /// `MatchPageLayout.rowInset` itself. See the gap in `body`.
+    private var sectionIsList: Bool { section == .points || section == .rallies }
+
+    /// The same decision the list's Analyze makes (`analyseAction(for:)`):
+    /// resume a failed cloud run with saved court points, else mark the court.
+    /// For the Analyze under the player and the overflow's Analyze again.
+    private func analyzeEntry(_ entryId: String) {
+        guard let entry = rally.localVideos.get(id: entryId) else { return }
+        switch analyseAction(for: entry) {
+        case .resume(let id): analyze.retry(entryId: id)
+        case .markCourt(let id): navigationTarget = CourtMarkingRoute(entryId: id)
+        }
+    }
+
     // A pull gesture that spins and refreshes nothing is worse than no gesture: a
     // score-only match has no video, so there is nothing here for a refresh to
     // touch. Only a video-backed match keeps the old `MatchClipsView`'s
-    // pull-to-refresh, including when both facets exist and Points is selected.
+    // pull-to-refresh, on Points as well as Rallies. Match and Analysis have
+    // none: pulling on a video's notes or a heatmap to refresh the clip cache
+    // would be a gesture that does nothing visible.
     @ViewBuilder
     private var listContent: some View {
         if effectiveVideoId != nil {
@@ -573,25 +732,34 @@ struct MatchView: View {
 
     private var listBody: some View {
         List {
-            if facet == .points, let log = matchModel.log {
+            if section == .points, let log = matchModel.log {
                 PointsFacet(
                     log: log, card: matchModel.card, tally: matchModel.tally,
                     points: matchModel.match?.points ?? [],
                     onScore: { scoringTarget = ScoringRoute(scoreLogId: log.id) }
                 )
             } else {
+                // Only rallies are reordered, so the sort lives with them
+                // rather than in a bar every section shares; one rally has no
+                // order.
+                if clipsForMatch.count > 1 {
+                    RallySortRow(sort: $sort)
+                }
                 RalliesFacet(
-                    rally: rally,
                     clips: clipsForMatch,
                     summary: summary,
                     matchTitle: matchName,
                     details: detailsLine,
                     description: metadata?.description_,
-                    onSummaryClick: { activeSheet = .summary }
+                    onSummaryClick: { activeSheet = .summary },
+                    onClipClick: { clipRoute = ClipRoute(id: $0.id) }
                 )
             }
         }
         .listStyle(.plain)
+        // The page's background between and behind the rows, as the device
+        // rallies and the notes list already draw, not the one `List` paints.
+        .scrollContentBackground(.hidden)
     }
 
     @ToolbarContentBuilder
@@ -599,19 +767,6 @@ struct MatchView: View {
         // The chrome indicator, on every bar androidApp puts it on. See
         // `BackgroundWorkAction`.
         ToolbarItem(placement: .topBarTrailing) { BackgroundWorkAction() }
-        // The sort order only means something while rallies are on screen.
-        if facet == .rallies {
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Picker("Sort", selection: $sort) {
-                        Text("Rally order").tag(ClipSort.rallyOrder)
-                        Text("Most notes").tag(ClipSort.mostNotes)
-                    }
-                } label: {
-                    Image(systemName: "arrow.up.arrow.down")
-                }
-            }
-        }
         if isOwned, effectiveVideoId != nil {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -636,28 +791,36 @@ struct MatchView: View {
             }
         }
         // One overflow, matching Android's own on this page, rather than a bare
-        // glyph per action: with sort, share and "Add video" already in the bar,
-        // three more discrete items would crowd it, and two of them would read as
+        // glyph per action: with share and "Add video" already in the bar, more
+        // discrete items would crowd it, and two of them would read as
         // near-identical icons under VoiceOver.
         //
         // A scored match, or a filmed one that is the coach's own: both have
-        // details to edit. A shared match has neither an editor nor an export, so
-        // it gets no menu at all.
-        if matchModel.log != nil || isOwned {
+        // details to edit. A video on this phone that can be analyzed again has
+        // that to offer. A shared match has none of these, so it gets no menu
+        // at all.
+        if matchModel.log != nil || isOwned || item?.canAnalyzeAgain == true {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     // First, because it is the one a coach comes here for: the
                     // new match form asks for none of this, and a video is
                     // uploaded with a name at most.
-                    Button {
-                        activeSheet = .details
-                    } label: {
-                        Label("Edit details", systemImage: "pencil")
+                    if matchModel.log != nil || isOwned {
+                        Button {
+                            activeSheet = .details
+                        } label: {
+                            Label("Edit details", systemImage: "pencil")
+                        }
                     }
                     if let log = matchModel.log {
                         ShareLink(item: ScoreTagSummaryKt.exportMatchText(log: log)) {
                             Label("Export as text", systemImage: "doc.text")
                         }
+                    }
+                    // The row's own menu item, here too: the same entry, through
+                    // the same resume-or-mark-court decision.
+                    if let item, item.canAnalyzeAgain, let entryId = item.entryId {
+                        Button(MatchListCopy.shared.MENU_ANALYZE_AGAIN) { analyzeEntry(entryId) }
                     }
                     // Offered whenever this match has a video and nothing is in
                     // flight for it - not only when the analysis disappointed. A
@@ -728,7 +891,51 @@ private struct AttachStatusBanner: View {
                     .frame(width: 24, height: 24)
             }
         }
-        .padding(.horizontal)
+        // The page's gutter, which every section below it keeps.
+        .padding(.horizontal, ShuttlGutter.page)
         .padding(.vertical, 12)
+    }
+}
+
+/// The rally sort, at the top of the Rallies section: it only reorders rallies,
+/// so it lives with them rather than in a bar every section shares. Port of
+/// androidApp's `RallySortRow`.
+private struct RallySortRow: View {
+    @Binding var sort: ClipSort
+
+    private var current: String {
+        sort == .rallyOrder ? MatchPageCopy.shared.SORT_RALLY_ORDER : MatchPageCopy.shared.SORT_MOST_NOTES
+    }
+
+    var body: some View {
+        HStack {
+            Spacer()
+            Menu {
+                Picker(MatchPageCopy.shared.SORT, selection: $sort) {
+                    Text(MatchPageCopy.shared.SORT_RALLY_ORDER).tag(ClipSort.rallyOrder)
+                    Text(MatchPageCopy.shared.SORT_MOST_NOTES).tag(ClipSort.mostNotes)
+                }
+            } label: {
+                Label(current, systemImage: "arrow.up.arrow.down")
+                    .shuttlType(ShuttlType.labelMedium)
+                    .foregroundStyle(Shuttl.textSecondary)
+                    .lineLimit(1)
+                    // The platform's minimum touch target, the label centred
+                    // in it: the reason this row's text sits a few points
+                    // lower than a rally row's first line.
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            // What the control does and the order it is on: the label replaces
+            // the visible text for VoiceOver, so it carries both.
+            .accessibilityLabel("\(MatchPageCopy.shared.SORT), \(current)")
+        }
+        // The page's gutter either side, no inset above or below: the touch
+        // target is the row's height. No separator: it is a control over the
+        // list, not one of its rows.
+        .listRowInsets(EdgeInsets(top: 0, leading: ShuttlGutter.page, bottom: 0, trailing: ShuttlGutter.page))
+        .listRowSeparator(.hidden)
+        .listSectionSeparator(.hidden, edges: .top)
+        .listRowBackground(Color.clear)
     }
 }

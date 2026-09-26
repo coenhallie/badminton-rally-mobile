@@ -1,6 +1,10 @@
 import Foundation
 import Shared
 
+/// An entry's registry id is its identity, so SwiftUI's identity-keyed APIs
+/// (`ForEach`, `sheet(item:)`) can take entries directly.
+extension LocalVideoEntry: Identifiable {}
+
 enum LocalVideoLogic {
     /// Returns the user-facing rejection message, or nil when the size is acceptable.
     /// The cap and its copy live in Shared (LocalVideoLimits) so Android and iOS

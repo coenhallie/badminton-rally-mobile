@@ -85,7 +85,8 @@ struct MatchVideoSection: View {
                     }
                 }
             )
-            .padding(.top, 8)
+            // No top padding: the page puts `MatchPageLayout.sectionGap` above
+            // every section, so each draws from its own top edge.
             .padding(.bottom, 8)
 
             // The row's own action, under the video it would analyze, rather

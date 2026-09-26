@@ -59,12 +59,14 @@ struct HomeView: View {
     /// for every video on this phone, which a second instance would quietly make
     /// false; and `start()` spawns `for await` loops that never return and hold
     /// the model alive, so a model created inside a pushed view would leak one
-    /// full set of them on every push. Both the Matches tab and the Analytics
-    /// tab call `start()` from their `.task`. That is not idempotent: each call
-    /// runs its own set of the five loops, and only the initial network refresh
-    /// is latched to once per model. What keeps it to one set at a time is the
-    /// `TabView`, which cancels a deselected tab's `.task`, so only the tab on
-    /// screen has its loops running.
+    /// full set of them on every push. The Matches tab, the Analytics tab and
+    /// the match page (which finds its row here) call `start()` from their
+    /// `.task`. That is not idempotent: each call runs its own set of the five
+    /// loops, and only the initial network refresh is latched to once per
+    /// model. What keeps it to one set at a time is that a covered view's
+    /// `.task` is cancelled: the `TabView` cancels a deselected tab's, and a
+    /// push cancels the list's under the match page. The two overlap only for
+    /// the length of a push or pop transition.
     @State private var listModel: ClipListModel
     /// The auto-open case only: straight after a record/import that isn't for
     /// an existing match, so the coach can name it. The row menu's own "Edit
@@ -72,11 +74,10 @@ struct HomeView: View {
     /// sheet - the two never need to agree on one value at the same time.
     @State private var detailsTarget: MatchDetailsTarget? = nil
 
-    // Every destination MatchesList used to carry, now owned here. Three of
-    // them (courtMarking, matchTap, localPlayer) are still triggered from
-    // inside the list, only now through a closure instead of an owned
-    // binding or a `NavigationLink(value:)` reaching up through the
-    // environment. The rest (labels, new match, the create-and-finish flow)
+    // Every destination MatchesList used to carry, now owned here. Two of
+    // them (courtMarking, matchTap) are still triggered from inside the list,
+    // only now through a closure instead of an owned binding or a
+    // `NavigationLink(value:)` reaching up through the environment. The rest (labels, new match, the create-and-finish flow)
     // had no trigger left once this redesign deleted the list's toolbar, so
     // they move here wholesale, state and all.
     @State private var courtMarkingRoute: CourtMarkingRoute? = nil
@@ -87,11 +88,8 @@ struct HomeView: View {
     /// and pushes on DIFFERENT bindings, not about how many bindings exist in
     /// total, and this route and that one are never on screen at once.
     @State private var matchRoute: MatchRoute? = nil
-    @State private var localPlayerRoute: LocalPlayerRoute? = nil
-    /// Where an on-device run's own output is reached from the Matches tab:
-    /// the rallies it cut, and the heatmap of the track it kept. Owned here
-    /// like every other destination the list reports upward.
-    @State private var localClipsRoute: LocalClipsRoute? = nil
+    /// The Analytics tab's heatmap page. The Matches tab reaches the same
+    /// analysis through the match page's Analysis section instead.
     @State private var analyticsDetailRoute: AnalyticsDetailRoute? = nil
     @State private var createFlowTarget: CreateFlowDestination? = nil
 
@@ -121,9 +119,6 @@ struct HomeView: View {
                     heroPaused: selectedTab != .matches || !nothingAbove,
                     onMatchTap: { matchRoute = $0 },
                     onCourtMarking: { courtMarkingRoute = $0 },
-                    onLocalPlayer: { localPlayerRoute = $0 },
-                    onLocalClips: { localClipsRoute = $0 },
-                    onAnalyticsDetail: { analyticsDetailRoute = $0 },
                     onOverlayChange: { listOverlayOpen = $0 },
                     onAdd: { showAddSheet = true }
                 )
@@ -156,7 +151,7 @@ struct HomeView: View {
             .navigationDestination(item: $matchRoute) { route in
                 MatchView(
                     rally: rally, analyze: analyze,
-                    localAnalysis: localAnalysis, route: route
+                    localAnalysis: localAnalysis, listModel: listModel, route: route
                 )
             }
             .navigationDestination(isPresented: $showNewMatch) {
@@ -182,25 +177,13 @@ struct HomeView: View {
                     )
                 case .finished(let scoreLogId, let attach):
                     MatchView(
-                        rally: rally, analyze: analyze, localAnalysis: localAnalysis,
+                        rally: rally, analyze: analyze, localAnalysis: localAnalysis, listModel: listModel,
                         route: MatchRoute(scoreLogId: scoreLogId, videoId: nil, attach: attach)
                     )
                 }
             }
-            .navigationDestination(item: $localPlayerRoute) { route in
-                LocalPlayerView(
-                    rally: rally, analyze: analyze,
-                    localAnalysis: localAnalysis, entryId: route.entryId
-                )
-            }
-            .navigationDestination(item: $localClipsRoute) { route in
-                LocalClipsView(localAnalysis: localAnalysis, entryId: route.entryId)
-            }
-            // The same screen the Matches tab and the Analytics tab both push,
-            // not two: both routes to one heatmap render `AnalyticsDetailView`,
-            // so there is one resolution of which track to draw rather than
-            // two. `fallbackTitle` because both rows carry a title now that
-            // Analytics pushes this too, not only the Matches tab's list.
+            // The Analytics tab's heatmap page. `fallbackTitle` because the
+            // Analytics row carries the match's title.
             .navigationDestination(item: $analyticsDetailRoute) { route in
                 AnalyticsDetailView(
                     rally: rally, localAnalysis: localAnalysis, entryId: route.entryId,
@@ -350,8 +333,7 @@ struct HomeView: View {
     /// `isHomeFront`, shared with androidApp.
     private var nothingAbove: Bool {
         !showLabels && !showNewMatch && !showAddSheet && !showRecorder && !showImporter
-            && courtMarkingRoute == nil && matchRoute == nil && localPlayerRoute == nil
-            && localClipsRoute == nil && analyticsDetailRoute == nil
+            && courtMarkingRoute == nil && matchRoute == nil && analyticsDetailRoute == nil
             && createFlowTarget == nil && detailsTarget == nil && !listOverlayOpen
     }
 
@@ -392,8 +374,6 @@ struct HomeView: View {
     private func goToMatches() {
         courtMarkingRoute = nil
         matchRoute = nil
-        localPlayerRoute = nil
-        localClipsRoute = nil
         analyticsDetailRoute = nil
         createFlowTarget = nil
         showLabels = false

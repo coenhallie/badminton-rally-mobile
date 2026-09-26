@@ -12,9 +12,6 @@ struct MatchesTabView: View {
     let heroPaused: Bool
     let onMatchTap: (MatchRoute) -> Void
     let onCourtMarking: (CourtMarkingRoute) -> Void
-    let onLocalPlayer: (LocalPlayerRoute) -> Void
-    let onLocalClips: (LocalClipsRoute) -> Void
-    let onAnalyticsDetail: (AnalyticsDetailRoute) -> Void
     let onOverlayChange: (Bool) -> Void
     let onAdd: () -> Void
 
@@ -27,8 +24,6 @@ struct MatchesTabView: View {
             MatchesList(
                 rally: rally, analyze: analyze, intake: intake, model: model,
                 onMatchTap: onMatchTap, onCourtMarking: onCourtMarking,
-                onLocalPlayer: onLocalPlayer, onLocalClips: onLocalClips,
-                onAnalyticsDetail: onAnalyticsDetail,
                 heroPaused: heroPaused, onOverlayChange: onOverlayChange
             )
         }

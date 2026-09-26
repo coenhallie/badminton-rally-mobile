@@ -121,6 +121,10 @@ struct AnalyticsDetailView: View {
     var body: some View {
         let entry = rally.localVideos.get(id: entryId)
         AnalysisSection(rally: rally, localAnalysis: localAnalysis, analysisId: entryId)
+            // The gap the match page puts above the section, which draws from
+            // its own top edge.
+            .padding(.top, MatchPageLayout.sectionGap)
+            .background(Shuttl.bg)
             .navigationBarTitleDisplayMode(.inline)
             .shuttlNavigationBarBackground()
             .toolbar {

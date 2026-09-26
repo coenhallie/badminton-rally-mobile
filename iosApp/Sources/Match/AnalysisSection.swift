@@ -91,8 +91,9 @@ struct AnalysisSection: View {
                         // page's section row, and must not read as its peer.
                         secondary: true
                     )
+                    // No top padding, here or on the heading below: the page
+                    // puts `MatchPageLayout.sectionGap` above every section.
                     .padding(.horizontal, ShuttlGutter.page)
-                    .padding(.top, 8)
                     .padding(.bottom, 16)
                 } else {
                     // Styled as a small uppercase section label, not as a title:
@@ -103,7 +104,7 @@ struct AnalysisSection: View {
                         .shuttlType(ShuttlType.labelSmall)
                         .foregroundStyle(Shuttl.textSecondary)
                         .padding(.horizontal, ShuttlGutter.page)
-                        .padding(.vertical, 12)
+                        .padding(.bottom, 12)
                 }
                 switch panel {
                 case .heatmap:

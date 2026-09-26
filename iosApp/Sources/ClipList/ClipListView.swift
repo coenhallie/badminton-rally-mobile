@@ -10,9 +10,9 @@ import Shared
 ///
 /// HomeView owns every navigation destination this list used to register
 /// (including `CreateFlowDestination` - see `HomeView.swift`'s own copy of its
-/// doc comment) and hands this view closures instead: `onMatchTap`,
-/// `onCourtMarking` and `onLocalPlayer` report a tap upward so it can drive
-/// its own `item:` bindings, the same shape `CreateFlowDestination` depends on.
+/// doc comment) and hands this view closures instead: `onMatchTap` and
+/// `onCourtMarking` report a tap upward so it can drive its own `item:`
+/// bindings, the same shape `CreateFlowDestination` depends on.
 struct MatchesList: View {
     let rally: RallyApp
     let analyze: AnalyzeCoordinator
@@ -30,11 +30,6 @@ struct MatchesList: View {
     let model: ClipListModel
     let onMatchTap: (MatchRoute) -> Void
     let onCourtMarking: (CourtMarkingRoute) -> Void
-    let onLocalPlayer: (LocalPlayerRoute) -> Void
-    /// The two destinations an on-device run's own output lives at, reported
-    /// upward like every other one this list carries. Home owns them.
-    let onLocalClips: (LocalClipsRoute) -> Void
-    let onAnalyticsDetail: (AnalyticsDetailRoute) -> Void
     /// The empty state's hero ticker stops while this tab is not on screen or
     /// something is pushed over it.
     let heroPaused: Bool
@@ -285,12 +280,10 @@ struct MatchesList: View {
 
     // MARK: - What a row does
 
+    /// Every row opens its match page, whatever the match has: see
+    /// `matchPageSections`. Mirrors androidApp's `onOpenMatch`.
     private func open(_ item: MatchListItem) {
-        if item.opensLocalPlayer, let entryId = item.entryId {
-            onLocalPlayer(LocalPlayerRoute(entryId: entryId))
-        } else if item.scoreLogId != nil || item.videoId != nil {
-            onMatchTap(MatchRoute(scoreLogId: item.scoreLogId, videoId: item.videoId))
-        }
+        onMatchTap(MatchRoute(scoreLogId: item.scoreLogId, videoId: item.videoId, entryId: item.entryId))
     }
 
     /// Every action goes by the row's own entry, never by looking it up again
@@ -327,16 +320,6 @@ struct MatchesList: View {
         let copy = MatchListCopy.shared
         if item.canShare, let videoId = item.videoId {
             items.append(RowMenuItem(label: copy.MENU_SHARE) { shareTarget = ShareTarget(videoId: videoId) })
-        }
-        if item.deviceClipCount > 0, let entryId = item.entryId {
-            items.append(RowMenuItem(label: copy.menuDeviceClips(count: item.deviceClipCount)) {
-                onLocalClips(LocalClipsRoute(entryId: entryId))
-            })
-        }
-        if let heatmapId = item.heatmapId {
-            items.append(RowMenuItem(label: copy.MENU_HEATMAP) {
-                onAnalyticsDetail(AnalyticsDetailRoute(entryId: heatmapId, title: item.title))
-            })
         }
         if item.canEditDetails, let entry = model.localEntries.first(where: { $0.id == item.entryId }) {
             items.append(RowMenuItem(label: copy.MENU_EDIT_DETAILS) {
