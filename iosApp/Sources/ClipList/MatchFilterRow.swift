@@ -14,7 +14,7 @@ struct MatchFilterRow: View {
     var body: some View {
         HStack(spacing: 0) {
             if showChips {
-                // One line at the drawer's width; at a large text size it
+                // One line at the tab's width; at a large text size it
                 // scrolls rather than wrapping into a second row of chips.
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
@@ -47,17 +47,17 @@ struct MatchFilterRow: View {
         }
     }
 
-    /// The row's trailing inset in the drawer: a card's edge plus its padding,
+    /// The row's trailing inset in the list: a card's edge plus its padding,
     /// less the 12pt the info glyph sits inside its centred 44pt box.
     static let trailingInset = DrawerList.sideMargin + DrawerList.rowPaddingH - 12
 
-    /// One filter, as a pill: three radio choices on the panel itself, outlined
+    /// One filter, as a pill: three radio choices on the card itself, outlined
     /// until chosen. The drawn pill is about 30pt tall; the hit area around it
     /// is the row's full 44pt, taken by a clear frame outside the drawn shape.
     ///
     /// bodySmall with 10pt sides rather than the labelMedium and 12pt Android
     /// uses: measured in Archivo, the three pills are then 229pt with their
-    /// gaps, and the drawer leaves them 234pt beside the info button. In
+    /// gaps, and the row leaves them 234pt beside the info button. In
     /// labelMedium they came to 257pt and "Not analyzed" sat half under the
     /// scroll edge at rest.
     private func pill(_ text: String, _ filter: MatchListFilter) -> some View {

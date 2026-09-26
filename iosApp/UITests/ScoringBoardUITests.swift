@@ -132,16 +132,17 @@ final class ScoringBoardUITests: XCTestCase {
         // rather than reporting a failure that says nothing about the board.
         // The same guard LabelSwatchGridUITests uses, and for the same reason.
         //
-        // Gated on the drawer control rather than on the pill this test goes on
-        // to tap: those are both on Home, so either would prove the app is
-        // signed in, but skipping on the pill's own absence would turn renaming
-        // or losing it into a silent skip instead of the failure it should be.
-        guard app.buttons["Menu"].firstMatch.waitForExistence(timeout: 15) else {
+        // Gated on the tab bar rather than on the Add button this test goes on
+        // to tap: the tab bar only exists behind sign-in, so it proves the app
+        // is signed in without also being the control a rename or a loss of
+        // "Add match" would need to fail on instead of silently skip.
+        guard app.tabBars.buttons["Settings"].firstMatch.waitForExistence(timeout: 15) else {
             throw XCTSkip("not signed in on this simulator - cannot reach the board")
         }
-        // "Add" was the list's own toolbar icon; Home replaced it with the
-        // "Add new match" pill, which opens the same three-row sheet.
-        app.buttons["Add new match"].firstMatch.tap()
+        // "Add" was the list's own toolbar icon, then Home's "Add new match"
+        // pill; the Matches tab's own round "Add match" button opens the same
+        // three-row sheet now.
+        app.buttons["Add match"].firstMatch.tap()
         let newMatch = app.buttons["New match"].firstMatch
         XCTAssertTrue(newMatch.waitForExistence(timeout: 5), "the add sheet did not open")
         newMatch.tap()
@@ -199,10 +200,11 @@ final class ScoringBoardUITests: XCTestCase {
     /// back to a clean device stays red for a reason that is not about the board.
     private func deleteMatch(_ app: XCUIApplication) throws {
         app.buttons["Back"].firstMatch.tap()
-        // Back lands on Home, not the list: the list is now behind the
-        // drawer, so it takes the hamburger to reach the row this test needs.
-        app.buttons["Open matches"].firstMatch.tap()
-        // Scrolled to, not assumed on screen. The drawer lists videos on this
+        // Back lands on the tab host, on the Matches tab the board was created
+        // from, with the list already on screen - no hamburger, no drawer to
+        // open first.
+        //
+        // Scrolled to, not assumed on screen. The list carries videos on this
         // phone above matches, and a SwiftUI List is lazy, so a row below the
         // fold is not in the accessibility tree at all. This test used to pass
         // only because the device happened to hold one local video; it fails on

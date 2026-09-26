@@ -9,11 +9,11 @@ struct RowMenuItem: Identifiable {
     var id: String { label }
 }
 
-/// One match in the drawer: thumbnail, title, detail, players, the status
-/// line, then whatever the match is asking of the coach.
+/// One match on the Matches tab's list: thumbnail, title, detail, players, the
+/// status line, then whatever the match is asking of the coach.
 ///
-/// The drawer keeps exactly one raised surface, and since the list became one
-/// list it marks "needs something from you" (`MatchListItem.isRaised`) rather
+/// The list keeps exactly one raised surface, and since it became one list it
+/// marks "needs something from you" (`MatchListItem.isRaised`) rather
 /// than "on this phone", which the status line now says. Every other row is
 /// the quiet inset box, transparent until pressed. Mirrors androidApp's
 /// MatchListRow.kt.
@@ -21,7 +21,7 @@ struct RowMenuItem: Identifiable {
 /// The text column is the row's inner width less the thumbnail, its gap and
 /// the menu, with no gap of its own before the menu: the 44pt menu box is
 /// trailing-aligned, so its glyph already sits well clear of the text. Measured
-/// on the iPhone 17 Pro drawer: 250pt inside the row padding, 130pt for the
+/// on the iPhone 17 Pro: 250pt inside the row padding, 130pt for the
 /// text. The old local card spent 24pt more on the gaps either side of a
 /// Spacer, which left 106pt, too narrow for a full status line.
 struct MatchListRowView: View {

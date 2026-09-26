@@ -5,13 +5,14 @@ import SwiftUI
 /// runs left on disk, so `model.matchList` never goes stale.
 ///
 /// Applied exactly once, on `HomeView`'s own `NavigationStack` - the common
-/// parent of `MatchesList` and `AnalyticsListView`, which stays mounted for
-/// the app's whole life regardless of which destination is pushed on top of
-/// it. It used to live on `MatchesList` alone, then on both `MatchesList` and
-/// `AnalyticsListView`: the first left the model looking no different when
-/// Analytics pushed on top, because the drawer underneath it never actually
-/// stops running its own modifiers in a `NavigationStack` - so applying it a
-/// second time on `AnalyticsListView` did not fix a staleness problem, it
+/// parent of every tab, which stays mounted for the app's whole life
+/// regardless of which destination is pushed on top of it. It used to live on
+/// `MatchesList` alone, then on both `MatchesList` and `AnalyticsListView`:
+/// the first left the model looking no different once Analytics could be
+/// reached its own way, because the Matches tab underneath never actually
+/// stops running its own modifiers - a `TabView` keeps every tab mounted, and
+/// before that a `NavigationStack` push behaved the same way - so applying it
+/// a second time on `AnalyticsListView` did not fix a staleness problem, it
 /// just ran the same two probes twice at once, redundantly. One instance, on
 /// the one view that is always there, is both correct and cheaper. The model
 /// still does not bridge `LocalAnalysisRunner`'s `@Observable` properties into

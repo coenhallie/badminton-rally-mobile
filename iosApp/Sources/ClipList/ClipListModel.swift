@@ -6,9 +6,9 @@ final class ClipListModel {
     let rally: RallyApp
     let analyze: AnalyzeCoordinator
     private(set) var clips: [RallyClip] = []
-    /// The drawer's and Analytics' rows: one per match wherever its video is, built by the
-    /// shared `buildMatchList` from everything below, so this list and
-    /// Android's cannot disagree about what a match is or what it has.
+    /// The Matches tab's and Analytics' rows: one per match wherever its video
+    /// is, built by the shared `buildMatchList` from everything below, so this
+    /// list and Android's cannot disagree about what a match is or what it has.
     private(set) var matchList = MatchList(mine: [], shared: [])
     /// The single source of truth for every video on this phone. `ClipListView`
     /// reads this rather than keeping its own copy, so the rows and the attach

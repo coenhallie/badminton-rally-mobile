@@ -163,9 +163,9 @@ struct MatchView: View {
 
     // This match's video, when it is the coach's own, as `MatchGrouping.matches`
     // folds its clips: the clips' owner decides (every clip of a video has the
-    // same one), the same fact the drawer's shared builder reads for its row's
-    // `isOwned` and so for its share button. `MatchGrouping` stays for this
-    // page's `MatchSummary`; the drawer no longer builds one.
+    // same one), the same fact the Matches tab list's shared builder reads for
+    // its row's `isOwned` and so for its share button. `MatchGrouping` stays
+    // for this page's `MatchSummary`; the list no longer builds one.
     private var ownedVideo: MatchSummary? {
         guard let effectiveVideoId else { return nil }
         let (owned, _) = MatchGrouping.matches(

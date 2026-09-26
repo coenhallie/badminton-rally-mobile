@@ -1,21 +1,21 @@
 import Foundation
 import Shared
 
-/// Which of the drawer's own two sections a row belongs to, in display order.
-/// Port of Android's `AnalyticsGroup`.
+/// Which of the Matches tab's own two sections a row belongs to, in display
+/// order. Port of Android's `AnalyticsGroup`.
 ///
-/// Two, not the three this used to be (local videos, owned matches, shared):
-/// the shared builder already folds a match's local video and its cloud clips
-/// into one `MatchListItem` regardless of where the file is, so "on this
-/// phone" versus "my matches" was never a distinction between two different
-/// *matches* here, only between two ways the same row's `MatchStatusLine`
-/// draws its where-glyphs.
+/// Two, not the drawer era's earlier three (local videos, owned matches,
+/// shared): the shared builder already folds a match's local video and its
+/// cloud clips into one `MatchListItem` regardless of where the file is, so
+/// "on this phone" versus "my matches" was never a distinction between two
+/// different *matches* here, only between two ways the same row's
+/// `MatchStatusLine` draws its where-glyphs.
 enum AnalyticsGroup: CaseIterable {
     case mine
     case shared
 
-    /// `nil` for `.mine`: the drawer does not label its own matches either,
-    /// only the shared ones.
+    /// `nil` for `.mine`: the Matches tab's list does not label its own
+    /// matches either, only the shared ones.
     var label: String? {
         switch self {
         case .mine:   return nil
@@ -30,7 +30,8 @@ enum AnalyticsGroup: CaseIterable {
 enum AnalyseAffordance: Equatable {
     /// Nothing is running: the button is live.
     case ready
-    /// A run is under way. `phase` is the drawer's own wording for that stage.
+    /// A run is under way. `phase` is the Matches tab list's own wording for
+    /// that stage.
     case inProgress(phase: String)
     /// The last attempt ended in a failure, with the pipeline's own message.
     case failed(reason: String)
@@ -61,8 +62,9 @@ enum AnalyseAction: Equatable {
 }
 
 /// One row of the Analytics list, one per `MatchListItem` in the shared match
-/// list - the same rows, in the same order, the drawer draws, because both
-/// read the one `MatchList` the shared builder produces from the same inputs.
+/// list - the same rows, in the same order, the Matches tab draws, because
+/// both read the one `MatchList` the shared builder produces from the same
+/// inputs.
 ///
 /// `entryId` is nil only when `state` is `.notOnDevice` with no video to point
 /// at (a score-only match, or a shared match) - inert either way.
@@ -202,8 +204,8 @@ func analyseAction(for entry: LocalVideoEntry) -> AnalyseAction {
 
 /// Builds the Analytics list's rows: one per `MatchListItem` in `matchList`,
 /// the coach's own matches first and shared ones after - the same rows, in the
-/// same order, the drawer draws, because both read the one `MatchList` the
-/// shared builder produces from the same inputs.
+/// same order, the Matches tab draws, because both read the one `MatchList`
+/// the shared builder produces from the same inputs.
 ///
 /// `analyticsRowState` alone decides READY / READY_NO_VIDEO / ANALYSABLE /
 /// NOT_ON_DEVICE, from the two facts the item already carries - whether it has
@@ -216,8 +218,8 @@ func analyseAction(for entry: LocalVideoEntry) -> AnalyseAction {
 /// the one distinction `MatchListItem.action` does not carry a matching
 /// affordance for. A READY row's own liveness is not lost by skipping it here:
 /// it already reaches the screen through the item's own `action`/`statusText`,
-/// which `MatchStatusLine` draws for every row, the same component the drawer
-/// uses for the same fields.
+/// which `MatchStatusLine` draws for every row, the same component the
+/// Matches tab uses for the same fields.
 ///
 /// Port of Android's `buildAnalyticsRows`. No `storedTrackIds` parameter:
 /// Android dropped it once the shared builder started writing `heatmapId`

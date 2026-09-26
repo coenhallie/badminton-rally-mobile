@@ -17,9 +17,9 @@ struct HeroTickerView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Paused whenever the caller decides this hero is not usefully on
-    /// screen - Home's own copy while the drawer covers it, and the empty
-    /// Matches tab's copy while something is pushed over it or another tab is
-    /// front. An animation nobody can see still costs a wake per tick.
+    /// screen - the empty Matches tab's copy while something is pushed over
+    /// it or another tab is front. An animation nobody can see still costs a
+    /// wake per tick.
     let isPaused: Bool
 
     private let dwell: Duration = .milliseconds(2600)
@@ -77,7 +77,7 @@ struct HeroTickerView: View {
         guard !reduceMotion, !isPaused else { return }
         // This task can be cancelled between `leaving = true` and
         // `leaving = false` (the caller flipping `isPaused` mid-transition -
-        // the drawer opening over Home's copy, say - does exactly that).
+        // a push covering the Matches tab, say - does exactly that).
         // Without this reset, a cancellation caught there leaves the
         // second line invisible until the next full dwell-and-transition
         // cycle completes.

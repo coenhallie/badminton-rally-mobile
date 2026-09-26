@@ -9,7 +9,7 @@ final class LocalThumbnails {
     /// Ids `load` tried and produced nothing for: a missing file, a codec
     /// `AVAssetImageGenerator` cannot decode, or a permission revoked under
     /// the app. Distinct from an id simply absent from `images`, which has
-    /// either not been asked for yet or is still decoding - the drawer's row
+    /// either not been asked for yet or is still decoding - the list's row
     /// needs that difference to fall through to the cloud's cover clip
     /// instead of sitting on an empty slot forever.
     private(set) var failed: Set<String> = []

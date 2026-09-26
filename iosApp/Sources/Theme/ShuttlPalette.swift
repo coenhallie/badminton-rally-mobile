@@ -21,7 +21,7 @@ enum ShuttlPalette {
     /// card underneath it. Equal to `bgSecondary` in light, where the palette
     /// has less room between tones; a shade lighter than either `bgSecondary`
     /// or `bgTertiary` in dark. Mirrors androidApp's ShuttlPalette.bgRaised,
-    /// which the drawer's menus and dialogs use so they stop drawing
+    /// which the app's own menus and dialogs use so they stop drawing
     /// Material's own lavender container colour.
     ///
     /// `textTertiary` reads below the 4.5:1 body floor here in dark

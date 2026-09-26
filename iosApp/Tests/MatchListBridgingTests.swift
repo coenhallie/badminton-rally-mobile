@@ -8,7 +8,7 @@ import XCTest
 /// platform's device-run state reduced to the list's.
 ///
 /// The builder's own rules are pinned in shared's MatchListBuilderTest; this
-/// only pins the shape the drawer compiles against.
+/// only pins the shape the Matches tab's list compiles against.
 final class MatchListBridgingTests: XCTestCase {
 
     private func entry(id: String, stage: AnalyzeStage) -> LocalVideoEntry {

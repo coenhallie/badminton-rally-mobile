@@ -149,8 +149,8 @@ final class AnalyticsRowsTests: XCTestCase {
         // Subtitle is `item.detail` for every row - score, rallies, date - the
         // same text for a named and an unnamed match alike. The players line
         // is its own field on the item (`playersLine`, drawn under the
-        // subtitle the same way the drawer draws it) rather than replacing the
-        // score/date line.
+        // subtitle the same way the Matches tab draws it) rather than replacing
+        // the score/date line.
         let unnamed = rows(logs: [log(id: "log1", points: 3)])
         XCTAssertNil(unnamed[0].item.playersLine)
         XCTAssertEqual(unnamed[0].subtitle, unnamed[0].item.detail)
@@ -259,7 +259,7 @@ final class AnalyticsRowsTests: XCTestCase {
 
     // MARK: - analyseAffordance (independent of buildAnalyticsRows)
 
-    func testAnUploadingRunSpeaksInTheDrawersOwnWording() {
+    func testAnUploadingRunSpeaksInTheMatchesTabListsOwnWording() {
         XCTAssertEqual(
             analyseAffordance(
                 for: entry(id: "e1", stage: .uploading),
@@ -270,7 +270,7 @@ final class AnalyticsRowsTests: XCTestCase {
         )
     }
 
-    func testAProcessingRunSpeaksInTheDrawersOwnWording() {
+    func testAProcessingRunSpeaksInTheMatchesTabListsOwnWording() {
         XCTAssertEqual(
             analyseAffordance(
                 for: entry(id: "e1", stage: .processing),

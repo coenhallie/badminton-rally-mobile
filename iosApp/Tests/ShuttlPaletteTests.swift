@@ -147,10 +147,10 @@ final class ShuttlPaletteTests: XCTestCase {
 
     /// The match list's analysis glyphs are the only thing saying which analysis
     /// a match has, so they are held to the 3:1 non-text floor on their chip, on
-    /// every surface a chip is drawn over: the quiet row and the drawer (bg),
-    /// the raised card (bgTertiary) and the legend sheet (bgSecondary). The
-    /// accent itself only makes 2.4:1 there in light, which is why the glyph is
-    /// its own token. Mirrors androidApp's ShuttlPaletteTest.
+    /// every surface a chip is drawn over: the quiet row and the tab's own
+    /// background (bg), the raised card (bgTertiary) and the legend sheet
+    /// (bgSecondary). The accent itself only makes 2.4:1 there in light, which
+    /// is why the glyph is its own token. Mirrors androidApp's ShuttlPaletteTest.
     func testAnalysisGlyphReadsOnItsChipOnEveryRowSurface() {
         func blend(_ fg: UInt32, _ bg: UInt32, _ alpha: Double) -> UInt32 {
             func mix(_ shift: UInt32) -> UInt32 {

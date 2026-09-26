@@ -17,11 +17,13 @@ final class VideoMatchDetailsUITests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
 
-        guard app.buttons["Menu"].firstMatch.waitForExistence(timeout: 15) else {
+        // Gated on the tab bar, which only exists behind sign-in, rather than on
+        // a control this test otherwise needs - the Matches tab's list is on
+        // screen at launch, with nothing to open first.
+        guard app.tabBars.buttons["Settings"].firstMatch.waitForExistence(timeout: 15) else {
             throw XCTSkip("not signed in on this simulator - cannot reach a match")
         }
-        app.buttons["Open matches"].firstMatch.tap()
-        // Scrolled to, not assumed on screen: the drawer lists the videos on this
+        // Scrolled to, not assumed on screen: the list carries the videos on this
         // phone above the matches, and a SwiftUI List is lazy, so a row below the
         // fold is not in the accessibility tree at all - see ScoringBoardUITests.
         let row = app.staticTexts["cloudia"].firstMatch

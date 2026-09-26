@@ -16,18 +16,20 @@ final class ReplayPlayerUITests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
 
-        guard app.buttons["Menu"].firstMatch.waitForExistence(timeout: 15) else {
+        // Gated on the tab bar, which only exists behind sign-in, rather than on
+        // a control this test otherwise needs - the Matches tab's list is on
+        // screen at launch, with nothing to open first.
+        guard app.tabBars.buttons["Settings"].firstMatch.waitForExistence(timeout: 15) else {
             throw XCTSkip("not signed in on this simulator - cannot reach a player")
         }
-        app.buttons["Open matches"].firstMatch.tap()
         let video = app.staticTexts["Chrome fixture"].firstMatch
         guard video.waitForExistence(timeout: 5) else {
             throw XCTSkip("the fixture video is not on this simulator")
         }
-        // The row exists before the drawer has finished sliding in, and off screen
-        // it cannot be tapped.
+        // The row can exist in the accessibility tree before the list has
+        // finished laying out on launch, and off screen it cannot be tapped.
         let onScreen = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isHittable == true"), object: video)
-        XCTAssertEqual(XCTWaiter().wait(for: [onScreen], timeout: 5), .completed, "the drawer did not open")
+        XCTAssertEqual(XCTWaiter().wait(for: [onScreen], timeout: 5), .completed, "the row never became tappable")
         video.tap()
 
         // (b): a gear, not "1x", on the card - and the speed in the transport row.
