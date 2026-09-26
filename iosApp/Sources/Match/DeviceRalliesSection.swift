@@ -8,10 +8,9 @@ import SwiftUI
 ///
 /// Only for a match with no cloud clips: when both exist the cloud clips are the
 /// rallies, the rule the row's own rally count follows. Drawn as the cloud rally
-/// rows are (a plain list of full-width rows under separators, the rally's name
-/// over a small caps line, the page's gutter) so a match's rallies look the same
-/// wherever they were cut, less the thumbnail and the note count, which device
-/// clips do not have yet. They had been rounded cards with a play glyph, which
+/// rows are (`RallyRowLabel` in a plain list, under separators, in the page's
+/// gutter) so a match's rallies look the same wherever they were cut, less the
+/// thumbnail and the note count, which device clips do not have yet. They had been rounded cards with a play glyph, which
 /// read as a different kind of thing from the cloud list one match over.
 ///
 /// They exist so the two pipelines can be judged on what they actually produce.
@@ -45,22 +44,9 @@ struct DeviceRalliesSection: View {
             }
             ForEach(clips) { clip in
                 Button { playing = clip } label: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(deviceClipTitle(clip))
-                            .shuttlType(ShuttlType.titleMedium)
-                            .foregroundStyle(Shuttl.text)
-                        if let length = deviceClipLength(clip) {
-                            Text(length.uppercased())
-                                .shuttlType(ShuttlType.labelSmall)
-                                .foregroundStyle(Shuttl.textSecondary)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
+                    RallyRowLabel(title: deviceClipTitle(clip), meta: deviceClipLength(clip))
                 }
-                .listRowInsets(DeviceRallyRow.insets)
-                .listRowSeparatorTint(Shuttl.border)
-                .listRowBackground(Color.clear)
+                .rallyListRow()
             }
         }
         .listStyle(.plain)
@@ -84,12 +70,6 @@ struct DeviceRalliesSection: View {
             LocalClipPlayerSheet(clip: clip)
         }
     }
-}
-
-/// A rally row's insets: the page's gutter either side, and Android's
-/// `MatchRowInset` above and below, the inset its cloud rally rows take too.
-private enum DeviceRallyRow {
-    static let insets = EdgeInsets(top: 14, leading: ShuttlGutter.page, bottom: 14, trailing: ShuttlGutter.page)
 }
 
 /// "Rally #3", the cloud rally row's own name for a rally (`clipRowTitle`), so a

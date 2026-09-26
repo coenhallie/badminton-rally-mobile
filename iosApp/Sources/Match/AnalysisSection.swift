@@ -125,12 +125,15 @@ struct AnalysisSection: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(Shuttl.bg)
-        .task { await reload() }
+        // Both keyed on the id they read: the page's `analysisId` moves from
+        // the entry to the heatmap's own id when a run lands while it is open,
+        // and a task that kept the old one would go on drawing the old match.
+        .task(id: analysisId) { await reload() }
         // The clip cache, watched rather than read once: it refreshes
         // asynchronously after a cloud run, and the Base panel's windows come
         // out of it. Reading it only on open left the panel missing for the
         // seconds between the section appearing and the clips landing.
-        .task {
+        .task(id: analysisId) {
             for await latest in rally.clips.observeClips() {
                 cloudClips = latest
                 await reload()

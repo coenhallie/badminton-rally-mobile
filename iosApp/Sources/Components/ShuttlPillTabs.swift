@@ -30,11 +30,15 @@ import UIKit
 /// Analysis's own.
 ///
 /// A primary row shrinks its labels on a narrow phone at a large text size, and a
-/// secondary one under it could then come out the larger of the two. `ceilingFor`
-/// is the row that sets the most the secondary rows under it may draw: it records
-/// its own label size there, and every secondary row inside a
-/// `.environment(\.pillLabelCeiling, ...)` holding that ceiling draws no larger.
-/// The match page's section row sets it for the whole of its sections.
+/// secondary one under it could then come out the larger of the two. A row with
+/// `setsCeiling` publishes its drawn label size as a preference; a view carrying
+/// `.pillLabelCeilingHost()` collects it and hands it down through the
+/// environment, and every secondary row inside that view draws no larger. The
+/// match page wires it once: its section row takes `setsCeiling: true`, and the
+/// stack holding that row and the section under it takes
+/// `.pillLabelCeilingHost()`. A preference rather than a shared object the row
+/// writes into: it goes with the row when the row goes (one section left, a
+/// pop), and comes back with it, with no last write to go stale.
 ///
 /// `labels` and `selectedIndex` rather than a generic over the caller's enum: the
 /// callers keep their own type and pass its labels, which keeps this file free of
@@ -47,7 +51,10 @@ struct ShuttlPillTabs: View {
     /// that carried one.
     var accessibilityLabel: String? = nil
     var secondary: Bool = false
-    var ceilingFor: PillLabelCeiling? = nil
+    /// Whether this row sets the ceiling for the secondary rows under the
+    /// nearest `.pillLabelCeilingHost()`. For a primary row; a secondary row
+    /// that set it would be capping itself.
+    var setsCeiling: Bool = false
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.pillLabelCeiling) private var ceiling
@@ -97,13 +104,12 @@ struct ShuttlPillTabs: View {
         .background(Shuttl.bgSecondary)
         .clipShape(Capsule())
         .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { trackWidth = $0 }
-        .onChange(of: fit.labelPoints, initial: true) { _, points in
-            ceilingFor?.points = points
-        }
-        // A row that goes (the match page drops its section row when one
-        // section is left) must not go on holding the rows under it to the
-        // size it last drew at.
-        .onDisappear { ceilingFor?.points = .infinity }
+        // Infinity is no ceiling, and what every row that does not set one
+        // contributes: the key keeps the smallest.
+        .preference(
+            key: PillLabelCeilingPreference.self,
+            value: setsCeiling && !secondary ? fit.labelPoints : .infinity
+        )
         .accessibilityElement(children: .contain)
         .accessibilityLabel(accessibilityLabel ?? "")
     }
@@ -159,13 +165,15 @@ struct ShuttlPillTabs: View {
             max: Metrics.tabPaddingH
         )
         let limit = pillWidth - padding * 2
-        var scale = pillLabelScale(limit: limit, measure: widestWord)
-        // Only a secondary row is held under a ceiling; reading it here is what
-        // redraws the row when the primary above it changes size.
-        if secondary, let ceiling {
-            let cap = ceiling.points
-            scale = min(scale, pillLabelScale(limit: cap) { points(base.size * $0) })
-        }
+        // Only a secondary row is held under a ceiling; reading it from the
+        // environment is what redraws the row when the primary above it
+        // changes size.
+        let scale = pillRowScale(
+            widthLimit: limit,
+            widestWord: widestWord,
+            ceiling: secondary ? ceiling : .infinity,
+            labelSize: { points(base.size * $0) }
+        )
         return PillFit(
             role: scale < 1 ? base.at(size: base.size * scale) : base,
             padding: padding,
@@ -195,7 +203,7 @@ struct ShuttlPillTabs: View {
 }
 
 /// What a row draws at: its label role, its pills' side padding, the label's
-/// drawn size in points (what a ceiling records), and whether every word fits
+/// drawn size in points (what a ceiling-setting row publishes), and whether every word fits
 /// its pill at that size.
 private struct PillFit {
     let role: ShuttlType.Role
@@ -204,25 +212,46 @@ private struct PillFit {
     let fits: Bool
 }
 
-/// The label size, in points as drawn, of the primary row that secondary rows
-/// under it may not exceed. See `ShuttlPillTabs`' `ceilingFor`. Unbounded until
-/// that row has drawn, and on a page that has none.
-@MainActor
-@Observable
-final class PillLabelCeiling {
-    var points: CGFloat = .infinity
+/// The label size, in points as drawn, of the row that sets the ceiling. The
+/// smallest wins, so a row that sets none contributes infinity.
+struct PillLabelCeilingPreference: PreferenceKey {
+    static let defaultValue: CGFloat = .infinity
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = min(value, nextValue())
+    }
 }
 
 private struct PillLabelCeilingKey: EnvironmentKey {
-    static let defaultValue: PillLabelCeiling? = nil
+    static let defaultValue: CGFloat = .infinity
 }
 
 extension EnvironmentValues {
-    /// The ceiling the secondary pill rows below read. Nil where no primary row
-    /// sets one.
-    var pillLabelCeiling: PillLabelCeiling? {
+    /// The most, in points as drawn, a secondary pill row's label may be.
+    /// Infinity, no ceiling, outside a `.pillLabelCeilingHost()` or before its
+    /// row has drawn.
+    var pillLabelCeiling: CGFloat {
         get { self[PillLabelCeilingKey.self] }
         set { self[PillLabelCeilingKey.self] = newValue }
+    }
+}
+
+extension View {
+    /// Collects the ceiling a `setsCeiling` pill row inside this view publishes
+    /// and hands it to every secondary pill row inside it. Goes on the view that
+    /// holds both: on the match page, the stack of the section row and the
+    /// section under it.
+    func pillLabelCeilingHost() -> some View {
+        modifier(PillLabelCeilingHost())
+    }
+}
+
+private struct PillLabelCeilingHost: ViewModifier {
+    @State private var ceiling: CGFloat = .infinity
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.pillLabelCeiling, ceiling)
+            .onPreferenceChange(PillLabelCeilingPreference.self) { ceiling = $0 }
     }
 }
 
@@ -251,4 +280,19 @@ func pillLabelScale(limit: CGFloat, measure: (CGFloat) -> CGFloat) -> CGFloat {
         scale = min(max(scale * limit / size * 0.995, minPillLabelScale), 1)
     }
     return scale
+}
+
+/// A row's one factor: the largest at which its widest word fits `widthLimit`,
+/// held further so its label size, as drawn, comes to no more than `ceiling`.
+/// `widestWord` and `labelSize` take the factor. The two limits are fitted
+/// apart because they measure different things (a word's width, a font's size).
+func pillRowScale(
+    widthLimit: CGFloat,
+    widestWord: (CGFloat) -> CGFloat,
+    ceiling: CGFloat,
+    labelSize: (CGFloat) -> CGFloat
+) -> CGFloat {
+    let fit = pillLabelScale(limit: widthLimit, measure: widestWord)
+    guard ceiling.isFinite else { return fit }
+    return min(fit, pillLabelScale(limit: ceiling, measure: labelSize))
 }

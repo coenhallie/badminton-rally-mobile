@@ -42,11 +42,37 @@ final class ShuttlPillTabsTests: XCTestCase {
         XCTAssertEqual(pillLabelScale(limit: 100, measure: { _ in 0 }), 1)
     }
 
-    /// The ceiling: a secondary row's label size held to the primary's above it.
+    // The ceiling: a secondary row's label size held to the primary's above it,
+    // through the one function the row resolves its factor with.
+
     func testASecondaryLabelIsHeldToThePrimaryLabelSize() {
-        // 11pt at a large text size comes to 14.3pt; a primary shrunk to 12pt.
-        let scale = pillLabelScale(limit: 12, measure: linear(14.3))
+        // 11pt at a large text size draws at 14.3pt, under a primary shrunk to
+        // 12pt; its words fit its pills at full size, so only the ceiling bites.
+        let scale = pillRowScale(
+            widthLimit: 100, widestWord: linear(60),
+            ceiling: 12, labelSize: linear(14.3)
+        )
         XCTAssertLessThanOrEqual(14.3 * scale, 12)
+        XCTAssertEqual(scale, 12 / 14.3, accuracy: 0.01)
+    }
+
+    func testTheNarrowerOfWidthAndCeilingSetsTheFactor() {
+        // The word needs 0.8; the ceiling would allow 0.9. The row takes 0.8,
+        // or the word breaks.
+        let scale = pillRowScale(
+            widthLimit: 80, widestWord: linear(100),
+            ceiling: 18, labelSize: linear(20)
+        )
+        XCTAssertLessThanOrEqual(100 * scale, 80)
+        XCTAssertEqual(scale, 0.8, accuracy: 0.01)
+    }
+
+    func testNoCeilingLeavesTheWidthFitAlone() {
+        // Outside a host, or before the primary row has drawn.
+        XCTAssertEqual(
+            pillRowScale(widthLimit: 120, widestWord: linear(120), ceiling: .infinity, labelSize: linear(40)),
+            1
+        )
     }
 
     func testAPillKeepsItsFullPaddingWhileTheWordFitsInsideIt() {

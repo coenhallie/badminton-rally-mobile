@@ -168,6 +168,7 @@
 		F1EC0CB5A2AD0B2C201B2B23 /* ShuttlPillTabsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77C248E77C3C5C7FC564BF4A /* ShuttlPillTabsTests.swift */; };
 		F34C70DAE58109539EEA2D7B /* AddAnnotationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B46560A5190E75D7D9644D0 /* AddAnnotationSheet.swift */; };
 		F6E6B5EF3C2DEEF79282ADCE /* Archivo-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = A7E5E9D329D5BCA69DF98CB4 /* Archivo-SemiBold.ttf */; };
+		F7509D2B7CD52897A9D362BE /* RallyRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D97CDE8D77081E3E94DAC501 /* RallyRow.swift */; };
 		F7F077E72BE49F51C36A2B78 /* MatchesTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33550DF4960AD64104B3FD98 /* MatchesTabView.swift */; };
 		FAB79A300959A2B5080B2DFF /* CourtCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AFBCE65971EDF3A28170ED3 /* CourtCard.swift */; };
 		FBD81E3F8DC5B517AE143AA3 /* KeepAwakeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A64093BD01220E5A47C287B1 /* KeepAwakeTests.swift */; };
@@ -347,6 +348,7 @@
 		D75E7C46412BEAF4B6640F9D /* PlaybackSettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackSettingsSheet.swift; sourceTree = "<group>"; };
 		D79A4BF9CDA7D689B5D678D0 /* LocalPlayerRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalPlayerRoute.swift; sourceTree = "<group>"; };
 		D8AA053DD42B2C5F92F0EE84 /* ScoringView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoringView.swift; sourceTree = "<group>"; };
+		D97CDE8D77081E3E94DAC501 /* RallyRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RallyRow.swift; sourceTree = "<group>"; };
 		DFA34C0702D7C4F873579DEF /* OnnxSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnnxSession.swift; sourceTree = "<group>"; };
 		E080747F6DAAF21E24B722D6 /* ChipFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChipFlow.swift; sourceTree = "<group>"; };
 		E0C593C73982CBDE7E42D277 /* ClipListModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipListModelTests.swift; sourceTree = "<group>"; };
@@ -389,6 +391,7 @@
 				8C56698E7571E945684C2474 /* MatchView.swift */,
 				70E5927A0FF5276512DACA06 /* PointsFacet.swift */,
 				5EFC41BB1279BF8DAD45DC0C /* RalliesFacet.swift */,
+				D97CDE8D77081E3E94DAC501 /* RallyRow.swift */,
 			);
 			path = Match;
 			sourceTree = "<group>";
@@ -975,6 +978,7 @@
 				7424550AE59BF1354C4DD5F4 /* PrimaryButtonStyle.swift in Sources */,
 				C0A71AC7DE77076139943940 /* RalliesFacet.swift in Sources */,
 				CFC74B86E0256055E87B5EAC /* RallyIOSApp.swift in Sources */,
+				F7509D2B7CD52897A9D362BE /* RallyRow.swift in Sources */,
 				39DA9DB707B5EA1141368278 /* ReplayLabels.swift in Sources */,
 				77F381D4EA05BBFC12F5FFD2 /* RootView.swift in Sources */,
 				CD5E1D2F1D535400CFC04B7C /* SchematicCourtGuide.swift in Sources */,

@@ -28,11 +28,14 @@ struct MatchVideoSection: View {
                 SplashView()
             }
         }
-        .task {
-            // The model is built once; what it observes is restarted on every
-            // appearance. This used to `guard model == nil` around both, so the
-            // loops that pushing court marking cancelled never came back.
-            if model == nil {
+        // Both keyed on the entry they read, so a host that swaps the entry
+        // under this section plays and lists the new one, not the old.
+        .task(id: entryId) {
+            // The model is built once per entry; what it observes is restarted
+            // on every appearance. This used to `guard model == nil` around both,
+            // so the loops that pushing court marking cancelled never came back.
+            if model?.entry.id != entryId {
+                model = nil
                 // A vanished entry is not dismissed here: the page that hosts
                 // this section falls back to another section when the file goes
                 // (`shownSection`), so there is nothing to draw and nothing to do.
@@ -41,7 +44,7 @@ struct MatchVideoSection: View {
             }
             await model?.start()
         }
-        .task {
+        .task(id: entryId) {
             // Keep the entry live (Android observes it the same way): its
             // description is drawn under the player, and an edit made elsewhere
             // must show here, not just on the match list. An entry that goes is
@@ -99,7 +102,7 @@ struct MatchVideoSection: View {
                     .onTapGesture { model.actionError = nil }
             }
 
-            if let description = (liveEntry ?? model.entry).description_ {
+            if let description = shownEntry(model).description_ {
                 Text(description)
                     .shuttlType(ShuttlType.titleMedium)
                     .foregroundStyle(Shuttl.textSecondary)
@@ -166,6 +169,15 @@ struct MatchVideoSection: View {
                 Text(target.body.isEmpty ? "This note" : "\"\(target.body)\"")
             }
         }
+    }
+
+    /// The live entry while it is this model's, else the one the model was
+    /// built from: after the host swaps entries the old live one stands until
+    /// the new entry's first emission, and must not lend the new video its
+    /// description.
+    private func shownEntry(_ model: LocalPlayerModel) -> LocalVideoEntry {
+        if let liveEntry, liveEntry.id == model.entry.id { return liveEntry }
+        return model.entry
     }
 
     private func annotationRow(_ annotation: LocalAnnotation, model: LocalPlayerModel) -> some View {
