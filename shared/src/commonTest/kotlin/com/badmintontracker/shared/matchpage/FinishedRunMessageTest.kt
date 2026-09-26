@@ -1,5 +1,6 @@
 package com.badmintontracker.shared.matchpage
 
+import com.badmintontracker.shared.matchlist.MatchAnalysis
 import com.badmintontracker.shared.matchlist.MatchList
 import com.badmintontracker.shared.matchlist.MatchListItem
 import kotlin.test.Test
@@ -7,10 +8,16 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 class FinishedRunMessageTest {
-    private fun item(key: String, title: String, entryId: String? = null, videoId: String? = null) =
+    private fun item(
+        key: String,
+        title: String,
+        entryId: String? = null,
+        videoId: String? = null,
+        analyses: List<MatchAnalysis> = listOf(MatchAnalysis.RALLIES),
+    ) =
         MatchListItem(
             key = key, sortAtEpochMs = 0, title = title, detail = "", playersLine = null, sharedBy = null,
-            where = null, analyses = emptyList(), statusText = null, statusIsError = false,
+            where = null, analyses = analyses, statusText = null, statusIsError = false,
             action = com.badmintontracker.shared.matchlist.MatchAction.NONE,
             entryId = entryId, videoId = videoId, scoreLogId = null, localUri = null, coverClip = null,
             scoreText = null, isOwned = true, canShare = false, canEditDetails = false, canAnalyzeAgain = false,
@@ -36,5 +43,21 @@ class FinishedRunMessageTest {
 
     @Test fun a_run_whose_match_is_gone_says_nothing() {
         assertNull(finishedRunMessage(setOf("gone"), list))
+    }
+
+    @Test fun a_run_that_found_nothing_is_not_announced() {
+        val empty = item("e3", "Short clip", entryId = "e3", analyses = emptyList())
+        assertNull(finishedRunMessage(setOf("e3"), MatchList(mine = listOf(empty), shared = emptyList())))
+    }
+
+    @Test fun a_score_alone_is_not_an_analysis() {
+        val scored = item("s4", "Club night", entryId = "e4", analyses = listOf(MatchAnalysis.SCORE))
+        assertNull(finishedRunMessage(setOf("e4"), MatchList(mine = listOf(scored), shared = emptyList())))
+    }
+
+    @Test fun among_several_runs_only_the_ones_that_found_something_are_counted() {
+        val empty = item("e3", "Short clip", entryId = "e3", analyses = emptyList())
+        val withEmpty = MatchList(mine = listOf(thu, sat, empty), shared = emptyList())
+        assertEquals(FinishedRunMessage("Thu League is analyzed", thu), finishedRunMessage(setOf("e1", "e3"), withEmpty))
     }
 }
