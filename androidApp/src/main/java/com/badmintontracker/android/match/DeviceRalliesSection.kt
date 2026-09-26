@@ -67,7 +67,7 @@ fun DeviceRalliesSection(entryId: String, localAnalysis: LocalAnalysisRunner, mo
                     )
                 }
             }
-            HorizontalDivider()
+            HorizontalDivider(color = RallyDivider)
         }
     }
 }

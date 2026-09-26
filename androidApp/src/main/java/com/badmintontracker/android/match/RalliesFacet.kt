@@ -8,8 +8,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.badmintontracker.android.cliplist.ClipRow
 import com.badmintontracker.android.cliplist.MatchLabelStrip
@@ -63,14 +65,14 @@ fun LazyListScope.ralliesFacet(
                 summary = summary,
                 onClick = onSummaryClick,
             )
-            HorizontalDivider()
+            HorizontalDivider(color = RallyDivider)
         }
     }
     // One block for both lines, so a match with a players line and a description
     // gets one divider under them rather than a ruled row each.
     if (details != null || description != null) {
         item(key = "match-details") {
-            Column(Modifier.padding(horizontal = MatchPageGutter, vertical = 12.dp)) {
+            Column(Modifier.padding(horizontal = MatchPageGutter, vertical = MatchRowInset)) {
                 details?.let { d ->
                     Text(
                         text = d,
@@ -87,7 +89,7 @@ fun LazyListScope.ralliesFacet(
                     )
                 }
             }
-            HorizontalDivider()
+            HorizontalDivider(color = RallyDivider)
         }
     }
     // Matches MatchClipsScreen's original gate: while a refresh is in flight an
@@ -110,7 +112,15 @@ fun LazyListScope.ralliesFacet(
     } else if (clips.isNotEmpty()) {
         items(clips, key = { it.id }) { clip ->
             ClipRow(clip, media, onClick = { onClipClick(clip) }, matchTitle = matchTitle)
-            HorizontalDivider()
+            HorizontalDivider(color = RallyDivider)
         }
     }
 }
+
+/**
+ * The rule between rally rows, cloud and device alike: the border token, set
+ * here rather than left to DividerDefaults so the two lists cannot drift.
+ */
+internal val RallyDivider: Color
+    @Composable get() = MaterialTheme.colorScheme.outlineVariant
+
