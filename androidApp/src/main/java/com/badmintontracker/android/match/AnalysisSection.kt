@@ -97,9 +97,9 @@ fun AnalysisSection(
                 modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 16.dp),
             )
         } else {
-            // Styled as the list's SectionHeader, not as a title: the label
-            // sits under the page's own section row, and two treatments of the
-            // same thing there reads as two different kinds of heading.
+            // Styled as a small uppercase section label, not as a title: the
+            // label sits under the page's own section row, and two treatments
+            // of the same thing there reads as two different kinds of heading.
             Text(
                 "HEATMAP",
                 style = MaterialTheme.typography.labelSmall,

@@ -97,9 +97,9 @@ fun HeatmapPanel(
     // one is not an option.
     //
     // The disk is read once per entry even when a run is in memory, because that
-    // run may be a pose-less one whose empty track must fall through. This is a
-    // detail screen reached by an explicit tap, so it is one parse per opening,
-    // not the per-row cost the Analytics list had to avoid.
+    // run may be a pose-less one whose empty track must fall through. This is
+    // the match page's Analysis section, reached by an explicit tap, so it is
+    // one parse per opening, not a per-row cost on the list.
     //
     // One parse, and not on the thread drawing the frame: `remember` runs its
     // block during composition, so the megabyte of track this reads was parsed

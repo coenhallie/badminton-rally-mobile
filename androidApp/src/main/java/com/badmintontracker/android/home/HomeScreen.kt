@@ -40,6 +40,7 @@ import com.badmintontracker.shared.matchlist.MatchListItem
 import com.badmintontracker.shared.matchpage.MatchPageCopy
 import com.badmintontracker.shared.matchpage.MatchPageSection
 import com.badmintontracker.shared.matchpage.finishedRunMessage
+import com.badmintontracker.shared.matchpage.matchPageItem
 import com.badmintontracker.shared.matchpage.sectionAfterRun
 import com.badmintontracker.shared.repo.MediaRepository
 import com.badmintontracker.shared.repo.SharesRepository
@@ -119,7 +120,14 @@ fun HomeScreen(
                 actionLabel = item?.let { MatchPageCopy.VIEW },
                 duration = if (item != null) SnackbarDuration.Long else SnackbarDuration.Short,
             )
-            if (result == SnackbarResult.ActionPerformed && item != null) onOpenMatch(item, sectionAfterRun(item))
+            if (result != SnackbarResult.ActionPerformed || item == null) return@launch
+            // The row as it is at the tap, not as it was when the run landed:
+            // the watcher can fire before the list has refreshed (a cloud
+            // run's stored track lands after its finish), and the frozen row
+            // would then have no Analysis to open on. Falls back to the frozen
+            // row if the match has left the list; the page says it is gone.
+            val now = state.matchList.matchPageItem(item.scoreLogId, item.videoId, item.entryId) ?: item
+            onOpenMatch(now, sectionAfterRun(now))
         }
     }
 

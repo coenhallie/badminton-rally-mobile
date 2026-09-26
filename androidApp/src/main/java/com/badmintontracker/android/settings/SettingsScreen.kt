@@ -73,13 +73,14 @@ fun SettingsScreen(
                 },
                 actions = { BackgroundWorkAction() },
                 // Pinned to what the other pushed screens' bars draw by
-                // default (surface is the page's bg in both themes), so this
-                // bar cannot drift from theirs if Material's defaults move.
+                // default (Material's surface / onSurface, and surface is the
+                // page's bg in both themes), so this bar cannot drift from
+                // theirs if Material's defaults move.
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    scrolledContainerColor = MaterialTheme.colorScheme.background,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onBackground,
-                    titleContentColor = MaterialTheme.colorScheme.onBackground,
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    scrolledContainerColor = MaterialTheme.colorScheme.surface,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface,
                     actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 ),
             )
