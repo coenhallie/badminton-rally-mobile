@@ -4,8 +4,9 @@ import SwiftUI
 /// Where a match's video is, then what it has. Read as one sentence by
 /// VoiceOver (`MatchListItem.accessibilityStatus`); the glyphs are for scanning.
 ///
-/// Sized against the Matches tab list's text column, measured at 130pt on the
-/// iPhone 17 Pro (see `MatchListRowView`): two bare 14pt where-glyphs 2pt
+/// Sized to fit the row's text column in the former 330pt drawer, measured
+/// there at 130pt on the iPhone 17 Pro (see `MatchListRowView`); the
+/// full-width Matches tab's column is wider. Two bare 14pt where-glyphs 2pt
 /// apart, a divider with 6pt either side, and up to four 18pt analysis chips
 /// 4pt apart is 127pt. Mirrors androidApp's MatchStatusLine.kt number for
 /// number.

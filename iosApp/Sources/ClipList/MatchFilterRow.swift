@@ -51,15 +51,17 @@ struct MatchFilterRow: View {
     /// less the 12pt the info glyph sits inside its centred 44pt box.
     static let trailingInset = DrawerList.sideMargin + DrawerList.rowPaddingH - 12
 
-    /// One filter, as a pill: three radio choices on the card itself, outlined
-    /// until chosen. The drawn pill is about 30pt tall; the hit area around it
-    /// is the row's full 44pt, taken by a clear frame outside the drawn shape.
+    /// One filter, as a pill: three radio choices on the list background,
+    /// outlined until chosen. The drawn pill is about 30pt tall; the hit area
+    /// around it is the row's full 44pt, taken by a clear frame outside the
+    /// drawn shape.
     ///
     /// bodySmall with 10pt sides rather than the labelMedium and 12pt Android
-    /// uses: measured in Archivo, the three pills are then 229pt with their
-    /// gaps, and the row leaves them 234pt beside the info button. In
-    /// labelMedium they came to 257pt and "Not analyzed" sat half under the
-    /// scroll edge at rest.
+    /// uses, sized to fit the former 330pt drawer: measured in Archivo, the
+    /// three pills are then 229pt with their gaps, and the drawer's row left
+    /// them 234pt beside the info button. In labelMedium they came to 257pt and
+    /// "Not analyzed" sat half under the scroll edge at rest. The full-width
+    /// Matches tab leaves them more room than that now.
     private func pill(_ text: String, _ filter: MatchListFilter) -> some View {
         let isSelected = selected == filter
         return Button { onSelect(filter) } label: {

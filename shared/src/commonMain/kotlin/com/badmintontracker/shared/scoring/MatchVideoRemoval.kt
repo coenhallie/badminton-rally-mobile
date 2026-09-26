@@ -40,7 +40,7 @@ fun scoreLogCanRemoveVideo(log: ScoreLog, entries: List<LocalVideoEntry>): Boole
 /**
  * The entry that names [scoreLogId] by its own scoreLogId, for a caller that has
  * no match-list row to hand it the entry: the match page's "Remove video", and
- * the drawer's deletes when the row has none.
+ * the match list's deletes when the row has none.
  *
  * Skips an entry that is another log's video. The match list gives a log's
  * server binding (its video id) precedence over an entry's own scoreLogId, so

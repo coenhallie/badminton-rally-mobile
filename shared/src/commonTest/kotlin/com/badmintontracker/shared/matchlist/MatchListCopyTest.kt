@@ -146,7 +146,7 @@ class MatchListCopyTest {
         createdAt = t, updatedAt = t,
     )
 
-    /** The one row the builder makes of these, as the drawer would get it. */
+    /** The one row the builder makes of these, as the match list would get it. */
     private fun row(
         entries: List<LocalVideoEntry>,
         clips: List<RallyClip> = emptyList(),

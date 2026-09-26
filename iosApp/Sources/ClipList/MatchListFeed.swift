@@ -5,16 +5,15 @@ import SwiftUI
 /// runs left on disk, so `model.matchList` never goes stale.
 ///
 /// Applied exactly once, on `HomeView`'s own `NavigationStack` - the common
-/// parent of every tab, which stays mounted for the app's whole life
-/// regardless of which destination is pushed on top of it. It used to live on
-/// `MatchesList` alone, then on both `MatchesList` and `AnalyticsListView`:
-/// the first left the model looking no different once Analytics could be
-/// reached its own way, because the Matches tab underneath never actually
-/// stops running its own modifiers - a `TabView` keeps every tab mounted, and
-/// before that a `NavigationStack` push behaved the same way - so applying it
-/// a second time on `AnalyticsListView` did not fix a staleness problem, it
-/// just ran the same two probes twice at once, redundantly. One instance, on
-/// the one view that is always there, is both correct and cheaper. The model
+/// parent of every tab, which stays on screen for the app's whole life
+/// regardless of which tab is selected or which destination is pushed on top
+/// of it. It used to live on `MatchesList` alone, then on both `MatchesList`
+/// and `AnalyticsListView`. Neither screen is always on screen: a `TabView`
+/// keeps a deselected tab's state but cancels its `.task`, as a push does for
+/// the view underneath, so this feed's stored-results probe on one tab's root
+/// stops whenever that tab is not the one showing, and a copy on each root
+/// only traded that for two copies of the same code. One instance, on the one
+/// view that is always there, is both correct and cheaper. The model
 /// still does not bridge `LocalAnalysisRunner`'s `@Observable` properties into
 /// an async sequence of its own - see `ClipListModelTests`' loop-lifecycle
 /// tests for why that would be risky.

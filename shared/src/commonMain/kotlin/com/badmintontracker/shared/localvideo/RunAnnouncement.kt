@@ -1,8 +1,8 @@
 package com.badmintontracker.shared.localvideo
 
 /**
- * What to do about device runs that have just finished: whether to take the
- * coach to the Analytics list, and what the new seen-set is.
+ * What to do about runs that have just finished: whether to switch the coach
+ * from the Matches tab to the Analytics tab, and what the new seen-set is.
  */
 data class RunAnnouncement(
     val openAnalytics: Boolean,
@@ -11,7 +11,8 @@ data class RunAnnouncement(
 )
 
 /**
- * Whether a finished on-device run should pull the coach to the Analytics list.
+ * Whether a finished run, on-device or in the cloud, should switch the coach
+ * from the Matches tab to the Analytics tab.
  *
  * A run takes minutes and the coach does not sit and watch it, which is the
  * whole reason the progress indicator lives in the app bar rather than on one
@@ -21,15 +22,16 @@ data class RunAnnouncement(
  *
  * Two rules, and the interesting one is the second.
  *
- * [onHome] gates the navigation. Anywhere else the app bar indicator stays the
- * way back, exactly as it was before this existed.
+ * [onHome] gates the switch: true only for the Matches tab with nothing above
+ * it (`isHomeFront`). Anywhere else the app bar indicator stays the way back,
+ * exactly as it was before this existed.
  *
- * [seen] is updated WHETHER OR NOT the navigation happens, which is what stops
- * a run that finished while the coach was elsewhere from ambushing them the
- * next time they happen to pass through Home. Call this on every state change,
- * from somewhere that is always composed, not from Home itself; called only
- * while Home is on screen it would have no way to tell a run that has just
- * landed from one that landed ten minutes ago.
+ * [seen] is updated WHETHER OR NOT the switch happens, which is what stops a
+ * run that finished while the coach was elsewhere from ambushing them the next
+ * time they happen to come back to the Matches tab. Call this on every state
+ * change, from somewhere that is always composed, not from the tab itself;
+ * called only while the tab is on screen it would have no way to tell a run
+ * that has just landed from one that landed ten minutes ago.
  *
  * Deliberately `seen = finished` rather than `seen + finished`: a re-analysis
  * of the same video leaves the finished set while it runs and re-enters it when

@@ -11,9 +11,11 @@ struct AnalyticsListView: View {
     /// Created and owned by `HomeView`, not here. `ClipListModel.start()` spawns
     /// `for await` loops that never return and hold the model alive, so a model
     /// created inside a pushed view would leak one full set of them on every
-    /// push. Home makes exactly one, and `start()` is idempotent, so calling it
-    /// from this view's own `.task` costs a coach who never opens Analytics
-    /// nothing.
+    /// push. Home makes exactly one. `start()` is not idempotent - each call
+    /// runs its own five loops - but calling it from this view's own `.task`
+    /// still never runs two sets at once: the `TabView` cancels a deselected
+    /// tab's `.task`, so the Matches tab's loops stop while this tab is
+    /// showing, and a coach who never opens Analytics never runs these.
     let model: ClipListModel
     /// The on-device pipeline, or nil in a build with no models staged. Its
     /// absence is what keeps every row's control honest: with no runner there is
@@ -69,12 +71,13 @@ struct AnalyticsListView: View {
             // refresh - means leaving the tab cannot cancel it: this is the
             // pull "opening this tab pulls fresh data" (review focus 7) rests
             // on, for a cloud run that finished, or a match a colleague
-            // shared, while the tab was off screen. `start()` itself is
-            // idempotent (see its own doc comment: repeated calls only
-            // restart the five observing loops, latched behind
-            // `initialRefreshStarted` so the one-time network refresh it
-            // kicks off cannot fire twice), so calling it again on every
-            // reappearance costs nothing.
+            // shared, while the tab was off screen. `start()` is not
+            // idempotent: every call runs its own five observing loops, and
+            // only its one-time network refresh is latched (behind
+            // `initialRefreshStarted`). Calling it on every appearance is
+            // still one set at a time, because the `TabView` cancels this
+            // `.task` when the tab is deselected, and the Matches tab's own
+            // when this one is selected.
             Task { await model.refresh() }
             await model.start()
         }

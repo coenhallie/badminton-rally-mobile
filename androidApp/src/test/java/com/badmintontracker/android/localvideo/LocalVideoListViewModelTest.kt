@@ -25,8 +25,8 @@ import kotlin.test.Test
  * The actions left on this view model, and the two labels that live beside it.
  *
  * The row model it used to build (LocalVideoRow, and the tests that pinned
- * its status text, busy state and remove gate) went when the drawer moved onto
- * the shared match list; those rules are MatchListBuilderTest's now.
+ * its status text, busy state and remove gate) went when the local video rows
+ * moved onto the shared match list; those rules are MatchListBuilderTest's now.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class LocalVideoListViewModelTest {

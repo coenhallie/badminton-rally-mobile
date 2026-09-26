@@ -202,12 +202,12 @@ class AnalyticsRowsTest {
     }
 
     @Test
-    fun a_cloud_run_reports_its_percentage_the_way_the_drawer_does() {
+    fun a_cloud_run_reports_its_percentage_the_way_the_match_list_does() {
         // The divergence this closes: this screen used to say "Uploading" and
         // "Processing in the cloud" - the chrome indicator's vocabulary, with no
-        // number - while the drawer's row for the same video, one tap away, said
-        // "Uploading 42%…". iOS's port of this screen had already gone the other
-        // way, so the two platforms disagreed as well.
+        // number - while the match list's row for the same video, one tap
+        // away, said "Uploading 42%…". iOS's port of this screen had already
+        // gone the other way, so the two platforms disagreed as well.
         affordanceFor(
             entry(stage = AnalyzeStage.UPLOADING),
             LocalAnalysisState.Idle,
@@ -319,8 +319,9 @@ class AnalyticsRowsTest {
         // this test asserted the subtitle ITSELF switched between the players
         // and the score; that distinction moved to a line of its own
         // (row.item.playersLine, drawn under the subtitle by AnalyticsScreen the
-        // same way MatchListRow.kt draws it in the drawer) rather than replacing
-        // the score/date line, so this now pins the new split instead.
+        // same way MatchListRow.kt draws it on the Matches tab) rather than
+        // replacing the score/date line, so this now pins the new split
+        // instead.
         val unnamed = rows(logs = listOf(log("log1", points = 3))).single()
         unnamed.item.playersLine shouldBe null
         unnamed.subtitle shouldBe unnamed.item.detail

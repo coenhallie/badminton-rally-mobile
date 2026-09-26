@@ -28,7 +28,7 @@ data class PanelAnchor(val x: Float, val y: Float) {
  * The arithmetic of a draggable panel that must stay on screen. Pure, so that
  * "cannot be dragged off the edge" is a tested fact on both platforms rather than
  * something each gesture handler gets right on its own - the same reason
- * DrawerDragMath and SkipMath exist.
+ * SkipMath exists.
  */
 object FloatingPanelMath {
 

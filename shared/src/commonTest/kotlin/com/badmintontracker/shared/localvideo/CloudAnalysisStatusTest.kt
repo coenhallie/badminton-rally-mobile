@@ -7,11 +7,12 @@ import kotlin.test.Test
 /**
  * The one line a row shows while the cloud is working on its video.
  *
- * Worth its own tests because four screens render it - the drawer's local video
- * row and the Analytics row, on each platform - and it used to be written out at
- * three of them. Android's Analytics said "Uploading" with no number while the
- * drawer beside it said "Uploading 42%…" for the same run, and iOS's port of
- * that screen had gone the other way, so the platforms disagreed too.
+ * Worth its own tests because four screens render it - the Matches tab's row
+ * and the Analytics tab's row, on each platform - and it used to be written out
+ * at three of them. Android's Analytics said "Uploading" with no number while
+ * the match list (then in a drawer) beside it said "Uploading 42%…" for the
+ * same run, and iOS's port of that screen had gone the other way, so the
+ * platforms disagreed too.
  */
 class CloudAnalysisStatusTest {
 

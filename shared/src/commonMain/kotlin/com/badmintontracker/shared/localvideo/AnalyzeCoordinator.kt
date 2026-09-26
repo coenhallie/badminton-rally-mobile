@@ -82,11 +82,11 @@ class AnalyzeCoordinator(
      * device run already goes through.
      *
      * The device runner is asked the same question through its own states, and
-     * `announceFinishedRuns` decides whether finishing should pull the coach to
-     * Analytics. A cloud run had no way to answer it at all: it ends by
-     * retiring its entry, so the only thing the list could observe was a row
-     * disappearing. The coach was left on Home with no result and nothing
-     * saying where it went.
+     * `announceFinishedRuns` decides whether finishing should switch the coach
+     * from the Matches tab to the Analytics tab. A cloud run had no way to
+     * answer it at all: it ends by retiring its entry, so the only thing the
+     * list could observe was a row disappearing. The coach was left on the
+     * list with no result and nothing saying where it went.
      *
      * Accumulates rather than being assigned, because the entry is gone by the
      * time this is set and there is no later state to clear it from. That is
@@ -320,7 +320,7 @@ class AnalyzeCoordinator(
         // GPU for it.
         //
         // Freeing the storage is the coach's call, through the same remove the
-        // drawer already offers, which discards the analysis with it.
+        // match list already offers, which discards the analysis with it.
         localVideos.update(entryId) {
             it.copy(stage = AnalyzeStage.ANALYZED, failedStep = null, failureMessage = null)
         }

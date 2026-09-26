@@ -20,10 +20,12 @@ struct RowMenuItem: Identifiable {
 ///
 /// The text column is the row's inner width less the thumbnail, its gap and
 /// the menu, with no gap of its own before the menu: the 44pt menu box is
-/// trailing-aligned, so its glyph already sits well clear of the text. Measured
-/// on the iPhone 17 Pro: 250pt inside the row padding, 130pt for the
-/// text. The old local card spent 24pt more on the gaps either side of a
-/// Spacer, which left 106pt, too narrow for a full status line.
+/// trailing-aligned, so its glyph already sits well clear of the text. Sized
+/// to fit the former 330pt drawer, measured there on the iPhone 17 Pro: 250pt
+/// inside the row padding, 130pt for the text. The full-width Matches tab
+/// gives the column more than that now. The old local card spent 24pt more on
+/// the gaps either side of a Spacer, which left 106pt, too narrow for a full
+/// status line.
 struct MatchListRowView: View {
     let item: MatchListItem
     let thumbnails: LocalThumbnails

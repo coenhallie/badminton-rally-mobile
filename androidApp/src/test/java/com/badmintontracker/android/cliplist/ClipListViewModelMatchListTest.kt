@@ -55,7 +55,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 
-/** The drawer's one list, as the view model folds it together and keeps it current. */
+/** The Matches tab's one list, as the view model folds it together and keeps it current. */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ClipListViewModelMatchListTest {
 

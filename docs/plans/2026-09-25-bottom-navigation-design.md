@@ -327,6 +327,16 @@ plus review rulings):
   a `windowInsetsPadding(WindowInsets.safeDrawing.only(Horizontal))` was added
   on top so a landscape or gesture-nav side inset does not eat into content;
   see the correction in 2.9.
+- **Android's "nothing above" (2.8) has two more conditions**: the activity is
+  at least RESUMED, and no new video's naming sheet is pending
+  (`autoDetailsEntryId`). The back-stack entry stays `Route.Home` while the
+  external camera or photo picker is in front, and the watcher keeps
+  collecting with the activity stopped, so a run landing then switched to
+  Analytics out of sight and stranded the naming sheet, which only the Matches
+  tab's list draws. A standalone video's arrival also selects Matches, as iOS
+  does from the details sheet's `onDismiss`. A run that lands while the app is
+  in the background is marked seen and does not announce later, the same as
+  for any run that lands while the coach is elsewhere.
 - **Android system Back on Analytics or Settings returns to Matches**; only
   Back on Matches leaves the app. Not in this design's scope in section 2, but
   specified in the implementation plan's review focus and shipped as written.
@@ -337,8 +347,8 @@ plus review rulings):
   tab host now shares one view model instance, so the refresh has to be made
   explicit instead.
 - **Both hero tickers reserve the tallest phrase's height** (except under Reduce
-  Motion on iOS, where only the first phrase ever shows), so the empty-state
-  body copy never jumps as the phrase cycles.
+  Motion, where only the first phrase ever shows, so only its height is
+  reserved), so the empty-state body copy never jumps as the phrase cycles.
 - **iOS's Analytics tab no longer awaits `start()` before `refresh()` inside the
   same `.task`.** The plan's `.task { await model.start(); await model.refresh() }`
   never actually refreshed: `ClipListModel.start()` does not return while the

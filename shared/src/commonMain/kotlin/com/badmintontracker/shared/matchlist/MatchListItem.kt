@@ -15,7 +15,7 @@ enum class MatchAnalysis { RALLIES, HEATMAP, SKELETON, SCORE }
 
 /**
  * The one thing a row asks of the coach, if anything. Any value but NONE makes
- * the row the drawer's raised card.
+ * the row the match list's raised card.
  */
 enum class MatchAction { NONE, ANALYZE, MARK_COURT, RETRY, RUNNING, PAUSED }
 
@@ -23,7 +23,7 @@ enum class MatchAction { NONE, ANALYZE, MARK_COURT, RETRY, RUNNING, PAUSED }
 enum class MatchDelete { NONE, VIDEO_MATCH, SCORE_MATCH, BOUND_MATCH, LEAVE_SHARE }
 
 /**
- * One match in the drawer and on the Analytics picker.
+ * One match on the Matches tab's list and on the Analytics tab.
  *
  * Plain fields and enums rather than sealed types on purpose: Swift reads this
  * directly, and a nullable field is a plain optional there where a sealed type
@@ -110,7 +110,7 @@ data class MatchList(
 }
 
 /**
- * The drawer's three confirmations: the two-way choice (remove the video, or
+ * The match list's three confirmations: the two-way choice (remove the video, or
  * delete the match everywhere), the single delete (or leave, for a shared
  * match), and "Remove video?".
  */

@@ -60,8 +60,11 @@ struct HomeView: View {
     /// false; and `start()` spawns `for await` loops that never return and hold
     /// the model alive, so a model created inside a pushed view would leak one
     /// full set of them on every push. Both the Matches tab and the Analytics
-    /// tab call `start()`, which is idempotent, so the loops are still started
-    /// exactly once no matter which tab mounts first.
+    /// tab call `start()` from their `.task`. That is not idempotent: each call
+    /// runs its own set of the five loops, and only the initial network refresh
+    /// is latched to once per model. What keeps it to one set at a time is the
+    /// `TabView`, which cancels a deselected tab's `.task`, so only the tab on
+    /// screen has its loops running.
     @State private var listModel: ClipListModel
     /// The auto-open case only: straight after a record/import that isn't for
     /// an existing match, so the coach can name it. The row menu's own "Edit
@@ -211,7 +214,7 @@ struct HomeView: View {
         // which destination above is pushed on top of it. See `MatchListFeed`.
         .feedsMatchList(model: listModel, localAnalysis: localAnalysis)
         // A CLOUD run that lands does the same. It ends by retiring its entry,
-        // so without this the coach watching Home saw the row vanish and
+        // so without this the coach watching the list saw the row vanish and
         // nothing else - no result, and nothing saying where it had gone. The
         // two sets are unioned into one announcement so a video analysed both
         // ways announces once. Mirrors androidApp's `combine` above its NavHost.
@@ -220,8 +223,9 @@ struct HomeView: View {
                 announce(cloudFinished: Set(finishedInCloud))
             }
         }
-        // A device run that lands takes the coach to the Analytics list.
-        // androidApp does the same from above its NavHost; `announceFinishedRuns`
+        // A device run that lands switches to the Analytics tab, from the
+        // Matches tab with nothing above it only (`isHomeFront`). androidApp
+        // does the same from above its NavHost; `announceFinishedRuns`
         // in shared is the rule both follow, and a change to when this fires is a
         // change in both places.
         //
@@ -378,10 +382,13 @@ struct HomeView: View {
     /// else on screen.
     ///
     /// The run it points at is a row on that tab, not wherever the coach
-    /// currently is, so switching tabs is not enough - every route and sheet
-    /// this view owns has to be dismissed too, the same list `nothingAbove`
-    /// checks. The indicator is reachable from any of them, and without this
-    /// a tap from two screens deep would silently do nothing.
+    /// currently is, so switching tabs is not enough - every push this view
+    /// owns is popped too. The indicator is on every pushed screen's bar, and
+    /// without this a tap from two screens deep would silently do nothing.
+    ///
+    /// Pushes only, not everything `nothingAbove` checks: sheets need no
+    /// clearing, because `BackgroundWorkAction` never appears inside a sheet,
+    /// so no tap on it can come from under one.
     private func goToMatches() {
         courtMarkingRoute = nil
         matchRoute = nil
