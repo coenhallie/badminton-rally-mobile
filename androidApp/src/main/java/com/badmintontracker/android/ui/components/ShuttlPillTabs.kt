@@ -20,9 +20,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.badmintontracker.android.ui.theme.ShuttlRadius
 
 /**
@@ -48,7 +48,7 @@ import com.badmintontracker.android.ui.theme.ShuttlRadius
  * [secondary] is the row that belongs to another one above it: the match
  * page's Analysis panels (Heatmap | Base | Skeleton) under its sections, and
  * the Near | Far toggle inside a panel. Shorter pills and a smaller label, the
- * transport bar's pill type (bodySmall at medium weight), in the same colours:
+ * labelSmall's size and weight, in the same colours:
  * three rows of one size stacked in the Analysis section read as three peers,
  * with nothing to say the second was Analysis's own.
  *
@@ -65,7 +65,12 @@ fun ShuttlPillTabs(
 ) {
     val shape = RoundedCornerShape(ShuttlRadius.pill)
     val baseStyle = if (secondary) {
-        MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium)
+        // labelSmall's size and weight, untracked: its tracking is for the
+        // uppercase labels it was made for. 11sp against the primary's 13sp,
+        // and not the transport pills' 12sp: at a large font scale on a
+        // narrow phone the primary row gives its labels up to 0.75x to keep
+        // "Analysis" whole, and at 12sp the row under it came out the larger.
+        MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.sp)
     } else {
         MaterialTheme.typography.labelMedium
     }
