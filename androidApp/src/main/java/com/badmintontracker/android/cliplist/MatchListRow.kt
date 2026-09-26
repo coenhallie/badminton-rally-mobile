@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -99,12 +100,16 @@ private fun MatchListRowContent(
     refreshGeneration: Int,
 ) {
     val hasMenu = menu.isNotEmpty()
-    // An IconButton carries 12dp of its own padding inside a 48dp box. Backing
-    // that out of the row's end inset is what puts the glyph the same 16dp from
-    // the card's edge as the thumbnail on the other side, instead of an optical
-    // 28dp that reads as a misaligned card. Whatever spans the row's full width
-    // below adds the 12dp back, so it ends flush with the card's right inset.
-    val menuCompensation = if (hasMenu) 12.dp else 0.dp
+    // The overflow glyph sits in one column with the icons above the list, the
+    // Settings gear and the legend's info button, whose centres are 36dp from
+    // the screen edge (12dp inside the list's 24dp margin). A row's card ends
+    // at that margin, so the menu takes the row's whole end inset and its
+    // 48dp button is drawn 12dp further out (MENU_OVERHANG), putting the glyph
+    // 12dp from the card's edge. It had sat 16dp in, in line with the
+    // thumbnail's inset, which left a column of dots 16dp short of the icons
+    // over them. Whatever spans the row's full width below takes the inset
+    // back, so it still ends flush with the card's right inset.
+    val menuCompensation = if (hasMenu) DrawerList.rowPaddingH else 0.dp
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -130,7 +135,7 @@ private fun MatchListRowContent(
                     MatchStatusLine(item, Modifier.padding(top = 4.dp))
                 }
             }
-            if (hasMenu) RowMenu(menu)
+            if (hasMenu) RowMenu(menu, Modifier.offset(x = MENU_OVERHANG))
         }
         item.statusText?.takeIf { item.statusIsError }?.let { failure ->
             Text(
@@ -177,12 +182,20 @@ private fun RowText(text: String, primary: Boolean = false) {
     )
 }
 
+/**
+ * How far past the row's content edge the overflow button is drawn: its own
+ * 12dp of padding, so the glyph's box ends at the card's edge and its centre
+ * lines up with the header icons. See MatchListRowContent. The press ripple
+ * is clipped by the card's shape.
+ */
+private val MENU_OVERHANG = 12.dp
+
 @Composable
-private fun RowMenu(menu: List<RowMenuItem>) {
+private fun RowMenu(menu: List<RowMenuItem>, modifier: Modifier = Modifier) {
     var open by remember { mutableStateOf(false) }
     // The menu must share a Box with its anchor: DropdownMenu positions itself
     // relative to its parent, not the IconButton.
-    Box {
+    Box(modifier) {
         IconButton(onClick = { open = true }) {
             Icon(Icons.Default.MoreVert, contentDescription = MatchListCopy.MATCH_MENU)
         }
