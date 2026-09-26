@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -27,6 +28,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -43,6 +45,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -64,6 +67,7 @@ import com.badmintontracker.android.share.ShareSheet
 import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlPillTabs
 import com.badmintontracker.android.ui.icons.ShuttlIcons
+import com.badmintontracker.android.ui.theme.ShuttlRadius
 import com.badmintontracker.android.ui.components.ShuttlButtonVariant
 import com.badmintontracker.android.ui.shareText
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
@@ -206,7 +210,8 @@ fun MatchScreen(
     val matchItem = state.matchList.matchPageItem(scoreLogId, videoId, entryId)
     val sections = matchItem?.let(::matchPageSections).orEmpty()
     // Saveable, held for the life of this page and never cleared: a section
-    // can go while on screen (the file removed, clips emptying mid-refresh),
+    // can go while on screen (the file removed from the phone, a re-analysis
+    // clearing the clips),
     // and shownSection falls back without forgetting what the coach picked.
     // Saveable rather than remembered also keeps the choice across a return
     // from court marking or any other pushed destination.
@@ -250,7 +255,9 @@ fun MatchScreen(
                         )
                         // Score-only: same title as the screen this page replaced.
                         log != null -> Text(log.title, maxLines = 1)
-                        else -> Text("Rallies")
+                        // Nothing to name: a match that is gone, or the frame
+                        // before its row arrives. The body says which.
+                        else -> Unit
                     }
                 },
                 navigationIcon = {
@@ -344,10 +351,15 @@ fun MatchScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
         if (matchItem == null) {
-            // Gone (deleted elsewhere, or the file removed from a match that
-            // was only on this phone), or not listed yet in the first frame
-            // after a push. Only the first is worth words.
-            val gone = (scoreLogId != null && log == null && match == null) ||
+            // Gone (deleted elsewhere, a share left, or the file removed from
+            // a match that was only on this phone), or not listed yet. Only
+            // the first is worth words. The list is Home's, so once it has
+            // finished one refresh (refreshGeneration counts completed ones,
+            // failed included) a row it lacks is not coming: the list holds
+            // everything it knows about. Before that, only the lookups that
+            // need no network can tell.
+            val gone = state.refreshGeneration > 0 ||
+                (scoreLogId != null && log == null && match == null) ||
                 (scoreLogId == null && videoId == null && entryId != null && state.localEntries.none { it.id == entryId })
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 if (gone) Text(MatchPageCopy.MISSING)
@@ -639,21 +651,35 @@ private fun RallySortRow(sort: ClipSort, onSort: (ClipSort) -> Unit) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.End) {
         // The menu shares a Box with its anchor: DropdownMenu positions itself
         // relative to its parent.
+        val current = if (sort == ClipSort.RallyOrder) MatchPageCopy.SORT_RALLY_ORDER else MatchPageCopy.SORT_MOST_NOTES
         Box {
             TextButton(
                 onClick = { open = true },
-                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant),
-                modifier = Modifier.semantics { contentDescription = MatchPageCopy.SORT },
+                shape = RoundedCornerShape(ShuttlRadius.pill),
+                colors = ButtonDefaults.textButtonColors(
+                    containerColor = Color.Transparent,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    disabledContainerColor = Color.Transparent,
+                    disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                ),
+                // What the control does and the order it is on: the description
+                // replaces the visible text for TalkBack, so it carries both.
+                modifier = Modifier.semantics { contentDescription = "${MatchPageCopy.SORT}, $current" },
             ) {
                 Icon(ShuttlIcons.ListOrdered, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
-                Text(
-                    if (sort == ClipSort.RallyOrder) MatchPageCopy.SORT_RALLY_ORDER else MatchPageCopy.SORT_MOST_NOTES,
-                    style = MaterialTheme.typography.labelMedium,
-                )
+                Text(current, style = MaterialTheme.typography.labelMedium)
             }
             // What MenuDefaults resolves to, set explicitly: the theme maps
-            // surfaceContainer to a palette token.
+            // surfaceContainer to a palette token. The items likewise.
+            val itemColors = MenuDefaults.itemColors(
+                textColor = MaterialTheme.colorScheme.onSurface,
+                leadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                trailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                disabledTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                disabledLeadingIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                disabledTrailingIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+            )
             DropdownMenu(
                 expanded = open,
                 onDismissRequest = { open = false },
@@ -666,6 +692,7 @@ private fun RallySortRow(sort: ClipSort, onSort: (ClipSort) -> Unit) {
                             text = { Text(label) },
                             leadingIcon = { if (sort == value) Icon(Icons.Default.Check, contentDescription = null) },
                             onClick = { onSort(value); open = false },
+                            colors = itemColors,
                         )
                     }
             }

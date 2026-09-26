@@ -3,7 +3,6 @@ package com.badmintontracker.android.localvideo
 import com.badmintontracker.android.testing.FakeClipsRepository
 import com.badmintontracker.android.testing.FakeVideosRepository
 import com.badmintontracker.shared.localvideo.AnalyzeCoordinator
-import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
@@ -59,12 +58,6 @@ class LocalVideoListViewModelTest {
         localVideos.get("a")?.title shouldBe "Thu League vs Marco"
         // Blank stays null: "" would be rejected by videos_title_length_check on insert.
         localVideos.get("a")?.description shouldBe null
-    }
-
-    @Test
-    fun a_failed_attempt_is_analyzed_again_and_a_fresh_video_analyzed() {
-        analyzeButtonLabel(AnalyzeStage.LOCAL) shouldBe "Analyze"
-        analyzeButtonLabel(AnalyzeStage.FAILED) shouldBe "Re-analyze"
     }
 
     @Test

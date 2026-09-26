@@ -2,7 +2,6 @@ package com.badmintontracker.android.localvideo
 
 import androidx.lifecycle.ViewModel
 import com.badmintontracker.shared.localvideo.AnalyzeCoordinator
-import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.localvideo.normalizeDescription
@@ -41,13 +40,6 @@ class LocalVideoListViewModel(
     fun setDetails(id: String, title: String, description: String) =
         localVideos.setDetails(id, normalizeTitle(title), normalizeDescription(description))
 }
-
-/**
- * "Re-analyze" once an attempt has failed (the video keeps its saved court points
- * and resumes from the failed step); "Analyze" for a fresh video.
- */
-internal fun analyzeButtonLabel(stage: AnalyzeStage): String =
-    if (stage == AnalyzeStage.FAILED) "Re-analyze" else "Analyze"
 
 internal fun formatDuration(ms: Long): String {
     val totalSec = ms / 1000
