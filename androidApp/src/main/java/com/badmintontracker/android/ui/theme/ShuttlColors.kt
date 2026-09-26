@@ -37,6 +37,15 @@ internal val ShuttlLightColorScheme = lightColorScheme(
     surfaceContainer        = ShuttlPalette.bgRaised.lightColor,
     surfaceContainerHigh    = ShuttlPalette.bgRaised.lightColor,
     surfaceContainerHighest = ShuttlPalette.bgRaised.lightColor,
+    // The snackbar's three colours, which M3 otherwise fills with its own
+    // purple-tinted neutral and a lavender action. The inverse of the page:
+    // the heading colour as the surface and the page colour on it, as iOS's
+    // toast does. The action is accent text on that surface, so it takes the
+    // other theme's accentDark, the value that theme already letters on this
+    // same ground (ShuttlVideoOverlay.accentText does the same over video).
+    inverseSurface   = ShuttlPalette.textHeading.lightColor,
+    inverseOnSurface = ShuttlPalette.bg.lightColor,
+    inversePrimary   = ShuttlPalette.accentDark.darkColor,
 )
 
 internal val ShuttlDarkColorScheme = darkColorScheme(
@@ -61,6 +70,15 @@ internal val ShuttlDarkColorScheme = darkColorScheme(
     surfaceContainer        = ShuttlPalette.bgRaised.darkColor,
     surfaceContainerHigh    = ShuttlPalette.bgRaised.darkColor,
     surfaceContainerHighest = ShuttlPalette.bgRaised.darkColor,
+    // The snackbar's three colours, which M3 otherwise fills with its own
+    // purple-tinted neutral and a lavender action. The inverse of the page:
+    // the heading colour as the surface and the page colour on it, as iOS's
+    // toast does. The action is accent text on that surface, so it takes the
+    // other theme's accentDark, the value that theme already letters on this
+    // same ground (ShuttlVideoOverlay.accentText does the same over video).
+    inverseSurface   = ShuttlPalette.textHeading.darkColor,
+    inverseOnSurface = ShuttlPalette.bg.darkColor,
+    inversePrimary   = ShuttlPalette.accentDark.lightColor,
 )
 
 /** Extended palette beyond M3's ColorScheme. */
