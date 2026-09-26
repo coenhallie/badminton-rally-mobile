@@ -140,7 +140,10 @@ fun HeatmapPanel(
                         sides = source.tracks.map { it.side },
                         selected = shown.side,
                         onSelect = { side = it },
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        // The court's gutter, as on Base and Skeleton: at 16dp this
+                        // row stood wider than the section and panel rows above it
+                        // and jumped sideways on every switch to Base.
+                        modifier = Modifier.padding(horizontal = COURT_GUTTER, vertical = 8.dp),
                     )
                 }
                 CourtHeatmapView(track = shown.track, fps = source.fps)
