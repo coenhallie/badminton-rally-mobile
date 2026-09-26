@@ -25,14 +25,14 @@ final class LocalPlayerModel {
     /// `start()`.
     private var labelsRefreshed = false
 
-    /// Runs for as long as the player is on screen: `LocalPlayerView`'s `.task`
-    /// calls this on every appearance and cancels it on every disappearance, and
-    /// pushing court marking is a disappearance.
+    /// Runs for as long as the player is on screen: `MatchVideoSection`'s
+    /// `.task` calls this on every appearance and cancels it on every
+    /// disappearance, and pushing court marking is a disappearance.
     ///
     /// The loops used to live in that `.task` behind `guard model == nil`, which
     /// is true exactly once: marking the court cancelled them, and on the way
     /// back the guard returned before restarting anything, so notes and labels
-    /// stopped updating for the rest of the screen's life.
+    /// stopped updating for the rest of the player's life.
     ///
     /// Everything runs side by side rather than the loads first. They used to be
     /// awaited ahead of the loops, which held the notes list empty until a

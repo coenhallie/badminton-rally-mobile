@@ -2,13 +2,14 @@ import Foundation
 import XCTest
 @testable import iosApp
 
-/// How the clips an on-device run cut are named, and what the screen listing
-/// them finds on disk.
+/// How the rallies an on-device run cut are named, and what the Rallies section
+/// listing them finds on disk.
 ///
-/// The naming is pinned because it is the only thing on that screen: a coach
-/// judging whether the two pipelines cut at the same moment reads the bounds
-/// before pressing play, and a clip whose bounds are unknown must say so rather
-/// than read as one that starts and ends at zero.
+/// The naming is pinned because a device rally row must read as the cloud rally
+/// rows do - "Rally #N" over its length, through the shared formatter - and the
+/// clip player's title must name the rally the way the row that opened it did.
+/// A clip whose bounds are unknown must say so rather than read as one that
+/// lasts zero seconds. Port of androidApp's `DeviceClipLabelTest`, case for case.
 final class LocalClipsTests: XCTestCase {
 
     private let entry = "local-clips-under-test"
@@ -30,36 +31,33 @@ final class LocalClipsTests: XCTestCase {
         )
     }
 
-    func testTheListNamesARallyItsBoundsAndItsLength() {
-        XCTAssertEqual(
-            localClipLabel(clip(3, 12.34, 19.86)),
-            "Rally 3  12.3s - 19.9s  (7.5s)"
-        )
+    func testARallyIsNamedAsTheCloudRowsNameTheirs() {
+        XCTAssertEqual(deviceClipTitle(clip(3, 12.34, 19.86)), "Rally #3")
     }
 
-    func testThePlayerSetsTheSameBoundsFinerAndDropsTheLength() {
-        // Two decimals over the player, where the number is the boundary being
-        // judged rather than a label being scanned; the length is on the list.
-        XCTAssertEqual(
-            localClipLabel(clip(3, 12.34, 19.86), decimals: 2),
-            "Rally 3  12.34s - 19.86s"
-        )
+    func testItsLengthGoesThroughTheSharedFormatter() {
+        XCTAssertEqual(deviceClipLength(clip(3, 12.34, 19.86)), "7.5s")
     }
 
-    func testAClipWithNoBoundsIsNamedWithoutFabricatingThem() {
+    func testThePlayerTitleIsTheRowOnOneLine() {
+        XCTAssertEqual(deviceClipLabel(clip(3, 12.34, 19.86)), "Rally #3 · 7.5s")
+    }
+
+    func testAClipWithNoBoundsIsNamedWithoutFabricatingALength() {
         // Clips recovered by filename have no bounds - loadClips falls back to
         // scanning the directory when the index sidecar is gone - and a
-        // fabricated "0.0s - 0.0s" would read as a broken clip rather than as
-        // missing bookkeeping.
-        XCTAssertEqual(localClipLabel(clip(7, 0, 0)), "Rally 7")
-        XCTAssertEqual(localClipLabel(clip(7, 5, 5), decimals: 2), "Rally 7")
+        // fabricated "0.0s" would read as a broken clip rather than as missing
+        // bookkeeping.
+        XCTAssertNil(deviceClipLength(clip(7, 0, 0)))
+        XCTAssertEqual(deviceClipLabel(clip(7, 0, 0)), "Rally #7")
+        XCTAssertEqual(deviceClipLabel(clip(7, 5, 5)), "Rally #7")
     }
 
     @MainActor
     func testTheCountIsAbsentRatherThanZeroForAnEntryWithNoClips() {
-        // The row's menu item is offered on "has a count", so an entry with no
-        // clips must not come back as zero and put "Clips on this phone (0)" in
-        // front of a coach.
+        // The row's rally count is shown on "has a count", so an entry with no
+        // clips must not come back as zero and put a count of 0 in front of a
+        // coach.
         let runner = LocalAnalysisRunner()
         XCTAssertNil(runner.storedClipCounts(among: [entry])[entry])
         XCTAssertTrue(runner.storedClips(entryId: entry).isEmpty)
@@ -79,7 +77,7 @@ final class LocalClipsTests: XCTestCase {
     @MainActor
     func testAClipWhoseFileHasGoneIsNeitherCountedNorListed() throws {
         // The count and the list have to agree, or the row promises three clips
-        // and the screen it opens shows two.
+        // and the section it opens shows two.
         let saved = try writeClips([(1, 0, 4), (2, 9, 15)])
         try FileManager.default.removeItem(at: saved[0].url)
 

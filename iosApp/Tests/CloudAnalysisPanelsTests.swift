@@ -2,17 +2,17 @@ import Shared
 import XCTest
 @testable import iosApp
 
-/// What `AnalyticsDetailView` composes, driven through the same pieces in the
+/// What `AnalysisSection` composes, driven through the same pieces in the
 /// same order. The port of androidApp's `CloudAnalysisPanelsTest`, case for case
 /// and name for name.
 ///
-/// The Base tab's absence for a cloud analysis was a WIRING defect, not a logic
-/// one: every part worked and the screen fed `hasBoundedClips` from the device
-/// clip index, which a cloud run never writes. So the parts are assembled here
+/// The Base panel's absence for a cloud analysis was a WIRING defect, not a
+/// logic one: every part worked and the section fed `hasBoundedClips` from the
+/// device clip index, which a cloud run never writes. So the parts are assembled here
 /// rather than asserted one at a time, over the real store.
 ///
 /// Two assumptions this pins that nothing else does. That `PlayerTrackStore.load`
-/// stamps the source it read from, without which the screen cannot tell a cloud
+/// stamps the source it read from, without which the section cannot tell a cloud
 /// track from a local one and pairs the wrong windows to it. And that a clip's
 /// `videoId` is the entry id the stores are keyed by - true because
 /// `AnalyzeCoordinator` creates the videos row with `entry.id`, and the whole
@@ -74,7 +74,7 @@ final class CloudAnalysisPanelsTests: XCTestCase {
         return store
     }
 
-    /// The panel set the detail screen builds, from the inputs it builds them from.
+    /// The panel set the Analysis section builds, from the inputs it builds them from.
     private func panelsFor(
         _ store: PlayerTrackStore,
         cloudClips: [RallyClip],
@@ -109,8 +109,8 @@ final class CloudAnalysisPanelsTests: XCTestCase {
 
     func testTheCloudTrackIsReadBackAsACloudTrack() throws {
         // Everything above hangs off this. If load() did not stamp the source,
-        // the screen would pair the device's windows to the cloud's track and
-        // the Base tab would go missing again - silently, since both are lists
+        // the section would pair the device's windows to the cloud's track and
+        // the Base panel would go missing again - silently, since both are lists
         // of rallies.
         let store = try installCloudAnalysis()
         let stored = try XCTUnwrap(store.load(entryId: entryId, source: .cloud))
@@ -120,7 +120,7 @@ final class CloudAnalysisPanelsTests: XCTestCase {
     }
 
     func testTheBaseTabWaitsForTheClipCacheRatherThanBorrowing() throws {
-        // The beat between the screen opening and rally_clips landing. The tab
+        // The beat between the section opening and rally_clips landing. Base
         // is not offered yet; it must not appear measured over some other run's
         // boundaries.
         let store = try installCloudAnalysis()
@@ -129,7 +129,7 @@ final class CloudAnalysisPanelsTests: XCTestCase {
     }
 
     func testAnotherVideosClipsDoNotFurnishThisOnesBaseTab() throws {
-        // The filter in cloudRallyWindows, reached the way the screen reaches
+        // The filter in cloudRallyWindows, reached the way the section reaches
         // it: the cache holds every clip the coach has.
         let store = try installCloudAnalysis()
 
@@ -162,7 +162,7 @@ final class CloudAnalysisPanelsTests: XCTestCase {
         // once, and that asked the store's `has` with its default source -
         // `.local`. A cloud run writes only under the cloud subtree, so a
         // finished cloud analysis read as never analysed on the list while the
-        // detail screen, which asks `hasStoredTrack`, could open it.
+        // Analysis section, which asks `hasStoredTrack`, could open it.
         try installCloudAnalysis()
         let runner = LocalAnalysisRunner()
 
@@ -170,7 +170,7 @@ final class CloudAnalysisPanelsTests: XCTestCase {
         XCTAssertEqual(
             runner.storedTrackIds(among: [entryId, "never-analysed"]),
             [entryId],
-            "the list and the detail screen disagree about whether this entry has a track"
+            "the list and the Analysis section disagree about whether this entry has a track"
         )
     }
 }
