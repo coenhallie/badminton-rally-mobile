@@ -40,6 +40,7 @@ struct DeviceRalliesSection: View {
                 PanelMessage(text: MatchPageCopy.shared.DEVICE_CLIPS_EMPTY)
                     .listRowInsets(EdgeInsets())
                     .listRowSeparator(.hidden)
+                    .listSectionSeparator(.hidden, edges: .top)
                     .listRowBackground(Color.clear)
             }
             ForEach(clips) { clip in

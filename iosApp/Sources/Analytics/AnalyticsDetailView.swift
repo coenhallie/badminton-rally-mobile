@@ -106,9 +106,9 @@ func rallyWindows(done: [PlayerTrackStore.Clip], stored: [PlayerTrackStore.Clip]
     }
 }
 
-/// The Analysis section as its own pushed screen, reached from a ready row on
-/// the Analytics list until the match page hosts `AnalysisSection` itself. The
-/// bar carries the match's name and its second line; everything under it is the
+/// The Analysis section as its own pushed screen, the Analytics tab's page for a
+/// ready row. The match page hosts the same `AnalysisSection` as its Analysis
+/// section. The bar carries the match's name and its second line; everything under it is the
 /// section's.
 struct AnalyticsDetailView: View {
     let rally: RallyApp

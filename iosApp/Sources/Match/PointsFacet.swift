@@ -93,6 +93,7 @@ struct PointsFacet: View {
                 ) { EmptyView() }
                 .listRowInsets(EdgeInsets())
                 .listRowSeparator(.hidden)
+                .listSectionSeparator(.hidden, edges: .top)
                 .listRowBackground(Color.clear)
             }
         } else {

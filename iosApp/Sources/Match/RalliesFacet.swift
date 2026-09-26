@@ -60,6 +60,7 @@ struct RalliesFacet: View {
             ) { EmptyView() }
             .listRowInsets(EdgeInsets())
             .listRowSeparator(.hidden)
+            .listSectionSeparator(.hidden, edges: .top)
             .listRowBackground(Color.clear)
         }
         ForEach(clips, id: \.id) { clip in

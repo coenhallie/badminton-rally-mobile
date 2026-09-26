@@ -546,11 +546,11 @@ struct MatchView: View {
         // push lands), and without loops `matchList` would freeze, so a run
         // finishing while this page is open could not make Analysis appear.
         // `start()` runs its own set of loops per call. Each set is cancelled
-        // when its view is covered (this page's too, when it pushes a rally or
-        // court marking), so one set runs at a time apart from a push or pop
-        // transition, where the two overlap for its length (about 0.6s
-        // measured). The overlap is harmless: both sets read the same flows
-        // and write the same values.
+        // when its view is covered (this page's too, by the same rule, when it
+        // pushes a rally or court marking), so one set runs at a time apart
+        // from a push or pop transition, where the two overlap for its length
+        // (about 0.6s measured). The overlap is harmless: both sets read the
+        // same flows and write the same values.
         .task { await listModel.start() }
         // Soft failure: no metadata just means the date headline, as before. Keyed
         // on the effective video id, not a bare `.task`: a score-only match that
