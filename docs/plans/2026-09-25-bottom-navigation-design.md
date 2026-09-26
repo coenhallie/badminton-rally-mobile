@@ -1,7 +1,7 @@
 # Design: bottom navigation, with the match list as the landing page
 
 **Date:** 2026-09-25
-**Status:** approved (Option A of the published mock), not yet built
+**Status:** implemented on `feat/bottom-navigation` (2026-09-26); real-phone checks open
 **Asked for:** "We can list recent matches on the landing page instead of just showing
 3 buttons (two big buttons and one link your matches). The add match button can be on
 the bottom right corner." Plus: can a bottom navigation bar carry Analytics and
@@ -163,15 +163,17 @@ mounted inside `TabView`, which gives the same result.
 - Shown on the Matches tab only.
 - **Android:** an `ExtendedFloatingActionButton` in the accent fill with `onAccent`
   content, pill-shaped, bottom-right above the bar. Expanded while the list is at
-  its top, collapsed to the "+" once it is scrolled. The rule is a pure function of
-  the first visible index and offset, `addButtonExpanded(index, offset)`, unit
-  tested. It needs the list's `LazyListState`, which `ClipListScreen` starts
-  accepting as a parameter.
+  its top, collapsed to the "+" once it is scrolled. What shipped is
+  `addButtonExpanded(index: Int)`, a pure function of the first visible index
+  alone, not `addButtonExpanded(index, offset)` as drafted here; see section 6. It
+  needs the list's `LazyListState`, which `ClipListScreen` starts accepting as a
+  parameter.
 - **iOS:** a 56pt round accent button with a "+" glyph, bottom-right above the tab
   bar, accessibility label "Add match". It does not change size; there is no
   iOS 17 scroll-position API worth taking on for it. The mock drew it beside the
   iOS 26 floating bar; whether that fits next to a three-tab bar is checked on the
-  simulator, and if it does not, it floats above, as on Android.
+  simulator, and if it does not, it floats above, as on Android. It did not fit;
+  see section 6 for the measured clearance.
 - Both open the existing `AddMatchSheet` unchanged.
 
 ### 2.5 Analytics tab
@@ -231,8 +233,12 @@ On iOS `isOnHome` already lists every sheet and route `HomeView` owns; it gains
 - One outer `Scaffold` in the tab host owns the `NavigationBar`, the Add button and
   the one `SnackbarHost`. `ClipListScreen`'s own bottom-centred snackbar host moves
   up into it, or snackbars land under the bar.
-- Tab content has no `Scaffold` of its own (or `contentWindowInsets = WindowInsets(0)`).
-  `AnalyticsScreen` keeping its own would pad the bottom twice.
+- Tab content has no `Scaffold` of its own. `contentWindowInsets = WindowInsets(0)`
+  shipped as drafted, but is not the whole story: since it also zeroes the
+  horizontal insets, the tab host's content additionally takes the horizontal
+  safe-drawing insets on its own `Box`, so landscape and a side gesture cutout do
+  not eat into content; see section 6. `AnalyticsScreen` keeping its own
+  `Scaffold` would pad the bottom twice.
 - Every colour and shape is set explicitly, not left to Material roles: bar container
   `bgSecondary` with a top `border` line, indicator `glyphBg`-style accent tint,
   selected icon `analysisGlyph`, selected label `textHeading`, unselected `textSecondary`;
@@ -286,6 +292,74 @@ On iOS `isOnHome` already lists every sheet and route `HomeView` owns; it gains
   New match; the Matches tab for delete), run, and confirmed to execute, not skip.
 - Screens, light and dark, both platforms: Matches with rows, Matches scrolled
   (Android button collapsed, last row clear), Add sheet, Analytics, Settings, empty
-  Matches, scoring board with no bar showing. Compared against the mock.
+  Matches, scoring board with no bar showing. Compared against the mock. What was
+  actually captured, and what is still open, is in section 6.
 - On a real phone: the Android gesture bar and the bar's insets, the iOS 26 floating
   bar, and a finished device run switching tabs only from Matches.
+
+## 6. What shipped differently
+
+Decided during implementation (`docs/plans/2026-09-25-bottom-navigation-plan.md`
+plus review rulings):
+
+- **Android's `addButtonExpanded` takes the first visible index only, not
+  `(index, offset)` as 2.4 drafted.** Item 0 in the list is the filter row, which
+  gives a stable collapse point with no pixel threshold to tune.
+- **The Android Add button's icon carries "Add match" in both states**, not just
+  while collapsed. Material 3 1.3.1 clears the extended label's own semantics, so
+  a label-only expanded state would leave the button with no accessible name.
+- **Tab bodies under the title bar use `Modifier.weight(1f)` in a `Column`,
+  not `fillMaxSize()` as the plan had it.** `fillMaxSize()` on a sibling below a
+  fixed-height `TabTopBar` overflows the column; `weight(1f)` gives it the
+  remaining space instead.
+- **The Settings switch's off state draws a background track with an
+  onSurfaceVariant outline**, rather than the `bgTertiary` track the plan
+  specified. `bgTertiary` measured 1.07:1 against the card in light theme; the
+  onSurfaceVariant outline clears 3:1 in both themes.
+- **Android resets the saved tab to Matches on arrival after sign-in** (the
+  `TO_HOME` redirect and `SignIn`'s `onSignedIn`), not on sign-out (the
+  `TO_SIGN_IN` redirect) as the plan had it. Resetting on sign-out flashes the
+  list during the sign-out crossfade, and arrival also covers process death
+  followed by an invalid session, which the sign-out path misses.
+- **The tab host's content additionally takes the horizontal safe-drawing
+  insets on its own `Box`.** `contentWindowInsets = WindowInsets(0)` shipped as
+  2.9 drafted, but since it zeroes every inset, including the horizontal ones,
+  a `windowInsetsPadding(WindowInsets.safeDrawing.only(Horizontal))` was added
+  on top so a landscape or gesture-nav side inset does not eat into content;
+  see the correction in 2.9.
+- **Android system Back on Analytics or Settings returns to Matches**; only
+  Back on Matches leaves the app. Not in this design's scope in section 2, but
+  specified in the implementation plan's review focus and shipped as written.
+- **Opening the Analytics tab refreshes the list on Android**, via
+  `LaunchedEffect(selectedTab)`, matching iOS's per-appearance `.task`. This
+  keeps the behaviour section 1.1 describes today, where every visit to
+  `Route.Analytics` built a fresh `ClipListViewModel` whose init refreshed; the
+  tab host now shares one view model instance, so the refresh has to be made
+  explicit instead.
+- **Both hero tickers reserve the tallest phrase's height** (except under Reduce
+  Motion on iOS, where only the first phrase ever shows), so the empty-state
+  body copy never jumps as the phrase cycles.
+- **iOS's Analytics tab no longer awaits `start()` before `refresh()` inside the
+  same `.task`.** The plan's `.task { await model.start(); await model.refresh() }`
+  never actually refreshed: `ClipListModel.start()` does not return while the
+  view is on screen, so the awaited `refresh()` after it never ran. It now spawns
+  `refresh()` as its own unstructured child task and awaits `start()` separately:
+  `.task { Task { await model.refresh() }; await model.start() }`.
+- **The iOS Add button floats above the centred iOS 26 floating tab bar**, 16pt
+  clear of it, not beside it as the mock drew and 2.4 conditioned on a fit
+  check. The system leaves 65pt to the bar's right on the iPhone 17 Pro
+  simulator; the button needs 72pt, so it does not fit beside the bar.
+- **iOS tab labels use the system font.** iOS 26's floating bar ignores
+  `UITabBarItem` appearance fonts, so `ShuttlType` cannot reach them. Only the
+  selected tab's SF Symbol is filled; the rest stay outlined.
+- **Tab icons are lucide (Android) and SF Symbols (iOS)**, not the mock's
+  hand-drawn glyphs. Both apps already draw every icon from one of these two
+  sets, and the mock's SVGs were illustrative.
+- **Verification is incomplete, and asymmetric across platforms.** The
+  Android emulator's session was revoked by the server
+  (`refresh_token_already_used`) before Task 5's captures, so its screenshots
+  were taken signed out through a temporary, uncommitted harness: cloud rows,
+  the collapsed Add button and the tab-switch check are still open on Android
+  for a signed-in pass. iOS's captures were taken signed in, with the Settings
+  email row redacted. Neither platform's scoring-board screen was captured; it
+  needs a match created on the account first. Open for Coen on a real phone.
