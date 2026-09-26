@@ -154,8 +154,10 @@ fun MatchScreen(
     }
 
     // Covers the case the clip-set trigger cannot see: a note added inside
-    // ClipDetail and then a back press.
-    LifecycleResumeEffect(Unit) {
+    // ClipDetail and then a back press. Keyed on summaryVm because the effect
+    // captures its block once per key: a page opened on a video only on this
+    // phone has none, and gains one when a cloud run creates the video.
+    LifecycleResumeEffect(summaryVm) {
         summaryVm?.refresh()
         onPauseOrDispose { }
     }
@@ -210,6 +212,15 @@ fun MatchScreen(
     // from court marking or any other pushed destination.
     var chosenSection by rememberSaveable { mutableStateOf(initialSection) }
     val section = shownSection(chosenSection, sections)
+    // The section first shown counts as chosen. Without this, a section
+    // appearing moves the page: a video only on this phone opens on Match
+    // alone, and when the run started from under its player lands, Rallies
+    // becomes the default and the player is released mid-watch. The app does
+    // not change the screen on its own (a finished run is announced, not
+    // opened), and a section arriving is the same kind of jump.
+    LaunchedEffect(section) {
+        if (chosenSection == null && section != null) chosenSection = section
+    }
     var videoFullscreen by rememberSaveable { mutableStateOf(false) }
     val fullscreen = videoFullscreen && section == MatchPageSection.MATCH
     val entry = matchItem?.entryId?.let { id -> state.localEntries.firstOrNull { it.id == id } }
@@ -627,8 +638,7 @@ private fun RallySortRow(sort: ClipSort, onSort: (ClipSort) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.End) {
         // The menu shares a Box with its anchor: DropdownMenu positions itself
-        // relative to its parent. Styled as the list row's RowMenu is, by the
-        // theme's surface container tokens.
+        // relative to its parent.
         Box {
             TextButton(
                 onClick = { open = true },
@@ -642,7 +652,14 @@ private fun RallySortRow(sort: ClipSort, onSort: (ClipSort) -> Unit) {
                     style = MaterialTheme.typography.labelMedium,
                 )
             }
-            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            // What MenuDefaults resolves to, set explicitly: the theme maps
+            // surfaceContainer to a palette token.
+            DropdownMenu(
+                expanded = open,
+                onDismissRequest = { open = false },
+                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                shape = MaterialTheme.shapes.extraSmall,
+            ) {
                 listOf(ClipSort.RallyOrder to MatchPageCopy.SORT_RALLY_ORDER, ClipSort.MostNotes to MatchPageCopy.SORT_MOST_NOTES)
                     .forEach { (value, label) ->
                         DropdownMenuItem(
