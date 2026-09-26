@@ -20,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.badmintontracker.android.ui.theme.ShuttlRadius
@@ -44,6 +45,13 @@ import com.badmintontracker.android.ui.theme.ShuttlRadius
  * against the row stacked under it (the Analysis section's panels); a few dp
  * of air inside a pill is not. See [pillPadding] and [pillLabelScale].
  *
+ * [secondary] is the row that belongs to another one above it: the match
+ * page's Analysis panels (Heatmap | Base | Skeleton) under its sections, and
+ * the Near | Far toggle inside a panel. Shorter pills and a smaller label, the
+ * transport bar's pill type (bodySmall at medium weight), in the same colours:
+ * three rows of one size stacked in the Analysis section read as three peers,
+ * with nothing to say the second was Analysis's own.
+ *
  * [labels] and [selectedIndex] rather than a generic type: the callers keep
  * their own enum and pass its labels, which keeps this file free of them.
  */
@@ -53,9 +61,15 @@ fun ShuttlPillTabs(
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    secondary: Boolean = false,
 ) {
     val shape = RoundedCornerShape(ShuttlRadius.pill)
-    val baseStyle = MaterialTheme.typography.labelMedium
+    val baseStyle = if (secondary) {
+        MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium)
+    } else {
+        MaterialTheme.typography.labelMedium
+    }
+    val padV = if (secondary) SECONDARY_PILL_PADDING_V else PILL_PADDING_V
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
     BoxWithConstraints(modifier.fillMaxWidth()) {
@@ -105,7 +119,7 @@ fun ShuttlPillTabs(
                             shape,
                         )
                         .selectable(selected = selected, role = Role.Tab, onClick = { onSelect(index) })
-                        .padding(horizontal = pad, vertical = 11.dp),
+                        .padding(horizontal = pad, vertical = padV),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
@@ -123,6 +137,10 @@ fun ShuttlPillTabs(
 private val TRACK_PADDING = 4.dp
 private val GAP = 4.dp
 private val PILL_PADDING_H = 8.dp
+private val PILL_PADDING_V = 11.dp
+
+/** A secondary pill's: with its smaller label, 8dp shorter than a primary one. */
+private val SECONDARY_PILL_PADDING_V = 7.dp
 /**
  * The least air either side of a label. Below this the label's first and last
  * letters crowd the capsule's curve: tried at 2dp, "Analysis" all but touched

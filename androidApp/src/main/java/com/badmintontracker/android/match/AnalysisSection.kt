@@ -95,6 +95,9 @@ fun AnalysisSection(
                 selectedIndex = panels.indexOf(panel),
                 onSelect = { chosen = panels[it] },
                 modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 16.dp),
+                // Secondary: this row is Analysis's own, under the page's
+                // section row, and must not read as its peer.
+                secondary = true,
             )
         } else {
             // Styled as a small uppercase section label, not as a title: the

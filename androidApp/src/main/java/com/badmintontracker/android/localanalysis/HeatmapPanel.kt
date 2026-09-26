@@ -172,6 +172,9 @@ internal fun SideToggle(
         selectedIndex = sides.indexOf(selected).coerceAtLeast(0),
         onSelect = { onSelect(sides[it]) },
         modifier = modifier,
+        // Inside a panel, under the section and panel rows: the lowest of the
+        // three, never their peer.
+        secondary = true,
     )
 }
 
