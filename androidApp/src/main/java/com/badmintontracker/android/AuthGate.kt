@@ -279,9 +279,19 @@ fun AuthGate(
                 // it had gone. The two sets are unioned rather than announced
                 // separately so one rule decides, and a video analysed both
                 // ways announces once.
+                //
+                // A device run that found nothing (no rally, no track, no
+                // skeleton) is left out here, from its own outcome: it is not
+                // "analyzed", and its row still offers Analyze. Not decided
+                // from the list later, which can lag a run and would lose one
+                // for good once its id is marked seen. Cloud runs are not
+                // filtered: one that finds no rallies fails instead of
+                // finishing, and its results land after the finish.
                 combine(
                     localAnalysis.state
-                        .map { states -> states.filterValues { it is LocalAnalysisState.Done }.keys },
+                        .map { states ->
+                            states.filterValues { it is LocalAnalysisState.Done && it.foundSomething }.keys
+                        },
                     coordinator.finishedRuns,
                 ) { device, cloud -> device + cloud }
                     .distinctUntilChanged()

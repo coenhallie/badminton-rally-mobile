@@ -45,19 +45,14 @@ class FinishedRunMessageTest {
         assertNull(finishedRunMessage(setOf("gone"), list))
     }
 
-    @Test fun a_run_that_found_nothing_is_not_announced() {
-        val empty = item("e3", "Short clip", entryId = "e3", analyses = emptyList())
-        assertNull(finishedRunMessage(setOf("e3"), MatchList(mine = listOf(empty), shared = emptyList())))
-    }
-
-    @Test fun a_score_alone_is_not_an_analysis() {
-        val scored = item("s4", "Club night", entryId = "e4", analyses = listOf(MatchAnalysis.SCORE))
-        assertNull(finishedRunMessage(setOf("e4"), MatchList(mine = listOf(scored), shared = emptyList())))
-    }
-
-    @Test fun among_several_runs_only_the_ones_that_found_something_are_counted() {
-        val empty = item("e3", "Short clip", entryId = "e3", analyses = emptyList())
-        val withEmpty = MatchList(mine = listOf(thu, sat, empty), shared = emptyList())
-        assertEquals(FinishedRunMessage("Thu League is analyzed", thu), finishedRunMessage(setOf("e1", "e3"), withEmpty))
+    // The list can lag a run: a cloud run's clips and track land after its
+    // finish, so its row can still read as unanalysed when the id arrives.
+    // The message is built all the same; the ids are cleared once read.
+    @Test fun a_row_that_has_not_caught_up_with_its_run_is_still_announced() {
+        val lagging = item("e3", "Sat Cup", entryId = "e3", analyses = emptyList())
+        assertEquals(
+            FinishedRunMessage("Sat Cup is analyzed", lagging),
+            finishedRunMessage(setOf("e3"), MatchList(mine = listOf(lagging), shared = emptyList())),
+        )
     }
 }
