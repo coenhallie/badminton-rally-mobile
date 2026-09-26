@@ -93,11 +93,12 @@ fun MatchVideoSection(
     var pendingDelete by remember { mutableStateOf<LocalAnnotation?>(null) }
     var playbackError by remember { mutableStateOf<String?>(null) }
 
-    // The snackbar host is the caller's, not this section's - passed in so it
-    // keeps working across the fullscreen toggle. Fullscreen here is only the
-    // video and transport bar, so surfacing an error over that view would
-    // interrupt playback rather than read as a normal message; hold it and
-    // re-check when fullscreen exits instead of firing once and losing it.
+    // The snackbar host is the caller's, passed in so this section can show a
+    // playback error through it. Fullscreen draws the video, the transport
+    // bar and FullscreenLabels' tag row over a black background; the
+    // LaunchedEffect below withholds the message while fullscreen and
+    // re-checks it once fullscreen exits, unchanged from LocalPlayerScreen's
+    // own behavior before this moved here.
     val tagMessage = rememberQuickTagMessage()
 
     LaunchedEffect(labelErrorMessage, fullscreen) {

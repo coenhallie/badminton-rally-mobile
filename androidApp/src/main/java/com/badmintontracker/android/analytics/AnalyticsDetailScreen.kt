@@ -65,20 +65,8 @@ fun VideoTitle(entry: LocalVideoEntry?, fallback: String) {
 }
 
 /**
- * What one analysed match has to show, reached from a READY row on the
- * Analytics tab.
- *
- * A pill tab row between the heatmap, the per-rally base position and the
- * skeleton, drawn only when more than one of them has content. The earlier
- * version of this screen had no tab row, deliberately: with one renderer a
- * single pill read as a primary button that did nothing, and a control that
- * cannot be actuated is worse than a plain heading. Gated the same way the
- * match page gates its facet selector: a tab must have something behind it.
- *
- * The heatmap itself, and the resolution of which track to draw, are
- * [HeatmapPanel]'s - shared with the standalone route a row's "Player heatmap"
- * menu item opens, so the two cannot drift. The base position is
- * [BasePositionPanel]'s, on the same track. The skeleton is [SkeletonPanel]'s.
+ * The Analytics tab's wrapper over [AnalysisSection], reached from a READY
+ * row on that tab.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
