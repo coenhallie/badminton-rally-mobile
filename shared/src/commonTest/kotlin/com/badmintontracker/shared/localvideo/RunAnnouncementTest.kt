@@ -70,4 +70,17 @@ class RunAnnouncementTest {
     fun nothing_finished_announces_nothing() {
         announceFinishedRuns(emptySet(), emptySet(), onHome = true).openAnalytics shouldBe false
     }
+
+    @Test
+    fun only_the_runs_that_just_landed_are_announced() {
+        val first = announceFinishedRuns(setOf("v1"), emptySet(), onHome = true)
+        val both = announceFinishedRuns(setOf("v1", "v2"), first.seen, onHome = true)
+
+        both.announce shouldBe setOf("v2")
+    }
+
+    @Test
+    fun nothing_is_announced_while_something_is_above_the_list() {
+        announceFinishedRuns(setOf("v1"), emptySet(), onHome = false).announce shouldBe emptySet()
+    }
 }
