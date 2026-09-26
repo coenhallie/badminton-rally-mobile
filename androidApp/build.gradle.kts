@@ -15,6 +15,15 @@ val localProperties = Properties().apply {
 val supabaseUrl     = (localProperties["SUPABASE_URL"] as? String).orEmpty()
 val supabaseAnonKey = (localProperties["SUPABASE_ANON_KEY"] as? String).orEmpty()
 
+// The release signing key, from local.properties or the environment, never from
+// the repo: a build handed to anyone outside the team has to be installable, and
+// an unsigned release APK is not. Absent on a machine without the key (CI, a
+// fresh checkout), the release build type simply stays unsigned rather than fail,
+// so `assembleRelease` still works as a compile check there.
+fun releaseSecret(name: String): String? =
+    (localProperties[name] as? String)?.takeIf { it.isNotBlank() } ?: System.getenv(name)?.takeIf { it.isNotBlank() }
+val releaseStoreFile = releaseSecret("RELEASE_STORE_FILE")?.let { file(it.replaceFirst("~", System.getProperty("user.home"))) }
+
 // Shared Android/iOS version source — see Config/Version.xcconfig.
 val versionConfig: Map<String, String> = rootProject.file("Config/Version.xcconfig")
     .readLines()
@@ -78,9 +87,21 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    signingConfigs {
+        if (releaseStoreFile != null) {
+            create("release") {
+                storeFile = releaseStoreFile
+                storePassword = releaseSecret("RELEASE_STORE_PASSWORD")
+                keyAlias = releaseSecret("RELEASE_KEY_ALIAS")
+                keyPassword = releaseSecret("RELEASE_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 }
@@ -135,6 +156,11 @@ dependencies {
     testImplementation(libs.turbine)
     testImplementation(libs.kotest.assertions)
     testImplementation(libs.settings.test)
+    // A Supabase client over a mock HTTP engine, so a view model test can drive
+    // a score log delete that the server accepts. Postgrest is what the score
+    // log store talks to; the app itself only reaches it through :shared.
+    testImplementation(libs.ktor.client.mock)
+    testImplementation(libs.supabase.postgrest)
 }
 
 // The ONNX graphs ship as assets, but they are NOT in git: they are
@@ -234,5 +260,19 @@ val copyTestOnlyOnnxModels by tasks.registering(Sync::class) {
 
 android.sourceSets.getByName("main").assets.srcDir(onnxAssetsDir)
 android.sourceSets.getByName("androidTest").assets.srcDir(onnxTestAssetsDir)
-tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }
-    .configureEach { dependsOn(copyOnnxModels, copyTestOnlyOnnxModels) }
+// Lint is here alongside the asset merge because it builds its own model of the
+// variant, assets included, so it reads this directory too. Without the edge,
+// Gradle fails the task with "uses this output of task ':androidApp:copyOnnxModels'
+// without declaring an explicit or implicit dependency".
+//
+// It only ever bit RELEASE builds, and that is why it went unnoticed: lintVital
+// runs as part of `assembleRelease` and not of `assembleDebug`, so every debug
+// build on every developer machine passed while `assembleRelease` could not
+// complete at all.
+tasks.matching {
+    // ignoreCase because the two families are capitalised differently:
+    // `generateReleaseLintVitalReportModel` and `lintVitalAnalyzeRelease`.
+    // Matching "Lint" alone silently misses every task of the second kind.
+    (it.name.startsWith("merge") && it.name.endsWith("Assets")) ||
+        it.name.contains("lint", ignoreCase = true)
+}.configureEach { dependsOn(copyOnnxModels, copyTestOnlyOnnxModels) }

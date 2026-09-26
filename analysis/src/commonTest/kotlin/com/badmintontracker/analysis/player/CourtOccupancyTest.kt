@@ -87,6 +87,19 @@ class CourtOccupancyTest {
     }
 
     @Test
+    fun a_position_just_off_the_low_edge_is_dropped_too() {
+        // toInt() truncates toward zero, so anything within a cell's width
+        // BELOW the grid came out as index 0 and was filed in the first row or
+        // column: the very clamping the test above forbids, for the near edge
+        // only. A margin smaller than the selector's two metres makes it
+        // reachable, and iOS passes its own.
+        val occupancy = CourtOccupancy(marginM = 0.5)
+        occupancy.add(Point(-0.6, 3.0), 1.0)
+        occupancy.add(Point(3.0, -0.6), 1.0)
+        assertEquals(0.0, occupancy.totalSeconds, 1e-9)
+    }
+
+    @Test
     fun smoothing_spreads_time_without_inventing_or_losing_it() {
         val occupancy = CourtOccupancy()
         occupancy.add(Point(3.0, 6.7), 10.0)

@@ -16,8 +16,10 @@ struct HeroTickerView: View {
     @State private var leaving = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// Paused while the drawer covers the screen: an animation nobody can see
-    /// still costs a wake per tick.
+    /// Paused whenever the caller decides this hero is not usefully on
+    /// screen - the empty Matches tab's copy while something is pushed over
+    /// it or another tab is front. An animation nobody can see still costs a
+    /// wake per tick.
     let isPaused: Bool
 
     private let dwell: Duration = .milliseconds(2600)
@@ -26,12 +28,38 @@ struct HeroTickerView: View {
         VStack(alignment: .leading, spacing: 40 * 0.08) {
             Text(HeroTicker.shared.leadLine)
                 .foregroundStyle(Shuttl.textHeading)
-            Text(HeroTicker.shared.phrases[index])
-                .foregroundStyle(Shuttl.textMuted)
-                .opacity(leaving ? 0 : 1)
-                .offset(y: leaving ? -12 : 0)
-                .animation(.easeOut(duration: 0.38), value: leaving)
-                .animation(.easeOut(duration: 0.38), value: index)
+            // Sized to the tallest phrase this slot will ever need at the
+            // current width, not to whichever phrase is showing: some phrases
+            // wrap to two lines here and some do not, and the empty Matches
+            // tab sets its body copy straight under the hero, so a slot that
+            // followed the current phrase would jump that copy a line up and
+            // down on every rotation (parity with androidApp's HeroTickerView,
+            // commit 9b7cbe7). Every candidate phrase is drawn hidden, purely
+            // to claim its own height; a ZStack's own size is the largest of
+            // its children, so it settles on the tallest one, and the real,
+            // visible phrase draws on top of them at that fixed size. Under
+            // Reduce Motion only the first phrase is ever shown (see run()
+            // below), so the sizing set is just that one phrase - reserving
+            // room for every phrase would hold open space for a rotation a
+            // coach with that setting will never see.
+            // .topLeading, not .leading: .leading centres a one-line phrase
+            // vertically in a slot sized for the tallest (two-line) one,
+            // which visibly shifts the single line down. Android's Box (the
+            // same technique, see the comment above) is top-start.
+            ZStack(alignment: .topLeading) {
+                ForEach(
+                    reduceMotion ? [HeroTicker.shared.phrases[0]] : HeroTicker.shared.phrases,
+                    id: \.self
+                ) { phrase in
+                    Text(phrase).hidden().accessibilityHidden(true)
+                }
+                Text(HeroTicker.shared.phrases[index])
+                    .foregroundStyle(Shuttl.textMuted)
+                    .opacity(leaving ? 0 : 1)
+                    .offset(y: leaving ? -12 : 0)
+                    .animation(.easeOut(duration: 0.38), value: leaving)
+                    .animation(.easeOut(duration: 0.38), value: index)
+            }
         }
         .shuttlType(ShuttlType.display)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -48,8 +76,9 @@ struct HeroTickerView: View {
         // exists to switch off.
         guard !reduceMotion, !isPaused else { return }
         // This task can be cancelled between `leaving = true` and
-        // `leaving = false` (the drawer opening mid-transition does exactly
-        // that). Without this reset, a cancellation caught there leaves the
+        // `leaving = false` (the caller flipping `isPaused` mid-transition -
+        // a push covering the Matches tab, say - does exactly that).
+        // Without this reset, a cancellation caught there leaves the
         // second line invisible until the next full dwell-and-transition
         // cycle completes.
         leaving = false

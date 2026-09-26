@@ -34,7 +34,12 @@ import com.badmintontracker.android.ui.components.ShuttlPillTabs
 import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.analytics.AnalyticsPanel
+import com.badmintontracker.analysis.player.RallyWindow
 import com.badmintontracker.shared.analytics.availablePanels
+import com.badmintontracker.shared.analytics.cloudRallyWindows
+import com.badmintontracker.shared.analytics.rallyWindowsFor
+import com.badmintontracker.shared.model.RallyClip
+import com.badmintontracker.android.localanalysis.TrackSource
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.prefs.PlaybackPreferenceRepository
 import com.badmintontracker.shared.prefs.RacketArmPreferenceRepository
@@ -78,7 +83,7 @@ fun VideoTitle(entry: LocalVideoEntry?, fallback: String) {
 
 /**
  * What one analysed match has to show, reached from a READY row on the
- * Analytics list.
+ * Analytics tab.
  *
  * A pill tab row between the heatmap, the per-rally base position and the
  * skeleton, drawn only when more than one of them has content. The earlier
@@ -88,9 +93,9 @@ fun VideoTitle(entry: LocalVideoEntry?, fallback: String) {
  * match page gates its facet selector: a tab must have something behind it.
  *
  * The heatmap itself, and the resolution of which track to draw, are
- * [HeatmapPanel]'s - shared with the standalone route the analysis banner
- * opens, so the two cannot drift. The base position is [BasePositionPanel]'s,
- * on the same track. The skeleton is [SkeletonPanel]'s.
+ * [HeatmapPanel]'s - shared with the standalone route a row's "Player heatmap"
+ * menu item opens, so the two cannot drift. The base position is
+ * [BasePositionPanel]'s, on the same track. The skeleton is [SkeletonPanel]'s.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -100,30 +105,54 @@ fun AnalyticsDetailScreen(
     localVideos: LocalVideoRepository,
     playbackPrefs: PlaybackPreferenceRepository,
     racketArmPrefs: RacketArmPreferenceRepository,
+    /**
+     * Every rally clip the cache holds. The rally truth for a CLOUD-analysed
+     * video, which cuts nothing on this phone: without these the Base tab could
+     * never appear for one, however good its track.
+     */
+    cloudClips: List<RallyClip>,
+    /**
+     * The list's name for this match, for when there is no entry to read one
+     * from. A cloud run finishing does not cause this - the entry stays at
+     * ANALYZED rather than being retired (since f96d78c) - so it is the video
+     * having since left the phone (`freeVideo` drops the entry but keeps the
+     * track) or a match analysed on another phone entirely.
+     */
+    fallbackTitle: String? = null,
     onBack: () -> Unit,
 ) {
     val hasSkeleton = remember(entryId) { localAnalysis.hasStoredSkeleton(entryId) }
     // A run still in memory may carry a track and clips the disk does not yet
     // hold, so both are consulted, the way HeatmapPanel resolves its track.
     val done = localAnalysis.stateFor(entryId) as? LocalAnalysisState.Done
-    val hasTrack = remember(entryId, done) {
-        done?.playerTrack?.samples?.isNotEmpty() == true || localAnalysis.hasStoredTrack(entryId)
+    val storedTrack = remember(entryId, done) { localAnalysis.storedTrack(entryId) }
+    val hasTrack = done?.playerTrack?.samples?.isNotEmpty() == true || storedTrack != null
+    // One source for the whole screen. A median taken over one run's rally
+    // boundaries and plotted from another run's track is two answers on one
+    // court, so whichever run heatmapSource will draw also supplies the windows.
+    val windows = remember(entryId, done, storedTrack, cloudClips) {
+        rallyWindowsFor(
+            preferCloud = storedTrack?.source == TrackSource.CLOUD,
+            cloud = cloudRallyWindows(cloudClips, entryId),
+            device = (done?.clips?.takeIf { it.isNotEmpty() } ?: localAnalysis.storedClips(entryId))
+                .map { RallyWindow(it.index, it.startSeconds, it.endSeconds) },
+        )
     }
-    val hasBoundedClips = remember(entryId, done) {
-        (done?.clips?.takeIf { it.isNotEmpty() } ?: localAnalysis.storedClips(entryId))
-            .any { it.endSeconds > it.startSeconds }
-    }
-    val panels = availablePanels(hasTrack, hasBoundedClips, hasSkeleton)
-    var chosen by rememberSaveable { mutableStateOf(AnalyticsPanel.Heatmap) }
-    val panel = if (chosen in panels) chosen else AnalyticsPanel.Heatmap
+    val hasBoundedClips = windows.any { it.isBounded }
     val entry = remember(entryId) { localVideos.get(entryId) }
     val videoUri = entry?.uri
+    // A cloud analysis lands on a phone that never held the footage, so the
+    // skeleton tab has nothing to overlay. The heatmap and base read only the
+    // stored track and are unaffected.
+    val panels = availablePanels(hasTrack, hasBoundedClips, hasSkeleton, hasVideo = videoUri != null)
+    var chosen by rememberSaveable { mutableStateOf(AnalyticsPanel.Heatmap) }
+    val panel = if (chosen in panels) chosen else AnalyticsPanel.Heatmap
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { VideoTitle(entry = entry, fallback = "Analysis") },
+                title = { VideoTitle(entry = entry, fallback = fallbackTitle ?: "Analysis") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -154,7 +183,8 @@ fun AnalyticsDetailScreen(
             }
             when (panel) {
                 AnalyticsPanel.Heatmap -> HeatmapPanel(entryId = entryId, runner = localAnalysis)
-                AnalyticsPanel.Base -> BasePositionPanel(entryId = entryId, runner = localAnalysis)
+                AnalyticsPanel.Base ->
+                    BasePositionPanel(entryId = entryId, runner = localAnalysis, windows = windows)
                 AnalyticsPanel.Skeleton -> SkeletonPanel(
                     entryId = entryId,
                     videoUri = videoUri,

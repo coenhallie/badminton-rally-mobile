@@ -22,6 +22,8 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Shuttl uses the camera to record match videos.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Shuttl adds the town you are in to a new match's name.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Shuttl records audio with your match videos.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>

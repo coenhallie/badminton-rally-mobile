@@ -13,6 +13,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 
 /**
  * Keeps an on-device analysis alive while the phone is asleep or the app is in
@@ -53,7 +54,10 @@ class LocalAnalysisService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val text = intent?.getStringExtra(EXTRA_TEXT) ?: "Analyzing on device"
-        startForeground(NOTIFICATION_ID, notification(text), foregroundType())
+        // ServiceCompat, not the framework call: the three-argument overload is
+        // API 29 and minSdk is 26, where it is a NoSuchMethodError the moment a
+        // device run starts.
+        ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(text), foregroundType())
 
         lockTimeoutMillis = intent?.getLongExtra(EXTRA_TIMEOUT, LOCK_TIMEOUT_MILLIS)
             ?: LOCK_TIMEOUT_MILLIS

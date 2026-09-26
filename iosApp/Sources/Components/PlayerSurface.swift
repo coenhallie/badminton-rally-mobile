@@ -4,7 +4,7 @@ import SwiftUI
 /// The video surface for both player screens.
 ///
 /// AVKit's own controls are off entirely. `ShuttlVideoCard` draws the timecode
-/// chip, the speed chip and the scrub bar, and `ShuttlTransportBar` under the
+/// chip, the settings chip and the scrub bar, and `ShuttlTransportBar` under the
 /// card owns playback; AVKit's play button and time bar would sit on top of both.
 /// The iOS counterpart of Android's `useController = false`.
 ///

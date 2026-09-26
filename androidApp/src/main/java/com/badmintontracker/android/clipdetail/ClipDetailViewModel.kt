@@ -4,7 +4,7 @@ import com.badmintontracker.shared.repo.userFacingMessage
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.badmintontracker.android.cliplist.clipRowTitle
-import com.badmintontracker.android.cliplist.matchTitle
+import com.badmintontracker.shared.matchlist.matchTitle
 import com.badmintontracker.shared.model.AnnotationLabel
 import com.badmintontracker.shared.model.RallyAnnotation
 import com.badmintontracker.shared.model.RallyClip

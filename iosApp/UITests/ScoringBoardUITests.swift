@@ -21,6 +21,17 @@ final class ScoringBoardUITests: XCTestCase {
 
         try createMatch(app)
 
+        // The serve pill sits inside the half that scores on a tap, so handing the
+        // opening serve across must not also be a rally. Held still here for the
+        // same reason the chip is below.
+        let serve = app.buttons["SERVE R"].firstMatch
+        XCTAssertTrue(serve.waitForExistence(timeout: 5), "the serve pill cannot be switched before the first point")
+        serve.tap()
+        XCTAssertTrue(
+            app.staticTexts["Tap a side to score, or SERVE to switch server"].exists,
+            "switching the first server also scored a rally"
+        )
+
         // One rally to the side on the left, which puts the tag row in reach.
         let board = app.otherElements.firstMatch
         scoreLeftHalf(app)
@@ -45,6 +56,75 @@ final class ScoringBoardUITests: XCTestCase {
         try deleteMatch(app)
     }
 
+    func testUndoTakesBackATaggedRallyAndRedoPutsItBack() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        try createMatch(app)
+
+        scoreLeftHalf(app)
+        XCTAssertTrue(app.staticTexts["Point 1: 1-0"].waitForExistence(timeout: 5), "the first tap did not score")
+        scoreRightHalf(app)
+        XCTAssertTrue(app.staticTexts["Point 2: 1-1"].waitForExistence(timeout: 5), "the second tap did not score")
+        // Tagged, because a tagged rally is the case the old undo got wrong: it
+        // took the tag first and left the score where it was.
+        app.buttons["Good shot"].firstMatch.tap()
+
+        app.buttons["Undo"].firstMatch.tap()
+        XCTAssertTrue(
+            app.staticTexts["Point to Away undone"].waitForExistence(timeout: 5),
+            "undo did not say what it took back"
+        )
+        XCTAssertTrue(app.staticTexts["Point 1: 1-0"].exists, "one undo did not take back the tagged rally")
+        // Held for the screenshot loop that runs beside this test.
+        Thread.sleep(forTimeInterval: 2)
+
+        app.buttons["Redo"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Point 2: 1-1"].waitForExistence(timeout: 5), "redo did not put the rally back")
+        XCTAssertFalse(app.buttons["Redo"].exists, "redo was still offered after it was used")
+
+        try deleteMatch(app)
+    }
+
+    func testDetailsEditedFromTheBoardNameTheSides() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        try createMatch(app)
+        XCTAssertTrue(app.staticTexts["Home"].exists, "an unnamed side is not called Home")
+
+        // The new match form asks for none of this; the board's menu is one of the
+        // two places it gets filled in.
+        app.buttons["Match options"].firstMatch.tap()
+        let edit = app.buttons["Edit details"].firstMatch
+        XCTAssertTrue(edit.waitForExistence(timeout: 5), "the board's menu does not offer the details editor")
+        edit.tap()
+
+        let doubles = app.buttons["Doubles"].firstMatch
+        XCTAssertTrue(doubles.waitForExistence(timeout: 5), "the details editor did not open")
+        doubles.tap()
+
+        for (field, name) in [("Home player 1", "Coen"), ("Home player 2", "Ana"),
+                              ("Away player 1", "Marco"), ("Away player 2", "Li")] {
+            let input = app.textFields[field].firstMatch
+            XCTAssertTrue(input.waitForExistence(timeout: 5), "doubles did not show \(field)")
+            input.tap()
+            input.typeText(name)
+        }
+        app.buttons["Save"].firstMatch.tap()
+
+        XCTAssertTrue(
+            app.staticTexts["Coen / Ana"].waitForExistence(timeout: 5),
+            "the board did not take the home pair's names"
+        )
+        XCTAssertTrue(app.staticTexts["Marco / Li"].exists, "the board did not take the away pair's names")
+        // Holds the named board on screen for the screenshot loop that runs beside
+        // this test; see the emulator-sim memory for why there is no other way in.
+        Thread.sleep(forTimeInterval: 3)
+
+        try deleteMatch(app)
+    }
+
     /// Creates a singles match from the real form, the way a coach reaches the
     /// board. Deleted again at the end of the test so the account keeps nothing.
     private func createMatch(_ app: XCUIApplication) throws {
@@ -52,33 +132,39 @@ final class ScoringBoardUITests: XCTestCase {
         // rather than reporting a failure that says nothing about the board.
         // The same guard LabelSwatchGridUITests uses, and for the same reason.
         //
-        // Gated on the drawer control rather than on the pill this test goes on
-        // to tap: those are both on Home, so either would prove the app is
-        // signed in, but skipping on the pill's own absence would turn renaming
-        // or losing it into a silent skip instead of the failure it should be.
-        guard app.buttons["Menu"].firstMatch.waitForExistence(timeout: 15) else {
+        // Gated on the tab bar rather than on the Add button this test goes on
+        // to tap: the tab bar only exists behind sign-in, so it proves the app
+        // is signed in without also being the control a rename or a loss of
+        // "Add match" would need to fail on instead of silently skip.
+        guard app.tabBars.buttons["Settings"].firstMatch.waitForExistence(timeout: 15) else {
             throw XCTSkip("not signed in on this simulator - cannot reach the board")
         }
-        // "Add" was the list's own toolbar icon; Home replaced it with the
-        // "Add new match" pill, which opens the same three-row sheet.
-        app.buttons["Add new match"].firstMatch.tap()
+        // "Add" was the list's own toolbar icon, then Home's "Add new match"
+        // pill; the Matches tab's own round "Add match" button opens the same
+        // three-row sheet now.
+        app.buttons["Add match"].firstMatch.tap()
         let newMatch = app.buttons["New match"].firstMatch
         XCTAssertTrue(newMatch.waitForExistence(timeout: 5), "the add sheet did not open")
         newMatch.tap()
 
+        // The form asks where the phone is, once, to put a town in the default
+        // name. Answered here so the alert cannot sit over the fields below.
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let allow = springboard.buttons["Allow While Using App"].firstMatch
+        if allow.waitForExistence(timeout: 3) { allow.tap() }
+
         let title = app.textFields["Match name"].firstMatch
         XCTAssertTrue(title.waitForExistence(timeout: 5), "the new match form did not open")
+        // The name arrives filled in, so it is cleared before the test's own is typed:
+        // deleting the match afterwards finds it by this exact name.
         title.tap()
+        let prefilled = (title.value as? String) ?? ""
+        title.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: prefilled.count))
         title.typeText(matchName)
-
-        app.textFields["Home player"].firstMatch.tap()
-        app.textFields["Home player"].firstMatch.typeText("Coen")
-        app.textFields["Away player"].firstMatch.tap()
-        app.textFields["Away player"].firstMatch.typeText("Marco")
 
         app.buttons["Create"].firstMatch.tap()
         XCTAssertTrue(
-            app.staticTexts["Tap a side to score"].waitForExistence(timeout: 10),
+            app.staticTexts["Tap a side to score, or SERVE to switch server"].waitForExistence(timeout: 10),
             "creating a match did not land on the board"
         )
     }
@@ -87,6 +173,10 @@ final class ScoringBoardUITests: XCTestCase {
     /// region rather than a control, which is the whole point of it.
     private func scoreLeftHalf(_ app: XCUIApplication) {
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5)).tap()
+    }
+
+    private func scoreRightHalf(_ app: XCUIApplication) {
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.5)).tap()
     }
 
     /// Swipes the list until [element] is on screen and touchable, or gives up.
@@ -110,10 +200,11 @@ final class ScoringBoardUITests: XCTestCase {
     /// back to a clean device stays red for a reason that is not about the board.
     private func deleteMatch(_ app: XCUIApplication) throws {
         app.buttons["Back"].firstMatch.tap()
-        // Back lands on Home, not the list: the list is now behind the
-        // drawer, so it takes the hamburger to reach the row this test needs.
-        app.buttons["Open matches"].firstMatch.tap()
-        // Scrolled to, not assumed on screen. The drawer lists videos on this
+        // Back lands on the tab host, on the Matches tab the board was created
+        // from, with the list already on screen - no hamburger, no drawer to
+        // open first.
+        //
+        // Scrolled to, not assumed on screen. The list carries videos on this
         // phone above matches, and a SwiftUI List is lazy, so a row below the
         // fold is not in the accessibility tree at all. This test used to pass
         // only because the device happened to hold one local video; it fails on

@@ -28,20 +28,17 @@ struct LocalPlayerView: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .task {
-            guard model == nil else { return }
-            guard let entry = rally.localVideos.get(id: entryId) else {
-                dismiss()   // entry vanished — mirror Android's popBackStack
-                return
+            // The model is built once; what it observes is restarted on every
+            // appearance. This used to `guard model == nil` around both, so the
+            // loops that pushing court marking cancelled never came back.
+            if model == nil {
+                guard let entry = rally.localVideos.get(id: entryId) else {
+                    dismiss()   // entry vanished - mirror Android's popBackStack
+                    return
+                }
+                model = LocalPlayerModel(rally: rally, entry: entry)
             }
-            let m = LocalPlayerModel(rally: rally, entry: entry)
-            model = m
-            await m.loadMetadata()
-            await m.refreshLabels()
-            // Structured child task: torn down automatically if this .task is
-            // cancelled (the view disappearing) before it is awaited.
-            async let labelsLoop: Void = m.observeLabels()
-            await m.observeAnnotations()
-            _ = await labelsLoop
+            await model?.start()
         }
         .task {
             // Keep the entry live (Android observes it the same way): the stage
@@ -49,7 +46,7 @@ struct LocalPlayerView: View {
             // must be reflected here, not just on the home list.
             for await entries in rally.localVideos.entries {
                 guard let entry = entries.first(where: { $0.id == entryId }) else {
-                    dismiss()   // removed (e.g. analysis succeeded) — pop back
+                    dismiss()   // removed (e.g. analysis succeeded) - pop back
                     return
                 }
                 liveEntry = entry
@@ -67,6 +64,12 @@ struct LocalPlayerView: View {
                 player: model.player,
                 prefs: rally.playbackPrefs,
                 step: { model.stepFrames($0) },
+                labels: model.labels,
+                onTag: { label, positionMs in
+                    model.add(label: label, body: "", atSeconds: Float(positionMs) / 1000)
+                },
+                tagError: model.actionError,
+                allowsFullscreen: true,
                 overlay: { EmptyView() },
                 errorContent: {
                     if let error = model.playbackError {

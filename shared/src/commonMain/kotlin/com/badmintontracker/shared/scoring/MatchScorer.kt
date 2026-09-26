@@ -24,8 +24,25 @@ class MatchScorer(
     /** False once the match has a winner, so a stray tap is never recorded as a rally. */
     fun canScore(): Boolean = state()?.isOver == false
 
-    /** True whenever there is anything at all to take back, a finished match included. */
-    fun canUndo(): Boolean = repo.get(scoreLogId)?.events?.isNotEmpty() == true
+    /** True whenever there is a rally to take back, a finished match included. */
+    fun canUndo(): Boolean = (state()?.pointCount ?: 0) > 0
+
+    /**
+     * True until the first point is scored. A new match starts with home serving
+     * because the form no longer asks; this is the window in which the board can be
+     * told it was the other side that won the toss.
+     */
+    fun canSwitchFirstServer(): Boolean {
+        val log = repo.get(scoreLogId) ?: return false
+        return log.isPlayable() && log.events.isEmpty()
+    }
+
+    /** Hands the first serve to the other side. A no-op once a point has been scored. */
+    fun switchFirstServer() {
+        if (!canSwitchFirstServer()) return
+        val log = repo.get(scoreLogId) ?: return
+        repo.setFirstServer(scoreLogId, log.setup.firstServer.other)
+    }
 
     fun score(side: Side) {
         if (!canScore()) return
@@ -40,8 +57,32 @@ class MatchScorer(
     fun tagPoint(ordinal: Int, tags: List<PointTag>, comment: String?) =
         edit { it.tagPoint(ordinal, tags, comment) }
 
-    /** Drops the last entry, which is the tag if one was just added, and the point otherwise. */
-    fun undo() = edit { it.undoLast() }
+    /**
+     * Takes back the last rally with its tags and note, and says which rally that
+     * was. Null when there was none to take back.
+     */
+    fun undo(): UndoneRally? {
+        val log = repo.get(scoreLogId) ?: return null
+        val last = log.state().points.lastOrNull() ?: return null
+        // Cut at the rally the board shows rather than the log's last point: a
+        // log from elsewhere can run past the end of the match, and the fold
+        // ignores what is past it, so that point is not the one being named.
+        val after = log.events.dropPointsFrom(last.ordinal)
+        repo.replaceEvents(scoreLogId, after)
+        return UndoneRally(last.wonBy, last.scoreAfter, before = log.events, after = after)
+    }
+
+    /**
+     * True while nothing has changed the match since [undone]. Once anything has -
+     * a rally, a tag, a reset, a sync - putting the old log back would erase it.
+     */
+    fun canRedo(undone: UndoneRally): Boolean = repo.get(scoreLogId)?.events == undone.after
+
+    /** Puts back what [undone] took, tags and note included. A no-op once [canRedo] is false. */
+    fun redo(undone: UndoneRally) {
+        if (!canRedo(undone)) return
+        repo.replaceEvents(scoreLogId, undone.before)
+    }
 
     /**
      * Clears the game being played and leaves every finished game alone. The cut is
@@ -51,6 +92,16 @@ class MatchScorer(
     fun resetCurrentGame() {
         val state = state() ?: return
         edit { it.dropPointsFrom(firstOrdinalOfCurrentGame(state)) }
+    }
+
+    /**
+     * The details editor's save, from the board. Through here rather than straight
+     * to the store for the same reason everything else is: the board has one way to
+     * change a match. Never touches the events, so it is safe at any score.
+     */
+    fun updateDetails(title: String, format: MatchFormat?, homePlayers: List<String>, awayPlayers: List<String>) {
+        if (repo.get(scoreLogId) == null) return
+        repo.updateDetails(scoreLogId, title, format, homePlayers, awayPlayers)
     }
 
     /** Ends the match as [ScoreLogStatus.UNBOUND] - a terminal state, not a half-done one. */
@@ -72,3 +123,19 @@ class MatchScorer(
         repo.replaceEvents(scoreLogId, transform(log.events))
     }
 }
+
+/**
+ * What one undo took back, and everything [MatchScorer.redo] needs to put it back.
+ * Holds the whole log on either side of the cut rather than the removed entries,
+ * so a redo is a comparison and a write rather than a merge.
+ */
+data class UndoneRally(
+    val side: Side,
+    /** The game's score as that rally left it, i.e. before the undo. */
+    val scoreAfter: SideScore,
+    val before: List<ScoreEvent>,
+    val after: List<ScoreEvent>,
+)
+
+/** The board's one-line confirmation of an undo. Shared so both boards say the same thing. */
+fun ScoreLog.undoneNotice(undone: UndoneRally): String = "Point to ${sideName(undone.side)} undone"

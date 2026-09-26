@@ -5,14 +5,19 @@ import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.model.CourtKeypoints
 import com.badmintontracker.shared.model.MatchMetadata
+import com.badmintontracker.shared.model.MatchShare
 import com.badmintontracker.shared.model.RallyClip
 import com.badmintontracker.shared.prefs.RacketArmPreferenceRepository
 import com.badmintontracker.shared.repo.ClipsRepository
 import com.badmintontracker.shared.repo.ProcessingUpdate
+import com.badmintontracker.shared.repo.ReceivedShare
+import com.badmintontracker.shared.repo.SharesRepository
 import com.badmintontracker.shared.repo.UploadState
 import com.badmintontracker.shared.repo.VideosRepository
+import com.badmintontracker.shared.scoring.MatchFormat
 import com.russhwolf.settings.NSUserDefaultsSettings
 import io.ktor.utils.io.ByteReadChannel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -41,36 +46,81 @@ private open class NoopVideosRepository : VideosRepository {
     override suspend fun setCourtKeypoints(videoId: String, keypoints: CourtKeypoints): Result<Unit> =
         Result.success(Unit)
     override suspend fun startProcessing(videoId: String): Result<Unit> = Result.success(Unit)
-    override fun observeProcessing(videoId: String, pollIntervalMs: Long): Flow<ProcessingUpdate> = emptyFlow()
+    override suspend fun startAnalytics(videoId: String): Result<Unit> = Result.success(Unit)
+    override fun observeProcessing(
+        videoId: String, pollIntervalMs: Long, awaitAnalytics: Boolean,
+    ): Flow<ProcessingUpdate> = emptyFlow()
     override fun uploadVideo(
         videoId: String, sizeBytes: Long, channelProvider: suspend (offset: Long) -> ByteReadChannel,
     ): Flow<UploadState> = emptyFlow()
     override suspend fun listMatchMetadata(): Result<List<MatchMetadata>> = Result.success(emptyList())
+    override fun observeMatchMetadata(): Flow<Map<String, MatchMetadata>> = MutableStateFlow(emptyMap())
+    override suspend fun updateMatchDetails(
+        videoId: String, title: String?, description: String?, format: MatchFormat?,
+        homePlayers: List<String>, awayPlayers: List<String>,
+    ): Result<Unit> = Result.success(Unit)
     override suspend fun deleteMatch(videoId: String): Result<Unit> = Result.success(Unit)
 }
 
 /**
  * The one double here that does more than satisfy a constructor: it records what
- * was deleted, and [failDeleteMatch] makes the server refuse, which is the branch
- * that must abort a removal before it touches anything local.
+ * was deleted and what details were written, and [failDeleteMatch] /
+ * [failUpdateDetails] make the server refuse, which is the branch that must abort
+ * before anything local is touched.
  */
 class RecordingVideosRepository internal constructor() : VideosRepository by NoopVideosRepository() {
     var failDeleteMatch: Boolean = false
+    var failUpdateDetails: Boolean = false
+
+    /**
+     * Makes [deleteMatch] throw rather than return a failure. A cancellation, the
+     * one exception a suspend function without `@Throws` bridges into Swift as an
+     * error rather than terminating the process (see KotlinThrowBridgingTests).
+     */
+    var cancelDeleteMatch: Boolean = false
 
     /** What [deleteMatch] was called with, in order. A read-only List, not the
      *  MutableList behind it: Swift sees this one as a plain array. */
     val deletedVideoIds: List<String> get() = calls.toList()
 
+    /** What [updateMatchDetails] was called with, in order, as the row it would produce. */
+    val detailUpdates: List<MatchMetadata> get() = updates.toList()
+
     private val calls = mutableListOf<String>()
+    private val updates = mutableListOf<MatchMetadata>()
+    private val metadata = MutableStateFlow<Map<String, MatchMetadata>>(emptyMap())
+
+    override fun observeMatchMetadata(): Flow<Map<String, MatchMetadata>> = metadata
 
     override suspend fun deleteMatch(videoId: String): Result<Unit> {
         calls += videoId
+        if (cancelDeleteMatch) throw CancellationException("cancelled")
         return if (failDeleteMatch) Result.failure(IllegalStateException("refused")) else Result.success(Unit)
+    }
+
+    override suspend fun updateMatchDetails(
+        videoId: String, title: String?, description: String?, format: MatchFormat?,
+        homePlayers: List<String>, awayPlayers: List<String>,
+    ): Result<Unit> {
+        val row = MatchMetadata(videoId, title, description, homePlayers, awayPlayers, format)
+        updates += row
+        if (failUpdateDetails) return Result.failure(IllegalStateException("refused"))
+        metadata.value = metadata.value + (videoId to row)
+        return Result.success(Unit)
     }
 }
 
-private class InMemoryClipsRepository : ClipsRepository {
+/**
+ * Clips held in memory, recording which videos were pruned so a test can check
+ * that a refused or thrown call left the cache alone.
+ */
+class InMemoryClipsRepository internal constructor() : ClipsRepository {
     val clips = MutableStateFlow<List<RallyClip>>(emptyList())
+
+    /** What [pruneVideo] was called with, in order, as a plain Swift array. */
+    val prunedVideoIds: List<String> get() = pruned.toList()
+    private val pruned = mutableListOf<String>()
+
     override suspend fun listClips(): List<RallyClip> = clips.value
     override fun observeClips(): Flow<List<RallyClip>> = clips
     override suspend fun refresh() = Unit
@@ -78,6 +128,7 @@ private class InMemoryClipsRepository : ClipsRepository {
     override suspend fun countClipsForVideo(videoId: String): Result<Int> =
         Result.success(clips.value.count { it.videoId == videoId })
     override fun pruneVideo(videoId: String) {
+        pruned += videoId
         clips.value = clips.value.filterNot { it.videoId == videoId }
     }
 }
@@ -105,10 +156,47 @@ fun testRacketArmPreferences(): RacketArmPreferenceRepository {
  * comment). Mutate `clips.value` directly through the same [InMemoryClipsRepository]
  * instance to seed clips for a test.
  */
-fun testClipsRepository(): ClipsRepository = InMemoryClipsRepository()
+fun testClipsRepository(): InMemoryClipsRepository = InMemoryClipsRepository()
+
+/**
+ * A [ClipsRepository] with no signal: every call that reaches the network throws,
+ * which is what supabase-kt does. For the one thing only the iOS bundle can
+ * check, that such a throw arrives in Swift as an error and not as an abort.
+ */
+fun testOfflineClipsRepository(): ClipsRepository = object : ClipsRepository by InMemoryClipsRepository() {
+    override suspend fun listClips(): List<RallyClip> = throw IllegalStateException("offline")
+    override suspend fun refresh() { throw IllegalStateException("offline") }
+}
 
 /** A [VideosRepository] the iOS test bundle can build. See [RecordingVideosRepository]. */
 fun testVideosRepository(): RecordingVideosRepository = RecordingVideosRepository()
+
+/**
+ * A [SharesRepository] that records what was left and can refuse or throw on
+ * cue: [failLeaveShare] makes the server say no, [cancelLeaveShare] throws a
+ * cancellation, the one exception that bridges into Swift from a suspend
+ * function without `@Throws`. Everything else succeeds with nothing.
+ */
+class RecordingSharesRepository internal constructor() : SharesRepository {
+    var failLeaveShare: Boolean = false
+    var cancelLeaveShare: Boolean = false
+
+    /** What [leaveShare] was called with, in order, as a plain Swift array. */
+    val leftVideoIds: List<String> get() = left.toList()
+    private val left = mutableListOf<String>()
+
+    override suspend fun share(videoId: String, email: String): Result<Unit> = Result.success(Unit)
+    override suspend fun unshare(videoId: String, userId: String): Result<Unit> = Result.success(Unit)
+    override suspend fun listShares(videoId: String): Result<List<MatchShare>> = Result.success(emptyList())
+    override suspend fun listReceived(): List<ReceivedShare> = emptyList()
+    override suspend fun leaveShare(videoId: String): Result<Unit> {
+        left += videoId
+        if (cancelLeaveShare) throw CancellationException("cancelled")
+        return if (failLeaveShare) Result.failure(IllegalStateException("refused")) else Result.success(Unit)
+    }
+}
+
+fun testSharesRepository(): RecordingSharesRepository = RecordingSharesRepository()
 
 /**
  * A [LocalAnnotationsRepository] the iOS test bundle can build, scoped to its own

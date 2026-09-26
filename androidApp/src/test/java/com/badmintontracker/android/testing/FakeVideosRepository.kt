@@ -5,8 +5,10 @@ import com.badmintontracker.shared.repo.ProcessingUpdate
 import com.badmintontracker.shared.repo.UploadState
 import com.badmintontracker.shared.model.MatchMetadata
 import com.badmintontracker.shared.repo.VideosRepository
+import com.badmintontracker.shared.scoring.MatchFormat
 import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
 
 data class CreateVideoCall(
@@ -57,8 +59,26 @@ class FakeVideosRepository : VideosRepository {
         return nextStartResult
     }
 
-    override fun observeProcessing(videoId: String, pollIntervalMs: Long): Flow<ProcessingUpdate> =
-        flow { processingUpdates.forEach { emit(it) } }
+    /** Recorded separately from [startCalls]: the two triggers are different phases. */
+    val startAnalyticsCalls = mutableListOf<String>()
+    var nextStartAnalyticsResult: Result<Unit> = Result.success(Unit)
+
+    override suspend fun startAnalytics(videoId: String): Result<Unit> {
+        startAnalyticsCalls += videoId
+        return nextStartAnalyticsResult
+    }
+
+    /** Recorded so a test can assert which kind of wait a caller asked for. */
+    val awaitAnalyticsCalls = mutableListOf<Boolean>()
+
+    override fun observeProcessing(
+        videoId: String,
+        pollIntervalMs: Long,
+        awaitAnalytics: Boolean,
+    ): Flow<ProcessingUpdate> = flow {
+        awaitAnalyticsCalls += awaitAnalytics
+        processingUpdates.forEach { emit(it) }
+    }
 
     override fun uploadVideo(
         videoId: String,
@@ -71,7 +91,30 @@ class FakeVideosRepository : VideosRepository {
 
     override suspend fun listMatchMetadata(): Result<List<MatchMetadata>> {
         metadataCalls++
+        nextMetadataResult.onSuccess { rows -> metadata.value = rows.associateBy { it.videoId } }
         return nextMetadataResult
+    }
+
+    /** The cache the real repository keeps; a test seeds it directly or through [listMatchMetadata]. */
+    val metadata = MutableStateFlow<Map<String, MatchMetadata>>(emptyMap())
+
+    override fun observeMatchMetadata(): Flow<Map<String, MatchMetadata>> = metadata
+
+    var nextUpdateDetailsResult: Result<Unit> = Result.success(Unit)
+    val updateDetailsCalls = mutableListOf<MatchMetadata>()
+
+    override suspend fun updateMatchDetails(
+        videoId: String,
+        title: String?,
+        description: String?,
+        format: MatchFormat?,
+        homePlayers: List<String>,
+        awayPlayers: List<String>,
+    ): Result<Unit> {
+        val row = MatchMetadata(videoId, title, description, homePlayers, awayPlayers, format)
+        updateDetailsCalls += row
+        nextUpdateDetailsResult.onSuccess { metadata.value = metadata.value + (videoId to row) }
+        return nextUpdateDetailsResult
     }
 
     override suspend fun deleteMatch(videoId: String): Result<Unit> {

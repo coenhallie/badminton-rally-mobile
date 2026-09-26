@@ -1,6 +1,7 @@
 package com.badmintontracker.android.clipdetail
 
 import android.view.LayoutInflater
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -55,7 +56,6 @@ import com.badmintontracker.android.localvideo.formatDuration
 import com.badmintontracker.android.ui.icons.ShuttlIcons
 import com.badmintontracker.android.ui.theme.ShuttlRadius
 import com.badmintontracker.android.ui.theme.ShuttlVideoOverlay
-import com.badmintontracker.shared.prefs.PlaybackOptions
 
 /** How far a pinch can take the frame. Enough to fill the card with one player at the far baseline. */
 private const val MAX_ZOOM = 5f
@@ -92,15 +92,17 @@ fun rememberPlaybackPosition(player: ExoPlayer): State<PlaybackPosition> {
 
 /**
  * The video on the mock's card: rounded, in the page gutter, with the
- * timecode chip top left, the speed chip top right, and the progress bar
- * along the bottom edge, which also scrubs.
+ * timecode chip top left, the settings chip top right, and the progress bar
+ * along the bottom edge, which also scrubs. The settings chip is a gear and opens
+ * the playback sheet; it used to be the speed itself ("1×"), which read as a
+ * readout rather than as a way in, and the speed now sits in the transport row.
  *
  * Media3's own controller is off. Its play button, time bar and settings
  * gear would sit on top of whatever [overlay] draws, and the transport under
  * the card owns playback anyway; scrubbing moves to the bar, whose touch
  * strip is taller than the three pixels it draws. In [fullscreen] the card
  * loses its gutter and corners and fills whatever the caller gives it; the
- * chips stay, and the corner-bracket chip beside the speed leaves again.
+ * chips stay, and the corner-bracket chip beside the gear leaves again.
  * The frame pinches to zoom and pans once zoomed, up to [MAX_ZOOM]; a double
  * tap zooms in on the spot, or out again.
  *
@@ -110,12 +112,12 @@ fun rememberPlaybackPosition(player: ExoPlayer): State<PlaybackPosition> {
  * square card and sit pillarboxed in it rather than a card taller than the
  * screen.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun VideoCard(
     player: ExoPlayer,
     position: PlaybackPosition,
-    speed: Float,
-    onSpeedTap: () -> Unit,
+    onSettingsTap: () -> Unit,
     modifier: Modifier = Modifier,
     aspectRatio: Float? = null,
     fullscreen: Boolean = false,
@@ -232,9 +234,9 @@ fun VideoCard(
         )
         Row(modifier = Modifier.align(Alignment.TopEnd).padding(12.dp)) {
             OverlayChip(
-                text = PlaybackOptions.formatSpeed(speed),
-                color = ShuttlVideoOverlay.accentText,
-                onClick = onSpeedTap,
+                icon = ShuttlIcons.Settings,
+                contentDescription = "Playback settings",
+                onClick = onSettingsTap,
             )
             if (onFullscreenToggle != null) {
                 OverlayChip(

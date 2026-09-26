@@ -1,6 +1,7 @@
 package com.badmintontracker.android.match
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
@@ -28,15 +29,21 @@ fun sortClips(clips: List<RallyClip>, sort: ClipSort): List<RallyClip> = when (s
 }
 
 /**
- * The rally half of a match: the label summary strip, the match description and
- * one row per clip. A `LazyListScope` extension rather than a screen, because the
- * match page renders it inside the same list as the points facet and one scroll
- * container per page is the whole point of merging the two screens.
+ * The rally half of a match: the label summary strip, who played, the match
+ * description and one row per clip. A `LazyListScope` extension rather than a
+ * screen, because the match page renders it inside the same list as the points
+ * facet and one scroll container per page is the whole point of merging the two
+ * screens.
+ *
+ * @param details "Coen vs Marco · Doubles" from [matchDetailsLine], or null. The
+ *   points facet has its own legend for this; here it is what a match that was
+ *   only ever filmed has to say about itself once its details are filled in.
  */
 fun LazyListScope.ralliesFacet(
     clips: List<RallyClip>,
     summary: MatchLabelSummary?,
     matchTitle: String?,
+    details: String?,
     description: String?,
     media: MediaRepository,
     isRefreshing: Boolean,
@@ -59,14 +66,27 @@ fun LazyListScope.ralliesFacet(
             HorizontalDivider()
         }
     }
-    description?.let { d ->
-        item(key = "match-description") {
-            Text(
-                text = d,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            )
+    // One block for both lines, so a match with a players line and a description
+    // gets one divider under them rather than a ruled row each.
+    if (details != null || description != null) {
+        item(key = "match-details") {
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                details?.let { d ->
+                    Text(
+                        text = d,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onBackground,
+                    )
+                }
+                description?.let { d ->
+                    Text(
+                        text = d,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = if (details != null) Modifier.padding(top = 4.dp) else Modifier,
+                    )
+                }
+            }
             HorizontalDivider()
         }
     }

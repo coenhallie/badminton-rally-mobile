@@ -62,12 +62,27 @@ class ScoringViewModelTest {
     ): Triple<ScoreLogsRepository, String, ScoringViewModel> {
         val log = repo.create(
             title = "Thu League",
-            homePlayers = listOf("Coen"),
-            awayPlayers = listOf("Marco"),
             rules = ScoringRules.BWF_21,
-            setup = MatchSetup(doubles = false, firstServer = Side.HOME),
+            setup = MatchSetup(firstServer = Side.HOME),
         )
         return Triple(repo, log.id, ScoringViewModel(repo, FakeAnnotationLabelsRepository(labels), log.id))
+    }
+
+    @Test
+    fun the_opening_serve_can_be_switched_until_the_first_point() = runTest(dispatcher) {
+        // The form no longer asks who won the toss, so this is the only place the
+        // coach can say it was the other side.
+        val (_, _, vm) = fixture()
+        advanceUntilIdle()
+        vm.state.value.canSwitchFirstServer shouldBe true
+
+        vm.switchFirstServer()
+        advanceUntilIdle()
+        vm.state.value.match?.server shouldBe Side.AWAY
+
+        vm.score(Side.HOME)
+        advanceUntilIdle()
+        vm.state.value.canSwitchFirstServer shouldBe false
     }
 
     @Test
@@ -163,8 +178,8 @@ class ScoringViewModelTest {
         val labels = FakeAnnotationLabelsRepository(listOf(goodShot, forcedError))
         val repo = repo()
         val log = repo.create(
-            "Thu League", listOf("Coen"), listOf("Marco"),
-            ScoringRules.BWF_21, MatchSetup(doubles = false, firstServer = Side.HOME),
+            "Thu League",
+            ScoringRules.BWF_21, MatchSetup(firstServer = Side.HOME),
         )
         val vm = ScoringViewModel(repo, labels, log.id)
         advanceUntilIdle()
@@ -181,6 +196,90 @@ class ScoringViewModelTest {
         advanceUntilIdle()
         vm.state.value.pendingTagOrdinal.shouldBeNull()
         vm.state.value.match!!.points.shouldBeEmpty()
+        vm.state.value.canUndo shouldBe false
+    }
+
+    @Test
+    fun undo_takes_back_a_tagged_rally_in_one_tap() = runTest(dispatcher) {
+        // The complaint this answers: with the rally tagged twice, the old undo
+        // needed three taps, and the first two left the score exactly as it was.
+        val (_, _, vm) = fixture()
+        vm.score(Side.HOME)
+        vm.score(Side.AWAY)
+        vm.toggleTag(1, goodShot)
+        vm.toggleTag(1, forcedError)
+        vm.undo()
+        advanceUntilIdle()
+        vm.state.value.match!!.currentGame shouldBe SideScore(home = 1, away = 0)
+    }
+
+    @Test
+    fun undo_puts_the_tag_row_back_on_the_rally_before() = runTest(dispatcher) {
+        // The board goes back to exactly how it looked after that rally, so the
+        // next undo, and the chips, are about the rally the caption names.
+        val (_, _, vm) = fixture()
+        vm.score(Side.HOME)
+        vm.toggleTag(0, goodShot)
+        vm.score(Side.AWAY)
+        vm.undo()
+        advanceUntilIdle()
+        vm.state.value.pendingTagOrdinal shouldBe 0
+        vm.state.value.match!!.points[0].tags.map { it.labelName } shouldBe listOf("Good shot")
+    }
+
+    @Test
+    fun undo_announces_what_it_took_back_and_offers_redo() = runTest(dispatcher) {
+        val (_, _, vm) = fixture()
+        vm.score(Side.AWAY)
+        vm.toggleTag(0, forcedError)
+        vm.undo()
+        advanceUntilIdle()
+        vm.state.value.undoneNotice shouldBe "Point to Away undone"
+        vm.redo()
+        advanceUntilIdle()
+        vm.state.value.undoneNotice.shouldBeNull()
+        vm.state.value.pendingTagOrdinal shouldBe 0
+        val point = vm.state.value.match!!.points.single()
+        point.wonBy shouldBe Side.AWAY
+        point.tags.map { it.labelName } shouldBe listOf("Forced error")
+    }
+
+    @Test
+    fun the_next_rally_retires_the_redo() = runTest(dispatcher) {
+        // Redo after another rally would put the old log back over that rally.
+        val (_, _, vm) = fixture()
+        vm.score(Side.HOME)
+        vm.undo()
+        vm.score(Side.AWAY)
+        advanceUntilIdle()
+        vm.state.value.undoneNotice.shouldBeNull()
+        vm.redo()
+        advanceUntilIdle()
+        vm.state.value.match!!.points.map { it.wonBy } shouldBe listOf(Side.AWAY)
+    }
+
+    @Test
+    fun a_change_made_elsewhere_retires_the_redo_too() = runTest(dispatcher) {
+        // A sync, or the match page, can change the log under the board.
+        val (repo, id, vm) = fixture()
+        vm.score(Side.HOME)
+        vm.score(Side.HOME)
+        vm.undo()
+        advanceUntilIdle()
+        vm.state.value.undoneNotice shouldBe "Point to Home undone"
+        repo.replaceEvents(id, emptyList())
+        advanceUntilIdle()
+        vm.state.value.undoneNotice.shouldBeNull()
+    }
+
+    @Test
+    fun the_undo_notice_can_be_dismissed() = runTest(dispatcher) {
+        val (_, _, vm) = fixture()
+        vm.score(Side.HOME)
+        vm.undo()
+        vm.dismissUndoNotice()
+        advanceUntilIdle()
+        vm.state.value.undoneNotice.shouldBeNull()
     }
 
     @Test
@@ -214,10 +313,10 @@ class ScoringViewModelTest {
         // The coach mis-scored the third game, not the first two.
         val repo = repo()
         val log = repo.create(
-            "Thu League", listOf("Coen"), listOf("Marco"),
+            "Thu League",
             ScoringRules(pointsToWin = 2, winBy = 1, cap = null, gamesToWin = 2,
                 intervalAt = null, changeEndsAt = null),
-            MatchSetup(doubles = false, firstServer = Side.HOME),
+            MatchSetup(firstServer = Side.HOME),
         )
         val vm = ScoringViewModel(repo, FakeAnnotationLabelsRepository(listOf(goodShot)), log.id)
         vm.score(Side.HOME)
@@ -235,10 +334,8 @@ class ScoringViewModelTest {
     }
 
     @Test
-    fun a_note_is_one_entry_so_undo_takes_back_a_rally_and_not_a_letter() = runTest(dispatcher) {
-        // Undo drops the last log entry. A note written a character at a time would
-        // be a character at a time to take back, which would cost the coach the one
-        // control he reaches for mid-rally. The surface commits the note once.
+    fun undo_takes_back_the_last_rally_and_leaves_the_note_on_the_one_before() = runTest(dispatcher) {
+        // Undo cuts by rally, so a note on an earlier rally is not what it takes.
         val (_, _, vm) = fixture()
         vm.score(Side.HOME)
         vm.setComment(0, "net cord")
@@ -256,10 +353,10 @@ class ScoringViewModelTest {
         // A match can end on a mis-tap, and that is exactly when undo matters most.
         val repo = repo()
         val log = repo.create(
-            "Thu League", listOf("Coen"), listOf("Marco"),
+            "Thu League",
             ScoringRules(pointsToWin = 1, winBy = 1, cap = null, gamesToWin = 1,
                 intervalAt = null, changeEndsAt = null),
-            MatchSetup(doubles = false, firstServer = Side.HOME),
+            MatchSetup(firstServer = Side.HOME),
         )
         val vm = ScoringViewModel(repo, FakeAnnotationLabelsRepository(listOf(goodShot)), log.id)
         vm.score(Side.HOME)

@@ -27,12 +27,13 @@ private enum CreateFlowDestination: Hashable, Identifiable {
     }
 }
 
-/// The app's front door: a rotating hero line, two pill buttons, and the
-/// drawer that used to be the whole screen. Owns the `NavigationStack` and
-/// every destination `MatchesList` (formerly `ClipListView`) used to
-/// register itself - `MatchesList` reports taps upward through closures
-/// instead, because it no longer has a stack of its own to push onto once it
-/// lives behind the drawer.
+/// The app's tab host: Matches, Analytics and Settings inside one `TabView`,
+/// which sits at this stack's root so every push (the scoring board above
+/// all) covers the bar with no per-screen code needed to hide it. Owns the
+/// `NavigationStack` and every destination `MatchesList` (formerly
+/// `ClipListView`) used to register itself - `MatchesList` reports taps
+/// upward through closures instead, because it no longer has a stack of its
+/// own to push onto once it lives inside a tab.
 struct HomeView: View {
     let rally: RallyApp
     let analyze: AnalyzeCoordinator
@@ -40,23 +41,30 @@ struct HomeView: View {
     /// `RootView`; Home only routes it to the two screens that offer a run.
     let localAnalysis: LocalAnalysisRunner?
 
-    @State private var drawerOpen = false
+    /// The selected tab. The bar lives inside this stack's root, so every push
+    /// covers it (the scoring board needs no code to hide it), and one stack
+    /// keeps `CreateFlowDestination`'s single binding and the one mounted
+    /// parent the match-list feed and the run watcher rely on.
+    @State private var selectedTab: HomeTab = .matches
+    /// Any sheet or dialog MatchesList has open over the tabs.
+    @State private var listOverlayOpen = false
     @State private var showAddSheet = false
     @State private var showLabels = false
-    @State private var showAnalytics = false
     @State private var showNewMatch = false
     @State private var showRecorder = false
     @State private var showImporter = false
-    @State private var themeMode: ThemeMode = .light
     @State private var intake: LocalVideoIntake
     /// One model for the whole app, made here rather than inside the screens that
     /// read it. Its `localEntries` is documented as the single source of truth
     /// for every video on this phone, which a second instance would quietly make
     /// false; and `start()` spawns `for await` loops that never return and hold
     /// the model alive, so a model created inside a pushed view would leak one
-    /// full set of them on every push - and Analytics is a pushed view. Both the
-    /// drawer's list and Analytics call `start()`, which is idempotent, so the
-    /// loops are still started exactly once.
+    /// full set of them on every push. Both the Matches tab and the Analytics
+    /// tab call `start()` from their `.task`. That is not idempotent: each call
+    /// runs its own set of the five loops, and only the initial network refresh
+    /// is latched to once per model. What keeps it to one set at a time is the
+    /// `TabView`, which cancels a deselected tab's `.task`, so only the tab on
+    /// screen has its loops running.
     @State private var listModel: ClipListModel
     /// The auto-open case only: straight after a record/import that isn't for
     /// an existing match, so the coach can name it. The row menu's own "Edit
@@ -80,46 +88,61 @@ struct HomeView: View {
     /// total, and this route and that one are never on screen at once.
     @State private var matchRoute: MatchRoute? = nil
     @State private var localPlayerRoute: LocalPlayerRoute? = nil
-    /// Where an on-device run's own output is reached from the drawer: the
-    /// rallies it cut, and the heatmap of the track it kept. Owned here like
-    /// every other destination the list reports upward.
+    /// Where an on-device run's own output is reached from the Matches tab:
+    /// the rallies it cut, and the heatmap of the track it kept. Owned here
+    /// like every other destination the list reports upward.
     @State private var localClipsRoute: LocalClipsRoute? = nil
     @State private var analyticsDetailRoute: AnalyticsDetailRoute? = nil
     @State private var createFlowTarget: CreateFlowDestination? = nil
+
+    /// Device runs already announced, so a finished one opens Analytics once.
+    /// See `announceFinishedRuns`, which owns the rule both platforms follow.
+    @State private var announcedRuns: Set<String> = []
 
     init(rally: RallyApp, analyze: AnalyzeCoordinator, localAnalysis: LocalAnalysisRunner?) {
         self.rally = rally
         self.analyze = analyze
         self.localAnalysis = localAnalysis
         _intake = State(initialValue: LocalVideoIntake(rally: rally))
-        _listModel = State(initialValue: ClipListModel(rally: rally, analyze: analyze))
+        _listModel = State(initialValue: ClipListModel(
+            rally: rally, analyze: analyze,
+            // The runner's own live state, not a copy fed through a screen's
+            // `.onChange`: a delete's guard must see a run started on whichever
+            // screen is on top right now, not only the Matches tab's.
+            liveDeviceRuns: { [localAnalysis] in localAnalysis?.deviceRuns ?? [:] }
+        ))
     }
 
     var body: some View {
         NavigationStack {
-            ZStack(alignment: .leading) {
-                homeScreen
-                MatchesDrawer(isOpen: $drawerOpen, onLabels: { showLabels = true }, onSignOut: signOut) {
-                    MatchesList(
-                        rally: rally,
-                        analyze: analyze,
-                        intake: intake,
-                        model: listModel,
-                        localAnalysis: localAnalysis,
-                        onMatchTap: { matchRoute = $0 },
-                        onCourtMarking: { courtMarkingRoute = $0 },
-                        onLocalPlayer: { localPlayerRoute = $0 },
-                        onLocalClips: { localClipsRoute = $0 },
-                        onAnalyticsDetail: { analyticsDetailRoute = $0 },
-                        // The sheet is Home's, presented outside the drawer, so
-                        // it opens over the drawer as it slides shut.
-                        onAddMatch: {
-                            withAnimation(.snappy(duration: 0.24)) { drawerOpen = false }
-                            showAddSheet = true
-                        }
-                    )
-                }
+            TabView(selection: $selectedTab) {
+                MatchesTabView(
+                    rally: rally, analyze: analyze, intake: intake, model: listModel,
+                    heroPaused: selectedTab != .matches || !nothingAbove,
+                    onMatchTap: { matchRoute = $0 },
+                    onCourtMarking: { courtMarkingRoute = $0 },
+                    onLocalPlayer: { localPlayerRoute = $0 },
+                    onLocalClips: { localClipsRoute = $0 },
+                    onAnalyticsDetail: { analyticsDetailRoute = $0 },
+                    onOverlayChange: { listOverlayOpen = $0 },
+                    onAdd: { showAddSheet = true }
+                )
+                .tabItem { tabLabel(HomeCopy.shared.TAB_MATCHES, systemImage: "rectangle.split.1x2", tab: .matches) }
+                .tag(HomeTab.matches)
+
+                AnalyticsListView(
+                    rally: rally, analyze: analyze, model: listModel, localAnalysis: localAnalysis,
+                    onCourtMarking: { courtMarkingRoute = $0 },
+                    onDetail: { analyticsDetailRoute = $0 }
+                )
+                .tabItem { tabLabel(HomeCopy.shared.TAB_ANALYTICS, systemImage: "chart.bar", tab: .analytics) }
+                .tag(HomeTab.analytics)
+
+                SettingsView(rally: rally, onLabels: { showLabels = true })
+                    .tabItem { tabLabel(HomeCopy.shared.TAB_SETTINGS, systemImage: "slider.horizontal.3", tab: .settings) }
+                    .tag(HomeTab.settings)
             }
+            .tint(Shuttl.analysisGlyph)
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(item: $courtMarkingRoute) { route in
                 CourtMarkingView(
@@ -129,19 +152,6 @@ struct HomeView: View {
             }
             .navigationDestination(isPresented: $showLabels) {
                 LabelsView(rally: rally)
-            }
-            .navigationDestination(isPresented: $showAnalytics) {
-                // Court marking is NOT registered alongside this one. Two
-                // destinations PRESENTING at one depth replace each other -
-                // declaring them side by side is fine, as the six neighbours
-                // here show - so the Analyze button's push lives inside
-                // AnalyticsListView, where it presents one level deeper. From
-                // here it would swap this screen out and then return the coach
-                // to Home instead of to his list.
-                AnalyticsListView(
-                    rally: rally, analyze: analyze,
-                    model: listModel, localAnalysis: localAnalysis
-                )
             }
             .navigationDestination(item: $matchRoute) { route in
                 MatchView(
@@ -186,14 +196,48 @@ struct HomeView: View {
             .navigationDestination(item: $localClipsRoute) { route in
                 LocalClipsView(localAnalysis: localAnalysis, entryId: route.entryId)
             }
-            // The same screen the Analytics list pushes, not a second one: both
-            // routes to one heatmap render `AnalyticsDetailView`, so there is
-            // one resolution of which track to draw rather than two.
+            // The same screen the Matches tab and the Analytics tab both push,
+            // not two: both routes to one heatmap render `AnalyticsDetailView`,
+            // so there is one resolution of which track to draw rather than
+            // two. `fallbackTitle` because both rows carry a title now that
+            // Analytics pushes this too, not only the Matches tab's list.
             .navigationDestination(item: $analyticsDetailRoute) { route in
                 AnalyticsDetailView(
-                    rally: rally, localAnalysis: localAnalysis, entryId: route.entryId
+                    rally: rally, localAnalysis: localAnalysis, entryId: route.entryId,
+                    fallbackTitle: route.title
                 )
             }
+        }
+        // Device runs and stored results, fed into `listModel` from here and
+        // nowhere else: this `NavigationStack` is the common parent of every
+        // tab, and it stays mounted for as long as the app does, regardless of
+        // which destination above is pushed on top of it. See `MatchListFeed`.
+        .feedsMatchList(model: listModel, localAnalysis: localAnalysis)
+        // A CLOUD run that lands does the same. It ends by retiring its entry,
+        // so without this the coach watching the list saw the row vanish and
+        // nothing else - no result, and nothing saying where it had gone. The
+        // two sets are unioned into one announcement so a video analysed both
+        // ways announces once. Mirrors androidApp's `combine` above its NavHost.
+        .task {
+            for await finishedInCloud in analyze.finishedRuns {
+                announce(cloudFinished: Set(finishedInCloud))
+            }
+        }
+        // A device run that lands switches to the Analytics tab, from the
+        // Matches tab with nothing above it only (`isHomeFront`). androidApp
+        // does the same from above its NavHost; `announceFinishedRuns`
+        // in shared is the rule both follow, and a change to when this fires is a
+        // change in both places.
+        //
+        // Keyed on `settledRuns`, never on `states`, for the reason that
+        // property's own doc gives: `@Observable` tracks a property, so reading
+        // `states` from a body - and the `of:` expression is body - subscribes
+        // Home to every per-frame write and redraws it at the rate of the
+        // progress bar. `settledRuns` changes twice per run. Picking the
+        // finished ones back out does need `states`, but a read inside the
+        // action closure is not tracked.
+        .onChange(of: localAnalysis?.settledRuns) { _, _ in
+            announce(cloudFinished: Set(analyze.finishedRuns.value as? [String] ?? []))
         }
         // Inside the stack, because every destination that carries the indicator
         // is inside it and the routes this dismisses are Home's.
@@ -234,19 +278,15 @@ struct HomeView: View {
         }
         .sheet(item: $detailsTarget, onDismiss: {
             // However the sheet went away - saved, skipped, or swiped down -
-            // the video it named is a row in the drawer's list, which is
-            // closed. Without this the coach lands back on a Home screen that
-            // looks exactly as it did before he picked the file. This binding
-            // is the auto-open case only (see its declaration), so the row
-            // menu's own "Edit details", which already happens with the drawer
-            // open, does not come through here. Entries are stored newest
-            // first, so the new row is the top of "On this phone" with nothing
-            // to scroll to.
-            //
-            // Mirrors HomeScreen.kt's `onAutoDetailsClosed`. The two are one
-            // rule written twice, with nothing shared to hold them together,
-            // so a change here is a change there.
-            withAnimation(.snappy(duration: 0.24)) { drawerOpen = true }
+            // the video it named is the new top row on the Matches tab (the
+            // list sorts a video on when it was added, newest first). The Add
+            // button that starts a record or import is only on that tab, so
+            // the coach is normally there already and this changes nothing;
+            // it exists for the one case where they are not, so the promise
+            // that the named video is on screen still holds. This binding is
+            // the auto-open case only (see its declaration), so the row
+            // menu's own "Edit details" does not come through here.
+            selectedTab = .matches
         }) { target in
             MatchDetailsSheet(
                 entry: target.entry,
@@ -279,11 +319,15 @@ struct HomeView: View {
             guard entry.scoreLogId == nil else { return }
             detailsTarget = MatchDetailsTarget(entry: entry, autoOpened: true)
         }
-        .task {
-            for await mode in rally.themePrefs.mode {
-                themeMode = mode
-            }
-        }
+    }
+
+    /// A tab's icon and name, outlined unless it is the selected tab. The
+    /// bar fills every symbol on its own, which drew all three tabs solid; the
+    /// mock and Android fill only the selected one. `slider.horizontal.3` has no
+    /// fill form, so Settings keeps its outline either way, as on Android.
+    private func tabLabel(_ title: String, systemImage: String, tab: HomeTab) -> some View {
+        Label(title, systemImage: systemImage)
+            .environment(\.symbolVariants, selectedTab == tab ? .fill : .none)
     }
 
     /// Lands on the match page rather than the list once the board is done,
@@ -300,52 +344,51 @@ struct HomeView: View {
         }
     }
 
-    private func signOut() {
-        Task { _ = try? await SwiftInteropKt.signOutOrMessage(rally.auth) }
+    /// Whether nothing covers the tabs: no push, no sheet, no list dialog.
+    /// Every route and sheet this view owns is listed; a new one must be added,
+    /// or a finished run switches tabs under it. The tab itself is checked by
+    /// `isHomeFront`, shared with androidApp.
+    private var nothingAbove: Bool {
+        !showLabels && !showNewMatch && !showAddSheet && !showRecorder && !showImporter
+            && courtMarkingRoute == nil && matchRoute == nil && localPlayerRoute == nil
+            && localClipsRoute == nil && analyticsDetailRoute == nil
+            && createFlowTarget == nil && detailsTarget == nil && !listOverlayOpen
     }
 
-    private var homeScreen: some View {
-        VStack(spacing: 0) {
-            topBar
-            if let error = intake.error {
-                ErrorBanner(message: error)
-            }
-            // Above the hero for the same reason androidApp puts it above its
-            // own: an on-device run takes minutes and what it produced belongs
-            // where it is visible on return, and Home is where that is.
-            if let localAnalysis {
-                LocalAnalysisBanner(
-                    runner: localAnalysis,
-                    onOpenClips: { localClipsRoute = LocalClipsRoute(entryId: $0) },
-                    onOpenHeatmap: { analyticsDetailRoute = AnalyticsDetailRoute(entryId: $0) }
-                )
-            }
-            Spacer().frame(height: 48)
-            HeroTickerView(isPaused: drawerOpen)
-                .padding(.horizontal, 24)
-            Spacer()
-            bottomControls
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Shuttl.bg)
-        // Attached here, not on the ZStack that also contains the drawer:
-        // scoped to the home screen alone so it never sits above the drawer's
-        // own List and risks swallowing a row's swipe-to-delete or the list's
-        // own scroll. Limited to the edge zone by checking where the drag
-        // STARTED, not by clipping the gesture's hit area: edgeZoneWidth is
-        // the mock's 26px "how close to the edge must this begin", the same
-        // rule the drawer's own close-drag mirrors on its header.
-        .gesture(edgeOpenDrag)
-    }
-
-    /// Where the chrome indicator sends a coach: Home, with the drawer open.
+    /// One announcement for both pipelines: a run that lands, on-device or in
+    /// the cloud, takes the coach to the Analytics tab.
     ///
-    /// The run it points at lives in the drawer's list, not on Home itself, so
-    /// arriving is not enough - the drawer has to open too. androidApp settles
-    /// the same question the same way, and pops to Home with `launchSingleTop`
-    /// for the reason this dismisses every route: the indicator is reachable
-    /// from any of them, and without this a tap from two screens deep would
-    /// silently do nothing.
+    /// `announceFinishedRuns` in shared owns the rule - it gates on
+    /// `isHomeFront` (the Matches tab, nothing above) and keeps its own seen
+    /// set, so a run that landed while the coach was elsewhere does not ambush
+    /// them later. This only gathers the two sets of finished ids. Reading
+    /// `localAnalysis?.states` here rather than in a body is deliberate: a
+    /// tracked read would redraw this view at the progress bar's rate. See
+    /// the `settledRuns` comment above.
+    private func announce(cloudFinished: Set<String>) {
+        let onDevice = (localAnalysis?.states ?? [:]).compactMap { id, state -> String? in
+            if case .done = state { return id } else { return nil }
+        }
+        let announcement = RunAnnouncementKt.announceFinishedRuns(
+            finished: Set(onDevice).union(cloudFinished),
+            seen: announcedRuns,
+            onHome: HomeTabKt.isHomeFront(tab: selectedTab, nothingAbove: nothingAbove)
+        )
+        announcedRuns = announcement.seen
+        if announcement.openAnalytics { selectedTab = .analytics }
+    }
+
+    /// Where the chrome indicator sends a coach: the Matches tab, with nothing
+    /// else on screen.
+    ///
+    /// The run it points at is a row on that tab, not wherever the coach
+    /// currently is, so switching tabs is not enough - every push this view
+    /// owns is popped too. The indicator is on every pushed screen's bar, and
+    /// without this a tap from two screens deep would silently do nothing.
+    ///
+    /// Pushes only, not everything `nothingAbove` checks: sheets need no
+    /// clearing, because `BackgroundWorkAction` never appears inside a sheet,
+    /// so no tap on it can come from under one.
     private func goToMatches() {
         courtMarkingRoute = nil
         matchRoute = nil
@@ -354,139 +397,7 @@ struct HomeView: View {
         analyticsDetailRoute = nil
         createFlowTarget = nil
         showLabels = false
-        showAnalytics = false
         showNewMatch = false
-        withAnimation(.snappy(duration: 0.24)) { drawerOpen = true }
-    }
-
-    // The hamburger sits on the LEFT, not the right as the mock draws it: it
-    // is both where the drawer's panel slides in from and where the edge-swipe
-    // starts, and a hamburger opposite the edge its own panel opens from reads
-    // as an unrelated control rather than the drawer's handle.
-    private var topBar: some View {
-        HStack {
-            Button {
-                withAnimation(.snappy(duration: 0.24)) { drawerOpen = true }
-            } label: {
-                Image(systemName: "line.3.horizontal")
-                    .foregroundStyle(Shuttl.text)
-            }
-            .accessibilityLabel("Open matches")
-
-            Spacer()
-
-            Text("SHUTTL.")
-                .shuttlType(ShuttlType.wordmark)
-                .foregroundStyle(Shuttl.textHeading)
-
-            Spacer()
-
-            Menu {
-                Button("Labels") { showLabels = true }
-                Button("Sign out", action: signOut)
-                Divider()
-                Button(themeMode == .dark ? "Switch to light mode" : "Switch to dark mode") {
-                    rally.themePrefs.toggle()
-                }
-                Divider()
-                Text(versionLabel())
-            } label: {
-                Image(systemName: "ellipsis")
-                    .foregroundStyle(Shuttl.text)
-            }
-            .accessibilityLabel("Menu")
-
-            // Home's bar is Home's own, not a navigation bar, so the indicator
-            // is placed rather than declared as a toolbar item. Left of the
-            // menu, which is where every pushed screen's bar puts it too.
-            BackgroundWorkAction()
-                .padding(.leading, 12)
-        }
-        .padding(.horizontal, 24)
-        .padding(.top, 12)
-    }
-
-    private var bottomControls: some View {
-        VStack(spacing: 12) {
-            Button {
-                showAddSheet = true
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "plus")
-                    Text("Add new match")
-                }
-            }
-            .buttonStyle(HomePillButtonStyle(background: Shuttl.accent, foreground: Shuttl.onAccent))
-            // Composed of an Image and a Text, whose default accessibility
-            // label would read as both concatenated in an unpredictable
-            // order; stated explicitly so it is exactly "Add new match".
-            .accessibilityLabel("Add new match")
-
-            Button {
-                showAnalytics = true
-            } label: {
-                Text("Analytics")
-            }
-            .buttonStyle(HomePillButtonStyle(background: Shuttl.bgTertiary, foreground: Shuttl.text))
-
-            Button {
-                withAnimation(.snappy(duration: 0.24)) { drawerOpen = true }
-            } label: {
-                Text("Swipe right for your matches")
-                    .shuttlType(ShuttlType.bodyMedium)
-                    .foregroundStyle(Shuttl.textSecondary)
-                    // The touch target must clear iOS's 44pt minimum. The
-                    // VStack's old `.padding(.bottom, 24)` moved in here so
-                    // the total space from this label's top to the screen
-                    // edge is unchanged - measured in the simulator, the
-                    // label plus that 24pt is still short of 44pt (Archivo's
-                    // natural line height at this size is ~14pt, not the
-                    // ~20pt `.lineSpacing` would suggest, since `.lineSpacing`
-                    // is inert on a single-line Text), so `frame(minHeight:)`
-                    // makes up the rest, top-aligned so the glyphs do not
-                    // move. `contentShape` extends the tap area to the full
-                    // enlarged frame instead of just the glyph bounds.
-                    .padding(.bottom, 24)
-                    .frame(minHeight: 44, alignment: .top)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.horizontal, 24)
-    }
-
-    private var edgeOpenDrag: some Gesture {
-        DragGesture()
-            .onEnded { value in
-                guard value.startLocation.x <= DrawerDragMath.edgeZoneWidth else { return }
-                guard DrawerDragMath.shouldOpen(
-                    translation: value.translation.width, velocity: value.velocity.width
-                ) else { return }
-                withAnimation(.snappy(duration: 0.24)) { drawerOpen = true }
-            }
-    }
-}
-
-/// Home's two 60pt pills. Not `PrimaryButtonStyle`: that style sizes itself
-/// from padding plus the font's own line height, which does not reliably land
-/// on 60 - the design's one exact metric for these two buttons - so the height
-/// is set directly instead.
-private struct HomePillButtonStyle: ButtonStyle {
-    let background: Color
-    let foreground: Color
-    // A custom ButtonStyle does not dim itself on `.disabled(true)` the way a
-    // system style does - `configuration` carries only `isPressed`, nothing
-    // about enablement - so a disabled pill needs to read this directly or it
-    // renders identically to an enabled one and just silently swallows taps.
-    @Environment(\.isEnabled) private var isEnabled
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .shuttlType(ShuttlType.titleLarge)
-            .foregroundStyle(foreground.opacity(isEnabled ? 1 : 0.4))
-            .frame(maxWidth: .infinity)
-            .frame(height: 60)
-            .background(background.opacity(isEnabled ? (configuration.isPressed ? 0.8 : 1) : 0.4))
-            .clipShape(Capsule())
+        selectedTab = .matches
     }
 }

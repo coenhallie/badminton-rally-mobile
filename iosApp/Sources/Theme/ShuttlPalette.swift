@@ -16,6 +16,19 @@ enum ShuttlPalette {
     static let bgSecondary:     Pair = (0xF5F7F6, 0x121415)
     static let bgTertiary:      Pair = (0xEDF0EE, 0x161819)
     static let bgInput:         Pair = (0xEDF0EE, 0x0E0F10)
+    /// One step above a raised card: a self-drawn menu or dialog sitting over
+    /// `bgTertiary` content needs its own surface, or it reads as the same
+    /// card underneath it. Equal to `bgSecondary` in light, where the palette
+    /// has less room between tones; a shade lighter than either `bgSecondary`
+    /// or `bgTertiary` in dark. Mirrors androidApp's ShuttlPalette.bgRaised,
+    /// which the app's own menus and dialogs use so they stop drawing
+    /// Material's own lavender container colour.
+    ///
+    /// `textTertiary` reads below the 4.5:1 body floor here in dark
+    /// (4.344:1) - see `ShuttlPaletteTests.testLegendSheetTextClearsAAOnBgRaised`,
+    /// which checks only `text` and `textSecondary`, the two this token is
+    /// actually drawn under today.
+    static let bgRaised:        Pair = (0xF5F7F6, 0x1E2123)
     static let border:          Pair = (0xE3E6E4, 0x1A1D1E)
     static let borderSecondary: Pair = (0xCED3D0, 0x22262A)
     static let textHeading:     Pair = (0x0B0C0D, 0xF2F4F3)
@@ -38,6 +51,16 @@ enum ShuttlPalette {
     /// jump from a dark-only design into a light theme.
     static let onAccent:        Pair = (0x04240F, 0x06210F)
     static let accentDark:      Pair = (0x15803D, 0x22C55E)
+    /// The match list's analysis chips: this glyph on `accent` at
+    /// `analysisChipOpacity` over the row. The accent itself is 2.4:1 on that
+    /// chip in light, under the 3:1 a glyph that alone carries meaning needs,
+    /// so light draws the glyph in `accentDark`'s value (3.6:1 on the raised
+    /// card) and dark keeps the accent, which is 7.5:1 there. Light's fill is a
+    /// step heavier because its tint separates less from the grey card than
+    /// dark's does. Mirrors androidApp's ShuttlPalette.analysisGlyph; see
+    /// ShuttlPaletteTests.testAnalysisGlyphReadsOnItsChipOnEveryRowSurface.
+    static let analysisGlyph:   Pair = (0x15803D, 0x3EE27C)
+    static let analysisChipOpacity: (light: Double, dark: Double) = (0.20, 0.16)
     static let sideHome:        Pair = (0x15803D, 0x14532D)
     static let sideAway:        Pair = (0x1D4ED8, 0x1E3A8A)
     static let error:           Pair = (0xEF4444, 0xEF4444)

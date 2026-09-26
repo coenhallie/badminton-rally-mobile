@@ -51,13 +51,17 @@ class AnalyzeCoordinatorTest {
         createdAt = Instant.fromEpochMilliseconds(0),
     )
 
-    private fun TestScope.coordinator(registry: LocalVideoRepository = localVideos) = AnalyzeCoordinator(
+    private fun TestScope.coordinator(
+        registry: LocalVideoRepository = localVideos,
+        installCloudPoses: suspend (String, (Float) -> Unit) -> Unit = { _, _ -> },
+    ) = AnalyzeCoordinator(
         localVideos = registry,
         videos = videos,
         clips = clips,
         scope = CoroutineScope(backgroundScope.coroutineContext + UnconfinedTestDispatcher(testScheduler)),
         openChannel = { _, _ -> ByteReadChannel(ByteArray(0)) },
         localAnnotations = localAnnotations,
+        installCloudPoses = installCloudPoses,
     )
 
     @Test
@@ -72,7 +76,10 @@ class AnalyzeCoordinatorTest {
         videos.keypointsCalls.single().first shouldBe "e1"
         videos.startCalls shouldBe listOf("e1")
         clips.refreshCalls.size shouldBe 1
-        localVideos.get("e1").shouldBeNull()   // auto-removed on success
+        // Kept, not removed. The cloud computes a skeleton for every run and the
+        // skeleton is an overlay on playback, so releasing the footage left an
+        // 11MB artifact on the phone that nothing could ever draw.
+        localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED
     }
 
     @Test
@@ -92,7 +99,7 @@ class AnalyzeCoordinatorTest {
         c.retry("e1")
         runCurrent()
         videos.uploadCalls shouldBe listOf("e1", "e1")
-        localVideos.get("e1").shouldBeNull()
+        localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED
     }
 
     @Test
@@ -111,7 +118,7 @@ class AnalyzeCoordinatorTest {
         videos.uploadCalls.size shouldBe 1     // not re-uploaded
         videos.createCalls.size shouldBe 1     // not re-created
         videos.startCalls.size shouldBe 2
-        localVideos.get("e1").shouldBeNull()
+        localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED
     }
 
     @Test
@@ -125,7 +132,7 @@ class AnalyzeCoordinatorTest {
         c.startAnalysis("e1", keypoints())
         runCurrent()
         // CREATE_ROW duplicate -> continue; pipeline completes.
-        localVideos.get("e1").shouldBeNull()
+        localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED
     }
 
     @Test
@@ -166,7 +173,7 @@ class AnalyzeCoordinatorTest {
         advanceTimeBy(10_000)   // cover the clip-count retry delays
         runCurrent()
         clips.countCalls.size shouldBe 2       // retried after the failed query
-        localVideos.get("e1").shouldBeNull()   // success, not a false "no rallies"
+        localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED  // success, not a false "no rallies"
     }
 
     @Test
@@ -180,7 +187,7 @@ class AnalyzeCoordinatorTest {
         advanceTimeBy(10_000)   // cover the clip-count retry delays
         runCurrent()
         clips.countCalls.size shouldBe 2
-        localVideos.get("e1").shouldBeNull()   // success, not a false "no rallies"
+        localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED  // success, not a false "no rallies"
     }
 
     @Test
@@ -194,7 +201,7 @@ class AnalyzeCoordinatorTest {
         runCurrent()
         // The pipeline reported success and the count was never confirmed to be
         // zero — treat as success rather than contradicting the matches list.
-        localVideos.get("e1").shouldBeNull()
+        localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED
     }
 
     @Test
@@ -205,7 +212,7 @@ class AnalyzeCoordinatorTest {
         c.reattachToProcessing()
         runCurrent()
         videos.uploadCalls shouldBe emptyList<String>()
-        localVideos.get("e1").shouldBeNull()   // completed via observeProcessing
+        localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED  // completed via observeProcessing
     }
 
     @Test
@@ -217,7 +224,7 @@ class AnalyzeCoordinatorTest {
         c.reattachToProcessing()
         runCurrent()
         videos.uploadCalls shouldBe listOf("e1")   // resumed from the UPLOAD step
-        localVideos.get("e1").shouldBeNull()       // completed end-to-end
+        localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED  // completed end-to-end
     }
 
     @Test
@@ -233,17 +240,91 @@ class AnalyzeCoordinatorTest {
     }
 
     @Test
-    fun a_successful_analysis_releases_the_local_file() = runTest {
-        // The clips live in the cloud now; on iOS the on-device copy is the only
-        // thing holding that storage and nothing else will ever reference it.
+    fun a_successful_analysis_keeps_the_local_file() = runTest {
+        // It used to release it: the clips live in the cloud, so the on-device
+        // copy looked like pure dead weight. It is not. The cloud computes a
+        // skeleton for every run, the skeleton is drawn OVER playback, and
+        // releasing the video left that artifact unviewable forever - the coach
+        // paid GPU time and storage for a panel the app could never offer.
         val released = mutableListOf<String>()
-        val registry = LocalVideoRepository(MapSettings(), onRemoved = { released += it.uri })
+        val registry = LocalVideoRepository(MapSettings(), onRemoved = { e, _ -> released += e.uri })
         registry.add(entry())
         clips.clips.value = listOf(clipFor("e1"))
         val c = coordinator(registry)
         c.startAnalysis("e1", keypoints())
         runCurrent()
-        released shouldBe listOf("content://x/e1")
+        released shouldBe emptyList()
+    }
+
+    @Test
+    fun a_successful_analysis_keeps_the_cloud_analysis_it_just_installed() = runTest {
+        // The run downloads a pose artifact, selects both players from it and
+        // writes two stores. The entry is then kept at ANALYZED rather than
+        // retired (since f96d78c), and nothing on the way there may take the
+        // analysis with it: that is the whole result the coach waited for.
+        val cloudArtifacts = mutableSetOf<String>()
+        val registry = LocalVideoRepository(
+            MapSettings(),
+            // What RallyAndroidApp wires: AnalysisFiles.deleteAll, whose store
+            // list includes cloud-tracks and cloud-skeletons.
+            onRemoved = { entry, reason ->
+                if (reason == LocalVideoRemoval.DISCARDED) cloudArtifacts.remove(entry.id)
+            },
+        )
+        registry.add(entry())
+        clips.clips.value = listOf(clipFor("e1"))
+        val c = coordinator(registry, installCloudPoses = { id, _ -> cloudArtifacts.add(id) })
+        c.startAnalysis("e1", keypoints())
+        runCurrent()
+
+        registry.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED  // kept, with its analysis
+        cloudArtifacts shouldBe setOf("e1")        // and so is its analysis
+    }
+
+    @Test
+    fun a_finished_run_announces_itself_so_the_coach_can_be_taken_to_it() = runTest {
+        // A device run that lands pulls the coach to Analytics; a cloud run
+        // landed in silence, and the entry it had been watching simply vanished
+        // from the list. Same rule, same screen - announceFinishedRuns decides
+        // whether to navigate, this only says a run finished.
+        localVideos.add(entry())
+        clips.clips.value = listOf(clipFor("e1"))
+        val c = coordinator()
+        c.finishedRuns.value shouldBe emptySet()
+
+        c.startAnalysis("e1", keypoints())
+        runCurrent()
+
+        c.finishedRuns.value shouldBe setOf("e1")
+    }
+
+    @Test
+    fun a_failed_run_announces_nothing() = runTest {
+        // There is nothing to take the coach to. The row's own failure message
+        // is where a failure is reported.
+        localVideos.add(entry())
+        videos.processingUpdates = listOf(ProcessingUpdate("failed_phase1", null, "no court detected"))
+        val c = coordinator()
+
+        c.startAnalysis("e1", keypoints())
+        runCurrent()
+
+        c.finishedRuns.value shouldBe emptySet()
+    }
+
+    @Test
+    fun a_successful_analysis_removes_nothing_at_all() = runTest {
+        // The guard on the defect this whole area exists for. The success path
+        // must not reach the removal hook, because that hook deletes what an
+        // analysis produced - and the analysis it would delete is the one that
+        // just finished.
+        val removals = mutableListOf<String>()
+        val registry = LocalVideoRepository(MapSettings(), onRemoved = { e, _ -> removals += e.id })
+        registry.add(entry())
+        clips.clips.value = listOf(clipFor("e1"))
+        coordinator(registry).startAnalysis("e1", keypoints())
+        runCurrent()
+        removals shouldBe emptyList()
     }
 
     @Test
@@ -251,7 +332,7 @@ class AnalyzeCoordinatorTest {
         // The entry survives as ANALYZED so the notes stay playable; deleting the
         // file underneath it would leave the user tapping a dead video.
         val released = mutableListOf<String>()
-        val registry = LocalVideoRepository(MapSettings(), onRemoved = { released += it.uri })
+        val registry = LocalVideoRepository(MapSettings(), onRemoved = { e, _ -> released += e.uri })
         registry.add(entry())
         clips.clips.value = listOf(clipFor("e1"))
         localAnnotations.add("e1", 1f, "note", null)
@@ -264,7 +345,7 @@ class AnalyzeCoordinatorTest {
     @Test
     fun a_failed_analysis_keeps_the_local_file_for_the_retry() = runTest {
         val released = mutableListOf<String>()
-        val registry = LocalVideoRepository(MapSettings(), onRemoved = { released += it.uri })
+        val registry = LocalVideoRepository(MapSettings(), onRemoved = { e, _ -> released += e.uri })
         registry.add(entry())
         videos.processingUpdates = listOf(ProcessingUpdate("failed_phase1", null, "no court detected"))
         val c = coordinator(registry)
@@ -283,14 +364,17 @@ class AnalyzeCoordinatorTest {
         localVideos.get("e1")?.failedStep shouldBe AnalyzeStep.PROCESSING
 
         // The videos row still holds the terminal failed_* status; polling it
-        // again without a new trigger would just re-read the old failure.
-        videos.processingUpdates = listOf(ProcessingUpdate("phase1_complete", 1f, null))
+        // again without a new trigger would just re-read the old failure. The
+        // row only moves once the edge function has been invoked again.
+        videos.onStartProcessing = {
+            videos.processingUpdates = listOf(ProcessingUpdate("phase1_complete", 1f, null))
+        }
         clips.clips.value = listOf(clipFor("e1"))
         c.retry("e1")
         runCurrent()
         videos.startCalls.size shouldBe 2      // edge function re-invoked
         videos.uploadCalls.size shouldBe 1     // upload not repeated
-        localVideos.get("e1").shouldBeNull()   // retry completed end-to-end
+        localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED  // retry completed end-to-end
     }
 
     @Test
@@ -365,6 +449,36 @@ class AnalyzeCoordinatorTest {
     }
 
     @Test
+    fun a_reattached_run_waits_for_the_session_before_it_touches_anything() {
+        // reattachToProcessing runs at launch, and supabase-kt restores the session
+        // asynchronously. A pipeline that ran ahead of it told the scoring store
+        // about a video while that store still held the empty list of a cold
+        // start, and asked the backend for an upload as nobody.
+        runTest {
+            val sessionReady = CompletableDeferred<Unit>()
+            val ready = mutableListOf<String>()
+            localVideos.add(entry().copy(stage = AnalyzeStage.PROCESSING, keypoints = keypoints()))
+            clips.clips.value = listOf(clipFor("e1"))
+            val c = AnalyzeCoordinator(
+                localVideos = localVideos, videos = videos, clips = clips,
+                scope = CoroutineScope(backgroundScope.coroutineContext + UnconfinedTestDispatcher(testScheduler)),
+                openChannel = { _, _ -> ByteReadChannel(ByteArray(0)) },
+                localAnnotations = localAnnotations,
+                onVideoRowReady = { ready += it },
+                awaitSession = { sessionReady.await() },
+            )
+            c.reattachToProcessing()
+            runCurrent()
+            ready shouldBe emptyList()
+            videos.awaitAnalyticsCalls shouldBe emptyList()
+
+            sessionReady.complete(Unit)
+            runCurrent()
+            ready shouldBe listOf("e1")
+        }
+    }
+
+    @Test
     fun the_video_row_hook_fires_on_a_retry_that_resumes_after_create_row() {
         // retry() resumes from the failed step, so a run that failed at TRIGGER
         // never re-enters the CREATE_ROW branch. Hanging the hook off that branch
@@ -412,7 +526,205 @@ class AnalyzeCoordinatorTest {
             c.startAnalysis("e1", keypoints())
             runCurrent()
             entryAtHook.shouldNotBeNull()
-            localVideos.get("e1").shouldBeNull()
+            localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED
         }
+    }
+
+    // MARK: - Phase 2, which must never turn a good Phase 1 red (Task 11)
+
+    @Test
+    fun the_pose_pass_runs_after_the_clips_and_before_the_entry_is_removed() = runTest {
+        // Both stores are keyed by entry id, so an install after the removal
+        // below would write a track against an id the registry no longer
+        // lists. The install is handed the id and must find the entry there.
+        localVideos.add(entry())
+        clips.clips.value = listOf(clipFor("e1"))
+        val stagesSeen = mutableListOf<AnalyzeStage?>()
+
+        val c = coordinator(installCloudPoses = { id, _ ->
+            stagesSeen += localVideos.get(id)?.stage
+        })
+        c.startAnalysis("e1", keypoints())
+        runCurrent()
+
+        videos.startAnalyticsCalls shouldBe listOf("e1")
+        // MEASURING while it runs, which is what makes the row unremovable.
+        stagesSeen shouldBe listOf(AnalyzeStage.MEASURING)
+        // And the ordinary end state is unchanged.
+        localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED
+    }
+
+    @Test
+    fun the_clip_wait_and_the_analytics_wait_are_different_waits() = runTest {
+        // The bug ProcessingUpdateTest describes but cannot catch at this
+        // level: a Phase 2 wait that stopped at phase1_complete would fetch a
+        // poses.raw Modal has not written yet.
+        localVideos.add(entry())
+        clips.clips.value = listOf(clipFor("e1"))
+
+        coordinator().startAnalysis("e1", keypoints())
+        runCurrent()
+
+        videos.awaitAnalyticsCalls shouldBe listOf(false, true)
+    }
+
+    @Test
+    fun a_phase_two_that_never_starts_leaves_a_good_phase_one_alone() = runTest {
+        // start-analytics answers 409 to a row it will not accept. The clips
+        // exist and are watchable; painting the row red and asking the coach
+        // to analyse the whole video again would be a lie about what failed.
+        localVideos.add(entry())
+        clips.clips.value = listOf(clipFor("e1"))
+        videos.nextStartAnalyticsResult = Result.failure(IllegalStateException("HTTP 409"))
+
+        coordinator().startAnalysis("e1", keypoints())
+        runCurrent()
+
+        clips.refreshCalls.size shouldBe 1
+        localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED  // kept on success, as ever now
+    }
+
+    @Test
+    fun an_install_that_throws_leaves_a_good_phase_one_alone() = runTest {
+        // The download broke, or the stream was corrupt. Same reasoning: the
+        // heatmap is missing, the analysis is not.
+        localVideos.add(entry())
+        clips.clips.value = listOf(clipFor("e1"))
+
+        coordinator(installCloudPoses = { _, _ -> throw IllegalStateException("connection lost") })
+            .startAnalysis("e1", keypoints())
+        runCurrent()
+
+        localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED
+    }
+
+    @Test
+    fun an_annotated_video_still_ends_analyzed_after_the_pose_pass() = runTest {
+        // The other arm of the branch the install has to precede.
+        localVideos.add(entry())
+        clips.clips.value = listOf(clipFor("e1"))
+        localAnnotations.add("e1", 1f, "note", null)
+
+        coordinator().startAnalysis("e1", keypoints())
+        runCurrent()
+
+        localVideos.get("e1")?.stage shouldBe AnalyzeStage.ANALYZED
+    }
+
+    // MARK: - A run that died while measuring movement
+
+    private fun measuringEntry() = entry().copy(stage = AnalyzeStage.MEASURING, keypoints = keypoints())
+
+    @Test
+    fun a_run_killed_before_phase_two_started_starts_it_on_relaunch() = runTest {
+        // MEASURING counts as running, so the row can be neither removed nor
+        // retried. Reattach ignored the stage, and Phase 2 takes minutes on a
+        // phone that kills backgrounded apps: the row span "Measuring movement"
+        // for ever.
+        localVideos.add(measuringEntry())
+        videos.processingUpdates = listOf(ProcessingUpdate("phase1_complete", 1f, null))
+        val installed = mutableListOf<String>()
+
+        coordinator(installCloudPoses = { id, _ -> installed += id }).reattachToProcessing()
+        runCurrent()
+
+        videos.startAnalyticsCalls shouldBe listOf("e1")
+        installed shouldBe listOf("e1")
+        localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED
+    }
+
+    @Test
+    fun a_run_killed_while_phase_two_was_going_waits_for_it_rather_than_starting_another() = runTest {
+        // start-analytics answers 409 to a row already in processing_phase2, and
+        // measureMovement treats a refused start as "no heatmap this time". Asking
+        // again would have thrown away a Phase 2 that was about to finish.
+        localVideos.add(measuringEntry())
+        videos.processingUpdates = listOf(
+            ProcessingUpdate("processing_phase2", 0.4f, null),
+            ProcessingUpdate("completed", 1f, null),
+        )
+        videos.nextStartAnalyticsResult = Result.failure(IllegalStateException("HTTP 409"))
+        val installed = mutableListOf<String>()
+
+        coordinator(installCloudPoses = { id, _ -> installed += id }).reattachToProcessing()
+        runCurrent()
+
+        videos.startAnalyticsCalls shouldBe emptyList()
+        installed shouldBe listOf("e1")
+        localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED
+    }
+
+    @Test
+    fun a_run_killed_after_phase_two_finished_only_has_the_artifact_left_to_fetch() = runTest {
+        localVideos.add(measuringEntry())
+        videos.processingUpdates = listOf(ProcessingUpdate("completed", 1f, null))
+        videos.nextStartAnalyticsResult = Result.failure(IllegalStateException("HTTP 409"))
+        val installed = mutableListOf<String>()
+
+        coordinator(installCloudPoses = { id, _ -> installed += id }).reattachToProcessing()
+        runCurrent()
+
+        videos.startAnalyticsCalls shouldBe emptyList()
+        installed shouldBe listOf("e1")
+        localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED
+    }
+
+    @Test
+    fun a_relaunch_that_cannot_reach_the_server_still_frees_the_row() = runTest {
+        // Phase 1 succeeded long ago. Whatever happens to the heatmap, the entry
+        // must come out of MEASURING, or the coach can never remove it.
+        localVideos.add(measuringEntry())
+        videos.processingUpdates = listOf(ProcessingUpdate("failed_connection", null, "offline"))
+
+        coordinator().reattachToProcessing()
+        runCurrent()
+
+        localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED
+    }
+
+    // MARK: - Retrying a run the phone lost touch with
+
+    @Test
+    fun retry_after_losing_the_connection_picks_the_run_up_instead_of_starting_it_again() = runTest {
+        // Three minutes without signal ends the poll with a failure of the
+        // PHONE's, not the backend's. retry() treated every PROCESSING failure
+        // alike and re-triggered, which resets the row to "uploaded" and starts
+        // Phase 1 from scratch: minutes of GPU thrown away, and possibly a second
+        // worker on the same video, for a job that was fine all along.
+        localVideos.add(entry())
+        videos.processingUpdates = listOf(ProcessingUpdate("failed_connection", null, "offline"))
+        val c = coordinator()
+        c.startAnalysis("e1", keypoints())
+        runCurrent()
+        localVideos.get("e1")?.failedStep shouldBe AnalyzeStep.PROCESSING
+
+        // Signal is back, and the job carried on without the phone.
+        videos.processingUpdates = listOf(
+            ProcessingUpdate("processing_phase1", 0.8f, null),
+            ProcessingUpdate("phase1_complete", 1f, null),
+        )
+        clips.clips.value = listOf(clipFor("e1"))
+        c.retry("e1")
+        runCurrent()
+
+        videos.startCalls.size shouldBe 1      // NOT re-triggered
+        localVideos.get("e1").shouldNotBeNull().stage shouldBe AnalyzeStage.ANALYZED
+    }
+
+    @Test
+    fun retry_while_still_offline_fails_again_without_touching_the_run() = runTest {
+        localVideos.add(entry())
+        videos.processingUpdates = listOf(ProcessingUpdate("failed_connection", null, "offline"))
+        val c = coordinator()
+        c.startAnalysis("e1", keypoints())
+        runCurrent()
+
+        c.retry("e1")
+        runCurrent()
+
+        videos.startCalls.size shouldBe 1
+        val entry = localVideos.get("e1").shouldNotBeNull()
+        entry.stage shouldBe AnalyzeStage.FAILED
+        entry.failedStep shouldBe AnalyzeStep.PROCESSING
     }
 }

@@ -18,6 +18,17 @@ internal object ShuttlPalette {
     val bgSecondary     = Tone(0xF5F7F6, 0x121415)
     val bgTertiary      = Tone(0xEDF0EE, 0x161819)
     val bgInput         = Tone(0xEDF0EE, 0x0E0F10)
+
+    /**
+     * What floats over the page: menus and dialogs (M3's surfaceContainer and
+     * surfaceContainerHigh). Light keeps [bgSecondary]'s value and lets the
+     * menu's shadow lift it. Dark needs its own step, a notch above
+     * [bgTertiary]: a shadow does not read on a near-black page, and a menu in
+     * bgTertiary opened from a raised card in bgTertiary would merge into it.
+     * Carries text, textHeading and textSecondary at AA; not textTertiary,
+     * which is 4.34:1 on the dark value.
+     */
+    val bgRaised        = Tone(0xF5F7F6, 0x1E2123)
     val border          = Tone(0xE3E6E4, 0x1A1D1E)
     val borderSecondary = Tone(0xCED3D0, 0x22262A)
     val textHeading     = Tone(0x0B0C0D, 0xF2F4F3)
@@ -47,6 +58,21 @@ internal object ShuttlPalette {
      */
     val onAccent        = Tone(0x04240F, 0x06210F)
     val accentDark      = Tone(0x15803D, 0x22C55E)
+
+    /** An opacity per theme, for a token that is a colour laid over whatever surface is below it. */
+    data class Opacity(val light: Float, val dark: Float)
+
+    /**
+     * The match list's analysis chips: this glyph on [accent] at
+     * [analysisChipOpacity] over the row. The accent itself is 2.4:1 on that
+     * chip in light, under the 3:1 a glyph that alone carries meaning needs,
+     * so light draws the glyph in [accentDark]'s value (3.6:1 on the raised
+     * card) and dark keeps the accent, which is 7.5:1 there. Light's fill is a
+     * step heavier because its tint separates less from the grey card than
+     * dark's does. See ShuttlPaletteTest.analysis_glyph_reads_on_its_chip_on_every_row_surface.
+     */
+    val analysisGlyph   = Tone(0x15803D, 0x3EE27C)
+    val analysisChipOpacity = Opacity(light = 0.20f, dark = 0.16f)
 
     /**
      * The two sides of the scoreboard. Deliberately not the accent green and the

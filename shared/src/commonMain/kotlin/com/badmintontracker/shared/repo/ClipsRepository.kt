@@ -11,8 +11,15 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.Serializable
 
 interface ClipsRepository {
+    /**
+     * Throws when the request fails. Declared, because Swift can only catch what
+     * is: an undeclared exception out of a suspend function terminates the iOS
+     * app instead of reaching the `catch` beside the call.
+     */
+    @Throws(Exception::class)
     suspend fun listClips(): List<RallyClip>
     fun observeClips(): Flow<List<RallyClip>>
+    @Throws(Exception::class)
     suspend fun refresh()
     suspend fun updateTitle(clipId: String, title: String?): Result<Unit>
     /** Count this video's rally clips directly on the server, bypassing the cache. */
@@ -26,9 +33,11 @@ class ClipsRepositoryImpl(private val client: SupabaseClient) : ClipsRepository 
     private val _clips = MutableStateFlow<List<RallyClip>>(emptyList())
 
     override suspend fun listClips(): List<RallyClip> =
-        client.postgrest.from("rally_clips")
-            .select { order("created_at", Order.DESCENDING) }
-            .decodeList<RallyClip>()
+        client.postgrest.from("rally_clips").selectAllPages {
+            order("created_at", Order.DESCENDING)
+            // The tie-break paging needs: one run's clips share a created_at.
+            order("id", Order.ASCENDING)
+        }
 
     override fun observeClips(): Flow<List<RallyClip>> = _clips.asStateFlow()
 

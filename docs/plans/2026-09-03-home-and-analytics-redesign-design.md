@@ -2,6 +2,7 @@
 
 **Date:** 2026-09-03
 **Status:** draft
+**Superseded in part:** phase 2 (Home and drawer) by 2026-09-25-bottom-navigation-design.md.
 **Builds on:** the Android client (`AuthGate`, `ClipListScreen`, `ui/theme/*`) and the iOS client (`RootView`, `ClipListView`, `Theme/ShuttlTheme.swift`).
 **Reference mock:** `~/Desktop/badminton-design/Rally Home.dc.html` (Home, drawer, Analytics). No other screen has a mock.
 

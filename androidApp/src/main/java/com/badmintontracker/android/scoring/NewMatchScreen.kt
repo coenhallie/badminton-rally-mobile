@@ -1,6 +1,10 @@
 package com.badmintontracker.android.scoring
 
-import androidx.compose.animation.AnimatedVisibility
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -22,8 +26,10 @@ import androidx.compose.material3.Text
 import com.badmintontracker.android.ui.components.ShuttlPillTabs
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -31,15 +37,15 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.badmintontracker.android.localanalysis.BackgroundWorkAction
 import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlOutlinedTextField
+import com.badmintontracker.shared.scoring.GamePoints
 import com.badmintontracker.shared.scoring.MAX_MATCH_TITLE
-import com.badmintontracker.shared.scoring.MAX_PLAYER_NAME
-import com.badmintontracker.shared.scoring.ScoringRules
-import com.badmintontracker.shared.scoring.Side
+import com.badmintontracker.shared.scoring.MatchSets
 
 /**
- * The match a coach creates before there is any video - §2 step 1. Everything it
- * asks for is what the fold needs plus the names to put on the board; the date is
- * deliberately not asked, because a match is created at the moment it is played.
+ * The match a coach creates before there is any video - §2 step 1. It asks only for
+ * what the fold cannot guess: how long a game is and how many sets. The name arrives
+ * filled in with the time and, where the phone will say, the place, so the form can
+ * be submitted the moment it opens.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,6 +55,7 @@ fun NewMatchScreen(
     onBack: () -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    PlaceForTitle(onAllowed = vm::addPlaceToTitle)
 
     Scaffold(
         topBar = {
@@ -82,37 +89,18 @@ fun NewMatchScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
 
-            SectionLabel("Format")
+            SectionLabel("Points")
             ShuttlPillTabs(
-                labels = listOf("Singles", "Doubles"),
-                selectedIndex = if (state.doubles) 1 else 0,
-                onSelect = { vm.setDoubles(it == 1) },
+                labels = GamePoints.entries.map { "${it.pointsToWin}" },
+                selectedIndex = state.points.ordinal,
+                onSelect = { vm.setPoints(GamePoints.entries[it]) },
             )
 
-            SectionLabel("Players")
-            PlayerField(state.homePlayers[0], "Home player") { vm.setPlayer(Side.HOME, 0, it) }
-            // Animated rather than instant: the field below it is already on screen,
-            // and a row appearing under the user's thumb without motion reads as a jump.
-            AnimatedVisibility(visible = state.doubles) {
-                PlayerField(state.homePlayers[1], "Home partner") { vm.setPlayer(Side.HOME, 1, it) }
-            }
-            PlayerField(state.awayPlayers[0], "Away player") { vm.setPlayer(Side.AWAY, 0, it) }
-            AnimatedVisibility(visible = state.doubles) {
-                PlayerField(state.awayPlayers[1], "Away partner") { vm.setPlayer(Side.AWAY, 1, it) }
-            }
-
-            SectionLabel("Scoring")
+            SectionLabel("Sets")
             ShuttlPillTabs(
-                labels = ScoringRules.PRESETS.map { it.label() },
-                selectedIndex = ScoringRules.PRESETS.indexOf(state.rules),
-                onSelect = { vm.setRules(ScoringRules.PRESETS[it]) },
-            )
-
-            SectionLabel("Coin toss")
-            ShuttlPillTabs(
-                labels = listOf("Home serves", "Away serves"),
-                selectedIndex = if (state.firstServer == Side.AWAY) 1 else 0,
-                onSelect = { vm.setFirstServer(if (it == 1) Side.AWAY else Side.HOME) },
+                labels = MatchSets.entries.map { "${it.sets}" },
+                selectedIndex = state.sets.ordinal,
+                onSelect = { vm.setSets(MatchSets.entries[it]) },
             )
 
             state.problem?.let {
@@ -135,28 +123,35 @@ fun NewMatchScreen(
 }
 
 /**
- * User-facing names for the shared presets. The list is shared so both platforms
- * offer the same rule sets; the wording is per platform copy.
+ * Asks for the place once, and only ever once: a second prompt after a no is
+ * nagging for something the form works perfectly well without. After a refusal
+ * Android reports that a rationale is due, and that is read here as "already
+ * asked, and the answer was no".
  */
-private fun ScoringRules.label(): String = when {
-    pointsToWin == 21 -> "21 points"
-    winBy == 1 -> "15 straight"
-    else -> "15 points"
+@Composable
+private fun PlaceForTitle(onAllowed: () -> Unit) {
+    val context = LocalContext.current
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) onAllowed()
+    }
+    LaunchedEffect(Unit) {
+        when {
+            AndroidPlaceNames.hasPermission(context) -> onAllowed()
+            context.findActivity()?.shouldShowRequestPermissionRationale(AndroidPlaceNames.PERMISSION) == true -> Unit
+            else -> launcher.launch(AndroidPlaceNames.PERMISSION)
+        }
+    }
 }
 
-@Composable
-private fun PlayerField(value: String, label: String, onChange: (String) -> Unit) {
-    ShuttlOutlinedTextField(
-        value = value,
-        onValueChange = onChange,
-        label = label,
-        maxLength = MAX_PLAYER_NAME,
-        modifier = Modifier.fillMaxWidth(),
-    )
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }
 
+/** The small uppercase heading over a group of fields. Shared with [EditMatchDetailsDialog]. */
 @Composable
-private fun SectionLabel(text: String) {
+internal fun SectionLabel(text: String) {
     Text(
         text = text.uppercase(),
         fontSize = 11.sp,

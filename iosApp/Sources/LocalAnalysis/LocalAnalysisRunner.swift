@@ -176,7 +176,20 @@ final class LocalAnalysisRunner {
         } else {
             settledRuns.remove(entryId)
         }
+        // Written only when the reduction moves, never per frame: an analysing
+        // run is RUNNING/ANALYSING at 3% and at 97%, and the match list
+        // rebuilds itself on every change to this map.
+        let run = state.flatMap(LocalVideoStatus.deviceRun(for:))
+        if deviceRuns[entryId] != run {
+            deviceRuns[entryId] = run
+        }
     }
+
+    /// Every run as the shared match list sees it, keyed by entry id. Derived
+    /// in `set(_:for:)` like `settledRuns`, and for the same reason: a list
+    /// observing `states` would redraw at the rate of the progress bar, and
+    /// this changes a handful of times per run.
+    private(set) var deviceRuns: [String: DeviceRun] = [:]
 
     // `nonisolated`, because `analyse` is: both stores are stateless value
     // types over the file system, and the run reaches them from the queue it
@@ -229,29 +242,75 @@ final class LocalAnalysisRunner {
     // them would put that parse and that pass back on the main actor, which is
     // the defect `analyse` was already fixed for once.
 
-    /// The track from an earlier run, for a screen opened after this one died.
-    nonisolated func storedTrack(entryId: String) -> PlayerTrackStore.Stored? { tracks.load(entryId: entryId) }
+    /// The track to draw for this entry: the cloud's if there is one, else
+    /// this phone's.
+    ///
+    /// Cloud wins, and silently. It comes from a large model on a GPU and
+    /// carries both players, so it is strictly the better track; a picker
+    /// between the two would be a third selector on a screen that already has
+    /// panel tabs and a player toggle. Matches Android's `storedTrack`.
+    nonisolated func storedTrack(entryId: String) -> PlayerTrackStore.Stored? {
+        tracks.load(entryId: entryId, source: .cloud) ?? tracks.load(entryId: entryId, source: .local)
+    }
 
     /// Whether `storedTrack` has anything to return, without loading it. For a
     /// list deciding what each of its rows can do.
-    nonisolated func hasStoredTrack(entryId: String) -> Bool { tracks.has(entryId: entryId) }
+    nonisolated func hasStoredTrack(entryId: String) -> Bool {
+        tracks.has(entryId: entryId, source: .cloud) || tracks.has(entryId: entryId, source: .local)
+    }
 
     /// The clips from an earlier run, for the same reason.
     nonisolated func storedClips(entryId: String) -> [PlayerTrackStore.Clip] { tracks.loadClips(entryId: entryId) }
 
-    nonisolated func storedSkeleton(entryId: String) -> SkeletonStore.Stored? { skeletons.load(entryId: entryId) }
+    /// The cloud's skeleton if there is one, else this phone's. See `storedTrack`.
+    nonisolated func storedSkeleton(entryId: String) -> SkeletonStore.Stored? {
+        skeletons.load(entryId: entryId, source: .cloud) ?? skeletons.load(entryId: entryId, source: .local)
+    }
 
     /// Header-only, for a screen deciding whether it has a second renderer to
     /// offer.
-    nonisolated func hasStoredSkeleton(entryId: String) -> Bool { skeletons.has(entryId: entryId) }
+    nonisolated func hasStoredSkeleton(entryId: String) -> Bool {
+        skeletons.has(entryId: entryId, source: .cloud) || skeletons.has(entryId: entryId, source: .local)
+    }
+
+    /// Store what a cloud analysis produced for this entry.
+    ///
+    /// Writes into the cloud subtree, which is what keeps `skeletonAction` -
+    /// "a completed run is the new truth for its entry" - from being able to
+    /// delete it on the next rally-only device run. Android's
+    /// `saveCloudAnalysis`, field for field.
+    nonisolated func saveCloudAnalysis(entryId: String, outcome: CloudPoseOutcome) throws {
+        try tracks.saveAll(
+            entryId: entryId, source: .cloud,
+            selections: outcome.selections, fps: outcome.fps
+        )
+        try skeletons.saveAll(
+            entryId: entryId, source: .cloud,
+            selections: outcome.selections, fps: outcome.fps,
+            videoWidth: Int(outcome.videoWidth), videoHeight: Int(outcome.videoHeight),
+            marks: outcome.marks
+        )
+    }
 
     /// Every entry with a track this app can draw.
     ///
     /// The list asks once for the whole list rather than once per row, matching
     /// Android's `storedTrackIds`: `has` is a small read, and a list of forty
     /// matches is forty of them on every recomposition otherwise.
+    ///
+    /// Asks `hasStoredTrack` rather than the store. The store's `has` defaults
+    /// to the local subtree, and a cloud run writes only to the cloud one, so
+    /// asking it directly made every finished cloud analysis read as never
+    /// analysed on the list while the detail screen could open it. One rule,
+    /// in one place, is what keeps the two screens from disagreeing again.
     nonisolated func storedTrackIds(among entryIds: [String]) -> Set<String> {
-        Set(entryIds.filter { tracks.has(entryId: $0) })
+        Set(entryIds.filter { hasStoredTrack(entryId: $0) })
+    }
+
+    /// Every id with a skeleton this app can draw, on the same footing as
+    /// `storedTrackIds`: one header check per id, asked once for the list.
+    nonisolated func storedSkeletonIds(among entryIds: [String]) -> Set<String> {
+        Set(entryIds.filter { hasStoredSkeleton(entryId: $0) })
     }
 
     /// How many clips each entry has, for the rows that offer to play them.

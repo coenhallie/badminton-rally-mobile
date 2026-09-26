@@ -9,17 +9,13 @@ class ScoreMatchCardTest {
     private fun log(
         events: List<ScoreEvent> = emptyList(),
         status: ScoreLogStatus = ScoreLogStatus.LIVE,
-        home: List<String> = listOf("Coen"),
-        away: List<String> = listOf("Marco"),
         videoId: String? = null,
     ) = ScoreLog(
         id = "log-1",
         videoId = videoId,
         title = "Thu League",
-        homePlayers = home,
-        awayPlayers = away,
         rules = ScoringRules.BWF_21,
-        setup = MatchSetup(doubles = home.size == 2, firstServer = Side.HOME),
+        setup = MatchSetup(firstServer = Side.HOME),
         events = events,
         status = status,
         createdAt = Instant.parse("2026-08-27T18:00:00Z"),
@@ -41,13 +37,9 @@ class ScoreMatchCardTest {
     }
 
     @Test
-    fun a_singles_side_reads_as_one_name() {
-        sideLabel(listOf("Coen")) shouldBe "Coen"
-    }
-
-    @Test
-    fun a_doubles_pair_reads_as_two() {
-        sideLabel(listOf("Coen", "Ana")) shouldBe "Coen / Ana"
+    fun a_side_is_named_for_where_it_stands() {
+        Side.HOME.label shouldBe "Home"
+        Side.AWAY.label shouldBe "Away"
     }
 
     @Test
@@ -80,7 +72,7 @@ class ScoreMatchCardTest {
         card.scoreLogId shouldBe "log-1"
         card.title shouldBe "Thu League"
         card.createdAtEpochMs shouldBe Instant.parse("2026-08-27T18:00:00Z").toEpochMilliseconds()
-        card.playersLine shouldBe "Coen vs Marco"
+        card.playersLine shouldBe null
         card.scoreLine shouldBe "11-9"
         card.statusLine shouldBe "Scoring"
         card.isLive shouldBe true
@@ -88,29 +80,10 @@ class ScoreMatchCardTest {
     }
 
     @Test
-    fun a_doubles_card_names_all_four_players() {
-        val card = buildScoreMatchCard(log(home = listOf("Coen", "Ana"), away = listOf("Marco", "Li")))
-        card.playersLine shouldBe "Coen / Ana vs Marco / Li"
-    }
-
-    @Test
     fun a_finished_match_says_who_won() {
         val card = buildScoreMatchCard(log(toScore(21, 18) + toScore(21, 15), status = ScoreLogStatus.UNBOUND))
-        card.statusLine shouldBe "Coen won"
+        card.statusLine shouldBe "Home won"
         card.isLive shouldBe false
-    }
-
-    @Test
-    fun a_finished_doubles_match_names_the_winning_pair() {
-        val card = buildScoreMatchCard(
-            log(
-                toScore(21, 18) + toScore(21, 15),
-                status = ScoreLogStatus.UNBOUND,
-                home = listOf("Coen", "Ana"),
-                away = listOf("Marco", "Li"),
-            )
-        )
-        card.statusLine shouldBe "Coen / Ana won"
     }
 
     @Test
@@ -118,7 +91,7 @@ class ScoreMatchCardTest {
         // §7.1: unbound is a terminal state, not a failure. Nothing in the row may
         // read as "missing a video".
         val card = buildScoreMatchCard(log(toScore(21, 0) + toScore(21, 0), status = ScoreLogStatus.UNBOUND))
-        card.statusLine shouldBe "Coen won"
+        card.statusLine shouldBe "Home won"
         card.hasVideo shouldBe false
     }
 

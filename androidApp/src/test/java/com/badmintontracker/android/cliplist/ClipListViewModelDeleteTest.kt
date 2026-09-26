@@ -25,6 +25,7 @@ import io.kotest.matchers.shouldBe
 import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -67,6 +68,9 @@ class ClipListViewModelDeleteTest {
             FakeClipsRepository(), FakeAuthRepository(), FakeSharesRepository(),
             videos, scoreLogs, localVideos, coordinator(localVideos),
             LocalAnnotationsRepository(MapSettings()),
+            deviceStates = MutableStateFlow(emptyMap()),
+            storedResults = { StoredResults() },
+            ioDispatcher = dispatcher,
         )
     }
 
@@ -78,10 +82,8 @@ class ClipListViewModelDeleteTest {
         val scoreLogs = scoreLogs()
         val match = scoreLogs.create(
             title = "Thu League",
-            homePlayers = listOf("Coen"),
-            awayPlayers = listOf("Marco"),
             rules = ScoringRules.BWF_21,
-            setup = MatchSetup(doubles = false, firstServer = Side.HOME),
+            setup = MatchSetup(firstServer = Side.HOME),
         )
         scoreLogs.replaceEvents(match.id, listOf(ScoreEvent.PointTo(Side.HOME)))
         scoreLogs.attachVideo(match.id, "vid-1")
@@ -107,10 +109,8 @@ class ClipListViewModelDeleteTest {
         val scoreLogs = scoreLogs()
         val match = scoreLogs.create(
             title = "Fri League",
-            homePlayers = listOf("Coen"),
-            awayPlayers = listOf("Marco"),
             rules = ScoringRules.BWF_21,
-            setup = MatchSetup(doubles = false, firstServer = Side.HOME),
+            setup = MatchSetup(firstServer = Side.HOME),
         )
         scoreLogs.attachVideo(match.id, "vid-other")
 
@@ -152,10 +152,8 @@ class ClipListViewModelDeleteTest {
         val scoreLogs = scoreLogs()
         val match = scoreLogs.create(
             title = "Thu League",
-            homePlayers = listOf("Coen"),
-            awayPlayers = listOf("Marco"),
             rules = ScoringRules.BWF_21,
-            setup = MatchSetup(doubles = false, firstServer = Side.HOME),
+            setup = MatchSetup(firstServer = Side.HOME),
         )
         scoreLogs.attachVideo(match.id, "vid-1")
 
@@ -188,10 +186,8 @@ class ClipListViewModelDeleteTest {
         val scoreLogs = scoreLogs()
         val match = scoreLogs.create(
             title = "Thu League",
-            homePlayers = listOf("Coen"),
-            awayPlayers = listOf("Marco"),
             rules = ScoringRules.BWF_21,
-            setup = MatchSetup(doubles = false, firstServer = Side.HOME),
+            setup = MatchSetup(firstServer = Side.HOME),
         )
         scoreLogs.attachVideo(match.id, "vid-1")
         val lv = localVideos()
@@ -222,10 +218,8 @@ class ClipListViewModelDeleteTest {
         val scoreLogs = scoreLogs()
         val match = scoreLogs.create(
             title = "Thu League",
-            homePlayers = listOf("Coen"),
-            awayPlayers = listOf("Marco"),
             rules = ScoringRules.BWF_21,
-            setup = MatchSetup(doubles = false, firstServer = Side.HOME),
+            setup = MatchSetup(firstServer = Side.HOME),
         )
         val lv = localVideos()
         lv.add(

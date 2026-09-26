@@ -28,6 +28,15 @@ internal val ShuttlLightColorScheme = lightColorScheme(
     outlineVariant   = ShuttlPalette.border.lightColor,
     error            = ShuttlPalette.error.lightColor,
     onError          = ShuttlPalette.onError.lightColor,
+    // Set rather than left to M3, whose defaults are its own lavender-tinted
+    // neutrals: every DropdownMenu, AlertDialog and unpinned bottom sheet was
+    // drawing one. Lowest to highest follows the page upward: the page, the
+    // secondary surface sheets sit on, then what floats (menus, dialogs).
+    surfaceContainerLowest  = ShuttlPalette.bg.lightColor,
+    surfaceContainerLow     = ShuttlPalette.bgSecondary.lightColor,
+    surfaceContainer        = ShuttlPalette.bgRaised.lightColor,
+    surfaceContainerHigh    = ShuttlPalette.bgRaised.lightColor,
+    surfaceContainerHighest = ShuttlPalette.bgRaised.lightColor,
 )
 
 internal val ShuttlDarkColorScheme = darkColorScheme(
@@ -43,6 +52,15 @@ internal val ShuttlDarkColorScheme = darkColorScheme(
     outlineVariant   = ShuttlPalette.border.darkColor,
     error            = ShuttlPalette.error.darkColor,
     onError          = ShuttlPalette.onError.darkColor,
+    // Set rather than left to M3, whose defaults are its own lavender-tinted
+    // neutrals: every DropdownMenu, AlertDialog and unpinned bottom sheet was
+    // drawing one. Lowest to highest follows the page upward: the page, the
+    // secondary surface sheets sit on, then what floats (menus, dialogs).
+    surfaceContainerLowest  = ShuttlPalette.bg.darkColor,
+    surfaceContainerLow     = ShuttlPalette.bgSecondary.darkColor,
+    surfaceContainer        = ShuttlPalette.bgRaised.darkColor,
+    surfaceContainerHigh    = ShuttlPalette.bgRaised.darkColor,
+    surfaceContainerHighest = ShuttlPalette.bgRaised.darkColor,
 )
 
 /** Extended palette beyond M3's ColorScheme. */
@@ -60,6 +78,9 @@ data class ShuttlExtendedColors(
     /** The home half of the scoreboard. Identifies the side, never the end. */
     val sideHome:     Color,
     val sideAway:     Color,
+    /** The match list's analysis chip fill and its glyph. See ShuttlPalette.analysisGlyph. */
+    val analysisChip:  Color,
+    val analysisGlyph: Color,
 )
 
 internal val ShuttlLightExtended = ShuttlExtendedColors(
@@ -73,6 +94,8 @@ internal val ShuttlLightExtended = ShuttlExtendedColors(
     info         = ShuttlPalette.info.lightColor,
     sideHome     = ShuttlPalette.sideHome.lightColor,
     sideAway     = ShuttlPalette.sideAway.lightColor,
+    analysisChip  = ShuttlPalette.accent.lightColor.copy(alpha = ShuttlPalette.analysisChipOpacity.light),
+    analysisGlyph = ShuttlPalette.analysisGlyph.lightColor,
 )
 
 internal val ShuttlDarkExtended = ShuttlExtendedColors(
@@ -86,6 +109,8 @@ internal val ShuttlDarkExtended = ShuttlExtendedColors(
     info         = ShuttlPalette.info.darkColor,
     sideHome     = ShuttlPalette.sideHome.darkColor,
     sideAway     = ShuttlPalette.sideAway.darkColor,
+    analysisChip  = ShuttlPalette.accent.darkColor.copy(alpha = ShuttlPalette.analysisChipOpacity.dark),
+    analysisGlyph = ShuttlPalette.analysisGlyph.darkColor,
 )
 
 val LocalShuttlColors = staticCompositionLocalOf { ShuttlLightExtended }

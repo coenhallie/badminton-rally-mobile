@@ -3,7 +3,10 @@ package com.badmintontracker.shared.localvideo
 import com.badmintontracker.shared.model.CourtKeypoints
 import kotlinx.serialization.Serializable
 
-enum class AnalyzeStage { LOCAL, UPLOADING, PROCESSING, FAILED, ANALYZED }
+// MEASURING sits after PROCESSING and before FAILED so the enum reads in
+// execution order, matching AnalyzeStep below. Safe to insert mid-enum:
+// kotlinx serializes these by name, and nothing persists the ordinal.
+enum class AnalyzeStage { LOCAL, UPLOADING, PROCESSING, MEASURING, FAILED, ANALYZED }
 
 /** Pipeline steps in execution order; retry resumes from the failed one. */
 enum class AnalyzeStep { UPLOAD, CREATE_ROW, KEYPOINTS, TRIGGER, PROCESSING }
@@ -13,7 +16,9 @@ enum class AnalyzeStep { UPLOAD, CREATE_ROW, KEYPOINTS, TRIGGER, PROCESSING }
  * both platforms — settled stages (LOCAL, FAILED, ANALYZED) must not spin.
  */
 fun isAnalysisRunning(stage: AnalyzeStage): Boolean =
-    stage == AnalyzeStage.UPLOADING || stage == AnalyzeStage.PROCESSING
+    stage == AnalyzeStage.UPLOADING ||
+        stage == AnalyzeStage.PROCESSING ||
+        stage == AnalyzeStage.MEASURING
 
 /**
  * Whether the row's remove affordances (swipe, menu) may be shown. Removing
@@ -97,11 +102,12 @@ fun canResumeFailedAnalysis(entry: LocalVideoEntry): Boolean =
  * settled with nothing to say (LOCAL, and FAILED, whose message the row shows
  * instead).
  *
- * Shared for the same reason [deviceWorkLabel] is: the drawer's local video row
- * and the Analytics row describe the same run over the same video, one tap
+ * Shared for the same reason [deviceWorkLabel] is: the Matches tab's row and
+ * the Analytics tab's row describe the same run over the same video, one tap
  * apart, and both platforms draw both. Written out per screen it drifted
- * immediately - Analytics on Android said "Uploading" where the drawer beside
- * it said "Uploading 42%…", and iOS said the drawer's line on both.
+ * immediately - Analytics on Android said "Uploading" where the match list
+ * (then in a drawer) beside it said "Uploading 42%…", and iOS said the match
+ * list's line on both.
  *
  * Not [deviceWorkLabel]'s vocabulary, deliberately. That one names the pipeline
  * ("Processing in the cloud") because the chrome indicator merges both and has
@@ -115,6 +121,10 @@ fun cloudAnalysisStatus(stage: AnalyzeStage, progress: AnalyzeProgress?): String
     // keeps going whatever the phone does.
     AnalyzeStage.UPLOADING -> rowPercent("Uploading", progress?.uploadProgress)
     AnalyzeStage.PROCESSING -> rowPercent("Analyzing", progress?.pipelineProgress)
+    // Named apart from PROCESSING for the same reason PROCESSING is named
+    // apart from UPLOADING: they are different promises minutes apart, and
+    // the coach waiting on this one is waiting for a heatmap, not for clips.
+    AnalyzeStage.MEASURING -> rowPercent("Measuring movement", progress?.pipelineProgress)
     // The failure's own message is what the row shows, and it is on the entry
     // rather than here.
     AnalyzeStage.FAILED -> null
@@ -128,8 +138,8 @@ fun cloudAnalysisStatus(stage: AnalyzeStage, progress: AnalyzeProgress?): String
  * Deliberately not BackgroundWork.kt's `withPercent`, which rounds and adds no
  * ellipsis. The two are not interchangeable and must not be merged on the
  * argument that they look alike: this one's exact output is what both platforms
- * have shipped on their drawer rows, and rounding would move "41.6%" from 41 to
- * 42 in a line a user watches tick.
+ * have shipped on their match list rows, and rounding would move "41.6%" from
+ * 41 to 42 in a line a user watches tick.
  */
 private fun rowPercent(label: String, fraction: Float?): String =
     if (fraction == null || fraction.isNaN()) "$label…"

@@ -19,16 +19,53 @@ class ScoringRulesTest {
     }
 
     @Test
-    fun both_fifteen_point_presets_are_playable() {
-        // The two variants clubs actually mean by "to 15". Neither is a guess the
-        // engine has to make: they are both here, and L1 picks.
-        ScoringRules.CLUB_15.winBy shouldBe 2
-        ScoringRules.CLUB_15.cap shouldBe 21
-        ScoringRules.STRAIGHT_15.winBy shouldBe 1
-        ScoringRules.STRAIGHT_15.cap shouldBe null
-        ScoringRules.PRESETS shouldBe listOf(
-            ScoringRules.BWF_21, ScoringRules.CLUB_15, ScoringRules.STRAIGHT_15,
-        )
+    fun a_new_match_offers_fifteen_twenty_one_and_eleven_in_that_order() {
+        // The order is the order the picker draws, so it is pinned.
+        GamePoints.entries.map { it.pointsToWin } shouldBe listOf(15, 21, 11)
+        GamePoints.DEFAULT shouldBe GamePoints.TWENTY_ONE
+    }
+
+    @Test
+    fun a_new_match_is_three_sets_unless_one_is_chosen() {
+        MatchSets.entries.map { it.sets } shouldBe listOf(3, 1)
+        MatchSets.DEFAULT shouldBe MatchSets.THREE
+        MatchSets.THREE.gamesToWin shouldBe 2
+        MatchSets.ONE.gamesToWin shouldBe 1
+    }
+
+    @Test
+    fun every_game_length_is_win_by_two_with_its_own_cap_and_midpoint() {
+        ScoringRules.of(GamePoints.FIFTEEN, MatchSets.THREE) shouldBe
+            ScoringRules(pointsToWin = 15, winBy = 2, cap = 21, intervalAt = 8, gamesToWin = 2, changeEndsAt = 8)
+        ScoringRules.of(GamePoints.TWENTY_ONE, MatchSets.THREE) shouldBe ScoringRules.BWF_21
+        ScoringRules.of(GamePoints.ELEVEN, MatchSets.ONE) shouldBe
+            ScoringRules(pointsToWin = 11, winBy = 2, cap = 15, intervalAt = 6, gamesToWin = 1, changeEndsAt = 6)
+    }
+
+    @Test
+    fun every_combination_the_form_offers_is_playable() {
+        // ScoringRules throws on an unplayable set, and a Kotlin throw crossing the
+        // ObjC bridge aborts the iOS app - so "the form cannot build one" is tested
+        // rather than assumed.
+        for (points in GamePoints.entries) for (sets in MatchSets.entries) {
+            val rules = ScoringRules.of(points, sets)
+            rules.pointsToWin shouldBe points.pointsToWin
+            rules.gamesToWin shouldBe sets.gamesToWin
+        }
+    }
+
+    @Test
+    fun an_eleven_point_game_is_capped_at_fifteen() {
+        gameWinner(SideScore(11, 10), ScoringRules.of(GamePoints.ELEVEN, MatchSets.THREE)) shouldBe null
+        gameWinner(SideScore(12, 10), ScoringRules.of(GamePoints.ELEVEN, MatchSets.THREE)) shouldBe Side.HOME
+        gameWinner(SideScore(15, 14), ScoringRules.of(GamePoints.ELEVEN, MatchSets.THREE)) shouldBe Side.HOME
+    }
+
+    @Test
+    fun a_one_set_match_is_over_after_one_game() {
+        val rules = ScoringRules.of(GamePoints.TWENTY_ONE, MatchSets.ONE)
+        val state = foldMatchState(rules, MatchSetup(firstServer = Side.HOME), List(21) { ScoreEvent.PointTo(Side.AWAY) })
+        state.winner shouldBe Side.AWAY
     }
 
     @Test

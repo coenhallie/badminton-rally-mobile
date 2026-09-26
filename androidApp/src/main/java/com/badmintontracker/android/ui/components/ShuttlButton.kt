@@ -38,8 +38,8 @@ fun ShuttlButton(
     loading:  Boolean = false,
     compact:  Boolean = false,
     // Defaults to none so every other call site in the app is unaffected.
-    // Mirrors iOS's HomeView.swift leading `Image(systemName: "plus")` on its
-    // own "Add new match" pill.
+    // Used today by LabelsScreen's "Add label" and NotesHeader's "Add note",
+    // both a leading Icons.Default.Add.
     leadingIcon: ImageVector? = null,
 ) {
     val isPrimary    = variant == ShuttlButtonVariant.Primary

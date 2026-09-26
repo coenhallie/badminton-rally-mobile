@@ -6,7 +6,13 @@ import com.badmintontracker.shared.testing.jsonResponse
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.ktor.client.engine.mock.respond
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.TextContent
+import io.ktor.http.headersOf
+import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 
@@ -100,5 +106,69 @@ class ClipsRepositoryTest {
             flow.awaitItem() shouldBe emptyList()
             flow.cancelAndIgnoreRemainingEvents()
         }
+    }
+
+    /**
+     * PostgREST as it actually answers a list: never more than [maxRows] at a
+     * time whatever was asked for (the hosted default and supabase/config.toml
+     * both say 1000), and the true total in Content-Range when asked to count.
+     */
+    private fun pagedServer(total: Int, maxRows: Int, withCount: Boolean = true) =
+        TestSupabase.client { request ->
+            val offset = request.url.parameters["offset"]?.toInt() ?: 0
+            val limit = minOf(request.url.parameters["limit"]?.toInt() ?: maxRows, maxRows)
+            val page = (offset until minOf(offset + limit, total)).joinToString(",") { i ->
+                """{"id":"c$i","video_id":"v${i / 80}","owner_id":"u1","rally_index":${i % 80 + 1},
+                   "start_timestamp":0,"end_timestamp":1,"duration_seconds":1,
+                   "clip_storage_path":"uid/v/c$i.mp4","thumbnail_storage_path":null,
+                   "title":null,"annotation_count":0,"created_at":"2026-05-04T12:00:00Z"}"""
+            }
+            val last = minOf(offset + limit, total) - 1
+            respond(
+                content = ByteReadChannel("[$page]"),
+                status = HttpStatusCode.OK,
+                headers = headersOf(
+                    HttpHeaders.ContentType to listOf(ContentType.Application.Json.toString()),
+                    HttpHeaders.ContentRange to listOf(
+                        if (withCount) "$offset-$last/$total" else "$offset-$last/*",
+                    ),
+                ),
+            )
+        }
+
+    @Test
+    fun a_coach_with_more_clips_than_one_response_holds_still_gets_all_of_them() = runTest {
+        // Roughly thirty matches. One unranged select came back with the first
+        // thousand rows and no error, so the oldest matches lost rallies or
+        // vanished from the list outright.
+        val clips = ClipsRepositoryImpl(pagedServer(total = 2_500, maxRows = 1_000)).listClips()
+        clips shouldHaveSize 2_500
+        clips.map { it.id }.toSet() shouldHaveSize 2_500
+    }
+
+    @Test
+    fun a_server_that_answers_in_smaller_pages_than_asked_for_loses_nothing() = runTest {
+        // max_rows is server configuration. Stopping at the first page shorter
+        // than the one requested would quietly bring the cap back.
+        ClipsRepositoryImpl(pagedServer(total = 1_050, maxRows = 300)).listClips() shouldHaveSize 1_050
+    }
+
+    @Test
+    fun a_server_that_will_not_count_is_paged_until_it_runs_dry() = runTest {
+        ClipsRepositoryImpl(pagedServer(total = 2_100, maxRows = 1_000, withCount = false))
+            .listClips() shouldHaveSize 2_100
+    }
+
+    @Test
+    fun pages_are_cut_from_a_total_order() = runTest {
+        // Clips cut by one run share a created_at. Paging over an order with
+        // ties lets a row appear on two pages and another on none.
+        var query: String? = null
+        val client = TestSupabase.client { request ->
+            query = request.url.toString()
+            jsonResponse("[]")
+        }
+        ClipsRepositoryImpl(client).listClips()
+        query!!.shouldContain("order=created_at.desc.nullslast%2Cid.asc.nullslast")
     }
 }

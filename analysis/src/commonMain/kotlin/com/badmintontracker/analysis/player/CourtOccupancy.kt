@@ -3,6 +3,7 @@ package com.badmintontracker.analysis.player
 import com.badmintontracker.analysis.geometry.Court
 import com.badmintontracker.analysis.geometry.Point
 import kotlin.math.exp
+import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -39,8 +40,10 @@ class CourtOccupancy(
 
     fun add(position: Point, seconds: Double) {
         if (seconds <= 0.0) return
-        val col = ((position.x + marginM) / cellSizeM).toInt()
-        val row = ((position.y + marginM) / cellSizeM).toInt()
+        // floor, not toInt: toInt truncates toward zero, which files a position
+        // up to a cell's width below the grid under index 0 instead of dropping it.
+        val col = floor((position.x + marginM) / cellSizeM).toInt()
+        val row = floor((position.y + marginM) / cellSizeM).toInt()
         if (col !in 0 until columns || row !in 0 until rows) return
         cells[row * columns + col] += seconds
         total += seconds

@@ -9,6 +9,9 @@ import SwiftUI
 /// the same target is worse than one shared one.
 struct ChipFlow: Layout {
     var spacing: CGFloat = 8
+    /// Centres each row in the width rather than starting it at the leading edge.
+    /// For the replay page's label row, which sits under a centred transport.
+    var centered = false
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let available = proposal.width ?? .infinity
@@ -28,7 +31,7 @@ struct ChipFlow: Layout {
     ) {
         var y = bounds.minY
         for row in rows(of: subviews, within: bounds.width) {
-            var x = bounds.minX
+            var x = bounds.minX + (centered ? max(0, (bounds.width - row.width) / 2) : 0)
             for index in row.indices {
                 let size = subviews[index].sizeThatFits(.unspecified)
                 subviews[index].place(

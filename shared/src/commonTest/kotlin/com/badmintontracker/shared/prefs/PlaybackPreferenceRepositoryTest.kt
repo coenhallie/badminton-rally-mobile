@@ -1,6 +1,7 @@
 package com.badmintontracker.shared.prefs
 
 import app.cash.turbine.test
+import com.badmintontracker.shared.playback.PanelAnchor
 import com.russhwolf.settings.MapSettings
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -137,5 +138,34 @@ class PlaybackPreferenceRepositoryTest {
         assertEquals("1\u00d7", PlaybackOptions.formatSpeed(1.0f))
         assertEquals("1.5\u00d7", PlaybackOptions.formatSpeed(1.5f))
         assertEquals("2\u00d7", PlaybackOptions.formatSpeed(2.0f))
+    }
+
+    @Test
+    fun the_label_window_starts_at_its_default_anchor() {
+        val repo = PlaybackPreferenceRepository(MapSettings())
+        assertEquals(PanelAnchor.DEFAULT, repo.labelPanelAnchor.value)
+    }
+
+    @Test
+    fun where_the_label_window_was_left_survives_a_restart() {
+        val settings = MapSettings()
+        PlaybackPreferenceRepository(settings).setLabelPanelAnchor(PanelAnchor(0.25f, 0.5f))
+        assertEquals(PanelAnchor(0.25f, 0.5f), PlaybackPreferenceRepository(settings).labelPanelAnchor.value)
+    }
+
+    @Test
+    fun an_anchor_outside_the_screen_is_pulled_back_onto_it() {
+        val repo = PlaybackPreferenceRepository(MapSettings())
+        repo.setLabelPanelAnchor(PanelAnchor(3f, -1f))
+        assertEquals(PanelAnchor(1f, 0f), repo.labelPanelAnchor.value)
+    }
+
+    @Test
+    fun a_stored_anchor_that_does_not_parse_is_the_default_rather_than_half_of_it() {
+        for (stored in listOf("0.5", "0.5,abc", "NaN,0.5", "0.1,0.2,0.3", "")) {
+            val settings = MapSettings()
+            settings.putString("replay_label_panel_anchor", stored)
+            assertEquals(PanelAnchor.DEFAULT, PlaybackPreferenceRepository(settings).labelPanelAnchor.value, stored)
+        }
     }
 }

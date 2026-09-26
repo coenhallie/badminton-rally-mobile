@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -47,6 +49,8 @@ import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
@@ -77,6 +81,7 @@ import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlButtonVariant
 import com.badmintontracker.android.ui.theme.ShuttlRadius
 import com.badmintontracker.android.ui.theme.ShuttlTheme
+import com.badmintontracker.shared.analytics.METRIC_PICKER_LINE
 import com.badmintontracker.shared.local.AnalysisMetric
 import com.badmintontracker.shared.local.DeviceThroughput
 import com.badmintontracker.shared.localvideo.court.CourtMarkingSpec
@@ -496,13 +501,46 @@ private fun ColumnScope.OptionsStep(
             .padding(horizontal = PagePadding),
     ) {
         Spacer(Modifier.height(16.dp))
+        var showCapabilities by rememberSaveable { mutableStateOf(false) }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "What to analyze",
+                style = MaterialTheme.typography.headlineLarge,
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.weight(1f),
+            )
+            // On the header rather than on either button: the question it
+            // answers is "what is the difference between these two", which is
+            // about the pair, and hanging it off one of them would imply the
+            // other needed no explanation.
+            // A drawn glyph rather than an icon: the core Material set has no
+            // question mark, and Info's "i" answers a different question. The
+            // 44dp box is the minimum touch target, and the ring keeps it
+            // reading as a control rather than as stray punctuation.
+            IconButton(
+                onClick = { showCapabilities = true },
+                modifier = Modifier.size(44.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(26.dp)
+                        .border(1.dp, ShuttlTheme.extended.textTertiary, CircleShape)
+                        .semantics { contentDescription = "What each run produces" },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        "?",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = ShuttlTheme.extended.textTertiary,
+                    )
+                }
+            }
+        }
+        if (showCapabilities) {
+            CapabilitySheet(onDismiss = { showCapabilities = false })
+        }
         Text(
-            "What to analyze",
-            style = MaterialTheme.typography.headlineLarge,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
-        Text(
-            "Pick what this run should produce.",
+            METRIC_PICKER_LINE,
             style = MaterialTheme.typography.bodySmall,
             color = ShuttlTheme.extended.textTertiary,
             modifier = Modifier.padding(top = 8.dp),

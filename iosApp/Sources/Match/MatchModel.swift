@@ -83,6 +83,39 @@ final class MatchModel {
     /// caller can go straight to the picker the page already owns. Mirrors
     /// Android's `MatchViewModel.removeVideo`.
     @discardableResult
+    /// The details editor's save. Local-first like every other edit to a match;
+    /// sync carries it.
+    func updateDetails(title: String, format: MatchFormat?, homePlayers: [String], awayPlayers: [String]) {
+        guard let scoreLogId else { return }
+        scoreLogs.updateDetails(
+            id: scoreLogId, title: title, format: format, homePlayers: homePlayers, awayPlayers: awayPlayers
+        )
+        readStore()
+    }
+
+    /// The details editor's save for a match that was only ever filmed, whose
+    /// details live on its videos row rather than on a score log. Server first,
+    /// then the local entry that uploaded it: the ordering, and the message on
+    /// failure, are `updateVideoMatchDetailsOrMessage`'s. The page reads the
+    /// result back through the repository's metadata cache, so nothing here has
+    /// to hand it over. Mirrors Android's `MatchViewModel.updateVideoDetails`.
+    func updateVideoDetails(
+        videoId: String, title: String, description: String, format: MatchFormat?,
+        homePlayers: [String], awayPlayers: [String]
+    ) async {
+        error = nil
+        do {
+            let message = try await VideoMatchDetailsKt.updateVideoMatchDetailsOrMessage(
+                videos: videos, localVideos: localVideos, videoId: videoId,
+                title: title, description: description, format: format,
+                homePlayers: homePlayers, awayPlayers: awayPlayers
+            )
+            if let message { error = message }
+        } catch {
+            self.error = VideoMatchDetailsKt.VIDEO_DETAILS_SAVE_FAILED_MESSAGE
+        }
+    }
+
     func removeVideo() async -> Bool {
         guard let scoreLogId else { return false }
         // A previous failure must not sit over a fresh attempt: the banner has no
@@ -115,32 +148,45 @@ final class MatchModel {
         }
     }
 
-    /// Never returns: `MatchView`'s `.task` runs this for as long as the page is on
-    /// screen, so a point scored elsewhere or a video finishing its pipeline
-    /// redraws this page without a manual refresh.
+    /// Runs for as long as the page is on screen: `MatchView`'s `.task` calls this
+    /// on every appearance and cancels it on every disappearance, so a point
+    /// scored elsewhere or a video finishing its pipeline redraws this page
+    /// without a manual refresh.
+    ///
+    /// Every loop is a structured child of that task - the same shape as
+    /// `BackgroundWorkModel.observe`. Three of them used to be unstructured
+    /// `Task {}`s, which cancellation cannot reach: leaving the page stopped one
+    /// loop and left three running for good, and each return stacked three more,
+    /// every one of them re-folding the match on every emission.
     func start() async {
-        // Each its own task, matching ClipListModel.start(): the scoreLogs loop at
-        // the bottom never returns, so anything sequenced after it never would.
-        Task {
-            for await entries in localVideos.entries {
-                localEntries = entries
-                readStore()
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { @MainActor [weak self] in
+                guard let self else { return }
+                for await entries in self.localVideos.entries {
+                    self.localEntries = entries
+                    self.readStore()
+                }
             }
-        }
-        Task {
-            for await map in analyze.progress {
-                progressByEntryId = map
-                readStore()
+            group.addTask { @MainActor [weak self] in
+                guard let self else { return }
+                for await map in self.analyze.progress {
+                    self.progressByEntryId = map
+                    self.readStore()
+                }
             }
-        }
-        Task {
-            for await latest in clips.observeClips() {
-                allClips = latest
-                readStore()
+            group.addTask { @MainActor [weak self] in
+                guard let self else { return }
+                for await latest in self.clips.observeClips() {
+                    self.allClips = latest
+                    self.readStore()
+                }
             }
-        }
-        for await _ in scoreLogs.logs {
-            readStore()
+            group.addTask { @MainActor [weak self] in
+                guard let self else { return }
+                for await _ in self.scoreLogs.logs {
+                    self.readStore()
+                }
+            }
         }
     }
 

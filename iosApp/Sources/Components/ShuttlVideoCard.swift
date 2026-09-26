@@ -17,8 +17,14 @@ struct PlaybackPosition: Equatable {
 }
 
 /// The video on the mock's card: rounded, in the page gutter, with the timecode
-/// chip top left, the speed chip top right, and the progress bar along the bottom
-/// edge, which also scrubs.
+/// chip top left, the settings chip top right, and the progress bar along the
+/// bottom edge, which also scrubs. The settings chip is a gear and opens the
+/// playback sheet; it used to be the speed itself, which read as a readout rather
+/// than as a way in, and the speed now sits in the transport row.
+///
+/// In `fullscreen` the card loses its gutter and corners and fits whatever the
+/// caller gives it; the chips stay, and the corner-bracket chip beside the gear
+/// leaves again.
 ///
 /// AVKit's own controls are off. Its play button and time bar would sit on top of
 /// the scrub bar and the chips, and the transport under the card owns playback
@@ -34,10 +40,12 @@ struct PlaybackPosition: Equatable {
 struct ShuttlVideoCard<Overlay: View, ErrorContent: View>: View {
     let player: AVPlayer?
     let position: PlaybackPosition
-    let speed: Float
-    let onSpeedTap: () -> Void
+    let onSettingsTap: () -> Void
     var aspectRatio: Double? = nil
     var onSeek: ((Double) -> Void)? = nil
+    var fullscreen = false
+    /// Nil where fullscreen is not offered, and the chip is then not drawn.
+    var onFullscreenToggle: (() -> Void)? = nil
     @ViewBuilder var overlay: Overlay
     @ViewBuilder var errorContent: ErrorContent
 
@@ -52,6 +60,24 @@ struct ShuttlVideoCard<Overlay: View, ErrorContent: View>: View {
     }
 
     var body: some View {
+        Group {
+            if fullscreen {
+                // The whole screen, with the frame fitted inside it by AVKit: the
+                // chips and the bar belong to the screen's edges here, not to
+                // wherever the letterboxed frame happens to end.
+                layers.frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                layers
+                    .aspectRatio(ratio, contentMode: .fit)
+                    .frame(maxWidth: .infinity)
+                    .clipShape(RoundedRectangle(cornerRadius: ShuttlRadius.large))
+                    .padding(.horizontal, CardMetrics.gutter)
+            }
+        }
+        .task(id: playerIdentity) { await trackPresentationSize() }
+    }
+
+    private var layers: some View {
         ZStack {
             Color.black
             PlayerSurface(player: player)
@@ -60,25 +86,23 @@ struct ShuttlVideoCard<Overlay: View, ErrorContent: View>: View {
             scrubBar
             errorContent
         }
-        .aspectRatio(ratio, contentMode: .fit)
-        .frame(maxWidth: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: ShuttlRadius.large))
-        .padding(.horizontal, CardMetrics.gutter)
-        .task(id: playerIdentity) { await trackPresentationSize() }
     }
 
     private var chips: some View {
         VStack {
-            HStack {
+            HStack(spacing: 6) {
                 OverlayChip(text: LocalVideoLogic.formatDuration(ms: position.positionMs))
                 Spacer()
-                OverlayChip(
-                    text: PlaybackOptions.shared.formatSpeed(speed: speed),
-                    tint: ShuttlVideoOverlay.accentText,
-                    action: onSpeedTap,
-                    accessibilityLabel: "Playback settings, speed "
-                        + PlaybackOptions.shared.formatSpeed(speed: speed)
-                )
+                OverlayChip(symbol: "gearshape", action: onSettingsTap, accessibilityLabel: "Playback settings")
+                if let onFullscreenToggle {
+                    OverlayChip(
+                        symbol: fullscreen
+                            ? "arrow.down.right.and.arrow.up.left"
+                            : "arrow.up.left.and.arrow.down.right",
+                        action: onFullscreenToggle,
+                        accessibilityLabel: fullscreen ? "Exit fullscreen" : "Fullscreen"
+                    )
+                }
             }
             Spacer()
         }
@@ -133,16 +157,14 @@ extension ShuttlVideoCard where Overlay == EmptyView, ErrorContent == EmptyView 
     init(
         player: AVPlayer?,
         position: PlaybackPosition,
-        speed: Float,
-        onSpeedTap: @escaping () -> Void,
+        onSettingsTap: @escaping () -> Void,
         aspectRatio: Double? = nil,
         onSeek: ((Double) -> Void)? = nil
     ) {
         self.init(
             player: player,
             position: position,
-            speed: speed,
-            onSpeedTap: onSpeedTap,
+            onSettingsTap: onSettingsTap,
             aspectRatio: aspectRatio,
             onSeek: onSeek,
             overlay: { EmptyView() },
@@ -204,16 +226,31 @@ private struct ScrubBar: View {
 }
 
 /// A small pill over the video: the mock's `rgba(11,12,13,.7)` scrim with an 11pt
-/// label. Port of androidApp's `OverlayChip`.
+/// label, or one glyph. Port of androidApp's `OverlayChip`.
 private struct OverlayChip: View {
-    let text: String
+    var text: String = ""
+    /// Drawn instead of `text`, in the text chip's line box so a glyph chip and a
+    /// text chip sit at one height.
+    var symbol: String? = nil
     var tint: Color = ShuttlVideoOverlay.text
     var action: (() -> Void)? = nil
     var accessibilityLabel: String? = nil
 
+    @ViewBuilder
+    private var content: some View {
+        if let symbol {
+            // Through the type scale, not a raw system size: it sits beside a text
+            // chip and should grow with it. The frame is the text chip's line box.
+            Image(systemName: symbol)
+                .shuttlType(ShuttlType.labelMedium)
+                .frame(height: ShuttlType.labelSmall.size * ShuttlType.labelSmall.lineHeightMultiple)
+        } else {
+            Text(text).shuttlType(ShuttlType.labelSmall)
+        }
+    }
+
     var body: some View {
-        let label = Text(text)
-            .shuttlType(ShuttlType.labelSmall)
+        let label = content
             .foregroundStyle(tint)
             .padding(.horizontal, 9)
             .padding(.vertical, 5)

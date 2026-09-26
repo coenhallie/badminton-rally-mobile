@@ -1,11 +1,38 @@
 import Shared
 import SwiftUI
 
-/// A track to draw and the frame rate it was sampled at, which must travel
-/// together.
+/// The tracks to draw and the frame rate they were sampled at, which must
+/// travel together.
+///
+/// A list because a cloud analysis carries both players. Returning the pair is
+/// still the point: the fps belongs to the tracks it was measured with, and
+/// picking each independently paired them by coincidence.
 struct HeatmapSource {
-    let track: PlayerTrack
+    let tracks: [PlayerTrackStore.SideTrack]
     let fps: Double
+}
+
+/// Near or Far, shown only where both were found.
+///
+/// Camera-relative labels. `videos.player_labels` carries the coach's own names
+/// and Phase 2's thumbnails; using them is out of scope (spec 10), and a label
+/// saying "Anna" over a track the gates assigned by net side would claim an
+/// identification this pipeline does not make.
+///
+/// Mirrors androidApp's `SideToggle` in HeatmapPanel.kt, label for label.
+struct SideToggle: View {
+    let sides: [CourtSide]
+    let selected: CourtSide
+    let onSelect: (CourtSide) -> Void
+
+    var body: some View {
+        ShuttlPillTabs(
+            labels: sides.map { $0 == .near ? "Near" : "Far" },
+            selectedIndex: max(0, sides.firstIndex(of: selected) ?? 0),
+            onSelect: { onSelect(sides[$0]) },
+            accessibilityLabel: "Which player"
+        )
+    }
 }
 
 /// Which track a heatmap should draw: the one still in memory, the one on disk,
@@ -32,13 +59,29 @@ func heatmapSource(
     done: LocalAnalysisState.Done?,
     stored: PlayerTrackStore.Stored?
 ) -> HeatmapSource? {
-    if let done, !done.playerTrack.samples.isEmpty {
-        return HeatmapSource(track: done.playerTrack, fps: done.fps)
-    }
+    // Only sides anyone was actually found on. A toggle whose second option
+    // draws an empty court is a control that cannot usefully be actuated.
+    var fromDisk: HeatmapSource?
     if let stored {
-        return HeatmapSource(track: stored.track, fps: stored.fps)
+        let drawable = stored.tracks.filter { !$0.track.samples.isEmpty }
+        if !drawable.isEmpty { fromDisk = HeatmapSource(tracks: drawable, fps: stored.fps) }
     }
-    return nil
+    // A device run produces the near player only, so this is always a single
+    // track. The empty check is load-bearing: see above.
+    var fromMemory: HeatmapSource?
+    if let done, !done.playerTrack.samples.isEmpty {
+        fromMemory = HeatmapSource(
+            tracks: [PlayerTrackStore.SideTrack(side: .near, track: done.playerTrack)],
+            fps: done.fps
+        )
+    }
+    // Cloud first, matching `storedTrack`'s own rule: it comes from a large
+    // model on a GPU and carries both players, so a near-only device run
+    // finishing beside it must not take the court back. Below that the
+    // in-memory run wins, because it is the newest truth for the local source
+    // and lands in memory before it lands on disk.
+    if stored?.source == .cloud, let fromDisk { return fromDisk }
+    return fromMemory ?? fromDisk
 }
 
 /// The rallies a run cut, as the spans the base positions are measured over.
@@ -78,6 +121,9 @@ struct AnalyticsDetailView: View {
     let rally: RallyApp
     let localAnalysis: LocalAnalysisRunner?
     let entryId: String
+    /// The list's name for this match, for when there is no entry to read one
+    /// from - which is every cloud-analysed match, since the run retires it.
+    var fallbackTitle: String? = nil
 
     @State private var chosen: AnalyticsPanel = .heatmap
 
@@ -89,17 +135,28 @@ struct AnalyticsDetailView: View {
     /// again for the tab held to it, and again for the panel: the same per-redraw
     /// file cost `storedTrackIds` exists to keep off the Analytics list.
     @State private var source: HeatmapSource? = nil
+    /// Held by side rather than by index, so a reload that reordered or dropped
+    /// a side cannot silently swap which player the court is showing.
+    @State private var side: CourtSide = .near
     @State private var hasSkeleton = false
     /// The cut rallies as spans, for the Base panel and for the tab that offers
     /// it. Read here rather than in the panel for the same reason `source` is:
     /// `storedClips` parses a sidecar off disk.
     @State private var windows: [RallyWindow] = []
+    /// `rally_clips` for this video: the rally truth for a CLOUD-analysed one,
+    /// which cuts nothing on this phone. Without these the Base tab could never
+    /// appear for a cloud run, however good its track.
+    @State private var cloudClips: [RallyClip] = []
 
     private var panels: [AnalyticsPanel] {
         AnalyticsPanelKt.availablePanels(
             hasTrack: source != nil,
             hasBoundedClips: windows.contains { $0.isBounded },
-            hasSkeleton: hasSkeleton
+            hasSkeleton: hasSkeleton,
+            // A cloud analysis lands on a phone that never held the footage,
+            // so the skeleton tab has nothing to overlay. Same resolution
+            // SkeletonPanel uses for the file it plays.
+            hasVideo: rally.localVideos.get(id: entryId)?.uri != nil
         )
     }
 
@@ -170,6 +227,16 @@ struct AnalyticsDetailView: View {
         }
         .background(Shuttl.bg)
         .task { await reload() }
+        // The clip cache, watched rather than read once: it refreshes
+        // asynchronously after a cloud run, and the Base tab's windows come out
+        // of it. Reading it only on open left the tab missing for the seconds
+        // between the screen appearing and the clips landing.
+        .task {
+            for await latest in rally.clips.observeClips() {
+                cloudClips = latest
+                await reload()
+            }
+        }
         .onChange(of: runSettled) { _, _ in Task { await reload() } }
         .navigationBarTitleDisplayMode(.inline)
         .shuttlNavigationBarBackground()
@@ -181,7 +248,7 @@ struct AnalyticsDetailView: View {
                 VStack(spacing: 0) {
                     // The list's own naming: the coach's title, else the file
                     // name.
-                    Text(entry?.title ?? entry?.displayName ?? "Analysis")
+                    Text(entry?.title ?? entry?.displayName ?? fallbackTitle ?? "Analysis")
                         .shuttlType(ShuttlType.titleMedium)
                         .foregroundStyle(Shuttl.textHeading)
                         .lineLimit(1)
@@ -232,7 +299,14 @@ struct AnalyticsDetailView: View {
 
         source = heatmapSource(done: done, stored: stored.track)
         hasSkeleton = stored.hasSkeleton
-        windows = rallyWindows(done: done?.clips ?? [], stored: stored.clips)
+        // One source for the whole screen. A median taken over one run's rally
+        // boundaries and plotted from another run's track is two answers on one
+        // court, so whichever run `heatmapSource` drew also supplies the windows.
+        windows = CloudRallyWindowsKt.rallyWindowsFor(
+            preferCloud: stored.track?.source == .cloud,
+            cloud: CloudRallyWindowsKt.cloudRallyWindows(clips: cloudClips, videoId: id),
+            device: rallyWindows(done: done?.clips ?? [], stored: stored.clips)
+        )
     }
 
     /// One entry's court heatmap, or an honest line saying why there is none.
@@ -243,7 +317,19 @@ struct AnalyticsDetailView: View {
     @ViewBuilder
     private var heatmap: some View {
         if let source {
-            CourtHeatmapView(track: source.track, fps: source.fps)
+            let shown = source.tracks.first { $0.side == side } ?? source.tracks[0]
+            VStack(spacing: 0) {
+                if source.tracks.count > 1 {
+                    SideToggle(
+                        sides: source.tracks.map(\.side),
+                        selected: shown.side,
+                        onSelect: { side = $0 }
+                    )
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                }
+                CourtHeatmapView(track: shown.track, fps: source.fps)
+            }
         } else {
             // A run's state lives in memory, so it is gone after a termination.
             // Said plainly rather than drawing an empty court, which would read

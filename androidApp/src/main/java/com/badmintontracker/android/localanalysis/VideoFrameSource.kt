@@ -153,13 +153,18 @@ class VideoFrameSource(private val file: File) {
      * longer trusts.
      */
     fun <T> sampleFramesForBackground(maxSamples: Int = 300, transform: (Bitmap) -> T): List<T> {
-        check(android.os.Build.VERSION.SDK_INT >= 28) {
-            "frame-indexed sampling needs API 28; API 26-27 has no implementation yet"
+        // An `if` and not a `check`, so lint can see the guard too.
+        if (android.os.Build.VERSION.SDK_INT < 28) {
+            error("frame-indexed sampling needs API 28; API 26-27 has no implementation yet")
         }
         val total = metadata().frameCount
-        return MediaMetadataRetriever().use { r ->
+        // release() in a finally rather than `use`: MediaMetadataRetriever only
+        // became AutoCloseable in API 29, so on API 28 `use` compiles to a cast
+        // that fails at run time.
+        val r = MediaMetadataRetriever()
+        try {
             r.setDataSource(file.path)
-            backgroundSampleIndices(total, maxSamples).mapNotNull { index ->
+            return backgroundSampleIndices(total, maxSamples).mapNotNull { index ->
                 r.getFrameAtIndex(index)?.let { bitmap ->
                     try {
                         transform(bitmap)
@@ -168,6 +173,8 @@ class VideoFrameSource(private val file: File) {
                     }
                 }
             }
+        } finally {
+            r.release()
         }
     }
 

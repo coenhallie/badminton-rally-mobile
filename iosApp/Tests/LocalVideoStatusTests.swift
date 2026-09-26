@@ -62,14 +62,6 @@ final class LocalVideoStatusTests: XCTestCase {
         XCTAssertFalse(LocalVideoStatus.isRunning(stage: .analyzed))
     }
 
-    func testCanRemoveBlockedOnlyMidPipeline() {
-        XCTAssertTrue(LocalVideoStatus.canRemove(stage: .local))
-        XCTAssertTrue(LocalVideoStatus.canRemove(stage: .failed))
-        XCTAssertTrue(LocalVideoStatus.canRemove(stage: .analyzed))
-        XCTAssertFalse(LocalVideoStatus.canRemove(stage: .uploading))
-        XCTAssertFalse(LocalVideoStatus.canRemove(stage: .processing))
-    }
-
     func testDetailsEditableOnlyBeforeThePipelineStarts() {
         // Metadata rides on the videos INSERT and the DB grants no UPDATE on
         // either column, so any stage past LOCAL means the row is already
@@ -111,44 +103,4 @@ final class LocalVideoStatusTests: XCTestCase {
         XCTAssertTrue(LocalVideoStatus.canAnalyze(stage: .local, device: .failed(message: "boom")))
     }
 
-    func testRemovalIsBlockedForADeviceRunToo() {
-        // Removal deletes the source copy out from under a live decoder and the
-        // clips directory out from under a live encoder.
-        XCTAssertTrue(LocalVideoStatus.canRemove(stage: .local, device: .idle))
-        XCTAssertFalse(LocalVideoStatus.canRemove(stage: .local, device: .analysing(fraction: 0.1)))
-        XCTAssertFalse(LocalVideoStatus.canRemove(stage: .local, device: .cutting(done: 1, total: 9)))
-    }
-
-    func testTheRowStatusLetsTheDeviceSpeakFirst() {
-        // A cloud stage left over from an earlier attempt must not describe a
-        // device run happening now.
-        XCTAssertEqual(
-            LocalVideoStatus.rowStatus(stage: .local, progress: nil, device: .analysing(fraction: 0.4)),
-            // No percentage: the drawer leaves this line about 115pt and
-            // "Analyzing on device" fills it on its own. Home's banner and the
-            // chrome indicator both have room and both show the number.
-            "Analyzing on device…"
-        )
-        XCTAssertEqual(
-            LocalVideoStatus.rowStatus(stage: .local, progress: nil, device: .failed(message: "no models")),
-            // The row is the only place a device failure is ever said: the
-            // result dialog is gated on stage == FAILED, which a device run
-            // never reaches.
-            "Analysis failed: no models"
-        )
-        XCTAssertEqual(
-            LocalVideoStatus.rowStatus(stage: .local, progress: nil, device: .paused(.analysing(fraction: 0.4))),
-            "Paused - keep Shuttl open"
-        )
-    }
-
-    func testTheRowStatusFallsBackToTheCloudWhenTheDeviceIsQuiet() {
-        XCTAssertEqual(
-            LocalVideoStatus.rowStatus(stage: .uploading, progress: progress(upload: 0.42), device: .idle),
-            "Uploading 42%…"
-        )
-        // .done stays in the runner's map after a run and is not work: the row
-        // must not keep describing it.
-        XCTAssertNil(LocalVideoStatus.rowStatus(stage: .local, progress: nil, device: .idle))
-    }
 }

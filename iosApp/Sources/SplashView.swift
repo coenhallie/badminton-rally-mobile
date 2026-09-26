@@ -3,7 +3,7 @@ import SwiftUI
 struct SplashView: View {
     var body: some View {
         VStack(spacing: 12) {
-            Text("Rally Clips")
+            Text("Shuttl")
             ProgressView()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

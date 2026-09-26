@@ -14,13 +14,14 @@ import androidx.compose.ui.unit.dp
 import com.badmintontracker.android.ui.components.SwipeToRemoveRow
 
 /**
- * The drawer list's shared metrics, from the `Rally Drawer` mock.
+ * The Matches tab list's shared metrics, from the `Rally Drawer` mock (the
+ * list's home before the bottom bar replaced the drawer it sat in).
  *
  * The list is an inset one now, not a full-bleed one: rows are cards sitting on
  * the panel with a margin either side, separated by a gap rather than by a
- * divider. Everything that renders a row in the drawer - the "On this phone"
- * card in LocalVideoSection.kt and both match rows in ClipListScreen.kt - reads
- * its numbers from here, so the two files cannot drift a dp apart.
+ * divider. Everything that renders a row in this list - MatchListRow.kt and
+ * the section labels and filter row around it - reads its numbers from here,
+ * so the pieces cannot drift a dp apart.
  *
  * Mirrors iosApp's DrawerList.swift number for number.
  */
@@ -44,7 +45,7 @@ internal object DrawerList {
 }
 
 /**
- * A drawer section's label: 12sp, secondary, sentence case.
+ * A section's label: 12sp, secondary, sentence case.
  *
  * Deliberately not the uppercase tracked `labelSmall` the app's older lists
  * use: the mocks for this redesign carry no uppercase and no positive tracking
@@ -72,7 +73,7 @@ internal fun DrawerSectionLabel(text: String) {
 }
 
 /**
- * The inset, rounded box every drawer row sits in.
+ * The inset, rounded box every list row sits in.
  *
  * Exists because a rounded inset row and [SwipeToRemoveRow] have to agree on
  * three things at once, and getting any of them wrong is visible: the margin

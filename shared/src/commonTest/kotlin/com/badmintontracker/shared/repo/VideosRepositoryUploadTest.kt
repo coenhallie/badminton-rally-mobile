@@ -36,6 +36,11 @@ private val BYTES = ByteArray(4) { it.toByte() }
 private const val TUS_SESSION_URL = "https://test.supabase.co/storage/v1/upload/resumable/session-1"
 
 private suspend fun SupabaseClient.signInAs(uid: String) {
+    // Auth restores its stored session on a coroutine of its own, and finding
+    // none it sets NotAuthenticated. Importing before that has finished is a
+    // race the import can lose: the upload then fails with "Not signed in",
+    // about one run in several hundred.
+    auth.awaitInitialization()
     auth.importSession(
         UserSession(
             accessToken = "test-token",

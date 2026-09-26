@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Nothing leaves this phone, by either route.
+
+     allowBackup="false" is not enough from Android 12 on: for an app targeting
+     API 31 or later it turns cloud backup off and leaves device-to-device
+     transfer ON, and that transfer would copy shared_prefs/rally.xml, which
+     holds a live Supabase refresh token, to the next phone. These rules are the
+     only thing that governs the transfer there.
+
+     Everything is excluded rather than the one file. The rest is no use on
+     another device either: the local video registry is content:// URIs that mean
+     nothing there, and the analysis stores are keyed to it. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" path="."/>
+        <exclude domain="file" path="."/>
+        <exclude domain="database" path="."/>
+        <exclude domain="sharedpref" path="."/>
+        <exclude domain="external" path="."/>
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" path="."/>
+        <exclude domain="file" path="."/>
+        <exclude domain="database" path="."/>
+        <exclude domain="sharedpref" path="."/>
+        <exclude domain="external" path="."/>
+    </device-transfer>
+</data-extraction-rules>

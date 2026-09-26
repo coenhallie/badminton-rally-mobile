@@ -2,6 +2,7 @@ package com.badmintontracker.shared.repo
 
 import com.badmintontracker.shared.model.CourtKeypoints
 import com.badmintontracker.shared.model.MatchMetadata
+import com.badmintontracker.shared.scoring.MatchFormat
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.exceptions.RestException
@@ -20,12 +21,15 @@ import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonNull
@@ -33,14 +37,59 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 /**
+ * The statuses the videos row holds, as the pipeline writes them.
+ *
+ * Named rather than spelled out at each comparison: three of these are
+ * compared in more than one place, and a typo in a string literal reads as
+ * "this video is not finished" rather than as an error.
+ */
+object VideoStatus {
+    const val UPLOADED = "uploaded"
+    const val PROCESSING_PHASE1 = "processing_phase1"
+    const val PHASE1_COMPLETE = "phase1_complete"
+    const val PROCESSING_PHASE2 = "processing_phase2"
+    const val COMPLETED = "completed"
+
+    /**
+     * Not a status the database has. [VideosRepository.observeProcessing] reports
+     * it when the PHONE could not reach the row for long enough to give up, which
+     * says nothing about the job: it starts with "failed" so that every consumer
+     * treats it as the end of the wait, and has a name so that the one consumer
+     * who must tell the two apart can.
+     */
+    const val FAILED_CONNECTION = "failed_connection"
+}
+
+/**
  * Snapshot of the cloud pipeline's state for one video (from the videos row).
  * [progress] is normalized to 0f..1f (the DB stores it as a 0..100 percentage).
+ *
+ * There are two kinds of "done" here and they are not interchangeable. Phase 1
+ * ends with watchable rally clips and the pipeline then STOPS: Phase 2 runs
+ * only when something calls start-analytics. Phase 2 ends with the pose
+ * artifact the heatmap and skeleton are drawn from. A caller waiting for clips
+ * wants [isTerminal]; a caller waiting for the artifact wants
+ * [isAnalyticsTerminal].
  */
 data class ProcessingUpdate(val status: String, val progress: Float?, val error: String?) {
-    // Phase 1 produces the rally clips; phase 2 analytics is desktop-only.
-    val isSuccess: Boolean get() = status == "phase1_complete" || status == "completed"
+    /** Phase 1 is done: the rally clips exist. Phase 2 merges into its results, so it keeps them. */
+    val hasClips: Boolean get() = status == VideoStatus.PHASE1_COMPLETE || status == VideoStatus.COMPLETED
+
+    /**
+     * Phase 2 is done.
+     *
+     * Not the same as "a pose artifact exists": the upload is non-fatal on the
+     * worker, so a completed video can still have a null poses_artifact_path.
+     * That is the field to gate a fetch on, not this.
+     */
+    val hasAnalytics: Boolean get() = status == VideoStatus.COMPLETED
+
+    val isSuccess: Boolean get() = hasClips
     val isFailure: Boolean get() = status.startsWith("failed")
     val isTerminal: Boolean get() = isSuccess || isFailure
+
+    /** A wait for the pose artifact. phase1_complete does NOT end it: Phase 2 is still to come. */
+    val isAnalyticsTerminal: Boolean get() = hasAnalytics || isFailure
 }
 
 sealed interface UploadState {
@@ -98,8 +147,30 @@ interface VideosRepository {
     suspend fun setCourtKeypoints(videoId: String, keypoints: CourtKeypoints): Result<Unit>
     /** Invoke the process-video Edge Function (requires row + keypoints in place). */
     suspend fun startProcessing(videoId: String): Result<Unit>
-    /** Poll the videos row until a terminal status, emitting every change of state. */
-    fun observeProcessing(videoId: String, pollIntervalMs: Long = 5_000): Flow<ProcessingUpdate>
+
+    /**
+     * Invoke the start-analytics Edge Function, which runs Phase 2: the full
+     * pose pass whose artifact the heatmap and skeleton are drawn from.
+     *
+     * Only valid from `phase1_complete` or `failed_phase2`; the function
+     * answers 409 otherwise, and flips the status to `processing_phase2`
+     * BEFORE calling Modal, so a double tap cannot start two workers.
+     */
+    suspend fun startAnalytics(videoId: String): Result<Unit>
+
+    /**
+     * Poll the videos row until a terminal status, emitting every change.
+     *
+     * @param awaitAnalytics keep polling past `phase1_complete` until Phase 2
+     *   finishes. False for the ordinary upload-and-clips wait, because
+     *   nothing advances a video past `phase1_complete` on its own and such a
+     *   wait would never end.
+     */
+    fun observeProcessing(
+        videoId: String,
+        pollIntervalMs: Long = 5_000,
+        awaitAnalytics: Boolean = false,
+    ): Flow<ProcessingUpdate>
     /**
      * Resumable (TUS) upload to videos/{uid}/{videoId}.mp4. [channelProvider] must
      * return a channel positioned at the requested byte offset so interrupted
@@ -113,12 +184,41 @@ interface VideosRepository {
     ): Flow<UploadState>
 
     /**
-     * Title and description for every match the user can see, owned or shared,
-     * from the list_match_metadata RPC. An RPC rather than a select on videos:
-     * that table's SELECT policy is owner-only, and widening it would also hand
-     * share recipients storage_path, results_meta and player_labels.
+     * Title, description, players and format for every match the user can see,
+     * owned or shared, from the list_match_metadata RPC. An RPC rather than a
+     * select on videos: that table's SELECT policy is owner-only, and widening it
+     * would also hand share recipients storage_path, results_meta and
+     * player_labels.
+     *
+     * A success also replaces what [observeMatchMetadata] holds. A failure leaves
+     * it alone: the caller's contract is "on failure keep the previous titles",
+     * because emptying the map would visibly wipe every name on a blip.
      */
     suspend fun listMatchMetadata(): Result<List<MatchMetadata>>
+
+    /**
+     * The last metadata this process fetched or wrote, keyed by video id. One
+     * cache rather than one per screen: the match list is built three times over
+     * on Android and the match page fetches its own on iOS, and a rename made on
+     * the page has to show on every row the moment it lands, not on the next
+     * pull to refresh.
+     */
+    fun observeMatchMetadata(): Flow<Map<String, MatchMetadata>>
+
+    /**
+     * Rewrites a video-born match's details, which live on its videos row. The
+     * title, description, format and the two player lists are the columns the
+     * database grants the owner an UPDATE on (20260922000000); every other column
+     * stays out of the phone's reach. On success the cached row is replaced too.
+     */
+    suspend fun updateMatchDetails(
+        videoId: String,
+        title: String?,
+        description: String?,
+        format: MatchFormat?,
+        homePlayers: List<String>,
+        awayPlayers: List<String>,
+    ): Result<Unit>
 
     /**
      * Permanently delete an owned match: best-effort storage cleanup (clips,
@@ -171,6 +271,24 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
     @Serializable
     private data class DeleteMatchArgs(@SerialName("p_video_id") val videoId: String)
 
+    /**
+     * Every column the details editor can change, in one write. Nulls are sent
+     * as nulls on purpose: clearing the description is "description = null", and
+     * a patch that left the key out would keep the old one.
+     */
+    @Serializable
+    private data class MatchDetailsPatch(
+        val title: String?,
+        val description: String?,
+        val format: MatchFormat?,
+        @SerialName("home_players") val homePlayers: List<String>,
+        @SerialName("away_players") val awayPlayers: List<String>,
+    )
+
+    private val metadata = MutableStateFlow<Map<String, MatchMetadata>>(emptyMap())
+
+    override fun observeMatchMetadata(): Flow<Map<String, MatchMetadata>> = metadata.asStateFlow()
+
     override suspend fun createVideo(
         videoId: String,
         filename: String,
@@ -197,6 +315,25 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
 
     override suspend fun listMatchMetadata(): Result<List<MatchMetadata>> = runCatching {
         client.postgrest.rpc("list_match_metadata").decodeList<MatchMetadata>()
+            .also { rows -> metadata.value = rows.associateBy { it.videoId } }
+    }.annotateHttpStatus()
+
+    override suspend fun updateMatchDetails(
+        videoId: String,
+        title: String?,
+        description: String?,
+        format: MatchFormat?,
+        homePlayers: List<String>,
+        awayPlayers: List<String>,
+    ): Result<Unit> = runCatching {
+        client.postgrest.from("videos")
+            .update(MatchDetailsPatch(title, description, format, homePlayers, awayPlayers)) {
+                filter { eq("id", videoId) }
+            }
+        // Written into the cache rather than re-fetched: the write is the truth
+        // now, and a round trip would only add a window in which the page shows
+        // the old name after Save.
+        metadata.update { it + (videoId to MatchMetadata(videoId, title, description, homePlayers, awayPlayers, format)) }
     }.annotateHttpStatus()
 
     override suspend fun setCourtKeypoints(videoId: String, keypoints: CourtKeypoints): Result<Unit> =
@@ -232,7 +369,32 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
         check(response.status.isSuccess()) { response.bodyAsText() }
     }.annotateHttpStatus()
 
-    override fun observeProcessing(videoId: String, pollIntervalMs: Long): Flow<ProcessingUpdate> = flow {
+    /**
+     * Deliberately NOT a copy of [startProcessing]'s opening move.
+     *
+     * That one clears the row to "uploaded" before invoking, because Phase 1
+     * restarts from scratch and a stale failed_phase1 would be re-read by the
+     * poll loop. Phase 2 is the opposite case: start-analytics accepts only
+     * `phase1_complete` or `failed_phase2` and answers 409 to anything else,
+     * so resetting the status first would reject every call. The edge function
+     * flips the status itself, before it calls Modal.
+     */
+    override suspend fun startAnalytics(videoId: String): Result<Unit> = runCatching {
+        val response = client.functions(
+            function = "start-analytics",
+            body = ProcessVideoBody(videoId),
+            headers = Headers.build {
+                append(HttpHeaders.ContentType, ContentType.Application.Json.toString())
+            },
+        )
+        check(response.status.isSuccess()) { response.bodyAsText() }
+    }.annotateHttpStatus()
+
+    override fun observeProcessing(
+        videoId: String,
+        pollIntervalMs: Long,
+        awaitAnalytics: Boolean,
+    ): Flow<ProcessingUpdate> = flow {
         // Collectors run in an app scope where an uncaught throw is fatal, and
         // processing spans minutes — a poll error must never escape this flow.
         // Tolerate transient errors; only persistent ones become a terminal update.
@@ -251,7 +413,7 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
                     val message = e.userFacingMessage("Lost connection while checking progress")
                     emit(
                         ProcessingUpdate(
-                            status = "failed_connection",
+                            status = VideoStatus.FAILED_CONNECTION,
                             progress = null,
                             error = message,
                         )
@@ -265,7 +427,7 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
             // DB progress is a 0..100 percentage; normalize to 0..1 for the UI.
             val update = ProcessingUpdate(row.status, row.progress?.let { (it / 100f).coerceIn(0f, 1f) }, row.error)
             emit(update)
-            if (update.isTerminal) break
+            if (if (awaitAnalytics) update.isAnalyticsTerminal else update.isTerminal) break
             delay(pollIntervalMs)
         }
     }
@@ -341,9 +503,22 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
         val thumbnailPaths = clipRows.mapNotNull { it.thumbnailPath }
         if (thumbnailPaths.isNotEmpty()) runCatching { client.storage.from("thumbnails").delete(thumbnailPaths) }
         if (videoPath != null) runCatching { client.storage.from("videos").delete(listOf(videoPath)) }
+        // What the analysis itself left behind, which this delete predates: the
+        // worker writes under results/{owner}/{video}/, and since Phase 2 that
+        // includes a pose artifact holding every frame of the players' bodies.
+        // Listed rather than named, so whatever the worker adds next is covered
+        // too. The owner comes off the video's own path, the one thing here that
+        // records it. Best effort like the rest: see the design note on why an
+        // orphaned file beats a match that cannot be removed.
+        if (videoPath != null) runCatching {
+            val folder = "${videoPath.substringBefore('/')}/$videoId"
+            val results = client.storage.from("results")
+            val left = results.list(folder).map { "$folder/${it.name}" }
+            if (left.isNotEmpty()) results.delete(left)
+        }
 
         client.postgrest.rpc("delete_match", DeleteMatchArgs(videoId))
-        Unit
+        metadata.update { it - videoId }
     }.annotateHttpStatus()
 
     companion object {

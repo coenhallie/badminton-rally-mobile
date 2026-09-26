@@ -6,10 +6,10 @@ import kotlinx.serialization.Serializable
 /**
  * How a match is scored.
  *
- * A parameter rather than an enum, because the coach said "15 or 21" and clubs
- * disagree about what a 15 point game is - win by two or a straight race, capped
- * or not, interval or none. A wrong guess about one club's variant then costs a
- * preset, not a redesign.
+ * A parameter rather than an enum, because clubs disagree about what a game is -
+ * its length, win by two or a straight race, capped or not, interval or none. The
+ * form offers the few combinations of [GamePoints] and [MatchSets] people actually
+ * play, and a variant it does not offer costs an option there, not a redesign here.
  *
  * Serializable because the rules travel with the match. The same log folded under
  * different rules is a different score, so the rules are stored beside the log
@@ -36,23 +36,60 @@ data class ScoringRules(
 
     companion object {
         /** BWF: 21, win by two, capped at 30, interval at 11, best of three, ends change at 11 in the third. */
-        val BWF_21 = ScoringRules(
-            pointsToWin = 21, winBy = 2, cap = 30, intervalAt = 11, gamesToWin = 2, changeEndsAt = 11,
-        )
+        val BWF_21 = of(GamePoints.DEFAULT, MatchSets.DEFAULT)
 
-        /** Club 15: win by two, capped at 21, interval at 8. */
-        val CLUB_15 = ScoringRules(
-            pointsToWin = 15, winBy = 2, cap = 21, intervalAt = 8, gamesToWin = 2, changeEndsAt = 8,
+        /**
+         * The rules a new match is played under. Total over both enums, so the form
+         * never builds a rule set the constructor above would throw on - which
+         * matters more than it looks, because a Kotlin throw crossing the ObjC
+         * bridge aborts the iOS app.
+         */
+        fun of(points: GamePoints, sets: MatchSets): ScoringRules = ScoringRules(
+            pointsToWin = points.pointsToWin,
+            winBy = 2,
+            cap = points.cap,
+            intervalAt = points.midGame,
+            gamesToWin = sets.gamesToWin,
+            changeEndsAt = points.midGame,
         )
-
-        /** Club 15: first to 15, no setting. */
-        val STRAIGHT_15 = ScoringRules(
-            pointsToWin = 15, winBy = 1, cap = null, intervalAt = 8, gamesToWin = 2, changeEndsAt = 8,
-        )
-
-        /** Declaration order, which is also the order a rules picker renders. */
-        val PRESETS: List<ScoringRules> = listOf(BWF_21, CLUB_15, STRAIGHT_15)
     }
+}
+
+/**
+ * The game lengths a new match offers. Every one is win by two with a cap, because
+ * that is what each of them means on a club night; a variant nobody asked for is a
+ * pill nobody can explain.
+ *
+ * Declaration order is the order the picker renders.
+ */
+enum class GamePoints(
+    val pointsToWin: Int,
+    /** The score at which the next point takes the game regardless of the lead. */
+    val cap: Int,
+    /** Where the interval falls, and where ends change in a deciding game. */
+    val midGame: Int,
+) {
+    FIFTEEN(pointsToWin = 15, cap = 21, midGame = 8),
+    TWENTY_ONE(pointsToWin = 21, cap = 30, midGame = 11),
+    ELEVEN(pointsToWin = 11, cap = 15, midGame = 6);
+
+    companion object { val DEFAULT = TWENTY_ONE }
+}
+
+/**
+ * How many sets a match is played over. "Sets" is the word on the form because it
+ * is the word said on court; the engine calls them games, as the laws do.
+ *
+ * Declaration order is the order the picker renders.
+ */
+enum class MatchSets(val sets: Int) {
+    THREE(sets = 3),
+    ONE(sets = 1);
+
+    /** Best of [sets] is won by taking the majority of them. */
+    val gamesToWin: Int get() = sets / 2 + 1
+
+    companion object { val DEFAULT = THREE }
 }
 
 /**

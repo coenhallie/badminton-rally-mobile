@@ -9,6 +9,12 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 interface AnnotationsRepository {
+    /**
+     * Throws when the request fails. Declared, because Swift can only catch what
+     * is: an undeclared exception out of a suspend function terminates the iOS
+     * app instead of reaching the `catch` beside the call.
+     */
+    @Throws(Exception::class)
     suspend fun list(clipId: String): List<RallyAnnotation>
 
     /**

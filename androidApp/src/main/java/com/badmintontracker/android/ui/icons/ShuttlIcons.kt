@@ -5,14 +5,17 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 
 /**
  * Lucide-style outlined icons inlined as [ImageVector]s so the app doesn't
  * pull in `androidx.compose.material:material-icons-extended` (~2-3 MB APK
- * cost). Path data is taken verbatim from the web app reference
- * `badminton-tracker/src/views/LoginView.vue`.
+ * cost). The sun, moon and info glyphs are taken verbatim from the web app
+ * reference `badminton-tracker/src/views/LoginView.vue`; the match list's six
+ * glyphs come from lucide-static 0.460.0, not the web app, which has none of
+ * them.
  *
  * Stroke is a solid color so Icon's ColorFilter.tint can recolor it via
  * SrcIn — Color.Unspecified renders transparent and would not be tinted.
@@ -27,9 +30,68 @@ object ShuttlIcons {
     // inside ShuttlEmptyState's disc, where the heavier line reads as a blob.
     val Trophy: ImageVector by lazy { buildLucide("ShuttlTrophy") { trophy() } }
     val ChartColumn: ImageVector by lazy { buildLucide("ShuttlChartColumn") { chartColumn() } }
+    /** The Matches tab: two stacked rows, lucide `rows-2`. */
+    val Rows: ImageVector by lazy {
+        buildLucideSvg("ShuttlRows", "M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z", "M3 12h18")
+    }
+    /** The Settings tab, lucide `sliders-horizontal`: the gear above is the video card's. */
+    val SlidersHorizontal: ImageVector by lazy {
+        buildLucideSvg(
+            "ShuttlSlidersHorizontal",
+            "M21 4h-7", "M10 4H3", "M21 12h-9", "M8 12H3", "M21 20h-5", "M12 20H3",
+            "M14 2v4", "M8 10v4", "M16 18v4",
+        )
+    }
     val Video: ImageVector by lazy { buildLucide("ShuttlVideo") { video() } }
     val ListOrdered: ImageVector by lazy { buildLucide("ShuttlListOrdered") { listOrdered() } }
     val Tag: ImageVector by lazy { buildLucide("ShuttlTag") { tag() } }
+    // The scoring board's Undo. Lucide's undo-2 at its stock stroke, drawn at
+    // 18dp beside the label like ShuttlButton's leading icon.
+    val Undo: ImageVector by lazy { buildLucide("ShuttlUndo") { undo() } }
+
+    // The match list's status line: where a match's video is, then what
+    // analysis it has. Lucide 0.460.0's own path strings (rects, lines and
+    // circles rewritten as paths), parsed by Compose rather than hand-traced:
+    // the flame and the cloud are arcs a transcription would get subtly wrong.
+    /** On this phone. */
+    val Smartphone: ImageVector by lazy {
+        buildLucideSvg("ShuttlSmartphone", "M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z", "M12 18h.01")
+    }
+    /** In the cloud. */
+    val Cloud: ImageVector by lazy {
+        buildLucideSvg("ShuttlCloud", "M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z")
+    }
+    /** Rallies. */
+    val Film: ImageVector by lazy {
+        buildLucideSvg(
+            "ShuttlFilm",
+            "M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z",
+            "M7 3v18", "M3 7.5h4", "M3 12h18", "M3 16.5h4", "M17 3v18", "M17 7.5h4", "M17 16.5h4",
+        )
+    }
+    /** Heatmap. */
+    val Flame: ImageVector by lazy {
+        buildLucideSvg(
+            "ShuttlFlame",
+            "M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 " +
+                "2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z",
+        )
+    }
+    /** Skeleton. */
+    val PersonStanding: ImageVector by lazy {
+        buildLucideSvg("ShuttlPersonStanding", "M13 5a1 1 0 1 1-2 0a1 1 0 1 1 2 0z", "m9 20 3-6 3 6", "m6 8 6 2 6-2", "M12 10v4")
+    }
+    /**
+     * The match list's legend button: Lucide's info, a circle with an "i". Not
+     * [Info], which despite its name is the alert "!" ErrorBanner draws.
+     */
+    val InfoCircle: ImageVector by lazy {
+        buildLucideSvg("ShuttlInfoCircle", "M22 12a10 10 0 1 1-20 0a10 10 0 1 1 20 0z", "M12 16v-4", "M12 8h.01")
+    }
+    /** Score. */
+    val Hash: ImageVector by lazy {
+        buildLucideSvg("ShuttlHash", "M4 9h16", "M4 15h16", "M10 3 8 21", "M16 3l-2 18")
+    }
 
     // The transport glyphs, traced from the Rally Analysis mock's own SVGs:
     // 14-unit chevrons and steps at a 1.4 stroke, an 18-unit filled play and
@@ -42,6 +104,43 @@ object ShuttlIcons {
     // Corner brackets pointing out, and in: the fullscreen toggle on the video card.
     val Maximize: ImageVector by lazy { buildStroked("ShuttlMaximize") { moveTo(2f, 5.5f); lineTo(2f, 2f); lineTo(5.5f, 2f); moveTo(8.5f, 2f); lineTo(12f, 2f); lineTo(12f, 5.5f); moveTo(12f, 8.5f); lineTo(12f, 12f); lineTo(8.5f, 12f); moveTo(5.5f, 12f); lineTo(2f, 12f); lineTo(2f, 8.5f) } }
     val Minimize: ImageVector by lazy { buildStroked("ShuttlMinimize") { moveTo(2f, 5.5f); lineTo(5.5f, 5.5f); lineTo(5.5f, 2f); moveTo(8.5f, 2f); lineTo(8.5f, 5.5f); lineTo(12f, 5.5f); moveTo(12f, 8.5f); lineTo(8.5f, 8.5f); lineTo(8.5f, 12f); moveTo(5.5f, 12f); lineTo(5.5f, 8.5f); lineTo(2f, 8.5f) } }
+    /**
+     * The settings gear on the video card, where the speed chip used to be. Drawn
+     * rather than imported for the reason at the top of this file, and computed
+     * rather than traced: eight teeth are sixteen flanks, and a loop cannot get one
+     * of them wrong. Same 14-unit, 1.4 stroke family as the chips beside it.
+     */
+    val Settings: ImageVector by lazy {
+        buildStroked("ShuttlSettings") {
+            val centre = 7f
+            val tip = 5.9f
+            val root = 4.4f
+            fun at(radius: Float, degrees: Float): Pair<Float, Float> {
+                val radians = Math.toRadians(degrees.toDouble())
+                return centre + radius * kotlin.math.cos(radians).toFloat() to centre + radius * kotlin.math.sin(radians).toFloat()
+            }
+            for (tooth in 0 until 8) {
+                val angle = tooth * 45f
+                val points = listOf(at(root, angle - 14f), at(tip, angle - 8f), at(tip, angle + 8f), at(root, angle + 14f))
+                points.forEachIndexed { index, (x, y) ->
+                    if (tooth == 0 && index == 0) moveTo(x, y) else lineTo(x, y)
+                }
+            }
+            close()
+            // The hub, as two half turns: one arc cannot return to its own start.
+            moveTo(centre + 1.9f, centre)
+            arcTo(1.9f, 1.9f, 0f, isMoreThanHalf = true, isPositiveArc = true, x1 = centre - 1.9f, y1 = centre)
+            arcTo(1.9f, 1.9f, 0f, isMoreThanHalf = true, isPositiveArc = true, x1 = centre + 1.9f, y1 = centre)
+        }
+    }
+    /** The floating label window's title bar: a six-dot grip says "drag me", and a pair of chevrons folds it. */
+    val Grip: ImageVector by lazy { buildStroked("ShuttlGrip") { for (x in listOf(5f, 9f)) for (y in listOf(3.5f, 7f, 10.5f)) { moveTo(x, y); lineTo(x + 0.01f, y) } } }
+    val ChevronUp: ImageVector by lazy { buildStroked("ShuttlChevronUp") { moveTo(3f, 9f); lineTo(7f, 5f); lineTo(11f, 9f) } }
+    val ChevronDown: ImageVector by lazy { buildStroked("ShuttlChevronDown") { moveTo(3f, 5f); lineTo(7f, 9f); lineTo(11f, 5f) } }
+    /** Settings' Labels row, pointing at the screen it opens. */
+    val ChevronRight: ImageVector by lazy { buildStroked("ShuttlChevronRight") { moveTo(5f, 3f); lineTo(9f, 7f); lineTo(5f, 11f) } }
+    /** Two opposed arrows: the scoring board's "hand the serve across" mark. Same 14-unit, 1.4 stroke family. */
+    val Swap: ImageVector by lazy { buildStroked("ShuttlSwap") { moveTo(2f, 4.5f); lineTo(12f, 4.5f); moveTo(9.5f, 2f); lineTo(12f, 4.5f); lineTo(9.5f, 7f); moveTo(12f, 9.5f); lineTo(2f, 9.5f); moveTo(4.5f, 7f); lineTo(2f, 9.5f); lineTo(4.5f, 12f) } }
     val Play: ImageVector by lazy { buildFilled("ShuttlPlay") { moveTo(5f, 3f); lineTo(15f, 9f); lineTo(5f, 15f); close() } }
     val Pause: ImageVector by lazy {
         buildFilled("ShuttlPause") {
@@ -214,6 +313,27 @@ private fun buildLucide(name: String, pathData: androidx.compose.ui.graphics.vec
         }
         .build()
 
+/**
+ * [buildLucide] from Lucide's own path strings, one per SVG element. Compose's
+ * parser handles the arcs and the implicit linetos after a moveto that some of
+ * these rely on (see LucideGlyphsTest).
+ */
+private fun buildLucideSvg(name: String, vararg d: String): ImageVector =
+    ImageVector.Builder(name = name, defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f)
+        .apply {
+            d.forEach { pathString ->
+                addPath(
+                    pathData = addPathNodes(pathString),
+                    fill = SolidColor(Color.Transparent),
+                    stroke = SolidColor(Color.Black),
+                    strokeLineWidth = 2f,
+                    strokeLineCap = StrokeCap.Round,
+                    strokeLineJoin = StrokeJoin.Round,
+                )
+            }
+        }
+        .build()
+
 private fun androidx.compose.ui.graphics.vector.PathBuilder.trophy() {
     // <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/>
     moveTo(6f, 9f); lineTo(4.5f, 9f)
@@ -304,4 +424,14 @@ private fun androidx.compose.ui.graphics.vector.PathBuilder.tag() {
     arcTo(0.5f, 0.5f, 0f, true, true, 8f, 7.5f)
     arcTo(0.5f, 0.5f, 0f, true, true, 7f, 7.5f)
     close()
+}
+
+private fun androidx.compose.ui.graphics.vector.PathBuilder.undo() {
+    // <path d="M9 14 4 9l5-5"/>
+    moveTo(9f, 14f); lineTo(4f, 9f); lineTo(9f, 4f)
+    // <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/>
+    moveTo(4f, 9f); lineTo(14.5f, 9f)
+    arcToRelative(5.5f, 5.5f, 0f, false, true, 5.5f, 5.5f)
+    arcToRelative(5.5f, 5.5f, 0f, false, true, -5.5f, 5.5f)
+    lineTo(11f, 20f)
 }

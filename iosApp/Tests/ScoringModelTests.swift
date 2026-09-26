@@ -27,13 +27,42 @@ final class ScoringModelTests: XCTestCase {
         let repo = SwiftInteropKt.testScoreLogsRepository(now: t0, ownerId: "owner-1")
         let log = repo.create(
             title: "Thu League",
-            homePlayers: ["Coen"],
-            awayPlayers: ["Marco"],
             rules: rules,
-            setup: MatchSetup(doubles: false, firstServer: .home, homeStartsRight: .first, awayStartsRight: .first)
+            setup: MatchSetup(firstServer: .home)
         )
         let model = ScoringModel(scoreLogs: repo, scoreboardLabels: [goodShot, forcedError], scoreLogId: log.id)
         return (repo, log.id, model)
+    }
+
+    func testDetailsEditedFromTheBoardAreStoredAndLeaveTheScoreAlone() {
+        // The new match form asks for none of this, so the board is one of the two
+        // places it gets filled in - mid-match, with points already on the log.
+        let (repo, id, model) = fixture()
+        model.score(.home)
+        model.updateDetails(
+            title: "Club final", format: .mixedDoubles,
+            homePlayers: ["Coen", "Ana"], awayPlayers: ["Marco", " "]
+        )
+        let stored = repo.get(id: id)
+        XCTAssertEqual(stored?.title, "Club final")
+        XCTAssertEqual(stored?.format, .mixedDoubles)
+        XCTAssertEqual(stored?.homePlayers, ["Coen", "Ana"])
+        XCTAssertEqual(stored?.awayPlayers, ["Marco"])
+        XCTAssertEqual(model.match?.currentGame.home, 1)
+        XCTAssertEqual(model.log.map { $0.sideName(side: .home) }, "Coen / Ana")
+    }
+
+    func testTheOpeningServeCanBeSwitchedUntilTheFirstPoint() {
+        // The form no longer asks who won the toss, so this is the only place the
+        // coach can say it was the other side.
+        let (_, _, model) = fixture()
+        XCTAssertTrue(model.canSwitchFirstServer)
+
+        model.switchFirstServer()
+        XCTAssertEqual(model.match?.server, .away)
+
+        model.score(.home)
+        XCTAssertFalse(model.canSwitchFirstServer)
     }
 
     func testScoringAPointOpensTheTagRowForThatPoint() {
@@ -95,10 +124,8 @@ final class ScoringModelTests: XCTestCase {
         let repo = SwiftInteropKt.testScoreLogsRepository(now: t0, ownerId: "owner-1")
         let log = repo.create(
             title: "Thu League",
-            homePlayers: ["Coen"],
-            awayPlayers: ["Marco"],
             rules: ScoringRules.companion.BWF_21,
-            setup: MatchSetup(doubles: false, firstServer: .home, homeStartsRight: .first, awayStartsRight: .first)
+            setup: MatchSetup(firstServer: .home)
         )
         let model = ScoringModel(
             scoreLogs: repo,
@@ -123,10 +150,8 @@ final class ScoringModelTests: XCTestCase {
         let repo = SwiftInteropKt.testScoreLogsRepository(now: t0, ownerId: "owner-1")
         let log = repo.create(
             title: "Thu League",
-            homePlayers: ["Coen"],
-            awayPlayers: ["Marco"],
             rules: ScoringRules.companion.BWF_21,
-            setup: MatchSetup(doubles: false, firstServer: .home, homeStartsRight: .first, awayStartsRight: .first)
+            setup: MatchSetup(firstServer: .home)
         )
         let labels = AnnotationLabelsTestDoublesKt.testAnnotationLabelsRepository(labels: [footwork])
         let model = ScoringModel(scoreLogs: repo, labelsRepository: labels, scoreLogId: log.id)
@@ -149,6 +174,76 @@ final class ScoringModelTests: XCTestCase {
         model.undo()
         XCTAssertNil(model.pendingTagOrdinal)
         XCTAssertEqual(model.match?.points.count, 0)
+        XCTAssertFalse(model.canUndo)
+    }
+
+    func testUndoTakesBackATaggedRallyInOneTap() {
+        // The complaint this answers: with the rally tagged twice, the old undo
+        // needed three taps, and the first two left the score exactly as it was.
+        let (_, _, model) = fixture()
+        model.score(.home)
+        model.score(.away)
+        model.toggleTag(ordinal: 1, label: goodShot)
+        model.toggleTag(ordinal: 1, label: forcedError)
+        model.undo()
+        XCTAssertEqual(model.match?.currentGame.home, 1)
+        XCTAssertEqual(model.match?.currentGame.away, 0)
+    }
+
+    func testUndoPutsTheTagRowBackOnTheRallyBefore() {
+        // The board goes back to exactly how it looked after that rally, so the
+        // next undo, and the chips, are about the rally the caption names.
+        let (_, _, model) = fixture()
+        model.score(.home)
+        model.toggleTag(ordinal: 0, label: goodShot)
+        model.score(.away)
+        model.undo()
+        XCTAssertEqual(model.pendingTagOrdinal, 0)
+        XCTAssertEqual(model.match?.points[0].tags.map(\.labelName), ["Good shot"])
+    }
+
+    func testUndoAnnouncesWhatItTookBackAndOffersRedo() {
+        let (_, _, model) = fixture()
+        model.score(.away)
+        model.toggleTag(ordinal: 0, label: forcedError)
+        model.undo()
+        XCTAssertEqual(model.undoneNotice, "Point to Away undone")
+        model.redo()
+        XCTAssertNil(model.undoneNotice)
+        XCTAssertEqual(model.pendingTagOrdinal, 0)
+        XCTAssertEqual(model.match?.points.map(\.wonBy), [Side.away])
+        XCTAssertEqual(model.match?.points[0].tags.map(\.labelName), ["Forced error"])
+    }
+
+    func testTheNextRallyRetiresTheRedo() {
+        // Redo after another rally would put the old log back over that rally.
+        let (_, _, model) = fixture()
+        model.score(.home)
+        model.undo()
+        model.score(.away)
+        XCTAssertNil(model.undoneNotice)
+        model.redo()
+        XCTAssertEqual(model.match?.points.map(\.wonBy), [Side.away])
+    }
+
+    func testAChangeMadeElsewhereRetiresTheRedoToo() {
+        // A sync, or the match page, can change the log under the board.
+        let (repo, id, model) = fixture()
+        model.score(.home)
+        model.score(.home)
+        model.undo()
+        XCTAssertEqual(model.undoneNotice, "Point to Home undone")
+        repo.replaceEvents(id: id, events: [])
+        model.reload()
+        XCTAssertNil(model.undoneNotice)
+    }
+
+    func testTheUndoNoticeCanBeDismissed() {
+        let (_, _, model) = fixture()
+        model.score(.home)
+        model.undo()
+        model.dismissUndoNotice()
+        XCTAssertNil(model.undoneNotice)
     }
 
     func testFinishingEndsTheMatchAndClosesTheRow() {
@@ -189,10 +284,8 @@ final class ScoringModelTests: XCTestCase {
         XCTAssertNil(model.pendingTagOrdinal)
     }
 
-    func testANoteIsOneEntrySoUndoTakesBackARallyAndNotALetter() {
-        // Undo drops the last log entry. A note written a character at a time would
-        // be a character at a time to take back, which would cost the coach the one
-        // control he reaches for mid-rally. The surface commits the note once.
+    func testUndoTakesBackTheLastRallyAndLeavesTheNoteOnTheOneBefore() {
+        // Undo cuts by rally, so a note on an earlier rally is not what it takes.
         let (_, _, model) = fixture()
         model.score(.home)
         model.setComment(ordinal: 0, text: "net cord")
@@ -215,5 +308,50 @@ final class ScoringModelTests: XCTestCase {
         model.undo()
         XCTAssertTrue(model.canScore)
         XCTAssertEqual(model.match?.points.count, 0)
+    }
+
+    // MARK: - start() and the `.task` that runs it
+
+    func testLeavingTheBoardStopsEveryLoopItStarted() async {
+        // With a labels repository - which is what the app hands over and what
+        // `fixture` does not - start() spawned two unstructured `Task {}` loops
+        // that nothing cancelled, and `ScoringView` built a fresh model on every
+        // run of its `.task`, so each return to the board left two more behind.
+        // See `MatchModelTests` for why a released model is the probe.
+        //
+        // A real `RallyApp` for the repository: shared has no double for it, and
+        // both flows read are its local cache, so nothing reaches the network.
+        let rally = RallyAppIosKt.createRallyApp(
+            url: "https://test.supabase.co",
+            anonKey: "test-anon-key",
+            deleteLocalVideoFile: { _ in },
+            deleteLocalAnalysis: { _, _ in }
+        )
+        let (repo, id, _) = fixture()
+        var m: ScoringModel? = ScoringModel(scoreLogs: repo, labelsRepository: rally.labels, scoreLogId: id)
+        weak var released = m
+
+        let returned = await ObservationLifecycle.runAndCancel { [m] in await m?.start() }
+        XCTAssertTrue(returned, "start() did not return after its task was cancelled")
+
+        m = nil
+        let gone = await ObservationLifecycle.wait { released == nil }
+        XCTAssertTrue(gone, "a loop start() spawned is still running and still holds the model")
+    }
+
+    func testComingBackToTheBoardFollowsTheStoreAgain() async {
+        let (repo, id, model) = fixture()
+
+        let returned = await ObservationLifecycle.runAndCancel { await model.start() }
+        XCTAssertTrue(returned, "start() did not return after its task was cancelled")
+
+        let again = Task { await model.start() }
+        defer { again.cancel() }
+        // Straight to the store, not through the model, so only the loop can
+        // have carried it across.
+        repo.replaceEvents(id: id, events: [ScoreEventPointTo(side: .home)])
+
+        let noticed = await ObservationLifecycle.wait { model.match?.currentGame.home == 1 }
+        XCTAssertTrue(noticed, "the second start() did not pick the store back up")
     }
 }

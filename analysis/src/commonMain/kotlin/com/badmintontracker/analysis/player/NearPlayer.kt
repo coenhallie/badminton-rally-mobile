@@ -72,21 +72,39 @@ enum class RejectionReason {
 }
 
 /**
- * Picks the player nearest the camera out of one frame of pose detections.
+ * Which half of the court a player stands on.
  *
- * Near only, on purpose. Measurement on an S23 put nano's far-player coverage at
- * 44% of frames against 93% near, and even the largest model reaches only about
- * 70% far. Tracking one player is what makes the smallest model viable rather
- * than a compromise, and it drops the half of the data that was unreliable
- * whatever the model.
+ * Decided by the marked net line, never by a pixel midline: on an angled
+ * camera a midline misclassifies play at the net, and the net is already
+ * marked by hand. See [NearPlayerSelector.isFarSide].
+ *
+ * NEAR is the half the camera sits behind. It is the only half a phone can
+ * track reliably - nano reaches 44% coverage on the far player against 93%
+ * near - so a device run fills NEAR and leaves FAR empty, while a cloud run
+ * on a large model fills both.
+ */
+enum class CourtSide { NEAR, FAR }
+
+/**
+ * Picks the player on a requested side of the net out of one frame of pose
+ * detections, NEAR by default.
+ *
+ * Built around one player at a time, on purpose. Measurement on an S23 put
+ * nano's far-player coverage at 44% of frames against 93% near, and even the
+ * largest model reaches only about 70% far - so a device run only ever asks
+ * for NEAR, which is what makes the smallest model viable rather than a
+ * compromise, and it drops the half of the data that was unreliable whatever
+ * the model. [CourtSide] is what a cloud run, with a model that does not have
+ * this problem, uses to ask for both.
  *
  * Four gates in order, cheapest first, each rejecting something different: a
- * person with no usable ground point, a person on the far side, a person who
- * is not on the court at all, and a person whose torso is too long for the
- * court scale where they stand. The third is not optional - the far side of
- * the net line contains the crowd, and on real footage it rejected more
- * detections than it kept. The fourth catches a close-up from another camera,
- * which lands on the court at a scale no player there could have; see
+ * person with no usable ground point, a person on the side of the net that
+ * was not requested, a person who is not on the court at all, and a person
+ * whose torso is too long for the court scale where they stand. The third is
+ * not optional: when NEAR is requested it is what keeps the crowd on the far
+ * side of the net line out, and on real footage it rejected more detections
+ * than it kept. The fourth catches a close-up from another camera, which
+ * lands on the court at a scale no player there could have; see
  * [plausibleScale].
  */
 class NearPlayerSelector(
@@ -123,7 +141,18 @@ class NearPlayerSelector(
 
     val usable: Boolean get() = courtUsable && netLineUsable
 
-    fun select(frame: PoseFrame): Result {
+    /** The near player, which is what every caller wanted before there were two. */
+    fun select(frame: PoseFrame): Result = select(frame, CourtSide.NEAR)
+
+    /**
+     * The best candidate on [side], or the furthest gate anyone on that side
+     * reached.
+     *
+     * Every gate is the same for both sides. Only the side test changed, from
+     * a rejection of the far half to a partition between the two, so a track
+     * taken for NEAR here is the same track this returned before FAR existed.
+     */
+    fun select(frame: PoseFrame, side: CourtSide): Result {
         if (homography == null || !usable) return Result(null, RejectionReason.BAD_COURT)
         if (frame.people.isEmpty()) return Result(null, RejectionReason.NO_PEOPLE)
 
@@ -134,7 +163,7 @@ class NearPlayerSelector(
 
         for (person in frame.people) {
             val ground = groundPoint(person) ?: continue
-            if (isFarSide(ground)) {
+            if (sideOf(ground) != side) {
                 reason = worse(reason, RejectionReason.WRONG_SIDE)
                 continue
             }
@@ -256,6 +285,9 @@ class NearPlayerSelector(
         val t = (point.x - left.x) / span
         return point.y < left.y + t * (right.y - left.y)
     }
+
+    private fun sideOf(point: Point): CourtSide =
+        if (isFarSide(point)) CourtSide.FAR else CourtSide.NEAR
 
     private fun onCourt(court: Point): Boolean =
         court.x >= -OUT_OF_COURT_MARGIN_M &&

@@ -29,10 +29,8 @@ class AttachStatusTest {
         id = "log-1",
         videoId = videoId,
         title = "Thu League",
-        homePlayers = listOf("Coen"),
-        awayPlayers = listOf("Marco"),
         rules = ScoringRules.BWF_21,
-        setup = MatchSetup(doubles = false, firstServer = Side.HOME),
+        setup = MatchSetup(firstServer = Side.HOME),
         events = emptyList(),
         status = if (videoId != null) ScoreLogStatus.BOUND else ScoreLogStatus.UNBOUND,
         createdAt = Instant.parse("2026-08-27T18:00:00Z"),
@@ -152,5 +150,17 @@ class AttachStatusTest {
             .shouldBeNull()
         scoreLogAttachStatus(log = log(videoId = "v1"), entries = emptyList(), progress = emptyMap(), clipCount = 0)
             ?.kind shouldBe AttachKind.FINISHING_UP
+    }
+
+    @Test
+    fun attachStatusFor_is_the_same_derivation_scoreLogAttachStatus_delegates_to() {
+        // scoreLogAttachStatus is now a one-line delegate to attachStatusFor
+        // with its own scoreLogId-only lookup; a caller that has already picked
+        // an entry - the match list's builder - calls attachStatusFor directly
+        // with that entry instead, so the two can never derive a different
+        // answer for the same (log, entry) pair.
+        val theEntry = entry(AnalyzeStage.UPLOADING)
+        attachStatusFor(log(), theEntry, emptyMap(), clipCount = 0) shouldBe
+            scoreLogAttachStatus(log(), listOf(theEntry), emptyMap(), clipCount = 0)
     }
 }

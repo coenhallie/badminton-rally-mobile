@@ -24,10 +24,8 @@ final class MatchModelTests: XCTestCase {
     private func newMatch(_ store: ScoreLogsRepository) -> ScoreLog {
         store.create(
             title: "Thu League",
-            homePlayers: ["Coen"],
-            awayPlayers: ["Marco"],
             rules: ScoringRules.companion.BWF_21,
-            setup: MatchSetup(doubles: false, firstServer: .home, homeStartsRight: .first, awayStartsRight: .first)
+            setup: MatchSetup(firstServer: .home)
         )
     }
 
@@ -250,5 +248,96 @@ final class MatchModelTests: XCTestCase {
 
         XCTAssertNil(m.log)
         XCTAssertFalse(m.canAddVideo)
+    }
+
+    // MARK: - start() and the `.task` that runs it
+
+    func testLeavingThePageStopsEveryLoopItStarted() async {
+        // `MatchView`'s `.task` is cancelled when the page leaves the screen and
+        // runs again on the way back. Three of start()'s four loops were
+        // unstructured `Task {}`s, so cancelling stopped one loop and left three
+        // running for good, and every return to the page added three more - each
+        // re-folding the whole match on every emission of its flow. A loop that
+        // never ends also never lets go of the model it captured, which is how
+        // this sees them: the model must be released once the page has gone.
+        let store = store()
+        let log = newMatch(store)
+        var m: MatchModel? = model(scoreLogs: store, scoreLogId: log.id)
+        weak var released = m
+
+        let returned = await ObservationLifecycle.runAndCancel { [m] in await m?.start() }
+        XCTAssertTrue(returned, "start() did not return after its task was cancelled")
+
+        m = nil
+        let gone = await ObservationLifecycle.wait { released == nil }
+        XCTAssertTrue(gone, "a loop start() spawned is still running and still holds the model")
+    }
+
+    private func uploadedEntry(id: String, title: String) -> LocalVideoEntry {
+        LocalVideoEntry(
+            id: id, uri: "file://\(id)", displayName: "m.mp4",
+            durationMs: 1000, sizeBytes: 10, addedAtEpochMs: 0,
+            title: title, description: nil, keypoints: nil,
+            stage: .analyzed, failedStep: nil, failureMessage: nil, resultSeen: false,
+            scoreLogId: nil
+        )
+    }
+
+    func testAVideoBornMatchSavesItsDetailsOntoTheVideoAndItsLocalEntry() async {
+        // No score log at all: cloudia, uploaded from this phone and never scored.
+        let videos = IosTestDoublesKt.testVideosRepository()
+        let localVideos = IosTestDoublesKt.testLocalVideoRepository()
+        localVideos.add(entry: uploadedEntry(id: "vid-1", title: "cloudia"))
+        let m = model(scoreLogs: store(), scoreLogId: nil, localVideos: localVideos, videos: videos)
+
+        await m.updateVideoDetails(
+            videoId: "vid-1", title: "Club final", description: "", format: .doubles,
+            homePlayers: ["Coen", "Ana"], awayPlayers: ["Marco", "Li"]
+        )
+
+        let written = videos.detailUpdates.first
+        XCTAssertEqual(written?.title, "Club final")
+        XCTAssertEqual(written?.homePlayers, ["Coen", "Ana"])
+        XCTAssertEqual(written?.format, .doubles)
+        XCTAssertEqual(localVideos.get(id: "vid-1")?.title, "Club final")
+        XCTAssertNil(m.error)
+    }
+
+    func testARefusedDetailsSaveSurfacesAMessageAndLeavesTheLocalEntryAlone() async {
+        let videos = IosTestDoublesKt.testVideosRepository()
+        videos.failUpdateDetails = true
+        let localVideos = IosTestDoublesKt.testLocalVideoRepository()
+        localVideos.add(entry: uploadedEntry(id: "vid-1", title: "cloudia"))
+        let m = model(scoreLogs: store(), scoreLogId: nil, localVideos: localVideos, videos: videos)
+
+        await m.updateVideoDetails(
+            videoId: "vid-1", title: "Club final", description: "", format: nil,
+            homePlayers: [], awayPlayers: []
+        )
+
+        XCTAssertEqual(m.error, VideoMatchDetailsKt.VIDEO_DETAILS_SAVE_FAILED_MESSAGE)
+        XCTAssertEqual(localVideos.get(id: "vid-1")?.title, "cloudia")
+    }
+
+    func testComingBackToThePageFollowsTheStoreAgain() async throws {
+        let store = store()
+        let log = newMatch(store)
+        store.finish(id: log.id)
+        let videos = IosTestDoublesKt.testLocalVideoRepository()
+        let m = model(scoreLogs: store, scoreLogId: log.id, localVideos: videos)
+
+        let returned = await ObservationLifecycle.runAndCancel { await m.start() }
+        XCTAssertTrue(returned, "start() did not return after its task was cancelled")
+        XCTAssertTrue(m.canAddVideo)
+
+        let again = Task { await m.start() }
+        defer { again.cancel() }
+        // Through the entries flow rather than the score log: `readStore` reads
+        // the log directly on any emission, so only a change that arrives
+        // THROUGH a loop proves that loop is running again.
+        videos.add(entry: entry(scoreLogId: log.id))
+
+        let noticed = await ObservationLifecycle.wait { !m.canAddVideo }
+        XCTAssertTrue(noticed, "the second start() did not pick the entries flow back up")
     }
 }

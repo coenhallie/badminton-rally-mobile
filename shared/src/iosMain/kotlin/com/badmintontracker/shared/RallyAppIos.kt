@@ -1,6 +1,7 @@
 package com.badmintontracker.shared
 
 import com.badmintontracker.shared.auth.resolveSessionStore
+import com.badmintontracker.shared.localvideo.LocalVideoRemoval
 import com.russhwolf.settings.ExperimentalSettingsImplementation
 import com.russhwolf.settings.KeychainSettings
 import com.russhwolf.settings.NSUserDefaultsSettings
@@ -25,15 +26,20 @@ fun createRallyApp(
      */
     deleteLocalVideoFile: (String) -> Unit,
     /**
-     * Deletes what an on-device analysis of that video produced - its track, its
-     * skeleton and its cut clips - given the entry id they are filed under.
+     * Deletes what an analysis of that video produced - its track, its skeleton
+     * and its cut clips - given the entry id they are filed under, and how much
+     * of it to take.
      *
      * Separate from [deleteLocalVideoFile] because the two are keyed
      * differently: the video is found by its path and the analysis by the entry
      * id. Both hang off the one removal callback so a coach deleting a match
      * cannot leave tens of megabytes of clips behind, reachable by nothing.
+     *
+     * The [LocalVideoRemoval] decides whether the CLOUD stores go with the
+     * local ones. They do on a discard and must not on a retire - the cloud
+     * analysis is the result of the run that is retiring the entry.
      */
-    deleteLocalAnalysis: (String) -> Unit,
+    deleteLocalAnalysis: (String, LocalVideoRemoval) -> Unit,
 ): RallyApp {
     val prefs = NSUserDefaultsSettings(NSUserDefaults.standardUserDefaults)
     // Probes the Keychain and migrates any pre-existing NSUserDefaults session into
@@ -50,9 +56,11 @@ fun createRallyApp(
         config = SupabaseConfig(url = url, anonKey = anonKey),
         settings = prefs,
         sessionSettings = session,
-        onLocalVideoRemoved = { entry ->
+        onLocalVideoRemoved = { entry, reason ->
+            // The footage goes either way: on a retire the clips live in the
+            // cloud now, and on a discard the coach asked for it to go.
             deleteLocalVideoFile(entry.uri)
-            deleteLocalAnalysis(entry.id)
+            deleteLocalAnalysis(entry.id, reason)
         },
     )
 }

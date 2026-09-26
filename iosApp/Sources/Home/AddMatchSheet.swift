@@ -1,11 +1,12 @@
 import SwiftUI
 
-/// The three ways a match starts, behind Home's one "Add new match" button.
+/// The three ways a match starts, behind the Matches tab's one "Add match"
+/// button.
 ///
-/// The mock shows a single button where the list had a three item menu. The
-/// actions are unchanged, so nothing a coach could do before is gone; only the
-/// way in is. Presented as a sheet rather than a menu because a 60pt primary
-/// button implies a destination, not a popover.
+/// A single button replaced what was once a three item menu. The actions are
+/// unchanged, so nothing a coach could do before is gone; only the way in is.
+/// Presented as a sheet rather than a menu because a primary button implies a
+/// destination, not a popover.
 struct AddMatchSheet: View {
     let onNewMatch: () -> Void
     let onRecord: () -> Void

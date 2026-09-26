@@ -32,11 +32,12 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.SeekParameters
 import com.badmintontracker.analysis.geometry.Matrix3x3
 import com.badmintontracker.analysis.geometry.homography
 import com.badmintontracker.analysis.geometry.maxResidualM
+import com.badmintontracker.analysis.player.CourtSide
 import com.badmintontracker.analysis.player.MetricKind
+import com.badmintontracker.analysis.player.PlayerPose
 import com.badmintontracker.analysis.player.NearPlayerSelector
 import com.badmintontracker.analysis.player.nearestPose
 import com.badmintontracker.analysis.player.poseMetrics
@@ -45,6 +46,7 @@ import com.badmintontracker.android.clipdetail.PlaybackSettingsSheet
 import com.badmintontracker.android.clipdetail.TransportBar
 import com.badmintontracker.android.clipdetail.VideoCard
 import com.badmintontracker.android.clipdetail.rememberPlaybackPosition
+import com.badmintontracker.android.ui.components.frameExactPlayer
 import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.shared.local.CourtFit
 import com.badmintontracker.shared.local.MetricSample
@@ -71,8 +73,12 @@ private sealed interface SkeletonLoad {
         /** The resolved court fit from the file's marks; non-null only when [courtFit] is OK. */
         val homography: Matrix3x3?,
         val courtFit: CourtFit,
-        /** One entry per pose, in pose order, for the graph. */
-        val series: List<MetricSample>,
+        /**
+         * One entry per pose, in pose order, for the graph - per side, because
+         * a cloud analysis carries both players and the graph belongs to
+         * whichever one the toggle is showing.
+         */
+        val seriesBySide: Map<CourtSide, List<MetricSample>>,
     ) : SkeletonLoad
 }
 
@@ -124,10 +130,15 @@ fun SkeletonPanel(
                 homography == null -> CourtFit.BAD
                 else -> CourtFit.OK
             }
-            val series = stored?.poses?.map {
-                MetricSample(it.timestamp, poseMetrics(it.keypoints, it.confidence, homography))
-            } ?: emptyList()
-            SkeletonLoad.Loaded(stored, homography, courtFit, series)
+            // Per side, and here rather than on selection: the metrics for a
+            // 30-minute match are the expensive part of this read, and moving
+            // them to the toggle would put them on the thread drawing the frame.
+            val seriesBySide = stored?.tracks.orEmpty().associate { track ->
+                track.side to track.poses.map {
+                    MetricSample(it.timestamp, poseMetrics(it.keypoints, it.confidence, homography))
+                }
+            }
+            SkeletonLoad.Loaded(stored, homography, courtFit, seriesBySide)
         }
     }
     val source = remember(entryId, videoUri) { videoUri?.let { runner.analysedSource(entryId, it) } }
@@ -140,17 +151,34 @@ fun SkeletonPanel(
                     "No skeleton was kept for this video. Run the analysis again with " +
                         "\"Skeleton playback\" ticked.",
                 )
-                source == null -> PanelMessage("The video this skeleton was measured on is no longer on this phone.")
-                else -> SkeletonPlayer(
-                    source = source,
-                    stored = l.stored,
-                    homography = l.homography,
-                    courtFit = l.courtFit,
-                    series = l.series,
-                    prefs = prefs,
-                    racketArmPrefs = racketArmPrefs,
-                    entryId = entryId,
+                source == null -> PanelMessage(
+                    "The video this skeleton was measured on is no longer on this phone.",
                 )
+                l.stored.tracks.none { it.poses.isNotEmpty() } -> PanelMessage(
+                    "No skeleton was kept for this video. Run the analysis again with " +
+                        "\"Skeleton playback\" ticked.",
+                )
+                else -> {
+                    // Held by side rather than by index, so a reordered or
+                    // dropped side cannot silently swap which player is drawn.
+                    var side by rememberSaveable { mutableStateOf(CourtSide.NEAR) }
+                    val drawable = l.stored.tracks.filter { it.poses.isNotEmpty() }
+                    val shown = drawable.firstOrNull { it.side == side } ?: drawable.first()
+                    SkeletonPlayer(
+                        source = source,
+                        stored = l.stored,
+                        poses = shown.poses,
+                        sides = drawable.map { it.side },
+                        shownSide = shown.side,
+                        onSide = { side = it },
+                        homography = l.homography,
+                        courtFit = l.courtFit,
+                        series = l.seriesBySide[shown.side].orEmpty(),
+                        prefs = prefs,
+                        racketArmPrefs = racketArmPrefs,
+                        entryId = entryId,
+                    )
+                }
             }
         }
     }
@@ -177,8 +205,13 @@ internal fun PanelMessage(text: String) {
  */
 @Composable
 private fun SkeletonPlayer(
-    source: File,
+    source: String,
     stored: SkeletonStore.Stored,
+    /** The shown side's joints. Not `stored.poses`, which is always the near list. */
+    poses: List<PlayerPose>,
+    sides: List<CourtSide>,
+    shownSide: CourtSide,
+    onSide: (CourtSide) -> Unit,
     homography: Matrix3x3?,
     courtFit: CourtFit,
     series: List<MetricSample>,
@@ -195,9 +228,7 @@ private fun SkeletonPlayer(
     }
 
     val context = LocalContext.current
-    val player = remember {
-        ExoPlayer.Builder(context).build().apply { setSeekParameters(SeekParameters.EXACT) }
-    }
+    val player = remember { frameExactPlayer(context) }
     var playbackError by remember { mutableStateOf<String?>(null) }
     DisposableEffect(player) {
         // Mirrors LocalPlayerScreen: the analysed file can be moved or
@@ -215,7 +246,7 @@ private fun SkeletonPlayer(
         }
     }
     LaunchedEffect(source) {
-        player.setMediaItem(MediaItem.fromUri(android.net.Uri.fromFile(source)))
+        player.setMediaItem(MediaItem.fromUri(source))
         player.prepare()
         player.playWhenReady = false
     }
@@ -224,7 +255,7 @@ private fun SkeletonPlayer(
     val positionMs = position.positionMs
     val durationMs = position.durationMs
     val tolerance = remember(stored.fps) { poseToleranceS(stored.fps) }
-    val pose = remember(positionMs, stored) { nearestPose(stored.poses, positionMs / 1000.0, tolerance) }
+    val pose = remember(positionMs, poses) { nearestPose(poses, positionMs / 1000.0, tolerance) }
 
     val hasCourt = homography != null
     var racketArm by remember(entryId) { mutableStateOf(racketArmPrefs.racketArm(entryId)) }
@@ -255,8 +286,7 @@ private fun SkeletonPlayer(
         VideoCard(
             player = player,
             position = position,
-            speed = speed,
-            onSpeedTap = { showSettings = true },
+            onSettingsTap = { showSettings = true },
             aspectRatio = stored.videoWidth.toFloat() / stored.videoHeight.toFloat(),
         ) {
             if (pose != null) {
@@ -287,27 +317,24 @@ private fun SkeletonPlayer(
         )
     }
     if (error == null) {
-        // The frame is the one fact read per frame; the speed sits opposite
-        // it, as the mock lays the line out, and opens the same sheet the
-        // transport's hold gesture does.
-        Row(
+        // The frame is the one fact read per frame. The speed used to sit opposite
+        // it; it is read out in the transport row now, on every player, and saying
+        // it twice a few lines apart would be noise.
+        Text(
+            skeletonFooter(pose?.frame),
+            style = MaterialTheme.typography.bodySmall,
+            color = ShuttlTheme.extended.textTertiary,
             modifier = Modifier.fillMaxWidth().padding(start = GUTTER, end = GUTTER, top = 22.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                skeletonFooter(pose?.frame),
-                style = MaterialTheme.typography.bodySmall,
-                color = ShuttlTheme.extended.textTertiary,
-                modifier = Modifier.weight(1f),
-            )
-            Text(
-                "${PlaybackOptions.formatSpeed(speed)} speed",
-                style = MaterialTheme.typography.bodySmall,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .clickable(role = Role.Button, onClick = { showSettings = true })
-                    .padding(vertical = 4.dp),
+        )
+        // With the strip rather than above it, so one row of controls does not
+        // become two. Absent entirely on a device run, which only ever has the
+        // near player.
+        if (sides.size > 1) {
+            SideToggle(
+                sides = sides,
+                selected = shownSide,
+                onSelect = onSide,
+                modifier = Modifier.padding(horizontal = GUTTER, vertical = 8.dp),
             )
         }
         MetricsStrip(
@@ -322,7 +349,7 @@ private fun SkeletonPlayer(
             onSelect = { chosen = it },
             expanded = expanded,
             onExpanded = prefs::setMetricsExpanded,
-            detail = skeletonDetail(stored.poses.size, courtFit),
+            detail = skeletonDetail(poses.size, courtFit),
             modifier = Modifier.padding(top = 10.dp),
         )
         MetricGraph(

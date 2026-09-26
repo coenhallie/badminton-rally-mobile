@@ -2,6 +2,7 @@ package com.badmintontracker.shared.repo
 
 import app.cash.turbine.test
 import com.badmintontracker.shared.model.CourtKeypoints
+import com.badmintontracker.shared.scoring.MatchFormat
 import com.badmintontracker.shared.testing.TestSupabase
 import com.badmintontracker.shared.testing.jsonResponse
 import io.github.jan.supabase.SupabaseClient
@@ -15,6 +16,7 @@ import io.ktor.client.engine.mock.respondError
 import io.ktor.content.TextContent
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlinx.io.IOException
 import kotlin.test.Test
@@ -110,6 +112,65 @@ class VideosRepositoryTest {
         path shouldContain "/rest/v1/rpc/list_match_metadata"
         rows.single().videoId shouldBe "vid-1"
         rows.single().title shouldBe "Thu League"
+    }
+
+    @Test
+    fun listMatchMetadata_fills_the_cache_every_screen_reads() = runTest {
+        val client = TestSupabase.client {
+            jsonResponse("""[{"video_id":"vid-1","title":"Thu League","description":null,
+                              "home_players":["Coen"],"away_players":[],"format":"singles"}]""")
+        }
+        val repo = VideosRepositoryImpl(client)
+
+        repo.observeMatchMetadata().first() shouldBe emptyMap()
+        repo.listMatchMetadata().getOrThrow()
+
+        val cached = repo.observeMatchMetadata().first().getValue("vid-1")
+        cached.title shouldBe "Thu League"
+        cached.homePlayers shouldBe listOf("Coen")
+        cached.format shouldBe MatchFormat.SINGLES
+    }
+
+    @Test
+    fun updateMatchDetails_patches_the_five_granted_columns_and_the_cache() = runTest {
+        var body = ""
+        var method = HttpMethod.Get
+        var query = ""
+        val client = TestSupabase.client { request ->
+            method = request.method
+            query = request.url.encodedQuery
+            body = (request.body as TextContent).text
+            jsonResponse("[]")
+        }
+        val repo = VideosRepositoryImpl(client)
+
+        repo.updateMatchDetails(
+            "vid-1", title = "Club final", description = null, format = MatchFormat.MIXED_DOUBLES,
+            homePlayers = listOf("Coen", "Ana"), awayPlayers = listOf("Marco", "Li"),
+        ).isSuccess.shouldBeTrue()
+
+        method shouldBe HttpMethod.Patch
+        query shouldContain "id=eq.vid-1"
+        body shouldContain "\"title\":\"Club final\""
+        // Sent as an explicit null: leaving the key out would keep the old description.
+        body shouldContain "\"description\":null"
+        body shouldContain "\"format\":\"mixed_doubles\""
+        body shouldContain "\"home_players\":[\"Coen\",\"Ana\"]"
+        body shouldContain "\"away_players\":[\"Marco\",\"Li\"]"
+        val cached = repo.observeMatchMetadata().first().getValue("vid-1")
+        cached.title shouldBe "Club final"
+        cached.format shouldBe MatchFormat.MIXED_DOUBLES
+    }
+
+    @Test
+    fun a_refused_updateMatchDetails_leaves_the_cache_alone() = runTest {
+        val client = TestSupabase.client { respondError(HttpStatusCode.Forbidden, "no grant") }
+        val repo = VideosRepositoryImpl(client)
+
+        repo.updateMatchDetails("vid-1", "Club final", null, null, emptyList(), emptyList())
+            .isFailure.shouldBeTrue()
+
+        repo.observeMatchMetadata().first() shouldBe emptyMap()
     }
 
     @Test

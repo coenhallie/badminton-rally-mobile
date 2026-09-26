@@ -114,8 +114,8 @@ fun MatchSummarySheet(
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        // Unset, this resolves M3's surfaceContainerLow, which ShuttlColors.kt
-        // never sets. See AddMatchSheet for the full reasoning.
+        // Pinned rather than left to surfaceContainerLow (the same bgSecondary
+        // value today): see AddMatchSheet for the full reasoning.
         containerColor = MaterialTheme.colorScheme.surfaceVariant,
     ) {
         Column(

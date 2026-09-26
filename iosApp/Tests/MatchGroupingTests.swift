@@ -76,41 +76,6 @@ final class MatchGroupingTests: XCTestCase {
         XCTAssertEqual(result.owned.first?.title, "Thu League vs Marco")
     }
 
-    private func summary(title: String?, rallyCount: Int = 12) -> MatchSummary {
-        MatchSummary(
-            videoId: "v", rallyCount: rallyCount,
-            latestCreatedAtMillis: 1_784_980_800_000,
-            coverClipId: "c", isOwned: true, sharerEmail: nil, title: title,
-            description: nil
-        )
-    }
-
-    func testNamedMatchLeadsWithTheMatchName() {
-        XCTAssertEqual(matchRowPrimary(summary(title: "Thu League vs Marco")), "Thu League vs Marco")
-    }
-
-    func testNamedMatchKeepsTheDateBesideTheRallyCount() {
-        XCTAssertEqual(
-            matchRowSecondary(summary(title: "Thu League vs Marco")),
-            // Sentence case: the drawer's redesign carries no uppercase, and
-            // Analytics applies its own `.uppercased()` at the call site in
-            // AnalyticsRows.swift, which AnalyticsRowsTests still pins.
-            "12 rallies \u{00B7} Jul 25, 2026"
-        )
-    }
-
-    func testUnnamedMatchKeepsTheOriginalDateHeadline() {
-        XCTAssertEqual(matchRowPrimary(summary(title: nil)), "Match \u{00B7} Jul 25, 2026")
-    }
-
-    func testUnnamedMatchSecondaryStaysRallyCountOnly() {
-        XCTAssertEqual(matchRowSecondary(summary(title: nil)), "12 rallies")
-    }
-
-    func testSingleRallyIsNotPluralised() {
-        XCTAssertEqual(matchRowSecondary(summary(title: nil, rallyCount: 1)), "1 rally")
-    }
-
     // MARK: - Rally row labels (mirrors Android MatchRowLabelsTest)
 
     func testClipCarryingOnlyTheMatchNameShowsItsRallyNumber() {
@@ -141,12 +106,34 @@ final class MatchGroupingTests: XCTestCase {
         let result = MatchGrouping.matches(
             from: clips, currentUserId: "me", sharerByVideoId: [:],
             metadataByVideoId: [
-                "v1": MatchMetadata(videoId: "v1", title: "Thu League vs Marco", description: "Indoor court 2.")
+                "v1": MatchMetadata(
+                    videoId: "v1", title: "Thu League vs Marco", description: "Indoor court 2.",
+                    homePlayers: [], awayPlayers: [], format: nil
+                )
             ]
         )
 
         XCTAssertEqual(result.owned.first?.title, "Thu League vs Marco")
         XCTAssertEqual(result.owned.first?.description, "Indoor court 2.")
+    }
+
+    func testMatchTakesItsPlayersAndFormatFromTheMetadataMap() {
+        // A match that was only ever filmed keeps these on its videos row, and
+        // its list row must read them the way a scored match's does.
+        let clips = [titledClip(id: "a", videoId: "v1", rallyIndex: 0, title: nil)]
+
+        let result = MatchGrouping.matches(
+            from: clips, currentUserId: "me", sharerByVideoId: [:],
+            metadataByVideoId: [
+                "v1": MatchMetadata(
+                    videoId: "v1", title: "Club final", description: nil,
+                    homePlayers: ["Coen", "Ana"], awayPlayers: ["Marco", "Li"], format: .mixedDoubles
+                )
+            ]
+        )
+
+        XCTAssertEqual(result.owned.first?.playersLine, "Coen / Ana vs Marco / Li")
+        XCTAssertEqual(result.owned.first?.format, .mixedDoubles)
     }
 
     func testVideoAbsentFromTheMapFallsBackToTheClipStampedName() {
@@ -160,6 +147,7 @@ final class MatchGroupingTests: XCTestCase {
 
         XCTAssertEqual(result.owned.first?.title, "Thu League vs Marco")
         XCTAssertNil(result.owned.first?.description)
+        XCTAssertNil(result.owned.first?.playersLine)
     }
 
     func testMatchWithNeitherSourceKeepsItsDateHeadline() {
@@ -170,7 +158,6 @@ final class MatchGroupingTests: XCTestCase {
         )
 
         XCTAssertNil(result.owned.first?.title)
-        XCTAssertEqual(matchRowPrimary(result.owned[0]), "Match \u{00B7} Jul 25, 2026")
     }
 
     // MARK: - Top rally name (mirrors Android MatchSummaryViewModelTest)
@@ -200,106 +187,5 @@ final class MatchGroupingTests: XCTestCase {
             topRallyName(clipId: "pruned", rallyIndex: 7, clips: [], matchTitle: nil),
             "Rally #7"
         )
-    }
-
-    // Named (and parameter-ordered) to match Android's `scoreMatch`/`videoMatch`
-    // helpers in MatchRowMergeTest.kt exactly - the cross-platform check this
-    // project relies on extends to test fixtures, not only test names.
-    private func scoreMatch(_ id: String, _ atMillis: Int64, videoId: String? = nil) -> ScoreMatchCard {
-        ScoreMatchCard(
-            scoreLogId: id,
-            videoId: videoId,
-            title: "Thu League",
-            createdAtEpochMs: atMillis,
-            playersLine: "Coen vs Marco",
-            scoreLine: "11-9",
-            statusLine: "Scoring",
-            isLive: true,
-            hasVideo: videoId != nil
-        )
-    }
-
-    private func videoMatch(_ videoId: String, _ atMillis: Int64) -> MatchSummary {
-        MatchSummary(
-            videoId: videoId, rallyCount: 3, latestCreatedAtMillis: atMillis,
-            coverClipId: "c-\(videoId)", isOwned: true, sharerEmail: nil,
-            title: nil, description: nil
-        )
-    }
-
-    func testScoredAndVideoMatchesInterleaveByDate() {
-        let rows = mergeMatchRows(
-            videoMatches: [videoMatch("v1", 300), videoMatch("v2", 100)],
-            scoreMatches: [scoreMatch("s1", 200)],
-            attachByScoreLogId: [:]
-        )
-        XCTAssertEqual(rows.map(\.id), ["video-v1", "score-s1", "video-v2"])
-    }
-
-    func testTiesKeepAFixedOrderMatchingAndroid() {
-        let rows = mergeMatchRows(
-            videoMatches: [videoMatch("v1", 100)],
-            scoreMatches: [scoreMatch("s1", 100)],
-            attachByScoreLogId: [:]
-        )
-        XCTAssertEqual(rows.map(\.id), ["score-s1", "video-v1"])
-    }
-
-    func testKeysFromTheTwoKindsCannotCollide() {
-        let rows = mergeMatchRows(
-            videoMatches: [videoMatch("same", 100)],
-            scoreMatches: [scoreMatch("same", 200)],
-            attachByScoreLogId: [:]
-        )
-        XCTAssertEqual(rows.map(\.id), ["score-same", "video-same"])
-    }
-
-    func testAnAccountWithOnlyScoredMatchesStillGetsAList() {
-        XCTAssertEqual(
-            mergeMatchRows(videoMatches: [], scoreMatches: [scoreMatch("s1", 100)], attachByScoreLogId: [:]).map(\.id),
-            ["score-s1"]
-        )
-    }
-
-    // MARK: - Video attach (mirrors Android MatchRowMergeTest's four new cases)
-
-    func testABoundMatchIsOneRowAndNotTwo() {
-        let rows = mergeMatchRows(
-            videoMatches: [videoMatch("v1", 300)],
-            scoreMatches: [scoreMatch("s1", 200, videoId: "v1")],
-            attachByScoreLogId: [:]
-        )
-        XCTAssertEqual(rows.map(\.id), ["score-s1"])
-        guard case .score(let content) = rows[0] else { return XCTFail("expected a score row") }
-        XCTAssertEqual(content.video?.videoId, "v1")
-    }
-
-    func testABoundMatchKeepsThePlaceItsScoreLogEarned() {
-        let rows = mergeMatchRows(
-            videoMatches: [videoMatch("v1", 900), videoMatch("v2", 500)],
-            scoreMatches: [scoreMatch("s1", 100, videoId: "v1")],
-            attachByScoreLogId: [:]
-        )
-        XCTAssertEqual(rows.map(\.id), ["video-v2", "score-s1"])
-    }
-
-    func testAVideoImportedOnItsOwnIsStillItsOwnRow() {
-        let rows = mergeMatchRows(
-            videoMatches: [videoMatch("v1", 300)],
-            scoreMatches: [scoreMatch("s1", 200)],
-            attachByScoreLogId: [:]
-        )
-        XCTAssertEqual(rows.map(\.id), ["video-v1", "score-s1"])
-    }
-
-    func testAMatchWhoseVideoIsStillClippingCarriesTheStatusButNoVideo() {
-        let rows = mergeMatchRows(
-            videoMatches: [],
-            scoreMatches: [scoreMatch("s1", 200, videoId: "v1")],
-            attachByScoreLogId: ["s1": AttachStatus(text: "Clipping…", kind: .clipping)]
-        )
-        guard case .score(let content) = rows[0] else { return XCTFail("expected a score row") }
-        XCTAssertNil(content.video)
-        XCTAssertEqual(content.attach?.text, "Clipping…")
     }
 }

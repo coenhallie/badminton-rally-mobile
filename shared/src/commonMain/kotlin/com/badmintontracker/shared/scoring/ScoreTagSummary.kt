@@ -49,20 +49,15 @@ fun buildScoreTagSummary(state: MatchState): ScoreTagSummary {
  */
 fun exportMatchText(log: ScoreLog): String {
     val state = log.state()
-    val header = listOf(
-        log.title,
-        "${sideLabel(log.homePlayers)} vs ${sideLabel(log.awayPlayers)}",
-        scoreLine(state),
-    )
+    val header = listOfNotNull(log.title, log.playersLine(), scoreLine(state))
     if (state.points.isEmpty()) return header.joinToString("\n")
 
     val rows = state.points.map { point ->
-        val winner = if (point.wonBy == Side.HOME) sideLabel(log.homePlayers) else sideLabel(log.awayPlayers)
         val score = "${point.scoreAfter.home}-${point.scoreAfter.away}"
         val tags = point.tags.joinToString(", ") { it.labelName }.takeIf { it.isNotEmpty() }
         val comment = point.comment?.trim()?.takeIf { it.isNotEmpty() }
         buildString {
-            append("${point.ordinal + 1}. $score $winner")
+            append("${point.ordinal + 1}. $score ${log.sideName(point.wonBy)}")
             if (tags != null) append(" - $tags")
             if (comment != null) append(" ($comment)")
         }

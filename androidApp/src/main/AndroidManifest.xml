@@ -15,17 +15,27 @@
          service still runs if it is denied; only its notification is hidden. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
+    <!-- Coarse only, and only to put a town in a new match's default name
+         ("Sep 20, 14:30 - Amsterdam"). Refusing it costs nothing but the town. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+
     <!-- allowBackup is off deliberately: shared_prefs/rally.xml holds the Supabase
          session (access + refresh token), and cloud backup / device-to-device transfer
          would copy a live refresh token off the device. Nothing else in that file
          benefits from backup - the local video registry is content:// URIs that mean
-         nothing on another device, and theme_mode is one enum. -->
+         nothing on another device, and theme_mode is one enum.
+
+         dataExtractionRules says the same thing again because from Android 12 on
+         allowBackup no longer covers device-to-device transfer; see the file.
+         fullBackupContent is the pre-12 spelling of the same answer. -->
     <application
         android:name=".RallyAndroidApp"
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="false"
         android:supportsRtl="true">
 
         <activity

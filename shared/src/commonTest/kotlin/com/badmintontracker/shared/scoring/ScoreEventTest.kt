@@ -46,18 +46,43 @@ class ScoreEventTest {
     }
 
     @Test
-    fun undo_drops_the_last_entry_whatever_it_is() {
-        val log = listOf(point(Side.HOME), ScoreEvent.TagPoint(0, emptyList(), "sloppy"))
-        // The tag was the last thing done, so it is the first thing undone.
-        log.undoLast() shouldBe listOf(point(Side.HOME))
-        log.undoLast().undoLast().shouldBeEmpty()
+    fun undo_takes_back_the_last_rally_with_its_tags_and_note() {
+        val log = listOf(
+            point(Side.HOME),
+            point(Side.AWAY),
+            ScoreEvent.TagPoint(1, listOf(PointTag("Forced error", "amber")), null),
+            ScoreEvent.TagPoint(1, listOf(PointTag("Forced error", "amber")), "sloppy"),
+        )
+        // One undo, however many times the rally was tagged: the coach is taking
+        // back a score, and the tags described a rally that is no longer there.
+        log.undoLastPoint() shouldBe listOf(point(Side.HOME))
+        log.undoLastPoint().undoLastPoint().shouldBeEmpty()
     }
 
     @Test
-    fun undoing_an_empty_log_is_a_no_op_rather_than_a_crash() {
-        // The Undo control is disabled on an empty log. If that ever slips, a
-        // courtside crash is a far worse answer than nothing happening.
-        emptyList<ScoreEvent>().undoLast().shouldBeEmpty()
+    fun undo_keeps_a_note_on_an_earlier_rally_written_after_the_last_one() {
+        // The interval case: the note on point 0 was the last thing written, but
+        // it is not about the rally being taken back, so it must survive it.
+        val note = ScoreEvent.TagPoint(0, listOf(PointTag("Good shot", "green")), "cross court winner")
+        val log = listOf(point(Side.HOME), point(Side.AWAY), note)
+        log.undoLastPoint() shouldBe listOf(point(Side.HOME), note)
+    }
+
+    @Test
+    fun a_rally_scored_again_after_undo_does_not_inherit_the_old_tags() {
+        // The fold resolves tags by ordinal, so a tag left behind for the undone
+        // ordinal would attach itself to whichever rally is scored there next.
+        val log = listOf(point(Side.HOME), ScoreEvent.TagPoint(0, listOf(PointTag("Unforced error", "red")), null))
+        val rescored = log.undoLastPoint() + point(Side.AWAY)
+        foldMatchState(ScoringRules.BWF_21, MatchSetup(firstServer = Side.HOME), rescored)
+            .points.single().tags.shouldBeEmpty()
+    }
+
+    @Test
+    fun undoing_a_log_without_a_rally_is_a_no_op_rather_than_a_crash() {
+        // The Undo control is disabled until a rally is scored. If that ever slips,
+        // a courtside crash is a far worse answer than nothing happening.
+        emptyList<ScoreEvent>().undoLastPoint().shouldBeEmpty()
     }
 
     @Test

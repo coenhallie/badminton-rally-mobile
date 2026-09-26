@@ -1,18 +1,25 @@
 import Foundation
 import Shared
 
-/// Which of the drawer's own sections a row belongs to, in display order.
-/// Port of Android's `AnalyticsGroup`.
+/// Which of the Matches tab's own two sections a row belongs to, in display
+/// order. Port of Android's `AnalyticsGroup`.
+///
+/// Two, not the drawer era's earlier three (local videos, owned matches,
+/// shared): the shared builder already folds a match's local video and its
+/// cloud clips into one `MatchListItem` regardless of where the file is, so
+/// "on this phone" versus "my matches" was never a distinction between two
+/// different *matches* here, only between two ways the same row's
+/// `MatchStatusLine` draws its where-glyphs.
 enum AnalyticsGroup: CaseIterable {
-    case localVideos
-    case ownedMatches
+    case mine
     case shared
 
-    var label: String {
+    /// `nil` for `.mine`: the Matches tab's list does not label its own
+    /// matches either, only the shared ones.
+    var label: String? {
         switch self {
-        case .localVideos:  return "On this phone"
-        case .ownedMatches: return "My matches"
-        case .shared:       return "Shared with me"
+        case .mine:   return nil
+        case .shared: return MatchListCopy.shared.SHARED_SECTION
         }
     }
 }
@@ -23,7 +30,8 @@ enum AnalyticsGroup: CaseIterable {
 enum AnalyseAffordance: Equatable {
     /// Nothing is running: the button is live.
     case ready
-    /// A run is under way. `phase` is the drawer's own wording for that stage.
+    /// A run is under way. `phase` is the Matches tab list's own wording for
+    /// that stage.
     case inProgress(phase: String)
     /// The last attempt ended in a failure, with the pipeline's own message.
     case failed(reason: String)
@@ -35,6 +43,12 @@ enum AnalyseAffordance: Equatable {
     /// would put "Retry" on a run that did not go wrong and colour the line red;
     /// folding it into `.inProgress` would spin a control over something that
     /// has stopped. See `LocalAnalysisState.paused`.
+    ///
+    /// This drives only the row's trailing control (`trailingControl` in
+    /// `AnalyticsListView`) - a disabled "Paused" pill - not a second line of
+    /// text: `MatchStatusLine` already draws the same pause message from the
+    /// item's own `statusText`, and a duplicate line under it would say the
+    /// same thing twice in two different words.
     case paused(reason: String)
 }
 
@@ -47,16 +61,27 @@ enum AnalyseAction: Equatable {
     case markCourt(entryId: String)
 }
 
-/// One row of the Analytics list. `entryId` is nil exactly when there is no video
-/// on this phone behind the row, which is also the only case that is inert.
+/// One row of the Analytics list, one per `MatchListItem` in the shared match
+/// list - the same rows, in the same order, the Matches tab draws, because
+/// both read the one `MatchList` the shared builder produces from the same
+/// inputs.
+///
+/// `entryId` is nil only when `state` is `.notOnDevice` with no video to point
+/// at (a score-only match, or a shared match) - inert either way.
 struct AnalyticsRow: Identifiable, Equatable {
     let key: String
     let entryId: String?
     let group: AnalyticsGroup
+    /// `item.title`, carried as its own field rather than read off `item` at
+    /// each use because that is what the pinned tests already assert on.
     let title: String
+    /// `item.detail`, for the same reason.
     let subtitle: String
     let state: AnalyticsRowState
     let affordance: AnalyseAffordance
+    /// Kept alongside the fields above for everything else a row draws that
+    /// they never had to: the status line, the players line.
+    let item: MatchListItem
 
     var id: String { key }
 }
@@ -90,11 +115,6 @@ enum AnalyticsLegend: Equatable {
     /// Whether any row draws the availability dot the `.dot` line explains.
     var showsDot: Bool { self == .dot }
 
-    /// Whether an inert row spells out "Not on this phone" for itself. False only
-    /// when the legend already said it once for the whole list, so the legend and
-    /// the rows cannot disagree about which of them is doing the explaining.
-    var showsNotOnDeviceSubtitle: Bool { self != .nothingOnThisPhone }
-
     var text: String? {
         switch self {
         case .silent:
@@ -102,9 +122,6 @@ enum AnalyticsLegend: Equatable {
         case .nothingOnThisPhone:
             return "None of these matches are on this phone yet."
         case .dot:
-            // "- tap to view", as Android has it. The words were dropped while
-            // there was no detail screen to open and nothing to tap; both exist
-            // now, so promising it is accurate again.
             return "Analyzed on this phone - tap to view"
         case .analyseButton:
             // What the button actually does, said plainly, so a screen called
@@ -125,9 +142,7 @@ enum AnalyticsLegend: Equatable {
 /// shared cannot see one at all: a row reading the cloud stage alone would show
 /// a live "Analyze" button over a run already in progress, and pressing it walks
 /// the coach through marking the court again and then returns immediately
-/// because the entry is already running. Android shipped exactly that - twelve
-/// taps, no effect, no explanation - which is why `isDeviceRunInFlight` exists
-/// and why it is consulted here.
+/// because the entry is already running.
 ///
 /// The device speaks first when it has anything to say. It is the pipeline this
 /// phone controls, and its states are the ones that end in a track the row can
@@ -187,53 +202,41 @@ func analyseAction(for entry: LocalVideoEntry) -> AnalyseAction {
         : .markCourt(entryId: entry.id)
 }
 
-/// How a local video describes itself under its title: how long it runs and when
-/// it was added.
+/// Builds the Analytics list's rows: one per `MatchListItem` in `matchList`,
+/// the coach's own matches first and shared ones after - the same rows, in the
+/// same order, the Matches tab draws, because both read the one `MatchList`
+/// the shared builder produces from the same inputs.
 ///
-/// Shared with the drawer's own local video row rather than written out twice.
-/// The two screens list the same videos side by side in one tap, and a comment
-/// claiming they cannot describe a video two ways is worth less than a call that
-/// makes it so.
+/// `analyticsRowState` alone decides READY / READY_NO_VIDEO / ANALYSABLE /
+/// NOT_ON_DEVICE, from the two facts the item already carries - whether it has
+/// a local entry (`item.entryId`) and whether it has a stored track
+/// (`item.heatmapId`) - so this function only re-reads those two fields. For
+/// an ANALYSABLE row it also reads both pipelines' own liveness through
+/// `analyseAffordance`, so the row's control can show progress or a failure
+/// instead of a live "Analyze" label; `hasStoredTrack` alone cannot tell a run
+/// in flight, or one that just failed, from one never attempted, and that is
+/// the one distinction `MatchListItem.action` does not carry a matching
+/// affordance for. A READY row's own liveness is not lost by skipping it here:
+/// it already reaches the screen through the item's own `action`/`statusText`,
+/// which `MatchStatusLine` draws for every row, the same component the
+/// Matches tab uses for the same fields.
 ///
-/// Sentence case, as the mock has it ("1:05 · Sep 2"). Neither this screen nor
-/// the drawer uppercases it any more: the redesign carries no uppercase
-/// anywhere, and Analytics kept transforming it at its own call site for a
-/// while after the drawer had stopped.
-func localVideoSubtitle(_ entry: LocalVideoEntry) -> String {
-    let duration = LocalVideoLogic.formatDuration(ms: entry.durationMs)
-    let date = formatMatchDate(millis: entry.addedAtEpochMs)
-    return "\(duration) · \(date)"
-}
-
-/// Builds the Analytics list's rows, grouped like the drawer: local videos, then
-/// owned matches, then shared. `analyticsRowState` alone decides READY /
-/// ANALYSABLE / NOT_ON_DEVICE; this only gathers its two booleans per match and,
-/// for an analysable one, reads the cloud pipeline's liveness through
-/// `analyseAffordance` so a row can show progress or a failure instead of a live
-/// button. `hasStoredTrack` alone cannot tell a run in flight, or one that just
-/// failed, from one never attempted.
-///
-/// Port of Android's `buildAnalyticsRows`, now including its `storedTrackIds`
-/// and its on-device liveness map.
+/// Port of Android's `buildAnalyticsRows`. No `storedTrackIds` parameter:
+/// Android dropped it once the shared builder started writing `heatmapId`
+/// itself, which is now the single source for whether a track exists.
 func buildAnalyticsRows(
+    matchList: MatchList,
     localEntries: [LocalVideoEntry],
-    ownedRows: [MatchRow],
-    sharedMatches: [MatchSummary],
     progressByEntryId: [String: AnalyzeProgress],
-    /// Entries with a track this build can draw. Passed in as a set rather than
-    /// probed per row: the store answers from a file header, and a list of forty
-    /// matches would ask forty times on every redraw.
-    storedTrackIds: Set<String> = [],
     /// What the on-device runner is doing, per entry. Absent means idle.
     deviceStates: [String: LocalAnalysisState] = [:]
 ) -> [AnalyticsRow] {
-    func rowFor(
-        key: String, entryId: String?, group: AnalyticsGroup, title: String, subtitle: String
-    ) -> AnalyticsRow {
-        let entry = entryId.flatMap { id in localEntries.first { $0.id == id } }
+    func rowFor(_ item: MatchListItem, group: AnalyticsGroup) -> AnalyticsRow {
+        let entry = item.entryId.flatMap { id in localEntries.first { $0.id == id } }
+        let trackId = item.heatmapId
         let state = analyticsRowState(
-            hasLocalEntry: entry != nil,
-            hasStoredTrack: entry.map { storedTrackIds.contains($0.id) } ?? false
+            hasLocalEntry: item.entryId != nil,
+            hasStoredTrack: trackId != nil
         )
         var affordance = AnalyseAffordance.ready
         // Only an analysable row reads liveness. A ready row keeps its dot while
@@ -241,8 +244,8 @@ func buildAnalyticsRows(
         // still there; and a not-on-device row has no run of its own to report.
         //
         // `entry` is never nil in this branch: analysable requires a local entry,
-        // which is exactly `entry != nil` above. The binding is a guard, not a
-        // second source of truth.
+        // which is exactly `item.entryId != nil` above, and entry is looked up by
+        // that same id. The binding is a guard, not a second source of truth.
         if state == .analysable, let entry {
             affordance = analyseAffordance(
                 for: entry,
@@ -251,84 +254,22 @@ func buildAnalyticsRows(
             )
         }
         return AnalyticsRow(
-            key: key,
-            // Not on this phone and inert either way once there is no entry, so
-            // there is nothing for a nil id to act on.
-            entryId: entry?.id,
+            key: item.key,
+            // The track's own id stands in once there is no local entry to open
+            // instead: `.readyNoVideo` is exactly this case, and this row still
+            // has to open on a tap.
+            entryId: item.entryId ?? trackId,
             group: group,
-            title: title,
-            subtitle: subtitle,
+            title: item.title,
+            subtitle: item.detail,
             state: state,
-            affordance: affordance
+            affordance: affordance,
+            item: item
         )
     }
 
-    // A video picked for a match is that match's row, not a standalone one -
-    // the same filter `MatchesList`'s own "On this phone" section applies.
-    let localVideoRows = localEntries.filter { $0.scoreLogId == nil }.map { entry -> AnalyticsRow in
-        return rowFor(
-            key: "local-\(entry.id)",
-            entryId: entry.id,
-            group: .localVideos,
-            title: entry.title ?? entry.displayName,
-            subtitle: localVideoSubtitle(entry)
-        )
-    }
-
-    let ownedMatchRows = ownedRows.map { row -> AnalyticsRow in
-        switch row {
-        case .video(let match):
-            return rowFor(
-                key: row.id,
-                entryId: match.videoId,
-                group: .ownedMatches,
-                title: matchRowPrimary(match),
-                subtitle: matchRowSecondary(match)
-            )
-        case .score(let content):
-            return rowFor(
-                key: row.id,
-                // The entry that claims this log, which is how the rest of this
-                // app pairs a scored match to its video (`scoreRow` in
-                // ClipListView, and the shared `scoreLogAttachStatus`). NOT
-                // `card.videoId`: that is written only by the cloud pipeline's
-                // CREATE_ROW step, so a match scored courtside and filmed on this
-                // phone has none, and reading it would call a video sitting on
-                // the phone "Not on this phone" forever. Android shipped that
-                // version and it was a Critical.
-                entryId: localEntries.first { $0.scoreLogId == content.card.scoreLogId }?.id,
-                group: .ownedMatches,
-                title: content.card.title,
-                subtitle: content.card.playersLine
-            )
-        }
-    }
-
-    let sharedRows = sharedMatches.map { match in
-        rowFor(
-            key: "shared-\(match.videoId)",
-            entryId: match.videoId,
-            group: .shared,
-            title: matchRowPrimary(match),
-            subtitle: matchRowSecondary(match)
-        )
-    }
-
-    // One video, one row. A video-first import the cloud has finished clipping is
-    // both a local video and an owned match, and the two rows would carry the
-    // same entry id, the same state and two identical "Analyze" buttons - the
-    // drawer gets away with that because its two rows look nothing alike, and
-    // here they are indistinguishable. First wins, and the order below puts the
-    // local row first deliberately: it is the stable one, alive from import until
-    // the file leaves the phone, whereas the owned row only appears once a cloud
-    // run has clipped, so keeping that one instead would make the row jump
-    // sections mid-life. Rows with no entry fall back to their own key, and every
-    // NOT_ON_DEVICE row has a nil entryId, so two matches that are merely both
-    // absent from this phone never collapse into each other.
-    var seen = Set<String>()
-    return (localVideoRows + ownedMatchRows + sharedRows).filter {
-        seen.insert($0.entryId ?? $0.key).inserted
-    }
+    return matchList.mine.map { rowFor($0, group: .mine) }
+        + matchList.shared.map { rowFor($0, group: .shared) }
 }
 
 /// Which explanatory line belongs above these rows. See `AnalyticsLegend`.
@@ -340,6 +281,6 @@ func analyticsLegend(for rows: [AnalyticsRow]) -> AnalyticsLegend {
     if rows.allSatisfy({ $0.state == .notOnDevice }) { return .nothingOnThisPhone }
     // A dot is a symbol and needs explaining; a button labelled "Analyze" does
     // not, so the dot wins whenever both are on screen.
-    if rows.contains(where: { $0.state == .ready }) { return .dot }
+    if rows.contains(where: { AnalyticsRowStateKt.opensAnalytics(state: $0.state) }) { return .dot }
     return .analyseButton
 }

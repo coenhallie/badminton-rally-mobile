@@ -45,13 +45,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.SeekParameters
 import com.badmintontracker.android.localanalysis.BackgroundWorkAction
 import com.badmintontracker.android.ui.components.FullscreenEffect
 import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlButtonVariant
+import com.badmintontracker.android.ui.components.frameExactPlayer
 import com.badmintontracker.android.ui.theme.ShuttlVideoOverlay
+import com.badmintontracker.shared.model.AnnotationLabel
 import com.badmintontracker.shared.model.RallyAnnotation
 import com.badmintontracker.shared.prefs.PlaybackPreferenceRepository
 
@@ -65,11 +65,7 @@ fun ClipDetailScreen(
     val state by vm.state.collectAsStateWithLifecycle()
     val ctx = LocalContext.current
     val orientation = LocalConfiguration.current.orientation
-    val player = remember {
-        ExoPlayer.Builder(ctx).build().apply {
-            setSeekParameters(SeekParameters.EXACT)
-        }
-    }
+    val player = remember { frameExactPlayer(ctx) }
     val snackbar = remember { SnackbarHostState() }
     var addDialog by remember { mutableStateOf<Float?>(null) }
     var pendingDelete by remember { mutableStateOf<RallyAnnotation?>(null) }
@@ -105,9 +101,13 @@ fun ClipDetailScreen(
         vm.seekTo.collect { ms -> player.seekTo(ms) }
     }
 
+    val tagMessage = rememberQuickTagMessage()
+
+    // In fullscreen the snackbar host is underneath an opaque box, so a failure
+    // there is said in the label window instead - the only surface on screen.
     LaunchedEffect(state.actionError) {
         val msg = state.actionError ?: return@LaunchedEffect
-        snackbar.showSnackbar(msg)
+        if (isFullscreen) tagMessage.show(msg) else snackbar.showSnackbar(msg)
         vm.clearActionError()
     }
 
@@ -117,13 +117,20 @@ fun ClipDetailScreen(
     var showSettings by remember { mutableStateOf(false) }
     val canAddNote = state.clip != null && state.isOwner
     val addNote: (() -> Unit)? = if (canAddNote) ({ addDialog = player.currentPosition.coerceAtLeast(0L) / 1000f }) else null
+    // Tagging is the owner's, like the "+" beside the notes: a viewer of a shared
+    // match gets no chips rather than chips that do nothing.
+    val tagLabels = if (canAddNote) state.labels else emptyList()
+    val tag: (AnnotationLabel) -> Unit = { label ->
+        val positionMs = player.currentPosition.coerceAtLeast(0L)
+        vm.addAnnotation(positionMs / 1000f, "", label)
+        tagMessage.show(quickTagConfirmation(label, positionMs))
+    }
 
     val video: @Composable (Boolean) -> Unit = { fullscreen ->
         VideoCard(
             player = player,
             position = position,
-            speed = speed,
-            onSpeedTap = { showSettings = true },
+            onSettingsTap = { showSettings = true },
             fullscreen = fullscreen,
             onFullscreenToggle = { isFullscreen = !isFullscreen },
             error = state.error?.let { message ->
@@ -159,6 +166,12 @@ fun ClipDetailScreen(
                     player = player,
                     prefs = playbackPrefs,
                     onSettings = { showSettings = true },
+                    modifier = Modifier.padding(top = 16.dp),
+                )
+                ReplayLabelRow(
+                    labels = tagLabels,
+                    message = tagMessage.text,
+                    onTag = tag,
                     modifier = Modifier.padding(top = 16.dp),
                 )
                 NotesHeader(caption = "Notes", onAdd = addNote, modifier = Modifier.padding(top = 22.dp, bottom = 8.dp))
@@ -201,7 +214,9 @@ fun ClipDetailScreen(
                 prefs = playbackPrefs,
                 onSettings = { showSettings = true },
                 modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 24.dp),
+                overVideo = true,
             )
+            FullscreenLabels(labels = tagLabels, prefs = playbackPrefs, message = tagMessage.text, onTag = tag)
         }
     }
 

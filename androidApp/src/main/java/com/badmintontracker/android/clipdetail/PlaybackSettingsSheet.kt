@@ -22,8 +22,8 @@ import com.badmintontracker.shared.prefs.PlaybackOptions
 /**
  * The speed and the skip interval, app-wide, as two rows of pill chips.
  *
- * Reached by the speed chip on the video card and by holding a skip pill on
- * the transport. The skip buttons are ours rather than Media3's because
+ * Reached by the gear on the video card, by the speed readout at the end of the
+ * transport row, and by holding a skip pill. The skip buttons are ours rather than Media3's because
  * ExoPlayer bakes its seek increments in at Builder time: a preference change
  * could only reach them by rebuilding the player and losing the playhead.
  */
@@ -41,8 +41,8 @@ fun PlaybackSettingsSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        // Unset, this resolves M3's surfaceContainerLow, which ShuttlColors.kt
-        // never sets. See AddMatchSheet for the full reasoning.
+        // Pinned rather than left to surfaceContainerLow (the same bgSecondary
+        // value today): see AddMatchSheet for the full reasoning.
         containerColor = MaterialTheme.colorScheme.surfaceVariant,
     ) {
         Column(

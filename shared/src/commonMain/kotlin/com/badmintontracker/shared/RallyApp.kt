@@ -6,6 +6,7 @@ import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.local.DeviceThroughputRepository
 import com.badmintontracker.shared.local.LocalAnalysisCoordinator
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
+import com.badmintontracker.shared.localvideo.LocalVideoRemoval
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.localvideo.orphanedLocalVideoIds
 import com.badmintontracker.shared.prefs.PlaybackPreferenceRepository
@@ -19,6 +20,9 @@ import com.badmintontracker.shared.repo.AuthRepository
 import com.badmintontracker.shared.repo.AuthRepositoryImpl
 import com.badmintontracker.shared.repo.AuthState
 import com.badmintontracker.shared.repo.ClipsRepository
+import com.badmintontracker.shared.local.CloudPoseCoordinator
+import com.badmintontracker.shared.repo.CloudPoseRepositoryImpl
+import com.badmintontracker.shared.repo.CloudPoseRepository
 import com.badmintontracker.shared.repo.ClipsRepositoryImpl
 import com.badmintontracker.shared.repo.MediaRepository
 import com.badmintontracker.shared.repo.MediaRepositoryImpl
@@ -30,10 +34,12 @@ import com.badmintontracker.shared.repo.toAuthState
 import com.badmintontracker.shared.scoring.ScoreLogsRepository
 import com.russhwolf.settings.Settings
 import io.github.jan.supabase.SupabaseClient
+import io.github.jan.supabase.auth.auth
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlin.time.Clock
 
@@ -56,7 +62,7 @@ class RallyApp(
      * delete, so it passes the analysis store's alone. See
      * [LocalVideoRepository].
      */
-    onLocalVideoRemoved: (LocalVideoEntry) -> Unit = {},
+    onLocalVideoRemoved: (LocalVideoEntry, LocalVideoRemoval) -> Unit = { _, _ -> },
 ) {
     val client: SupabaseClient = buildSupabaseClient(config, settings, sessionSettings, httpEngine)
     val auth:        AuthRepository        = AuthRepositoryImpl(client)
@@ -66,8 +72,12 @@ class RallyApp(
     val media:       MediaRepository       = MediaRepositoryImpl(client)
     val shares:      SharesRepository      = SharesRepositoryImpl(client)
     val videos:      VideosRepository      = VideosRepositoryImpl(client)
+    val cloudPoses:  CloudPoseRepository   = CloudPoseRepositoryImpl(client)
 
-    val authState: Flow<AuthState> = auth.sessionFlow.map { it.toAuthState() }
+    // distinct, because several statuses now share a value: a refresh that fails
+    // and then succeeds is AUTHENTICATED three times over, and no screen should be
+    // told the session changed when it did not.
+    val authState: Flow<AuthState> = auth.sessionFlow.map { it.toAuthState() }.distinctUntilChanged()
 
     // On-device local video registry + annotations (shared persistence, native UI).
     val localVideos:      LocalVideoRepository         = LocalVideoRepository(settings, onLocalVideoRemoved)
@@ -128,6 +138,14 @@ class RallyApp(
     ): LocalAnalysisCoordinator = LocalAnalysisCoordinator(engine = engine, log = log)
 
     /**
+     * The cloud sibling of [localAnalysisCoordinator]. Built here rather than
+     * per platform so both phones fetch and decode a pose artifact the same
+     * way; only the sink that stores the result differs.
+     */
+    fun cloudPoseCoordinator(log: (String) -> Unit = {}): CloudPoseCoordinator =
+        CloudPoseCoordinator(repository = cloudPoses, log = log)
+
+    /**
      * Builds the analyze pipeline with the scoring link already wired in. Both
      * platforms call this rather than constructing a coordinator themselves, so
      * "a finished upload binds its match" cannot be true on one phone and not the
@@ -137,6 +155,7 @@ class RallyApp(
         scope: CoroutineScope,
         openChannel: suspend (uri: String, offset: Long) -> ByteReadChannel,
         log: (String) -> Unit = {},
+        installCloudPoses: suspend (videoId: String, onProgress: (Float) -> Unit) -> Unit = { _, _ -> },
     ): AnalyzeCoordinator = AnalyzeCoordinator(
         localVideos = localVideos,
         videos = videos,
@@ -145,6 +164,8 @@ class RallyApp(
         openChannel = openChannel,
         log = log,
         localAnnotations = localAnnotations,
+        installCloudPoses = installCloudPoses,
+        awaitSession = { client.auth.awaitInitialization() },
         onVideoRowReady = { entryId ->
             // The videos row now exists, so the foreign key can be satisfied. A
             // video-first import has no match and this is a no-op.

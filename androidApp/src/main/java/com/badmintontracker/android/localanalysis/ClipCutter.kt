@@ -174,12 +174,14 @@ class ClipCutter {
             extractor.release()
         }
 
-        check(rendered > 0) {
-            "no frames fell inside ${"%.2f".format(startSeconds)}..${"%.2f".format(endSeconds)}s of ${'$'}{source.name}"
-        }
+        check(rendered > 0) { emptyWindowMessage(startSeconds, endSeconds, source.name) }
     }
 
     /** Expected frame count for a window, for tests to check against. */
     fun expectedFrames(startSeconds: Double, endSeconds: Double, fps: Double): Int =
         ((endSeconds - startSeconds) * fps).roundToInt()
 }
+
+/** Why a cut produced nothing. Shown to the coach verbatim, so it names the file. */
+internal fun emptyWindowMessage(startSeconds: Double, endSeconds: Double, fileName: String): String =
+    "no frames fell inside %.2f..%.2fs of %s".format(java.util.Locale.ROOT, startSeconds, endSeconds, fileName)

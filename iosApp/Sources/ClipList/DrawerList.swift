@@ -1,12 +1,13 @@
 import SwiftUI
 
-/// The drawer list's shared metrics, from the `Rally Drawer` mock.
+/// The Matches tab list's shared metrics, from the `Rally Drawer` mock (the
+/// list's home before the bottom bar replaced the drawer it sat in).
 ///
 /// The list is an inset one now, not a full-bleed one: rows are cards sitting on
 /// the panel with a margin either side, separated by a gap rather than by a
-/// divider. Everything that renders a row in the drawer - the "On this phone"
-/// card in LocalVideoSection.swift and both match rows in ClipListView.swift -
-/// reads its numbers from here, so the two files cannot drift a point apart.
+/// divider. Everything that renders a row in this list - MatchListRowView,
+/// the filter row and the section label - reads its numbers from here, so
+/// they cannot drift a point apart.
 ///
 /// Mirrors androidApp's DrawerList.kt number for number.
 enum DrawerList {
@@ -24,11 +25,11 @@ enum DrawerList {
     static let labelGap: CGFloat = 4
     /// The list's own top inset. On Android the LazyColumn carries it as
     /// contentPadding and every label carries `sectionGap`, which puts the first
-    /// label 26dp below the drawer header; `firstSectionGap` is that same sum,
+    /// label 26dp below the tab's own header; `firstSectionGap` is that same sum,
     /// stated once, because a SwiftUI row carries its whole inset itself.
     static let listTopInset: CGFloat = 4
-    /// Above the FIRST label, measured from the drawer's header. Unlike a later
-    /// label there is no row above it to contribute `rowGap`.
+    /// Above the FIRST label, measured from the tab's own header. Unlike a
+    /// later label there is no row above it to contribute `rowGap`.
     static let firstSectionGap: CGFloat = sectionGap + listTopInset
     static let thumbWidth: CGFloat = 64
     static let thumbHeight: CGFloat = 40
@@ -36,10 +37,11 @@ enum DrawerList {
 
 extension View {
     /// Strips the styling `List` gives a row so an inset card can be drawn in
-    /// its place: no separator, no system row fill over the drawer's own panel,
-    /// and the row's margin and gap stated as insets rather than as spacing
-    /// between rows (`listRowSpacing` is a `List` initialiser argument, and this
-    /// list needs different gaps above a section label and above a row).
+    /// its place: no separator, no system row fill over the list's own
+    /// background, and the row's margin and gap stated as insets rather than
+    /// as spacing between rows (`listRowSpacing` is a `List` initialiser
+    /// argument, and this list needs different gaps above a section label and
+    /// above a row).
     ///
     /// [top] carries whatever extra the caller needs above this row - a section
     /// label asks for `DrawerList.sectionGap`.
@@ -56,7 +58,7 @@ extension View {
     }
 }
 
-/// A drawer section's label: 12pt, secondary, sentence case.
+/// A section's label on the Matches tab list: 12pt, secondary, sentence case.
 ///
 /// Deliberately not `Shuttl.sectionLabel`, the uppercase tracked `labelSmall`
 /// the app's older lists use: the mocks for this redesign carry no uppercase and

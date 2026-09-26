@@ -5,7 +5,7 @@ import kotlin.test.Test
 
 class MatchMilestonesTest {
 
-    private val singles = MatchSetup(doubles = false, firstServer = Side.HOME)
+    private val singles = MatchSetup(firstServer = Side.HOME)
 
     private fun fold(events: List<ScoreEvent>, rules: ScoringRules = ScoringRules.BWF_21) =
         foldMatchState(rules, singles, events)
@@ -38,7 +38,7 @@ class MatchMilestonesTest {
     @Test
     fun undoing_the_interval_point_un_announces_the_interval() {
         // The edge is re-derived from the log, so it cannot get stuck on.
-        fold(toScore(11, 0).undoLast()).isIntervalPoint shouldBe false
+        fold(toScore(11, 0).undoLastPoint()).isIntervalPoint shouldBe false
     }
 
     @Test

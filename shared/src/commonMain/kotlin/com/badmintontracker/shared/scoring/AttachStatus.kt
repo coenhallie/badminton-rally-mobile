@@ -46,6 +46,12 @@ fun attachStatus(
                 AttachKind.UPLOADING,
             )
             AnalyzeStage.PROCESSING -> return AttachStatus("Clipping…", AttachKind.CLIPPING)
+            // The clips already exist by the time Phase 2 runs, so this row is
+            // not waiting on the attachment any more. It reuses CLIPPING's kind
+            // rather than gaining one: the attach banner's question is "can I
+            // watch this match yet", and the answer during the pose pass is the
+            // same yes-with-a-run-in-flight it is during clipping.
+            AnalyzeStage.MEASURING -> return AttachStatus("Measuring movement…", AttachKind.CLIPPING)
             AnalyzeStage.FAILED ->
                 return AttachStatus(entry.failureMessage ?: "Analysis failed", AttachKind.FAILED)
             // ANALYZED means the pipeline succeeded, not that clips have synced -
@@ -69,23 +75,20 @@ fun attachStatus(
 }
 
 /**
- * [attachStatus] for one match, from the three sources every surface that shows
- * it needs to combine: the local entry picked for [log] (if it still exists),
- * the coordinator's transient upload progress keyed by entry id, and how many
- * clips this match's video already has.
- *
- * Pulled out so the match list's row (`ClipListViewModel.attachStatuses`,
- * `ClipListModel.attachMap()`) and the match page's own status
- * (`MatchViewModel`, `MatchModel`) derive the same answer for the same match -
- * three surfaces writing this by hand is three chances for them to disagree.
+ * [attachStatus] for one match, given the entry the caller has already picked
+ * for it. Pulled out of [scoreLogAttachStatus] so a caller that resolves its
+ * own (log, entry) pairing - the match list's builder, which folds a log, an
+ * entry and a video's clips into one row - can hand that same entry straight
+ * back here, rather than asking a second, independent lookup to agree with the
+ * first. A row and the status it shows can then never disagree about which
+ * entry it is, because both come from the one the row already chose.
  */
-fun scoreLogAttachStatus(
+fun attachStatusFor(
     log: ScoreLog,
-    entries: List<LocalVideoEntry>,
+    entry: LocalVideoEntry?,
     progress: Map<String, AnalyzeProgress>,
     clipCount: Int,
 ): AttachStatus? {
-    val entry = entries.firstOrNull { it.scoreLogId == log.id }
     val uploadPercent = entry
         ?.let { progress[it.id]?.uploadProgress }
         ?.let { (it * 100).toInt() }
@@ -95,4 +98,26 @@ fun scoreLogAttachStatus(
         uploadPercent = uploadPercent,
         clipCount = clipCount,
     )
+}
+
+/**
+ * [attachStatusFor], finding the entry by [LocalVideoEntry.scoreLogId] alone -
+ * the same rule this function has always used.
+ *
+ * Deliberately not the match list's own richer join (a log's video id can also
+ * pick up an entry that was never told which log claimed it): its callers, the
+ * match page on each platform (`MatchViewModel`, `MatchModel`), were written
+ * against this narrower rule, and widening it out from under them would change
+ * what they show without anyone deciding it should. A caller that has already
+ * resolved a richer pairing of its own - the match list's builder - calls
+ * [attachStatusFor] directly instead.
+ */
+fun scoreLogAttachStatus(
+    log: ScoreLog,
+    entries: List<LocalVideoEntry>,
+    progress: Map<String, AnalyzeProgress>,
+    clipCount: Int,
+): AttachStatus? {
+    val entry = entries.firstOrNull { it.scoreLogId == log.id }
+    return attachStatusFor(log, entry, progress, clipCount)
 }

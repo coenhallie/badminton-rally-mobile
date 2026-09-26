@@ -1,5 +1,6 @@
 package com.badmintontracker.shared.scoring
 
+import com.badmintontracker.shared.repo.selectAllPages
 import com.badmintontracker.shared.util.SyncLock
 import com.badmintontracker.shared.util.randomUuid
 import com.badmintontracker.shared.util.withLock
@@ -51,8 +52,8 @@ class ScoreLogsRepository internal constructor(
      * has, so a caller can reconcile things that point at matches by id.
      *
      * Here rather than at a render site because this is the only moment the set is
-     * AUTHORITATIVE: [sync] pulls every row for the owner with no limit and no
-     * paging, and already drops local logs the server no longer returns. In memory
+     * AUTHORITATIVE: [sync] pulls every row for the owner, page by page until the
+     * server has no more, and already drops local logs the server no longer returns. In memory
      * the set is empty for the whole of a cold start's session restore, so a
      * consumer that asked then would conclude everything had been deleted.
      */
@@ -97,7 +98,14 @@ class ScoreLogsRepository internal constructor(
     private data class CachedLogs(
         @SerialName("owner_id") val ownerId: String?,
         val logs: List<StoredLog>,
+        /**
+         * Matches the coach deleted that the server has not confirmed deleting.
+         * Defaulted, so a cache written before this field existed still reads.
+         */
+        @SerialName("pending_deletes") val pendingDeletes: List<String> = emptyList(),
     )
+
+    private class Loaded(val logs: List<StoredLog>, val pendingDeletes: Set<String>)
 
     /**
      * Whose cache [stored] was read for. Held rather than re-asked, because the
@@ -107,7 +115,21 @@ class ScoreLogsRepository internal constructor(
      */
     private var loadedOwner: String? = currentOwnerId()
 
-    private var stored: List<StoredLog> = loadStored(loadedOwner)
+    private var stored: List<StoredLog>
+
+    /**
+     * Ids deleted on this phone whose server delete has not succeeded yet. Without
+     * it a delete made with no signal undoes itself: the match is gone locally,
+     * still on the server, and to the merge in [sync] that is indistinguishable
+     * from a match this device has simply never seen.
+     */
+    private var pendingDeletes: Set<String>
+
+    init {
+        val loaded = load(loadedOwner)
+        stored = loaded.logs
+        pendingDeletes = loaded.pendingDeletes
+    }
 
     private val state = MutableStateFlow(stored.map { it.log })
 
@@ -122,8 +144,6 @@ class ScoreLogsRepository internal constructor(
 
     fun create(
         title: String,
-        homePlayers: List<String>,
-        awayPlayers: List<String>,
         rules: ScoringRules,
         setup: MatchSetup,
     ): ScoreLog {
@@ -132,8 +152,6 @@ class ScoreLogsRepository internal constructor(
             id = randomUuid(),
             videoId = null,
             title = title.trim(),
-            homePlayers = homePlayers.map { it.trim() }.filter { it.isNotEmpty() },
-            awayPlayers = awayPlayers.map { it.trim() }.filter { it.isNotEmpty() },
             rules = rules,
             setup = setup,
             events = emptyList(),
@@ -148,8 +166,40 @@ class ScoreLogsRepository internal constructor(
     fun replaceEvents(id: String, events: List<ScoreEvent>) =
         edit(id) { it.copy(events = events) }
 
-    fun rename(id: String, title: String) =
-        edit(id) { it.copy(title = title.trim()) }
+    /**
+     * Everything the details editor can change, in one write. The names are
+     * normalised here rather than trusted from the caller, so a partner typed into
+     * a match that was then switched to singles is not stored: see [submittedPlayers].
+     */
+    fun updateDetails(
+        id: String,
+        title: String,
+        format: MatchFormat?,
+        homePlayers: List<String>,
+        awayPlayers: List<String>,
+    ) = edit(id) {
+        it.copy(
+            title = title.trim(),
+            format = format,
+            homePlayers = submittedPlayers(homePlayers, format),
+            awayPlayers = submittedPlayers(awayPlayers, format),
+        )
+    }
+
+    /**
+     * Who serves the first point. Only until a point has been scored: after that the
+     * serve is a consequence of the log, and rewriting its seed would silently
+     * re-attribute every serve already played.
+     */
+    fun setFirstServer(id: String, side: Side) {
+        // Asked before editing, because edit() marks the row dirty and restamps it
+        // whether or not anything changed.
+        val log = get(id) ?: return
+        if (log.events.isNotEmpty() || log.setup.firstServer == side) return
+        edit(id) {
+            if (it.events.isEmpty()) it.copy(setup = it.setup.copy(firstServer = side)) else it
+        }
+    }
 
     fun finish(id: String) =
         edit(id) { it.copy(status = ScoreLogStatus.UNBOUND) }
@@ -187,6 +237,12 @@ class ScoreLogsRepository internal constructor(
     }
 
     private fun mutate(transform: (List<StoredLog>) -> List<StoredLog>) = lock.withLock {
+        // A session that has finished restoring since `stored` was read makes the
+        // cache readable, and the write has to land on THAT list. Only this
+        // direction: an owner that has gone away mid-session is handled by
+        // persist, which keeps stamping the one it loaded for.
+        val owner = currentOwnerId()
+        if (owner != null && owner != loadedOwner) adopt(owner)
         persist(transform(stored))
     }
 
@@ -199,21 +255,37 @@ class ScoreLogsRepository internal constructor(
         // permanently unreadable, which is far worse than whatever the write was
         // recording.
         val owner = currentOwnerId() ?: loadedOwner
-        settings.putString(KEY_CACHE, json.encodeToString(
-            CachedLogs.serializer(), CachedLogs(owner, sorted),
-        ))
+        // With nobody to write for, memory is all this touches. `stored` is the
+        // empty list a cold start reads before the session is back, and a payload
+        // with no owner is one loadStored refuses anyway, so writing it could only
+        // ever replace a readable cache with an unreadable one.
+        if (owner != null) {
+            settings.putString(KEY_CACHE, json.encodeToString(
+                CachedLogs.serializer(), CachedLogs(owner, sorted, pendingDeletes.toList()),
+            ))
+        }
         state.value = sorted.map { it.log }
     }
 
-    private fun loadStored(owner: String?): List<StoredLog> {
+    /** Caller must hold [lock], or be the constructor. */
+    private fun adopt(owner: String?) {
+        val loaded = load(owner)
+        loadedOwner = owner
+        stored = loaded.logs
+        pendingDeletes = loaded.pendingDeletes
+    }
+
+    private fun load(owner: String?): Loaded {
+        val nothing = Loaded(emptyList(), emptySet())
         val cached = settings.getStringOrNull(KEY_CACHE)
             ?.let { runCatching { json.decodeFromString(CachedLogs.serializer(), it) }.getOrNull() }
-            ?: return emptyList()
+            ?: return nothing
         // A cache written by another account, or by a build before this scoping
         // existed, is discarded rather than shown. Better an empty list than one
         // coach's match names in another coach's app.
         val usable = owner != null && owner == cached.ownerId
-        return if (usable) cached.logs.sortedByDescending { it.log.createdAt } else emptyList()
+        if (!usable) return nothing
+        return Loaded(cached.logs.sortedByDescending { it.log.createdAt }, cached.pendingDeletes.toSet())
     }
 
     /**
@@ -230,8 +302,7 @@ class ScoreLogsRepository internal constructor(
         val owner = currentOwnerId()
         if (owner == loadedOwner) return
         lock.withLock {
-            loadedOwner = owner
-            stored = loadStored(owner)
+            adopt(owner)
             state.value = stored.map { it.log }
         }
     }
@@ -254,13 +325,24 @@ class ScoreLogsRepository internal constructor(
             IllegalStateException("Not signed in.")
         )
         return runCatching {
+            // Deletes first, so the pull below already reflects them. One that
+            // fails fails the sync: it is the same network the push needs, and the
+            // id stays pending and is filtered out of the merge either way.
+            for (id in pendingDeletes.toList()) {
+                postgrest.from(TABLE).delete { filter { eq("id", id) } }
+                settle(id)
+            }
             val dirty = stored.filter { it.dirty }.map { it.log }
             if (dirty.isNotEmpty()) {
                 postgrest.from(TABLE).upsert(dirty)
             }
-            val remote = postgrest.from(TABLE)
-                .select { order("created_at", Order.DESCENDING) }
-                .decodeList<ScoreLog>()
+            // Paged, because everything below reads "not in this list" as "deleted
+            // elsewhere": a pull PostgREST had cut off at max_rows would remove the
+            // matches past the cut from the phone.
+            val remote = postgrest.from(TABLE).selectAllPages<ScoreLog> {
+                order("created_at", Order.DESCENDING)
+                order("id", Order.ASCENDING)
+            }
 
             lock.withLock {
                 // Compared by content, not by id. A row that is still byte for byte
@@ -270,7 +352,7 @@ class ScoreLogsRepository internal constructor(
                 // Comparing ids instead would silently un-score that rally.
                 val pushedById = dirty.associateBy { it.id }
                 val localById = stored.associateBy { it.log.id }
-                val merged = remote.map { row ->
+                val merged = remote.filterNot { it.id in pendingDeletes }.map { row ->
                     val local = localById[row.id]
                     when {
                         local == null -> StoredLog(row, dirty = false)
@@ -293,19 +375,28 @@ class ScoreLogsRepository internal constructor(
     /**
      * Removes a match everywhere. The local removal happens whether or not the
      * server call succeeds: the row is the user's own, the gesture is explicit, and
-     * a match that reappears after a failed delete is a worse outcome than a server
-     * row the next sync will not resurrect, since [sync] only adds rows the server
-     * still returns.
+     * a match that reappears after a failed delete is the worse outcome. A delete
+     * the server did not hear is kept in [pendingDeletes], which keeps the row out
+     * of the next pull and has [sync] send the delete again.
      */
     suspend fun delete(id: String): Result<Unit> {
-        removeLocally(id)
+        lock.withLock {
+            pendingDeletes = pendingDeletes + id
+            persist(stored.filterNot { it.log.id == id })
+        }
         val postgrest = client?.postgrest ?: return Result.failure(
             IllegalStateException("Not signed in.")
         )
         return runCatching {
             postgrest.from(TABLE).delete { filter { eq("id", id) } }
-            Unit
+            settle(id)
         }
+    }
+
+    /** The server has confirmed this delete; stop remembering it. */
+    private fun settle(id: String) = lock.withLock {
+        pendingDeletes = pendingDeletes - id
+        persist(stored)
     }
 
     private fun currentOwnerId(): String? = ownerId()

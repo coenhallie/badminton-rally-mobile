@@ -92,7 +92,7 @@ class LocalVideoRepositoryTest {
         // iOS copies the video into its app container, so the registry entry is the
         // only reference to that file. A removal that skips this strands it forever.
         val removed = mutableListOf<LocalVideoEntry>()
-        val repo = LocalVideoRepository(MapSettings(), onRemoved = { removed += it })
+        val repo = LocalVideoRepository(MapSettings(), onRemoved = { e, _ -> removed += e })
         repo.add(entry("a"))
         repo.add(entry("b"))
 
@@ -102,9 +102,52 @@ class LocalVideoRepositoryTest {
     }
 
     @Test
+    fun remove_reports_the_entry_as_discarded() {
+        // A coach deleting a video wants everything derived from it gone too.
+        val reasons = mutableListOf<LocalVideoRemoval>()
+        val repo = LocalVideoRepository(MapSettings(), onRemoved = { _, r -> reasons += r })
+        repo.add(entry("a"))
+
+        repo.remove("a")
+
+        reasons shouldBe listOf(LocalVideoRemoval.DISCARDED)
+    }
+
+    @Test
+    fun freeVideo_reports_the_entry_as_video_only_and_still_releases_the_file() {
+        // The coach wants the space back. The footage goes, but the tracks must
+        // survive so the heatmap and base position keep working, which is what
+        // the reason lets the cleanup hook tell apart.
+        val released = mutableListOf<String>()
+        val reasons = mutableListOf<LocalVideoRemoval>()
+        val repo = LocalVideoRepository(
+            MapSettings(),
+            onRemoved = { e, r -> released += e.id; reasons += r },
+        )
+        repo.add(entry("a"))
+
+        repo.freeVideo("a")
+
+        repo.get("a").shouldBeNull()
+        released shouldBe listOf("a")
+        reasons shouldBe listOf(LocalVideoRemoval.VIDEO_ONLY)
+    }
+
+    @Test
+    fun freeing_an_unknown_id_does_not_fire_the_cleanup_hook() {
+        val removed = mutableListOf<LocalVideoEntry>()
+        val repo = LocalVideoRepository(MapSettings(), onRemoved = { e, _ -> removed += e })
+        repo.add(entry("a"))
+
+        repo.freeVideo("nope")
+
+        removed shouldBe emptyList()
+    }
+
+    @Test
     fun removing_an_unknown_id_does_not_fire_the_cleanup_hook() {
         val removed = mutableListOf<LocalVideoEntry>()
-        val repo = LocalVideoRepository(MapSettings(), onRemoved = { removed += it })
+        val repo = LocalVideoRepository(MapSettings(), onRemoved = { e, _ -> removed += e })
         repo.add(entry("a"))
 
         repo.remove("nope")
@@ -115,7 +158,7 @@ class LocalVideoRepositoryTest {
     @Test
     fun add_and_update_never_fire_the_cleanup_hook() {
         val removed = mutableListOf<LocalVideoEntry>()
-        val repo = LocalVideoRepository(MapSettings(), onRemoved = { removed += it })
+        val repo = LocalVideoRepository(MapSettings(), onRemoved = { e, _ -> removed += e })
         repo.add(entry("a"))
         repo.update("a") { it.copy(stage = AnalyzeStage.UPLOADING) }
 
@@ -128,7 +171,7 @@ class LocalVideoRepositoryTest {
         // if the process died in between; that reads as a corrupt library.
         var stillPresent: LocalVideoEntry? = null
         lateinit var repo: LocalVideoRepository
-        repo = LocalVideoRepository(MapSettings(), onRemoved = { stillPresent = repo.get(it.id) })
+        repo = LocalVideoRepository(MapSettings(), onRemoved = { e, _ -> stillPresent = repo.get(e.id) })
         repo.add(entry("a"))
 
         repo.remove("a")
@@ -172,5 +215,32 @@ class LocalVideoRepositoryTest {
 
         repo.get("a")?.title shouldBe "Thu League"
         repo.get("a")?.description shouldBe "notes"
+    }
+
+    @Test
+    fun mirrorVideoDetails_follows_a_rename_that_landed_on_the_server_at_any_stage() {
+        // The match page renames the videos row; the entry that uploaded it must
+        // not go on showing the old name in "On this phone".
+        val repo = LocalVideoRepository(MapSettings())
+        repo.add(entry("a"))
+        repo.setDetails("a", "Thu League", "notes")
+        repo.update("a") { it.copy(stage = AnalyzeStage.ANALYZED) }
+
+        repo.mirrorVideoDetails("a", "Club final", null)
+
+        repo.get("a")?.title shouldBe "Club final"
+        repo.get("a")?.description.shouldBeNull()
+    }
+
+    @Test
+    fun mirrorVideoDetails_ignores_a_video_this_phone_never_held() {
+        // A match filmed on the web app or another phone has no entry here.
+        val repo = LocalVideoRepository(MapSettings())
+        repo.add(entry("a"))
+
+        repo.mirrorVideoDetails("elsewhere", "Club final", null)
+
+        repo.entries.value.map { it.id } shouldBe listOf("a")
+        repo.get("a")?.title.shouldBeNull()
     }
 }

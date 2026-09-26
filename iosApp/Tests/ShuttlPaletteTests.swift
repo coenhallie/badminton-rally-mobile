@@ -89,6 +89,28 @@ final class ShuttlPaletteTests: XCTestCase {
         }
     }
 
+    /// `bgRaised` sits one step above a raised card, for a self-drawn menu or
+    /// dialog - `MatchLegendSheet` today. Checked against the two foregrounds
+    /// it actually carries there (`text`, `textSecondary`), not the whole
+    /// `testBodyTextClearsAAOnEverySurface` set: dark `textTertiary` reads
+    /// 4.344:1 on `bgRaised.dark`, under the 4.5:1 floor, and nothing draws
+    /// that pairing today. Matches Android's identical value.
+    func testLegendSheetTextClearsAAOnBgRaised() {
+        eachTheme { theme, pick in
+            let bg = pick(ShuttlPalette.bgRaised)
+            let foregrounds = [
+                ("text", pick(ShuttlPalette.text)),
+                ("textSecondary", pick(ShuttlPalette.textSecondary)),
+            ]
+            for (fgName, fg) in foregrounds {
+                XCTAssertGreaterThanOrEqual(
+                    contrast(fg, bg), 4.5,
+                    "\(theme) \(fgName) on bgRaised is below the 4.5:1 body threshold"
+                )
+            }
+        }
+    }
+
     func testAccentCarriesOnAccentText() {
         eachTheme { theme, pick in
             XCTAssertGreaterThanOrEqual(
@@ -120,6 +142,39 @@ final class ShuttlPaletteTests: XCTestCase {
                 contrast(pick(ShuttlPalette.accentDark), pick(ShuttlPalette.bg)), 4.5,
                 "\(theme) accentDark must be readable as text"
             )
+        }
+    }
+
+    /// The match list's analysis glyphs are the only thing saying which analysis
+    /// a match has, so they are held to the 3:1 non-text floor on their chip, on
+    /// every surface a chip is drawn over: the quiet row and the tab's own
+    /// background (bg), the raised card (bgTertiary) and the legend sheet
+    /// (bgSecondary). The accent itself only makes 2.4:1 there in light, which
+    /// is why the glyph is its own token. Mirrors androidApp's ShuttlPaletteTest.
+    func testAnalysisGlyphReadsOnItsChipOnEveryRowSurface() {
+        func blend(_ fg: UInt32, _ bg: UInt32, _ alpha: Double) -> UInt32 {
+            func mix(_ shift: UInt32) -> UInt32 {
+                let f = Double((fg >> shift) & 0xFF)
+                let b = Double((bg >> shift) & 0xFF)
+                return UInt32((alpha * f + (1 - alpha) * b).rounded()) << shift
+            }
+            return mix(16) | mix(8) | mix(0)
+        }
+        let alphas = ShuttlPalette.analysisChipOpacity
+        eachTheme { theme, pick in
+            let alpha = theme == "light" ? alphas.light : alphas.dark
+            let surfaces = [
+                ("bg", pick(ShuttlPalette.bg)),
+                ("bgSecondary", pick(ShuttlPalette.bgSecondary)),
+                ("bgTertiary", pick(ShuttlPalette.bgTertiary)),
+            ]
+            for (name, surface) in surfaces {
+                let chip = blend(pick(ShuttlPalette.accent), surface, alpha)
+                XCTAssertGreaterThanOrEqual(
+                    contrast(pick(ShuttlPalette.analysisGlyph), chip), 3.0,
+                    "\(theme) analysisGlyph on its chip on \(name) is below 3:1"
+                )
+            }
         }
     }
 

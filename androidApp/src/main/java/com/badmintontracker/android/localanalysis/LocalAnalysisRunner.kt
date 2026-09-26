@@ -10,8 +10,11 @@ import com.badmintontracker.shared.local.skeletonAction
 import com.badmintontracker.shared.local.LocalAnalysisCoordinator
 import com.badmintontracker.shared.localvideo.DevicePhase
 import com.badmintontracker.shared.localvideo.DeviceWork
+import com.badmintontracker.shared.matchlist.DeviceRun
+import com.badmintontracker.shared.matchlist.DeviceRunKind
 import com.badmintontracker.shared.model.CourtKeypoints
 import com.badmintontracker.shared.model.toAnalysis
+import com.badmintontracker.shared.local.CloudPoseOutcome
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,6 +22,31 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.File
+
+/**
+ * Which handle the skeleton is played from, given what is on disk and what the
+ * grant still allows.
+ *
+ * Pure, and separate from [LocalAnalysisRunner], so the rule can be tested
+ * without an Android Context - the reason the cloud case went unnoticed is that
+ * nothing could exercise this decision at all.
+ *
+ * Order matters and mirrors `materialise`: it returns the direct file when that
+ * is readable and only copies otherwise, so the direct file is what a device
+ * analysis decoded. The content grant comes last because only a cloud run
+ * leaves nothing else.
+ */
+internal fun analysedSourceUri(
+    entryUri: String,
+    direct: File?,
+    copy: File?,
+    contentReadable: Boolean,
+): String? = when {
+    direct != null -> direct.toURI().toString()
+    copy != null -> copy.toURI().toString()
+    contentReadable -> entryUri
+    else -> null
+}
 
 /** Where a local analysis has got to, per video. */
 sealed interface LocalAnalysisState {
@@ -87,6 +115,23 @@ internal fun toDeviceWork(entryId: String, state: LocalAnalysisState): DeviceWor
 }
 
 /**
+ * A run as the match list sees it, or null when idle or done: a finished run
+ * speaks through the files it left (the track, the skeleton, the clips), which
+ * the list reads for itself, so a Done kept here would only say it twice.
+ *
+ * Exhaustive over [LocalAnalysisState] for the same reason [isDeviceRunInFlight]
+ * is: a new state must fail to compile here rather than quietly vanish from the
+ * list. Android has no paused run; only iOS's runner can report one.
+ */
+internal fun toDeviceRun(state: LocalAnalysisState): DeviceRun? = when (state) {
+    is LocalAnalysisState.Preparing -> DeviceRun(DeviceRunKind.RUNNING, DevicePhase.PREPARING)
+    is LocalAnalysisState.Analysing -> DeviceRun(DeviceRunKind.RUNNING, DevicePhase.ANALYSING)
+    is LocalAnalysisState.Cutting -> DeviceRun(DeviceRunKind.RUNNING, DevicePhase.CUTTING)
+    is LocalAnalysisState.Failed -> DeviceRun(DeviceRunKind.FAILED, message = state.message)
+    is LocalAnalysisState.Idle, is LocalAnalysisState.Done -> null
+}
+
+/**
  * Runs the on-device pipeline for one video and keeps its progress.
  *
  * Held by the application rather than a ViewModel because an analysis outlives
@@ -115,40 +160,95 @@ class LocalAnalysisRunner(
 
     private val tracks = PlayerTrackStore(context.filesDir)
 
-    /** The track from an earlier run, for a screen opened after this one died. */
-    fun storedTrack(entryId: String): PlayerTrackStore.Stored? = tracks.load(entryId)
-
     /**
-     * Whether [storedTrack] has anything to return, without loading it. For a
-     * list deciding what each of its rows can do: see [PlayerTrackStore.has].
+     * The track to draw for this entry: the cloud's if there is one, else this
+     * phone's.
+     *
+     * Cloud wins, and silently. It comes from a large model on a GPU and
+     * carries both players, so it is strictly the better track; a picker
+     * between the two would be a third selector on a screen that already has
+     * panel tabs and a player toggle. See the design's 3 and 10.
      */
-    fun hasStoredTrack(entryId: String): Boolean = tracks.has(entryId)
+    fun storedTrack(entryId: String): PlayerTrackStore.Stored? =
+        tracks.load(entryId, TrackSource.CLOUD) ?: tracks.load(entryId, TrackSource.LOCAL)
+
+    fun hasStoredTrack(entryId: String): Boolean =
+        tracks.has(entryId, TrackSource.CLOUD) || tracks.has(entryId, TrackSource.LOCAL)
 
     /** The clips from an earlier run, for the same reason. */
     fun storedClips(entryId: String): List<ClipCutter.Clip> = tracks.loadClips(entryId)
 
     private val skeletons = SkeletonStore(context.filesDir)
 
-    /** A skeleton from an earlier run, for the same reason as [storedTrack]. */
-    fun storedSkeleton(entryId: String): SkeletonStore.Stored? = skeletons.load(entryId)
+    /** The cloud's skeleton if there is one, else this phone's. See [storedTrack]. */
+    fun storedSkeleton(entryId: String): SkeletonStore.Stored? =
+        skeletons.load(entryId, TrackSource.CLOUD) ?: skeletons.load(entryId, TrackSource.LOCAL)
 
-    /** Header-only, for a screen deciding whether it has a second renderer to offer. */
-    fun hasStoredSkeleton(entryId: String): Boolean = skeletons.has(entryId)
+    fun hasStoredSkeleton(entryId: String): Boolean =
+        skeletons.has(entryId, TrackSource.CLOUD) || skeletons.has(entryId, TrackSource.LOCAL)
 
     /**
-     * The file the analysis actually decoded, if it is still there.
+     * Store what a cloud analysis produced for this entry.
      *
-     * A skeleton is indexed by the frames of THIS file. The entry's own URI may
-     * be a content grant that has since been revoked, and a copy made by
-     * another app may be re-encoded; neither shares the analysed frames. Null
-     * when the copy was never made or has been cleaned up, in which case the
-     * skeleton has no video to sit on and the panel says so.
+     * Writes into [TrackSource.CLOUD], which is what keeps `skeletonAction` -
+     * "a completed run is the new truth for its entry" - from being able to
+     * delete it on the next rally-only device run.
+     *
+     * The caller has already decoded and selected off the main thread; this is
+     * two file writes.
      */
-    fun analysedSource(entryId: String, videoUri: String): File? {
-        val direct = File(videoUri.removePrefix("file://"))
-        if (direct.isFile && direct.canRead()) return direct
-        return File(context.filesDir, "local-sources/$entryId.mp4").takeIf { it.isFile && it.length() > 0 }
+    fun saveCloudAnalysis(entryId: String, outcome: CloudPoseOutcome) {
+        tracks.saveAll(entryId, TrackSource.CLOUD, outcome.selections, outcome.fps)
+        skeletons.saveAll(
+            entryId = entryId,
+            source = TrackSource.CLOUD,
+            selections = outcome.selections,
+            fps = outcome.fps,
+            videoWidth = outcome.videoWidth,
+            videoHeight = outcome.videoHeight,
+            marks = outcome.marks,
+        )
+        log("cloud analysis stored for $entryId")
     }
+
+    /**
+     * The video the analysis actually decoded, as a URI the player can open, or
+     * null when it is genuinely not reachable any more.
+     *
+     * A skeleton is indexed by the frames of ONE file, so this is not "find any
+     * copy of the video". A copy made by another app may be re-encoded and
+     * would not share the analysed frames.
+     *
+     * Returns a URI rather than a File because the two pipelines leave
+     * different handles. A device run copies a gallery pick into `local-sources`
+     * and decodes that. A CLOUD run copies nothing - it streams the upload
+     * straight from the gallery grant - so its only handle is the entry's own
+     * `content://` URI, which is not a File at all. Resolving to a File
+     * therefore always failed for a cloud analysis, and the panel told the
+     * coach the video was "no longer on this phone" while it sat in their
+     * gallery. ExoPlayer opens either scheme.
+     */
+    fun analysedSource(entryId: String, videoUri: String): String? = analysedSourceUri(
+        entryUri = videoUri,
+        direct = File(videoUri.removePrefix("file://")).takeIf { it.isFile && it.canRead() },
+        copy = File(context.filesDir, "local-sources/$entryId.mp4")
+            .takeIf { it.isFile && it.length() > 0 },
+        contentReadable = canOpenContent(videoUri),
+    )
+
+    /**
+     * Whether the picker's grant on [videoUri] still opens.
+     *
+     * Asked rather than assumed: `VideoIntake` takes a persistable read
+     * permission, but the user can revoke it, and the gallery item itself can
+     * be deleted. Opening a descriptor is the only honest test, and it is one
+     * cheap call on a screen that is being opened, not per frame.
+     */
+    private fun canOpenContent(videoUri: String): Boolean = runCatching {
+        val uri = Uri.parse(videoUri)
+        if (uri.scheme != "content") return@runCatching false
+        context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { true } ?: false
+    }.getOrDefault(false)
 
     private val states = MutableStateFlow<Map<String, LocalAnalysisState>>(emptyMap())
     val state: StateFlow<Map<String, LocalAnalysisState>> = states
@@ -295,10 +395,15 @@ class LocalAnalysisRunner(
         val direct = File(videoUri.removePrefix("file://"))
         if (direct.isFile && direct.canRead()) return direct
         val out = File(context.filesDir, "local-sources/$entryId.mp4")
+        // Present means whole: copyAtomicallyFrom is the only thing that creates
+        // it. "Exists and is not empty" used to be the test, and a copy of a 2GB
+        // match killed partway passed it, so every later run analysed the first
+        // part of the match without complaint. The length is still checked for
+        // the one case that predates this: a build before it could leave an empty
+        // file behind, and that one at least is recognisable.
         if (out.isFile && out.length() > 0) return out
-        out.parentFile?.mkdirs()
         context.contentResolver.openInputStream(Uri.parse(videoUri))
-            ?.use { input -> out.outputStream().use { input.copyTo(it) } }
+            ?.use { out.copyAtomicallyFrom(it) }
             ?: error("Video file is missing or access was revoked")
         return out
     }

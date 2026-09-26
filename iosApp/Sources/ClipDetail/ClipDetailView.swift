@@ -46,7 +46,13 @@ struct ClipDetailView: View {
             ShuttlPlayer(
                 player: model.player,
                 prefs: rally.playbackPrefs,
-                step: { model.stepFrames($0) }
+                step: { model.stepFrames($0) },
+                // Tagging is the owner's, like the "+" beside the title: a viewer
+                // of a shared match gets no chips rather than chips that do nothing.
+                labels: model.isOwner ? model.labels : [],
+                onTag: model.isOwner ? { label, _ in Task { await model.add(label: label, body: "") } } : nil,
+                tagError: model.actionError,
+                allowsFullscreen: true
             )
             .padding(.top, 8)
             .padding(.bottom, 8)

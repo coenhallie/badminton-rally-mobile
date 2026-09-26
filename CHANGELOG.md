@@ -133,6 +133,14 @@ The mobile app is versioned independently from the web app.
   of the screen red, "Court mapping" and the status bar included.
 
 ### Changed
+- Undo on the scoring board now takes back the whole last rally, with its tags
+  and note, in one tap. Before, it took a tagged rally's tags off one at a time
+  first and the score did not move, so a wrongly given point looked impossible
+  to take back. The button is now easy to spot, with an outline and an undo
+  icon. The line at the top says which point went ("Point to Away undone") and
+  offers Redo for five seconds, in case Undo itself was the mis-tap. A note
+  written about an earlier rally is no longer lost when the rally after it is
+  undone.
 - The Android app is 2MB smaller. It shipped a fourth model, InpaintNet, whose
   stage neither phone runs; it is still exported and still exercised on a real
   device by the instrumented tests, from those tests' own assets rather than

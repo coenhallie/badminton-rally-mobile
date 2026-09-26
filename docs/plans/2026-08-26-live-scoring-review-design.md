@@ -341,6 +341,9 @@ thing that binds to video; and it is trivially unit-testable. Same shape as
 `buildMatchLabelSummary` - one pure shared function both platforms call, so
 Android and iOS cannot disagree about the score.
 
+(2026-09-25: undo now takes back the last *rally*, with its tags and note, rather
+than the last event. See `2026-09-25-undo-last-rally-design.md`.)
+
 Tests are the deliverable here as much as the code: serve rotation in doubles,
 setting at 20-20 through 29-29 to 30, change of ends at 11 in the third, the
 15-point presets, undo across a game boundary.
@@ -351,6 +354,10 @@ setting at 20-20 through 29-29 to 30, change of ends at 11 in the third, the
 
 This is §2 steps 1 to 3, and it is shippable on its own with no video anywhere
 near it.
+
+> **Superseded 2026-09-20** by `2026-09-20-new-match-form-simplification-design.md`:
+> the form now asks only for a prefilled name, points and sets. Singles or doubles,
+> player names and the coin toss (row 7 above) are gone from the model.
 
 **Create the match first.** Name, singles or doubles, player or pair names,
 scoring rules, date. A match now exists with no video, which is the inversion

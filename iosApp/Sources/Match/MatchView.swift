@@ -36,7 +36,7 @@ private struct ClipRoute: Identifiable, Hashable {
     let id: String
 }
 
-/// The two sheets this page can show, as one `.sheet(item:)` rather than two
+/// The sheets this page can show, as one `.sheet(item:)` rather than two
 /// stacked `.sheet(isPresented:)` modifiers - stacking two on the same view is a
 /// known SwiftUI footgun where presentation can silently fail for one of them.
 /// No associated data: the content closure reads `summary`/`effectiveVideoId`
@@ -45,6 +45,7 @@ private struct ClipRoute: Identifiable, Hashable {
 private enum MatchSheet: Identifiable, Hashable {
     case share
     case summary
+    case details
     var id: Self { self }
 }
 
@@ -89,7 +90,10 @@ struct MatchView: View {
     // and a soft-failing read is cheaper than threading a summary through the route.
     @State private var allClips: [RallyClip] = []
     @State private var sort: ClipSort = .rallyOrder
-    @State private var metadata: MatchMetadata? = nil
+    // The repository's cache, followed rather than fetched once: a rename made
+    // from this page's own editor lands there and must redraw the title and the
+    // details line without a re-entry.
+    @State private var metadataByVideoId: [String: MatchMetadata] = [:]
     @State private var summary: MatchLabelSummary? = nil
     @State private var isLoadingSummary = false
     // A superseded fetch must not write its result: the awaited Kotlin bridge does
@@ -153,19 +157,35 @@ struct MatchView: View {
         return .rallies
     }
 
-    // Reuses `MatchGrouping.matches` rather than re-deriving ownership from a clip
-    // lookup here: that function is what `ClipListView`'s own share button already
-    // trusts, and two independent answers to "is this mine" that can disagree is a
-    // defect regardless of which one happens to be right at a given moment.
-    private var isOwned: Bool {
-        guard let effectiveVideoId else { return false }
+    private var metadata: MatchMetadata? {
+        effectiveVideoId.flatMap { metadataByVideoId[$0] }
+    }
+
+    // This match's video, when it is the coach's own, as `MatchGrouping.matches`
+    // folds its clips: the clips' owner decides (every clip of a video has the
+    // same one), the same fact the Matches tab list's shared builder reads for
+    // its row's `isOwned` and so for its share button. `MatchGrouping` stays
+    // for this page's `MatchSummary`; the list no longer builds one.
+    private var ownedVideo: MatchSummary? {
+        guard let effectiveVideoId else { return nil }
         let (owned, _) = MatchGrouping.matches(
             from: allClips.map(ClipInfo.init),
             currentUserId: rally.auth.currentUserId(),
             sharerByVideoId: [:],
-            metadataByVideoId: [:]
+            metadataByVideoId: metadataByVideoId
         )
-        return owned.contains { $0.videoId == effectiveVideoId }
+        return owned.first { $0.videoId == effectiveVideoId }
+    }
+
+    private var isOwned: Bool { ownedVideo != nil }
+
+    // The score log's details when there is one, the video's own otherwise: a
+    // scored match that was later filmed keeps the log as its record.
+    private var detailsLine: String? {
+        MatchDetailsKt.matchDetailsLine(
+            playersLine: matchModel.log?.playersLine() ?? ownedVideo?.playersLine,
+            format: matchModel.log?.format ?? ownedVideo?.format
+        )
     }
 
     private var matchName: String? {
@@ -287,6 +307,30 @@ struct MatchView: View {
             clipRoute = ClipRoute(id: clipId)
         }) { sheet in
             switch sheet {
+            case .details:
+                if let log = matchModel.log {
+                    EditMatchDetailsSheet(
+                        initial: MatchDetailsDraft(log: log), titleCap: Int(ScoreLogKt.MAX_MATCH_TITLE)
+                    ) { draft in
+                        matchModel.updateDetails(
+                            title: draft.title, format: draft.format,
+                            homePlayers: draft.homePlayers, awayPlayers: draft.awayPlayers
+                        )
+                    }
+                } else if let video = ownedVideo {
+                    EditMatchDetailsSheet(
+                        initial: MatchDetailsDraft(video: video),
+                        titleCap: Int(VideoMatchDetailsKt.VIDEO_MATCH_TITLE_CAP)
+                    ) { draft in
+                        Task {
+                            await matchModel.updateVideoDetails(
+                                videoId: video.videoId, title: draft.title,
+                                description: draft.description ?? "", format: draft.format,
+                                homePlayers: draft.homePlayers, awayPlayers: draft.awayPlayers
+                            )
+                        }
+                    }
+                }
             case .share:
                 if let videoId = effectiveVideoId {
                     ShareSheetView(rally: rally, videoId: videoId)
@@ -402,14 +446,16 @@ struct MatchView: View {
         // Soft failure: no metadata just means the date headline, as before. Keyed
         // on the effective video id, not a bare `.task`: a score-only match that
         // acquires a video after this page opens must pick up its metadata without
-        // a re-entry, the same reason `effectiveVideoId` itself is derived.
+        // a re-entry, the same reason `effectiveVideoId` itself is derived. The
+        // rows land in the repository's cache, which the loop below follows.
         .task(id: effectiveVideoId) {
-            guard let effectiveVideoId else {
-                metadata = nil
-                return
+            guard effectiveVideoId != nil else { return }
+            _ = try? await SwiftInteropKt.listMatchMetadataOrNull(rally.videos)
+        }
+        .task {
+            for await map in rally.videos.observeMatchMetadata() {
+                metadataByVideoId = map
             }
-            let rows = try? await SwiftInteropKt.listMatchMetadataOrNull(rally.videos)
-            metadata = rows?.first { $0.videoId == effectiveVideoId }
         }
         // A Set, not the sorted array: changing the sort order reorders
         // `clipsForMatch` without changing which clips are in it, and that must
@@ -539,6 +585,7 @@ struct MatchView: View {
                     clips: clipsForMatch,
                     summary: summary,
                     matchTitle: matchName,
+                    details: detailsLine,
                     description: metadata?.description_,
                     onSummaryClick: { activeSheet = .summary }
                 )
@@ -592,11 +639,25 @@ struct MatchView: View {
         // glyph per action: with sort, share and "Add video" already in the bar,
         // three more discrete items would crowd it, and two of them would read as
         // near-identical icons under VoiceOver.
-        if let log = matchModel.log {
+        //
+        // A scored match, or a filmed one that is the coach's own: both have
+        // details to edit. A shared match has neither an editor nor an export, so
+        // it gets no menu at all.
+        if matchModel.log != nil || isOwned {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    ShareLink(item: ScoreTagSummaryKt.exportMatchText(log: log)) {
-                        Label("Export as text", systemImage: "doc.text")
+                    // First, because it is the one a coach comes here for: the
+                    // new match form asks for none of this, and a video is
+                    // uploaded with a name at most.
+                    Button {
+                        activeSheet = .details
+                    } label: {
+                        Label("Edit details", systemImage: "pencil")
+                    }
+                    if let log = matchModel.log {
+                        ShareLink(item: ScoreTagSummaryKt.exportMatchText(log: log)) {
+                            Label("Export as text", systemImage: "doc.text")
+                        }
                     }
                     // Offered whenever this match has a video and nothing is in
                     // flight for it - not only when the analysis disappointed. A
