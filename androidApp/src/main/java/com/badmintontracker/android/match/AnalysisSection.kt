@@ -94,7 +94,7 @@ fun AnalysisSection(
                 labels = panels.map { it.label },
                 selectedIndex = panels.indexOf(panel),
                 onSelect = { chosen = panels[it] },
-                modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 16.dp),
+                modifier = Modifier.padding(start = MatchPageGutter, end = MatchPageGutter, bottom = 16.dp),
                 // Secondary: this row is Analysis's own, under the page's
                 // section row, and must not read as its peer.
                 secondary = true,
@@ -107,7 +107,7 @@ fun AnalysisSection(
                 "HEATMAP",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
+                modifier = Modifier.padding(start = MatchPageGutter, end = MatchPageGutter, bottom = 12.dp),
             )
         }
         when (panel) {

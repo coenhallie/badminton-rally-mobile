@@ -383,14 +383,24 @@ fun MatchScreen(
                         labels = sections.map { it.label },
                         selectedIndex = sections.indexOf(section),
                         onSelect = { chosenSection = sections[it] },
-                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                        modifier = Modifier.padding(start = MatchPageGutter, end = MatchPageGutter, top = 8.dp),
                     )
                 }
             }
             // One call site for every section, in both layouts: the Match
             // section's player lives inside it, and moving the call would
             // rebuild the player on every trip into fullscreen and back.
-            Box(Modifier.weight(1f).fillMaxWidth()) {
+            // The gap between the section row (or the top bar, on a page with
+            // one section) and what the section draws first, the same for
+            // every section: each draws from its own top edge. Points and
+            // Rallies are lists of rows whose own padding already holds their
+            // first line of text off the edge, so they get the rest of it.
+            val gap = when {
+                fullscreen -> 0.dp
+                section == MatchPageSection.POINTS || section == MatchPageSection.RALLIES -> MatchSectionGap - MatchRowInset
+                else -> MatchSectionGap
+            }
+            Box(Modifier.weight(1f).fillMaxWidth().padding(top = gap)) {
                 SectionBody(
                     section = section,
                     refreshable = videoId != null,
@@ -528,6 +538,28 @@ fun MatchScreen(
 }
 
 /**
+ * The match page's one side margin, for every section: the section row, the
+ * video card, the panels, the points and the rally rows all start 24dp in.
+ * Points and the cloud rallies had kept the 16dp of the screens they came
+ * from, and switching Points to Match moved the page's left edge by 8dp.
+ */
+internal val MatchPageGutter = 24.dp
+
+/**
+ * The gap between the section row and the section under it; see MatchScreen.
+ * 16dp is what the Analysis section already had between the two pill rows.
+ */
+internal val MatchSectionGap = 16.dp
+
+/**
+ * The top padding the first row of a list section carries (a rally row's
+ * 14dp, and the Points header's, which takes the same), counted into
+ * [MatchSectionGap] so a list's first line lands where the video card and
+ * the panel row do.
+ */
+internal val MatchRowInset = 14.dp
+
+/**
  * The confirm for both video gestures. What it says is built in shared
  * ([matchVideoPrompt]) rather than here, for the same reason [AttachStatus]'s
  * text is: two platforms writing the same sentence are two chances to write it
@@ -591,7 +623,7 @@ private fun AttachStatusBanner(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = MatchPageGutter, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(

@@ -40,6 +40,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.badmintontracker.android.home.MatchesEmptyState
 import com.badmintontracker.android.localvideo.MatchDetailsSheet
+import com.badmintontracker.android.match.MatchPageGutter
 import com.badmintontracker.android.share.ShareSheet
 import com.badmintontracker.android.ui.components.ConfirmDialog
 import com.badmintontracker.shared.localvideo.AnalyzeStage
@@ -485,7 +486,8 @@ internal fun ClipRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            // The match page's gutter: its Rallies section is where this row lives.
+            .padding(horizontal = MatchPageGutter, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AsyncImage(

@@ -70,7 +70,7 @@ fun LazyListScope.ralliesFacet(
     // gets one divider under them rather than a ruled row each.
     if (details != null || description != null) {
         item(key = "match-details") {
-            Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Column(Modifier.padding(horizontal = MatchPageGutter, vertical = 12.dp)) {
                 details?.let { d ->
                     Text(
                         text = d,
