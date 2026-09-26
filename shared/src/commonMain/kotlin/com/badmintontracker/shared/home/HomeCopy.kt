@@ -29,5 +29,10 @@ object HomeCopy {
     const val SETTINGS_SIGNED_IN_AS = "Signed in as"
     const val SETTINGS_SIGN_OUT = "Sign out"
 
-    fun version(name: String, code: Int): String = "Version $name ($code)"
+    /**
+     * [code] is a string on purpose: iOS's build number (CFBundleVersion) is
+     * one, and need not be an integer ("1.2.3" is valid). Parsing it here, or
+     * on iOS before the call, printed "(0)" for any build it could not parse.
+     */
+    fun version(name: String, code: String): String = "Version $name ($code)"
 }

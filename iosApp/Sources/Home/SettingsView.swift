@@ -8,7 +8,16 @@ struct SettingsView: View {
     let rally: RallyApp
     let onLabels: () -> Void
 
-    @State private var themeMode: ThemeMode = .light
+    @State private var themeMode: ThemeMode
+
+    init(rally: RallyApp, onLabels: @escaping () -> Void) {
+        self.rally = rally
+        self.onLabels = onLabels
+        // Seeded from the stored preference, not a fixed .light: the `.task`
+        // below only delivers it after the first frame, so a coach in dark
+        // theme saw the switch start off and flip on.
+        _themeMode = State(initialValue: rally.themePrefs.mode.value)
+    }
 
     var body: some View {
         VStack(spacing: 0) {

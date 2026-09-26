@@ -109,7 +109,7 @@ fun SettingsTab(
                 }
             }
             Text(
-                HomeCopy.version(BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE),
+                HomeCopy.version(BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE.toString()),
                 style = MaterialTheme.typography.bodySmall,
                 color = ShuttlTheme.extended.textTertiary,
                 textAlign = TextAlign.Center,

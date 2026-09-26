@@ -9,5 +9,6 @@ import Shared
 func versionLabel() -> String {
     let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
     let b = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
-    return HomeCopy.shared.version(name: v, code: Int32(b) ?? 0)
+    // Passed as it is: CFBundleVersion is a string and need not be an integer.
+    return HomeCopy.shared.version(name: v, code: b)
 }
