@@ -60,7 +60,7 @@ private const val ANNOTATION_STORAGE_NOTE =
 
 /**
  * The Match section: the full recording on this phone, with its timestamped
- * notes and the label chips, as LocalPlayerScreen showed it.
+ * notes and the label chips.
  *
  * Fullscreen is hoisted because, in fullscreen, the page drops its own bar,
  * status banner and section row and this section fills the screen: only the
@@ -97,8 +97,7 @@ fun MatchVideoSection(
     // playback error through it. Fullscreen draws the video, the transport
     // bar and FullscreenLabels' tag row over a black background; the
     // LaunchedEffect below withholds the message while fullscreen and
-    // re-checks it once fullscreen exits, unchanged from LocalPlayerScreen's
-    // own behavior before this moved here.
+    // re-checks it once fullscreen exits.
     val tagMessage = rememberQuickTagMessage()
 
     LaunchedEffect(labelErrorMessage, fullscreen) {

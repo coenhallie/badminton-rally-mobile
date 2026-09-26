@@ -80,12 +80,11 @@ internal fun heatmapSource(
 /**
  * One entry's court heatmap, or an honest line saying why there is none.
  *
- * Two screens show this: the standalone heatmap route a row's "Player heatmap"
- * menu item opens, and the Analytics detail's Heatmap tab. They resolve the
- * same track from the same two places, so the resolution lives here once. Two
- * copies is how the menu item's path rots while the newer one still looks fine,
- * and the menu item's path is how a coach returns to a run that cost half an
- * hour.
+ * AnalysisSection's Heatmap tab draws this. Which track it draws is
+ * [heatmapSource]'s, which BasePositionPanel calls too: one resolution for the
+ * two panels on the same court, since a second copy is how one of them rots
+ * while the other still looks fine, and this is how a coach returns to a run
+ * that cost half an hour.
  */
 @Composable
 fun HeatmapPanel(

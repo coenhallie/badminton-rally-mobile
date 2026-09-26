@@ -8,16 +8,12 @@ sealed interface Route {
     @Serializable data object Labels : Route
 
     /**
-     * What one analysed match has to show, reached from a READY row on the
-     * Analytics tab. Keyed by entry for the same reason [Heatmap] is.
+     * What one analysed match has to show, reached only from a READY row on the
+     * Analytics tab now: every other way in is the match page's Analysis
+     * section. It goes when that tab does.
      *
-     * Separate from [Heatmap] rather than replacing it. The two are near
-     * identical today - same content, different title - and the reason to keep
-     * both is not what they show but who reaches them: a READY row's tap opens
-     * this one, while [Heatmap] is what that same row's "Player heatmap" menu
-     * item opens, and a pose run costs half an hour either way. Folding one
-     * into the other to tidy up is exactly how that path breaks unnoticed.
-     * Both draw with the same HeatmapPanel, so there is nothing to drift.
+     * Keyed by entry rather than carrying the track: a track is thousands of
+     * points and navigation arguments are serialized into the back stack.
      */
     @Serializable data class AnalyticsDetail(
         val entryId: String,
@@ -41,36 +37,32 @@ sealed interface Route {
     ) : Route
 
     /**
-     * One match, however it was made. At least one of the two ids is non-null: a
-     * video-first or shared match has only a video, a scored match has a score log
-     * and gains a video later.
+     * One match, however it was made. At least one of the three ids is
+     * non-null: a video-first or shared match has a video, a scored match has a
+     * score log and may gain a video later, and a video only on this phone has
+     * neither, so [entryId] is how that one is opened. The page finds its row in
+     * the match list by whichever id the list still has (matchPageItem).
      *
      * [attach] carries the intent chosen on the board's "add the video?" prompt
      * ("Import" or "Record"), null otherwise. It is read once by the match page and
      * not part of route identity beyond that: because it can differ between two
      * Route.Match values for the same match, nothing may pop or popUpTo a
      * Route.Match by reconstructing one - only the instance already on the stack.
+     *
+     * [section] is a MatchPageSection name to open on (a finished run's View),
+     * null for the page's default. Read once when the page opens, like [attach],
+     * and under the same rule about reconstructing a Route.Match.
      */
     @Serializable data class Match(
         val scoreLogId: String? = null,
         val videoId: String? = null,
+        val entryId: String? = null,
         val attach: String? = null,
+        val section: String? = null,
     ) : Route
 
     @Serializable data class  ClipDetail(val clipId: String)  : Route
-    @Serializable data class  LocalPlayer(val entryId: String)  : Route
     @Serializable data class  CourtMarking(val entryId: String) : Route
-
-    /**
-     * The court heatmap for one on-device run.
-     *
-     * Keyed by entry rather than carrying the track: a track is thousands of
-     * points and navigation arguments are serialized into the back stack.
-     */
-    @Serializable data class  Heatmap(val entryId: String) : Route
-
-    /** Clips a device run cut, which never leave the phone. */
-    @Serializable data class  LocalClips(val entryId: String) : Route
     @Serializable data object NewMatch : Route
     @Serializable data class  Scoring(val scoreLogId: String)    : Route
 }

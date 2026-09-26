@@ -40,7 +40,6 @@ import androidx.navigation.toRoute
 import com.badmintontracker.android.clipdetail.ClipDetailScreen
 import com.badmintontracker.android.clipdetail.ClipDetailViewModel
 import com.badmintontracker.android.analytics.AnalyticsDetailScreen
-import com.badmintontracker.android.analytics.VideoTitle
 import com.badmintontracker.android.analytics.AnalyticsTab
 import com.badmintontracker.android.analytics.buildAnalyticsRows
 import com.badmintontracker.android.cliplist.ClipListViewModel
@@ -53,7 +52,6 @@ import com.badmintontracker.shared.home.isHomeFront
 import com.badmintontracker.android.match.MatchScreen
 import com.badmintontracker.android.match.MatchViewModel
 import com.badmintontracker.shared.prefs.ThemePreferenceRepository
-import com.badmintontracker.android.localvideo.LocalPlayerScreen
 import com.badmintontracker.android.localvideo.LocalPlayerViewModel
 import com.badmintontracker.android.localvideo.LocalVideoListViewModel
 import com.badmintontracker.android.localvideo.MatchTarget
@@ -77,7 +75,6 @@ import com.badmintontracker.android.signin.SignInScreen
 import com.badmintontracker.android.signin.SignInViewModel
 import com.badmintontracker.shared.localvideo.announceFinishedRuns
 import com.badmintontracker.shared.localvideo.AnalyzeCoordinator
-import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.canResumeFailedAnalysis
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
@@ -85,17 +82,12 @@ import com.badmintontracker.shared.RallyApp
 import com.badmintontracker.shared.repo.AuthState
 import com.badmintontracker.shared.scoring.ScoreLogStatus
 import com.badmintontracker.android.localanalysis.LocalAnalysisState
-import com.badmintontracker.android.localanalysis.isDeviceRunInFlight
-import com.badmintontracker.android.localanalysis.HeatmapPanel
-import com.badmintontracker.android.localanalysis.BackgroundWorkAction
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.Icons
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.Scaffold
-import androidx.compose.foundation.layout.padding
+import com.badmintontracker.android.match.AnalysisSection
 import com.badmintontracker.android.match.DeviceRalliesSection
+import com.badmintontracker.android.match.MatchVideoSection
+import com.badmintontracker.shared.matchlist.MatchListItem
+import com.badmintontracker.shared.matchpage.MatchPageSection
+import com.badmintontracker.shared.matchpage.matchPageItem
 
 @Composable
 fun AuthGate(
@@ -196,10 +188,66 @@ fun AuthGate(
                 onError = { intakeError = it },
             )
 
-            // One reader for every screen that builds a ClipListViewModel: the
-            // Matches tab, the Analytics tab and the match page all show what
-            // earlier runs left on disk, and must probe it the same way.
+            // One reader for the one ClipListViewModel below, which the Matches
+            // tab, the Analytics tab and the match page all read: each shows
+            // what earlier runs left on disk, and must probe it the same way.
             val storedResults = remember(localAnalysis) { storedResultsReader(localAnalysis) }
+
+            // One factory for the one list view model. The match page reads the
+            // Route.Home entry's instance rather than building its own: it finds
+            // its match in that list (matchPageItem), and a second instance
+            // would be a second, later copy of the same list.
+            val clipListVmFactory = remember(storedResults) {
+                viewModelFactory {
+                    initializer {
+                        ClipListViewModel(
+                            rally.clips, rally.auth, rally.shares, rally.videos, rally.scoreLogs,
+                            localVideos, coordinator, localAnnotations,
+                            deviceStates = localAnalysis.state,
+                            storedResults = storedResults,
+                        )
+                    }
+                }
+            }
+
+            // Resume a failed cloud run whose court points are saved, else mark
+            // the court. The one decision behind every Analyze and Retry: the
+            // list's rows, the Analytics tab's Analyze, the match page's button
+            // under the player, and its "Analyze again". The same guard
+            // MatchScreen's onRetry keeps its own copy of, keyed by score log
+            // rather than by entry: a cloud run that failed at TRIGGER already
+            // has this video's four court corners saved, and sending the coach
+            // back to mark them again both wastes the marking and means the
+            // coordinator's resume-from-the-failed-step is never reached.
+            //
+            // It reads correctly for a device failure too, and not by
+            // accident: a device run never moves entry.stage, so a row
+            // showing "Retry" because LocalAnalysisState is Failed falls
+            // through to court marking, which is where a device re-run
+            // has to start (LocalAnalysisRunner.start takes keypoints
+            // from the screen, not from the entry).
+            val analyzeEntry: (String) -> Unit = remember(nav) {
+                { entryId ->
+                    localVideos.get(entryId)?.let { entry ->
+                        if (canResumeFailedAnalysis(entry)) coordinator.retry(entry.id)
+                        else nav.navigate(Route.CourtMarking(entry.id))
+                    }
+                }
+            }
+
+            // Every way into a match: a row's tap, and (Task 4) a finished
+            // run's View. All three ids ride along; the page finds its row by
+            // whichever the list still has.
+            val openMatch: (MatchListItem, MatchPageSection?) -> Unit = remember(nav) {
+                { item, section ->
+                    nav.navigate(
+                        Route.Match(
+                            scoreLogId = item.scoreLogId, videoId = item.videoId,
+                            entryId = item.entryId, section = section?.name,
+                        )
+                    )
+                }
+            }
 
             val work by backgroundWork.work.collectAsStateWithLifecycle()
 
@@ -332,45 +380,12 @@ fun AuthGate(
                     )
                 }
                 composable<Route.Home> {
-                    val clipListVm: ClipListViewModel = viewModel(
-                        factory = viewModelFactory {
-                            initializer {
-                                ClipListViewModel(
-                                    rally.clips, rally.auth, rally.shares, rally.videos, rally.scoreLogs,
-                                    localVideos, coordinator, localAnnotations,
-                                    deviceStates = localAnalysis.state,
-                                    storedResults = storedResults,
-                                )
-                            }
-                        }
-                    )
+                    val clipListVm: ClipListViewModel = viewModel(factory = clipListVmFactory)
                     val localVm: LocalVideoListViewModel = viewModel(
                         factory = viewModelFactory {
                             initializer { LocalVideoListViewModel(localVideos, coordinator, localAnnotations) }
                         }
                     )
-                    // Both the list's Analyze and the Analytics tab's Analyze go
-                    // through this one decision: resume a failed cloud run whose
-                    // court points are saved, otherwise mark the court. The same
-                    // guard MatchScreen's onRetry keeps its own copy of, keyed by
-                    // score log rather than by entry: a cloud run that failed at
-                    // TRIGGER already has this video's four court corners saved,
-                    // and sending the coach back to mark them again both wastes
-                    // the marking and means the coordinator's
-                    // resume-from-the-failed-step is never reached.
-                    //
-                    // It reads correctly for a device failure too, and not by
-                    // accident: a device run never moves entry.stage, so a row
-                    // showing "Retry" because LocalAnalysisState is Failed falls
-                    // through to court marking, which is where a device re-run
-                    // has to start (LocalAnalysisRunner.start takes keypoints
-                    // from the screen, not from the entry).
-                    fun analyze(entryId: String) {
-                        localVideos.get(entryId)?.let { entry ->
-                            if (canResumeFailedAnalysis(entry)) localVm.retry(entry.id)
-                            else nav.navigate(Route.CourtMarking(entry.id))
-                        }
-                    }
                     HomeScreen(
                         selectedTab = homeTab,
                         onSelectTab = { homeTab = it },
@@ -394,20 +409,16 @@ fun AuthGate(
                                     progressByEntryId = cloudProgress,
                                 ),
                                 onOpenDetail = { row -> row.entryId?.let { nav.navigate(Route.AnalyticsDetail(it, row.title)) } },
-                                onAnalyse = { row -> row.entryId?.let(::analyze) },
+                                onAnalyse = { row -> row.entryId?.let(analyzeEntry) },
                                 contentPadding = bottom,
                             )
                         },
-                        onMatchClick = { nav.navigate(Route.Match(videoId = it)) },
-                        onScoreMatchClick = { nav.navigate(Route.Match(scoreLogId = it)) },
+                        onOpenMatch = { openMatch(it, null) },
                         onNewMatch = { nav.navigate(Route.NewMatch) },
                         onRecord = { intake.record(null) },
                         onImport = { intake.import(null) },
                         onLabels = { nav.navigate(Route.Labels) },
-                        onOpenHeatmap = { nav.navigate(Route.Heatmap(it)) },
-                        onOpenLocalClips = { nav.navigate(Route.LocalClips(it)) },
-                        onLocalClick = { nav.navigate(Route.LocalPlayer(it)) },
-                        onAnalyze = ::analyze,
+                        onAnalyze = analyzeEntry,
                         // By the row's own entry id: see ClipListScreen.act.
                         onMarkCourt = { entryId -> nav.navigate(Route.CourtMarking(entryId)) },
                         onRemoveFromPhone = localVm::remove,
@@ -474,23 +485,20 @@ fun AuthGate(
                 }
                 composable<Route.Match> { entry ->
                     val args = entry.toRoute<Route.Match>()
-                    val clipListVm: ClipListViewModel = viewModel(
-                        factory = viewModelFactory {
-                            initializer {
-                                ClipListViewModel(
-                                    rally.clips, rally.auth, rally.shares, rally.videos, rally.scoreLogs,
-                                    localVideos, coordinator, localAnnotations,
-                                    deviceStates = localAnalysis.state,
-                                    storedResults = storedResults,
-                                )
-                            }
-                        }
-                    )
+                    // Route.Home is always under a match page (the start
+                    // destination, and every push is over it), so its entry is
+                    // there to scope the shared list view model to.
+                    val homeEntry = remember(entry) { nav.getBackStackEntry<Route.Home>() }
+                    val clipListVm: ClipListViewModel = viewModel(homeEntry, factory = clipListVmFactory)
+                    val listState by clipListVm.state.collectAsStateWithLifecycle()
                     val logs by rally.scoreLogs.logs.collectAsStateWithLifecycle()
-                    // The score log is authoritative: a match bound after this page
-                    // was opened must start showing its rallies without a re-entry.
-                    val effectiveVideoId = args.videoId
-                        ?: logs.firstOrNull { it.id == args.scoreLogId }?.videoId
+                    val logVideoId = logs.firstOrNull { it.id == args.scoreLogId }?.videoId
+                    val item = listState.matchList.matchPageItem(args.scoreLogId, args.videoId ?: logVideoId, args.entryId)
+                    // The row's video first: a video only on this phone gains
+                    // one when a cloud run creates it, and the page must start
+                    // showing its rallies without a re-entry. Then the route's,
+                    // then the score log's, for a match bound after it opened.
+                    val effectiveVideoId = item?.videoId ?: args.videoId ?: logVideoId
                     val summaryVm: MatchSummaryViewModel? = effectiveVideoId?.let { vid ->
                         viewModel(
                             key = vid,
@@ -510,15 +518,24 @@ fun AuthGate(
                             }
                         }
                     )
+                    // rally_clips, for the Analysis section's rally windows: the
+                    // rally truth for a cloud-analysed video, and the only source
+                    // of rally bounds on a phone that cut no clips itself.
+                    // Remembered: observeClips returns a new wrapper per call,
+                    // and this destination recomposes whenever the list does,
+                    // so an unremembered flow restarted its collector each time.
+                    val cloudClipsFlow = remember(rally) { rally.clips.observeClips() }
+                    val cloudClips by cloudClipsFlow.collectAsStateWithLifecycle(emptyList())
                     MatchScreen(
                         vm = clipListVm,
                         matchVm = matchVm,
                         summaryVm = summaryVm,
                         media = rally.media,
                         shares = rally.shares,
-                        themePrefs = themePrefs,
                         scoreLogId = args.scoreLogId,
                         videoId = effectiveVideoId,
+                        entryId = args.entryId,
+                        initialSection = MatchPageSection.entries.firstOrNull { it.name == args.section },
                         attach = args.attach,
                         onBack = { nav.popBackStack() },
                         onClipClick = { nav.navigate(Route.ClipDetail(it.id)) },
@@ -557,6 +574,29 @@ fun AuthGate(
                                     }
                                 }
                         },
+                        onAnalyzeEntry = analyzeEntry,
+                        matchSection = { e, fullscreen, onFullscreenChange, snackbar, analyzeLabel ->
+                            val playerVm: LocalPlayerViewModel = viewModel(
+                                key = "player-${e.id}",
+                                factory = viewModelFactory {
+                                    initializer { LocalPlayerViewModel(e.id, localAnnotations, rally.labels) }
+                                },
+                            )
+                            MatchVideoSection(
+                                vm = playerVm, entry = e, playbackPrefs = rally.playbackPrefs,
+                                fullscreen = fullscreen, onFullscreenChange = onFullscreenChange,
+                                snackbar = snackbar, analyzeLabel = analyzeLabel,
+                                onAnalyze = { analyzeEntry(e.id) },
+                            )
+                        },
+                        analysisSection = { id ->
+                            AnalysisSection(
+                                analysisId = id, localAnalysis = localAnalysis, localVideos = localVideos,
+                                playbackPrefs = rally.playbackPrefs, racketArmPrefs = rally.racketArmPrefs,
+                                cloudClips = cloudClips,
+                            )
+                        },
+                        deviceRalliesSection = { id -> DeviceRalliesSection(entryId = id, localAnalysis = localAnalysis) },
                     )
                 }
                 composable<Route.ClipDetail> { entry ->
@@ -576,103 +616,6 @@ fun AuthGate(
                         onBack = { nav.popBackStack() },
                     )
                 }
-                composable<Route.LocalPlayer> { entry ->
-                    val args = entry.toRoute<Route.LocalPlayer>()
-                    val entries by localVideos.entries.collectAsStateWithLifecycle()
-                    val e = entries.firstOrNull { it.id == args.entryId }
-                    if (e == null) {
-                        LaunchedEffect(Unit) { nav.popBackStack() }
-                    } else {
-                        val playerVm: LocalPlayerViewModel = viewModel(
-                            factory = viewModelFactory {
-                                initializer { LocalPlayerViewModel(args.entryId, localAnnotations, rally.labels) }
-                            }
-                        )
-                        // The stage rules out a cloud run in flight, but a device run
-                        // never moves the stage, so it has to be asked separately or
-                        // this button sits there live over the run it already started.
-                        val deviceState by localAnalysis.state.collectAsStateWithLifecycle()
-                        LocalPlayerScreen(
-                            vm = playerVm,
-                            entry = e,
-                            canAnalyze = (e.stage == AnalyzeStage.LOCAL || e.stage == AnalyzeStage.FAILED) &&
-                                !isDeviceRunInFlight(deviceState[e.id] ?: LocalAnalysisState.Idle),
-                            playbackPrefs = rally.playbackPrefs,
-                            // The same rule as every other Analyze affordance. Without it
-                            // the "Re-analyze" label here lies: it promises the resume that
-                            // analyzeButtonLabel documents, and delivers court marking.
-                            onAnalyze = {
-                                if (canResumeFailedAnalysis(e)) {
-                                    coordinator.retry(e.id)
-                                } else {
-                                    nav.navigate(Route.CourtMarking(e.id))
-                                }
-                            },
-                            onBack = { nav.popBackStack() },
-                        )
-                    }
-                }
-                @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-                composable<Route.LocalClips> { entry ->
-                    val args = entry.toRoute<Route.LocalClips>()
-                    Scaffold(
-                        topBar = {
-                            TopAppBar(
-                                title = { Text("Clips on this phone") },
-                                navigationIcon = {
-                                    IconButton(onClick = { nav.popBackStack() }) {
-                                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                                    }
-                                },
-                                actions = { BackgroundWorkAction() },
-                            )
-                        },
-                    ) { padding ->
-                        DeviceRalliesSection(
-                            entryId = args.entryId,
-                            localAnalysis = localAnalysis,
-                            modifier = Modifier.padding(padding),
-                        )
-                    }
-                }
-
-                // The heatmap on its own, which is what a row's "Player heatmap"
-                // menu item opens. Kept alongside Route.AnalyticsDetail rather
-                // than folded into it: the two are reached from two different
-                // taps on the same row (this one from the menu item,
-                // AnalyticsDetail from a READY row's own tap), and folding one
-                // into the other to tidy up is exactly how that path breaks
-                // unnoticed. Both render HeatmapPanel, so there is one
-                // resolution to keep right rather than two.
-                @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-                composable<Route.Heatmap> { entry ->
-                    val args = entry.toRoute<Route.Heatmap>()
-                    Scaffold(
-                        topBar = {
-                            TopAppBar(
-                                title = {
-                                    // The same two lines the Analytics detail heads
-                                    // itself with, so the two routes to one heatmap
-                                    // do not read as two screens.
-                                    VideoTitle(entry = localVideos.get(args.entryId), fallback = "Player heatmap")
-                                },
-                                navigationIcon = {
-                                    IconButton(onClick = { nav.popBackStack() }) {
-                                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                                    }
-                                },
-                                actions = { BackgroundWorkAction() },
-                            )
-                        },
-                    ) { padding ->
-                        HeatmapPanel(
-                            entryId = args.entryId,
-                            runner = localAnalysis,
-                            modifier = Modifier.padding(padding),
-                        )
-                    }
-                }
-
                 composable<Route.AnalyticsDetail> { entry ->
                     val args = entry.toRoute<Route.AnalyticsDetail>()
                     // rally_clips, which is the rally truth for a cloud-analysed
@@ -724,14 +667,15 @@ fun AuthGate(
                             }
                             // A single pop, not popBackStack(Route.X, ...): typed-route
                             // popping matches on the serialized route, and the Match
-                            // instance on the stack carries an `attach` argument this
-                            // one would not. Naming a destination is also wrong because
-                            // CourtMarking has callers besides Route.Home: LocalPlayer's
-                            // own Analyze/Re-analyze and the Match page's onMarkCourt and
-                            // onRetry all push it directly too, and popping to a named
-                            // Route.Home would skip past whichever of those the coach
-                            // actually came from. Returning to the caller is the same
-                            // answer for every entry point, so there is one branch fewer.
+                            // instance on the stack carries `attach` and `section`
+                            // arguments this one would not. Naming a destination is also
+                            // wrong because CourtMarking has callers besides Route.Home:
+                            // the Match page's Analyze under the player, its "Analyze
+                            // again", onMarkCourt and onRetry all push it directly too,
+                            // and popping to a named Route.Home would skip past
+                            // whichever of those the coach actually came from.
+                            // Returning to the caller is the same answer for every
+                            // entry point, so there is one branch fewer.
                             //
                             // Safe against a second run being started from the screen
                             // the coach lands back on. Both pipelines refuse re-entry at

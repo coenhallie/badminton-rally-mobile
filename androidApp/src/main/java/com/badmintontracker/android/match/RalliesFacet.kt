@@ -31,12 +31,12 @@ fun sortClips(clips: List<RallyClip>, sort: ClipSort): List<RallyClip> = when (s
 /**
  * The rally half of a match: the label summary strip, who played, the match
  * description and one row per clip. A `LazyListScope` extension rather than a
- * screen, because the match page renders it inside the same list as the points
- * facet and one scroll container per page is the whole point of merging the two
- * screens.
+ * screen, because the match page's Rallies section renders it inside a list the
+ * page owns, under the section's own sort row: one scroll container for the
+ * section, not one nested in another.
  *
  * @param details "Coen vs Marco · Doubles" from [matchDetailsLine], or null. The
- *   points facet has its own legend for this; here it is what a match that was
+ *   Points section has its own legend for this; here it is what a match that was
  *   only ever filmed has to say about itself once its details are filled in.
  */
 fun LazyListScope.ralliesFacet(

@@ -67,7 +67,8 @@ import kotlinx.datetime.toLocalDateTime
  *
  * Every row comes from the shared builder ([ClipListState.matchList]); this
  * screen only draws them and turns their taps, menus and swipes into the
- * callbacks below. Navigation takes ids, which is all the routes take.
+ * callbacks below. A tap hands the whole row up: the match page is found by
+ * whichever of its ids the list still has, so the caller needs them all.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -75,17 +76,12 @@ fun ClipListScreen(
     vm: ClipListViewModel,
     shares: SharesRepository,
     media: MediaRepository,
-    onMatchClick: (videoId: String) -> Unit,
-    onScoreMatchClick: (scoreLogId: String) -> Unit,
-    /** A file on this phone with nothing else to it: the local player. */
-    onLocalClick: (entryId: String) -> Unit = {},
+    /** Every row opens its match page, whatever the match has: see matchPageSections. */
+    onOpenMatch: (MatchListItem) -> Unit,
     /** Analyze, or analyze again: court marking, or a resume when the run can resume. */
     onAnalyze: (entryId: String) -> Unit = {},
     /** Court marking for this entry: a scored match's video that has not been marked yet. */
     onMarkCourt: (entryId: String) -> Unit = {},
-    /** Opens a stored player heatmap, by the id its track is keyed by. */
-    onOpenHeatmap: (heatmapId: String) -> Unit = {},
-    onOpenLocalClips: (entryId: String) -> Unit = {},
     /** Frees the file and keeps the tracks: see LocalVideoListViewModel.remove. */
     onRemoveFromPhone: (entryId: String) -> Unit = {},
     onLocalResultSeen: (entryId: String) -> Unit = {},
@@ -187,17 +183,6 @@ fun ClipListScreen(
         choiceTarget != null || deleteTarget != null || removeTarget != null || resultEntry != null
     LaunchedEffect(overlayOpen) { onOverlayChange(overlayOpen) }
 
-    fun open(item: MatchListItem) {
-        val entryId = item.entryId
-        val scoreLogId = item.scoreLogId
-        val videoId = item.videoId
-        when {
-            item.opensLocalPlayer && entryId != null -> onLocalClick(entryId)
-            scoreLogId != null -> onScoreMatchClick(scoreLogId)
-            videoId != null -> onMatchClick(videoId)
-        }
-    }
-
     fun act(item: MatchListItem) {
         val entryId = item.entryId
         when (item.action) {
@@ -227,10 +212,6 @@ fun ClipListScreen(
         val entryId = item.entryId
         val videoId = item.videoId
         if (item.canShare && videoId != null) add(RowMenuItem(MatchListCopy.MENU_SHARE) { sheetVideoId = videoId })
-        if (item.deviceClipCount > 0 && entryId != null) {
-            add(RowMenuItem(MatchListCopy.menuDeviceClips(item.deviceClipCount)) { onOpenLocalClips(entryId) })
-        }
-        item.heatmapId?.let { id -> add(RowMenuItem(MatchListCopy.MENU_HEATMAP) { onOpenHeatmap(id) }) }
         if (item.canEditDetails) {
             state.localEntries.firstOrNull { it.id == entryId }?.let { entry ->
                 add(RowMenuItem(MatchListCopy.MENU_EDIT_DETAILS) { detailsTarget = DetailsTarget(entry, autoOpened = false) })
@@ -253,7 +234,7 @@ fun ClipListScreen(
             MatchListRow(
                 item = item,
                 media = media,
-                onClick = { open(item) },
+                onClick = { onOpenMatch(item) },
                 onAction = { act(item) },
                 menu = menuFor(item),
                 swipeLabel = swipe?.label,

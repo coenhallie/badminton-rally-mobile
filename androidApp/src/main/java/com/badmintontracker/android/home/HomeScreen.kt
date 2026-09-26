@@ -28,6 +28,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.badmintontracker.android.cliplist.ClipListScreen
 import com.badmintontracker.android.cliplist.ClipListViewModel
 import com.badmintontracker.shared.home.HomeTab
+import com.badmintontracker.shared.matchlist.MatchListItem
 import com.badmintontracker.shared.prefs.ThemePreferenceRepository
 import com.badmintontracker.shared.repo.MediaRepository
 import com.badmintontracker.shared.repo.SharesRepository
@@ -61,15 +62,12 @@ fun HomeScreen(
      * whole tab host, on Matches and Settings too.
      */
     analyticsContent: @Composable (PaddingValues) -> Unit,
-    onMatchClick: (videoId: String) -> Unit,
-    onScoreMatchClick: (scoreLogId: String) -> Unit,
+    /** A row's tap: its match page. */
+    onOpenMatch: (MatchListItem) -> Unit,
     onNewMatch: () -> Unit,
     onRecord: () -> Unit,
     onImport: () -> Unit,
     onLabels: () -> Unit,
-    onOpenHeatmap: (heatmapId: String) -> Unit,
-    onOpenLocalClips: (entryId: String) -> Unit,
-    onLocalClick: (entryId: String) -> Unit,
     onAnalyze: (entryId: String) -> Unit,
     onMarkCourt: (entryId: String) -> Unit,
     onRemoveFromPhone: (entryId: String) -> Unit,
@@ -161,13 +159,9 @@ fun HomeScreen(
                     HomeTab.MATCHES -> MatchesTab {
                         ClipListScreen(
                             vm = vm, shares = shares, media = media,
-                            onMatchClick = onMatchClick,
-                            onScoreMatchClick = onScoreMatchClick,
-                            onLocalClick = onLocalClick,
+                            onOpenMatch = onOpenMatch,
                             onAnalyze = onAnalyze,
                             onMarkCourt = onMarkCourt,
-                            onOpenHeatmap = onOpenHeatmap,
-                            onOpenLocalClips = onOpenLocalClips,
                             onRemoveFromPhone = onRemoveFromPhone,
                             onLocalResultSeen = onLocalResultSeen,
                             onLocalDetailsSaved = onLocalDetailsSaved,

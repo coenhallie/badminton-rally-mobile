@@ -1,7 +1,9 @@
 package com.badmintontracker.android.match
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,12 +14,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -42,6 +44,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -59,12 +63,20 @@ import com.badmintontracker.android.scoring.detailsDraft
 import com.badmintontracker.android.share.ShareSheet
 import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlPillTabs
+import com.badmintontracker.android.ui.icons.ShuttlIcons
 import com.badmintontracker.android.ui.components.ShuttlButtonVariant
-import com.badmintontracker.android.ui.components.ThemeToggleButton
 import com.badmintontracker.android.ui.shareText
+import com.badmintontracker.shared.localvideo.LocalVideoEntry
+import com.badmintontracker.shared.matchlist.MatchAction
+import com.badmintontracker.shared.matchlist.MatchListCopy
+import com.badmintontracker.shared.matchpage.MatchPageCopy
+import com.badmintontracker.shared.matchpage.MatchPageSection
+import com.badmintontracker.shared.matchpage.analysisId
+import com.badmintontracker.shared.matchpage.matchPageItem
+import com.badmintontracker.shared.matchpage.matchPageSections
+import com.badmintontracker.shared.matchpage.shownSection
 import com.badmintontracker.shared.model.MatchLabelSummary
 import com.badmintontracker.shared.model.RallyClip
-import com.badmintontracker.shared.prefs.ThemePreferenceRepository
 import com.badmintontracker.shared.repo.MediaRepository
 import com.badmintontracker.shared.repo.SharesRepository
 import com.badmintontracker.shared.scoring.AttachKind
@@ -77,14 +89,13 @@ import com.badmintontracker.shared.scoring.matchDetailsLine
 import com.badmintontracker.shared.scoring.matchVideoPrompt
 import com.badmintontracker.shared.scoring.playersLine
 
-/** Which half of a match page is on screen. Only meaningful when the match has both. */
-private enum class Facet { Points, Rallies }
-
 /**
- * One match, however it was made: a video-first or shared match shows only the
- * rallies facet, a scored match with no video shows only the points facet, and a
- * match with both gets a selector between them. [summaryVm] is nullable because a
- * match with no video has no clips to summarise - see the caller for how the
+ * One match, however it was made, and every way into it: a row's tap on the
+ * Matches tab opens this page whatever the match has. It shows the match's
+ * sections (Points, Match, Rallies, Analysis), decided by the shared
+ * [matchPageSections] rule from the list's own row, with a toggle row between
+ * them when there is more than one. [summaryVm] is nullable because a match
+ * with no cloud video has no clips to summarise - see the caller for how the
  * effective video id is resolved.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -95,9 +106,12 @@ fun MatchScreen(
     summaryVm: MatchSummaryViewModel?,
     media: MediaRepository,
     shares: SharesRepository,
-    themePrefs: ThemePreferenceRepository,
     scoreLogId: String?,
     videoId: String?,
+    /** A video only on this phone has no cloud id and no score log: this is how the page finds it. */
+    entryId: String?,
+    /** The section to open on, from a finished run's View; null opens the default. */
+    initialSection: MatchPageSection?,
     /** The intent carried by [com.badmintontracker.android.nav.Route.Match]'s `attach`
      *  argument - "Import" or "Record" chosen on the board's finish prompt, or null. */
     attach: String?,
@@ -107,13 +121,20 @@ fun MatchScreen(
     onAddVideo: (AttachIntent) -> Unit,
     onMarkCourt: () -> Unit = {},
     onRetry: () -> Unit = {},
+    onAnalyzeEntry: (entryId: String) -> Unit,
+    /**
+     * The three section bodies, built by AuthGate, which holds the runner and
+     * the repositories they read. Slots rather than parameters so this screen
+     * does not take five more dependencies to pass straight through.
+     */
+    matchSection: @Composable (entry: LocalVideoEntry, fullscreen: Boolean, onFullscreenChange: (Boolean) -> Unit, snackbar: SnackbarHostState, analyzeLabel: String?) -> Unit,
+    analysisSection: @Composable (analysisId: String) -> Unit,
+    deviceRalliesSection: @Composable (entryId: String) -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val matchState by matchVm.state.collectAsStateWithLifecycle()
-    val themeMode by themePrefs.mode.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     var sheetOpen by remember { mutableStateOf(false) }
-    var sortMenuOpen by remember { mutableStateOf(false) }
     var overflowOpen by remember { mutableStateOf(false) }
     var addVideoMenuOpen by remember { mutableStateOf(false) }
     var sort by remember { mutableStateOf(ClipSort.RallyOrder) }
@@ -177,35 +198,40 @@ fun MatchScreen(
     val clipsForMatch = sortClips(state.clips.filter { it.videoId == videoId }, sort)
     val log = matchState.log
 
-    // Shown only when the match has both. A selector over one facet is a control
-    // that does nothing, and a match that has only rallies must look exactly like
-    // it did before this page existed.
-    val hasPoints = log != null
-    val hasRallies = clipsForMatch.isNotEmpty()
-    // Held for the life of this composable, not re-keyed on hasPoints/hasRallies:
-    // clipsForMatch briefly empties during a refresh, and re-keying on that would
-    // silently snap a reader on the rallies facet back to Points mid-read.
-    // rememberSaveable, not remember: returning from court marking (or any other
-    // pushed destination) must not snap a reader on the rallies facet back to
-    // Points. Matches iOS, where @State survives that return for free.
-    var chosenFacet by rememberSaveable { mutableStateOf(if (hasPoints) Facet.Points else Facet.Rallies) }
-    // What actually renders: the user's choice when it is still available, else
-    // whichever facet the match currently has.
-    val facet = when {
-        chosenFacet == Facet.Points && hasPoints -> Facet.Points
-        chosenFacet == Facet.Rallies && hasRallies -> Facet.Rallies
-        hasPoints -> Facet.Points
-        else -> Facet.Rallies
-    }
+    // The row this page is for, from the same list the Matches screen draws,
+    // and the sections it has by the one shared rule: the chips on that row
+    // are the toggles here. See matchPageSections.
+    val matchItem = state.matchList.matchPageItem(scoreLogId, videoId, entryId)
+    val sections = matchItem?.let(::matchPageSections).orEmpty()
+    // Saveable, held for the life of this page and never cleared: a section
+    // can go while on screen (the file removed, clips emptying mid-refresh),
+    // and shownSection falls back without forgetting what the coach picked.
+    // Saveable rather than remembered also keeps the choice across a return
+    // from court marking or any other pushed destination.
+    var chosenSection by rememberSaveable { mutableStateOf(initialSection) }
+    val section = shownSection(chosenSection, sections)
+    var videoFullscreen by rememberSaveable { mutableStateOf(false) }
+    val fullscreen = videoFullscreen && section == MatchPageSection.MATCH
+    val entry = matchItem?.entryId?.let { id -> state.localEntries.firstOrNull { it.id == id } }
+    // Under the player only for a video with no score log. A scored match's
+    // video asks through AttachStatusBanner already; two buttons for one
+    // question is the kind of drift the shared rule exists to stop.
+    val analyzeLabel = matchItem?.takeIf { it.scoreLogId == null }?.action
+        ?.takeIf { it == MatchAction.ANALYZE || it == MatchAction.RETRY }
+        ?.let(MatchListCopy::actionLabel)
 
     Scaffold(
         topBar = {
-            TopAppBar(
+            // Fullscreen video owns the whole screen: see MatchVideoSection.
+            if (!fullscreen) TopAppBar(
                 title = {
                     when {
-                        // A match with a video - own its title, whether or not it
-                        // also has a score log. Matches the rallies-only screen this
-                        // page replaced.
+                        // The list's own name for this match, so the page and
+                        // the row one tap back cannot read as two matches.
+                        matchItem != null -> Text(matchItem.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        // Until the row arrives (the first frame after a push):
+                        // a match with a video owns its title, whether or not it
+                        // also has a score log.
                         match != null -> Text(
                             match.title ?: "Match · ${formatDate(match.latestCreatedAt)}",
                             maxLines = 1,
@@ -225,32 +251,6 @@ fun MatchScreen(
                     // First in the bar so it keeps its place as each screen's own
                     // actions come and go.
                     BackgroundWorkAction()
-                    // The sort order only means something while rallies are on screen.
-                    if (facet == Facet.Rallies) {
-                        IconButton(onClick = { sortMenuOpen = true }) {
-                            Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Sort")
-                        }
-                        DropdownMenu(expanded = sortMenuOpen, onDismissRequest = { sortMenuOpen = false }) {
-                            DropdownMenuItem(
-                                text = { Text("Rally order") },
-                                leadingIcon = {
-                                    if (sort == ClipSort.RallyOrder) {
-                                        Icon(Icons.Default.Check, contentDescription = null)
-                                    }
-                                },
-                                onClick = { sort = ClipSort.RallyOrder; sortMenuOpen = false },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Most notes") },
-                                leadingIcon = {
-                                    if (sort == ClipSort.MostNotes) {
-                                        Icon(Icons.Default.Check, contentDescription = null)
-                                    }
-                                },
-                                onClick = { sort = ClipSort.MostNotes; sortMenuOpen = false },
-                            )
-                        }
-                    }
                     if (match?.isOwned == true) {
                         IconButton(onClick = { sheetOpen = true }) {
                             Icon(Icons.Default.Share, contentDescription = "Share match")
@@ -275,9 +275,10 @@ fun MatchScreen(
                         }
                     }
                     // A scored match, or a filmed one that is the coach's own: both
-                    // have details to edit. A shared match has neither an editor nor
-                    // an export, so it gets no menu at all.
-                    if (log != null || match?.isOwned == true) {
+                    // have details to edit. A video only on this phone that can be
+                    // analyzed again has that to offer. A shared match has none of
+                    // these, so it gets no menu at all.
+                    if (log != null || match?.isOwned == true || matchItem?.canAnalyzeAgain == true) {
                         IconButton(onClick = { overflowOpen = true }) {
                             Icon(Icons.Default.MoreVert, contentDescription = "Match options")
                         }
@@ -285,10 +286,12 @@ fun MatchScreen(
                             // First, because it is the one a coach comes here for:
                             // the new match form asks for none of this, and a video
                             // is uploaded with a name at most.
-                            DropdownMenuItem(
-                                text = { Text("Edit details") },
-                                onClick = { overflowOpen = false; editingDetails = true },
-                            )
+                            if (log != null || match?.isOwned == true) {
+                                DropdownMenuItem(
+                                    text = { Text("Edit details") },
+                                    onClick = { overflowOpen = false; editingDetails = true },
+                                )
+                            }
                             if (log != null) {
                                 DropdownMenuItem(
                                     text = { Text("Export as text") },
@@ -296,6 +299,14 @@ fun MatchScreen(
                                         overflowOpen = false
                                         shareText(context, log.title, exportMatchText(log))
                                     },
+                                )
+                            }
+                            // The row's own menu item, here too: the same entry,
+                            // through the same resume-or-mark-court decision.
+                            matchItem?.takeIf { it.canAnalyzeAgain }?.entryId?.let { id ->
+                                DropdownMenuItem(
+                                    text = { Text(MatchListCopy.MENU_ANALYZE_AGAIN) },
+                                    onClick = { overflowOpen = false; onAnalyzeEntry(id) },
                                 )
                             }
                             // Offered whenever this match has a video and nothing
@@ -316,34 +327,24 @@ fun MatchScreen(
                             }
                         }
                     }
-                    ThemeToggleButton(
-                        mode = themeMode,
-                        onToggle = themePrefs::toggle,
-                    )
                 },
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
-        // The score log this page was opened for is gone - deleted elsewhere while
-        // it was open, or never synced to this device. A video-first match with no
-        // log at all is not this state: `hasPoints` is false for it and it falls
-        // straight through to the rallies facet below, same as before this page
-        // existed.
-        if (scoreLogId != null && log == null && match == null) {
+        if (matchItem == null) {
+            // Gone (deleted elsewhere, or the file removed from a match that
+            // was only on this phone), or not listed yet in the first frame
+            // after a push. Only the first is worth words.
+            val gone = (scoreLogId != null && log == null && match == null) ||
+                (scoreLogId == null && videoId == null && entryId != null && state.localEntries.none { it.id == entryId })
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Text("This match is no longer on this phone.")
+                if (gone) Text(MatchPageCopy.MISSING)
             }
             return@Scaffold
         }
-
-        // A pull gesture that spins and refreshes nothing is worse than no gesture:
-        // a score-only match has no video, so neither vm (clips) nor summaryVm
-        // (null here) has anything for onRefresh to touch. Only a video-backed
-        // match - the same condition that gives it a summaryVm - keeps the old
-        // MatchClipsScreen's pull-to-refresh.
-        val pageBody: @Composable (Modifier) -> Unit = { modifier ->
-            Column(modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().padding(if (fullscreen) PaddingValues() else padding)) {
+            if (!fullscreen) {
                 // Same status, same actions as the match list's own row - see
                 // AttachStatusBanner. Without this the page was blind about an
                 // attach in progress while simultaneously still offering "Add
@@ -351,58 +352,74 @@ fun MatchScreen(
                 matchState.attach?.let { attach ->
                     AttachStatusBanner(attach = attach, onMarkCourt = onMarkCourt, onRetry = onRetry)
                 }
-                if (hasPoints && hasRallies) {
-                    val facets = listOf(Facet.Points to "Points", Facet.Rallies to "Rallies")
+                // A row over one section is a control that does nothing, and a
+                // match with one section must look like a page, not a picker.
+                if (sections.size > 1 && section != null) {
                     ShuttlPillTabs(
-                        labels = facets.map { it.second },
-                        selectedIndex = facets.indexOfFirst { it.first == facet },
-                        onSelect = { chosenFacet = facets[it].first },
+                        labels = sections.map { it.label },
+                        selectedIndex = sections.indexOf(section),
+                        onSelect = { chosenSection = sections[it] },
                         modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
                     )
                 }
-
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    if (facet == Facet.Points && log != null) {
-                        pointsFacet(
-                            log = log,
-                            card = matchState.card,
-                            tally = matchState.tally,
-                            points = matchState.match?.points.orEmpty(),
-                            onScore = onScore,
-                        )
-                    } else {
-                        ralliesFacet(
-                            clips = clipsForMatch,
-                            summary = summary,
-                            matchTitle = match?.title,
-                            // The score log's details when there is one, the
-                            // video's own otherwise: a scored match that was later
-                            // filmed keeps the log as its record.
-                            details = matchDetailsLine(
-                                playersLine = log?.playersLine() ?: match?.playersLine,
-                                format = log?.format ?: match?.format,
-                            ),
-                            description = match?.description,
-                            media = media,
-                            isRefreshing = state.isRefreshing,
-                            onSummaryClick = { summarySheetOpen = true },
-                            onClipClick = onClipClick,
-                        )
+            }
+            // One call site for every section, in both layouts: the Match
+            // section's player lives inside it, and moving the call would
+            // rebuild the player on every trip into fullscreen and back.
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                SectionBody(
+                    section = section,
+                    refreshable = videoId != null,
+                    isRefreshing = state.isRefreshing,
+                    onRefresh = { vm.refresh(); summaryVm?.refresh() },
+                ) {
+                    when (section) {
+                        MatchPageSection.POINTS -> LazyColumn(Modifier.fillMaxSize()) {
+                            if (log != null) pointsFacet(
+                                log = log, card = matchState.card, tally = matchState.tally,
+                                points = matchState.match?.points.orEmpty(), onScore = onScore,
+                            )
+                        }
+                        MatchPageSection.MATCH -> entry?.let {
+                            matchSection(it, fullscreen, { on -> videoFullscreen = on }, snackbarHostState, analyzeLabel)
+                        }
+                        MatchPageSection.RALLIES -> {
+                            // Rallies a device run cut and nothing in the cloud:
+                            // those clips never leave the phone, so they are
+                            // drawn from its disk rather than from rally_clips.
+                            val deviceEntryId = matchItem.entryId
+                            if (clipsForMatch.isEmpty() && matchItem.deviceClipCount > 0 && deviceEntryId != null) {
+                                deviceRalliesSection(deviceEntryId)
+                            } else {
+                                LazyColumn(Modifier.fillMaxSize()) {
+                                    // Only rallies are reordered, so the sort
+                                    // lives with them; one rally has no order.
+                                    if (clipsForMatch.size > 1) item(key = "sort") { RallySortRow(sort) { sort = it } }
+                                    ralliesFacet(
+                                        clips = clipsForMatch,
+                                        summary = summary,
+                                        matchTitle = match?.title,
+                                        // The score log's details when there is one, the
+                                        // video's own otherwise: a scored match that was later
+                                        // filmed keeps the log as its record.
+                                        details = matchDetailsLine(
+                                            playersLine = log?.playersLine() ?: match?.playersLine,
+                                            format = log?.format ?: match?.format,
+                                        ),
+                                        description = match?.description,
+                                        media = media,
+                                        isRefreshing = state.isRefreshing,
+                                        onSummaryClick = { summarySheetOpen = true },
+                                        onClipClick = onClipClick,
+                                    )
+                                }
+                            }
+                        }
+                        MatchPageSection.ANALYSIS -> analysisId(matchItem)?.let { analysisSection(it) }
+                        null -> Unit
                     }
                 }
             }
-        }
-
-        if (videoId != null) {
-            PullToRefreshBox(
-                isRefreshing = state.isRefreshing,
-                onRefresh = { vm.refresh(); summaryVm?.refresh() },
-                modifier = Modifier.padding(padding).fillMaxSize(),
-            ) {
-                pageBody(Modifier)
-            }
-        } else {
-            pageBody(Modifier.padding(padding))
         }
     }
 
@@ -574,6 +591,67 @@ private fun AttachStatusBanner(
                 Box(modifier = Modifier.size(24.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                 }
+        }
+    }
+}
+
+/**
+ * Pull to refresh around the sections that show cloud data (Points for a
+ * filmed match, Rallies), and nothing around the others: pulling on the Match
+ * section's notes or on a heatmap refreshing the clip cache would be a
+ * gesture that does nothing visible. A score-only match has no video to
+ * refresh, as before.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SectionBody(
+    section: MatchPageSection?,
+    refreshable: Boolean,
+    isRefreshing: Boolean,
+    onRefresh: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    if (refreshable && (section == MatchPageSection.POINTS || section == MatchPageSection.RALLIES)) {
+        PullToRefreshBox(isRefreshing = isRefreshing, onRefresh = onRefresh, modifier = Modifier.fillMaxSize()) { content() }
+    } else {
+        content()
+    }
+}
+
+/**
+ * The rally sort, at the top of the Rallies section: it only reorders rallies,
+ * so it lives with them rather than in a top bar every section shares.
+ */
+@Composable
+private fun RallySortRow(sort: ClipSort, onSort: (ClipSort) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.End) {
+        // The menu shares a Box with its anchor: DropdownMenu positions itself
+        // relative to its parent. Styled as the list row's RowMenu is, by the
+        // theme's surface container tokens.
+        Box {
+            TextButton(
+                onClick = { open = true },
+                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant),
+                modifier = Modifier.semantics { contentDescription = MatchPageCopy.SORT },
+            ) {
+                Icon(ShuttlIcons.ListOrdered, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    if (sort == ClipSort.RallyOrder) MatchPageCopy.SORT_RALLY_ORDER else MatchPageCopy.SORT_MOST_NOTES,
+                    style = MaterialTheme.typography.labelMedium,
+                )
+            }
+            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                listOf(ClipSort.RallyOrder to MatchPageCopy.SORT_RALLY_ORDER, ClipSort.MostNotes to MatchPageCopy.SORT_MOST_NOTES)
+                    .forEach { (value, label) ->
+                        DropdownMenuItem(
+                            text = { Text(label) },
+                            leadingIcon = { if (sort == value) Icon(Icons.Default.Check, contentDescription = null) },
+                            onClick = { onSort(value); open = false },
+                        )
+                    }
+            }
         }
     }
 }
