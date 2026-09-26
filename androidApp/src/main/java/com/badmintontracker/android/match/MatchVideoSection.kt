@@ -4,11 +4,13 @@ import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
@@ -28,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.MediaItem
@@ -54,6 +57,17 @@ import com.badmintontracker.shared.localvideo.LocalAnnotation
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.model.AnnotationLabel
 import com.badmintontracker.shared.prefs.PlaybackPreferenceRepository
+
+/**
+ * What the landscape layout keeps free under the video card, so play is on
+ * screen with the frame: the transport row's 60dp play circle
+ * (TransportRowLayout.PLAY_CIRCLE), its 16dp top margin and 12dp of air
+ * under it. At the 48dp of the pills alone the play circle was cut off.
+ */
+private val LANDSCAPE_TRANSPORT_ROOM = 88.dp
+
+/** The smallest card landscape will draw, on a page too short for the rule above. */
+private val LANDSCAPE_MIN_CARD = 120.dp
 
 private const val ANNOTATION_STORAGE_NOTE =
     "Notes are saved on this phone and are removed if you remove the video from the app."
@@ -151,11 +165,12 @@ fun MatchVideoSection(
         tagMessage.show(quickTagConfirmation(label, positionMs))
     }
 
-    val video: @Composable (Boolean) -> Unit = { isFullscreenVideo ->
+    val video: @Composable (Boolean, Dp?) -> Unit = { isFullscreenVideo, maxHeight ->
         VideoCard(
             player = player,
             position = position,
             onSettingsTap = { showSettings = true },
+            maxHeight = maxHeight,
             fullscreen = isFullscreenVideo,
             onFullscreenToggle = { onFullscreenChange(!fullscreen) },
             error = playbackError?.let { message ->
@@ -172,10 +187,67 @@ fun MatchVideoSection(
             },
         )
     }
+    val transport: @Composable () -> Unit = {
+        TransportBar(
+            player = player,
+            prefs = playbackPrefs,
+            onSettings = { showSettings = true },
+            modifier = Modifier.padding(top = 16.dp),
+        )
+    }
+    // What sits under the transport bar, in order, for both layouts below.
+    val analyzeButton: @Composable () -> Unit = {
+        analyzeLabel?.let { label ->
+            ShuttlButton(
+                text = label,
+                onClick = onAnalyze,
+                variant = ShuttlButtonVariant.Primary,
+                modifier = Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 16.dp),
+            )
+        }
+    }
+    val labelRow: @Composable () -> Unit = {
+        ReplayLabelRow(
+            labels = labelOptions,
+            message = tagMessage.text,
+            onTag = tag,
+            modifier = Modifier.padding(top = 16.dp),
+        )
+    }
+    val details: @Composable () -> Unit = {
+        entry.description?.let { description ->
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 22.dp),
+            )
+        }
+        // The caption doubles as the notes' heading: where they live is
+        // the one thing a coach needs to know before writing one.
+        NotesHeader(
+            caption = ANNOTATION_STORAGE_NOTE,
+            onAdd = { addDialog = player.currentPosition.coerceAtLeast(0L) / 1000f },
+            modifier = Modifier.padding(top = 22.dp, bottom = 8.dp),
+        )
+    }
+    val notes: LazyListScope.() -> Unit = {
+        items(annotations, key = { it.id }) { a ->
+            AnnotationRow(
+                timestampSeconds = a.timestampSeconds,
+                body = a.body,
+                labelName = a.labelName,
+                labelColor = a.labelColor,
+                onClick = { vm.onAnnotationTap(a) },
+                onDelete = { pendingDelete = a },
+            )
+            HorizontalDivider(modifier = Modifier.padding(horizontal = 24.dp))
+        }
+    }
 
-    if (fullscreen) {
-        Box(modifier.fillMaxSize().background(Color.Black)) {
-            video(true)
+    when {
+        fullscreen -> Box(modifier.fillMaxSize().background(Color.Black)) {
+            video(true, null)
             TransportBar(
                 player = player,
                 prefs = playbackPrefs,
@@ -185,57 +257,31 @@ fun MatchVideoSection(
             )
             FullscreenLabels(labels = labelOptions, prefs = playbackPrefs, message = tagMessage.text, onTag = tag)
         }
-    } else {
-        Column(modifier.fillMaxSize()) {
-            video(false)
-            TransportBar(
-                player = player,
-                prefs = playbackPrefs,
-                onSettings = { showSettings = true },
-                modifier = Modifier.padding(top = 16.dp),
-            )
-            analyzeLabel?.let { label ->
-                ShuttlButton(
-                    text = label,
-                    onClick = onAnalyze,
-                    variant = ShuttlButtonVariant.Primary,
-                    modifier = Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 16.dp),
-                )
+        // Landscape out of fullscreen: BACK has just left fullscreen and the
+        // page is short and wide. The card at the full width would be taller
+        // than the whole section, so it is held to the height left over once
+        // the transport bar is under it, and everything scrolls as one list,
+        // so nothing is pushed under the gesture bar or over the section row.
+        orientation == Configuration.ORIENTATION_LANDSCAPE -> BoxWithConstraints(modifier.fillMaxSize()) {
+            val cardHeight = (maxHeight - LANDSCAPE_TRANSPORT_ROOM).coerceAtLeast(LANDSCAPE_MIN_CARD)
+            LazyColumn(Modifier.fillMaxSize()) {
+                item(key = "video") { video(false, cardHeight) }
+                item(key = "transport") { transport() }
+                item(key = "analyze") { analyzeButton() }
+                item(key = "labels") { labelRow() }
+                item(key = "details") { details() }
+                notes()
             }
-            ReplayLabelRow(
-                labels = labelOptions,
-                message = tagMessage.text,
-                onTag = tag,
-                modifier = Modifier.padding(top = 16.dp),
-            )
-            entry.description?.let { description ->
-                Text(
-                    text = description,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 22.dp),
-                )
-            }
-            // The caption doubles as the notes' heading: where they live is
-            // the one thing a coach needs to know before writing one.
-            NotesHeader(
-                caption = ANNOTATION_STORAGE_NOTE,
-                onAdd = { addDialog = player.currentPosition.coerceAtLeast(0L) / 1000f },
-                modifier = Modifier.padding(top = 22.dp, bottom = 8.dp),
-            )
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
-                items(annotations, key = { it.id }) { a ->
-                    AnnotationRow(
-                        timestampSeconds = a.timestampSeconds,
-                        body = a.body,
-                        labelName = a.labelName,
-                        labelColor = a.labelColor,
-                        onClick = { vm.onAnnotationTap(a) },
-                        onDelete = { pendingDelete = a },
-                    )
-                    HorizontalDivider(modifier = Modifier.padding(horizontal = 24.dp))
-                }
-            }
+        }
+        // Portrait: the card and its controls stay put and the notes scroll
+        // under them, so a note tapped to seek is watched as it plays.
+        else -> Column(modifier.fillMaxSize()) {
+            video(false, null)
+            transport()
+            analyzeButton()
+            labelRow()
+            details()
+            LazyColumn(modifier = Modifier.fillMaxSize()) { notes() }
         }
     }
 
