@@ -37,6 +37,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -64,6 +65,8 @@ import com.badmintontracker.android.scoring.EditMatchDetailsDialog
 import com.badmintontracker.android.scoring.MatchDetailsDraft
 import com.badmintontracker.android.scoring.detailsDraft
 import com.badmintontracker.android.share.ShareSheet
+import com.badmintontracker.android.ui.components.LocalPillLabelCeiling
+import com.badmintontracker.android.ui.components.PillLabelCeiling
 import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlPillTabs
 import com.badmintontracker.android.ui.icons.ShuttlIcons
@@ -228,6 +231,9 @@ fun MatchScreen(
         if (chosenSection == null && section != null) chosenSection = section
     }
     var videoFullscreen by rememberSaveable { mutableStateOf(false) }
+    // The section row's label size, the most any secondary pill row inside a
+    // section may draw. See ShuttlPillTabs.
+    val pillCeiling = remember { PillLabelCeiling() }
     val fullscreen = videoFullscreen && section == MatchPageSection.MATCH
     val entry = matchItem?.entryId?.let { id -> state.localEntries.firstOrNull { it.id == id } }
     // Under the player only for a video with no score log. A scored match's
@@ -384,6 +390,9 @@ fun MatchScreen(
                         selectedIndex = sections.indexOf(section),
                         onSelect = { chosenSection = sections[it] },
                         modifier = Modifier.padding(start = MatchPageGutter, end = MatchPageGutter, top = 8.dp),
+                        // The secondary rows in the sections below (Analysis's
+                        // panels, Near and Far) draw no larger than this row.
+                        ceilingFor = pillCeiling,
                     )
                 }
             }
@@ -393,64 +402,74 @@ fun MatchScreen(
             // The gap between the section row (or the top bar, on a page with
             // one section) and what the section draws first, the same for
             // every section: each draws from its own top edge. Points and
-            // Rallies are lists of rows whose own padding already holds their
-            // first line of text off the edge, so they get the rest of it.
+            // Rallies are lists whose first row (the Points header, the label
+            // strip, the details block, a rally row) holds its first line
+            // MatchRowInset off its own top, so they get the rest of it.
+            // Three first rows are left as they are, each a few dp lower:
+            // the rally sort control, whose text is centred in its 48dp touch
+            // target (about 3dp lower, measured; matching it would mean a
+            // smaller target), the device rallies' empty message, which is
+            // PanelMessage's 16dp (2dp lower, and shared with the panels,
+            // where 16dp is right), and "No rallies yet", which is centred in
+            // the section rather than hung from its top.
             val gap = when {
                 fullscreen -> 0.dp
                 section == MatchPageSection.POINTS || section == MatchPageSection.RALLIES -> MatchSectionGap - MatchRowInset
                 else -> MatchSectionGap
             }
             Box(Modifier.weight(1f).fillMaxWidth().padding(top = gap)) {
-                SectionBody(
-                    section = section,
-                    refreshable = videoId != null,
-                    isRefreshing = state.isRefreshing,
-                    onRefresh = { vm.refresh(); summaryVm?.refresh() },
-                ) {
-                    when (section) {
-                        MatchPageSection.POINTS -> LazyColumn(Modifier.fillMaxSize()) {
-                            if (log != null) pointsFacet(
-                                log = log, card = matchState.card, tally = matchState.tally,
-                                points = matchState.match?.points.orEmpty(), onScore = onScore,
-                            )
-                        }
-                        MatchPageSection.MATCH -> entry?.let {
-                            matchSection(it, fullscreen, { on -> videoFullscreen = on }, snackbarHostState, analyzeLabel)
-                        }
-                        MatchPageSection.RALLIES -> {
-                            // Rallies a device run cut and nothing in the cloud:
-                            // those clips never leave the phone, so they are
-                            // drawn from its disk rather than from rally_clips.
-                            val deviceEntryId = matchItem.entryId
-                            if (clipsForMatch.isEmpty() && matchItem.deviceClipCount > 0 && deviceEntryId != null) {
-                                deviceRalliesSection(deviceEntryId)
-                            } else {
-                                LazyColumn(Modifier.fillMaxSize()) {
-                                    // Only rallies are reordered, so the sort
-                                    // lives with them; one rally has no order.
-                                    if (clipsForMatch.size > 1) item(key = "sort") { RallySortRow(sort) { sort = it } }
-                                    ralliesFacet(
-                                        clips = clipsForMatch,
-                                        summary = summary,
-                                        matchTitle = match?.title,
-                                        // The score log's details when there is one, the
-                                        // video's own otherwise: a scored match that was later
-                                        // filmed keeps the log as its record.
-                                        details = matchDetailsLine(
-                                            playersLine = log?.playersLine() ?: match?.playersLine,
-                                            format = log?.format ?: match?.format,
-                                        ),
-                                        description = match?.description,
-                                        media = media,
-                                        isRefreshing = state.isRefreshing,
-                                        onSummaryClick = { summarySheetOpen = true },
-                                        onClipClick = onClipClick,
-                                    )
+                CompositionLocalProvider(LocalPillLabelCeiling provides pillCeiling) {
+                    SectionBody(
+                        section = section,
+                        refreshable = videoId != null,
+                        isRefreshing = state.isRefreshing,
+                        onRefresh = { vm.refresh(); summaryVm?.refresh() },
+                    ) {
+                        when (section) {
+                            MatchPageSection.POINTS -> LazyColumn(Modifier.fillMaxSize()) {
+                                if (log != null) pointsFacet(
+                                    log = log, card = matchState.card, tally = matchState.tally,
+                                    points = matchState.match?.points.orEmpty(), onScore = onScore,
+                                )
+                            }
+                            MatchPageSection.MATCH -> entry?.let {
+                                matchSection(it, fullscreen, { on -> videoFullscreen = on }, snackbarHostState, analyzeLabel)
+                            }
+                            MatchPageSection.RALLIES -> {
+                                // Rallies a device run cut and nothing in the cloud:
+                                // those clips never leave the phone, so they are
+                                // drawn from its disk rather than from rally_clips.
+                                val deviceEntryId = matchItem.entryId
+                                if (clipsForMatch.isEmpty() && matchItem.deviceClipCount > 0 && deviceEntryId != null) {
+                                    deviceRalliesSection(deviceEntryId)
+                                } else {
+                                    LazyColumn(Modifier.fillMaxSize()) {
+                                        // Only rallies are reordered, so the sort
+                                        // lives with them; one rally has no order.
+                                        if (clipsForMatch.size > 1) item(key = "sort") { RallySortRow(sort) { sort = it } }
+                                        ralliesFacet(
+                                            clips = clipsForMatch,
+                                            summary = summary,
+                                            matchTitle = match?.title,
+                                            // The score log's details when there is one, the
+                                            // video's own otherwise: a scored match that was later
+                                            // filmed keeps the log as its record.
+                                            details = matchDetailsLine(
+                                                playersLine = log?.playersLine() ?: match?.playersLine,
+                                                format = log?.format ?: match?.format,
+                                            ),
+                                            description = match?.description,
+                                            media = media,
+                                            isRefreshing = state.isRefreshing,
+                                            onSummaryClick = { summarySheetOpen = true },
+                                            onClipClick = onClipClick,
+                                        )
+                                    }
                                 }
                             }
+                            MatchPageSection.ANALYSIS -> analysisId(matchItem)?.let { analysisSection(it) }
+                            null -> Unit
                         }
-                        MatchPageSection.ANALYSIS -> analysisId(matchItem)?.let { analysisSection(it) }
-                        null -> Unit
                     }
                 }
             }

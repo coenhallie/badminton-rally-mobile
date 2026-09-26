@@ -1,6 +1,13 @@
 package com.badmintontracker.android.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.runtime.remember
@@ -21,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.badmintontracker.android.ui.theme.ShuttlRadius
@@ -43,14 +51,25 @@ import com.badmintontracker.android.ui.theme.ShuttlRadius
  * in the row set a step smaller, by the one factor the tightest word needs, so
  * the row keeps one size. Padding first because a smaller label is visible
  * against the row stacked under it (the Analysis section's panels); a few dp
- * of air inside a pill is not. See [pillPadding] and [pillLabelScale].
+ * of air inside a pill is not. See [pillPadding] and [fitScale]. The factor
+ * is checked against the words measured at the size it gives, not assumed
+ * from the first measure, since Android scales large text by less than small
+ * text (non-linear font scaling) and a linear guess could leave a word a few
+ * pixels too wide.
  *
  * [secondary] is the row that belongs to another one above it: the match
  * page's Analysis panels (Heatmap | Base | Skeleton) under its sections, and
- * the Near | Far toggle inside a panel. Shorter pills and a smaller label, the
- * labelSmall's size and weight, in the same colours:
- * three rows of one size stacked in the Analysis section read as three peers,
- * with nothing to say the second was Analysis's own.
+ * the Near | Far toggle inside a panel. Shorter pills and a smaller label,
+ * labelSmall's size and weight, in the same colours: three rows of one size
+ * stacked in the Analysis section read as three peers, with nothing to say
+ * the second was Analysis's own.
+ *
+ * A primary row shrinks its labels on a narrow phone at a large font scale,
+ * and a secondary one under it could then come out the larger of the two.
+ * [ceilingFor] is the row that sets the most the secondary rows under it may
+ * draw: it records its own label size there, and every secondary row inside
+ * a [LocalPillLabelCeiling] holding that ceiling draws no larger. The match
+ * page's section row sets it for the whole of its sections.
  *
  * [labels] and [selectedIndex] rather than a generic type: the callers keep
  * their own enum and pass its labels, which keeps this file free of them.
@@ -62,6 +81,7 @@ fun ShuttlPillTabs(
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
     secondary: Boolean = false,
+    ceilingFor: PillLabelCeiling? = null,
 ) {
     val shape = RoundedCornerShape(ShuttlRadius.pill)
     val baseStyle = if (secondary) {
@@ -85,25 +105,35 @@ fun ShuttlPillTabs(
             ((maxWidth - TRACK_PADDING * 2 - GAP * (labels.size - 1).coerceAtLeast(0)) /
                 labels.size.coerceAtLeast(1)).toPx() - 1f
         }
-        val fit = remember(labels, baseStyle, pillWidthPx, density) {
-            val wordWidths = labels.flatMap { it.split(' ') }.filter { it.isNotEmpty() }.map { word ->
-                measurer.measure(word, baseStyle, softWrap = false, maxLines = 1).size.width.toFloat()
-            }
-            val padPx = pillPadding(
-                pillWidth = pillWidthPx,
-                widestWord = wordWidths.maxOrNull() ?: 0f,
-                min = with(density) { PILL_PADDING_H_MIN.toPx() },
-                max = with(density) { PILL_PADDING_H.toPx() },
-            )
-            val scale = pillLabelScale(wordWidths, pillWidthPx - padPx * 2)
-            val style = if (scale >= 1f) baseStyle else baseStyle.copy(
+        // Only a secondary row is held under a ceiling; reading it here is
+        // what redraws the row when the primary above it changes size.
+        val ceilingPx = if (secondary) LocalPillLabelCeiling.current?.px else null
+        val fit = remember(labels, baseStyle, pillWidthPx, density, ceilingPx) {
+            fun scaled(scale: Float) = if (scale >= 1f) baseStyle else baseStyle.copy(
                 fontSize = baseStyle.fontSize * scale,
                 lineHeight = baseStyle.lineHeight * scale,
                 letterSpacing = baseStyle.letterSpacing * scale,
             )
-            with(density) { padPx.toDp() } to style
+            val words = labels.flatMap { it.split(' ') }.filter { it.isNotEmpty() }
+            fun widestWord(scale: Float): Float = words.maxOfOrNull { word ->
+                measurer.measure(word, scaled(scale), softWrap = false, maxLines = 1).size.width.toFloat()
+            } ?: 0f
+            val padPx = pillPadding(
+                pillWidth = pillWidthPx,
+                widestWord = widestWord(1f),
+                min = with(density) { PILL_PADDING_H_MIN.toPx() },
+                max = with(density) { PILL_PADDING_H.toPx() },
+            )
+            var scale = fitScale(limit = pillWidthPx - padPx * 2, measure = ::widestWord)
+            if (ceilingPx != null) {
+                scale = minOf(scale, fitScale(limit = ceilingPx) { with(density) { scaled(it).fontSize.toPx() } })
+            }
+            val style = scaled(scale)
+            PillFit(with(density) { padPx.toDp() }, style, with(density) { style.fontSize.toPx() })
         }
-        val (pad, style) = fit
+        ceilingFor?.let { ceiling -> SideEffect { ceiling.px = fit.labelPx } }
+        val pad = fit.pad
+        val style = fit.style
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -161,15 +191,39 @@ internal fun pillPadding(pillWidth: Float, widestWord: Float, min: Float, max: F
     ((pillWidth - widestWord) / 2f).coerceIn(min, max)
 
 /**
- * The factor every label in a row is set at so that no word has to break:
- * 1 when the widest word already fits [available], else what shrinks the
- * widest word to it. Floored at [MIN_PILL_LABEL_SCALE]: below that the label
- * is too small to read, and a break inside the word is the lesser harm.
+ * The largest factor, at most 1, at which [measure] (a width, or a size, at
+ * that factor) comes to no more than [limit]. Checked against [measure]
+ * again at each guess rather than assumed linear: Android scales large text
+ * by less than small text, so halving a factor does not halve the width.
+ * Floored at [MIN_PILL_LABEL_SCALE]: below that a label is too small to
+ * read, and a break inside the word is the lesser harm.
  */
-internal fun pillLabelScale(wordWidths: List<Float>, available: Float): Float {
-    val widest = wordWidths.maxOrNull() ?: return 1f
-    if (widest <= available || widest <= 0f) return 1f
-    return (available / widest).coerceIn(MIN_PILL_LABEL_SCALE, 1f)
+internal fun fitScale(limit: Float, measure: (Float) -> Float): Float {
+    var scale = 1f
+    repeat(8) {
+        val size = measure(scale)
+        if (size <= limit || size <= 0f || scale <= MIN_PILL_LABEL_SCALE) return scale
+        // A hair under the proportional guess, so a guess that lands exactly
+        // on the limit is not rounded back over it by the text measurer.
+        scale = (scale * limit / size * 0.995f).coerceIn(MIN_PILL_LABEL_SCALE, 1f)
+    }
+    return scale
 }
+
+/** What a row draws at: its pills' side padding, its label style, and that style's size in pixels. */
+private data class PillFit(val pad: Dp, val style: TextStyle, val labelPx: Float)
+
+/**
+ * The label size, in pixels, of the primary row that secondary rows under it
+ * may not exceed. See [ShuttlPillTabs]' ceilingFor. Unbounded until that row
+ * has drawn, and on a page that has none.
+ */
+@Stable
+class PillLabelCeiling {
+    var px by mutableFloatStateOf(Float.POSITIVE_INFINITY)
+}
+
+/** The ceiling the secondary pill rows below read. Null where no primary row sets one. */
+val LocalPillLabelCeiling = staticCompositionLocalOf<PillLabelCeiling?> { null }
 
 internal const val MIN_PILL_LABEL_SCALE = 0.75f
