@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The three ways a match starts, behind the Matches tab's one "Add match"
+/// The three ways a match starts, behind the match list's one "Add match"
 /// button.
 ///
 /// A single button replaced what was once a three item menu. The actions are

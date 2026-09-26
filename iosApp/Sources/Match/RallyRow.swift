@@ -2,9 +2,9 @@ import SwiftUI
 
 /// One rally as the Rallies section lists it: its name over a small caps meta
 /// line. Shared by the device rallies and the cloud ones, so a match's rallies
-/// look the same wherever they were cut: the action differs (the clip sheet for
-/// a device clip, the rally page for a cloud one), the row does not. Port of the row androidApp's `ClipRow` and
-/// `DeviceRalliesSection` both draw.
+/// look the same wherever they were cut: the action differs (the clip sheet
+/// for a device clip, the rally page for a cloud one), the row does not. Port
+/// of the row androidApp's `ClipRow` and `DeviceRalliesSection` both draw.
 ///
 /// `meta` is set in capitals here rather than by the caller, so the two lists
 /// cannot disagree on it; nil draws the name alone (a device clip whose bounds

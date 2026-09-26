@@ -93,4 +93,46 @@ final class LocalVideoLogicTests: XCTestCase {
         LocalVideoFiles.delete(relativePath: rel)
         XCTAssertFalse(FileManager.default.fileExists(atPath: stored.path))
     }
+
+    // MARK: - analyseAction
+
+    private func entry(
+        id: String,
+        stage: AnalyzeStage = .local,
+        keypoints: CourtKeypoints? = nil
+    ) -> LocalVideoEntry {
+        LocalVideoEntry(
+            id: id, uri: "LocalVideos/\(id).mp4", displayName: "\(id).mp4",
+            durationMs: 60_000, sizeBytes: 1_000_000, addedAtEpochMs: 1_787_940_000_000,
+            title: nil, description: nil, keypoints: keypoints,
+            stage: stage, failedStep: nil, failureMessage: nil,
+            resultSeen: false, scoreLogId: nil
+        )
+    }
+
+    private func court() -> CourtKeypoints {
+        let p = [KotlinFloat(float: 0), KotlinFloat(float: 0)]
+        return CourtKeypoints(
+            topLeft: p, topRight: p, bottomRight: p, bottomLeft: p,
+            netLeft: p, netRight: p,
+            serviceLineNearLeft: p, serviceLineNearRight: p,
+            serviceLineFarLeft: p, serviceLineFarRight: p,
+            centerNear: p, centerFar: p
+        )
+    }
+
+    func testAFailedRunWithItsCourtAlreadySavedResumesFromTheFailedStep() {
+        XCTAssertEqual(
+            analyseAction(for: entry(id: "e1", stage: .failed, keypoints: court())),
+            .resume(entryId: "e1")
+        )
+    }
+
+    func testAFailedRunWithNoCourtMustBeMarkedAgain() {
+        XCTAssertEqual(analyseAction(for: entry(id: "e1", stage: .failed)), .markCourt(entryId: "e1"))
+    }
+
+    func testAFreshVideoStartsAtCourtMarking() {
+        XCTAssertEqual(analyseAction(for: entry(id: "e1")), .markCourt(entryId: "e1"))
+    }
 }

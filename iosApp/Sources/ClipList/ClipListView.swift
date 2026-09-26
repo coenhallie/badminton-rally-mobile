@@ -1,7 +1,7 @@
 import SwiftUI
 import Shared
 
-/// The list of matches, on the Matches tab: one row per match, wherever its
+/// The list of matches, on the root screen: one row per match, wherever its
 /// video is, with "Shared with me" below.
 ///
 /// Every row comes from the shared builder (`ClipListModel.matchList`); this
@@ -17,24 +17,25 @@ struct MatchesList: View {
     let rally: RallyApp
     let analyze: AnalyzeCoordinator
     /// Owned outside this list, like every destination it used to register.
-    /// The tab's own Add button (`AddMatchButton`, in `MatchesTabView`) is what
-    /// starts a record or import now, and `intake.error`/`intake.lastAddedId`
-    /// are surfaced and consumed on the tab, not behind a closed drawer.
+    /// The screen's own Add button (`AddMatchButton`, in `MatchesScreen`) is
+    /// what starts a record or import now, and `intake.error` and
+    /// `intake.lastAddedId` are surfaced and consumed on that screen, not
+    /// behind a closed drawer.
     let intake: LocalVideoIntake
     /// Owned by Home, like every destination this list used to register. It has
     /// to be one instance for the whole app rather than one per screen: its own
     /// `localEntries` is documented as "the single source of truth for every
     /// video on this phone", and a second instance would make that false while
     /// doubling four flow subscriptions and four network calls per refresh.
-    /// Analytics reads the same one.
+    /// The match page reads the same one.
     let model: ClipListModel
     let onMatchTap: (MatchRoute) -> Void
     let onCourtMarking: (CourtMarkingRoute) -> Void
-    /// The empty state's hero ticker stops while this tab is not on screen or
-    /// something is pushed over it.
+    /// The empty state's hero ticker stops while something is pushed or
+    /// presented over the list.
     let heroPaused: Bool
     /// Whether any sheet or dialog this list owns is open. HomeView folds it
-    /// into "nothing above the tabs", which gates a finished run switching tabs.
+    /// into "nothing above the list", which gates announcing a finished run.
     let onOverlayChange: (Bool) -> Void
 
     @State private var shareTarget: ShareTarget? = nil
@@ -65,7 +66,7 @@ struct MatchesList: View {
 
     /// Any sheet, confirmation or alert this list owns, reported upward
     /// through `onOverlayChange` so HomeView can fold it into "nothing above
-    /// the tabs" alongside its own sheets and pushes.
+    /// the list" alongside its own sheets and pushes.
     private var overlayOpen: Bool {
         shareTarget != nil || detailsTarget != nil || legendOpen || resultEntry != nil
             || choiceKey != nil || deleteKey != nil || removeKey != nil
@@ -142,10 +143,10 @@ struct MatchesList: View {
         .refreshable { await model.refresh() }
         .onChange(of: overlayOpen, initial: true) { _, open in onOverlayChange(open) }
         // If this list is torn down while one of its own sheets or dialogs is
-        // still open (a tab switch that unmounts it, say), the `onChange`
+        // still open (a sign-out that unmounts it, say), the `onChange`
         // above never fires false and the flag it reported upward would
         // stick open for good, permanently blocking "nothing above the
-        // tabs". This is the reset for exactly that case.
+        // list". This is the reset for exactly that case.
         .onDisappear { onOverlayChange(false) }
     }
 
@@ -201,7 +202,7 @@ struct MatchesList: View {
             }
         }
         .listStyle(.plain)
-        // The tab's own background is what should show between the inset
+        // The screen's own background is what should show between the inset
         // rows, not the material `List` paints over it.
         .scrollContentBackground(.hidden)
         .background(Shuttl.bg)
@@ -219,11 +220,11 @@ struct MatchesList: View {
         .onChange(of: showChips) { wasShown, isShown in
             if wasShown && !isShown { filter = .all }
         }
-        // Room at the foot so the last row clears the Add button and the tab
-        // bar, both of which float over the list rather than reserving space
-        // in its layout. 88, not the button's own 56: the button also floats
-        // 16pt off the bottom and casts a 12pt shadow, and the last row needs
-        // air past the shadow, not just past the button's edge.
+        // Room at the foot so the last row clears the Add button, which floats
+        // over the list rather than reserving space in its layout. 88, not
+        // the button's own 56: the button also floats 16pt off the bottom and
+        // casts a 12pt shadow, and the last row needs air past the shadow, not
+        // just past the button's edge.
         .safeAreaPadding(.bottom, 88)
         // Over the list rather than in it: the hero needs the full available
         // height to top-align itself, which a row cannot do, and the list
@@ -305,7 +306,7 @@ struct MatchesList: View {
         // entry's saved court points and failed step as they are now.
         guard let entry = rally.localVideos.get(id: entryId) else { return }
         // The shared rule, not a hand-written copy. Android had four and the
-        // drift had already happened: its Analytics list shipped without the
+        // drift had already happened: its old Analytics list shipped without the
         // keypoints half and sent coaches back to re-mark a court that was
         // already saved.
         switch analyseAction(for: entry) {

@@ -29,3 +29,23 @@ enum LocalVideoLogic {
         return String(format: "%d:%02d", totalSec / 60, totalSec % 60)
     }
 }
+
+/// Where a video's Analyze goes when it is tapped, on the list's row and on the
+/// match page alike.
+enum AnalyseAction: Equatable {
+    /// A failed cloud run whose court is already saved: `AnalyzeCoordinator.retry`
+    /// picks up at the step that failed, so there is nothing to ask the coach for.
+    case resume(entryId: String)
+    /// Everything else starts at court marking.
+    case markCourt(entryId: String)
+}
+
+/// Where this video's Analyze goes. The rule itself is shared
+/// (`canResumeFailedAnalysis`) rather than written out here: five hand-written
+/// copies of `stage == .failed && keypoints != nil` are exactly what put it in
+/// `shared/` in the first place, and this would have been the sixth.
+func analyseAction(for entry: LocalVideoEntry) -> AnalyseAction {
+    LocalVideoEntryKt.canResumeFailedAnalysis(entry: entry)
+        ? .resume(entryId: entry.id)
+        : .markCourt(entryId: entry.id)
+}

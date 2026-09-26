@@ -4,8 +4,8 @@ enum LocalVideoStatus {
     /// How a cloud run reads on this row. Forwards the shared rule rather than
     /// porting it: this used to be a hand-copied version of Android's own
     /// mapping, and the copy that mattered was the third one - Android's
-    /// Analytics list wrote its own and drifted to "Uploading" with no
-    /// percentage while this said "Uploading 42%…" for the same run.
+    /// since-deleted Analytics list wrote its own and drifted to "Uploading"
+    /// with no percentage while this said "Uploading 42%…" for the same run.
     static func text(stage: AnalyzeStage, progress: AnalyzeProgress?) -> String? {
         LocalVideoEntryKt.cloudAnalysisStatus(stage: stage, progress: progress)
     }

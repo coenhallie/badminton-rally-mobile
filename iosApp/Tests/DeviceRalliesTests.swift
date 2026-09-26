@@ -10,7 +10,7 @@ import XCTest
 /// clip player's title must name the rally the way the row that opened it did.
 /// A clip whose bounds are unknown must say so rather than read as one that
 /// lasts zero seconds. Port of androidApp's `DeviceClipLabelTest`, case for case.
-final class LocalClipsTests: XCTestCase {
+final class DeviceRalliesTests: XCTestCase {
 
     private let entry = "local-clips-under-test"
 

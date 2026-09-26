@@ -147,7 +147,7 @@ final class ShuttlPaletteTests: XCTestCase {
 
     /// The match list's analysis glyphs are the only thing saying which analysis
     /// a match has, so they are held to the 3:1 non-text floor on their chip, on
-    /// every surface a chip is drawn over: the quiet row and the tab's own
+    /// every surface a chip is drawn over: the quiet row and the list's own
     /// background (bg), the raised card (bgTertiary) and the legend sheet
     /// (bgSecondary). The accent itself only makes 2.4:1 there in light, which
     /// is why the glyph is its own token. Mirrors androidApp's ShuttlPaletteTest.
@@ -175,6 +175,27 @@ final class ShuttlPaletteTests: XCTestCase {
                     "\(theme) analysisGlyph on its chip on \(name) is below 3:1"
                 )
             }
+        }
+    }
+
+    /// The toast is the page inverted: `textHeading` as its fill, `bg` as its
+    /// text, and `inverseAccent` for its View. The action is 13pt semibold,
+    /// which is not WCAG "large text", so it is held to the 4.5:1 text floor
+    /// rather than the 3:1 a control needs: 8.592:1 light, 4.540:1 dark. Plain
+    /// `accent`, the first choice, read 1.536:1 there in dark. Mirrors
+    /// androidApp's snackbar colours (`inverseSurface`, `inverseOnSurface`,
+    /// `inversePrimary`).
+    func testToastReadsInBothThemes() {
+        eachTheme { theme, pick in
+            let surface = pick(ShuttlPalette.textHeading)
+            XCTAssertGreaterThanOrEqual(
+                contrast(pick(ShuttlPalette.bg), surface), 4.5,
+                "\(theme) toast text is below the 4.5:1 body threshold"
+            )
+            XCTAssertGreaterThanOrEqual(
+                contrast(pick(ShuttlPalette.inverseAccent), surface), 4.5,
+                "\(theme) toast action is below the 4.5:1 text threshold"
+            )
         }
     }
 

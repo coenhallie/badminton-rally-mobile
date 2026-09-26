@@ -47,6 +47,9 @@ enum Shuttl {
     static let accent          = token(ShuttlPalette.accent)
     static let onAccent        = token(ShuttlPalette.onAccent)
     static let accentDark      = token(ShuttlPalette.accentDark)
+    /// Accent text on a `textHeading` fill (the toast's action). See
+    /// `ShuttlPalette.inverseAccent`.
+    static let inverseAccent   = token(ShuttlPalette.inverseAccent)
     /// The match list's analysis glyph and the chip it sits in. See
     /// `ShuttlPalette.analysisGlyph` for why the glyph is not plain `accent`.
     static let analysisGlyph   = token(ShuttlPalette.analysisGlyph)

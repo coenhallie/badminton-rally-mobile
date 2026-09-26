@@ -18,7 +18,7 @@ import SwiftUI
 /// in, rather than read here. On Android each panel resolves its own because
 /// `remember` keys them to the entry; SwiftUI has no such key, and a panel
 /// re-reading a megabyte of track on every redraw is the per-row file cost
-/// `storedTrackIds` exists to keep off the Analytics list. It also means the
+/// `storedTrackIds` exists to keep off the match list. It also means the
 /// panel pills and the panel behind them cannot disagree about which run they
 /// show.
 struct BasePositionPanel: View {

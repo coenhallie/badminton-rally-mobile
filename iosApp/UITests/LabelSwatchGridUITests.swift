@@ -64,13 +64,14 @@ final class LabelSwatchGridUITests: XCTestCase {
 
     /// Signing in needs real credentials, so a signed-out simulator skips rather
     /// than reporting a failure that says nothing about the swatch grid. The
-    /// tab bar only exists behind sign-in, so it doubles as that gate.
+    /// list's Settings gear only exists behind sign-in, so it doubles as that
+    /// gate, and it is the way to Labels besides.
     private func openLabelsScreen(_ app: XCUIApplication) throws {
-        let settingsTab = app.tabBars.buttons["Settings"].firstMatch
-        guard settingsTab.waitForExistence(timeout: 15) else {
+        let settings = app.buttons["Settings"].firstMatch
+        guard settings.waitForExistence(timeout: 15) else {
             throw XCTSkip("not signed in on this simulator - cannot reach the Labels screen")
         }
-        settingsTab.tap()
+        settings.tap()
         app.buttons["Labels"].firstMatch.tap()
         XCTAssertTrue(
             app.navigationBars["Labels"].waitForExistence(timeout: 10),

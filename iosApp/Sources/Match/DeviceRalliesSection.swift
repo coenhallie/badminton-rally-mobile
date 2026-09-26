@@ -10,8 +10,9 @@ import SwiftUI
 /// rallies, the rule the row's own rally count follows. Drawn as the cloud rally
 /// rows are (`RallyRowLabel` in a plain list, under separators, in the page's
 /// gutter) so a match's rallies look the same wherever they were cut, less the
-/// thumbnail and the note count, which device clips do not have yet. They had been rounded cards with a play glyph, which
-/// read as a different kind of thing from the cloud list one match over.
+/// thumbnail and the note count, which device clips do not have yet. They had
+/// been rounded cards with a play glyph, which read as a different kind of
+/// thing from the cloud list one match over.
 ///
 /// They exist so the two pipelines can be judged on what they actually produce.
 /// Rally counts can match while the clips are cut at the wrong moment, and the

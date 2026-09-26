@@ -19,9 +19,8 @@ import SwiftUI
 /// same object on all of them, and a per-screen fix is how two of them end up
 /// treated differently.
 ///
-/// For a page that paints `Shuttl.bg`, which is the match page, the Analytics
-/// detail and court marking. The labels screen is deliberately NOT
-/// one of them: its `List` keeps the system's own background rather than the
+/// For a page that paints `Shuttl.bg`, which is the match page, Settings and
+/// court marking. The labels screen is deliberately NOT one of them: its `List` keeps the system's own background rather than the
 /// palette's, and a `Shuttl.bg` bar over it would seam against that in dark,
 /// where the two are 0x0B0C0D and black. That screen keeps the system bar.
 struct ShuttlNavigationBarBackground: ViewModifier {

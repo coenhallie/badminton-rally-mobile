@@ -200,7 +200,7 @@ struct MatchView: View {
 
     // This match's video, when it is the coach's own, as `MatchGrouping.matches`
     // folds its clips: the clips' owner decides (every clip of a video has the
-    // same one), the same fact the Matches tab list's shared builder reads for
+    // same one), the same fact the match list's shared builder reads for
     // its row's `isOwned` and so for its share button. `MatchGrouping` stays
     // for this page's `MatchSummary`; the list no longer builds one.
     private var ownedVideo: MatchSummary? {
@@ -601,7 +601,7 @@ struct MatchView: View {
             // than from rally_clips. When both exist the cloud clips win, the
             // rule the row's rally count follows.
             if clipsForMatch.isEmpty, let item, item.deviceClipCount > 0, let entryId = item.entryId {
-                DeviceRalliesSection(localAnalysis: localAnalysis, entryId: entryId)
+                refreshingIfCloud(DeviceRalliesSection(localAnalysis: localAnalysis, entryId: entryId))
             } else {
                 listContent
             }
@@ -629,21 +629,25 @@ struct MatchView: View {
         }
     }
 
+    private var listContent: some View { refreshingIfCloud(listBody) }
+
     // A pull gesture that spins and refreshes nothing is worse than no gesture: a
     // score-only match has no video, so there is nothing here for a refresh to
     // touch. Only a video-backed match keeps the old `MatchClipsView`'s
-    // pull-to-refresh, on Points as well as Rallies. Match and Analysis have
-    // none: pulling on a video's notes or a heatmap to refresh the clip cache
-    // would be a gesture that does nothing visible.
+    // pull-to-refresh, on Points as well as Rallies, the device rallies
+    // included: a match with a cloud video can gain cloud clips, which then
+    // take their place. Match and Analysis have none: pulling on a video's
+    // notes or a heatmap to refresh the clip cache would be a gesture that
+    // does nothing visible. Mirrors androidApp's Rallies section.
     @ViewBuilder
-    private var listContent: some View {
+    private func refreshingIfCloud(_ list: some View) -> some View {
         if effectiveVideoId != nil {
-            listBody.refreshable {
+            list.refreshable {
                 try? await rally.clips.refresh()
                 await refreshSummary(supersede: true)
             }
         } else {
-            listBody
+            list
         }
     }
 
@@ -732,13 +736,15 @@ struct MatchView: View {
 
     private var listBody: some View {
         List {
-            if section == .points, let log = matchModel.log {
-                PointsFacet(
-                    log: log, card: matchModel.card, tally: matchModel.tally,
-                    points: matchModel.match?.points ?? [],
-                    onScore: { scoringTarget = ScoringRoute(scoreLogId: log.id) }
-                )
-            } else {
+            if section == .points {
+                if let log = matchModel.log {
+                    PointsFacet(
+                        log: log, card: matchModel.card, tally: matchModel.tally,
+                        points: matchModel.match?.points ?? [],
+                        onScore: { scoringTarget = ScoringRoute(scoreLogId: log.id) }
+                    )
+                }
+            } else if section == .rallies {
                 // Only rallies are reordered, so the sort lives with them
                 // rather than in a bar every section shares; one rally has no
                 // order.
