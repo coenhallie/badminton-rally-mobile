@@ -23,7 +23,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 
 /**
- * Plays one locally cut clip.
+ * Plays one locally cut clip, under [title].
  *
  * Exists so the two pipelines can be judged on what they actually produce.
  * Rally counts can match while the clips are cut at the wrong moment, and the
@@ -35,7 +35,7 @@ import androidx.media3.ui.PlayerView
  * takes more than one viewing.
  */
 @Composable
-fun LocalClipPlayerDialog(clip: ClipCutter.Clip, onDismiss: () -> Unit) {
+fun LocalClipPlayerDialog(clip: ClipCutter.Clip, title: String, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val player = remember(clip.file.path) {
         ExoPlayer.Builder(context).build().apply {
@@ -56,11 +56,10 @@ fun LocalClipPlayerDialog(clip: ClipCutter.Clip, onDismiss: () -> Unit) {
                 modifier = Modifier.padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text(
-                    "Rally ${clip.index}  ${"%.2f".format(clip.startSeconds)}s - " +
-                        "${"%.2f".format(clip.endSeconds)}s",
-                    style = MaterialTheme.typography.labelLarge,
-                )
+                // The caller's name for the clip, the one on the row that
+                // opened it; it had printed its own bounds to two decimals
+                // under a row that said something else.
+                Text(title, style = MaterialTheme.typography.labelLarge)
                 AndroidView(
                     factory = { ctx -> PlayerView(ctx).apply { this.player = player } },
                     modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
