@@ -44,6 +44,7 @@ import com.badmintontracker.android.share.ShareSheet
 import com.badmintontracker.android.ui.components.ConfirmDialog
 import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
+import com.badmintontracker.shared.matchlist.rallyLengthText
 import com.badmintontracker.shared.matchlist.MatchAction
 import com.badmintontracker.shared.matchlist.MatchConfirmation
 import com.badmintontracker.shared.matchlist.MatchDelete
@@ -500,7 +501,12 @@ internal fun ClipRow(
                 color = MaterialTheme.colorScheme.onBackground,
             )
             Text(
-                "${clip.durationSeconds}s · ${clip.annotationCount} notes".uppercase(Locale.ROOT),
+                // The length through the shared formatter: the stored float
+                // printed as it came ("25.1727S"). Left out, not "0.0s", when
+                // the clip has none.
+                listOfNotNull(rallyLengthText(clip.durationSeconds.toDouble()), "${clip.annotationCount} notes")
+                    .joinToString(" · ")
+                    .uppercase(Locale.ROOT),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
