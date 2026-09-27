@@ -2,20 +2,23 @@ package com.badmintontracker.analysis.camera
 
 import com.badmintontracker.analysis.geometry.Point
 import io.kotest.matchers.shouldBe
-import kotlin.math.cos
 import kotlin.math.roundToLong
-import kotlin.math.sin
 import kotlin.test.Test
 import kotlin.time.Duration
 import kotlin.time.TimeSource
 
 /**
  * What one tracked sample costs once the runtime is warm, stage by stage, on
- * whichever platform runs the suite (the JVM for `jvmTest`, Kotlin/Native for
- * `iosSimulatorArm64Test`). It prints; it gates nothing on time, because a
- * shared CI host's timings are not a contract. It does check that every timed
- * sample was followed, so a speed-up that breaks the tracker cannot pass here
+ * the host JVM. It prints; it gates nothing on time, because a shared CI
+ * host's timings are not a contract. It does check that every timed sample
+ * was followed, so a speed-up that breaks the tracker cannot pass here
  * unnoticed.
+ *
+ * JVM only: its 180 rounds added about 13 s to the iOS suite, where the
+ * debug Kotlin/Native test binary runs the tracker over ten times slower than
+ * the JVM, to print a figure nobody reads there. The same frames, a few
+ * rounds on every platform with no clock, are `CameraTrackerWarpedRunTest` in
+ * commonTest.
  *
  * The frames are built before the clock starts: what is timed is the pyramid,
  * Lucas-Kanade and RANSAC, and a whole [CameraMotionTracker.offer], nothing
@@ -26,14 +29,7 @@ class CameraTrackerBenchmarkTest {
 
     @Test fun a_warm_sample_costs_this_much() {
         val base = Synthetic.texture(480, 270, 11)
-        val frames = List(FRAMES) { i ->
-            val a = 0.004 * (i - FRAMES / 2)
-            Synthetic.warp(base, listOf(
-                listOf(cos(a), -sin(a), 3.0 * i - 12),
-                listOf(sin(a), cos(a), -2.0 * i + 7),
-                listOf(0.0, 0.0, 1.0),
-            ))
-        }
+        val frames = Synthetic.panAndRoll(base, FRAMES)
         val corners = shiTomasi(base)
         val templates = AnchoredTemplates(pyramid(base, PYRAMID_LEVELS), corners)
         val guesses = DoubleArray(corners.size * 2)

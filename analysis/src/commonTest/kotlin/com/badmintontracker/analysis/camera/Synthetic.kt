@@ -3,6 +3,7 @@ package com.badmintontracker.analysis.camera
 import com.badmintontracker.analysis.geometry.Matrix3x3
 import com.badmintontracker.analysis.geometry.apply
 import com.badmintontracker.analysis.geometry.invert3x3
+import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
 
@@ -94,5 +95,20 @@ object Synthetic {
             px[y * src.width + x] = src.sample(s.x, s.y).toFloat()
         }
         return GreyImage(src.width, src.height, px)
+    }
+
+    /**
+     * [count] frames of [base] under a steady pan (3 px right and 2 px up a
+     * frame) and a slow roll (0.004 rad a frame, centred on the middle frame):
+     * the run `CameraTrackerBenchmarkTest` times and `CameraTrackerWarpedRunTest`
+     * follows.
+     */
+    fun panAndRoll(base: GreyImage, count: Int): List<GreyImage> = List(count) { i ->
+        val a = 0.004 * (i - count / 2)
+        warp(base, listOf(
+            listOf(cos(a), -sin(a), 3.0 * i - 12),
+            listOf(sin(a), cos(a), -2.0 * i + 7),
+            listOf(0.0, 0.0, 1.0),
+        ))
     }
 }

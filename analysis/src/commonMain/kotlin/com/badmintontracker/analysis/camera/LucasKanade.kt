@@ -44,10 +44,10 @@ private const val WINDOW = SIDE * SIDE
  * column and row (42 times) instead of once per pixel (441 times), no call
  * per pixel, and each image row's horizontal blend computed once and shared
  * by the two window rows that read it. The results are the same to the last
- * bit. On the host JVM that took Lucas-Kanade from about 1.5 to 1.0 ms per
- * sample (`CameraTrackerBenchmarkTest`). On an emulator's debuggable build,
- * where a call costs far more, this and the allocation-free RANSAC together
- * took the whole tracker from about 110 to 12 ms per sample.
+ * bit. What that saved, and what a sample costs on each platform it was
+ * measured on, are in the design doc's §10
+ * (`docs/plans/2026-09-27-camera-motion-design.md`, "Tracker cost"); the
+ * host figures come from the JVM-only `CameraTrackerBenchmarkTest`.
  *
  * Holds scratch buffers, so one instance must not [track] on two threads at
  * once; the camera tracker is single-threaded.
@@ -125,7 +125,7 @@ internal class AnchoredTemplates(reference: List<GreyImage>, val points: List<Pa
         require(target.size == levels)
         val out = DoubleArray(points.size * 2)
         val ok = BooleanArray(points.size)
-        val top = levels - 1
+        val coarsest = levels - 1
         val col0 = taps.col0
         val col1 = taps.col1
         val fxs = taps.fx
@@ -137,21 +137,21 @@ internal class AnchoredTemplates(reference: List<GreyImage>, val points: List<Pa
         val upper = DoubleArray(SIDE)
         val lower = DoubleArray(SIDE)
         for (i in points.indices) {
-            val px = px[i]
-            val py = py[i]
+            val x0 = px[i]
+            val y0 = py[i]
             // The guess as a displacement, carried down the pyramid (Bouguet).
-            var gx = (guesses[2 * i] - px) / (1 shl top)
-            var gy = (guesses[2 * i + 1] - py) / (1 shl top)
+            var gx = (guesses[2 * i] - x0) / (1 shl coarsest)
+            var gy = (guesses[2 * i + 1] - y0) / (1 shl coarsest)
             var failed = false
             var dx = 0.0
             var dy = 0.0
-            for (level in top downTo 0) {
+            for (level in coarsest downTo 0) {
                 if (!usable[level][i]) { failed = true; break }
                 val img = target[level]
                 val p = img.pixels
                 val scale = 1.0 / (1 shl level)
-                val cx = px * scale
-                val cy = py * scale
+                val cx = x0 * scale
+                val cy = y0 * scale
                 val a = tensor[level][3 * i]
                 val b = tensor[level][3 * i + 1]
                 val c = tensor[level][3 * i + 2]
@@ -206,8 +206,8 @@ internal class AnchoredTemplates(reference: List<GreyImage>, val points: List<Pa
                     dy = gy + vy
                 }
             }
-            val x = px + dx
-            val y = py + dy
+            val x = x0 + dx
+            val y = y0 + dy
             val base = target[0]
             if (failed || x.isNaN() || y.isNaN() || x < 0 || y < 0 || x > base.width - 1 || y > base.height - 1) {
                 ok[i] = false

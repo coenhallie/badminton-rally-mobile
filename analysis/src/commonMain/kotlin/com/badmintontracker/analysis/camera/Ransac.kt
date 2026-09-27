@@ -16,10 +16,12 @@ internal class RansacResult(val homography: Matrix3x3, val inliers: Int)
  * platform. The result is normalised so `h22 == 1.0`.
  *
  * This runs once per tracked sample, and its 300 fits and inlier counts were
- * half the tracker's cost (1.4 of 2.9 ms per sample on the host JVM) when
- * each fit went through `List<List<Double>>` and each projected point was a
- * new [Point]. So the points are copied once into primitive arrays, every fit
- * reuses one [HomographySolver], and the counting allocates nothing: 0.15 ms.
+ * about half the tracker's cost when each fit went through
+ * `List<List<Double>>` and each projected point was a new [Point]. So the
+ * points are copied once into primitive arrays, every fit reuses one
+ * [HomographySolver], and the counting allocates nothing. The measured costs,
+ * before and after and by platform, are in the design doc's §10
+ * (`docs/plans/2026-09-27-camera-motion-design.md`, "Tracker cost").
  * The fits, the draws from [random] and the inlier test are the same as
  * through [com.badmintontracker.analysis.geometry.calculateHomography] and
  * [com.badmintontracker.analysis.geometry.apply], to the last bit.

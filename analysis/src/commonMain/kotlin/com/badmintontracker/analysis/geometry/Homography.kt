@@ -345,7 +345,11 @@ fun multiply3x3(a: Matrix3x3, b: Matrix3x3): Matrix3x3 {
     return out.toMatrix3x3()
 }
 
-/** [multiply3x3] on row-major arrays; each entry summed from 0.0 in `k` order. */
+/**
+ * [multiply3x3] on row-major arrays; each entry summed from 0.0 in `k` order.
+ * [out] must not be [a] or [b]: entries are written while later ones are
+ * still being read from the inputs, so an aliased call returns garbage.
+ */
 internal fun multiply3x3Into(a: DoubleArray, b: DoubleArray, out: DoubleArray) {
     for (r in 0..2) for (c in 0..2) {
         var sum = 0.0
@@ -364,7 +368,10 @@ fun invert3x3(m: Matrix3x3): Matrix3x3? {
     return if (invert3x3Into(m.toRowMajor(), out)) out.toMatrix3x3() else null
 }
 
-/** [invert3x3] on row-major arrays; false when singular. */
+/**
+ * [invert3x3] on row-major arrays; false when singular. [out] must not be
+ * [m]: every entry of [m] is read again after the first is written.
+ */
 internal fun invert3x3Into(m: DoubleArray, out: DoubleArray): Boolean {
     val det = m[0] * (m[4] * m[8] - m[5] * m[7]) -
               m[1] * (m[3] * m[8] - m[5] * m[6]) +

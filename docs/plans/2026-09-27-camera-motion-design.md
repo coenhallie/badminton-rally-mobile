@@ -788,6 +788,15 @@ p95 1.956 px (gate median <= 1.0 px, p95 <= 2.0 px, pass).
 | iOS simulator, direct engine path, 1920x1080 (Task 10) | Debug | -- | 482 ms (319 reading the plane) | -- |
 | iOS simulator, full instrumented pass, `IMG_5892` (Task 15b) | Release | -- | 7.7-9.8 ms | -- |
 
+Before Task 9b's performance work, on the same benchmarks
+(`task-9b-report.md`): host JVM synthetic 2.94-3.45 ms per sample, of which
+Lucas-Kanade 1.40-1.66 ms and RANSAC 1.36-1.60 ms (after: 0.96-1.11 and
+0.13-0.17 ms); Android emulator debuggable 104-114 ms per tracked sample
+(after: 11.7-11.8 ms); Android emulator release 9.2-9.9 ms (after: 2.4-2.5
+ms); iOS simulator Kotlin/Native release 12.4 ms (after: 2.0-2.8 ms). The
+KDoc of `LucasKanade.kt` and `Ransac.kt` points here rather than carrying
+these figures itself.
+
 Share of the pass, measured (not estimated) on the full `IMG_5892`
 instrumented Android run (Task 15a, debuggable build, 545.8 ms/frame overall):
 tracker 17.1 s of a 1190.8 s pass, **1.44%**. Design §1 estimated 1-4
