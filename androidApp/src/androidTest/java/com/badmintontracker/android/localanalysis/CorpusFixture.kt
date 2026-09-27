@@ -19,12 +19,13 @@ import java.io.File
  * where production puts video before decoding it: app storage, copied there
  * the same way `LocalAnalysisRunner.materialise` stages a `content://` video.
  * Copied once and reused, since re-staging seventy megabytes on every test is
- * wasted time.
+ * wasted time. [name] is the file pushed to `/data/local/tmp`: the default is
+ * the static-camera corpus, and `CameraFollowedRunTest` stages its handheld one.
  */
-internal fun stagedCorpusVideo(context: Context): File? {
-    val source = File("/data/local/tmp/corpus-743d7fb1.mp4")
+internal fun stagedCorpusVideo(context: Context, name: String = "corpus-743d7fb1.mp4"): File? {
+    val source = File("/data/local/tmp/$name")
     if (!source.isFile || !source.canRead()) return null
-    val dest = File(context.filesDir, "corpus/corpus-743d7fb1.mp4")
+    val dest = File(context.filesDir, "corpus/$name")
     if (dest.isFile && dest.length() == source.length()) return dest
     dest.parentFile?.mkdirs()
     source.inputStream().use { input -> dest.outputStream().use { input.copyTo(it) } }
