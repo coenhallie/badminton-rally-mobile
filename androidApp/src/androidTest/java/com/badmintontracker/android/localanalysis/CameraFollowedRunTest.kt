@@ -50,10 +50,15 @@ import kotlin.math.hypot
  * debuggable build that share is an upper bound (the tracker costs several
  * times more there than in a release build). The pose file and the near track,
  * with the reference beside each position, are written to the app's external
- * files dir, so a miss can be looked into on a computer without another hour
+ * files dir, so a miss can be looked into on a computer without another run
  * on the device.
  *
- * Takes the better part of an hour on the emulator. Run it with
+ * Takes about twenty minutes on the emulator, which needs two things a phone
+ * does not. Its hardware HEVC decoder (`c2.goldfish.hevc.decoder`) accepts
+ * this recording's samples and never returns a frame, so the pass waits
+ * forever: start it with `-feature -HardwareDecoder` for the software
+ * decoder. And the three models at work need more than a 2 GB AVD has, so
+ * give it `-memory 6144`. Run it with
  * `am instrument` on an installed build, not `connectedAndroidTest`, which
  * uninstalls the app afterwards and with it the signed-in session:
  *
