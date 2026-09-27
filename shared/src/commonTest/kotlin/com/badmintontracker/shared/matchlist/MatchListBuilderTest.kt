@@ -97,7 +97,6 @@ class MatchListBuilderTest {
         item.entryId shouldBe "v1"
         item.videoId shouldBe "v1"
         item.analyses shouldContainExactly listOf(MatchAnalysis.RALLIES)
-        item.opensLocalPlayer shouldBe false
     }
 
     @Test
@@ -107,7 +106,6 @@ class MatchListBuilderTest {
         item.analyses.shouldBeEmpty()
         item.action shouldBe MatchAction.ANALYZE
         item.statusText shouldBe MatchListCopy.NOT_ANALYZED
-        item.opensLocalPlayer shouldBe true
         item.detail shouldBe "0:48 · Sep 8, 2026"
     }
 
@@ -298,7 +296,8 @@ class MatchListBuilderTest {
 
     @Test
     fun the_skeleton_is_not_offered_once_the_video_has_left_the_phone() {
-        // Same rule as AnalyticsRowState.READY_NO_VIDEO: it is drawn over playback.
+        // A track kept after its file is gone still has a heatmap; the
+        // skeleton does not, because it is drawn over playback.
         val item = build(input(
             clips = listOf(clip("v1", 1)), tracks = setOf("v1"), skeletons = setOf("v1"),
         )).mine.single()

@@ -23,7 +23,8 @@ enum class MatchAction { NONE, ANALYZE, MARK_COURT, RETRY, RUNNING, PAUSED }
 enum class MatchDelete { NONE, VIDEO_MATCH, SCORE_MATCH, BOUND_MATCH, LEAVE_SHARE }
 
 /**
- * One match on the Matches tab's list and on the Analytics tab.
+ * One match on the list. The match page reads the same item, so a row's
+ * chips and the page's sections cannot disagree.
  *
  * Plain fields and enums rather than sealed types on purpose: Swift reads this
  * directly, and a nullable field is a plain optional there where a sealed type
@@ -61,9 +62,7 @@ data class MatchListItem(
     val canAnalyzeAgain: Boolean,
     val canRemoveFromPhone: Boolean,
     val delete: MatchDelete,
-    /** A tap opens the local player rather than the match page: the file is here and nothing else is. */
-    val opensLocalPlayer: Boolean,
-    /** Rallies an on-device run cut, for the "Clips on this phone (N)" menu item. */
+    /** Rallies an on-device run cut, for the Rallies section of a match with no cloud clips. */
     val deviceClipCount: Int,
     /** The id a stored heatmap is keyed by, when there is one. */
     val heatmapId: String?,

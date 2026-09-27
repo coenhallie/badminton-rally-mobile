@@ -102,12 +102,12 @@ fun canResumeFailedAnalysis(entry: LocalVideoEntry): Boolean =
  * settled with nothing to say (LOCAL, and FAILED, whose message the row shows
  * instead).
  *
- * Shared for the same reason [deviceWorkLabel] is: the Matches tab's row and
- * the Analytics tab's row describe the same run over the same video, one tap
- * apart, and both platforms draw both. Written out per screen it drifted
- * immediately - Analytics on Android said "Uploading" where the match list
- * (then in a drawer) beside it said "Uploading 42%…", and iOS said the match
- * list's line on both.
+ * Shared for the same reason [deviceWorkLabel] is: both platforms draw it, on
+ * the match list's row and, for a scored match, in the match page's banner,
+ * which draws that same row. Written out per screen it drifted immediately -
+ * the Analytics list this app once had said "Uploading" on Android where the
+ * match list (then in a drawer) beside it said "Uploading 42%…", and iOS said
+ * the match list's line on both.
  *
  * Not [deviceWorkLabel]'s vocabulary, deliberately. That one names the pipeline
  * ("Processing in the cloud") because the chrome indicator merges both and has

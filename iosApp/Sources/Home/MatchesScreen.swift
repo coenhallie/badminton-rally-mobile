@@ -22,7 +22,7 @@ struct MatchesScreen: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HomeHeader(HomeCopy.shared.TAB_MATCHES) {
+            HomeHeader(HomeCopy.shared.MATCHES_TITLE) {
                 BackgroundWorkAction()
                 Button(action: onSettings) {
                     Image(systemName: "gearshape")

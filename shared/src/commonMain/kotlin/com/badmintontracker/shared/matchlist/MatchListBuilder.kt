@@ -233,7 +233,6 @@ private fun videoItem(
             entry != null && !removable -> MatchDelete.NONE
             else -> MatchDelete.VIDEO_MATCH
         },
-        opensLocalPlayer = entry != null && videoId == null,
         deviceClipCount = deviceClips,
         heatmapId = heatmapId,
         accessibilityStatus = statusDescription(where, analyses, asks.text),
@@ -313,7 +312,6 @@ private fun scoreItem(
             videoId != null -> MatchDelete.BOUND_MATCH
             else -> MatchDelete.SCORE_MATCH
         },
-        opensLocalPlayer = false,
         deviceClipCount = entry?.let { input.deviceClipCounts[it.id] } ?: 0,
         heatmapId = heatmapId,
         accessibilityStatus = statusDescription(where, analyses, asks.text),

@@ -22,8 +22,8 @@ import kotlinx.serialization.json.jsonPrimitive
  *
  * [keypoints] rides along because the stream is meaningless without the court
  * it was projected against, and they come off the same row. A phone with no
- * local entry for this video - which is exactly what READY_NO_VIDEO exists for
- * - has no other copy of them.
+ * local entry for this video - a match analyzed in the cloud from another
+ * phone, whose Analysis works from the track alone - has no other copy of them.
  */
 data class CloudPoseArtifact(
     val videoId: String,
@@ -55,8 +55,9 @@ class CloudPoseRepositoryImpl(private val client: SupabaseClient) : CloudPoseRep
         // The marks Phase 2 itself was handed. Read on the SAME query as the
         // artifact path, so the stream and the court it is interpreted
         // against come from one row rather than from two sources that could
-        // disagree - and so a phone with no local entry for this video, which
-        // is the whole point of READY_NO_VIDEO, has marks at all.
+        // disagree - and so a phone with no local entry for this video (a
+        // match analyzed from another phone, whose Analysis works from the
+        // track alone) has marks at all.
         @SerialName("manual_court_keypoints") val keypoints: CourtKeypoints? = null,
     )
 

@@ -5,10 +5,7 @@ data class RunAnnouncement(
     val announce: Set<String>,
     /** Pass back into the next [announceFinishedRuns] call. */
     val seen: Set<String>,
-) {
-    /** Transitional, for the tab-switch callers until Task 10 of the 2026-09-26 plan removes them. */
-    val openAnalytics: Boolean get() = announce.isNotEmpty()
-}
+)
 
 /**
  * Whether a finished run, on-device or in the cloud, should be announced on
@@ -23,8 +20,9 @@ data class RunAnnouncement(
  * Two rules, and the interesting one is the second.
  *
  * [onHome] gates the announcement: true only when the list is the front screen
- * with nothing above it (`isHomeFront`). Anywhere else nothing is announced,
- * exactly as it was before this existed.
+ * with nothing above it (no page pushed, no sheet or dialog open, the app in
+ * the foreground), which each platform works out for itself. Anywhere else
+ * nothing is announced, exactly as it was before this existed.
  *
  * [seen] is updated WHETHER OR NOT the announcement happens, which is what
  * stops a run that finished while the coach was elsewhere from ambushing them

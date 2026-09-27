@@ -6,9 +6,8 @@ import kotlin.test.assertFalse
 
 class HomeCopyTest {
     private val all = listOf(
-        HomeCopy.TAB_MATCHES, HomeCopy.TAB_ANALYTICS, HomeCopy.TAB_SETTINGS,
-        HomeCopy.ADD_MATCH, HomeCopy.EMPTY_BODY, HomeCopy.ANALYTICS_EMPTY_TITLE,
-        HomeCopy.ANALYTICS_EMPTY_BODY, HomeCopy.SETTINGS_LABELS, HomeCopy.SETTINGS_LABELS_DETAIL,
+        HomeCopy.MATCHES_TITLE, HomeCopy.ADD_MATCH, HomeCopy.EMPTY_BODY,
+        HomeCopy.SETTINGS_LABELS, HomeCopy.SETTINGS_LABELS_DETAIL,
         HomeCopy.SETTINGS_DARK_THEME, HomeCopy.SETTINGS_SIGNED_IN_AS, HomeCopy.SETTINGS_SIGN_OUT,
         HomeCopy.version("0.8.0", "25"),
     )

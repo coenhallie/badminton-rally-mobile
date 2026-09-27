@@ -4,8 +4,7 @@ import io.kotest.matchers.shouldBe
 import kotlin.test.Test
 
 /**
- * When a finished run switches the coach from the Matches tab to the Analytics
- * tab.
+ * When a finished run is announced on the match list.
  *
  * The rule is small and its consequences are not: every case here is a way the
  * app could take the screen out from under someone who was using it.
@@ -13,35 +12,35 @@ import kotlin.test.Test
 class RunAnnouncementTest {
 
     @Test
-    fun a_run_that_lands_while_home_is_showing_opens_analytics() {
+    fun a_run_that_lands_while_home_is_showing_announces() {
         val result = announceFinishedRuns(finished = setOf("v1"), seen = emptySet(), onHome = true)
 
-        result.openAnalytics shouldBe true
+        result.announce shouldBe setOf("v1")
         result.seen shouldBe setOf("v1")
     }
 
     @Test
-    fun the_same_finished_run_does_not_open_analytics_twice() {
-        // The Matches tab is left and come back to on every trip out and back.
-        // Without this the coach could not return to it at all: every arrival
-        // would bounce straight back out to Analytics.
+    fun the_same_finished_run_does_not_announce_twice() {
+        // The list is left and come back to on every trip out and back.
+        // Without this every arrival back on it would announce the same run
+        // again.
         val first = announceFinishedRuns(setOf("v1"), emptySet(), onHome = true)
         val second = announceFinishedRuns(setOf("v1"), first.seen, onHome = true)
 
-        second.openAnalytics shouldBe false
+        second.announce shouldBe emptySet()
     }
 
     @Test
-    fun a_run_that_lands_while_the_coach_is_elsewhere_never_opens_analytics() {
+    fun a_run_that_lands_while_the_coach_is_elsewhere_never_announces() {
         // The case the seen-set exists for. The run finishes while the coach is
         // deep in another screen; the app bar indicator reports it. Walking back
-        // onto the Matches tab ten minutes later must not then behave as though
+        // onto the list ten minutes later must not then behave as though
         // it had just that moment landed.
         val away = announceFinishedRuns(setOf("v1"), emptySet(), onHome = false)
-        away.openAnalytics shouldBe false
+        away.announce shouldBe emptySet()
 
         val backOnHome = announceFinishedRuns(setOf("v1"), away.seen, onHome = true)
-        backOnHome.openAnalytics shouldBe false
+        backOnHome.announce shouldBe emptySet()
     }
 
     @Test
@@ -51,10 +50,10 @@ class RunAnnouncementTest {
         val first = announceFinishedRuns(setOf("v1"), emptySet(), onHome = true)
         // Mid-run the entry is no longer finished, so it leaves the set.
         val running = announceFinishedRuns(emptySet(), first.seen, onHome = true)
-        running.openAnalytics shouldBe false
+        running.announce shouldBe emptySet()
 
         val second = announceFinishedRuns(setOf("v1"), running.seen, onHome = true)
-        second.openAnalytics shouldBe true
+        second.announce shouldBe setOf("v1")
     }
 
     @Test
@@ -62,13 +61,13 @@ class RunAnnouncementTest {
         val first = announceFinishedRuns(setOf("v1"), emptySet(), onHome = true)
         val both = announceFinishedRuns(setOf("v1", "v2"), first.seen, onHome = true)
 
-        both.openAnalytics shouldBe true
+        both.announce shouldBe setOf("v2")
         both.seen shouldBe setOf("v1", "v2")
     }
 
     @Test
     fun nothing_finished_announces_nothing() {
-        announceFinishedRuns(emptySet(), emptySet(), onHome = true).openAnalytics shouldBe false
+        announceFinishedRuns(emptySet(), emptySet(), onHome = true).announce shouldBe emptySet()
     }
 
     @Test

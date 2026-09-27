@@ -42,11 +42,12 @@ object AnalysisFiles {
      * The player tracks, local and cloud.
      *
      * Kept when the coach is only freeing the footage. The heatmap and the base
-     * position are computed entirely from these and need no video at all, which
-     * is what `AnalyticsRowState.READY_NO_VIDEO` exists for - so taking them
-     * here would turn "get my storage back" into "lose my analysis". Only a
-     * match with a cloud copy is listed again afterwards; one only on this
-     * phone leaves the list with its entry, and its kept track with it.
+     * position are computed entirely from these and need no video at all: a
+     * track kept after its file is gone still opens the match page's Analysis,
+     * with Heatmap and Base but no Skeleton. Taking them here would turn "get
+     * my storage back" into "lose my analysis". Only a match with a cloud copy
+     * is listed again afterwards; one only on this phone leaves the list with
+     * its entry, and its kept track with it.
      */
     private val TRACK_STORES = listOf("player-tracks", "cloud-tracks")
 

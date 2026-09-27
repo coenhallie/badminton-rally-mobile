@@ -65,15 +65,14 @@ fun attachStatus(
             AnalyzeStage.FAILED ->
                 return AttachStatus(entry.failureMessage ?: "Analysis failed", AttachKind.FAILED)
             // ANALYZED means the pipeline succeeded, not that clips have synced -
-            // the same gap the no-entry path below exists to cover. Today this is
+            // the same gap the no-entry path below exists to cover. This is
             // reachable only when the entry also carries local annotations (the
-            // only reason the pipeline keeps an entry past success), and an
-            // attached entry can no longer be opened in the local player to
-            // acquire any - so in practice clipCount is already > 0 by the time
-            // ANALYZED shows up here. That's correct by accident, not by
-            // guarantee: it rests on a chain of "you cannot get there from here"
-            // that later work can change. Fall through to the same clip-count
-            // question rather than assume the accident holds.
+            // only reason the pipeline keeps an entry past success). An attached
+            // entry once had no way to acquire any, because the local player
+            // would not open it; the match page's Match section now opens any
+            // entry on this phone, bound or not, so that chain of "you cannot
+            // get there from here" no longer holds. Fall through to the same
+            // clip-count question rather than assume clips have landed.
             AnalyzeStage.ANALYZED -> Unit
         }
     }

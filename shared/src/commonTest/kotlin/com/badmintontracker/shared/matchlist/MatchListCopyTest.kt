@@ -40,7 +40,7 @@ class MatchListCopyTest {
             MatchListCopy.ANALYSIS_RALLIES, MatchListCopy.ANALYSIS_HEATMAP,
             MatchListCopy.ANALYSIS_SKELETON, MatchListCopy.ANALYSIS_SCORE,
             MatchListCopy.MENU_SHARE, MatchListCopy.MENU_EDIT_DETAILS, MatchListCopy.MENU_ANALYZE_AGAIN,
-            MatchListCopy.MENU_HEATMAP, MatchListCopy.MENU_REMOVE_FROM_PHONE, MatchListCopy.MENU_DELETE,
+            MatchListCopy.MENU_REMOVE_FROM_PHONE, MatchListCopy.MENU_DELETE,
             MatchListCopy.MENU_LEAVE_SHARE, MatchListCopy.SWIPE_DELETE, MatchListCopy.SWIPE_REMOVE,
             MatchListCopy.CHOICE_REMOVE, MatchListCopy.CHOICE_DELETE, MatchListCopy.CHOICE_CANCEL,
             MatchListCopy.REMOVE_VIDEO_TITLE, MatchListCopy.CONFIRM_REMOVE, MatchListCopy.CONFIRM_DELETE,
@@ -48,9 +48,7 @@ class MatchListCopyTest {
             MatchListCopy.ANALYSIS_FAILED, MatchListCopy.analysisFailed(null), MatchListCopy.analysisFailed("x"),
             MatchListCopy.sharedBy("coach@club.es"),
         )
-        val produced = listOf(
-            MatchListCopy.menuDeviceClips(0), MatchListCopy.menuDeviceClips(7),
-        ) + removableRows().flatMap { item ->
+        val produced = removableRows().flatMap { item ->
             listOf(MatchListCopy.removeFromPhoneDetail(item), MatchListCopy.choiceMessage(item))
         } + MatchAction.entries.mapNotNull { MatchListCopy.actionLabel(it) } +
             MatchDelete.entries.flatMap { listOfNotNull(MatchListCopy.deleteTitle(it), MatchListCopy.deleteConfirmLabel(it)) } +

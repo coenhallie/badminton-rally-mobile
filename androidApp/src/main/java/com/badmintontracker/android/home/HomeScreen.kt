@@ -157,7 +157,7 @@ fun HomeScreen(
         // footprint goes on top of it.
         val bottom = PaddingValues(bottom = padding.calculateBottomPadding() + ADD_BUTTON_CLEARANCE)
         Column(Modifier.fillMaxSize().windowInsetsPadding(HorizontalSafeDrawing)) {
-            HomeTopBar(HomeCopy.TAB_MATCHES) {
+            HomeTopBar(HomeCopy.MATCHES_TITLE) {
                 BackgroundWorkAction()
                 IconButton(onClick = onSettings) {
                     Icon(
