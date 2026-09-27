@@ -41,9 +41,9 @@ enum class ShuttlFieldType { Text, Email, Password }
  * iosApp's ShuttlTextField draws the same thing.
  *
  * The label and the counter are drawn inside [BasicTextField]'s decoration box
- * rather than beside it. That makes them part of the field's own semantics
- * node, so TalkBack reads "Email, edit box" instead of an unnamed edit box
- * after a separate "Email" text, and a tap on the label focuses the field.
+ * rather than beside it. That puts them in the field's own semantics node:
+ * the label is the edit box's text in the merged tree, not a separate text
+ * node beside an unnamed one, and a tap on the label focuses the field.
  */
 @Composable
 fun ShuttlOutlinedTextField(
@@ -74,9 +74,18 @@ fun ShuttlOutlinedTextField(
 ) {
     val interaction = remember { MutableInteractionSource() }
     val isFocused   by interaction.collectIsFocusedAsState()
+    // The unfocused stroke is textTertiary, not the theme's outline
+    // (borderSecondary): an input's boundary needs 3:1 against what it sits
+    // on (WCAG 1.4.11), and borderSecondary was 1.52:1 on the light page and
+    // 1.29:1 on the dark one, with the fill itself invisible in dark.
+    // textTertiary is 5.82 / 5.41 / 5.41:1 on bg / bgSecondary / bgRaised in
+    // light, 5.25 / 4.96 / 4.34:1 in dark. Focus stays the stronger state:
+    // accent, and twice as thick. The border draws inside the box, so the
+    // thicker stroke moves neither the text nor the field's size.
     val borderColor =
         if (isFocused) MaterialTheme.colorScheme.primary
-        else            MaterialTheme.colorScheme.outline
+        else            ShuttlTheme.extended.textTertiary
+    val borderWidth = if (isFocused) 2.dp else 1.dp
     // Small, not the cards' large: a field is a control inside a surface, and
     // 12 is what the iOS system form fields already draw.
     val shape = RoundedCornerShape(ShuttlRadius.small)
@@ -134,7 +143,7 @@ fun ShuttlOutlinedTextField(
                         .fillMaxWidth()
                         .clip(shape)
                         .background(ShuttlTheme.extended.bgInput, shape)
-                        .border(width = 1.dp, color = borderColor, shape = shape)
+                        .border(width = borderWidth, color = borderColor, shape = shape)
                         .padding(horizontal = 12.dp, vertical = 10.dp),
                 ) {
                     innerTextField()
