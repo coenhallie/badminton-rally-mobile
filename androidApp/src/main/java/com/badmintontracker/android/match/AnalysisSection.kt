@@ -26,6 +26,7 @@ import com.badmintontracker.shared.analytics.availablePanels
 import com.badmintontracker.shared.analytics.cloudRallyWindows
 import com.badmintontracker.shared.analytics.rallyWindowsFor
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
+import com.badmintontracker.shared.matchpage.MatchPageCopy
 import com.badmintontracker.shared.model.RallyClip
 import com.badmintontracker.shared.prefs.PlaybackPreferenceRepository
 import com.badmintontracker.shared.prefs.RacketArmPreferenceRepository
@@ -99,13 +100,14 @@ fun AnalysisSection(
                 // Secondary: this row is Analysis's own, under the page's
                 // section row, and must not read as its peer.
                 secondary = true,
+                groupLabel = MatchPageCopy.ANALYSIS_PANELS,
             )
         } else {
             // Styled as a small uppercase section label, not as a title: the
             // label sits under the page's own section row, and two treatments
             // of the same thing there reads as two different kinds of heading.
             Text(
-                "HEATMAP",
+                MatchPageCopy.HEATMAP_HEADING,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = MatchPageGutter, end = MatchPageGutter, bottom = 12.dp),

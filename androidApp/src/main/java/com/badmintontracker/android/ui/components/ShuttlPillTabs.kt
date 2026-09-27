@@ -27,6 +27,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -73,6 +75,10 @@ import com.badmintontracker.android.ui.theme.ShuttlRadius
  *
  * [labels] and [selectedIndex] rather than a generic type: the callers keep
  * their own enum and pass its labels, which keeps this file free of them.
+ *
+ * [groupLabel] is read to TalkBack as the row's name ("Match sections"), as
+ * iOS reads its `accessibilityLabel` to VoiceOver. Without it a screen reader
+ * user meets a bare run of tabs with nothing saying what they switch.
  */
 @Composable
 fun ShuttlPillTabs(
@@ -82,6 +88,7 @@ fun ShuttlPillTabs(
     modifier: Modifier = Modifier,
     secondary: Boolean = false,
     ceilingFor: PillLabelCeiling? = null,
+    groupLabel: String? = null,
 ) {
     val shape = RoundedCornerShape(ShuttlRadius.pill)
     val baseStyle = if (secondary) {
@@ -140,6 +147,7 @@ fun ShuttlPillTabs(
                 .clip(shape)
                 .background(MaterialTheme.colorScheme.surfaceVariant, shape)
                 .padding(TRACK_PADDING)
+                .then(if (groupLabel != null) Modifier.semantics { contentDescription = groupLabel } else Modifier)
                 .selectableGroup(),
             horizontalArrangement = Arrangement.spacedBy(GAP),
         ) {

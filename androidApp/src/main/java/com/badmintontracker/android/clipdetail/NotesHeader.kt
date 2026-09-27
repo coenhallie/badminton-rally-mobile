@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlButtonVariant
 import com.badmintontracker.android.ui.theme.ShuttlTheme
+import com.badmintontracker.shared.matchpage.MatchPageCopy
 
 /**
  * The line that heads a player's notes: the caption on the left, and, for a
@@ -39,7 +40,7 @@ fun NotesHeader(caption: String, onAdd: (() -> Unit)?, modifier: Modifier = Modi
         )
         if (onAdd != null) {
             ShuttlButton(
-                text = "Add note",
+                text = MatchPageCopy.ADD_NOTE,
                 onClick = onAdd,
                 variant = ShuttlButtonVariant.Primary,
                 compact = true,

@@ -86,7 +86,7 @@ struct AnalysisSection: View {
                         labels: panels.map(\.label),
                         selectedIndex: panels.firstIndex(of: panel) ?? 0,
                         onSelect: { chosen = panels[$0] },
-                        accessibilityLabel: "Analysis panel",
+                        accessibilityLabel: MatchPageCopy.shared.ANALYSIS_PANELS,
                         // Secondary: this row is Analysis's own, under the
                         // page's section row, and must not read as its peer.
                         secondary: true
@@ -100,7 +100,7 @@ struct AnalysisSection: View {
                     // the label sits under the page's own section row, and two
                     // treatments of the same thing there reads as two different
                     // kinds of heading.
-                    Text("HEATMAP")
+                    Text(MatchPageCopy.shared.HEATMAP_HEADING)
                         .shuttlType(ShuttlType.labelSmall)
                         .foregroundStyle(Shuttl.textSecondary)
                         .padding(.horizontal, ShuttlGutter.page)

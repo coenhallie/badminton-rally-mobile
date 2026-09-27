@@ -410,6 +410,7 @@ fun MatchScreen(
                         // The secondary rows in the sections below (Analysis's
                         // panels, Near and Far) draw no larger than this row.
                         ceilingFor = pillCeiling,
+                        groupLabel = MatchPageCopy.SECTIONS,
                     )
                 }
             }
