@@ -535,8 +535,9 @@ committed:
   sampling rule selects, at full source resolution, one file per frame
   (about 728 files, ~1.4 GB total).
 - `samples.json`, `frame_times.json`, `paint.json` - the sample list, every
-  decoded frame's timestamp, and the 24 painted-line points (court metres)
-  the test measures against.
+  decoded frame's timestamp (`frame_times.json` is a bare array; list
+  position is the 0-based decode index), and the 24 painted-line points
+  (court metres) the test measures against.
 - `opencv_motion.json` - the same anchored Lucas-Kanade tracker run through
   OpenCV, by importing `backend/camera_motion.py` from the sibling
   `badminton-tracker` checkout (read only; never edited from here) rather

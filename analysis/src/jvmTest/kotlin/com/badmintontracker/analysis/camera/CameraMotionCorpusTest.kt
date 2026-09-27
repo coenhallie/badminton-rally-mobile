@@ -196,18 +196,18 @@ class CameraMotionCorpusTest {
      * nearby in [grey] (a full-resolution, single-byte-per-pixel Y plane,
      * [width] x [height]), or null when there is no line to find there.
      *
-     * A port of /tmp/hm/cost/acc.py's `line_err`, the method the plan's
-     * Task 5 brief names for this check: a grey-weighted centroid of the
-     * brightest pixels in a +-12 px vertical window, counted only when that
-     * window's peak clearly beats its wider surroundings (the same column's
-     * own median over a +-40 px window, plus 40 grey levels). A point with no
-     * such peak contributes NOTHING to the aggregate (null, not a fixed
-     * penalty); a point too close to the image edge for a full window is
-     * penalised at 99 px so it cannot silently vanish from the gate; a window
-     * with a peak but a degenerate weighted centroid is penalised at 12 px,
-     * the edge of the search window. Matches badminton-tracker's
-     * `paint_line_vertical_error` in backend/scripts/verify_camera_motion.py
-     * case for case.
+     * A port of the same method badminton-tracker's
+     * backend/scripts/verify_camera_motion.py implements as
+     * `paint_line_vertical_error`, which the plan's Task 5 brief names for
+     * this check: a grey-weighted centroid of the brightest pixels in a
+     * +-12 px vertical window, counted only when that window's peak clearly
+     * beats its wider surroundings (the same column's own median over a
+     * +-40 px window, plus 40 grey levels). A point with no such peak
+     * contributes NOTHING to the aggregate (null, not a fixed penalty); a
+     * point too close to the image edge for a full window is penalised at
+     * 99 px so it cannot silently vanish from the gate; a window with a peak
+     * but a degenerate weighted centroid is penalised at 12 px, the edge of
+     * the search window.
      */
     private fun lineVerticalError(grey: ByteArray, width: Int, height: Int, xPx: Double, yPx: Double): Double? {
         if (!(xPx >= 0 && xPx < width && yPx >= 12 && yPx < height - 13)) return 99.0

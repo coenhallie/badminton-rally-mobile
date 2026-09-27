@@ -16,8 +16,10 @@ video decoding:
     also the key into frame_times.json.
   - `samples.json`: `[{"index": int, "timestamp": float}, ...]`, the frames
     chosen, in decode order.
-  - `frame_times.json`: `{"timestamps": [float, ...]}`, EVERY decoded
-    frame's presentation timestamp (from ffprobe), indexed by list position.
+  - `frame_times.json`: `[float, ...]`, EVERY decoded frame's presentation
+    timestamp (from ffprobe), one per 0-based decode index - list position
+    `i` is frame `i`'s timestamp, matching the controller ruling's wording
+    exactly.
   - `paint.json`: `{"points": [[x, y], ...]}`, 24 points in court metres on
     the near short service line, the near baseline, and the near long
     service line - the painted lines CameraMotionCorpusTest.kt measures
@@ -137,8 +139,8 @@ def paint_court_points() -> list[tuple[float, float]]:
     """24 court-metre points on the near short service line, the near
     baseline, and the near long service line. Design doc section 8 / the
     plan's Task 5: `x` in `linspace(0.8, 5.3, 8)` for each of the three
-    lines. Matches /tmp/hm/cost/acc.py's LINES and badminton-tracker's
-    verify_camera_motion.py's PAINT_COURT_POINTS exactly, including order.
+    lines. Matches badminton-tracker's verify_camera_motion.py's
+    PAINT_COURT_POINTS exactly, including order.
     """
     xs = np.linspace(0.8, 5.3, 8)
     near_short_service = [(float(x), COURT_LENGTH_M / 2 + SHORT_SERVICE_LINE_M) for x in xs]
@@ -152,10 +154,11 @@ def paint_line_vertical_error(grey: np.ndarray, x_px: float, y_px: float) -> flo
     nearby in `grey` (a full-resolution grey frame, float dtype), or None
     when there is no line to find there.
 
-    A direct port of /tmp/hm/cost/acc.py's `line_err`, which the plan's
-    Task 5 brief names as this probe's own grounding check, and which
-    badminton-tracker's verify_camera_motion.py also ports faithfully as
-    `paint_line_vertical_error` for its own parity gate: a grey-weighted
+    A direct port of the same method badminton-tracker's
+    backend/scripts/verify_camera_motion.py implements as
+    `paint_line_vertical_error` for its own parity gate (itself a port of a
+    scratch script, `/tmp/hm/cost/acc.py`'s `line_err`, that the plan's
+    Task 5 brief names as this probe's own grounding check): a grey-weighted
     centroid of the brightest pixels in a +-12 px vertical window, counted
     only when that window's peak clearly beats its wider surroundings (the
     same column's own median over a +-40 px window, plus 40 grey levels). A
@@ -227,7 +230,7 @@ def main() -> int:
 
     print(f"reading frame timestamps from {source} with ffprobe...")
     frame_times = ffprobe_frame_times(source)
-    (corpus_dir / "frame_times.json").write_text(json.dumps({"timestamps": frame_times}))
+    (corpus_dir / "frame_times.json").write_text(json.dumps(frame_times))
     print(f"ffprobe reports {len(frame_times)} decoded frames")
 
     tracker = CameraMotionTracker(MARKING_TIME_S, SOURCE_WIDTH, SOURCE_HEIGHT)
