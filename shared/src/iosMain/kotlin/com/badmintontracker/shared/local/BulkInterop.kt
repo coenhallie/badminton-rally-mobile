@@ -1,5 +1,7 @@
 package com.badmintontracker.shared.local
 
+import com.badmintontracker.analysis.camera.GreyImage
+import com.badmintontracker.analysis.camera.Luma
 import com.badmintontracker.analysis.shuttle.HEATMAP_MAX_AREA
 import com.badmintontracker.analysis.shuttle.HEATMAP_THRESHOLD
 import com.badmintontracker.analysis.shuttle.HeatmapCoord
@@ -86,6 +88,35 @@ object BulkInterop {
             frames[frame.toLong() * frameLength + index].toInt() and 0xFF
         }
         median.usePinned { memcpy(out, it.addressOf(0), frameLength.toULong()) }
+    }
+
+    /**
+     * [Luma.downsample] over a luma plane Swift has locked: the camera
+     * tracker's input, read in place.
+     *
+     * [plane] is the decoded `CVPixelBuffer`'s plane 0
+     * (`CVPixelBufferGetBaseAddressOfPlane(buf, 0)`), its rows
+     * [rowStride] bytes apart (`CVPixelBufferGetBytesPerRowOfPlane(buf, 0)`),
+     * which is at least [width] and is often more. The buffer must stay locked
+     * for the call. Reading through the pointer rather than copying first is
+     * the point: at 1080p the plane is 2 MB, and a `ByteArray` of it built
+     * from Swift would cross the bridge one element at a time, ten times a
+     * second of video. What comes back is the tracker-size image, 480x270.
+     *
+     * `@Throws` so that a failure reaches Swift as an error it can catch: the
+     * camera is an extra, and losing it must not end the run, let alone the
+     * process.
+     */
+    @Throws(Throwable::class)
+    fun lumaDownsample(
+        plane: CPointer<ByteVar>,
+        width: Int,
+        height: Int,
+        rowStride: Int,
+        outWidth: Int,
+        outHeight: Int,
+    ): GreyImage = Luma.downsampleWith(width, height, outWidth, outHeight) { x, y ->
+        plane[y.toLong() * rowStride + x].toInt() and 0xFF
     }
 
     /**

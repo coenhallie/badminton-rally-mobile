@@ -464,7 +464,7 @@ final class LocalAnalysisRunner {
         let source = URL(fileURLWithPath: videoPath)
         await MainActor.run { set(.analysing(fraction: 0), for: entryId) }
 
-        let engine = IosLocalInferenceEngine(wantsPose: wantsPose)
+        let engine = IosLocalInferenceEngine(wantsPose: wantsPose, log: log)
         // Marks saved before they carried a time were drawn on whichever frame
         // the marking screen's generator returned, often a later sync frame
         // than the 0.1 s it asked for. Asked again, the same way, it names that

@@ -34,9 +34,11 @@ final class LocalInferenceEngineTests: XCTestCase {
         if let scratch { try? FileManager.default.removeItem(at: scratch) }
     }
 
-    private func video(frames: Int, width: Int = 320, height: Int = 180) throws -> URL {
+    private func video(frames: Int, width: Int = 320, height: Int = 180, pan: Int? = nil) throws -> URL {
         let url = scratch.appendingPathComponent("clip.mp4")
-        try TestVideo.write(frames: frames, width: width, height: height, to: url, test: self)
+        try TestVideo.write(
+            frames: frames, width: width, height: height, panPixelsPerFrame: pan, to: url, test: self
+        )
         return url
     }
 
@@ -127,6 +129,81 @@ final class LocalInferenceEngineTests: XCTestCase {
         } catch {
             // Expected.
         }
+    }
+
+    // MARK: - Following the camera (design 2026-09-27-camera-motion §5.5)
+
+    /// A pass with pose and a known marking time follows the camera from the
+    /// marking frame, and finds the move the clip was written with.
+    ///
+    /// The pan is the real check. A camera that is merely present proves the
+    /// marking frame had corners; one whose translation matches the written
+    /// move proves the plane was read with the right stride and the right
+    /// scale all the way from the locked pixel buffer into the tracker.
+    func testAPoseRunWithAMarkingTimeFollowsTheCameraFromTheMarkingFrame() throws {
+        let pan = 1
+        let url = try video(frames: 12, pan: pan)
+        let lines = LogLines()
+        let raw = try IosLocalInferenceEngine(wantsPose: true, log: { lines.append($0) })
+            .rawInference(videoPath: url.path, markingTimeS: 0.1) { _ in }
+
+        let camera = try XCTUnwrap(raw.camera, "no camera from a textured clip: \(lines.all)")
+        // The marking frame is the first at or after T, within the tracker's
+        // own tolerance: the container may store 0.1 as 0.0999...
+        let marking = try XCTUnwrap(raw.frames.map(\.timestamp).first { $0 >= 0.1 - 1e-6 })
+        XCTAssertEqual(camera.referenceTimestamp, marking, accuracy: 1e-9)
+
+        // 12 frames at 30 fps: samples at 0.0 (buffered, tracked once the
+        // marking frame arrives), 0.1 (the reference), 0.2 and 0.3.
+        XCTAssertGreaterThanOrEqual(camera.samples.count, 4, "\(lines.all)")
+        let last = try XCTUnwrap(camera.samples.last)
+        let fps = 30.0
+        let movedFrames = ((last.timestamp - marking) * fps).rounded()
+        let m = last.referenceToFrame.map { $0.map(\.doubleValue) }
+        // Frame k is the texture moved right by k * pan, so a reference point
+        // lands that much further right in a later frame.
+        XCTAssertEqual(m[0][2], movedFrames * Double(pan), accuracy: 0.5, "\(m)")
+        XCTAssertEqual(m[1][2], 0, accuracy: 0.5, "\(m)")
+        XCTAssertTrue(
+            lines.all.contains { $0.contains("camera:") && $0.contains("followed") },
+            "the counts were not logged: \(lines.all)"
+        )
+        print("CAMERA engine 320x180: \(lines.all)")
+    }
+
+    /// Marks with no known time: nothing to anchor the camera to.
+    func testAPoseRunWithNoMarkingTimeFollowsNoCamera() throws {
+        let url = try video(frames: 12, pan: 1)
+        let raw = try IosLocalInferenceEngine(wantsPose: true)
+            .rawInference(videoPath: url.path, markingTimeS: nil) { _ in }
+        XCTAssertNil(raw.camera)
+    }
+
+    /// A rallies-only pass has no skeleton for the camera to correct.
+    func testARunWithoutPoseFollowsNoCamera() throws {
+        let url = try video(frames: 12, pan: 1)
+        let raw = try IosLocalInferenceEngine()
+            .rawInference(videoPath: url.path, markingTimeS: 0.1) { _ in }
+        XCTAssertNil(raw.camera)
+    }
+
+    /// A marking frame with nothing to hold on to gives no camera, and the run
+    /// still succeeds: losing the camera never costs the analysis.
+    func testAFlatMarkingFrameGivesNoCameraAndTheRunStillCompletes() throws {
+        let url = try video(frames: 12)
+        let raw = try IosLocalInferenceEngine(wantsPose: true)
+            .rawInference(videoPath: url.path, markingTimeS: 0.1) { _ in }
+        XCTAssertNil(raw.camera)
+        XCTAssertEqual(raw.frames.count, 12)
+    }
+
+    /// Collected off the analysis queue in the coordinator's case; locked for
+    /// the same reason `Progress` is.
+    private final class LogLines: @unchecked Sendable {
+        private let lock = NSLock()
+        private var seen: [String] = []
+        func append(_ line: String) { lock.lock(); seen.append(line); lock.unlock() }
+        var all: [String] { lock.lock(); defer { lock.unlock() }; return seen }
     }
 
     /// The engine driven the way the app drives it: through the shared

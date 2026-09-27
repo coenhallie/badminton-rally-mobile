@@ -60,7 +60,15 @@ class CameraMotionTracker(
         return bucket(timestamp) > lastBucket
     }
 
-    /** One sampled frame's luma at tracker size. */
+    /**
+     * One sampled frame's luma at tracker size.
+     *
+     * `@Throws`, like [finish], for iOS: the engine calls these from Swift,
+     * where an exception out of a Kotlin function not so marked ends the
+     * process instead of reaching the `catch` that turns a lost camera into a
+     * run without one.
+     */
+    @Throws(Throwable::class)
     fun offer(timestamp: Double, image: GreyImage) {
         require(image.width == trackerWidth && image.height == trackerHeight) {
             "expected $trackerWidth x $trackerHeight, got ${image.width} x ${image.height}"
@@ -136,6 +144,7 @@ class CameraMotionTracker(
     }
 
     /** The motion so far, or null when no marking frame was ever tracked. */
+    @Throws(Throwable::class)
     fun finish(): CameraMotion? {
         if (templates == null) return null
         return CameraMotion.of(referenceTimestamp, samples)
