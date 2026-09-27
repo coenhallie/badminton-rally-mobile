@@ -55,6 +55,12 @@ struct MatchVideoSection: View {
                 liveEntry = entry
             }
         }
+        // Paused here, on leaving: another section, the page, or a push over
+        // it. The section going drops the model and with it the player, but
+        // silence then rests on nothing else still holding the AVPlayer, and
+        // a section left behind must not keep playing. Android releases its
+        // player explicitly in the same place (`MatchVideoSection.kt`).
+        .onDisappear { model?.player.pause() }
     }
 
     @ViewBuilder
