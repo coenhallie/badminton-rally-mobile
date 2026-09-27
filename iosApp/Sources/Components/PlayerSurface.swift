@@ -13,6 +13,11 @@ import SwiftUI
 /// false` hides but does not disable for a hardware or accessibility path - and
 /// it offers rates the shared preference does not.
 ///
+/// `allowsVideoFrameAnalysis` is off for the same reason as the controls: on a
+/// paused frame with any text in it (a scoreboard, a sponsor board, which every
+/// broadcast has) AVKit lays its own Live Text button over the card's corner,
+/// a system control the card does not draw and Android does not have.
+///
 /// `videoGravity` is left at `.resizeAspect`: the card imposes the aspect ratio,
 /// so the layer letterboxes inside a box that already matches it, and a portrait
 /// video pillarboxes in its square card rather than being cropped.
@@ -26,6 +31,7 @@ struct PlayerSurface: UIViewControllerRepresentable {
         controller.player = player
         controller.showsPlaybackControls = false
         controller.speeds = []
+        controller.allowsVideoFrameAnalysis = false
         return controller
     }
 
@@ -33,8 +39,9 @@ struct PlayerSurface: UIViewControllerRepresentable {
         if controller.player !== player {
             controller.player = player
         }
-        // Both re-asserted because AVKit restores them when the item changes.
+        // Re-asserted because AVKit restores them when the item changes.
         controller.showsPlaybackControls = false
         controller.speeds = []
+        controller.allowsVideoFrameAnalysis = false
     }
 }
