@@ -1,5 +1,7 @@
 package com.badmintontracker.analysis.raw
 
+import com.badmintontracker.analysis.camera.CameraMotion
+
 /**
  * Raw model output for one video, as the platform layer produces it.
  *
@@ -60,4 +62,14 @@ data class RawFrame(
     val persons: List<RawPerson>,
 )
 
-data class RawInference(val header: RawHeader, val frames: List<RawFrame>)
+data class RawInference(
+    val header: RawHeader,
+    val frames: List<RawFrame>,
+    /**
+     * Where the camera was, frame by frame, when the pass followed it (design
+     * `2026-09-27-camera-motion-design.md` §5.1). Null when it did not: a
+     * version 1 file, a rallies-only pass, or a marking frame with nothing to
+     * follow. Selection then uses the fixed marks, as before.
+     */
+    val camera: CameraMotion? = null,
+)

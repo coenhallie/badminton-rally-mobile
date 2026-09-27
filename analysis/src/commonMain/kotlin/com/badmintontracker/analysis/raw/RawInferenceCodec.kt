@@ -1,5 +1,8 @@
 package com.badmintontracker.analysis.raw
 
+import com.badmintontracker.analysis.camera.CameraMotion
+import com.badmintontracker.analysis.camera.CameraSample
+
 /**
  * The RawInference wire format: little-endian, fixed width, no framing.
  *
@@ -8,7 +11,7 @@ package com.badmintontracker.analysis.raw
  * reaching for a platform buffer through expect/actual would let the two
  * targets disagree, so the byte handling is explicit here and shared.
  *
- * Layout:
+ * Layout (version 1):
  *   magic        4 bytes  "RAWI"
  *   version      int32
  *   fps          float64
@@ -20,11 +23,23 @@ package com.badmintontracker.analysis.raw
  *   per frame:   frame int32, timestamp float64, shuttleFlag int8,
  *                [shuttle], boxCount int32, [boxes], personCount int32,
  *                [persons]
+ *
+ * Version 2 appends a camera section after the frames:
+ *   hasCamera         int8
+ *   [if hasCamera]:
+ *     referenceTimestamp float64
+ *     count              int32
+ *     per sample: timestamp float64, then h00 h01 h02 h10 h11 h12 h20 h21 as
+ *       eight float64 (h22 is always 1.0 and is not written)
+ *
+ * `decode` reads both version 1 and version 2 and rejects any trailing bytes;
+ * `encode` always writes version 2.
  */
 object RawInferenceCodec {
 
     private val MAGIC = byteArrayOf('R'.code.toByte(), 'A'.code.toByte(), 'W'.code.toByte(), 'I'.code.toByte())
-    const val VERSION: Int = 1
+    const val VERSION: Int = 2
+    val READABLE_VERSIONS: Set<Int> = setOf(1, VERSION)
 
     const val VERSION_OFFSET: Int = 4
     const val TOTAL_FRAMES_OFFSET: Int = 16
@@ -57,6 +72,19 @@ object RawInferenceCodec {
                 for (k in p.keypoints) { out.float(k.x); out.float(k.y); out.float(k.confidence) }
             }
         }
+        val camera = inference.camera
+        out.byte(if (camera == null) 0 else 1)
+        if (camera != null) {
+            out.double(camera.referenceTimestamp)
+            out.int(camera.samples.size)
+            for (s in camera.samples) {
+                out.double(s.timestamp)
+                val m = s.referenceToFrame
+                out.double(m[0][0]); out.double(m[0][1]); out.double(m[0][2])
+                out.double(m[1][0]); out.double(m[1][1]); out.double(m[1][2])
+                out.double(m[2][0]); out.double(m[2][1])
+            }
+        }
         return out.toByteArray()
     }
 
@@ -67,8 +95,8 @@ object RawInferenceCodec {
             "not a RawInference stream: expected magic RAWI, got ${magic.decodeToString()}"
         }
         val version = r.int()
-        require(version == VERSION) {
-            "unsupported RawInference version $version, this build reads $VERSION"
+        require(version in READABLE_VERSIONS) {
+            "unsupported RawInference version $version, this build reads $READABLE_VERSIONS"
         }
         val header = RawHeader(
             version = version,
@@ -94,7 +122,31 @@ object RawInferenceCodec {
             }
             frames.add(RawFrame(frame, timestamp, shuttle, boxes, persons))
         }
-        return RawInference(header, frames)
+        var camera: CameraMotion? = null
+        if (version == 2) {
+            val hasCamera = r.byte().toInt() != 0
+            if (hasCamera) {
+                val referenceTimestamp = r.double()
+                val sampleCount = r.count(CAMERA_SAMPLE_BYTES)
+                val samples = List(sampleCount) {
+                    val timestamp = r.double()
+                    val h00 = r.double(); val h01 = r.double(); val h02 = r.double()
+                    val h10 = r.double(); val h11 = r.double(); val h12 = r.double()
+                    val h20 = r.double(); val h21 = r.double()
+                    CameraSample(
+                        timestamp,
+                        listOf(
+                            listOf(h00, h01, h02),
+                            listOf(h10, h11, h12),
+                            listOf(h20, h21, 1.0),
+                        ),
+                    )
+                }
+                camera = CameraMotion(referenceTimestamp, samples)
+            }
+        }
+        require(r.remaining() == 0) { "trailing bytes after RawInference stream" }
+        return RawInference(header, frames, camera)
     }
 
 
@@ -105,6 +157,8 @@ object RawInferenceCodec {
     private const val PERSON_MIN_BYTES = BOX_BYTES + 4
     /** Frame index, timestamp, the shuttle flag, and the two counts. */
     private const val FRAME_MIN_BYTES = 4 + 8 + 1 + 4 + 4
+    /** A camera sample: timestamp plus the eight written homography entries, all float64. */
+    private const val CAMERA_SAMPLE_BYTES = 8 + 8 * 8
     private class Writer {
         private var buf = ByteArray(1024)
         private var size = 0
@@ -210,5 +264,8 @@ object RawInferenceCodec {
         fun string(): String = bytes(int()).decodeToString()
 
         fun box(): RawBox = RawBox(int(), float(), float(), float(), float(), float())
+
+        /** Bytes not yet consumed, for the trailing-bytes check at the end of [decode]. */
+        fun remaining(): Int = buf.size - pos
     }
 }

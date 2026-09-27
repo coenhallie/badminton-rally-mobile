@@ -199,7 +199,10 @@ final class IosLocalInferenceEngine: NSObject, LocalInferenceEngine {
                 // this line: the model lookup above already failed.
                 modelVersion: ModelCatalog.version ?? "unpinned"
             ),
-            frames: frames
+            frames: frames,
+            // Task 10 wires the tracker's samples in; this pass follows no
+            // camera yet.
+            camera: nil
         )
     }
 }
