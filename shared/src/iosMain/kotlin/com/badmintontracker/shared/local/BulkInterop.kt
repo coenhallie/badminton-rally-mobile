@@ -19,11 +19,14 @@ import platform.posix.memcpy
 /**
  * Bulk buffers across the Swift boundary, by pointer.
  *
- * Two functions in `:analysis` take arrays of pixels: [heatmapToCoord] takes a
- * `FloatArray` of 147,456 floats, and the median background reduces 300 frames
- * of 442,368 bytes each. Both are the shared implementations the whole port exists to
- * reuse - the design's section 3.1 is explicit that reimplementing the blob
- * detector in Swift is the one thing this stage must not do.
+ * Three functions in `:analysis` take arrays of pixels: [heatmapToCoord] takes
+ * a `FloatArray` of 147,456 floats, the median background reduces 300 frames
+ * of 442,368 bytes each, and the camera tracker's [Luma.downsample]
+ * ([lumaDownsample] here) reads a 1080p luma plane of about 2 MB ten times a
+ * second of video. All three are the shared implementations the whole port
+ * exists to reuse - the design's section 3.1 is explicit that reimplementing
+ * the blob detector in Swift is the one thing this stage must not do, and the
+ * camera design keeps one tracker for both phones for the same reason.
  *
  * They cannot be called from Swift as they stand. `KotlinFloatArray` is
  * constructed from Swift one element at a time through a boxing closure, and
@@ -34,7 +37,8 @@ import platform.posix.memcpy
  * So the boundary moves: Swift passes a raw pointer to memory it already holds,
  * and the copy into Kotlin's heap happens here as a `memcpy` on the native
  * side. One 590KB copy per sequence against an inference that costs hundreds of
- * milliseconds.
+ * milliseconds. [lumaDownsample] copies nothing at all: it reads the locked
+ * plane through the pointer and returns only the 480x270 tracker image.
  *
  * **The caller owns the memory and must keep it alive across the call.** Every
  * function here reads its pointer and returns before Swift's buffer goes out of

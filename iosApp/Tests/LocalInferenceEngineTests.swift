@@ -240,15 +240,7 @@ final class LocalInferenceEngineTests: XCTestCase {
 
     // MARK: - The handheld recording, against the reference
 
-    /// The corpus this test reads, on the Mac running the simulator.
-    ///
-    /// Through `SIMULATOR_HOST_HOME` rather than `NSHomeDirectory()`, which in
-    /// a simulator process is the app's own container. A simulator process can
-    /// read the host's files directly, so the 1080p video is read in place
-    /// rather than copied into the container first.
-    /// Read as a value rather than fencing the body with `#if`, as
-    /// `ThroughputMeasurementTests` does, so the test keeps compiling on every
-    /// ordinary build and cannot rot behind a flag nobody sets.
+    /// Whether this build has `-D RUN_HANDHELD_CORPUS_TEST`; a value, not an `#if` fence, so the test always compiles.
     private var handheldCorpusRunEnabled: Bool {
         #if RUN_HANDHELD_CORPUS_TEST
         return true
@@ -257,6 +249,12 @@ final class LocalInferenceEngineTests: XCTestCase {
         #endif
     }
 
+    /// The corpus this test reads, on the Mac running the simulator.
+    ///
+    /// Through `SIMULATOR_HOST_HOME` rather than `NSHomeDirectory()`, which in
+    /// a simulator process is the app's own container. A simulator process can
+    /// read the host's files directly, so the 1080p video is read in place
+    /// rather than copied into the container first.
     private var corpus: URL? {
         ProcessInfo.processInfo.environment["SIMULATOR_HOST_HOME"].map {
             URL(fileURLWithPath: $0).appendingPathComponent("shuttl-corpus/IMG_5892", isDirectory: true)
@@ -290,8 +288,8 @@ final class LocalInferenceEngineTests: XCTestCase {
     /// app.
     ///
     /// Run it in the Release configuration, since the camera tracker in a
-    /// Debug Kotlin framework is some 28 times slower (about 6.5 minutes on
-    /// the simulator in Release):
+    /// Debug Kotlin framework is some 28 times slower (391 to 489 s measured
+    /// on the simulator in Release, about 6.5 to 8 minutes):
     ///
     ///     xcodebuild test -project iosApp/iosApp.xcodeproj -scheme iosApp \
     ///       -configuration Release ENABLE_TESTABILITY=YES \
