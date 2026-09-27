@@ -40,6 +40,7 @@ import com.badmintontracker.analysis.player.MetricKind
 import com.badmintontracker.analysis.player.PlayerPose
 import com.badmintontracker.analysis.player.NearPlayerSelector
 import com.badmintontracker.analysis.player.nearestPose
+import com.badmintontracker.analysis.player.poseCourtFit
 import com.badmintontracker.analysis.player.poseMetrics
 import com.badmintontracker.analysis.player.poseToleranceS
 import com.badmintontracker.android.clipdetail.PlaybackSettingsSheet
@@ -70,7 +71,11 @@ private sealed interface SkeletonLoad {
     data object Loading : SkeletonLoad
     data class Loaded(
         val stored: SkeletonStore.Stored?,
-        /** The resolved court fit from the file's marks; non-null only when [courtFit] is OK. */
+        /**
+         * The resolved court fit from the file's marks; non-null only when
+         * [courtFit] is OK. It fits the marking frame: a pose is measured
+         * through [poseCourtFit], which carries it through that pose's camera.
+         */
         val homography: Matrix3x3?,
         val courtFit: CourtFit,
         /**
@@ -133,9 +138,12 @@ fun SkeletonPanel(
             // Per side, and here rather than on selection: the metrics for a
             // 30-minute match are the expensive part of this read, and moving
             // them to the toggle would put them on the thread drawing the frame.
+            // Each pose through its own frame's fit: the gate above judged the
+            // marks on the frame they were placed on, and a pose from a frame
+            // the camera had moved in reaches the court through its camera.
             val seriesBySide = stored?.tracks.orEmpty().associate { track ->
                 track.side to track.poses.map {
-                    MetricSample(it.timestamp, poseMetrics(it.keypoints, it.confidence, homography))
+                    MetricSample(it.timestamp, poseMetrics(it.keypoints, it.confidence, poseCourtFit(homography, it)))
                 }
             }
             SkeletonLoad.Loaded(stored, homography, courtFit, seriesBySide)
@@ -268,7 +276,9 @@ private fun SkeletonPlayer(
     // no tile. Derived, not written back, so composition stays a read; the choice
     // itself is kept, so putting the arm back brings the tile back selected.
     val selected = if (chosen in visible) chosen else visible.first()
-    val metrics = remember(pose, homography) { pose?.let { poseMetrics(it.keypoints, it.confidence, homography) } }
+    val metrics = remember(pose, homography) {
+        pose?.let { poseMetrics(it.keypoints, it.confidence, poseCourtFit(homography, it)) }
+    }
     val expanded by prefs.metricsExpanded.collectAsStateWithLifecycle()
     val speed by prefs.speed.collectAsStateWithLifecycle()
     val skipSeconds by prefs.skipSeconds.collectAsStateWithLifecycle()

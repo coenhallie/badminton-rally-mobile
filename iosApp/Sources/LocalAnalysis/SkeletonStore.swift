@@ -10,9 +10,20 @@ import Shared
 /// which is what a future sync would need and what makes an A/B comparison of
 /// the two pose passes possible at all.
 ///
-///   magic "SKEL", version i32, fps f64, videoWidth i32, videoHeight i32,
-///   hasMarks i32, 12 x (x f64, y f64) in CourtKeypoints.pixels() order,
+///   v1: magic "SKEL", version i32 = 1, fps f64, videoWidth i32, videoHeight i32,
 ///   poseCount i32, then per pose: frame i32, timestamp f64, 17 x (x f32, y f32, c f32)
+///
+///   v2: as v1, with hasMarks i32 and 12 x (x f64, y f64) in
+///   CourtKeypoints.pixels() order between videoHeight and poseCount.
+///
+///   v3: magic "SKEL", version i32 = 3, fps f64, videoWidth i32, videoHeight i32,
+///   hasMarks i32, 12 x (x f64, y f64), trackCount i32, then per track:
+///     side i32 (CourtSide ordinal), poseCount i32, then poses as in v2.
+///
+///   v4: as v3, with hasCamera i32 between the marks and trackCount. When it is
+///   1 every pose record is followed by its camera, h00 h01 h02 h10 h11 h12 h20
+///   h21 as f64 (h22 is 1.0 by construction and not stored); when it is 0 the
+///   poses are exactly v3's.
 ///
 /// Binary, because a person does not read a joint list and a 30-minute match is
 /// 11MB of them: 216 bytes a pose against the track store's three numbers. The
@@ -27,8 +38,18 @@ import Shared
 /// marks fit, and the local entry that holds them can be deleted while this file
 /// lives on.
 ///
-/// Version 1 files, written before the marks were stored, are still read; they
-/// load with `marks == nil`. Save always writes version 2.
+/// The camera travels for the last of those reasons. The marks describe the
+/// frame they were placed on; a pose from a frame the camera had moved in
+/// reaches the court only through that frame's camera, and a file that dropped
+/// it would turn every pan into metres of error (design §5.3). Within one file
+/// every pose has a camera or none does, because selection only returns a pose
+/// for a frame whose camera it knew; a mix is refused at save rather than
+/// written with cameras dropped or invented.
+///
+/// Both `save` and `saveAll` write version 4. A device run writes it too, as
+/// one near track, because a device run's poses carry cameras as well: v2 has
+/// nowhere to put them. Versions 1 to 3, already on phones, keep loading, with
+/// no marks for v1 and no camera for any of them.
 struct SkeletonStore {
 
     /// One player's joints, and which half of the court they were on.
@@ -49,17 +70,34 @@ struct SkeletonStore {
         var poses: [PlayerPose] { tracks.first { $0.side == .near }?.poses ?? [] }
     }
 
+    enum Failure: LocalizedError {
+        /// Some poses had a camera and some did not. The file has one flag
+        /// for all of them, so writing it would drop cameras or invent them.
+        case mixedCameras(withCamera: Int, total: Int)
+
+        var errorDescription: String? {
+            switch self {
+            case .mixedCameras(let withCamera, let total):
+                return "\(withCamera) of \(total) poses have a camera; a skeleton file holds all or none"
+            }
+        }
+    }
+
     private static let magic: [UInt8] = Array("SKEL".utf8)
-    private static let version: Int32 = 2
-    /// A THIRD format the readers accept. v1 and v2 stay readable: every
-    /// skeleton already on every phone is one of them.
+    /// What `save` and `saveAll` write.
+    private static let version: Int32 = 4
+    private static let versionV2: Int32 = 2
     private static let versionV3: Int32 = 3
     private static var keypointCount: Int { Int(Coco.shared.COUNT) }
     private static let markCount = 12
     private static let markBytes = markCount * 2 * 8
     private static let headerBytesV1 = 4 + 4 + 8 + 4 + 4
     private static var poseBytes: Int { 4 + 8 + keypointCount * 12 }
+    private static let cameraBytes = 8 * 8
 
+    /// The near player's joints from a device run, as one near track in the
+    /// version 4 format. Throws `Failure.mixedCameras` when some poses have a
+    /// camera and some do not.
     func save(
         entryId: String,
         poses: [PlayerPose],
@@ -70,46 +108,19 @@ struct SkeletonStore {
     ) throws {
         // Nothing to draw is nothing to offer: no file, so `has` stays false.
         guard !poses.isEmpty else { return }
-        var out = Writer()
-        out.bytes(Self.magic)
-        out.int32(Self.version)
-        out.double(fps)
-        out.int32(Int32(videoWidth))
-        out.int32(Int32(videoHeight))
-        out.int32(marks != nil ? 1 : 0)
-        // The marks field is fixed width whether or not there are marks, so
-        // everything after it sits at the same offset in every v2 file.
-        let pixels = marks?.pixels()
-        for i in 0..<Self.markCount {
-            let point = pixels?[i]
-            out.double(point?.x ?? 0)
-            out.double(point?.y ?? 0)
-        }
-        out.int32(Int32(poses.count))
-        for pose in poses {
-            precondition(
-                pose.keypoints.count == Self.keypointCount && pose.confidence.count == Self.keypointCount,
-                "pose at frame \(pose.frame) has \(pose.keypoints.count) joints"
-            )
-            out.int32(pose.frame)
-            out.double(pose.timestamp)
-            for k in 0..<Self.keypointCount {
-                out.float(Float(pose.keypoints[k].x))
-                out.float(Float(pose.keypoints[k].y))
-                out.float(pose.confidence[k].floatValue)
-            }
-        }
+        let data = try Self.encode(
+            tracks: [SidePoses(side: .near, poses: poses)],
+            fps: fps, videoWidth: videoWidth, videoHeight: videoHeight, marks: marks
+        )
         let directory = try AnalysisFiles.directory(TrackSource.local.skeletonDir)
         // Atomically: a partial write must never become visible, which is what
         // makes `has` reading the header alone sound for files this store wrote.
-        try out.data.write(to: directory.appendingPathComponent("\(entryId).skel"), options: .atomic)
+        try data.write(to: directory.appendingPathComponent("\(entryId).skel"), options: .atomic)
     }
 
-    /// Every player's joints from one analysis, in the v3 format.
-    ///
-    ///   magic "SKEL", version i32 = 3, fps f64, videoWidth i32, videoHeight i32,
-    ///   hasMarks i32, 12 x (x f64, y f64), trackCount i32,
-    ///   then per track: side i32 (CourtSide ordinal), poseCount i32, poses
+    /// Every player's joints from one analysis, in the version 4 format.
+    /// Throws `Failure.mixedCameras` when some poses have a camera and some do
+    /// not, across every track: the file has one flag for all of them.
     ///
     /// Byte-for-byte Android's `saveAll`, for the reason the whole file is:
     /// the format is the contract between the two platforms and the cloud.
@@ -125,32 +136,58 @@ struct SkeletonStore {
         let withPoses = selections.filter { !$0.poses.isEmpty }
         // Nothing to draw is nothing to offer, matching save().
         guard !withPoses.isEmpty else { return }
+        let data = try Self.encode(
+            tracks: withPoses.map { SidePoses(side: $0.side, poses: $0.poses) },
+            fps: fps, videoWidth: videoWidth, videoHeight: videoHeight, marks: marks
+        )
+        let directory = try AnalysisFiles.directory(source.skeletonDir)
+        try data.write(
+            to: directory.appendingPathComponent("\(entryId).skel"), options: .atomic
+        )
+    }
+
+    /// The version 4 bytes for `tracks`, none of them empty.
+    private static func encode(
+        tracks: [SidePoses],
+        fps: Double,
+        videoWidth: Int,
+        videoHeight: Int,
+        marks: AnalysisCourtKeypoints?
+    ) throws -> Data {
+        let total = tracks.reduce(0) { $0 + $1.poses.count }
+        let withCamera = tracks.reduce(0) { sum, track in sum + track.poses.filter { $0.camera != nil }.count }
+        guard withCamera == 0 || withCamera == total else {
+            throw Failure.mixedCameras(withCamera: withCamera, total: total)
+        }
         var out = Writer()
-        out.bytes(Self.magic)
-        out.int32(Self.versionV3)
+        out.bytes(magic)
+        out.int32(version)
         out.double(fps)
         out.int32(Int32(videoWidth))
         out.int32(Int32(videoHeight))
         out.int32(marks != nil ? 1 : 0)
+        // The marks field is fixed width whether or not there are marks, so
+        // everything after it sits at the same offset in every file.
         let pixels = marks?.pixels()
-        for i in 0..<Self.markCount {
+        for i in 0..<markCount {
             let point = pixels?[i]
             out.double(point?.x ?? 0)
             out.double(point?.y ?? 0)
         }
-        out.int32(Int32(withPoses.count))
-        for selection in withPoses {
+        out.int32(withCamera > 0 ? 1 : 0)
+        out.int32(Int32(tracks.count))
+        for track in tracks {
             // The ordinal, matching Android's `side.ordinal`. The NAME is what
             // the track store writes, because that file is text; here the width
             // is fixed and an ordinal is what fits.
-            out.int32(selection.side.ordinal)
-            out.int32(Int32(selection.poses.count))
-            for pose in selection.poses { Self.put(pose, into: &out) }
+            out.int32(track.side.ordinal)
+            out.int32(Int32(track.poses.count))
+            for pose in track.poses {
+                put(pose, into: &out)
+                if let camera = pose.camera { put(camera: camera, into: &out) }
+            }
         }
-        let directory = try AnalysisFiles.directory(source.skeletonDir)
-        try out.data.write(
-            to: directory.appendingPathComponent("\(entryId).skel"), options: .atomic
-        )
+        return out.data
     }
 
     /// Writes one pose in the fixed-width layout common to every version.
@@ -168,13 +205,24 @@ struct SkeletonStore {
         }
     }
 
+    /// Writes a camera as its first eight entries; h22 is 1.0 by construction.
+    private static func put(camera: [[KotlinDouble]], into out: inout Writer) {
+        precondition(
+            camera.count == 3 && camera.allSatisfy { $0.count == 3 } && camera[2][2].doubleValue == 1.0,
+            "a camera is a 3x3 matrix with h22 == 1.0"
+        )
+        for r in 0..<3 {
+            for c in 0..<3 where r != 2 || c != 2 { out.double(camera[r][c].doubleValue) }
+        }
+    }
+
     /// Whether a skeleton this version can draw exists for `entryId`, from the
     /// header alone.
     func has(entryId: String, source: TrackSource = .local) -> Bool {
         let url = fileFor(entryId, source)
         guard let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size]) as? Int,
-              // The v1 floor, not the v2 one: this reads only the first eight
-              // bytes, so the shorter header is the right floor for both.
+              // The v1 floor, not a later one: this reads only the first eight
+              // bytes, so the shortest header is the right floor for every version.
               size >= Self.headerBytesV1,
               let handle = try? FileHandle(forReadingFrom: url)
         else { return false }
@@ -183,7 +231,7 @@ struct SkeletonStore {
         var reader = Reader(head)
         guard reader.bytes(4) == Self.magic else { return false }
         guard let version = reader.int32() else { return false }
-        return version == 1 || version == Self.version || version == Self.versionV3
+        return (1...Self.version).contains(version)
     }
 
     /// Nil when there is nothing stored, or when what is stored cannot be read
@@ -193,8 +241,9 @@ struct SkeletonStore {
         var reader = Reader(data)
         guard reader.bytes(4) == Self.magic, let version = reader.int32() else { return nil }
         switch version {
-        case 1, Self.version: return loadV1OrV2(version: version, reader: &reader)
-        case Self.versionV3: return loadV3(reader: &reader)
+        case 1, Self.versionV2: return loadV1OrV2(version: version, reader: &reader)
+        case Self.versionV3: return loadMultiTrack(reader: &reader, withCameraFlag: false)
+        case Self.version: return loadMultiTrack(reader: &reader, withCameraFlag: true)
         default: return nil
         }
     }
@@ -205,7 +254,7 @@ struct SkeletonStore {
         else { return nil }
 
         var marks: AnalysisCourtKeypoints?
-        if version == Self.version {
+        if version == Self.versionV2 {
             guard let hasMarks = reader.int32() else { return nil }
             // Refused rather than guessed at, as a bad magic or an unknown
             // version is: this store writes only 0 or 1, so anything else is
@@ -228,15 +277,28 @@ struct SkeletonStore {
         )
     }
 
-    private func loadV3(reader: inout Reader) -> Stored? {
+    /// The multi-track formats. v4 is v3 with a camera flag after the marks,
+    /// and a camera after every pose when it is set.
+    private func loadMultiTrack(reader: inout Reader, withCameraFlag: Bool) -> Stored? {
         guard let fps = reader.double(),
               let width = reader.int32(), let height = reader.int32(),
               let hasMarks = reader.int32(), hasMarks == 0 || hasMarks == 1,
-              reader.remaining >= Self.markBytes + 4,
-              let read = Self.readMarks(&reader),
-              let trackCount = reader.int32()
+              // The 4 is the count that follows the marks, and v4's flag another 4.
+              reader.remaining >= Self.markBytes + 4 + (withCameraFlag ? 4 : 0),
+              let read = Self.readMarks(&reader)
         else { return nil }
         let marks = hasMarks == 1 ? read : nil
+        let hasCamera: Int32
+        if withCameraFlag {
+            // Refused, as a marks flag other than 0 or 1 is: not a file this
+            // store wrote.
+            guard let flag = reader.int32(), flag == 0 || flag == 1 else { return nil }
+            hasCamera = flag
+        } else {
+            hasCamera = 0
+        }
+        let poseBytes = Self.poseBytes + (hasCamera == 1 ? Self.cameraBytes : 0)
+        guard let trackCount = reader.int32() else { return nil }
         // Rejected before the loop can allocate on it: a negative or
         // implausibly large count is corruption, not a file this store wrote.
         guard trackCount >= 0, Int(trackCount) <= CourtSide.allCases.count else { return nil }
@@ -248,8 +310,10 @@ struct SkeletonStore {
                   let ordinal = reader.int32(),
                   ordinal >= 0, Int(ordinal) < CourtSide.allCases.count,
                   let poseCount = reader.int32(),
-                  poseCount >= 0, Int(poseCount) <= reader.remaining / Self.poseBytes,
-                  let poses = Self.readPoses(count: poseCount, reader: &reader, exact: false)
+                  poseCount >= 0, Int(poseCount) <= reader.remaining / poseBytes,
+                  let poses = Self.readPoses(
+                      count: poseCount, reader: &reader, exact: false, withCamera: hasCamera == 1
+                  )
             else { return nil }
             guard let side = CourtSide.allCases.first(where: { $0.ordinal == ordinal }) else { return nil }
             tracks.append(SidePoses(side: side, poses: poses))
@@ -280,16 +344,19 @@ struct SkeletonStore {
     }
 
     /// `exact` is the v1/v2 rule that the poses run to the end of the file. v3
-    /// has sections after this one, so it checks only that this section fits.
+    /// and v4 have sections after this one, so they check only that this
+    /// section fits. `withCamera` reads the camera that follows each pose in a
+    /// v4 file whose flag is set.
     private static func readPoses(
-        count: Int32, reader: inout Reader, exact: Bool = true
+        count: Int32, reader: inout Reader, exact: Bool = true, withCamera: Bool = false
     ) -> [PlayerPose]? {
+        let recordBytes = poseBytes + (withCamera ? cameraBytes : 0)
         // Guarded before the multiply: a negative or absurdly large count -
         // corruption, not a file this store wrote - would otherwise overflow.
-        guard count >= 0, Int(count) <= reader.remaining / poseBytes else { return nil }
+        guard count >= 0, Int(count) <= reader.remaining / recordBytes else { return nil }
         // Length checked before parsing: a file killed mid-write ends in a
         // partial pose, and a skeleton missing its last joints is not one.
-        if exact { guard reader.remaining == Int(count) * poseBytes else { return nil } }
+        if exact { guard reader.remaining == Int(count) * recordBytes else { return nil } }
 
         var poses: [PlayerPose] = []
         poses.reserveCapacity(Int(count))
@@ -302,8 +369,18 @@ struct SkeletonStore {
                 keypoints.append(Point(x: Double(x), y: Double(y)))
                 confidence.append(KotlinFloat(float: c))
             }
+            var camera: [[KotlinDouble]]?
+            if withCamera {
+                var h: [Double] = []
+                for _ in 0..<8 {
+                    guard let value = reader.double() else { return nil }
+                    h.append(value)
+                }
+                camera = [[h[0], h[1], h[2]], [h[3], h[4], h[5]], [h[6], h[7], 1.0]]
+                    .map { $0.map { KotlinDouble(double: $0) } }
+            }
             poses.append(PlayerPose(
-                frame: frame, timestamp: timestamp, keypoints: keypoints, confidence: confidence, camera: nil
+                frame: frame, timestamp: timestamp, keypoints: keypoints, confidence: confidence, camera: camera
             ))
         }
         return poses

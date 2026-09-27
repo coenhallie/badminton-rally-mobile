@@ -1,6 +1,7 @@
 package com.badmintontracker.android.localanalysis
 
 import com.badmintontracker.analysis.geometry.CourtKeypoints
+import com.badmintontracker.analysis.geometry.Matrix3x3
 import com.badmintontracker.analysis.geometry.Point
 import com.badmintontracker.analysis.geometry.pixels
 import com.badmintontracker.analysis.player.Coco
@@ -20,13 +21,20 @@ import java.nio.ByteOrder
  * layout is fixed width and little-endian, so [has] can answer from the header
  * and [load] can check the length before parsing a byte.
  *
- *   magic "SKEL", version i32, fps f64, videoWidth i32, videoHeight i32,
- *   hasMarks i32, 12 x (x f64, y f64) in CourtKeypoints.pixels() order,
+ *   v1: magic "SKEL", version i32 = 1, fps f64, videoWidth i32, videoHeight i32,
  *   poseCount i32, then per pose: frame i32, timestamp f64, 17 x (x f32, y f32, c f32)
+ *
+ *   v2: as v1, with hasMarks i32 and 12 x (x f64, y f64) in
+ *   CourtKeypoints.pixels() order between videoHeight and poseCount.
  *
  *   v3: magic "SKEL", version i32 = 3, fps f64, videoWidth i32, videoHeight i32,
  *   hasMarks i32, 12 x (x f64, y f64), trackCount i32, then per track:
  *     side i32 (CourtSide.ordinal), poseCount i32, then poses as in v2.
+ *
+ *   v4: as v3, with hasCamera i32 between the marks and trackCount. When it is
+ *   1 every pose record is followed by its camera, h00 h01 h02 h10 h11 h12 h20
+ *   h21 as f64 (h22 is 1.0 by construction and not stored); when it is 0 the
+ *   poses are exactly v3's.
  *
  * The timestamp is the frame's container presentation time, which is what
  * playback matches on; the video size is what the joints are measured in.
@@ -38,12 +46,18 @@ import java.nio.ByteOrder
  * holds them can be deleted while this file lives on, and a file that carries
  * what it needs cannot be paired with the wrong marks.
  *
- * Version 1 files, written before the marks were stored, are still read; they
- * load with `marks = null`. Save always writes version 2.
+ * The camera travels for the last of those reasons. The marks describe the
+ * frame they were placed on; a pose from a frame the camera had moved in
+ * reaches the court only through that frame's camera, and a file that dropped
+ * it would turn every pan into metres of error (design §5.3). Within one file
+ * every pose has a camera or none does, because selection only returns a pose
+ * for a frame whose camera it knew; a mix is refused at save rather than
+ * written with cameras dropped or invented.
  *
- * v3 is a THIRD version this store reads, not a replacement: v1 and v2 files
- * already on phones keep loading, and a device run keeps writing v2 because it
- * only ever has the near player. Only the cloud path writes v3.
+ * Both [save] and [saveAll] write version 4. A device run writes it too, as
+ * one NEAR track, because a device run's poses carry cameras as well: v2 has
+ * nowhere to put them. Versions 1 to 3, already on phones, keep loading, with
+ * no marks for v1 and no camera for any of them.
  *
  * Save writes a complete file atomically: bytes are written to a temporary
  * sibling file, then renamed into place. A partial write never becomes visible,
@@ -67,6 +81,11 @@ class SkeletonStore(private val root: File) {
             get() = tracks.firstOrNull { it.side == CourtSide.NEAR }?.poses ?: emptyList()
     }
 
+    /**
+     * The near player's joints from a device run, as one NEAR track in the
+     * version 4 format. Throws [IllegalArgumentException] when some poses
+     * have a camera and some do not.
+     */
     fun save(
         entryId: String,
         poses: List<PlayerPose>,
@@ -77,27 +96,14 @@ class SkeletonStore(private val root: File) {
     ) {
         // Nothing to draw is nothing to offer: no file, so has() stays false.
         if (poses.isEmpty()) return
-        val buffer = ByteBuffer.allocate(HEADER_BYTES_V2 + poses.size * POSE_BYTES).order(ByteOrder.LITTLE_ENDIAN)
-        buffer.put(MAGIC).putInt(VERSION).putDouble(fps).putInt(videoWidth).putInt(videoHeight)
-        buffer.putInt(if (marks != null) 1 else 0)
-        // The marks field is fixed width whether or not there are marks, so
-        // everything after it sits at the same offset in every v2 file.
-        val pixels = marks?.pixels()
-        repeat(12) { i ->
-            val point = pixels?.get(i)
-            buffer.putDouble(point?.x ?: 0.0).putDouble(point?.y ?: 0.0)
-        }
-        buffer.putInt(poses.size)
-        poses.forEach { pose -> buffer.putPose(pose) }
-        writeAtomically(fileFor(entryId), buffer.array())
+        val bytes = encode(listOf(SidePoses(CourtSide.NEAR, poses)), fps, videoWidth, videoHeight, marks)
+        writeAtomically(fileFor(entryId), bytes)
     }
 
     /**
-     * Every player's joints from one analysis, in the v3 format.
-     *
-     * v3 is a THIRD version this store reads, not a replacement: v1 and v2
-     * files already on phones keep loading, and a device run keeps writing v2
-     * because it only ever has the near player.
+     * Every player's joints from one analysis, in the version 4 format.
+     * Throws [IllegalArgumentException] when some poses have a camera and
+     * some do not, across every track: the file has one flag for all of them.
      */
     fun saveAll(
         entryId: String,
@@ -111,22 +117,46 @@ class SkeletonStore(private val root: File) {
         val withPoses = selections.filter { it.poses.isNotEmpty() }
         // Nothing to draw is nothing to offer, matching save().
         if (withPoses.isEmpty()) return
-        val poseCount = withPoses.sumOf { it.poses.size }
-        val bytes = HEADER_BYTES_V3 + withPoses.size * TRACK_HEADER_BYTES_V3 + poseCount * POSE_BYTES
-        val buffer = ByteBuffer.allocate(bytes).order(ByteOrder.LITTLE_ENDIAN)
-        buffer.put(MAGIC).putInt(VERSION_V3).putDouble(fps).putInt(videoWidth).putInt(videoHeight)
+        val tracks = withPoses.map { SidePoses(it.side, it.poses) }
+        writeAtomically(fileFor(entryId, source), encode(tracks, fps, videoWidth, videoHeight, marks))
+    }
+
+    /** The version 4 bytes for [tracks], none of them empty. */
+    private fun encode(
+        tracks: List<SidePoses>,
+        fps: Double,
+        videoWidth: Int,
+        videoHeight: Int,
+        marks: CourtKeypoints?,
+    ): ByteArray {
+        val poses = tracks.flatMap { it.poses }
+        val withCamera = poses.count { it.camera != null }
+        require(withCamera == 0 || withCamera == poses.size) {
+            "$withCamera of ${poses.size} poses have a camera; a skeleton file holds all or none"
+        }
+        val hasCamera = withCamera > 0
+        val poseBytes = POSE_BYTES + if (hasCamera) CAMERA_BYTES else 0
+        val size = HEADER_BYTES_V4 + tracks.size * TRACK_HEADER_BYTES + poses.size * poseBytes
+        val buffer = ByteBuffer.allocate(size).order(ByteOrder.LITTLE_ENDIAN)
+        buffer.put(MAGIC).putInt(VERSION).putDouble(fps).putInt(videoWidth).putInt(videoHeight)
         buffer.putInt(if (marks != null) 1 else 0)
+        // The marks field is fixed width whether or not there are marks, so
+        // everything after it sits at the same offset in every file.
         val pixels = marks?.pixels()
         repeat(12) { i ->
             val point = pixels?.get(i)
             buffer.putDouble(point?.x ?: 0.0).putDouble(point?.y ?: 0.0)
         }
-        buffer.putInt(withPoses.size)
-        withPoses.forEach { selection ->
-            buffer.putInt(selection.side.ordinal).putInt(selection.poses.size)
-            selection.poses.forEach { pose -> buffer.putPose(pose) }
+        buffer.putInt(if (hasCamera) 1 else 0)
+        buffer.putInt(tracks.size)
+        tracks.forEach { track ->
+            buffer.putInt(track.side.ordinal).putInt(track.poses.size)
+            track.poses.forEach { pose ->
+                buffer.putPose(pose)
+                pose.camera?.let { buffer.putCamera(it) }
+            }
         }
-        writeAtomically(fileFor(entryId, source), buffer.array())
+        return buffer.array()
     }
 
     /** Writes [pose] in the fixed-width layout common to every version this store writes. */
@@ -140,6 +170,14 @@ class SkeletonStore(private val root: File) {
                 .putFloat(pose.keypoints[k].y.toFloat())
                 .putFloat(pose.confidence[k])
         }
+    }
+
+    /** Writes [camera] as its first eight entries; h22 is 1.0 by construction. */
+    private fun ByteBuffer.putCamera(camera: Matrix3x3) {
+        require(camera.size == 3 && camera.all { it.size == 3 } && camera[2][2] == 1.0) {
+            "a camera is a 3x3 matrix with h22 == 1.0, not $camera"
+        }
+        for (r in 0 until 3) for (c in 0 until 3) if (r != 2 || c != 2) putDouble(camera[r][c])
     }
 
     /** Writes [bytes] to [file] atomically: a temp sibling, then a rename into place. */
@@ -160,9 +198,9 @@ class SkeletonStore(private val root: File) {
     /** Whether a skeleton this version can draw exists for [entryId], from the header alone. */
     fun has(entryId: String, source: TrackSource = TrackSource.LOCAL): Boolean {
         val file = fileFor(entryId, source)
-        // The v1 floor, not the v2 one: this reads only the first eight
-        // bytes, so the shorter of the two headers is the right floor for
-        // every version. A v2 or v3 file clears it comfortably.
+        // The v1 floor, not a later one: this reads only the first eight
+        // bytes, so the shortest header is the right floor for every
+        // version. A v2, v3 or v4 file clears it comfortably.
         if (!file.isFile || file.length() < HEADER_BYTES_V1) return false
         return runCatching {
             val head = ByteArray(8)
@@ -170,7 +208,7 @@ class SkeletonStore(private val root: File) {
             val buffer = ByteBuffer.wrap(head).order(ByteOrder.LITTLE_ENDIAN)
             val magic = ByteArray(4).also { buffer.get(it) }
             val version = buffer.getInt()
-            magic.contentEquals(MAGIC) && (version == 1 || version == VERSION || version == VERSION_V3)
+            magic.contentEquals(MAGIC) && version in 1..VERSION
         }.getOrDefault(false)
     }
 
@@ -184,8 +222,9 @@ class SkeletonStore(private val root: File) {
             if (!magic.contentEquals(MAGIC)) return null
             val version = buffer.getInt()
             when (version) {
-                1, VERSION -> loadV1OrV2(version, buffer)
-                VERSION_V3 -> loadV3(buffer)
+                1, VERSION_V2 -> loadV1OrV2(version, buffer)
+                VERSION_V3 -> loadMultiTrack(buffer, withCameraFlag = false)
+                VERSION -> loadMultiTrack(buffer, withCameraFlag = true)
                 else -> null
             }
         }.getOrNull()
@@ -197,7 +236,7 @@ class SkeletonStore(private val root: File) {
         val width = buffer.getInt()
         val height = buffer.getInt()
         var marks: CourtKeypoints? = null
-        if (version == VERSION) {
+        if (version == VERSION_V2) {
             val hasMarks = buffer.getInt()
             // Refused rather than guessed at, as a bad magic or an unknown
             // version is: this store writes only 0 or 1, so anything else
@@ -215,16 +254,25 @@ class SkeletonStore(private val root: File) {
         return Stored(listOf(SidePoses(CourtSide.NEAR, poses)), fps, width, height, marks)
     }
 
-    /** The multi-track format: a header, then a section per player. */
-    private fun loadV3(buffer: ByteBuffer): Stored? {
+    /**
+     * The multi-track formats: a header, then a section per player. v4 is v3
+     * with a camera flag after the marks, and a camera after every pose when
+     * it is set.
+     */
+    private fun loadMultiTrack(buffer: ByteBuffer, withCameraFlag: Boolean): Stored? {
         val fps = buffer.getDouble()
         val width = buffer.getInt()
         val height = buffer.getInt()
         val hasMarks = buffer.getInt()
         if (hasMarks != 0 && hasMarks != 1) return null
-        if (buffer.remaining() < MARKS_BYTES + 4) return null
+        // The 4 is the count that follows the marks, and v4's flag another 4.
+        if (buffer.remaining() < MARKS_BYTES + 4 + (if (withCameraFlag) 4 else 0)) return null
         val points = List(12) { Point(buffer.getDouble(), buffer.getDouble()) }
         val marks = if (hasMarks == 1) points.toCourtKeypoints() else null
+        val hasCamera = if (withCameraFlag) buffer.getInt() else 0
+        // Refused, as a marks flag other than 0 or 1 is: not a file this store wrote.
+        if (hasCamera != 0 && hasCamera != 1) return null
+        val poseBytes = POSE_BYTES + if (hasCamera == 1) CAMERA_BYTES else 0
         val trackCount = buffer.getInt()
         // Rejected before the loop below can allocate or slice on it: a
         // negative or implausibly large count is corruption, not a file this
@@ -232,12 +280,12 @@ class SkeletonStore(private val root: File) {
         if (trackCount < 0 || trackCount > CourtSide.entries.size) return null
         val tracks = ArrayList<SidePoses>(trackCount)
         repeat(trackCount) {
-            if (buffer.remaining() < 8) return null
+            if (buffer.remaining() < TRACK_HEADER_BYTES) return null
             val sideOrdinal = buffer.getInt()
             val side = CourtSide.entries.getOrNull(sideOrdinal) ?: return null
             val poseCount = buffer.getInt()
-            if (poseCount < 0 || poseCount > buffer.remaining() / POSE_BYTES) return null
-            val poses = buffer.readPoses(poseCount) ?: return null
+            if (poseCount < 0 || poseCount > buffer.remaining() / poseBytes) return null
+            val poses = buffer.readPoses(poseCount, hasCamera == 1) ?: return null
             tracks.add(SidePoses(side, poses))
         }
         // A file killed mid-write ends short: nothing but a fully-formed
@@ -260,9 +308,12 @@ class SkeletonStore(private val root: File) {
         return readPoses(count)
     }
 
-    /** Reads exactly [count] poses, for a caller that already validated the count. */
-    private fun ByteBuffer.readPoses(count: Int): List<PlayerPose>? {
-        if (remaining() < count * POSE_BYTES) return null
+    /**
+     * Reads exactly [count] poses, each followed by its camera when
+     * [withCamera], for a caller that already validated the count.
+     */
+    private fun ByteBuffer.readPoses(count: Int, withCamera: Boolean = false): List<PlayerPose>? {
+        if (remaining() < count * (POSE_BYTES + if (withCamera) CAMERA_BYTES else 0)) return null
         val poses = ArrayList<PlayerPose>(count)
         repeat(count) {
             val frame = getInt()
@@ -273,7 +324,13 @@ class SkeletonStore(private val root: File) {
                 keypoints.add(Point(getFloat().toDouble(), getFloat().toDouble()))
                 confidence.add(getFloat())
             }
-            poses.add(PlayerPose(frame, timestamp, keypoints, confidence))
+            val camera = if (withCamera) {
+                val h = DoubleArray(8) { getDouble() }
+                listOf(listOf(h[0], h[1], h[2]), listOf(h[3], h[4], h[5]), listOf(h[6], h[7], 1.0))
+            } else {
+                null
+            }
+            poses.add(PlayerPose(frame, timestamp, keypoints, confidence, camera))
         }
         return poses
     }
@@ -313,13 +370,15 @@ class SkeletonStore(private val root: File) {
 
     private companion object {
         val MAGIC = "SKEL".toByteArray(Charsets.US_ASCII)
-        const val VERSION = 2
+        /** What [save] and [saveAll] write. */
+        const val VERSION = 4
+        const val VERSION_V2 = 2
         const val VERSION_V3 = 3
         const val HEADER_BYTES_V1 = 4 + 4 + 8 + 4 + 4 + 4
         const val MARKS_BYTES = 12 * 2 * 8
-        const val HEADER_BYTES_V2 = 4 + 4 + 8 + 4 + 4 + 4 + MARKS_BYTES + 4
-        const val HEADER_BYTES_V3 = 4 + 4 + 8 + 4 + 4 + 4 + MARKS_BYTES + 4
-        const val TRACK_HEADER_BYTES_V3 = 4 + 4
+        const val HEADER_BYTES_V4 = 4 + 4 + 8 + 4 + 4 + 4 + MARKS_BYTES + 4 + 4
+        const val TRACK_HEADER_BYTES = 4 + 4
         const val POSE_BYTES = 4 + 8 + Coco.COUNT * 12
+        const val CAMERA_BYTES = 8 * 8
     }
 }
