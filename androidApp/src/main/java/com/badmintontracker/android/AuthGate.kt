@@ -7,11 +7,24 @@ import com.badmintontracker.shared.local.DeviceThroughputRepository
 import com.badmintontracker.android.localanalysis.LocalAnalysisRunner
 import com.badmintontracker.android.localanalysis.AnalysisTarget
 import android.net.Uri
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.unit.dp
+import com.badmintontracker.android.home.HomeTopBar
+import com.badmintontracker.android.ui.theme.ShuttlTypeExtras
+import com.badmintontracker.shared.signin.SignInCopy
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -642,14 +655,31 @@ private fun storedResultsReader(localAnalysis: LocalAnalysisRunner) = StoredResu
     )
 }
 
+/**
+ * What shows while the stored session is read. The same title bar as the
+ * sign-in screen and the list, with the wordmark in the title's slot, so the
+ * handover moves nothing: to sign-in the wordmark holds still, to the list
+ * "Matches" takes its place. A small indicator in the space below, drawn like
+ * ShuttlButton's own (a 2dp stroke), not M3's 40dp default.
+ */
 @Composable
 private fun Splash() {
     Column(
-        modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)),
     ) {
-        Text("Shuttl")
-        CircularProgressIndicator()
+        HomeTopBar(SignInCopy.WORDMARK, titleStyle = ShuttlTypeExtras.wordmark)
+        Box(
+            modifier = Modifier.weight(1f).fillMaxWidth().navigationBarsPadding(),
+            contentAlignment = Alignment.Center,
+        ) {
+            CircularProgressIndicator(
+                color       = MaterialTheme.colorScheme.onSurfaceVariant,
+                strokeWidth = 2.dp,
+                modifier    = Modifier.size(24.dp),
+            )
+        }
     }
 }
