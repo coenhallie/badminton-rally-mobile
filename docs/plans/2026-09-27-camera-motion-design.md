@@ -841,6 +841,24 @@ whole time. Ruling: this is the design's intended behaviour (`CAMERA_LOST` is
 the honest answer on a view the marking frame does not describe), not a
 regression, and it stays (§7, §9).
 
+### Screenshots after the Base label fix (final fix wave)
+
+- **iOS:** `docs/screenshots/2026-09-27-camera-ios-base-{light,dark}.png`
+  were retaken on the signed-in iPhone 17 Pro simulator after the label fix,
+  on the same imported "IMG_5892 handheld" entry. Rallies 1 to 4 are
+  numbered to the right of their dots; rally 5's dot, 8pt below rally 2's
+  and hemmed in by the "2", the "3", dot 2 and the ring, carries no number
+  and is named by the list under the court.
+- **Android:** the Base screenshots from Task 15a
+  (`2026-09-27-camera-android-base-{light,dark}.png`) showed the collision
+  and were removed rather than kept as a picture of a defect. Retaking them
+  means launching the app on the emulator, whose session state awaits the
+  owner (Task 15a's restart rolled it back to a 2026-09-26 snapshot), so
+  there is no Android Base screenshot of the fix. Android draws through the
+  same `placeRallyLabels` as iOS, and `RallyLabelPlacementTest` pins that
+  run's own medians (rally 4 beside its dot, 2 above its dot, 5 left to the
+  list). The Android Heatmap and Skeleton screenshots are unaffected.
+
 ### Not verified
 
 - **No real phone.** Every device number above is from an emulator (Android,
