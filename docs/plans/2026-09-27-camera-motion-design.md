@@ -1,7 +1,9 @@
 # Design: follow the camera, so a handheld recording still maps onto the court
 
 **Date:** 2026-09-27
-**Status:** Approved for implementation by Coen on 2026-09-27
+**Status:** Implemented 2026-09-27 on feat/camera-motion in both repos; not
+deployed (deploying the Modal worker is the owner's step). Approved for
+implementation by Coen on 2026-09-27
 ("implement it ... make sure it works for both the local pipeline and the
 cloud"). Coen delegated the design calls; a reviewer agent reviewed this spec in
 his place.
@@ -470,6 +472,33 @@ In `badminton-tracker`, branch `feat/camera-motion` from
   `CAMERA_LOST` rather than wrong positions.
 - The ankle-height correction and a rallies-only heatmap from the same
   investigation: separate changes.
+- **The cloud's candidate ranking is side-blind.** Once a frame has more than
+  two admitted people, the top two by cumulative movement win regardless of
+  side. An extra high-movement candidate (a duplicate track, an official on a
+  cut shot) can push the correct player on the other side out of the top two.
+  Found and left open by Task 14b's court-filter work (§9); a side-aware
+  ranking is a separate change.
+- **The shuttle static-cluster and minimum-movement checks still run in frame
+  pixels.** Task 14 mapped only the Phase 2 shuttle court-area test by `M`;
+  a pan still moves a static shuttle candidate in the pixels these two checks
+  read.
+- **Android's pose and TrackNet samplers ignore the decoder's crop rect.**
+  `PoseRunner.detect`, `FramePreprocessor.toRgbResized`/`toRgb` and
+  `DetectorRunner` all size from `image.width`/`image.height` directly, not
+  `image.cropRect`. Only the camera tracker's own `LumaPlane` reads the crop
+  rect (Task 9 fix round 1, §9). A decoder that reports padded dimensions
+  (for example 1920x1088 for 1080p) would feed the pose and shuttle models
+  the padding; unverified on any real device, since the emulator's decoder
+  reports a clean, unpadded size.
+- **Letting the user choose which frame a video is marked on**, for edited
+  highlight reels that cut between cameras. The marking frame decides which
+  camera's view the whole track is measured against: `2eabfc01` (a BWF
+  highlights reel) is marked on an opening low-angle camera that pans, zooms
+  and cuts away within the first 1.2 s, so the tracker follows that camera
+  and then loses it, and the fixed-mark positions on the rest of the video
+  were computed through the wrong view all along (§9, §10). Re-anchoring per
+  shot, or letting a coach step to a later frame to mark, is a separate
+  change.
 
 ---
 
@@ -517,3 +546,314 @@ In `badminton-tracker`, branch `feat/camera-motion` from
    Base and Skeleton panels checked. Until then §8.6 is the cloud's evidence.
    Once the worker writes version 2, the older unmerged branches'
    dev builds can no longer install cloud poses; no shipped build is affected.
+
+---
+
+## 9. What shipped differently
+
+Deviations from `2026-09-27-camera-motion-plan.md`. Source of truth: the SDD
+ledger, `.superpowers/sdd/2026-09-27-camera-motion-plan/progress.md` (every
+`Ruling:` line and every implementer finding recorded there). Each entry below
+names the task and, where the ledger records one, the ruling.
+
+### The tracker (Tasks 1-5, 9b)
+
+- **The synthetic test texture (`Synthetic.kt`) was retuned twice, not
+  written once from the plan's code block.** The plan's own texture gave the
+  required 150 corners but broke `LucasKanadeTest`: a 30 px pan locked onto
+  the wrong basin (worst error 90.3 px, a convergence failure, not a
+  model-mismatch one), and a rotation-with-perspective case carried an
+  aperture-problem bias (0.346 px). Task 2's first enriched texture (250
+  blobs) still failed the same way under review. Task 3 took ownership of the
+  fixture and converged, after roughly a dozen tried configurations, on a
+  jittered grid (blobs on a 22 px pitch, 2 px jitter, sigma 0.9-1.4). The
+  ledger records this as a narrow working point, not a robust plateau:
+  neighbouring configurations (pitch 21, or jitter 1.5 or 0) fail one test or
+  the other. `Synthetic.kt`'s own KDoc now carries this warning.
+- **The rotation-test bound moved from 0.1 px on one seed to 0.15 px checked
+  across four seeds.** Review measured the plan's 0.1 px bound passing only
+  on seed 7 (0.086 px); seeds 2 and 3 measured 0.118 and 0.113 px. This is a
+  textbook aperture-problem bias in any window-based translational LK fit
+  under local rotation, present even in a single pyramid level with the
+  correct starting guess, not a tracker defect; it is well inside the
+  tracker's own 1.0 px RANSAC inlier threshold. `LucasKanadeTest` now asserts
+  `worst < 0.15` across seeds 2, 3, 7 and 11 (Task 3 fix round 1).
+- **`LK_MIN_EIGEN`'s KDoc states a measured value** (minimum normalised
+  eigenvalue 0.248, seed 3, pyramid level 1) rather than the plan's
+  unverified placeholder guess.
+
+### The cloud tracker (Task 12)
+
+- **The section-5 parity gate moved from image-corner distances to the
+  painted-line points, and OpenCV's own accuracy is measured against the
+  paint too, not just against Kotlin.** Review found the corner metric fails
+  by construction: comparing two homographies at the image corners
+  extrapolates past the region the corners were actually tracked in (measured
+  2.5 px median), well above the tracker's own reproducibility floor of about
+  0.65 px. The shipped gate: painted-line median <= 1.0 px / p95 <= 2.0 px on
+  the real `cv2.VideoCapture` decode path (measured 0.837 / 1.956 px), and
+  parity against `opencv_motion.json` at the same paint points, median
+  <= 1.0 px / p95 <= 3.0 px.
+- **Points that track outside the image are now explicitly masked before
+  RANSAC sees them**, in the OpenCV path, matching §4.3 step 3's failure
+  rule exactly. OpenCV's own LK status flag does not cover a point that
+  "succeeds" by its own convergence criterion but lands off the image;
+  without an explicit mask the three implementations (Kotlin, OpenCV in this
+  repo, the Task 5 probe) disagreed on this one rule.
+
+### Task sequencing, not in the plan
+
+- **Task 13 split into a backend half (the cloud's version-2 writer) and a
+  mobile half (the Kotlin decoder test), run in parallel in separate repos**,
+  to avoid two implementers committing in the mobile repo at the same time.
+  The mobile half was folded into Task 6's dispatch.
+- **Task 9b, tracker performance, is a new task the plan does not have.**
+  Added after Task 9 measured the tracker at about 25x its host-JVM cost on a
+  debuggable Android emulator build (Coen had asked specifically about
+  processing cost). It removed RANSAC's boxed-list allocations and
+  Lucas-Kanade's and the pyramid's per-pixel calls, verified bit-identical
+  output (a byte digest and the corpus gate, before and after), and took the
+  release-build emulator figure from about 9-10 ms/sample to 2.4-2.5
+  ms/sample. See §10 for the full before/after table.
+- **Task 15 split into 15a (Android) and 15b (iOS), run in parallel.** The
+  plan's single Task 15 assumed one device check; the pass criteria instead
+  came from a committed instrumented/XCTest run of the real engine and
+  coordinator against the corpus video on the emulator and simulator, because
+  the shared emulator's signed-in session was not reachable during this work.
+
+### Selection and rejection (Task 7)
+
+- **A frame whose camera is known from exactly one sample, with no
+  interpolation neighbour, is `CAMERA_LOST`, not resolved through the fixed
+  marks.** Read literally, the task brief would have fallen back to the fixed
+  marks for this case; the design (§4.4, §5.2) forbids fixed marks whenever a
+  frame's camera is not known, so the ruling kept `CAMERA_LOST` here too.
+
+### Marking time and the iOS coordinator (Task 8)
+
+- **Clear and Undo-to-empty now reset `markedAtSeconds` to the on-screen
+  frame's time**, not in the plan. Without it, marks redrawn after clearing
+  previously restored marks would carry the restored marks' old time instead
+  of the still they were actually drawn on.
+- **iOS builds its `LocalAnalysisCoordinator` through a new factory,
+  `createIosLocalAnalysisCoordinator`, with a completion-callback legacy-time
+  lookup**, not a direct constructor call and not a suspend lambda crossing
+  SKIE. A suspend `(String) -> Double` parameter reaches Swift as an untyped
+  `KotlinSuspendFunction1`, and the coordinator does not run on the engine's
+  own serial queue (SKIE delegates coroutine dispatch to a Swift concurrency
+  thread), so blocking that thread on a semaphore around the async frame
+  generator was rejected as unsafe. A direct `LocalAnalysisCoordinator(engine:
+  log:)` call no longer compiles from Swift after this change.
+
+### Android's padded-decoder crop (Task 9 fix round 1)
+
+- **`LumaPlane` now reads the decoder's crop rect, and treats a crop rect
+  equal to the full buffer as no crop.** The first pass compared
+  `image.width`/`height` to the container's size and stopped tracking
+  whenever they differed, which silently disabled tracking on any decoder
+  reporting padded dimensions (for example 1920x1088 for 1080p) without an
+  explicit crop rect narrower than the buffer -- the ordinary case, since
+  `Image.getCropRect()` never returns null. Found on the S23 corpus test only
+  after tracking silently switched off partway through: `image.width/height`
+  alone was never a safe signal.
+
+### The cloud loop (Task 14)
+
+- **After a mid-run tracker exception, the loop holds the last accepted `M`**
+  rather than reverting to identity. Not specified by the plan. Ruling:
+  holding is closer to the true camera than the fixed marks (identity), and
+  matches the phone's own behaviour of marking a lost frame `CAMERA_LOST`
+  rather than falling back. Untested against a real cloud failure --
+  `IMG_5892` never triggered it.
+- **The shuttle static-cluster and minimum-movement checks stayed in frame
+  pixels.** The plan scoped only the Phase 2 shuttle court-area test to be
+  mapped by `M`; the cluster/movement checks are a known follow-up (§7).
+
+### The cloud court filter (Task 14b, not in the plan)
+
+Task 14 shipped with the cloud's coverage bound failing (0.916 against the
+0.95 gate, §10) because a pre-existing box-bottom court-area filter drops a
+near-baseline player whose YOLO box bottom lands outside the marked polygon
+even though her ankles are inside it. Task 14b, dispatched after Task 14's
+review, is entirely new work:
+
+- **Round 1** tried an unconditional ankle-midpoint-OR-box-bottom admission
+  rule. It met every `IMG_5892` bound (coverage 0.974) but, measured on the
+  `743d7fb1` broadcast corpus, also admitted a seated official and a standing
+  photographer on frames where the marked court was not in view (close-ups,
+  alternate cameras). The controller withheld it rather than ship it.
+- **Round 2 shipped instead:** the ankle clause applies only while the
+  camera is currently followed (`CameraMotionTracker.following`, true only
+  when the most recently offered sample was accepted -- false before the
+  marking frame, after a give-up, and after any dropped sample, which covers
+  every frame the officials were found on in round 1). Alongside it, an
+  exact-duplicate-keypoint filter (`distinct_people`): ultralytics sometimes
+  reports one person as two track IDs sharing bit-identical keypoints with a
+  stale second box, which let both copies pass the court test under the
+  ankle rule and starve the far player's slot in the top-2 movement ranking.
+  The duplicate filter keeps the copy whose box best matches its keypoints,
+  not simply the first -- a deliberate deviation from the ruling, which said
+  "first"; the box feeds the emitted player box and the court test, and every
+  duplicate inspected had the real copy first anyway, so the two rules agreed
+  everywhere checked.
+- Net result on `IMG_5892`: coverage 0.974, median 6.8 cm, p95 22.4 cm, all
+  passing (§10).
+
+### Verification gating (Tasks 15a, 15b)
+
+- **Both platforms' handheld-corpus device tests became opt-in**, not gated
+  on file presence alone as the plan assumed. Android's
+  `CameraFollowedRunTest` requires `-e runHandheld true` (review found a
+  file-presence gate survives a reinstall and hangs forever on an emulator
+  whose HEVC hardware decoder never returns a frame for this clip). iOS's
+  equivalent requires building with `-D RUN_HANDHELD_CORPUS_TEST` (review
+  found it otherwise ran the full multi-minute pass inside every local
+  unit-test invocation that has the corpus present, through
+  `SIMULATOR_HOST_HOME`).
+- **The iOS analysis log was routed to `os.Logger`**
+  (`LocalAnalysisRunner.systemLog`, subsystem `com.badmintontracker.ios`),
+  folded into Task 15b's prep, not in the plan. Without it,
+  `RallyIOSApp.swift` and `RootView.swift` built the runner with the default
+  no-op logger, so the `camera:` line the device check needs was never
+  reaching Console.
+- **A pre-existing Base-panel label collision was fixed on both platforms**
+  in the final fix wave: `rallyLabelX` in
+  `shared/.../local/BasePositionFormat.kt` throws a rally's label to the far
+  side of the whole-match ring whenever the label's row crosses the ring's
+  band, without checking whether the label's own span reaches the ring --
+  visible on both platforms' new screenshots. Not part of the plan.
+
+### Design doc corrections found by implementation
+
+- **§4.2's "130 KB each" for pre-marking pending frames is wrong.** A pending
+  frame is a `GreyImage` of floats (480x270x4 bytes), about 518 KB, not
+  bytes. Found in Task 4's review, confirmed in Task 10: with `T` always near
+  0.1 s today this is a few MB, but a `T` of 60 s (not reachable today, since
+  marking never steps to a later frame) would hold about 310 MB.
+- **§3's claim that iOS returns the frame at 1.0 s for a 0.1 s request is
+  real but is not the only value observed.** Task 8's own test clip (10 fps,
+  a sync frame every 20 frames) returned the 2.0 s sync frame for the same
+  0.1 s request: the loader returns whichever sync frame is nearest at or
+  after the request, which depends on the clip's own GOP structure, not a
+  fixed 1.0 s. Task 15b's real device run (import through the photo picker,
+  which transcodes HEVC to H.264) landed back on 1.0 s for `IMG_5892`'s
+  transcoded copy. `marked_at_s` is what makes either value correct instead
+  of a source of drift; §3's point about needing it stands.
+
+---
+
+## 10. Verification, as run
+
+Numbers below are from the per-task reports in
+`.superpowers/sdd/2026-09-27-camera-motion-plan/`
+(`task-3-report.md`, `task-4-report.md`, `task-5-report.md`,
+`task-9-report.md`, `task-9b-report.md`, `task-10-report.md`,
+`task-12-report.md`, `task-14-report.md` including its Task 14b sections,
+`task-15a-report.md`, `task-15b-report.md`).
+
+### Tracker corpus test (host JVM), `IMG_5892`
+
+`CameraMotionCorpusTest`, `ANALYSIS_REQUIRE_CORPUS=1`: 2182 frames decoded,
+728 samples, 0 dropped (unchanged before and after Task 9b's performance
+work, confirmed by a bit-identical digest and a re-run of the gate):
+
+| | Kotlin tracker | OpenCV (probe) |
+|---|---|---|
+| painted-line median | 0.805 px | 0.870 px |
+| painted-line p95 | 1.913 px | 2.000 px |
+| parity vs OpenCV, median | 0.705 px | -- |
+| parity vs OpenCV, p95 | 2.136 px | -- |
+
+Gates: painted-line median <= 1.0 px / p95 <= 2.0 px; parity median
+<= 1.0 px / p95 <= 3.0 px. All passed.
+
+### Cloud tracker paint-line error (Task 12, badminton-tracker, host)
+
+`verify_camera_motion.py` section 5, on the real `cv2.VideoCapture` BGR
+decode path over `source.mov`, 17257 (sample, point) pairs: median 0.837 px,
+p95 1.956 px (gate median <= 1.0 px, p95 <= 2.0 px, pass).
+
+### Tracker cost, by where it was measured
+
+| location | build | per sample, track only | incl. downsample | per frame |
+|---|---|---|---|---|
+| host JVM, synthetic benchmark | warm | 1.25-1.43 ms | -- | -- |
+| host JVM, `IMG_5892` corpus (728 samples) | warm | 2.37-2.53 ms | -- | -- |
+| Android emulator (Pixel_9a) | debuggable | 11.7-11.8 ms | 13.5-13.6 ms | 4.6 ms |
+| Android emulator | release, non-debuggable | 2.4-2.5 ms | 4.4-4.6 ms | 1.5-1.6 ms |
+| Android emulator, full instrumented pass, `IMG_5892` (Task 15a) | debuggable | 23.48 ms | -- | -- |
+| iOS simulator, Kotlin/Native, synthetic benchmark | release | 2.0-2.8 ms | -- | -- |
+| iOS simulator, Kotlin/Native, synthetic benchmark | debug | 19.3-20.6 ms | -- | -- |
+| iOS simulator, direct engine path, 1920x1080 (Task 10) | Release | -- | 17.2 ms (3.3 reading the plane) | -- |
+| iOS simulator, direct engine path, 1920x1080 (Task 10) | Debug | -- | 482 ms (319 reading the plane) | -- |
+| iOS simulator, full instrumented pass, `IMG_5892` (Task 15b) | Release | -- | 7.7-9.8 ms | -- |
+
+Share of the pass, measured (not estimated) on the full `IMG_5892`
+instrumented Android run (Task 15a, debuggable build, 545.8 ms/frame overall):
+tracker 17.1 s of a 1190.8 s pass, **1.44%**. Design §1 estimated 1-4
+ms/frame, under 1%, against an S23 pass of about 465 ms/frame; that S23
+figure is itself still unmeasured (see "Not verified" below). Task 9b's
+release-build emulator figure (1.5-1.6 ms/frame) projects to about 0.3% of a
+465 ms/frame pass.
+
+### Device-path runs (§8.5), emulator/simulator, ideal marks
+
+| platform | coverage (gate >=0.95) | median (gate <=5cm) | p95 (gate <=15cm) | worst | camera |
+|---|---|---|---|---|---|
+| Android emulator, Pixel_9a, debuggable (Task 15a) | 0.9931 | 2.1 cm | 6.2 cm | 16.4 cm | 728 followed, 0 dropped |
+| iOS simulator, iPhone 17 Pro Max, Release (Task 15b) | 0.9918 | 1.8 cm | 5.2 cm | 11.6 cm | 728 followed, 0 dropped |
+
+### The app's own run, end to end (Task 15b, iOS)
+
+Through the app's real Add match > Import (PHPicker, which transcodes HEVC to
+H.264) > mark (lands on the 1.0 s frame, §9) > analyse-on-device flow, the
+stored track compared to the reference: coverage 0.9940 (2169/2182), median
+2.3 cm, p95 6.8 cm, worst 148.4 cm (one frame, frame 2037). Android's Task 15a
+screenshots came from a device-test-produced track staged onto an entry, not
+the app's own Add/mark/analyse flow; no Android app-driven equivalent of this
+run exists.
+
+### Cloud local harness (§8.6), `IMG_5892`, `run_phase2_locally.py`, CPU, medium pose model
+
+| run | coverage (gate >=0.95) | median (gate <=8cm) | p95 (gate <=25cm) | worst |
+|---|---|---|---|---|
+| fixed marks (pre-change loop) | 0.636 | 53.2 cm | 289.5 cm | 437 cm |
+| camera-followed, Task 14 (`23940fc`) | 0.916 FAIL | 6.8 cm | 22.7 cm | 157 cm |
+| Task 14b round 2, shipped (`488996c`) | **0.974 PASS** | **6.8 cm PASS** | **22.4 cm PASS** | -- |
+
+Near/far position counts on the two broadcast corpus videos (Task 14b round
+2; HEAD = `23940fc`, gated = shipped `488996c`):
+
+| video | camera samples | NEAR positions, HEAD -> gated | FAR positions, HEAD -> gated |
+|---|---|---|---|
+| `743d7fb1` (Paris 2024 broadcast, full 5972 frames) | 1104 accepted, 899 dropped | 3082 (0.660) -> 3134 (0.681) | 2616 (0.560) -> 2625 (0.570) |
+| `2eabfc01` (BWF highlights, first 3000 of 12032 frames) | 12 accepted, 1188 dropped | 30 -> 30 (identical frames) | 33 -> 33 (identical frames) |
+
+**Finding:** on both broadcast clips the tracker drops cut shots, and on
+`743d7fb1` it re-acquires the main camera afterward -- the dropped runs
+(28.4-51.1 s and 62.3-77.5 s) are close-ups and replays from other cameras,
+and tracking resumes at 51.2 s and 77.6 s when the main camera returns. On
+`2eabfc01` the marks (drawn at the decoded 0.12 s frame) belong to an opening
+low-angle camera that pans, zooms and cuts to a different main wide camera;
+the tracker follows that opening camera and loses it at the cut, and the
+video's 2179 fixed-mark positions were computed through the wrong view the
+whole time. Ruling: this is the design's intended behaviour (`CAMERA_LOST` is
+the honest answer on a view the marking frame does not describe), not a
+regression, and it stays (§7, §9).
+
+### Not verified
+
+- **No real phone.** Every device number above is from an emulator (Android,
+  Pixel_9a) or a simulator (iOS, iPhone 17 Pro / Pro Max). The Galaxy S23 and
+  a real iPhone are unmeasured; the ~465 ms/frame S23 pass-time figure §1
+  uses for "under 1%" predates this work and was not re-measured here.
+- **No production Modal run.** Deploying is the owner's step: `python3 -m
+  modal deploy backend/modal_supabase_processor.py`, then one Phase 2 run of
+  `IMG_5892` installed on a phone through `CloudPoseCoordinator`, with its
+  Heatmap, Base and Skeleton panels checked (§8.7).
+- **The padded-decoder crop-rect path (Task 9 fix round 1) is unit-tested
+  only.** `LumaPlaneTest` covers a synthetic 1920x1088 plane; no real device
+  decoder has been observed to report padded dimensions through
+  `Image.getCropRect()`/`width`/`height`. The emulator's own decoder reports
+  a clean 1920x1080 with no padding, so the padded path has never run
+  against a real decode.
