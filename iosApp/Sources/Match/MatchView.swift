@@ -363,10 +363,9 @@ struct MatchView: View {
                             // lower, as on Android: the rally sort control, whose
                             // label is centred in its touch target, and "No
                             // rallies yet", which is centred in the section rather
-                            // than hung from its top.
-                            .padding(.top, sectionIsList
-                                ? MatchPageLayout.sectionGap - MatchPageLayout.rowInset
-                                : MatchPageLayout.sectionGap)
+                            // than hung from its top. Analysis takes all of it
+                            // inside its scroll view (see AnalysisSection).
+                            .padding(.top, sectionTopPadding)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     }
                     // Collects the section row's label size for the secondary
@@ -617,6 +616,16 @@ struct MatchView: View {
     /// Whether the section on screen is a list whose first row carries
     /// `MatchPageLayout.rowInset` itself. See the gap in `body`.
     private var sectionIsList: Bool { section == .points || section == .rallies }
+
+    /// What the page puts between the section row and the section: the gap,
+    /// less what a list's first row carries itself, and none for Analysis,
+    /// which puts it inside its scroll view.
+    private var sectionTopPadding: CGFloat {
+        if section == .analysis { return 0 }
+        return sectionIsList
+            ? MatchPageLayout.sectionGap - MatchPageLayout.rowInset
+            : MatchPageLayout.sectionGap
+    }
 
     /// The same decision the list's Analyze makes (`analyseAction(for:)`):
     /// resume a failed cloud run with saved court points, else mark the court.

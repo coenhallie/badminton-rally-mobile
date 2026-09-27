@@ -91,8 +91,8 @@ struct AnalysisSection: View {
                         // page's section row, and must not read as its peer.
                         secondary: true
                     )
-                    // No top padding, here or on the heading below: the page
-                    // puts `MatchPageLayout.sectionGap` above every section.
+                    // No top padding, here or on the heading below: the gap
+                    // under the page's section row is the stack's, below.
                     .padding(.horizontal, ShuttlGutter.page)
                     .padding(.bottom, 16)
                 } else {
@@ -124,6 +124,11 @@ struct AnalysisSection: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            // The page's `sectionGap`, inside the scroll rather than above it
+            // as the other sections take it: a pill row at the scroll view's
+            // top edge lost the upper half of its 44pt target, since nothing
+            // outside a scroll view's bounds takes a touch.
+            .padding(.top, MatchPageLayout.sectionGap)
         }
         .background(Shuttl.bg)
         // Both keyed on the id they read: the page's `analysisId` moves from
