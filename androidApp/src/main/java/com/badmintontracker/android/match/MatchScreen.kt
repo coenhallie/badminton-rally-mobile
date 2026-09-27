@@ -82,6 +82,7 @@ import com.badmintontracker.shared.matchpage.MatchPageSection
 import com.badmintontracker.shared.matchpage.analysisId
 import com.badmintontracker.shared.matchpage.matchPageItem
 import com.badmintontracker.shared.matchpage.matchPageSections
+import com.badmintontracker.shared.matchpage.pageOffersVideoRemoval
 import com.badmintontracker.shared.matchpage.showsStatusBanner
 import com.badmintontracker.shared.matchpage.shownSection
 import com.badmintontracker.shared.model.MatchLabelSummary
@@ -339,7 +340,9 @@ fun MatchScreen(
                             // likeliest reason to want another one, but gating on
                             // that would leave the "Finishing up…" dead end with
                             // no action on it at all. See the 2026-08-29 design.
-                            if (matchState.canRemoveVideo) {
+                            // An on-device run counts as in flight: only the row
+                            // sees it, see pageOffersVideoRemoval.
+                            if (pageOffersVideoRemoval(matchState.canRemoveVideo, matchItem)) {
                                 DropdownMenuItem(
                                     text = { Text("Change video") },
                                     onClick = { overflowOpen = false; videoAction = MatchVideoAction.CHANGE },

@@ -834,8 +834,9 @@ struct MatchView: View {
                     // video that found no rallies is the likeliest reason to want
                     // another one, but gating on that would leave the "Finishing
                     // up…" dead end with no action on it at all. See the
-                    // 2026-08-29 design.
-                    if matchModel.canRemoveVideo {
+                    // 2026-08-29 design. An on-device run counts as in flight:
+                    // only the row sees it, see `pageOffersVideoRemoval`.
+                    if MatchPageSectionKt.pageOffersVideoRemoval(canRemoveVideo: matchModel.canRemoveVideo, item: item) {
                         Button("Change video") { videoAction = .change }
                         Button("Remove video", role: .destructive) { videoAction = .remove }
                     }

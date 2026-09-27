@@ -3,6 +3,8 @@ package com.badmintontracker.shared.matchpage
 import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.AnalyzeStep
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
+import com.badmintontracker.shared.matchlist.DeviceRun
+import com.badmintontracker.shared.matchlist.DeviceRunKind
 import com.badmintontracker.shared.matchlist.MatchAnalysis
 import com.badmintontracker.shared.matchlist.MatchList
 import com.badmintontracker.shared.matchlist.MatchListInput
@@ -64,10 +66,11 @@ private fun list(
     skeletons: Set<String> = emptySet(),
     deviceClips: Map<String, Int> = emptyMap(),
     sharers: Map<String, String> = emptyMap(),
+    deviceRuns: Map<String, DeviceRun> = emptyMap(),
 ): MatchList = buildMatchList(
     MatchListInput(
         clips = clips, currentUserId = ME, sharerByVideoId = sharers, metadataByVideoId = emptyMap(),
-        scoreLogs = logs, localEntries = entries, cloudProgress = emptyMap(), deviceRuns = emptyMap(),
+        scoreLogs = logs, localEntries = entries, cloudProgress = emptyMap(), deviceRuns = deviceRuns,
         storedTrackIds = tracks, storedSkeletonIds = skeletons, deviceClipCounts = deviceClips,
     ),
     TimeZone.UTC,
@@ -108,6 +111,31 @@ class MatchPageSectionTest {
             deviceClips = mapOf("e1" to 1), tracks = setOf("e1"),
         ))
         assertFalse(showsStatusBanner(item))
+    }
+
+    // --- Change video / Remove video: never while a device run holds the file ---
+
+    @Test fun a_scored_match_whose_file_a_device_run_is_analysing_offers_no_removal() {
+        // The row forbids it (canRemoveFromPhone), so the page must too:
+        // removing the file mid-run orphans what the run writes and swallows
+        // its outcome, with "Analyzing on device" showing beside the menu.
+        val item = only(list(
+            logs = listOf(log("s1", points = 3)), entries = listOf(entry("e1", scoreLogId = "s1")),
+            deviceRuns = mapOf("e1" to DeviceRun(DeviceRunKind.RUNNING)),
+        ))
+        assertFalse(pageOffersVideoRemoval(canRemoveVideo = true, item = item))
+    }
+
+    @Test fun a_scored_match_with_nothing_running_offers_removal_when_the_page_allows_it() {
+        val item = only(list(logs = listOf(log("s1", points = 3)), entries = listOf(entry("e1", scoreLogId = "s1"))))
+        assertTrue(pageOffersVideoRemoval(canRemoveVideo = true, item = item))
+        assertFalse(pageOffersVideoRemoval(canRemoveVideo = false, item = item))
+    }
+
+    @Test fun a_scored_match_whose_video_left_the_phone_goes_by_the_page_alone() {
+        // No entry on the row: nothing on this phone can be holding a file.
+        val item = only(list(logs = listOf(log("s1", videoId = "v1", points = 3)), clips = listOf(clip("v1", 1))))
+        assertTrue(pageOffersVideoRemoval(canRemoveVideo = true, item = item))
     }
 
     @Test fun a_video_only_match_asks_under_its_player_not_in_a_banner() {

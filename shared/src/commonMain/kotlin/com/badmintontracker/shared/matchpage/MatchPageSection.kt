@@ -85,6 +85,18 @@ fun sectionAfterRun(item: MatchListItem): MatchPageSection? {
 fun showsStatusBanner(item: MatchListItem): Boolean = item.scoreLogId != null && item.statusText != null
 
 /**
+ * Whether a scored match's page offers Change video and Remove video.
+ * [canRemoveVideo] is the page's own rule (`scoreLogCanRemoveVideo`: a video,
+ * and no cloud stage using the file); the row adds the one thing only it can
+ * see, an on-device run holding the file ([MatchListItem.canRemoveFromPhone]).
+ * Removing the file under a run orphans the clips, track and skeleton it goes
+ * on to write and swallows its outcome, so the page must refuse whenever its
+ * row does. A row with no entry has no file here to hold.
+ */
+fun pageOffersVideoRemoval(canRemoveVideo: Boolean, item: MatchListItem?): Boolean =
+    canRemoveVideo && (item?.entryId == null || item.canRemoveFromPhone)
+
+/**
  * The id the Analysis section reads its track, skeleton and clips by: the
  * heatmap's own id (the entry's, or the cloud video's once the file has gone),
  * else the entry, for a match with a skeleton and no track.
