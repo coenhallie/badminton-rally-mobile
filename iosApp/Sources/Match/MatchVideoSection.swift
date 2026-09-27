@@ -59,64 +59,36 @@ struct MatchVideoSection: View {
 
     @ViewBuilder
     private func content(_ model: LocalPlayerModel) -> some View {
-        layout(model)
-            .background(Shuttl.bg)
-            .sheet(item: $addSheet) { item in
-                AddAnnotationSheet(
-                    labels: model.labels,
-                    onAdd: { label, body in
-                        model.add(label: label, body: body, atSeconds: item.timestamp)
-                    }
-                )
-                .presentationDetents([.medium])
-            }
-            .alert("Delete note?", isPresented: Binding(
-                get: { deleteTarget != nil },
-                set: { if !$0 { deleteTarget = nil } }
-            )) {
-                Button("Cancel", role: .cancel) { deleteTarget = nil }
-                Button("Delete", role: .destructive) {
-                    if let target = deleteTarget { model.delete(annotationId: target.id) }
-                    deleteTarget = nil
+        // The player and the notes header pinned, the notes scrolling under
+        // them, or all of it as one scroll where that leaves the notes no
+        // room. The notes take the page's gutter, as the header does.
+        PlayerNotesLayout(notes: model.annotations, id: \.id, rowInsets: NoteRow.insets) {
+            head(model)
+        } row: { annotation in
+            annotationRow(annotation, model: model)
+        }
+        .background(Shuttl.bg)
+        .sheet(item: $addSheet) { item in
+            AddAnnotationSheet(
+                labels: model.labels,
+                onAdd: { label, body in
+                    model.add(label: label, body: body, atSeconds: item.timestamp)
                 }
-            } message: {
-                if let target = deleteTarget {
-                    Text(target.body.isEmpty ? "This note" : "\"\(target.body)\"")
-                }
+            )
+            .presentationDetents([.medium])
+        }
+        .alert("Delete note?", isPresented: Binding(
+            get: { deleteTarget != nil },
+            set: { if !$0 { deleteTarget = nil } }
+        )) {
+            Button("Cancel", role: .cancel) { deleteTarget = nil }
+            Button("Delete", role: .destructive) {
+                if let target = deleteTarget { model.delete(annotationId: target.id) }
+                deleteTarget = nil
             }
-    }
-
-    /// The player and the notes header pinned with the notes scrolling under
-    /// them, as Android's portrait layout; at accessibility text sizes, the
-    /// whole section as one scroll. The player keeps its own height, so at
-    /// those sizes the pinned layout had no room left under it: the caption
-    /// was cut to "Note…" and the notes list was squeezed to nothing.
-    @ViewBuilder
-    private func layout(_ model: LocalPlayerModel) -> some View {
-        if dynamicTypeSize.isAccessibilitySize {
-            // Held to the screen's width: a scroll view is as wide as its
-            // content, and at these sizes the transport's minimum is wider
-            // than the screen (its skip labels are already cut to "-…"),
-            // which pushed the whole section past both edges.
-            GeometryReader { proxy in
-                ScrollView {
-                    VStack(spacing: 0) {
-                        head(model)
-                        ForEach(model.annotations, id: \.id) { annotation in
-                            annotationRow(annotation, model: model)
-                                .padding(NoteRow.insets)
-                            Divider()
-                                .overlay(Shuttl.border)
-                                .padding(.horizontal, ShuttlGutter.page)
-                        }
-                    }
-                    .frame(width: proxy.size.width)
-                }
-            }
-        } else {
-            VStack(spacing: 0) {
-                head(model)
-                notesList(model)
+        } message: {
+            if let target = deleteTarget {
+                Text(target.body.isEmpty ? "This note" : "\"\(target.body)\"")
             }
         }
     }
@@ -206,25 +178,6 @@ struct MatchVideoSection: View {
         // the first note.
         .padding(.top, NotesHeaderMetrics.gap)
         .padding(.bottom, 8)
-    }
-
-    private func notesList(_ model: LocalPlayerModel) -> some View {
-        List {
-            ForEach(model.annotations, id: \.id) { annotation in
-                annotationRow(annotation, model: model)
-                    // The page's gutter, as the header above takes: at the
-                    // list's own inset the notes stood out of line with it.
-                    .listRowInsets(NoteRow.insets)
-                    // The rule in the gutter at both ends, as Android's
-                    // between notes: the system's stops 16pt short of the
-                    // trailing edge, out of line with the header's pill.
-                    .alignmentGuide(.listRowSeparatorTrailing) { $0.width }
-                    .listRowSeparatorTint(Shuttl.border)
-                    .listRowBackground(Color.clear)
-            }
-        }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
     }
 
     /// The live entry while it is this model's, else the one the model was
