@@ -175,10 +175,9 @@ class AndroidLocalInferenceEngine(
     /**
      * Offers one sampled frame to [camera]; false once following has to stop.
      *
-     * The size check is here rather than a rescale: the tracker maps its
-     * pixels to source pixels through the container's size, so a decoded
-     * frame of another size (a decoder reporting its aligned buffer, say)
-     * would put every mark in the wrong place rather than merely blur it.
+     * The frame is the decoder's visible picture of the container's size
+     * (`visibleRegion`): a 1920x1088 buffer holding 1080p is followed, and a
+     * picture of some other size stops following rather than being rescaled.
      */
     private fun follow(
         camera: CameraMotionTracker,
@@ -187,10 +186,10 @@ class AndroidLocalInferenceEngine(
         image: android.media.Image,
         meta: VideoFrameSource.Metadata,
     ): Boolean = try {
-        check(image.width == meta.width && image.height == meta.height) {
-            "decoded ${image.width}x${image.height}, the container says ${meta.width}x${meta.height}"
-        }
-        camera.offer(seconds, luma.downsample(image, camera.trackerWidth, camera.trackerHeight))
+        camera.offer(
+            seconds,
+            luma.downsample(image, meta.width, meta.height, camera.trackerWidth, camera.trackerHeight),
+        )
         true
     } catch (e: Exception) {
         log("camera: stopped following at ${seconds}s: $e")

@@ -43,14 +43,13 @@ class CameraTrackingTimingTest {
         source.forEachFrame(FRAMES) { _, seconds, image ->
             frames++
             if (!tracker.wants(seconds)) return@forEachFrame
-            // The engine stops following when these disagree, so a decoder
-            // reporting its aligned buffer (1088 rows for 1080) would turn the
-            // tracker off; say what this one reports.
+            // What this decoder hands over: an aligned buffer (1088 rows for
+            // 1080) is read through its crop, so say what the crop is.
             if (samples == 0) {
                 Log.i(TAG, "decoded ${image.width}x${image.height}, crop ${image.cropRect}, container ${meta.width}x${meta.height}")
             }
             val started = System.nanoTime()
-            val grey = luma.downsample(image, tracker.trackerWidth, tracker.trackerHeight)
+            val grey = luma.downsample(image, meta.width, meta.height, tracker.trackerWidth, tracker.trackerHeight)
             val downsampled = System.nanoTime()
             tracker.offer(seconds, grey)
             offerNs += System.nanoTime() - downsampled
