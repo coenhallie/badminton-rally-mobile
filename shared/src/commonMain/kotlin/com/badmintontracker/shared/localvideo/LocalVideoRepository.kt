@@ -1,5 +1,6 @@
 package com.badmintontracker.shared.localvideo
 
+import com.badmintontracker.shared.model.CourtKeypoints
 import com.badmintontracker.shared.util.SyncLock
 import com.badmintontracker.shared.util.withLock
 import com.russhwolf.settings.Settings
@@ -126,6 +127,16 @@ class LocalVideoRepository(
 /** Marks a FAILED entry's result dialog as seen (Swift-friendly single-purpose mutation). */
 fun LocalVideoRepository.acknowledgeResult(id: String) =
     update(id) { it.copy(resultSeen = true) }
+
+/**
+ * Saves the court points marked for this video (Swift-friendly single-purpose
+ * mutation). Every run saves them before it starts, cloud and on-device alike:
+ * they are how the match list tells a marked court from an unmarked one (an
+ * on-device run never moves the stage off LOCAL), they let a failed cloud run
+ * resume without re-marking, and they prefill the marking screen next time.
+ */
+fun LocalVideoRepository.setKeypoints(id: String, keypoints: CourtKeypoints) =
+    update(id) { it.copy(keypoints = keypoints) }
 
 /**
  * Stores the match name and description (Swift-friendly single-purpose mutation).

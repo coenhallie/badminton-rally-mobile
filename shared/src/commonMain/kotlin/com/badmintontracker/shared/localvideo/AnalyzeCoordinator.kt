@@ -112,7 +112,7 @@ class AnalyzeCoordinator(
     }
 
     fun startAnalysis(entryId: String, keypoints: CourtKeypoints) {
-        localVideos.update(entryId) { it.copy(keypoints = keypoints) }
+        localVideos.setKeypoints(entryId, keypoints)
         launchPipeline(entryId, AnalyzeStep.UPLOAD)
     }
 

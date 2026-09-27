@@ -73,6 +73,7 @@ import com.badmintontracker.shared.localvideo.AnalyzeCoordinator
 import com.badmintontracker.shared.localvideo.canResumeFailedAnalysis
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
+import com.badmintontracker.shared.localvideo.setKeypoints
 import com.badmintontracker.shared.RallyApp
 import com.badmintontracker.shared.repo.AuthState
 import com.badmintontracker.shared.scoring.ScoreLogStatus
@@ -623,7 +624,7 @@ fun AuthGate(
                                     // The keypoints are persisted either way, so
                                     // a device run can be followed by a cloud run
                                     // over the same markings without re-marking.
-                                    localVideos.update(args.entryId) { it.copy(keypoints = keypoints) }
+                                    localVideos.setKeypoints(args.entryId, keypoints)
                                     localVideos.get(args.entryId)?.uri?.let { uri ->
                                         localAnalysis.start(args.entryId, uri, keypoints, metrics)
                                     }

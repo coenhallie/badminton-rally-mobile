@@ -1,5 +1,6 @@
 package com.badmintontracker.shared.localvideo
 
+import com.badmintontracker.shared.model.CourtKeypoints
 import com.russhwolf.settings.MapSettings
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
@@ -177,6 +178,21 @@ class LocalVideoRepositoryTest {
         repo.remove("a")
 
         stillPresent.shouldBeNull()
+    }
+
+    @Test
+    fun setKeypoints_saves_the_court_on_a_local_entry_and_leaves_its_stage() {
+        // An on-device run saves the court this way and never moves the stage.
+        val repo = LocalVideoRepository(MapSettings())
+        repo.add(entry("a"))
+        val court = List(12) { listOf(it.toFloat(), 0f) }.let {
+            CourtKeypoints(it[0], it[1], it[2], it[3], it[4], it[5], it[6], it[7], it[8], it[9], it[10], it[11])
+        }
+
+        repo.setKeypoints("a", court)
+
+        repo.get("a")?.keypoints shouldBe court
+        repo.get("a")?.stage shouldBe AnalyzeStage.LOCAL
     }
 
     @Test

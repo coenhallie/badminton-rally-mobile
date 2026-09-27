@@ -276,6 +276,11 @@ struct CourtMarkingView: View {
     private func start(onDevice: Bool, marking: CourtMarkingState) {
         let keypoints = marking.toCourtKeypoints()
         if onDevice, let localAnalysis, let entry = rally.localVideos.get(id: entryId) {
+            // Saved first, as Android does and as the cloud run does inside
+            // `startAnalysis`: a device run never moves the stage off LOCAL, so
+            // the saved court is what tells the match list this court is
+            // marked. It also prefills the marking screen for the next run.
+            rally.localVideos.setKeypoints(id: entryId, keypoints: keypoints)
             localAnalysis.start(
                 entryId: entryId,
                 videoPath: LocalVideoFiles.resolve(relativePath: entry.uri).path,
