@@ -4,6 +4,7 @@ import com.badmintontracker.shared.localvideo.AnalyzeProgress
 import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.AnalyzeStep
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
+import com.badmintontracker.shared.model.CourtKeypoints
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import kotlinx.datetime.Instant
@@ -16,6 +17,7 @@ class AttachStatusTest {
         failureMessage: String? = null,
         id: String = "vid-1",
         scoreLogId: String? = "log-1",
+        keypoints: CourtKeypoints? = null,
     ) = LocalVideoEntry(
         id = id, uri = "content://x/$id", displayName = "m.mp4",
         durationMs = 1000, sizeBytes = 10, addedAtEpochMs = 0,
@@ -23,7 +25,12 @@ class AttachStatusTest {
         failedStep = if (stage == AnalyzeStage.FAILED) AnalyzeStep.PROCESSING else null,
         failureMessage = failureMessage,
         scoreLogId = scoreLogId,
+        keypoints = keypoints,
     )
+
+    private val court = List(12) { listOf(0f, 0f) }.let {
+        CourtKeypoints(it[0], it[1], it[2], it[3], it[4], it[5], it[6], it[7], it[8], it[9], it[10], it[11])
+    }
 
     private fun log(videoId: String? = null) = ScoreLog(
         id = "log-1",
@@ -47,6 +54,31 @@ class AttachStatusTest {
         val status = attachStatus(hasVideo = false, entry = entry(), uploadPercent = null, clipCount = 0)
         status?.kind shouldBe AttachKind.COURT_NOT_MARKED
         status?.text shouldBe "Video added, court not marked"
+    }
+
+    @Test
+    fun a_picked_video_whose_court_is_marked_is_not_asked_for_the_court() {
+        // A device run never moves the stage off LOCAL, so LOCAL alone does not
+        // mean unmarked: the saved court points do. What the marked video is
+        // doing next is the device run's to say, not the attach status's.
+        attachStatus(hasVideo = false, entry = entry(keypoints = court), uploadPercent = null, clipCount = 0).shouldBeNull()
+    }
+
+    @Test
+    fun a_marked_local_entry_on_a_bound_match_is_not_finishing_up() {
+        // Nothing is uploading for a LOCAL entry, so the no-clips-yet gap the
+        // FINISHING_UP spinner stands for is not this one.
+        attachStatus(hasVideo = true, entry = entry(keypoints = court), uploadPercent = null, clipCount = 0).shouldBeNull()
+    }
+
+    @Test
+    fun saved_court_points_do_not_change_what_a_cloud_stage_says() {
+        attachStatus(false, entry(AnalyzeStage.UPLOADING, keypoints = court), uploadPercent = 42, clipCount = 0)
+            ?.kind shouldBe AttachKind.UPLOADING
+        attachStatus(true, entry(AnalyzeStage.PROCESSING, keypoints = court), null, clipCount = 0)
+            ?.kind shouldBe AttachKind.CLIPPING
+        attachStatus(true, entry(AnalyzeStage.FAILED, "Upload failed", keypoints = court), null, clipCount = 0)
+            ?.kind shouldBe AttachKind.FAILED
     }
 
     @Test

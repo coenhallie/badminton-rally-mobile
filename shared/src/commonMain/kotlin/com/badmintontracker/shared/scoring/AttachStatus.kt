@@ -39,8 +39,18 @@ fun attachStatus(
 ): AttachStatus? {
     if (entry != null) {
         when (entry.stage) {
-            AnalyzeStage.LOCAL ->
-                return AttachStatus("Video added, court not marked", AttachKind.COURT_NOT_MARKED)
+            // LOCAL alone is not "unmarked": an on-device run never moves the
+            // stage, so a video analyzed on this phone stays LOCAL for good. The
+            // saved court points are what say the court was marked (both
+            // platforms save them before any run starts), and past that the
+            // device run speaks for itself, on the match list's row. Null, not a
+            // fall-through: nothing is uploading for a LOCAL entry, so a bound
+            // one with no clips is not "Finishing up…" either.
+            AnalyzeStage.LOCAL -> return if (entry.keypoints == null) {
+                AttachStatus("Video added, court not marked", AttachKind.COURT_NOT_MARKED)
+            } else {
+                null
+            }
             AnalyzeStage.UPLOADING -> return AttachStatus(
                 uploadPercent?.let { "Uploading $it%" } ?: "Uploading…",
                 AttachKind.UPLOADING,
