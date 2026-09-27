@@ -19,6 +19,7 @@ struct MatchVideoSection: View {
     @State private var liveEntry: LocalVideoEntry?
     @State private var addSheet: AddSheetItem? = nil
     @State private var deleteTarget: LocalAnnotation? = nil
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         Group {
@@ -58,127 +59,174 @@ struct MatchVideoSection: View {
 
     @ViewBuilder
     private func content(_ model: LocalPlayerModel) -> some View {
-        VStack(spacing: 0) {
-            // The card takes the video's own ratio rather than a share of the
-            // screen: the mock sizes it that way, and the 60% slab this replaced
-            // letterboxed a 16:9 recording with black above and below it.
-            ShuttlPlayer(
-                player: model.player,
-                prefs: rally.playbackPrefs,
-                step: { model.stepFrames($0) },
-                labels: model.labels,
-                onTag: { label, positionMs in
-                    model.add(label: label, body: "", atSeconds: Float(positionMs) / 1000)
-                },
-                tagError: model.actionError,
-                allowsFullscreen: true,
-                // The row's own action, under the video it would analyze, rather
-                // than in the bar: the page's bar belongs to the whole match.
-                // Between the transport and the chips, where Android has it.
-                primaryAction: analyzeLabel.map { PlayerPrimaryAction(label: $0, perform: onAnalyze) },
-                overlay: { EmptyView() },
-                errorContent: {
-                    if let error = model.playbackError {
-                        VStack(spacing: 8) {
-                            ErrorBanner(message: error)
-                            Button("Retry") { model.retry() }
-                                .buttonStyle(PrimaryButtonStyle())
-                                .frame(maxWidth: 160)
-                        }
-                        .padding(16)
+        layout(model)
+            .background(Shuttl.bg)
+            .sheet(item: $addSheet) { item in
+                AddAnnotationSheet(
+                    labels: model.labels,
+                    onAdd: { label, body in
+                        model.add(label: label, body: body, atSeconds: item.timestamp)
                     }
-                }
-            )
-            // No top padding: the page puts `MatchPageLayout.sectionGap` above
-            // every section, so each draws from its own top edge.
-
-            if let actionError = model.actionError {
-                ErrorBanner(message: actionError)
-                    .padding(.top, 8)
-                    .onTapGesture { model.actionError = nil }
-            }
-
-            if let description = shownEntry(model).description_ {
-                Text(description)
-                    .shuttlType(ShuttlType.titleMedium)
-                    .foregroundStyle(Shuttl.textSecondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, ShuttlGutter.page)
-                    .padding(.top, NotesHeaderMetrics.gap)
-            }
-
-            // The storage note doubles as the notes' heading: where they live is
-            // the one thing a coach needs to know before adding one, and the
-            // add action sits beside it rather than in a bar the host owns.
-            // Android's `NotesHeader`, which sets the same compact pill.
-            HStack(spacing: 12) {
-                Text("Notes are saved on this phone and are removed if you remove the video from the app.")
-                    .shuttlType(ShuttlType.bodySmall)
-                    .foregroundStyle(Shuttl.textTertiary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Button {
-                    addSheet = AddSheetItem(timestamp: model.currentTimestampSeconds())
-                } label: {
-                    Label(MatchPageCopy.shared.ADD_NOTE, systemImage: "plus")
-                        .lineLimit(1)
-                        // Android's pill is its 18dp icon tall: 30 in all.
-                        .frame(minHeight: NotesHeaderMetrics.pillContent)
-                }
-                .buttonStyle(CompactPillButtonStyle())
-                .fixedSize()
-                // A 44pt target around the 30pt pill, reaching above and below
-                // it without making the header taller than its caption.
-                .contentShape(
-                    Rectangle().inset(by: -(44 - NotesHeaderMetrics.pillContent - 12) / 2)
                 )
+                .presentationDetents([.medium])
             }
-            .padding(.horizontal, ShuttlGutter.page)
-            // Android's `NotesHeader`: 22 under whatever is above it, 8 over
-            // the first note.
-            .padding(.top, NotesHeaderMetrics.gap)
-            .padding(.bottom, 8)
+            .alert("Delete note?", isPresented: Binding(
+                get: { deleteTarget != nil },
+                set: { if !$0 { deleteTarget = nil } }
+            )) {
+                Button("Cancel", role: .cancel) { deleteTarget = nil }
+                Button("Delete", role: .destructive) {
+                    if let target = deleteTarget { model.delete(annotationId: target.id) }
+                    deleteTarget = nil
+                }
+            } message: {
+                if let target = deleteTarget {
+                    Text(target.body.isEmpty ? "This note" : "\"\(target.body)\"")
+                }
+            }
+    }
 
-            List {
-                ForEach(model.annotations, id: \.id) { annotation in
-                    annotationRow(annotation, model: model)
-                        // The page's gutter, as the header above takes: at the
-                        // list's own inset the notes stood out of line with it.
-                        .listRowInsets(NoteRow.insets)
-                        // The rule in the gutter at both ends, as Android's
-                        // between notes: the system's stops 16pt short of the
-                        // trailing edge, out of line with the header's pill.
-                        .alignmentGuide(.listRowSeparatorTrailing) { $0.width }
-                        .listRowSeparatorTint(Shuttl.border)
-                        .listRowBackground(Color.clear)
+    /// The player and the notes header pinned with the notes scrolling under
+    /// them, as Android's portrait layout; at accessibility text sizes, the
+    /// whole section as one scroll. The player keeps its own height, so at
+    /// those sizes the pinned layout had no room left under it: the caption
+    /// was cut to "Note…" and the notes list was squeezed to nothing.
+    @ViewBuilder
+    private func layout(_ model: LocalPlayerModel) -> some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            // Held to the screen's width: a scroll view is as wide as its
+            // content, and at these sizes the transport's minimum is wider
+            // than the screen (its skip labels are already cut to "-…"),
+            // which pushed the whole section past both edges.
+            GeometryReader { proxy in
+                ScrollView {
+                    VStack(spacing: 0) {
+                        head(model)
+                        ForEach(model.annotations, id: \.id) { annotation in
+                            annotationRow(annotation, model: model)
+                                .padding(NoteRow.insets)
+                            Divider()
+                                .overlay(Shuttl.border)
+                                .padding(.horizontal, ShuttlGutter.page)
+                        }
+                    }
+                    .frame(width: proxy.size.width)
                 }
             }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
+        } else {
+            VStack(spacing: 0) {
+                head(model)
+                notesList(model)
+            }
         }
-        .background(Shuttl.bg)
-        .sheet(item: $addSheet) { item in
-            AddAnnotationSheet(
-                labels: model.labels,
-                onAdd: { label, body in
-                    model.add(label: label, body: body, atSeconds: item.timestamp)
+    }
+
+    /// The player, its errors, the description and the notes header.
+    @ViewBuilder
+    private func head(_ model: LocalPlayerModel) -> some View {
+        // The card takes the video's own ratio rather than a share of the
+        // screen: the mock sizes it that way, and the 60% slab this replaced
+        // letterboxed a 16:9 recording with black above and below it.
+        ShuttlPlayer(
+            player: model.player,
+            prefs: rally.playbackPrefs,
+            step: { model.stepFrames($0) },
+            labels: model.labels,
+            onTag: { label, positionMs in
+                model.add(label: label, body: "", atSeconds: Float(positionMs) / 1000)
+            },
+            tagError: model.actionError,
+            allowsFullscreen: true,
+            // The row's own action, under the video it would analyze, rather
+            // than in the bar: the page's bar belongs to the whole match.
+            // Between the transport and the chips, where Android has it.
+            primaryAction: analyzeLabel.map { PlayerPrimaryAction(label: $0, perform: onAnalyze) },
+            overlay: { EmptyView() },
+            errorContent: {
+                if let error = model.playbackError {
+                    VStack(spacing: 8) {
+                        ErrorBanner(message: error)
+                        Button("Retry") { model.retry() }
+                            .buttonStyle(PrimaryButtonStyle())
+                            .frame(maxWidth: 160)
+                    }
+                    .padding(16)
                 }
+            }
+        )
+        // No top padding: the page puts `MatchPageLayout.sectionGap` above
+        // every section, so each draws from its own top edge.
+
+        if let actionError = model.actionError {
+            ErrorBanner(message: actionError)
+                .padding(.top, 8)
+                .onTapGesture { model.actionError = nil }
+        }
+
+        if let description = shownEntry(model).description_ {
+            Text(description)
+                .shuttlType(ShuttlType.titleMedium)
+                .foregroundStyle(Shuttl.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, ShuttlGutter.page)
+                .padding(.top, NotesHeaderMetrics.gap)
+        }
+
+        // The storage note doubles as the notes' heading: where they live is
+        // the one thing a coach needs to know before adding one, and the
+        // add action sits beside it rather than in a bar the host owns.
+        // Android's `NotesHeader`, which sets the same compact pill. The pill
+        // goes under the caption at accessibility sizes: beside it, the pill
+        // and the caption's longest word were wider than the screen, and the
+        // whole section was pushed past both edges.
+        let headerLayout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+            : AnyLayout(HStackLayout(spacing: 12))
+        headerLayout {
+            Text("Notes are saved on this phone and are removed if you remove the video from the app.")
+                .shuttlType(ShuttlType.bodySmall)
+                .foregroundStyle(Shuttl.textTertiary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button {
+                addSheet = AddSheetItem(timestamp: model.currentTimestampSeconds())
+            } label: {
+                Label(MatchPageCopy.shared.ADD_NOTE, systemImage: "plus")
+                    .lineLimit(1)
+                    // Android's pill is its 18dp icon tall: 30 in all.
+                    .frame(minHeight: NotesHeaderMetrics.pillContent)
+            }
+            .buttonStyle(CompactPillButtonStyle())
+            .fixedSize()
+            // A 44pt target around the 30pt pill, reaching above and below
+            // it without making the header taller than its caption.
+            .contentShape(
+                Rectangle().inset(by: -(44 - NotesHeaderMetrics.pillContent - 12) / 2)
             )
-            .presentationDetents([.medium])
         }
-        .alert("Delete note?", isPresented: Binding(
-            get: { deleteTarget != nil },
-            set: { if !$0 { deleteTarget = nil } }
-        )) {
-            Button("Cancel", role: .cancel) { deleteTarget = nil }
-            Button("Delete", role: .destructive) {
-                if let target = deleteTarget { model.delete(annotationId: target.id) }
-                deleteTarget = nil
-            }
-        } message: {
-            if let target = deleteTarget {
-                Text(target.body.isEmpty ? "This note" : "\"\(target.body)\"")
+        .padding(.horizontal, ShuttlGutter.page)
+        // Android's `NotesHeader`: 22 under whatever is above it, 8 over
+        // the first note.
+        .padding(.top, NotesHeaderMetrics.gap)
+        .padding(.bottom, 8)
+    }
+
+    private func notesList(_ model: LocalPlayerModel) -> some View {
+        List {
+            ForEach(model.annotations, id: \.id) { annotation in
+                annotationRow(annotation, model: model)
+                    // The page's gutter, as the header above takes: at the
+                    // list's own inset the notes stood out of line with it.
+                    .listRowInsets(NoteRow.insets)
+                    // The rule in the gutter at both ends, as Android's
+                    // between notes: the system's stops 16pt short of the
+                    // trailing edge, out of line with the header's pill.
+                    .alignmentGuide(.listRowSeparatorTrailing) { $0.width }
+                    .listRowSeparatorTint(Shuttl.border)
+                    .listRowBackground(Color.clear)
             }
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
     }
 
     /// The live entry while it is this model's, else the one the model was
