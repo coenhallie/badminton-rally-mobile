@@ -880,6 +880,11 @@ private struct StatusBanner: View {
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.borderless)
+                // The banner's whole purpose, drawn about 28pt tall: taps
+                // count across the least target, inside the banner's own
+                // vertical padding. iOS does not extend a small control the
+                // way Compose extends a clickable to 48dp.
+                .contentShape(MinimumTargetShape())
             } else if item.action == .running {
                 ProgressView()
                     .controlSize(.small)
