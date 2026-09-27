@@ -25,15 +25,30 @@ struct DeviceRalliesSection: View {
     let localAnalysis: LocalAnalysisRunner?
     let entryId: String
 
-    /// Read once per entry, not per redraw: this is a directory listing and a
-    /// small parse, and the set cannot grow while the section is up without a
-    /// run the page would show.
+    /// Read once per entry and once per run of it, not per redraw: this is a
+    /// directory listing and a small parse. The page offers Analyze again for
+    /// a phone-analyzed video, so a re-run can land while the coach sits on
+    /// Rallies, and a list read once would show the old run's rallies over the
+    /// new files. See `ClipsKey`.
     @State private var clips: [PlayerTrackStore.Clip] = []
     /// Whether `clips` has been read yet: until it has, an empty list is not
     /// news, and saying "No clips are stored" for the moment the read takes
     /// flashes a false message on every opening.
     @State private var loaded = false
     @State private var playing: PlayerTrackStore.Clip? = nil
+
+    /// What the stored clips are read again on: the entry, and whether its run
+    /// has stopped. Read from `settledRuns` rather than `state(for:)`, as
+    /// `AnalysisSection` does, so a run's progress does not redraw the list;
+    /// the set changes twice per run.
+    private struct ClipsKey: Equatable {
+        let entryId: String
+        let runSettled: Bool
+    }
+
+    private var runSettled: Bool {
+        localAnalysis?.settledRuns.contains(entryId) ?? false
+    }
 
     var body: some View {
         List {
@@ -59,8 +74,9 @@ struct DeviceRalliesSection: View {
         // Off the main actor: `storedClips` parses a sidecar and stats one file
         // per clip, and this runs as the section appears. `storedClips` is
         // already `nonisolated` for exactly this. Keyed on the entry, so a page
-        // that swaps entries under the section reads the new one.
-        .task(id: entryId) {
+        // that swaps entries under the section reads the new one, and on the
+        // run settling, so a run that lands while the section is up is read.
+        .task(id: ClipsKey(entryId: entryId, runSettled: runSettled)) {
             let runner = localAnalysis
             let id = entryId
             clips = await Task.detached(priority: .userInitiated) {

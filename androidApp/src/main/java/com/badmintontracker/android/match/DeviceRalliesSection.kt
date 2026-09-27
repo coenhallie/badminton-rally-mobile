@@ -18,13 +18,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.badmintontracker.android.localanalysis.ClipCutter
 import com.badmintontracker.android.localanalysis.LocalAnalysisRunner
+import com.badmintontracker.android.localanalysis.LocalAnalysisState
 import com.badmintontracker.android.localanalysis.LocalClipPlayerDialog
 import com.badmintontracker.android.localanalysis.PanelMessage
 import com.badmintontracker.shared.matchlist.rallyLengthText
 import com.badmintontracker.shared.matchpage.MatchPageCopy
 import java.util.Locale
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 
 /**
  * The rallies an on-device run cut, as the Rallies section shows them until
@@ -40,9 +44,17 @@ import java.util.Locale
  */
 @Composable
 fun DeviceRalliesSection(entryId: String, localAnalysis: LocalAnalysisRunner, modifier: Modifier = Modifier) {
-    // Read once per entry: a sidecar parse and one stat per clip, and the set
-    // cannot grow while the section is up without a run this page would show.
-    val clips = remember(entryId) { localAnalysis.storedClips(entryId) }
+    // Read once per entry and once per run of it: a sidecar parse and one
+    // stat per clip. The page offers Analyze again for a phone-analyzed video,
+    // so a re-run can land while the coach sits on Rallies, and a list read
+    // once would show the old run's rallies over the new files. Keyed on the
+    // run's Done, which goes to null while a run works and comes back as the
+    // new run's; the progress in between maps to the same null and redraws
+    // nothing.
+    val done by remember(entryId, localAnalysis) {
+        localAnalysis.state.map { it[entryId] as? LocalAnalysisState.Done }.distinctUntilChanged()
+    }.collectAsStateWithLifecycle(localAnalysis.stateFor(entryId) as? LocalAnalysisState.Done)
+    val clips = remember(entryId, done) { localAnalysis.storedClips(entryId) }
     var playing by remember { mutableStateOf<ClipCutter.Clip?>(null) }
     playing?.let { LocalClipPlayerDialog(clip = it, title = deviceClipLabel(it), onDismiss = { playing = null }) }
     LazyColumn(modifier.fillMaxSize()) {
