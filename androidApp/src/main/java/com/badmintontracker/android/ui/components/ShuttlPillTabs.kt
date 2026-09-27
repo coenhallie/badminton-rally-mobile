@@ -1,6 +1,7 @@
 package com.badmintontracker.android.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -138,7 +139,14 @@ fun ShuttlPillTabs(
             val style = scaled(scale)
             PillFit(with(density) { padPx.toDp() }, style, with(density) { style.fontSize.toPx() })
         }
-        ceilingFor?.let { ceiling -> SideEffect { ceiling.px = fit.labelPx } }
+        ceilingFor?.let { ceiling ->
+            SideEffect { ceiling.px = fit.labelPx }
+            // Released when the row goes (a page dropping to one section), or
+            // the secondary rows would stay capped at a size nothing sets any
+            // more. iOS gets the same from its preference key, which goes
+            // with the view that published it.
+            DisposableEffect(ceiling) { onDispose { ceiling.px = Float.POSITIVE_INFINITY } }
+        }
         val pad = fit.pad
         val style = fit.style
         Row(
@@ -224,7 +232,7 @@ private data class PillFit(val pad: Dp, val style: TextStyle, val labelPx: Float
 /**
  * The label size, in pixels, of the primary row that secondary rows under it
  * may not exceed. See [ShuttlPillTabs]' ceilingFor. Unbounded until that row
- * has drawn, and on a page that has none.
+ * has drawn, once it has left composition, and on a page that has none.
  */
 @Stable
 class PillLabelCeiling {
