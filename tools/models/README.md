@@ -513,6 +513,45 @@ step's output:
    flagship - which needs a host app embedding ONNX Runtime. This script is
    the measurement and reporting logic that harness should reproduce.
 
+## Camera-motion corpus probe
+
+`camera_motion_probe.py` is unrelated to the Stage 0 sequence above: it
+prepares the inputs `analysis`'s `CameraMotionCorpusTest.kt` (JVM, corpus
+gated) needs to measure the Kotlin camera tracker
+(`analysis/src/commonMain/kotlin/com/badmintontracker/analysis/camera/`)
+against a real 72.7 s handheld recording, `~/shuttl-corpus/IMG_5892/source.mov`.
+
+```bash
+python3 tools/models/camera_motion_probe.py
+```
+
+Decodes the video once, sequentially (this corpus is variable-frame-rate, and
+a seeked frame does not reliably land where its timestamp says - no seeking
+avoids that entirely), and writes into
+`~/shuttl-corpus/IMG_5892/`, outside this repo's tree - none of it is ever
+committed:
+
+- `y/<index>.y` - the raw Y plane of every frame the tracker's 10 Hz
+  sampling rule selects, at full source resolution, one file per frame
+  (about 728 files, ~1.4 GB total).
+- `samples.json`, `frame_times.json`, `paint.json` - the sample list, every
+  decoded frame's timestamp, and the 24 painted-line points (court metres)
+  the test measures against.
+- `opencv_motion.json` - the same anchored Lucas-Kanade tracker run through
+  OpenCV, by importing `backend/camera_motion.py` from the sibling
+  `badminton-tracker` checkout (read only; never edited from here) rather
+  than reimplementing it. A second, independent implementation to compare
+  the from-scratch Kotlin port against, not a source of truth on its own.
+
+Also prints that OpenCV run's own painted-line error (median, p95): the
+number to check first if the Kotlin test's painted-line bound ever fails,
+since the test's bound is only meaningful relative to what OpenCV achieves
+on the same planes.
+
+**Run 2026-09-27.** 2182 frames decoded, 728 samples selected, 0 dropped.
+OpenCV painted-line vertical error: median 0.87 px, p95 2.00 px, over 17230
+(sample, point) pairs.
+
 ## Blocked on
 
 Five environment gaps stop every measurement step above from having been
