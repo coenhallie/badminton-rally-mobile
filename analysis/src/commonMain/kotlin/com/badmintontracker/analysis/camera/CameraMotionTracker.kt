@@ -43,7 +43,12 @@ class CameraMotionTracker(
     private var templates: AnchoredTemplates? = null
     private var referenceTimestamp = 0.0
     private var gaveUp = false
-    private val pending = ArrayList<Pair<Double, GreyImage>>()
+    /**
+     * Sampled frames before the marking frame, oldest first, held until it
+     * arrives and they can be tracked backward from it. At most
+     * [MAX_PENDING_SAMPLES]: see there.
+     */
+    private val pending = ArrayDeque<Pair<Double, GreyImage>>()
     private val samples = ArrayList<CameraSample>()
     private var guess: Matrix3x3 = IDENTITY
 
@@ -77,7 +82,8 @@ class CameraMotionTracker(
         if (gaveUp) return
         if (templates == null) {
             if (timestamp < markingTimeS - CameraMotion.EXACT_S) {
-                pending.add(timestamp to image)
+                if (pending.size == MAX_PENDING_SAMPLES) pending.removeFirst()
+                pending.addLast(timestamp to image)
                 return
             }
             val reference = pyramid(image, PYRAMID_LEVELS)
@@ -155,6 +161,19 @@ class CameraMotionTracker(
         const val MIN_INLIERS = 40
         const val MIN_CORNERS = 40
         const val MAX_CORNER_SHIFT = 0.25
+
+        /**
+         * How many pre-marking samples are held for the backward pass: five
+         * seconds at 10 Hz. Each is a tracker-size float image, about 518 KB,
+         * and a marking time `T` seconds in would otherwise hold `10 T` of
+         * them (about 310 MB at 60 s). When full the OLDEST is dropped, so the
+         * frames kept are the ones nearest the marking frame, which are the
+         * ones the backward pass can reach anyway; a dropped frame has no
+         * sample, so [CameraMotion.at] returns null there and selection reads
+         * it as `CAMERA_LOST`. `backend/camera_motion.py` holds the same cap
+         * under the same name.
+         */
+        const val MAX_PENDING_SAMPLES = 50
         private val IDENTITY: Matrix3x3 = listOf(listOf(1.0, 0.0, 0.0), listOf(0.0, 1.0, 0.0), listOf(0.0, 0.0, 1.0))
     }
 }

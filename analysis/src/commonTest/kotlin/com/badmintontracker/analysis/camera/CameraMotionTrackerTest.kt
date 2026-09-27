@@ -52,6 +52,20 @@ class CameraMotionTrackerTest {
         cornerError(sourcePanRelativeFrom(0.0, 1.0), motion.at(0.0)!!) shouldBeLessThan 2.0
     }
 
+    @Test fun frames_before_a_marking_time_ten_seconds_in_keep_only_the_last_five_seconds() {
+        // Each pending frame is a 480x270 float image, 518 KB; ten seconds at
+        // 10 Hz would hold 100 of them. The cap keeps the 50 nearest the
+        // marking frame and drops the oldest, which then read as no camera.
+        val tracker = CameraMotionTracker(10.0, 1920, 1080)
+        val times = (0..100).map { it / 10.0 }
+        run(tracker, times) { base }
+        val motion = tracker.finish().shouldNotBeNull()
+        motion.samples.first().timestamp shouldBe 5.0
+        motion.samples.size shouldBe CameraMotionTracker.MAX_PENDING_SAMPLES + 1
+        motion.at(4.8).shouldBeNull()
+        motion.at(5.0).shouldNotBeNull()
+    }
+
     @Test fun variable_frame_rate_samples_by_time_not_by_count() {
         val tracker = CameraMotionTracker(0.1, 1920, 1080)
         // Irregular spacing, with a duplicate timestamp as the cloud produces.
