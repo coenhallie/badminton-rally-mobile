@@ -72,6 +72,10 @@ struct MatchVideoSection: View {
                 },
                 tagError: model.actionError,
                 allowsFullscreen: true,
+                // The row's own action, under the video it would analyze, rather
+                // than in the bar: the page's bar belongs to the whole match.
+                // Between the transport and the chips, where Android has it.
+                primaryAction: analyzeLabel.map { PlayerPrimaryAction(label: $0, perform: onAnalyze) },
                 overlay: { EmptyView() },
                 errorContent: {
                     if let error = model.playbackError {
@@ -87,19 +91,10 @@ struct MatchVideoSection: View {
             )
             // No top padding: the page puts `MatchPageLayout.sectionGap` above
             // every section, so each draws from its own top edge.
-            .padding(.bottom, 8)
-
-            // The row's own action, under the video it would analyze, rather
-            // than in the bar: the page's bar belongs to the whole match.
-            if let analyzeLabel {
-                Button(analyzeLabel, action: onAnalyze)
-                    .buttonStyle(PrimaryButtonStyle())
-                    .padding(.horizontal, ShuttlGutter.page)
-                    .padding(.bottom, 8)
-            }
 
             if let actionError = model.actionError {
                 ErrorBanner(message: actionError)
+                    .padding(.top, 8)
                     .onTapGesture { model.actionError = nil }
             }
 
@@ -109,7 +104,7 @@ struct MatchVideoSection: View {
                     .foregroundStyle(Shuttl.textSecondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, ShuttlGutter.page)
-                    .padding(.vertical, 8)
+                    .padding(.top, NotesHeaderMetrics.gap)
             }
 
             // The storage note doubles as the notes' heading: where they live is
@@ -126,12 +121,22 @@ struct MatchVideoSection: View {
                 } label: {
                     Label(MatchPageCopy.shared.ADD_NOTE, systemImage: "plus")
                         .lineLimit(1)
+                        // Android's pill is its 18dp icon tall: 30 in all.
+                        .frame(minHeight: NotesHeaderMetrics.pillContent)
                 }
                 .buttonStyle(CompactPillButtonStyle())
                 .fixedSize()
+                // A 44pt target around the 30pt pill, reaching above and below
+                // it without making the header taller than its caption.
+                .contentShape(
+                    Rectangle().inset(by: -(44 - NotesHeaderMetrics.pillContent - 12) / 2)
+                )
             }
             .padding(.horizontal, ShuttlGutter.page)
-            .padding(.top, 8)
+            // Android's `NotesHeader`: 22 under whatever is above it, 8 over
+            // the first note.
+            .padding(.top, NotesHeaderMetrics.gap)
+            .padding(.bottom, 8)
 
             List {
                 ForEach(model.annotations, id: \.id) { annotation in
@@ -206,6 +211,14 @@ struct MatchVideoSection: View {
         .contentShape(Rectangle())
         .onTapGesture { model.seek(toSeconds: annotation.timestampSeconds) }
     }
+}
+
+/// The notes header's rhythm, androidApp's `NotesHeader` and the description
+/// above it: 22 over each, and a pill whose content is 18 tall (Android's icon
+/// size), so 30 with the style's 6 above and below.
+private enum NotesHeaderMetrics {
+    static let gap: CGFloat = 22
+    static let pillContent: CGFloat = 18
 }
 
 /// A note row's insets: the page's gutter either side, and UIKit's own cell
