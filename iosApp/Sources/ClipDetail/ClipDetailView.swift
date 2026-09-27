@@ -48,6 +48,10 @@ struct ClipDetailView: View {
         } row: { annotation in
             annotationRow(annotation, model: model)
         }
+        // The page's own colour, as the Match section draws it. The notes list
+        // is clear, so without this the page showed the system background,
+        // which in dark is pure black against the palette's near-black.
+        .background(Shuttl.bg)
         .sheet(isPresented: $showAddSheet) {
             AddAnnotationSheet(
                 labels: model.labels,
