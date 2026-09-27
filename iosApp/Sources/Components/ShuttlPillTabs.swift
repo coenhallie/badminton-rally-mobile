@@ -96,7 +96,11 @@ struct ShuttlPillTabs: View {
                         // Taps land at least 44pt tall, reaching past the track
                         // above and below the pill rather than making it taller:
                         // a secondary pill draws about 25pt, a primary one 35.
-                        .contentShape(MinimumHeightHitShape(minHeight: Metrics.minTarget))
+                        // Only vertically: the next pill is 4pt away. Rows
+                        // stacked on the match page are 16pt apart, and a
+                        // secondary pill reaches about 6pt past its track, so
+                        // two rows' targets do not meet.
+                        .contentShape(MinimumTargetShape(axes: .vertical))
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
@@ -202,21 +206,6 @@ struct ShuttlPillTabs: View {
         static let tabPaddingV: CGFloat = 11
         /// A secondary pill's: with its smaller label, 8pt shorter than a primary.
         static let secondaryPaddingV: CGFloat = 7
-        /// The platform's least touch target.
-        static let minTarget: CGFloat = 44
-    }
-}
-
-/// A pill's hit area: its own rect, grown above and below to `minHeight` when
-/// it is shorter. Only vertically: the pills beside it are 4pt away, and a
-/// wider target would take their taps. Rows stacked on the match page are 16pt
-/// apart, and a secondary pill reaches about 6pt past its track, so two rows'
-/// targets do not meet.
-private struct MinimumHeightHitShape: Shape {
-    let minHeight: CGFloat
-
-    func path(in rect: CGRect) -> Path {
-        Path(rect.insetBy(dx: 0, dy: -max(0, (minHeight - rect.height) / 2)))
     }
 }
 

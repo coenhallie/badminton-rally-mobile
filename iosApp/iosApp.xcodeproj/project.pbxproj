@@ -126,6 +126,7 @@
 		BEBE9F0F59B385E1AFB86863 /* MetricsStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = C23817895BB7CF088646D4BB /* MetricsStrip.swift */; };
 		BFCF300E039D982805435D9E /* IosLocalInferenceEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F09AE3FEADD4D23B45A2009 /* IosLocalInferenceEngine.swift */; };
 		C0A71AC7DE77076139943940 /* RalliesFacet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EFC41BB1279BF8DAD45DC0C /* RalliesFacet.swift */; };
+		C13B71D55CB498FFE971F6B9 /* ShuttlTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 345A5FC7E12674B72A5B2298 /* ShuttlTarget.swift */; };
 		C374FCB3243BA5345C2C3F95 /* LocalInferenceEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6955A81E13F652ADD80B48B2 /* LocalInferenceEngineTests.swift */; };
 		C5EB2C372C4CEC4BA1449043 /* LocalVideoLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F48D800419AB5B1F89A5DD9 /* LocalVideoLogicTests.swift */; };
 		C8ED2146227A943B694C3B25 /* ObservationLifecycle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 540BEC353F4A9BB1D56F7374 /* ObservationLifecycle.swift */; };
@@ -225,6 +226,7 @@
 		31E65E242A0E0BC5F3FB3DF9 /* TrackNetRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackNetRunner.swift; sourceTree = "<group>"; };
 		323906AFB18147ABEDEBDB38 /* iosAppUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = iosAppUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		327CF7F26B706A73DCE67AB7 /* DeviceRalliesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceRalliesTests.swift; sourceTree = "<group>"; };
+		345A5FC7E12674B72A5B2298 /* ShuttlTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShuttlTarget.swift; sourceTree = "<group>"; };
 		35E8EB6B4003A3F141A4A1F8 /* AddMatchButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddMatchButton.swift; sourceTree = "<group>"; };
 		36DA4D40D7C6052946C3CC35 /* ClipListModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipListModel.swift; sourceTree = "<group>"; };
 		374F7ADDCA02DFBA8D628BFB /* SystemImageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemImageTests.swift; sourceTree = "<group>"; };
@@ -704,6 +706,7 @@
 				036BB7DF4026EDD84A447F30 /* ShuttlGutter.swift */,
 				62C3B5945D6755C849EF171A /* ShuttlPalette.swift */,
 				21A3E77B3442881360ADAFA6 /* ShuttlRadius.swift */,
+				345A5FC7E12674B72A5B2298 /* ShuttlTarget.swift */,
 				0C55FBA93C98A27AC7EE21BE /* ShuttlTheme.swift */,
 				84D74A234D0DD8487E890454 /* ShuttlType.swift */,
 			);
@@ -982,6 +985,7 @@
 				17FD444B554B1B995C9854FE /* ShuttlPlayer.swift in Sources */,
 				7BCE0FFBA927D82D9D9EB2F0 /* ShuttlRadius.swift in Sources */,
 				35856BEAD6E5AE44F2B15811 /* ShuttlStatTile.swift in Sources */,
+				C13B71D55CB498FFE971F6B9 /* ShuttlTarget.swift in Sources */,
 				EB93197882D94A5AF008CD13 /* ShuttlTheme.swift in Sources */,
 				02D41C7297C5D2DCCA6DF102 /* ShuttlToast.swift in Sources */,
 				DD9A28EFDEA0A0FB6BE02F52 /* ShuttlTransportBar.swift in Sources */,

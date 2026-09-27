@@ -197,11 +197,9 @@ struct MatchVideoSection: View {
             }
             .buttonStyle(CompactPillButtonStyle())
             .fixedSize()
-            // A 44pt target around the 30pt pill, reaching above and below
+            // The least target around the 30pt pill, reaching above and below
             // it without making the header taller than its caption.
-            .contentShape(
-                Rectangle().inset(by: -(44 - NotesHeaderMetrics.pillContent - 12) / 2)
-            )
+            .contentShape(MinimumTargetShape())
         }
         .padding(.horizontal, ShuttlGutter.page)
         // Android's `NotesHeader`: 22 under whatever is above it, 8 over

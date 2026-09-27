@@ -135,9 +135,9 @@ struct LocalClipPlayerSheet: View {
                     // is a fill, about 3:1 on this sheet in light.
                     .foregroundStyle(Shuttl.accentDark)
                     .buttonStyle(.plain)
-                    // A 44pt target around a 17pt word, reaching past it rather
-                    // than making the row taller than its label.
-                    .contentShape(Rectangle().inset(by: -14))
+                    // The least target around a one-word label, reaching past
+                    // it rather than making the row taller than its label.
+                    .contentShape(MinimumTargetShape())
             }
             ZStack {
                 Color.black
