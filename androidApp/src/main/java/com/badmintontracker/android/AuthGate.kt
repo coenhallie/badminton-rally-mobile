@@ -21,7 +21,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -43,6 +42,8 @@ import com.badmintontracker.android.cliplist.MatchSummaryViewModel
 import com.badmintontracker.android.cliplist.StoredResults
 import com.badmintontracker.android.cliplist.StoredResultsReader
 import com.badmintontracker.android.home.HomeScreen
+import com.badmintontracker.android.home.finishedRuns
+import com.badmintontracker.android.home.runSnackbarUpdate
 import com.badmintontracker.android.settings.SettingsScreen
 import com.badmintontracker.android.match.MatchScreen
 import com.badmintontracker.android.match.MatchViewModel
@@ -68,7 +69,6 @@ import com.badmintontracker.android.scoring.ScoringScreen
 import com.badmintontracker.android.scoring.ScoringViewModel
 import com.badmintontracker.android.signin.SignInScreen
 import com.badmintontracker.android.signin.SignInViewModel
-import com.badmintontracker.shared.localvideo.announceFinishedRuns
 import com.badmintontracker.shared.localvideo.AnalyzeCoordinator
 import com.badmintontracker.shared.localvideo.canResumeFailedAnalysis
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
@@ -77,7 +77,6 @@ import com.badmintontracker.shared.localvideo.setKeypoints
 import com.badmintontracker.shared.RallyApp
 import com.badmintontracker.shared.repo.AuthState
 import com.badmintontracker.shared.scoring.ScoreLogStatus
-import com.badmintontracker.android.localanalysis.LocalAnalysisState
 import com.badmintontracker.android.match.AnalysisSection
 import com.badmintontracker.android.match.DeviceRalliesSection
 import com.badmintontracker.android.match.MatchVideoSection
@@ -276,24 +275,9 @@ fun AuthGate(
                 // Both pipelines, not just the device one. A cloud run keeps its
                 // entry, and its end showed on the list only as the row's status
                 // line changing - nothing saying the result was ready or where
-                // to find it. The two sets are unioned rather than announced
-                // separately so one rule decides, and a video analysed both
-                // ways announces once.
-                //
-                // A device run that found nothing (no rally, no track, no
-                // skeleton) is left out here, from its own outcome: it is not
-                // "analyzed", and its row still offers Analyze. Not decided
-                // from the list later, which can lag a run and would lose one
-                // for good once its id is marked seen. Cloud runs are not
-                // filtered: one that finds no rallies fails instead of
-                // finishing, and its results land after the finish.
-                combine(
-                    localAnalysis.state
-                        .map { states ->
-                            states.filterValues { it is LocalAnalysisState.Done && it.foundSomething }.keys
-                        },
-                    coordinator.finishedRuns,
-                ) { device, cloud -> device + cloud }
+                // to find it. Which runs count, and why a device run that found
+                // nothing does not: see finishedRuns (home/RunSnackbarUpdate.kt).
+                combine(localAnalysis.state, coordinator.finishedRuns, ::finishedRuns)
                     .distinctUntilChanged()
                     .collect { finished ->
                         // "Nothing above" is more than the back stack and the
@@ -315,16 +299,16 @@ fun AuthGate(
                             autoDetailsEntryId == null &&
                             !homeOverlayOpen &&
                             nav.currentBackStackEntry?.destination?.hasRoute<Route.Home>() == true
-                        val announcement = announceFinishedRuns(
+                        // Merged with the runs still waiting to be shown: see
+                        // runSnackbarUpdate.
+                        val update = runSnackbarUpdate(
                             finished = finished,
                             seen = seen,
                             onHome = nothingAbove,
+                            waiting = announced,
                         )
-                        seen = announcement.seen
-                        // Merged, not replaced: two runs can land on consecutive
-                        // collections before HomeScreen's effect has read and
-                        // cleared the first, and a plain assignment dropped it.
-                        if (announcement.announce.isNotEmpty()) announced = announced + announcement.announce
+                        seen = update.seen
+                        update.announced?.let { announced = it }
                     }
             }
             // Provided around the NavHost so every destination's bar can show it
