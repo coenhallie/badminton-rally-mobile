@@ -6,7 +6,7 @@ import SwiftUI
 /// describe where else to find it - the Labels screen's empty state set that
 /// rule and this is the same idea, given a shape.
 ///
-/// The disc is the same surface-plus-hairline pairing as `ShuttlCard`, rounded
+/// The disc is a surface fill with a hairline border (bgSecondary and border), rounded
 /// because it holds a glyph and not content. Mirrors androidApp's
 /// ShuttlEmptyState.kt measure for measure.
 struct ShuttlEmptyState<Action: View>: View {

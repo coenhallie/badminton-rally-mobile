@@ -14,7 +14,7 @@ struct ClipDetailView: View {
             if let model {
                 content(model)
             } else {
-                SplashView()
+                LoadingView()
             }
         }
         .navigationBarTitleDisplayMode(.inline)

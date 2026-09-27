@@ -26,7 +26,7 @@ struct MatchVideoSection: View {
             if let model {
                 content(model)
             } else {
-                SplashView()
+                LoadingView()
             }
         }
         // Both keyed on the entry they read, so a host that swaps the entry

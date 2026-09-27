@@ -20,7 +20,7 @@ struct RootView: View {
     @State private var backgroundWork: BackgroundWorkModel
     @Environment(\.scenePhase) private var scenePhase
     @State private var authState: AuthState? = nil
-    @State private var themeMode: ThemeMode = .light
+    @State private var themeMode: ThemeMode
     @State private var uploading = false
     /// Where the scoring board says it is on screen. See `KeepAwake`.
     @State private var keepAwake = KeepAwake()
@@ -32,6 +32,10 @@ struct RootView: View {
     init(rally: RallyApp, analyze: AnalyzeCoordinator) {
         self.rally = rally
         self.analyze = analyze
+        // Seeded from the stored preference, not a fixed .light: the `.task`
+        // below only delivers it after the first frame, so a dark-theme cold
+        // start drew the splash (and a signed-out sign-in) light, then flipped.
+        _themeMode = State(initialValue: rally.themePrefs.mode.value)
         let runner = ModelCatalog.canAnalyseOnDevice ? LocalAnalysisRunner() : nil
         _localAnalysis = State(initialValue: runner)
         _backgroundWork = State(
