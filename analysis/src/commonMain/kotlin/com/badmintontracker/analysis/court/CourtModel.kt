@@ -14,9 +14,11 @@ internal class ModelSamples(val x: DoubleArray, val y: DoubleArray, val segment:
 
 /**
  * The BWF doubles court in metres, mirroring `court_probe.py`'s module-level
- * constants. The model plane has `(0,0)` at the near-left corner, x growing
- * along the net (sideline to sideline, width [W]) and y growing away from the
- * net toward the far baseline (length [L]).
+ * constants. The model plane has `(0,0)` at `top_left` of
+ * `COURT_KEYPOINT_POSITIONS` - the near (top-of-frame) baseline corner - x
+ * growing across the net (sideline to sideline, width [W]) and y growing down
+ * the court's length, through the net at `y = L / 2`, to the far baseline at
+ * `y = L`.
  */
 internal object CourtModel {
     const val W = 6.1
@@ -27,7 +29,7 @@ internal object CourtModel {
     /** Half the gap between the doubles and singles sidelines. */
     const val O = (6.1 - 5.18) / 2
 
-    /** The six across lines (both baselines, both service lines, the net, mid-court), y in metres. */
+    /** The six across lines (both baselines, both doubles long service lines, both short service lines), y in metres. */
     val ACROSS = doubleArrayOf(0.0, LS, L / 2 - S, L / 2 + S, L - LS, L)
 
     /** The four along lines (both sidelines, both singles sidelines), x in metres. */
@@ -36,8 +38,9 @@ internal object CourtModel {
     /**
      * The court's 12 line segments used by search: 6 across (indices 0-5), 4
      * along (indices 6-9), then the two centre-line halves either side of the
-     * net (indices 10-11). Endpoints are the line's geometric centreline,
-     * ignoring the paint's own width.
+     * net (indices 10-11). Endpoints are the BWF dimension positions - the
+     * boundary between the two areas a line divides, not the painted line's
+     * own centre; see [CENTRE_SEGMENTS] for that.
      */
     val SEGMENTS: List<Segment> = buildList {
         for (y in ACROSS) add(Segment(0.0, y, W, y))
@@ -47,12 +50,15 @@ internal object CourtModel {
     }
 
     /**
-     * The same 12 segments, each moved inward by a half line-width
-     * (`h = 0.02`, BWF lines are 40mm wide) so it sits on the painted line's
-     * own centre rather than the boundary between the two areas it divides -
-     * a line belongs to the area it bounds. Used to profile the frame for
-     * refinement (design §4.6), where the pixels searched are the paint
-     * itself, not the court-area boundary the search stage works from.
+     * The same 12 segments, with the across and along lines each moved
+     * inward by a half line-width (`h = 0.02`, BWF lines are 40mm wide) so
+     * they sit on the painted line's own centre rather than the boundary
+     * between the two areas the line divides - a line belongs to the area
+     * it bounds. The two centre-line halves are unchanged (they already run
+     * along `x = W / 2`, a line with no width of its own to correct for).
+     * Used to profile the frame for refinement (design §4.6), where the
+     * pixels searched are the paint itself, not the court-area boundary the
+     * search stage works from.
      */
     val CENTRE_SEGMENTS: List<Segment> = run {
         val h = 0.02

@@ -48,9 +48,10 @@ internal fun areaDownsample(src: GreyImage, outWidth: Int, outHeight: Int): Grey
 
 /**
  * The work image's size for a source of this size: capped to `longSide` on
- * its long edge, aspect kept, never upscaled (a source already smaller than
- * `longSide` is returned unchanged, as `court_probe.py`'s `detect()` never
- * grows the frame it was given).
+ * its long edge, aspect kept, never upscaled. `court_probe.py`'s `detect()`
+ * always resizes to exactly `WORK` (960), upscaling a smaller frame; not
+ * upscaling here is a deliberate departure from the probe, per this task's
+ * brief.
  */
 internal fun longSideSize(width: Int, height: Int, longSide: Int): Pair<Int, Int> {
     val long = max(width, height)
@@ -65,7 +66,9 @@ internal fun longSideSize(width: Int, height: Int, longSide: Int): Pair<Int, Int
 
 /**
  * Separable Gaussian blur, radius `ceil(3 * sigma)`, `BORDER_REFLECT_101`
- * border - the same result as `cv2.GaussianBlur(img, (0, 0), sigma)`.
+ * border, per this task's brief. `cv2.GaussianBlur(img, (0, 0), sigma)` picks
+ * a wider kernel for a float image (about a 4-sigma radius), so this is close
+ * to but not numerically identical to OpenCV's own result.
  */
 internal fun gaussianBlur(src: GreyImage, sigma: Double): GreyImage {
     require(sigma > 0.0) { "sigma must be positive: $sigma" }
@@ -240,10 +243,12 @@ private const val DT_NO_PIXEL_THRESHOLD = 1e19
 
 /**
  * The exact Euclidean distance to the nearest `true` pixel of `mask`, by two
- * passes of [dt1d] over squared distances - columns, then rows - as
- * `cv2.distanceTransform(mask, DIST_L2, 3)` computes exactly (not the 3x3/5x5
- * approximate masks OpenCV uses for other mask sizes). A mask with no `true`
- * pixel at all gives [Float.MAX_VALUE] everywhere.
+ * passes of [dt1d] over squared distances - columns, then rows - per this
+ * task's brief. `court_probe.py` calls `cv2.distanceTransform(mask, DIST_L2,
+ * 3)`, which is only a 3x3-mask chamfer approximation (about 4.5% low on
+ * the diagonal); this port is intentionally more accurate, not a match to
+ * that approximation. A mask with no `true` pixel at all gives
+ * [Float.MAX_VALUE] everywhere.
  */
 internal fun distanceTransform(mask: BooleanArray, width: Int, height: Int): FloatArray {
     val f = DoubleArray(width * height) { if (mask[it]) 0.0 else DT_NO_PIXEL }
