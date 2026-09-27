@@ -57,9 +57,15 @@ struct SignInView: View {
         // does: the message is about what was sent, not what is typed now.
         .onChange(of: email) { error = nil }
         .onChange(of: password) { error = nil }
-        // A failed sign-in changes nothing else VoiceOver would land on.
+        // A failed sign-in changes nothing else VoiceOver would land on. High
+        // priority, because the button is relabelled ("Signing in…" back to
+        // "Sign in") in the same update, and VoiceOver reading the focused
+        // button's new label would otherwise cut a default announcement off.
         .onChange(of: error) { _, message in
-            if let message { AccessibilityNotification.Announcement(message).post() }
+            guard let message else { return }
+            var announcement = AttributedString(message)
+            announcement.accessibilitySpeechAnnouncementPriority = .high
+            AccessibilityNotification.Announcement(announcement).post()
         }
     }
 
