@@ -9,7 +9,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.badmintontracker.android.ui.icons.ShuttlIcons
 import com.badmintontracker.shared.prefs.ThemeMode
-import com.badmintontracker.shared.signin.SignInCopy
 
 /**
  * The sign-in screen's theme switch, in the title bar. Drawn the way the
@@ -17,13 +16,16 @@ import com.badmintontracker.shared.signin.SignInCopy
  * 20dp, onSurfaceVariant. It used to sit in a bordered square, a box nothing
  * else in the app draws.
  *
- * The glyph is the theme a tap switches to: a moon while light.
+ * The glyph is the theme a tap switches to: a moon while light. The spoken
+ * label comes from the caller (SignInCopy.themeToggle on sign-in), so this
+ * component carries no screen's copy.
  */
 @Composable
 fun ThemeToggleButton(
-    mode:     ThemeMode,
-    onToggle: () -> Unit,
-    modifier: Modifier = Modifier,
+    mode:               ThemeMode,
+    contentDescription: String,
+    onToggle:           () -> Unit,
+    modifier:           Modifier = Modifier,
 ) {
     val icon = when (mode) {
         ThemeMode.LIGHT -> ShuttlIcons.Moon
@@ -32,7 +34,7 @@ fun ThemeToggleButton(
     IconButton(onClick = onToggle, modifier = modifier) {
         Icon(
             imageVector        = icon,
-            contentDescription = SignInCopy.themeToggle(mode),
+            contentDescription = contentDescription,
             tint               = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier           = Modifier.size(20.dp),
         )

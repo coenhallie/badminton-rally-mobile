@@ -81,7 +81,11 @@ fun SignInScreen(
             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)),
     ) {
         HomeTopBar(SignInCopy.WORDMARK, titleStyle = ShuttlTypeExtras.wordmark) {
-            ThemeToggleButton(mode = themeMode, onToggle = themePrefs::toggle)
+            ThemeToggleButton(
+                mode               = themeMode,
+                contentDescription = SignInCopy.themeToggle(themeMode),
+                onToggle           = themePrefs::toggle,
+            )
         }
 
         Column(
