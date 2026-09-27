@@ -136,16 +136,27 @@ fun SignInScreen(
                 )
                 // Above the button, beside the fields it is about, so it is
                 // still on screen with the keyboard up.
-                state.error?.let { error ->
-                    Spacer(Modifier.height(16.dp))
-                    ErrorBanner(
-                        error,
-                        // Read out when it appears: a failed sign-in changes
-                        // nothing else a screen reader would land on.
-                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                    )
+                //
+                // Read out when it appears: a failed sign-in changes nothing
+                // else a screen reader would land on. The live region is this
+                // always-composed container, not the banner, so an error
+                // appearing is a content change of a node TalkBack already
+                // knows rather than a new node it may not announce. The gap
+                // above the button lives inside it so the container is never
+                // zero-sized: Compose leaves a node with no area out of what
+                // it reports to accessibility services, which would make the
+                // container a new node again the moment the error arrives.
+                Column(
+                    Modifier.semantics(mergeDescendants = true) {
+                        liveRegion = LiveRegionMode.Polite
+                    },
+                ) {
+                    state.error?.let { error ->
+                        Spacer(Modifier.height(16.dp))
+                        ErrorBanner(error)
+                    }
+                    Spacer(Modifier.height(24.dp))
                 }
-                Spacer(Modifier.height(24.dp))
                 ShuttlButton(
                     text     = if (state.isSubmitting) SignInCopy.SUBMITTING else SignInCopy.SUBMIT,
                     onClick  = submit,
