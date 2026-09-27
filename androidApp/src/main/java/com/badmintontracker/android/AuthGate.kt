@@ -273,10 +273,10 @@ fun AuthGate(
             // upstream means the body below runs twice per run instead.
             LaunchedEffect(localAnalysis, coordinator, nav) {
                 var seen = emptySet<String>()
-                // Both pipelines, not just the device one. A cloud run ends by
-                // retiring its entry, so the coach watching the list saw the row
-                // vanish and nothing else - no result, and nothing saying where
-                // it had gone. The two sets are unioned rather than announced
+                // Both pipelines, not just the device one. A cloud run keeps its
+                // entry, and its end showed on the list only as the row's status
+                // line changing - nothing saying the result was ready or where
+                // to find it. The two sets are unioned rather than announced
                 // separately so one rule decides, and a video analysed both
                 // ways announces once.
                 //

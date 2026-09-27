@@ -83,15 +83,14 @@ class AnalyzeCoordinator(
      *
      * The device runner is asked the same question through its own states, and
      * `announceFinishedRuns` decides whether finishing is announced on the match
-     * list. A cloud run had no way to answer it at all: it ends by retiring
-     * its entry, so the only thing the list could observe was a row
-     * disappearing. The coach was left on the list with no result and nothing
-     * saying where it went.
+     * list. A cloud run had no way to answer it at all: [finish] keeps its
+     * entry, so the only thing the list could observe was the row's status
+     * line changing. The coach was left on the list with nothing saying the
+     * result was ready or where to find it.
      *
-     * Accumulates rather than being assigned, because the entry is gone by the
-     * time this is set and there is no later state to clear it from. That is
-     * the shape `announceFinishedRuns` already expects: it keeps its own seen
-     * set and announces a run once.
+     * Accumulates rather than being assigned, because a finished run has no
+     * later state to clear it from. That is the shape `announceFinishedRuns`
+     * already expects: it keeps its own seen set and announces a run once.
      */
     val finishedRuns: StateFlow<Set<String>> = _finishedRuns.asStateFlow()
 

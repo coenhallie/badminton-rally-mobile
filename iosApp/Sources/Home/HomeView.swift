@@ -173,10 +173,10 @@ struct HomeView: View {
         // screen, and it stays mounted for as long as the app does, regardless
         // of which destination is pushed on top of it. See `MatchListFeed`.
         .feedsMatchList(model: listModel, localAnalysis: localAnalysis)
-        // A CLOUD run that lands is announced like a device run. It ends by
-        // retiring its entry, so without this the coach watching the list saw
-        // the row vanish and nothing else - no result, and nothing saying
-        // where it had gone. The two sets are unioned into one announcement so
+        // A CLOUD run that lands is announced like a device run. It keeps its
+        // entry, and without this its end showed on the list only as the row's
+        // status line changing - nothing saying the result was ready or where
+        // to find it. The two sets are unioned into one announcement so
         // a video analyzed both ways announces once. Mirrors androidApp's
         // `combine` above its NavHost.
         //
