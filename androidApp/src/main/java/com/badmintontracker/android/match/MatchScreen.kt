@@ -647,11 +647,16 @@ private fun MatchVideoDialog(
  * What the match list's row says about this match's video, repeated on the match
  * page itself: §4.9 of the 2026-08-28 design requires the page to say so and offer
  * the same actions, not leave the coach reading a page that says nothing while
- * "Add video" is also gone with no explanation. It draws the row
- * ([com.badmintontracker.android.cliplist.MatchListRow]) rather than a status of
- * its own, so the two cannot say different things: the same text in the same
- * colour, the same button (Mark court, Retry or Analyze), a spinner while
- * something runs. See [showsStatusBanner].
+ * "Add video" is also gone with no explanation. It takes the row's status
+ * ([com.badmintontracker.android.cliplist.MatchListRow]) rather than working
+ * out one of its own, so the two cannot say different things: the row's text in
+ * the row's colour, the same button (Mark court, Retry or Analyze), a spinner
+ * while something runs. See [showsStatusBanner].
+ *
+ * Not the row's size: the row's status line is bodySmall among the row's other
+ * lines, and alone at the top of a page, beside the button's label, 12sp read
+ * as the least important thing there. bodyMedium, as the iOS banner draws it,
+ * so the two platforms match.
  */
 @Composable
 private fun StatusBanner(

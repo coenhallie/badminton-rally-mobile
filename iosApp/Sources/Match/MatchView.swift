@@ -852,10 +852,16 @@ struct MatchView: View {
 /// What the match list's row says about this match's video, repeated on the
 /// match page itself: §4.9 of the 2026-08-28 design requires the page to say so
 /// and offer the same actions, not leave the coach reading a page that says
-/// nothing while "Add video" is also gone with no explanation. It draws the row
-/// rather than a status of its own, so the two cannot say different things:
-/// the same text in the same colour, the same button (Mark court, Retry or
-/// Analyze), a spinner while something runs. See `showsStatusBanner`.
+/// nothing while "Add video" is also gone with no explanation. It takes the row's
+/// status rather than working out one of its own, so the two cannot say
+/// different things: the row's text in the row's colour, the same button (Mark
+/// court, Retry or Analyze), a spinner while something runs. See
+/// `showsStatusBanner`.
+///
+/// Not the row's size: the row's status line is bodySmall among the row's
+/// other lines, and alone at the top of a page, beside a 13pt button label,
+/// 12pt read as the least important thing there. bodyMedium, as androidApp's
+/// banner draws it, so the two platforms match.
 private struct StatusBanner: View {
     let item: MatchListItem
     let onAction: () -> Void
@@ -863,7 +869,7 @@ private struct StatusBanner: View {
     var body: some View {
         HStack(spacing: 12) {
             Text(item.statusText ?? "")
-                .shuttlType(ShuttlType.titleMedium)
+                .shuttlType(ShuttlType.bodyMedium)
                 .foregroundStyle(item.statusIsError ? Shuttl.error : Shuttl.textSecondary)
                 .lineLimit(2)
             Spacer()
