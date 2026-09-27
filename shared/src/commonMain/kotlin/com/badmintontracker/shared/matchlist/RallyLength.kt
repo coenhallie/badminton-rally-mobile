@@ -16,8 +16,8 @@ import kotlin.math.roundToLong
  * recovered without its bounds, or a row the server has not measured. "0.0s"
  * would read as a broken clip rather than as a missing number.
  *
- * Shared so both platforms print the same thing; iOS still prints the raw
- * float until it adopts this.
+ * Shared so both platforms print the same thing: the device and cloud rally
+ * rows on Android and iOS all call it.
  */
 fun rallyLengthText(seconds: Double): String? {
     if (seconds.isNaN() || seconds <= 0.0 || seconds.isInfinite()) return null

@@ -8,8 +8,9 @@ import SwiftUI
 /// leaves on its own is otherwise missed by anyone not looking at it. While
 /// VoiceOver runs it does not leave on its own at all: four seconds is not
 /// enough to find and activate its action by swiping. It then stays until
-/// its action, a new message, or leaving the screen. Android's snackbar with
-/// an action does the same under an accessibility service.
+/// its action, a new message, or leaving the screen. Android's snackbar does
+/// not: with an action it stays ten seconds, or the user's accessibility
+/// timeout if that is longer, and then leaves.
 ///
 /// Identity is the `id`, not the text: two runs of the same match landing a
 /// minute apart are two messages, and the toast restarts its four seconds for

@@ -104,7 +104,7 @@ fun HeatmapPanel(
     // One parse, and not on the thread drawing the frame: `remember` runs its
     // block during composition, so the megabyte of track this reads was parsed
     // on the main thread and the section opened frozen for as long as it took.
-    // iOS reads it the same way, in AnalyticsDetailView.reload.
+    // iOS reads it the same way, in AnalysisSection.reload.
     val done = runner.stateFor(entryId) as? LocalAnalysisState.Done
     val loaded = produceState<Loaded?>(null, entryId, done) {
         value = withContext(Dispatchers.Default) {

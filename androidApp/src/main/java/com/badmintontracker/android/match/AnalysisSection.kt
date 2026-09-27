@@ -35,11 +35,12 @@ import com.badmintontracker.shared.prefs.RacketArmPreferenceRepository
  * page's Analysis toggle.
  *
  * A pill tab row between the heatmap, the per-rally base position and the
- * skeleton, drawn only when more than one of them has content. The earlier
- * version of this screen had no tab row, deliberately: with one renderer a
- * single pill read as a primary button that did nothing, and a control that
- * cannot be actuated is worse than a plain heading. Gated the same way the
- * match page gates its section row: a tab must have something behind it.
+ * skeleton, drawn only when more than one of them has content. The analysis
+ * screen this section replaced first had no tab row, deliberately: with one
+ * renderer a single pill read as a primary button that did nothing, and a
+ * control that cannot be actuated is worse than a plain heading. Gated the
+ * same way the match page gates its section row: a tab must have something
+ * behind it.
  *
  * The heatmap itself, and the resolution of which track to draw, are
  * [HeatmapPanel]'s. The base position is [BasePositionPanel]'s, on the same
