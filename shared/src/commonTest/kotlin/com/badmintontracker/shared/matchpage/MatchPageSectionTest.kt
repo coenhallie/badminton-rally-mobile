@@ -142,6 +142,14 @@ class MatchPageSectionTest {
         assertFalse(showsStatusBanner(only(EVERY_KIND[0])))
     }
 
+    @Test fun a_score_only_match_with_no_video_has_no_status_banner() {
+        // Nothing was filmed, so there is nothing to mark or analyze: a banner
+        // here would be a status line about a video that does not exist.
+        val item = only(EVERY_KIND[7])
+        assertNull(item.entryId)
+        assertFalse(showsStatusBanner(item))
+    }
+
     // --- which sections a match has ---
 
     @Test fun a_video_just_imported_has_only_the_match() {
