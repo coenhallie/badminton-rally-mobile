@@ -61,6 +61,18 @@ fun Matrix3x3.apply(x: Double, y: Double): Point? {
 }
 
 /**
+ * The court fit for a frame the camera had moved in: [h] fits the marking
+ * frame, and [camera] maps marking-frame pixels to this frame's pixels, so a
+ * pixel here reaches the court through `h · camera⁻¹`. Null [camera] means the
+ * camera is not being followed, and the fit is [h] itself. Design §5.3.
+ */
+fun courtFitAt(h: Matrix3x3, camera: Matrix3x3?): Matrix3x3? {
+    if (camera == null) return h
+    val inverse = invert3x3(camera) ?: return null
+    return multiply3x3(h, inverse)
+}
+
+/**
  * Court metres per source pixel along the image x axis at [p], by finite
  * difference; null when either side of [p] projects to infinity.
  *
@@ -192,10 +204,19 @@ private fun normalizePoints(points: List<Point>): Pair<List<Point>, Matrix3x3>? 
     return points.map { Point((it.x - cx) * s, (it.y - cy) * s) } to t
 }
 
-private fun multiply3x3(a: Matrix3x3, b: Matrix3x3): Matrix3x3 =
+/**
+ * 3x3 matrix multiply, `a * b`. Public for the camera tracker's [courtFitAt]
+ * and for the Skeleton panel, which both compose homographies outside this file.
+ */
+fun multiply3x3(a: Matrix3x3, b: Matrix3x3): Matrix3x3 =
     (0..2).map { r -> (0..2).map { c -> (0..2).sumOf { k -> a[r][k] * b[k][c] } } }
 
-private fun invert3x3(m: Matrix3x3): Matrix3x3? {
+/**
+ * 3x3 matrix inverse, null when singular. Public for the camera tracker's
+ * [courtFitAt] and for the Skeleton panel, which both invert homographies
+ * outside this file.
+ */
+fun invert3x3(m: Matrix3x3): Matrix3x3? {
     val det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) -
               m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) +
               m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0])
