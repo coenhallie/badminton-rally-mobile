@@ -35,6 +35,17 @@ data class CourtFinding(
     val found: Boolean get() = keypoints != null
 }
 
+/**
+ * The court's 12 line segments in court metres, the ones search fits (the
+ * internal `CourtModel.SEGMENTS`, in its order: the 6 across lines, the 4
+ * along lines, then the two centre-line halves either side of the net), for
+ * the marking screens to draw through a marking's homography. Endpoints are
+ * the BWF dimension positions, the same plane the 12 keypoints live in, so a
+ * court drawn through well-placed marks sits on the marks themselves.
+ */
+val COURT_LINE_SEGMENTS: List<Pair<Point, Point>> =
+    CourtModel.SEGMENTS.map { Point(it.ax, it.ay) to Point(it.bx, it.by) }
+
 /** The search runs on an image this long on its long side. */
 private const val WORK_LONG_SIDE = 960
 

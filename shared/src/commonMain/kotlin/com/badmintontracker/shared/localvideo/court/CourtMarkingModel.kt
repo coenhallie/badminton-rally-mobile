@@ -1,8 +1,27 @@
 package com.badmintontracker.shared.localvideo.court
 
+import com.badmintontracker.analysis.court.COURT_LINE_SEGMENTS
+import com.badmintontracker.analysis.geometry.apply
+import com.badmintontracker.analysis.geometry.homography
+import com.badmintontracker.analysis.geometry.invert3x3
 import com.badmintontracker.shared.model.CourtKeypoints
+import com.badmintontracker.shared.model.toAnalysis
 
 data class CourtPoint(val x: Float, val y: Float)
+
+/**
+ * The marking as it stood before one edit: its points and the time of the
+ * frame they were drawn on, which is what [CourtMarkingState.undo] puts back.
+ *
+ * The time travels with the points because an edit can replace marks drawn on
+ * another frame: Clear or Find court over restored marks. Undoing either
+ * brings those marks back, and they must come back with their own time,
+ * including none for marks saved without one, not with the frame on screen.
+ */
+data class CourtMarkingStep(
+    val points: List<CourtPoint>,
+    val markedAtSeconds: Double?,
+)
 
 /** Constants copied verbatim from desktop CourtSetup.vue (order, labels, colors). */
 object CourtMarkingSpec {
@@ -38,6 +57,32 @@ object CourtMarkingSpec {
      */
     const val SAVED_MARKS_NOTE =
         "These marks come from this video's last analysis. Clear to mark the court again."
+
+    /** The instruction line while the court finder looks at the frame. */
+    const val FINDING = "Finding the court..."
+
+    /** The note after the court finder placed all twelve points. */
+    const val FOUND_NOTE =
+        "Found the court automatically. Check the lines sit on the court's lines; tap a point to move it."
+
+    /** The note when the court finder found nothing it would stand behind. */
+    const val NOT_FOUND_NOTE =
+        "Couldn't find the court. Tap the four corners and the rest will be placed for you."
+
+    /** The instruction line while four tapped corners are being completed. */
+    const val ALIGNING = "Lining the points up with the court..."
+
+    /** The note after four tapped corners were completed to twelve points. */
+    const val ALIGNED_NOTE = "Lined up with the court's lines. Check them; tap a point to move it."
+
+    /** The note when four tapped corners could not be completed. */
+    const val ALIGN_FAILED_NOTE = "Couldn't line the points up. Tap the rest."
+
+    /** The button that runs the court finder on demand. */
+    const val FIND_COURT = "Find court"
+
+    /** The instruction line while the point at [index] is selected to be moved. */
+    fun moveInstruction(index: Int): String = "Tap the new spot for ${fullLabels[index]}"
 }
 
 data class CourtMarkingState(
@@ -63,6 +108,18 @@ data class CourtMarkingState(
      * two times only differ for marks saved without one.
      */
     val frameSeconds: Double? = markedAtSeconds,
+    /**
+     * The marking before each edit made on this screen, oldest first: a
+     * placed point, a moved point, a Clear, an applied detection. [undo] pops
+     * it. Empty for marks just restored, which [undo] then takes apart point
+     * by point as it always has. Selecting a point is not an edit.
+     */
+    val history: List<CourtMarkingStep> = emptyList(),
+    /**
+     * The index of the point a tap on a complete marking picked up to move,
+     * or null. Every edit clears it, so it never outlives the point it names.
+     */
+    val selected: Int? = null,
 ) {
     val isComplete: Boolean get() = points.size == CourtMarkingSpec.TOTAL
     val nextIndex: Int get() = points.size
@@ -70,17 +127,123 @@ data class CourtMarkingState(
     /** Same mapping as desktop handleCanvasClick: display coords -> source pixels. */
     fun place(displayX: Float, displayY: Float, displayWidth: Float, displayHeight: Float): CourtMarkingState {
         if (isComplete) return this
-        val scaleX = videoWidth / displayWidth
-        val scaleY = videoHeight / displayHeight
-        return copy(points = points + CourtPoint(displayX * scaleX, displayY * scaleY))
+        return edited(points + toSource(displayX, displayY, displayWidth, displayHeight), markedAtSeconds)
     }
 
-    fun undo(): CourtMarkingState = if (points.isEmpty()) this else withPoints(points.dropLast(1))
+    /**
+     * A tap on the frame, in display coordinates, with [hitRadiusDisplay] the
+     * reach of a point in the same units.
+     *
+     * An incomplete marking places the next point ([place]). A complete one
+     * edits by selecting and moving: with nothing selected, the tap selects
+     * the nearest point within the radius, or does nothing; with a point
+     * selected, a tap within the radius of that point puts it down where it
+     * was, and a tap anywhere else, even on another point, moves it there.
+     * Distances are measured in source pixels, the radius scaled by the same
+     * x scale [place] uses, so a point's reach on screen is the same at any
+     * size the frame is shown.
+     */
+    fun tap(
+        displayX: Float,
+        displayY: Float,
+        displayWidth: Float,
+        displayHeight: Float,
+        hitRadiusDisplay: Float,
+    ): CourtMarkingState {
+        if (!isComplete) return place(displayX, displayY, displayWidth, displayHeight)
+        val at = toSource(displayX, displayY, displayWidth, displayHeight)
+        val radius = hitRadiusDisplay * (videoWidth / displayWidth)
+        val picked = selected?.takeIf { it in points.indices }
+        if (picked == null) {
+            val nearest = points.indices
+                .map { it to distanceSquared(points[it], at) }
+                .filter { (_, d) -> d <= radius * radius }
+                .minByOrNull { (_, d) -> d }
+            return if (nearest == null) this else copy(selected = nearest.first)
+        }
+        if (distanceSquared(points[picked], at) <= radius * radius) return copy(selected = null)
+        return edited(points.toMutableList().also { it[picked] = at }, markedAtSeconds)
+    }
 
-    fun clear(): CourtMarkingState = withPoints(emptyList())
+    /**
+     * Reverses the last edit ([history]); with none, drops the last point, the
+     * only undo restored marks have. Back to no points, the marking is on the
+     * frame on screen again (see [frameSeconds]).
+     */
+    fun undo(): CourtMarkingState {
+        val last = history.lastOrNull() ?: return if (points.isEmpty()) this else withPoints(points.dropLast(1))
+        return copy(
+            points = last.points,
+            markedAtSeconds = if (last.points.isEmpty()) frameSeconds else last.markedAtSeconds,
+            history = history.dropLast(1),
+            selected = null,
+        )
+    }
 
-    private fun withPoints(kept: List<CourtPoint>): CourtMarkingState =
-        copy(points = kept, markedAtSeconds = if (kept.isEmpty()) frameSeconds else markedAtSeconds)
+    /** Removes every point, as one step [undo] reverses. Nothing to clear is not a step. */
+    fun clear(): CourtMarkingState =
+        if (points.isEmpty()) withPoints(emptyList()) else edited(emptyList(), frameSeconds)
+
+    /**
+     * Replaces the marking with the twelve [points] a court finder placed, in
+     * table order, as one step [undo] reverses. The finder looked at the frame
+     * on screen, so the marks are on [frameSeconds] whatever they replace.
+     */
+    fun withDetected(points: List<CourtPoint>): CourtMarkingState {
+        require(points.size == CourtMarkingSpec.TOTAL) {
+            "A detected court has ${CourtMarkingSpec.TOTAL} points, got ${points.size}"
+        }
+        return edited(points, frameSeconds)
+    }
+
+    /**
+     * Whether the step from [previous] to this one placed the fourth corner:
+     * the moment to try completing the court from the four taps. A tap to
+     * four, not any arrival at four: an Undo back to four is how the coach
+     * declines the completion, so it must not ask again.
+     */
+    fun justReachedFourCorners(previous: CourtMarkingState): Boolean =
+        previous.points.size == 3 && points.size == 4
+
+    /**
+     * The court's line segments in source pixels, drawn through this marking:
+     * [COURT_LINE_SEGMENTS] taken from court metres to pixels by the inverse
+     * of the homography the analysis will fit to these marks. A mark that
+     * misses its paint shows as a line off the court's lines. Empty unless the
+     * marking is complete and the marks have a homography with every
+     * endpoint at a finite pixel.
+     */
+    fun courtLines(): List<Pair<CourtPoint, CourtPoint>> {
+        if (!isComplete) return emptyList()
+        val pixelToCourt = toCourtKeypoints().toAnalysis().homography() ?: return emptyList()
+        val courtToPixel = invert3x3(pixelToCourt) ?: return emptyList()
+        return COURT_LINE_SEGMENTS.map { (a, b) ->
+            val pa = courtToPixel.apply(a.x, a.y) ?: return emptyList()
+            val pb = courtToPixel.apply(b.x, b.y) ?: return emptyList()
+            CourtPoint(pa.x.toFloat(), pa.y.toFloat()) to CourtPoint(pb.x.toFloat(), pb.y.toFloat())
+        }
+    }
+
+    private fun toSource(displayX: Float, displayY: Float, displayWidth: Float, displayHeight: Float): CourtPoint {
+        val scaleX = videoWidth / displayWidth
+        val scaleY = videoHeight / displayHeight
+        return CourtPoint(displayX * scaleX, displayY * scaleY)
+    }
+
+    /** An edit: the new [points] and their time, with the current marking pushed onto [history]. */
+    private fun edited(points: List<CourtPoint>, markedAtSeconds: Double?): CourtMarkingState = copy(
+        points = points,
+        markedAtSeconds = markedAtSeconds,
+        history = history + CourtMarkingStep(this.points, this.markedAtSeconds),
+        selected = null,
+    )
+
+    /** [kept] points without an undo step (an undo with no history), back on the frame on screen when none are left. */
+    private fun withPoints(kept: List<CourtPoint>): CourtMarkingState = copy(
+        points = kept,
+        markedAtSeconds = if (kept.isEmpty()) frameSeconds else markedAtSeconds,
+        selected = null,
+    )
 
     companion object {
         /**
@@ -146,4 +309,10 @@ data class CourtMarkingState(
             markedAtSeconds = markedAtSeconds,
         )
     }
+}
+
+private fun distanceSquared(a: CourtPoint, b: CourtPoint): Float {
+    val dx = a.x - b.x
+    val dy = a.y - b.y
+    return dx * dx + dy * dy
 }

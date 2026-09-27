@@ -1,5 +1,6 @@
 package com.badmintontracker.analysis.court
 
+import com.badmintontracker.analysis.geometry.Point
 import io.kotest.matchers.doubles.shouldBeLessThan
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldNotStartWith
@@ -142,5 +143,13 @@ class CourtFinderTest {
             took
         }
         println("find 1280x720: calls ${times.joinToString()} ms")
+    }
+
+    @Test fun court_line_segments_are_the_twelve_search_segments() {
+        COURT_LINE_SEGMENTS.size shouldBe 12
+        COURT_LINE_SEGMENTS.first() shouldBe (Point(0.0, 0.0) to Point(CourtModel.W, 0.0))
+        COURT_LINE_SEGMENTS.zip(CourtModel.SEGMENTS).forEach { (pair, seg) ->
+            pair shouldBe (Point(seg.ax, seg.ay) to Point(seg.bx, seg.by))
+        }
     }
 }
