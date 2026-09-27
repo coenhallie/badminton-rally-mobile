@@ -20,6 +20,8 @@ struct LabelsView: View {
         VStack(spacing: 0) {
             if let errorMessage = model.errorMessage {
                 ErrorBanner(message: errorMessage)
+                    .padding(.horizontal, ShuttlGutter.page)
+                    .padding(.top, 8)
                     .onTapGesture { model.errorMessage = nil }
             }
             if model.labels.isEmpty && model.expanded != .new {

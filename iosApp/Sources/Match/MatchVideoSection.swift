@@ -137,6 +137,7 @@ struct MatchVideoSection: View {
 
         if let actionError = model.actionError {
             ErrorBanner(message: actionError)
+                .padding(.horizontal, ShuttlGutter.page)
                 .padding(.top, 8)
                 .onTapGesture { model.actionError = nil }
         }

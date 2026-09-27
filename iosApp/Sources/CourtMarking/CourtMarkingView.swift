@@ -66,7 +66,9 @@ struct CourtMarkingView: View {
     var body: some View {
         VStack(spacing: 0) {
             if let error {
+                // At the page gutter, as androidApp's CourtMarkingScreen puts it.
                 ErrorBanner(message: error)
+                    .padding(ShuttlGutter.page)
                 Spacer()
             } else if step == .options, let courtFrame, let marking, marking.isComplete {
                 optionsStep(courtFrame: courtFrame, marking: marking)

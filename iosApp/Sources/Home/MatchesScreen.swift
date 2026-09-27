@@ -36,6 +36,8 @@ struct MatchesScreen: View {
             }
             if let error = intake.error {
                 ErrorBanner(message: error)
+                    .padding(.horizontal, ShuttlGutter.page)
+                    .padding(.bottom, 8)
             }
             MatchesList(
                 rally: rally, analyze: analyze, intake: intake, model: model,

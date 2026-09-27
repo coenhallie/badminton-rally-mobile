@@ -48,6 +48,7 @@
 		39C3563A29B0C742C993740C /* KotlinThrowBridgingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C653800D88FDA4EFB8C42457 /* KotlinThrowBridgingTests.swift */; };
 		39DA9DB707B5EA1141368278 /* ReplayLabels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 689E040BE4096BDC0E420AC2 /* ReplayLabels.swift */; };
 		3AD1A4C1F76FB329D882B424 /* ScoreLogDeleteMessageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F86CA7E3C3A9EBC8035FF98 /* ScoreLogDeleteMessageTests.swift */; };
+		3CF68D737883D895238EC4BA /* ShuttlTextField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 026C1447366A9BEC22E0FBAA /* ShuttlTextField.swift */; };
 		4005B240F6260BF74A4E1E45 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FEFF2919262131269E30566 /* SettingsView.swift */; };
 		4175AE2A684D5C4E22D3025F /* PointsFacet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70E5927A0FF5276512DACA06 /* PointsFacet.swift */; };
 		45C02933D6DD284454F64FAC /* BasePositionPanelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 892AF494B3C742068295A4BE /* BasePositionPanelTests.swift */; };
@@ -194,6 +195,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		026C1447366A9BEC22E0FBAA /* ShuttlTextField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShuttlTextField.swift; sourceTree = "<group>"; };
 		036BB7DF4026EDD84A447F30 /* ShuttlGutter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShuttlGutter.swift; sourceTree = "<group>"; };
 		03C3580E306B592D4690F013 /* ReplayPlayerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayPlayerUITests.swift; sourceTree = "<group>"; };
 		09DC5A242EBE164C182143AD /* ShuttlPaletteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShuttlPaletteTests.swift; sourceTree = "<group>"; };
@@ -436,6 +438,7 @@
 				6B17571954B660B726FF837C /* ShuttlPillTabs.swift */,
 				BA7AE2547676C60BDC65D02A /* ShuttlPlayer.swift */,
 				1A014CD4B3CFF04C915C82C4 /* ShuttlStatTile.swift */,
+				026C1447366A9BEC22E0FBAA /* ShuttlTextField.swift */,
 				913AE8A9DEC3871D49BC44C8 /* ShuttlToast.swift */,
 				58C898670F4E87CA8AEEEDF6 /* ShuttlTransportBar.swift */,
 				0F734A19C688CBEE111712AC /* ShuttlVideoCard.swift */,
@@ -990,6 +993,7 @@
 				7BCE0FFBA927D82D9D9EB2F0 /* ShuttlRadius.swift in Sources */,
 				35856BEAD6E5AE44F2B15811 /* ShuttlStatTile.swift in Sources */,
 				C13B71D55CB498FFE971F6B9 /* ShuttlTarget.swift in Sources */,
+				3CF68D737883D895238EC4BA /* ShuttlTextField.swift in Sources */,
 				EB93197882D94A5AF008CD13 /* ShuttlTheme.swift in Sources */,
 				02D41C7297C5D2DCCA6DF102 /* ShuttlToast.swift in Sources */,
 				DD9A28EFDEA0A0FB6BE02F52 /* ShuttlTransportBar.swift in Sources */,
