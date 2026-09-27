@@ -237,4 +237,175 @@ final class LocalInferenceEngineTests: XCTestCase {
         // Pose was not asked for, so the track is empty rather than absent.
         XCTAssertEqual(result.playerTrack.framesWithPose, 0)
     }
+
+    // MARK: - The handheld recording, against the reference
+
+    /// The corpus this test reads, on the Mac running the simulator.
+    ///
+    /// Through `SIMULATOR_HOST_HOME` rather than `NSHomeDirectory()`, which in
+    /// a simulator process is the app's own container. A simulator process can
+    /// read the host's files directly, so the 1080p video is read in place
+    /// rather than copied into the container first.
+    private var corpus: URL? {
+        ProcessInfo.processInfo.environment["SIMULATOR_HOST_HOME"].map {
+            URL(fileURLWithPath: $0).appendingPathComponent("shuttl-corpus/IMG_5892", isDirectory: true)
+        }
+    }
+
+    /// `IMG_5892`, a handheld recording that drifts and pans, analysed the way
+    /// the app analyses it: this engine with pose, through the shared
+    /// coordinator, the court marked at 0.1 s with the corpus's ideal marks.
+    /// The near track is held against `reference_tracks.json`'s `ref_track`,
+    /// the same selection with the camera followed by every-frame ORB. Design
+    /// `2026-09-27-camera-motion-design.md` §8.5: at least 95% of pose frames
+    /// produce a position, median at most 5 cm, p95 at most 15 cm.
+    ///
+    /// The one test that runs the iOS luma path on real footage. Android reads
+    /// its planes differently (padded decoder frames, a different stride), so
+    /// the Kotlin corpus tests cannot vouch for this one.
+    ///
+    /// Joined by frame: this engine numbers frames from 0 in decode order, as
+    /// `ref_track` does, so frame `k` is reference `k` (the cloud's frames are
+    /// the ones numbered from 1).
+    ///
+    /// Skips unless the corpus is on this Mac, and costs minutes when it is:
+    /// every one of the 2,182 frames pays TrackNet, the detector and pose. Run
+    /// it in the Release configuration, since the camera tracker in a Debug
+    /// Kotlin framework is some 28 times slower:
+    ///
+    ///     xcodebuild test -project iosApp/iosApp.xcodeproj -scheme iosApp \
+    ///       -configuration Release ENABLE_TESTABILITY=YES \
+    ///       -destination "platform=iOS Simulator,name=iPhone 17 Pro" \
+    ///       -only-testing:iosAppTests/LocalInferenceEngineTests/testAHandheldRecordingPutsTheNearPlayerWhereTheReferenceHasHer \
+    ///       CODE_SIGNING_ALLOWED=NO
+    func testAHandheldRecordingPutsTheNearPlayerWhereTheReferenceHasHer() async throws {
+        guard let directory = corpus else {
+            throw XCTSkip("SIMULATOR_HOST_HOME is not set: this test reads the corpus off the host Mac")
+        }
+        let video = directory.appendingPathComponent("source.mov")
+        let marksFile = directory.appendingPathComponent("marks_ideal.json")
+        let referenceFile = directory.appendingPathComponent("reference_tracks.json")
+        let missing = [video, marksFile, referenceFile].filter {
+            !FileManager.default.isReadableFile(atPath: $0.path)
+        }
+        try XCTSkipUnless(
+            missing.isEmpty,
+            "corpus file(s) \(missing.map(\.path).joined(separator: ", ")) not present, so the "
+                + "handheld recording was not analysed on the simulator"
+        )
+
+        let marks = try corpusMarks(marksFile, markedAtSeconds: 0.1)
+        let reference = try corpusReference(referenceFile)
+
+        // Every line to the system log as well, as the app's runner sends it:
+        // the test host is the app, so `log show` finds this run's camera line.
+        let lines = LogLines()
+        let log: @Sendable (String) -> Void = { line in
+            lines.append(line)
+            LocalAnalysisRunner.systemLog(line)
+            print("LocalAnalysis: \(line)")
+        }
+        let coordinator = LocalAnalysisCoordinatorIosKt.createIosLocalAnalysisCoordinator(
+            engine: IosLocalInferenceEngine(wantsPose: true, log: log),
+            log: log,
+            // Never asked: the marks carry their time.
+            legacyMarkingTime: { _, done in done(KotlinDouble(value: 0.1)) }
+        )
+        let started = Date()
+        let result = try await coordinator.analyzeThrowing(
+            videoPath: video.path, keypoints: marks, onProgress: { _ in }
+        )
+        let elapsed = Date().timeIntervalSince(started)
+
+        // The camera was followed. Without this a run that fell back to the
+        // fixed marks would be held to the bounds by luck alone, and on this
+        // recording it cannot meet them that way.
+        let cameraLine = lines.all.first { $0.hasPrefix("camera:") && $0.contains("samples followed") }
+        XCTAssertNotNil(cameraLine, "no camera line: \(lines.all)")
+        XCTAssertFalse(cameraLine?.hasSuffix(", no camera") ?? true, "the camera was not followed: \(cameraLine ?? "")")
+
+        let track = result.playerTrack
+        var errors: [Double] = []
+        var withoutReference = 0
+        for sample in track.samples {
+            guard let expected = reference[Int(sample.frame)] else {
+                withoutReference += 1
+                continue
+            }
+            errors.append(hypot(sample.courtPosition.x - expected.x, sample.courtPosition.y - expected.y))
+        }
+        let totalFrames = Int(result.result.totalFrames)
+        print(String(
+            format: "HANDHELD: %d frames in %.0f s (%.1f ms per frame); NEAR: %d positions over %d pose frames "
+                + "(coverage %.4f), %.4f of every frame; rejections %@",
+            totalFrames, elapsed, elapsed * 1000 / Double(max(totalFrames, 1)),
+            track.samples.count, Int(track.framesWithPose), track.coverage,
+            Double(track.samples.count) / Double(max(totalFrames, 1)), "\(track.rejections)"
+        ))
+        print("HANDHELD: \(cameraLine ?? "no camera line")")
+        let median = percentile(errors, 50)
+        let p95 = percentile(errors, 95)
+        print(String(
+            format: "HANDHELD against ref_track: median %.1f cm, p95 %.1f cm, worst %.1f cm, over %d frames "
+                + "(%d positions had no reference)",
+            median * 100, p95 * 100, (errors.max() ?? .nan) * 100, errors.count, withoutReference
+        ))
+
+        // All three, and none of them fatal, so a coverage miss cannot hide an
+        // accuracy one.
+        XCTAssertFalse(errors.isEmpty, "no position met the reference")
+        XCTAssertGreaterThanOrEqual(track.coverage, 0.95, "coverage")
+        XCTAssertLessThanOrEqual(median, 0.05, "median error in metres")
+        XCTAssertLessThanOrEqual(p95, 0.15, "p95 error in metres")
+    }
+
+    /// `marks_ideal.json`'s `manual_court_keypoints`, source pixels, by the
+    /// names `:analysis`' `CourtKeypoints.fromMap` reads them by.
+    private func corpusMarks(_ file: URL, markedAtSeconds: Double) throws -> CourtKeypoints {
+        let json = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any]
+        )
+        let points = try XCTUnwrap(json["manual_court_keypoints"] as? [String: [Double]], "\(file.path)")
+        func point(_ name: String) throws -> [KotlinFloat] {
+            let xy = try XCTUnwrap(points[name], "\(name) missing from \(file.path)")
+            return [KotlinFloat(float: Float(xy[0])), KotlinFloat(float: Float(xy[1]))]
+        }
+        return CourtKeypoints(
+            topLeft: try point("top_left"), topRight: try point("top_right"),
+            bottomRight: try point("bottom_right"), bottomLeft: try point("bottom_left"),
+            netLeft: try point("net_left"), netRight: try point("net_right"),
+            serviceLineNearLeft: try point("service_line_near_left"),
+            serviceLineNearRight: try point("service_line_near_right"),
+            serviceLineFarLeft: try point("service_line_far_left"),
+            serviceLineFarRight: try point("service_line_far_right"),
+            centerNear: try point("center_near"), centerFar: try point("center_far"),
+            markedAtSeconds: KotlinDouble(value: markedAtSeconds)
+        )
+    }
+
+    /// `ref_track`: 0-based frame index to the near player's court position in
+    /// metres.
+    private func corpusReference(_ file: URL) throws -> [Int: (x: Double, y: Double)] {
+        let json = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any]
+        )
+        let track = try XCTUnwrap(json["ref_track"] as? [String: [Double]], "\(file.path)")
+        var reference: [Int: (x: Double, y: Double)] = [:]
+        for (key, xy) in track {
+            reference[try XCTUnwrap(Int(key), "frame key \(key)")] = (xy[0], xy[1])
+        }
+        return reference
+    }
+
+    /// Linearly interpolated, numpy's default, so the figures match the
+    /// Kotlin corpus tests' and the tracker repo's.
+    private func percentile(_ values: [Double], _ p: Double) -> Double {
+        let sorted = values.sorted()
+        guard let first = sorted.first else { return .nan }
+        if sorted.count == 1 { return first }
+        let rank = p / 100 * Double(sorted.count - 1)
+        let lower = Int(rank.rounded(.down))
+        let upper = Int(rank.rounded(.up))
+        return sorted[lower] + (sorted[upper] - sorted[lower]) * (rank - Double(lower))
+    }
 }
