@@ -36,7 +36,7 @@ struct RootView: View {
         // below only delivers it after the first frame, so a dark-theme cold
         // start drew the splash (and a signed-out sign-in) light, then flipped.
         _themeMode = State(initialValue: rally.themePrefs.mode.value)
-        let runner = ModelCatalog.canAnalyseOnDevice ? LocalAnalysisRunner() : nil
+        let runner = ModelCatalog.canAnalyseOnDevice ? LocalAnalysisRunner(log: LocalAnalysisRunner.systemLog) : nil
         _localAnalysis = State(initialValue: runner)
         _backgroundWork = State(
             initialValue: BackgroundWorkModel(localVideos: rally.localVideos, analyze: analyze, runner: runner)

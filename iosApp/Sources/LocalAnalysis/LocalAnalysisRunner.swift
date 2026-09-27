@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Shared
 import SwiftUI
 
@@ -233,6 +234,21 @@ final class LocalAnalysisRunner {
     init(log: @escaping @Sendable (String) -> Void = { _ in }) {
         self.log = log
     }
+
+    /// The sink the app hands its runners: the system log, under this app's
+    /// bundle id and the category Android's logcat tag uses.
+    ///
+    /// Without it the engine's and the coordinator's lines went nowhere, and
+    /// the one that says how the camera tracking went ("camera: N samples
+    /// followed, M dropped") is the only way to tell a run that followed the
+    /// camera from one that fell back to the fixed marks. Notice level, and
+    /// public, so `log show` prints the lines rather than `<private>` and
+    /// without being asked for info messages. Tests keep the silent default.
+    nonisolated static let systemLog: @Sendable (String) -> Void = { line in
+        logger.notice("\(line, privacy: .public)")
+    }
+
+    private nonisolated static let logger = Logger(subsystem: "com.badmintontracker.ios", category: "LocalAnalysis")
 
     func state(for entryId: String) -> LocalAnalysisState { states[entryId] ?? .idle }
 

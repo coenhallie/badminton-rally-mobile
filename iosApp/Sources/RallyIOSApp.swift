@@ -10,7 +10,7 @@ struct RallyIOSApp: App {
     let analyze: AnalyzeCoordinator
     /// The stores a fetched cloud analysis lands in. Held here rather than
     /// made per call: it is the same runner the panels read through.
-    let localAnalysis = LocalAnalysisRunner()
+    let localAnalysis = LocalAnalysisRunner(log: LocalAnalysisRunner.systemLog)
 
     init() {
         let info = Bundle.main.infoDictionary
