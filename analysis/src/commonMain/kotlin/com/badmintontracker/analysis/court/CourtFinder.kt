@@ -173,10 +173,9 @@ private fun rescale(p: Point, fw: Int, fh: Int, tw: Int, th: Int): Point {
  * to source pixels before the keypoints are read from it.
  */
 private fun accept(frames: Frames, ridge: RidgeMap, ref: Refinement?, mark: TimeSource.Monotonic.ValueTimeMark): CourtFinding {
-    if (ref == null || ref.h.any { !it.isFinite() } || !gatesPass(ref.h, frames.fit.width, frames.fit.height)) {
-        return notFound("refinement failed", mark)
-    }
+    if (ref == null || ref.h.any { !it.isFinite() }) return notFound("refinement failed", mark)
     val residual = ref.rmsPx * FIT_LONG_SIDE / max(frames.fit.width, frames.fit.height)
+    if (!gatesPass(ref.h, frames.fit.width, frames.fit.height)) return notFound("refinement failed", mark, residual)
     if (ref.lastStepPx > MAX_LAST_STEP_PX) {
         return notFound("not converged (last step ${fixed(ref.lastStepPx, 3)} px)", mark, residual)
     }
