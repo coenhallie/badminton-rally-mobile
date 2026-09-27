@@ -61,18 +61,25 @@ class CameraMotionCorpusTest {
         val paintPoints = parsePaintPoints(File(corpusDir, "paint.json"))
 
         // Step 1: feed every sample through the tracker, in samples.json order.
+        // Timed per offer. The first [WARM_UP_OFFERS] include the marking
+        // frame's templates and the JIT compiling the loops, so the mean past
+        // them is the steady cost a long pass pays, and is printed apart.
         val tracker = CameraMotionTracker(0.1, sourceWidth, sourceHeight)
-        var totalOfferNanos = 0L
-        for (sample in samples) {
+        val offerNanos = LongArray(samples.size)
+        for ((i, sample) in samples.withIndex()) {
             val bytes = File(corpusDir, "y/${sample.index}.y").readBytes()
             val image = Luma.downsample(bytes, 0, sourceWidth, sourceHeight, sourceWidth, tracker.trackerWidth, tracker.trackerHeight)
             tracker.wants(sample.timestamp) shouldBe true
             val start = System.nanoTime()
             tracker.offer(sample.timestamp, image)
-            totalOfferNanos += System.nanoTime() - start
+            offerNanos[i] = System.nanoTime() - start
         }
-        val meanOfferMs = totalOfferNanos / 1_000_000.0 / samples.size
-        println("mean ms per offer: %.3f over %d samples".format(meanOfferMs, samples.size))
+        val meanOfferMs = offerNanos.sum() / 1_000_000.0 / samples.size
+        val warm = offerNanos.drop(WARM_UP_OFFERS)
+        println(
+            "mean ms per offer: %.3f over %d samples; warm (past the first %d): %.3f"
+                .format(meanOfferMs, samples.size, WARM_UP_OFFERS, warm.sum() / 1_000_000.0 / warm.size)
+        )
 
         tracker.droppedSamples shouldBe 0
         val motion = tracker.finish() ?: error("the corpus video never reached the marking frame")
@@ -133,6 +140,10 @@ class CameraMotionCorpusTest {
         )
         parityMedian shouldBeLessThanOrEqual 1.0
         parityP95 shouldBeLessThanOrEqual 3.0
+    }
+
+    private companion object {
+        const val WARM_UP_OFFERS = 100
     }
 
     private data class Sample(val index: Int, val timestamp: Double)
