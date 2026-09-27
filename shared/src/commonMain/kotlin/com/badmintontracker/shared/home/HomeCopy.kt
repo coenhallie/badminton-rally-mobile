@@ -1,9 +1,10 @@
 package com.badmintontracker.shared.home
 
 /**
- * Every string the match list's title bar, its empty state and the Settings
- * page draw. One place for both clients, the way MatchListCopy holds the
- * list's rows.
+ * The match list's title, its Add button and empty state, and the Settings
+ * page's contents. One place for both clients, the way MatchListCopy holds the
+ * list's rows. The Settings title and the gear's label are
+ * `MatchPageCopy.SETTINGS`.
  */
 object HomeCopy {
     /** The match list's title: the app's root screen. */

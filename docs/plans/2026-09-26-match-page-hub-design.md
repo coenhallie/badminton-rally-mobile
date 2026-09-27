@@ -491,6 +491,12 @@ differs from section 2, with the reason. Android paths are under
 - **The page offers no video removal while a device run holds the file.** The
   overflow's Change video and Remove video follow the row's rule (shared
   `pageOffersVideoRemoval`). The page used to offer them mid-run.
+- **A scored match never offers "Analyze again".** 2.7 gives the page's overflow
+  item the row's condition, `canAnalyzeAgain`, and `scoreItem` sets that to
+  false for every scored match (`matchlist/MatchListBuilder.kt`). So neither the
+  row nor the page of a scored match can re-run its analysis, even after a
+  device run that found nothing. Left as is: whether re-running should replace
+  a scored match's results is a product decision for Coen (8).
 
 ### 7.5 When a run finishes (2.8)
 
@@ -571,3 +577,12 @@ differs from section 2, with the reason. Android paths are under
   - on Android, the keyboard over the list: the emulator's hardware keyboard
     showed no inset;
   - on iOS, a signed-in 667pt phone.
+- **Open, awaiting Coen's decision**: whether a scored match gets "Analyze
+  again", and so whether re-running replaces its results (7.4).
+- **Known, pre-existing, not changed here** (reported to Coen):
+  - "Remove video from this phone" on a match only on this phone leaves its
+    player track on disk, while the confirmation says the heatmap goes with
+    it. The match leaves the list, so the track is orphaned. Both platforms.
+  - Accent green used as text on white is about 3:1 in light, under AA: text
+    buttons (dialog Cancel and Remove, the naming sheet's Skip, the clip
+    dialog's Close on Android) take the accent fill colour. App-wide.

@@ -23,8 +23,8 @@ enum class MatchAction { NONE, ANALYZE, MARK_COURT, RETRY, RUNNING, PAUSED }
 enum class MatchDelete { NONE, VIDEO_MATCH, SCORE_MATCH, BOUND_MATCH, LEAVE_SHARE }
 
 /**
- * One match on the list. The match page reads the same item, so a row's
- * chips and the page's sections cannot disagree.
+ * One match on the list. The match page reads the same item for its
+ * sections.
  *
  * Plain fields and enums rather than sealed types on purpose: Swift reads this
  * directly, and a nullable field is a plain optional there where a sealed type
