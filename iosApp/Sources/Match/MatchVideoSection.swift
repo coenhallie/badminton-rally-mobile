@@ -144,6 +144,10 @@ struct MatchVideoSection: View {
                         // The page's gutter, as the header above takes: at the
                         // list's own inset the notes stood out of line with it.
                         .listRowInsets(NoteRow.insets)
+                        // The rule in the gutter at both ends, as Android's
+                        // between notes: the system's stops 16pt short of the
+                        // trailing edge, out of line with the header's pill.
+                        .alignmentGuide(.listRowSeparatorTrailing) { $0.width }
                         .listRowSeparatorTint(Shuttl.border)
                         .listRowBackground(Color.clear)
                 }

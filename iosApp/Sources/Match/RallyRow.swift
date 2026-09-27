@@ -40,8 +40,8 @@ enum RallyRow {
 }
 
 extension View {
-    /// A rally row's list chrome: `RallyRow.insets`, a separator in the border
-    /// token rather than the system grey, and no row fill of its own, so the
+    /// A rally row's list chrome: `RallyRow.insets`, a separator edge to edge
+    /// in the border token rather than the system grey, and no row fill of its own, so the
     /// page's background shows through.
     ///
     /// No rule above the list's first row: a plain list draws its section's
@@ -50,8 +50,24 @@ extension View {
     /// as Android's dividers do.
     func rallyListRow() -> some View {
         listRowInsets(RallyRow.insets)
+            .fullBleedListSeparator()
             .listRowSeparatorTint(Shuttl.border)
             .listSectionSeparator(.hidden, edges: .top)
             .listRowBackground(Color.clear)
+    }
+}
+
+extension View {
+    /// The rule under a list row drawn from edge to edge, as Android's
+    /// dividers between rallies and points are. The system's own starts at the
+    /// row's 24pt content inset and stops 16pt short of the trailing edge,
+    /// which matched neither edge of anything on the page. The guides are in
+    /// the row content's coordinates, which start at the gutter, so the content
+    /// is first given the row's full width: a Points header measured at its
+    /// own width drew its rule halfway across.
+    func fullBleedListSeparator() -> some View {
+        frame(maxWidth: .infinity, alignment: .leading)
+            .alignmentGuide(.listRowSeparatorLeading) { _ in -ShuttlGutter.page }
+            .alignmentGuide(.listRowSeparatorTrailing) { $0.width + ShuttlGutter.page }
     }
 }
