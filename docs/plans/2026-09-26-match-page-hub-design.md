@@ -472,13 +472,17 @@ differs from section 2, with the reason. Android paths are under
 
 ### 7.4 The status banner (2.7)
 
-- **The banner is `StatusBanner`, and it draws the list row.** For a scored match
-  with a status line (shared `showsStatusBanner`), it shows the row's own
-  `statusText` and action (`MatchScreen.kt`, `MatchView.swift`): running,
-  failed, court not marked, and also "Not analyzed" with Analyze for a scored
-  match whose court is marked but never run. The old `AttachStatusBanner`
-  derived its status again from the score log alone, could not see device runs,
-  and disagreed with the row.
+- **The banner is `StatusBanner`, and it shows the list row's status.** For a
+  scored match with a status line (shared `showsStatusBanner`), it shows the
+  row's own `statusText`, in the row's colour, and the row's action
+  (`MatchScreen.kt`, `MatchView.swift`): running, failed, court not marked, and
+  also "Not analyzed" with Analyze for a scored match whose court is marked but
+  has no results. The old `AttachStatusBanner` derived its status again from
+  the score log alone, could not see device runs, and disagreed with the row.
+  The text is bodyMedium on both platforms, a step up from the row's bodySmall:
+  alone at the top of the page, beside the button's 13-unit label, bodySmall
+  read as the least important thing there (compared on the simulator). iOS's
+  action button takes taps across 44pt (`MinimumTargetShape`).
 - **"Court not marked" after an on-device run is fixed.** Shared `attachStatus`
   asked for the court for every entry at `LOCAL`. A device run never leaves
   `LOCAL`, so a scored match analyzed on the phone said "Video added, court not
@@ -509,9 +513,10 @@ differs from section 2, with the reason. Android paths are under
 - **Runs landing together are one message** ("2 matches are analyzed", no
   View). On iOS, a run landing while the toast shows is merged into it and the
   toast is rebuilt (`Home/RunToastUpdate.swift`). On Android, runs are merged
-  only while they are waiting to be shown (`announced + announcement.announce`
-  in `AuthGate.kt`). Once a snackbar is up, the next run's snackbar queues
-  behind it.
+  only while they are waiting to be shown (`runSnackbarUpdate` in
+  `home/RunSnackbarUpdate.kt`, called from `AuthGate.kt`, and pinned by
+  `RunSnackbarUpdateTest`). Once a snackbar is up, the next run's snackbar
+  queues behind it.
 - **View reads the row again when tapped**, on both platforms, so a cloud track
   that landed after the run still opens on Analysis.
 - **Android.** The snackbar is shown from the screen's coroutine scope
@@ -544,8 +549,9 @@ differs from section 2, with the reason. Android paths are under
 
 ## 8. Verification, as run
 
-- **Unit tests** at the end of the branch: shared 773, androidApp 309, iOS 318
-  (one skipped: `ThroughputMeasurementTests` needs its build flag), no failures.
+- **Unit tests** at the end of the branch, after the final review's fixes:
+  shared 774, androidApp 319, iOS 315 (one skipped: `ThroughputMeasurementTests`
+  needs its build flag), no failures.
 - **iOS UI tests**: 7 run. The three suites re-pointed at the gear pass
   (`LabelSwatchGridUITests`, `ReplayPlayerUITests`, `ScoringBoardUITests`).
   `VideoMatchDetailsUITests` gets past the gear and then skips, because the
@@ -564,6 +570,27 @@ differs from section 2, with the reason. Android paths are under
     `match-analysed-*` and dark `run-snackbar-view` used a track planted from
     the cloud copy of the same footage, because a device pose run cannot finish
     on the 2GB emulator. The iOS frames used only real runs.
+  - **Re-taken after the final review, on 77b1220.** The first iOS set was
+    taken before the "court not marked" fix (7.4), and its scored match showed
+    "Video added, court not marked" with Mark court over its results. These
+    were taken again from new real device runs: iOS `list-*`,
+    `match-scored-{light,dark}`, `match-scored-xxxl-{light,dark}`,
+    `match-scored-ax5-dark`, `match-scored-analysis-{light,dark}`,
+    `run-snackbar-{light,dark}` and `run-snackbar-view-light`; and Android
+    `run-snackbar-light`, for its 16dp corners. Both toasts now name 28.mp4.
+    The light one came from a clips-only "Analyze again", which dropped the
+    earlier run's skeleton, so 28.mp4 shows no skeleton chip there and its
+    Analysis opens on Heatmap and Base. Android's `run-snackbar-dark` still
+    shows the snackbar's earlier 8dp corners. iOS
+    `run-snackbar-view-dark` is from the first set; it shows a video-only
+    match, which the fix does not touch.
+  - **The banner's "Not analyzed / Analyze"**, light, in
+    `2026-09-26-{android,ios}-match-banner-not-analyzed-light.png`. A court is
+    saved only when a run starts, so the state cannot be made by marking alone.
+    Each frame is a scored match whose device run was interrupted: the app
+    force-stopped (Android) or terminated (iOS) seconds into the run, then
+    opened again. The run is gone, the court stays marked, and the row and the
+    banner offer Analyze.
 - **Open, needs an account with cloud matches**: the iOS cloud Rallies rows,
   their label strip and details row, and the sort control; a shared match on
   either platform; `VideoMatchDetailsUITests` running rather than skipping.
@@ -572,7 +599,14 @@ differs from section 2, with the reason. Android paths are under
   - rotating on Match (position kept) and on Skeleton; no Skeleton landscape
     frame was taken on either platform;
   - switching sections releasing the player, with no audio from a section left
-    behind;
+    behind (iOS now pauses the Match section's player when the section goes;
+    on the simulator a playing video still played on entering fullscreen);
+  - a phone-analyzed video's Rallies taking the new rallies when "Analyze
+    again" lands while it shows (the read is keyed on the run settling; a re-run
+    on the same footage gives the same rallies, so the simulator and emulator
+    could not show the difference);
+  - the banner reading "Not analyzed / Analyze" on a scored match whose device
+    run was interrupted;
   - the gesture bar and the Add button's clearance;
   - on Android, the keyboard over the list: the emulator's hardware keyboard
     showed no inset;
