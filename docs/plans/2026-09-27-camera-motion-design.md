@@ -51,7 +51,10 @@ reference:
 | ORB + RANSAC vs the marking frame, 960 wide, every frame | 172 | 0.87 / 2.11 | reference |
 | chained KLT (frame to frame), 480 wide, every frame | 1.1 | 0.99 / 2.94 | 4.1 / 14.6 cm |
 | translation-only phase correlation, 480 wide | 1.4 | 5.5 / 12 | **154 / 266 cm (fails)** |
-| **anchored LK (marking frame to this frame), 480 wide, every 3rd frame** | **0.4** | **0.60 / 1.93** | **1.6 / 4.9 cm** |
+| **anchored LK (marking frame to this frame), 480 wide, §4's exact settings: 150 corners, 3 pyramid levels, 10 Hz** | **0.29** | **0.82 / 2.00** | **1.6 / 4.8 cm** |
+
+(`/tmp/hm/cost/spec_cfg.py`; the reference and anchored tracks are kept in
+`~/shuttl-corpus/IMG_5892/` for §8.)
 
 Anchored LK tracks the marking frame's own features into each frame, starting
 from the previous estimate, so errors do not accumulate however long the video
@@ -145,16 +148,43 @@ The court fit for that frame is then `H · M(t)⁻¹`, where `H` is today's fit
 from the marks. The net line for that frame is the marked net line mapped by
 `M(t)`.
 
-**The marking frame is the first decoded frame whose timestamp is at least
-0.1 s.** The Android, web and iOS stills are all within one frame of it; the
-camera does not move measurably in one frame. It is defined by time, not by
-index, because Android numbers frames from 0 and the cloud from 1.
+**The marking frame is the first decoded frame whose timestamp is at least the
+marking time `T`,** defined by time, not by index, because Android numbers
+frames from 0 and the cloud from 1.
 
-One change keeps that true on iOS: `CourtFrameLoader` allows unlimited
-tolerance after 0.1 s today, which lets AVFoundation hand back a later sync
-frame, possibly a second or more in. With the camera now known to move, the
-marks must come from the frame the tracker anchors to, so the tolerance after
-becomes `.zero` as well.
+**`T` travels with the marks.** The wire `CourtKeypoints` gains an optional
+`marked_at_s` (seconds), stored inside `videos.manual_court_keypoints` and the
+local entry like the 12 points. `T = marked_at_s ?: 0.1`.
+
+- Why it is needed: iOS's `CourtFrameLoader` allows unlimited tolerance after
+  0.1 s, so AVFoundation hands back a later sync frame. On `IMG_5892.MOV` it
+  returned the frame at **1.0 s**, measured by the spec review. Marks drawn
+  there and anchored at 0.1 s would be off by whatever the camera did in that
+  0.9 s.
+- New iOS marks: the loader keeps its tolerances and records the generator's
+  `actualTime` as `marked_at_s`. (Zero tolerance after would force a 0.1 s
+  frame, but recording the truth is the same fix without changing which frame
+  a coach sees.)
+- New Android marks: `getFrameAtTime(100_000, OPTION_CLOSEST)` returns the
+  frame nearest 0.1 s and does not say which; `marked_at_s = 0.1`, within one
+  frame.
+- The web app writes no `marked_at_s`; 0.1 is what `CourtSetup.vue` seeks to.
+- Legacy iOS marks on a local entry (no `marked_at_s`): the iOS run asks the
+  same generator, with the same tolerances the marking screen used, for its
+  `actualTime`, and anchors there. Legacy iOS marks that reached the cloud
+  cannot be told apart from web marks and anchor at 0.1 s; re-marking fixes
+  them (§7).
+- Nothing reads `manual_court_keypoints` key by key in a way an extra number
+  would break: the backend and web read named keys, and the only app decoder
+  of the row (`CloudPoseRepository.kt:61`) is unshipped and gets the field.
+  Shipped builds only ever write the column (`VideosRepository.kt:147`).
+  Local entries decode with `ignoreUnknownKeys` (`LocalVideoRepository.kt:65`).
+
+The cloud's frame clock lags by one frame (`CAP_PROP_POS_MSEC` read before
+`read()`: frames 1 and 2 both read 0.0 s, measured by the spec review on
+OpenCV 4.13). Its marking frame is therefore one frame later than the
+phone's. That is inside the one-frame tolerance, and the join between frames
+and camera samples is still exact because both come from the same clock.
 
 A camera that walks (translates by metres) breaks the model, because the
 stands and the floor then move differently. That is not handheld-from-a-seat
@@ -174,7 +204,15 @@ the painted lines on the same video (§8).
 
 - A greyscale image, the luma plane area-averaged down so its long side is 480
   px (480x270 for 16:9). Luma, not RGB: the tracker needs texture, not colour,
-  and the Y plane is already there.
+  and the Y plane is already there. A source already 480 or smaller on its
+  long side is used as is.
+- Area average for any ratio: output pixel `(ox, oy)` averages source columns
+  `floor(ox * W / w) until max(that + 1, floor((ox + 1) * W / w))`, rows
+  likewise. Exact for 1920 to 480, approximate for 1280 to 480; the tracker
+  does not care.
+- Tracker pixels map to source pixels by pixel centres:
+  `x_src = (x_t + 0.5) * sx - 0.5` with `sx = W / w`, so
+  `S = [[sx, 0, 0.5 sx - 0.5], [0, sy, 0.5 sy - 0.5], [0, 0, 1]]`.
 - `Luma.downsample(plane, width, height, rowStride, out)` in `commonMain` does
   the area average. Android copies plane 0 of the `Image` into a reused
   `ByteArray` and calls it. iOS calls a new `BulkInterop` function that reads
@@ -186,9 +224,12 @@ the painted lines on the same video (§8).
 
 - The tracker asks for a frame each time the timestamp crosses a 0.1 s
   boundary (10 Hz, whatever the frame rate, and correct on variable frame
-  rate). The marking frame is always one of them.
-- Frames before the marking frame (the first 0.1 s) are buffered and tracked
-  once it arrives: at most a handful of 130 KB images.
+  rate), and for the marking frame (the first at or after `T`) whether or not
+  it crosses one.
+- Frames sampled before the marking frame are buffered and tracked once it
+  arrives: 130 KB each, ten per second of `T` (one for the usual `T = 0.1`).
+- The tracker is constructed with `T` and the source size; a pass whose marks
+  are unknown runs no tracker.
 - The anchored tracker does not accumulate error, so a lower rate costs only
   temporal resolution. 10 Hz keeps within 1.6 cm of every-frame accuracy on the
   measured video (§1) and follows a hand's slow drift; it would miss a
@@ -196,20 +237,34 @@ the painted lines on the same video (§8).
 
 ### 4.3 One sample
 
-1. **Reference features, once.** Shi-Tomasi corners on the marking frame: up
-   to 150, quality level 0.01 of the strongest, at least 8 px apart, 3x3
-   structure-tensor window, at least 10 px from the border.
-2. **Pyramids.** Three levels (full, half, quarter), each level a 5-tap
-   Gaussian then a 2x decimation, the marking frame's built once.
+The OpenCV call each step corresponds to is given, so the cloud's
+implementation (§6) is the same algorithm by construction.
+
+1. **Reference features, once.** Shi-Tomasi corners on the marking frame:
+   up to 150, quality level 0.01 of the strongest response, at least 8 px
+   apart, 3x3 structure-tensor window over Sobel gradients, at least 10 px from
+   the border. (`goodFeaturesToTrack(img, 150, 0.01, 8, blockSize=3)`, border
+   filter applied after.) Fewer than 40 corners means the marking frame has no
+   texture to follow: the tracker gives up and the run uses the fixed marks.
+2. **Pyramids.** Three levels (full, half, quarter): each level is the one
+   below blurred with the 5-tap `[1 4 6 4 1] / 16` kernel in both directions
+   (border replicated) and every second pixel taken. Gradients at each level
+   are Scharr, scaled by 1/32. The marking frame's pyramid is built once.
+   (`calcOpticalFlowPyrLK` with `maxLevel = 2`.)
 3. **Anchored pyramidal Lucas-Kanade.** Each reference corner is tracked from
-   the marking frame into this frame, starting at the previous accepted
-   `M` applied to the corner (the identity before the first). 21x21 window,
-   up to 20 iterations per level, stop when the update is under 0.03 px. A
-   corner fails if its window leaves the image or its system is singular.
+   the marking frame into this frame, starting at the previous accepted `M`
+   applied to the corner (the identity before the first). 21x21 window,
+   bilinear sampling with the border replicated, up to 20 iterations per
+   level, stopping when the update's length is at most 0.03 px. A corner fails
+   if its structure tensor's smaller eigenvalue, divided by the window area,
+   is under 1e-4, or if it ends outside the image.
+   (`winSize = (21, 21)`, `OPTFLOW_USE_INITIAL_FLOW`,
+   `criteria = (COUNT | EPS, 20, 0.03)`, `minEigThreshold = 1e-4`.)
 4. **RANSAC homography** over the surviving pairs: 4-point minimal fits
    through the existing DLT (`calculateHomography`), inlier threshold 1.0 px at
-   tracker scale, 300 iterations from a fixed-seed generator so a run is
-   repeatable, then a least-squares refit on the inliers.
+   tracker scale, 300 iterations from `kotlin.random.Random(seed = 0x5EED)` so a
+   run is repeatable on every platform, then a least-squares refit on the
+   inliers. (`findHomography(src, dst, RANSAC, 1.0, maxIters = 300)`.)
 5. **Accept** when there are at least 40 inliers and the result is plausible:
    the four image corners of the marking frame each land within 25% of the
    image width of where they started, and the determinant of the upper-left
@@ -220,14 +275,22 @@ the painted lines on the same video (§8).
 
 ### 4.4 Reading `M` at a frame
 
-`CameraMotion(referenceTimestamp, samples)` answers `at(timestamp): Matrix3x3?`:
+`CameraMotion(referenceTimestamp, samples)` answers `at(timestamp): Matrix3x3?`,
+with samples sorted by timestamp and, where two share a timestamp, the first
+kept. In order:
 
-- A sample at that timestamp: its `M`.
-- Between two samples no more than 0.5 s apart: the element-wise linear blend,
-  renormalised so `h22 = 1`. The motion between 10 Hz samples is a fraction
-  of a pixel of rotation; a blend is exact to well under a pixel.
-- Within 0.15 s before the first sample or after the last: the nearest sample.
-- Anywhere else: `null`, meaning **the camera is not known here.**
+1. A sample whose timestamp equals `t` to within 1e-6 s: its `M`.
+2. `t` between two neighbouring samples no more than 0.5 s apart: the
+   element-wise linear blend, renormalised so `h22 = 1`. The motion between
+   10 Hz samples is a fraction of a pixel of rotation; a blend is exact to well
+   under a pixel.
+3. Otherwise, the nearest sample if it is within 0.15 s of `t`.
+4. Otherwise `null`, meaning **the camera is not known here.**
+
+Every stored `M` has `h22` exactly 1.0, and `CameraMotion`, `CameraSample`
+and `M` are plain values (lists, not arrays) so two equal motions compare
+equal. Inside the tracker the arithmetic uses `DoubleArray`s; the list form is
+only the boundary.
 
 A frame with no known camera produces no position. It is not drawn with the
 fixed marks, because §1 shows that is exactly the wrong answer. It is counted
@@ -277,26 +340,44 @@ rallies-only pass): selection uses the fixed marks, as today.
   Versions 1 to 3 still load, with no camera.
 - The panel computes each pose's court fit as `H · pose.camera⁻¹` when the
   pose has a camera, and `H` otherwise. `H`'s residual gate is unchanged.
-- `Matrix3x3` gains public `times` and `inverse()` in `Homography.kt` (today's
-  private `multiply3x3` / `invert3x3`), and a helper
-  `courtFitAt(h, camera)` so neither platform composes matrices itself.
+- `Homography.kt` makes today's private `multiply3x3` / `invert3x3` public
+  under those names (top-level functions, not extensions on the
+  `List<List<Double>>` typealias, which would attach to every nested list),
+  and adds `courtFitAt(h: Matrix3x3, camera: Matrix3x3?): Matrix3x3?`
+  (`h · camera⁻¹`, or `h` when `camera` is null) so neither platform composes
+  matrices itself.
+- Within one skeleton file every pose has a camera or none does: selection
+  only returns a pose for a frame whose camera it knew.
 
 ### 5.4 The heatmap and Base panels
 
 They read court-metre samples from the track store, which are now right. No
-change, except the empty-state line: when a pass found no position because the
-camera could not be followed, the heatmap says so instead of "the player was
-not found" (`whyEmpty`, Android `CourtHeatmapView.kt:262-270` and iOS
-`CourtHeatmapView.swift:219`).
+change. A run in which the camera could not be followed at all leaves an empty
+track, and an empty track is never offered to these panels
+(`HeatmapPanel.kt:59-76`, `AnalysisSection.swift:295-301`), so no empty-state
+wording can reach a coach. Instead `LocalAnalysisCoordinator` and
+`CloudPoseCoordinator` log the `CAMERA_LOST` count beside the existing
+`BAD_COURT` log (`LocalAnalysisCoordinator.kt:150`). That an empty track shows
+nothing at all is pre-existing (the `BAD_COURT` message has the same
+unreachable path) and is reported, not fixed here.
 
 ### 5.5 The platform engines
 
 - The tracker runs only when pose runs (a rallies-only pass has nothing to map).
+  The engine owns one `CameraMotionTracker` for the pass, created with `T` and
+  the source size, used on the decode thread only.
+- The engine learns `T` the way it learns the marks: `LocalAnalysisCoordinator`
+  already hands the engine a request per run; it gains `markingTimeS`. The
+  coordinator computes it as `keypoints.markedAtSeconds ?: legacyMarkingTime`,
+  where `legacyMarkingTime` is 0.1 on Android and, on iOS, the generator's
+  `actualTime` for 0.1 s under the marking screen's tolerances.
 - Android: in the engine's `onFrame`, if `tracker.wants(seconds)`, copy the Y
-  plane, downsample, `tracker.offer(index, seconds, luma)`. After the pass,
+  plane (plane 0, honouring its row stride) into a reused `ByteArray`,
+  `Luma.downsample` it, and `tracker.offer(seconds, image)`. After the pass,
   `tracker.finish()` goes into `RawInference.camera`.
-- iOS: the same, with the downsample done in Kotlin/Native from the plane's
-  base address through `BulkInterop`.
+- iOS: the same, with the downsample done in Kotlin/Native from the locked
+  plane's base address through a new `BulkInterop.lumaDownsample(...)`, so the
+  2 MB plane never crosses the bridge.
 - A tracker failure never fails the run: `finish()` returns what it has, and
   frames it could not follow become `CAMERA_LOST`.
 
@@ -307,21 +388,36 @@ not found" (`whyEmpty`, Android `CourtHeatmapView.kt:262-270` and iOS
 In `badminton-tracker`, branch `feat/camera-motion` from
 `feat/cloud-pose-artifacts` (what is deployed).
 
-- `backend/camera_motion.py`: the §4 algorithm through OpenCV
-  (`goodFeaturesToTrack`, `calcOpticalFlowPyrLK` with
-  `OPTFLOW_USE_INITIAL_FLOW`, `findHomography` RANSAC), the same parameters,
-  the same 10 Hz sampling and the same `at(timestamp)` rule, from the
-  full-resolution frame the loop already holds (`:3163`).
-- In `_run_full_yolo_loop`, per frame, with `M = motion.at(timestamp)`:
-  - the court area polygon's four corners are mapped by `M` before the
-    point-in-polygon test;
-  - the identity tracker's net line is mapped by `M` for that frame;
-  - the Phase 2 shuttle court area is mapped by `M`;
-  - speed's court position is `H_court · M⁻¹ · p`, with the previous point
-    mapped by its own frame's `M`.
-  Where `M` is unknown the fixed geometry is used, as today: the cloud's job
-  here is to keep the right people and write `M`, and the phone makes the
-  final call through `CAMERA_LOST`.
+- `backend/camera_motion.py`: the §4 algorithm through the OpenCV calls §4
+  names, the same parameters, the same sampling and the same `at(timestamp)`
+  rule, from the full-resolution frame the loop already holds (`:3163`),
+  converted to grey and area-resized (`INTER_AREA`) to the §4.1 size. `T` is
+  `manual_court_keypoints["marked_at_s"]` or 0.1. `cv2` is imported inside
+  its functions, as the processor already does, so the offline verify scripts
+  that import the processor still run without OpenCV.
+- The Modal image mounts each backend module by name
+  (`modal_supabase_processor.py:3928`): `camera_motion.py` gets its own
+  `add_local_file` line, or every Phase 2 run fails at import after deploy.
+- **In the loop the camera is causal.** Frames are read in batches of 8, so a
+  frame's later sample may not exist yet. The tracker is fed each sampled
+  frame as it is read, and in-loop code uses the latest accepted `M`
+  (identity before the first, or when the tracker gave up). Only the section
+  written to the file uses §4.4's blending, on the phone.
+- **Stabilise early, emit late.** Each frame's detected skeletons are mapped
+  by `M⁻¹` into marking-frame pixels as shadow copies (centre, box, keypoints)
+  that keep a reference to the original. Everything the loop decides runs on
+  the shadows with the fixed geometry unchanged: the court area filter, the
+  sitting filter, cumulative movement, the jump gate, the identity tracker
+  (its net line, its calibration, its velocities) and speed. What is emitted
+  (`skeleton_frames`, `results.json`, the pose file) is the originals, in
+  frame pixels. This keeps the tracker's own `net_line` rewriting
+  (`:1942`, `:1964`) and every pixel threshold meaning what it means today,
+  and it is the phone's approach (§5.2) in the cloud. The Phase 2 shuttle
+  court area is mapped by `M` instead, because shuttle candidates are points,
+  not skeletons.
+- **Plumbing.** `_run_full_yolo_loop` returns the motion in `tracking_state`
+  under `"camera_motion"`; `raw_inference_from_skeleton_frames(...)` and
+  `encode_raw_inference(...)` gain a `camera` argument.
 - `raw_inference_codec.py` writes version 2 with the camera section;
   `verify_raw_inference_codec.py` checks the new layout and writes a version 2
   fixture that the phone's codec test decodes, next to the existing version 1
@@ -343,6 +439,8 @@ In `badminton-tracker`, branch `feat/camera-motion` from
 | format change | RawInference version 2 | an unversioned trailer after version 1 frames: old readers would skip it, but no shipped build reads the file (§2.3), so compatibility buys nothing and a trailer is a second, hidden format |
 | sampling | 10 Hz by timestamp | every frame: 3x the cost for no measured accuracy. Every Nth frame: wrong on variable frame rate |
 | a frame the tracker lost | no position (`CAMERA_LOST`) | fall back to the fixed marks: §1 is the measurement of what that draws |
+| which frame the marks belong to | `marked_at_s` stored with the marks; iOS records the generator's `actualTime` | assume 0.1 s: iOS marks came from a frame up to a GOP later (1.0 s on `IMG_5892`). Force iOS to 0.1 s with zero tolerance: fixes new marks only, and still leaves nothing recording which frame was used |
+| cloud in-loop camera | causal (latest accepted `M`), shadows stabilised by `M⁻¹` | the full `at()` blend in-loop: needs samples from batches not yet read. Mapping the fixed geometry forward by `M`: fights the identity tracker's own net-line calibration and leaves every pixel-space motion threshold polluted by the pan |
 
 ---
 
@@ -357,7 +455,14 @@ In `badminton-tracker`, branch `feat/camera-motion` from
   shuttle court area). A moving camera probably hurts shuttle detection too.
   Unmeasured, and a different pipeline.
 - **The web app** (`useZoneAnalytics.ts`, `speed_calc.recalculate_speeds`),
-  which read positions from `results.json` through the fixed marks.
+  which read positions from `results.json` through the fixed marks. This pass
+  changes what they see: the cloud now keeps players on frames where the
+  camera had moved, which it used to drop, and `results.json` stores them in
+  frame pixels as before, so the web maps those frames to wrong places instead
+  of leaving them out. Fixing it means writing `M` into `results.json` too.
+- **Legacy iOS marks in the cloud** anchor at 0.1 s while they were drawn on a
+  later frame (§3). Marking again fixes a video.
+- **An empty track explains nothing to the coach** (§5.4), today and after.
 - **Tracks already stored.** Cloud tracks are computed once at install and the
   raw file is not kept; a video must be analysed again to benefit.
 - **A camera that walks**, a fast deliberate pan that outruns 10 Hz, and a
@@ -371,28 +476,44 @@ In `badminton-tracker`, branch `feat/camera-motion` from
 ## 8. Verification
 
 1. **Unit tests, `:analysis`, JVM and iOS simulator:** the downsample against
-   a hand-computed average; corners, pyramid and LK on synthetic textures
-   shifted and warped by known homographies (recovered to within 0.1 px);
-   RANSAC with 30% planted outliers; the sampler's 0.1 s boundaries on constant
-   and variable frame rates; `at()`'s blend, hold and gap rules; the codec's
-   version 1 and 2 round trips and truncation; selection with a camera
-   (a panned person is found where they stand, a `null` camera frame is
-   `CAMERA_LOST`, a `null` `camera` field is today's behaviour).
+   a hand-computed average at an integer and a non-integer ratio; corners,
+   pyramid and LK on synthetic textures shifted and warped by known
+   homographies (recovered to within 0.1 px at tracker scale); RANSAC with 30%
+   planted outliers; the sampler's 0.1 s boundaries and the marking frame on
+   constant and variable frame rates and with `T = 1.0`; `at()`'s exact,
+   blend, hold, gap and duplicate-timestamp rules; the codec's version 1 and 2
+   round trips and truncation; selection with a camera (a panned person is
+   found where they stand, a frame with no known camera is `CAMERA_LOST`, a
+   `null` `camera` field is today's behaviour exactly).
 2. **The real video, corpus-gated JVM test:** `tools/models/camera_motion_probe.py`
-   writes `IMG_5892`'s 10 Hz luma frames and the painted-line check points to
-   `~/shuttl-corpus/IMG_5892/`; the Kotlin tracker must keep the near service
-   line, near baseline and near long service line within 2 px p95 of the paint,
-   and agree with OpenCV's anchored tracker to within 1 px median at source
-   scale.
+   writes `IMG_5892`'s raw Y planes (video range, as the phones decode them,
+   via ffmpeg `extractplanes=y`) at each 10 Hz sample, their timestamps, the
+   painted-line check points and the reference tracks to
+   `~/shuttl-corpus/IMG_5892/`. Through `Luma.downsample` and the tracker, the
+   Kotlin result must keep the near service line, near baseline and near long
+   service line within 2 px p95 of the paint, and agree with OpenCV's anchored
+   tracker to within 1 px median at source scale.
 3. **Store and panel tests** on both platforms for version 4 and the per-pose
    court fit; the iOS layout test pinned to Android's bytes, as today.
-4. **Cost on a device:** tracker milliseconds per frame on the S23 if it is
-   reachable, otherwise on the emulator and the iOS simulator with the S23
-   estimate stated as an estimate.
-5. **End to end on a phone:** `IMG_5892` analysed on the device path, the
-   heatmap drawn, compared against §1's corrected map.
-6. **End to end in the cloud:** the Phase 2 loop run locally on `IMG_5892`
-   (not on Modal), its `poses.raw` decoded by the phone's codec and selected
-   with coverage and positions matching the device run's.
-7. Deploying the worker is the owner's step: `python3 -m modal deploy
-   backend/modal_supabase_processor.py`.
+4. **Cost on a device:** tracker milliseconds per sample and per frame on the
+   S23 if it is reachable, otherwise on the emulator and the iOS simulator,
+   with the S23 figure stated as an estimate.
+5. **End to end on both phones:** `IMG_5892` analysed on the device path on
+   Android and on iOS (the two luma paths differ), the stored track selected
+   against the ideal marks. Pass: at least 95% of pose frames produce a
+   position, and against the reference track (every-frame ORB, §1) the median
+   is at most 5 cm and p95 at most 15 cm. The heatmap, Base and Skeleton panels
+   drawn and screenshotted.
+6. **End to end in the cloud, locally:** the Phase 2 loop run on `IMG_5892`
+   on this Mac (not on Modal) with the medium pose model, its `poses.raw`
+   decoded by the phone's codec and selected. Pass: at least 95% of pose
+   frames produce a position, and against the reference track the median is at
+   most 8 cm and p95 at most 25 cm (a different model, and a clock one frame
+   late). `verify_raw_inference_codec.py`, `verify_camera_motion.py`,
+   `verify_tracker_invariants.py` and `verify_speed_filters.py` all pass.
+7. **In production, after the owner deploys** (`python3 -m modal deploy
+   backend/modal_supabase_processor.py`): one Phase 2 run of `IMG_5892`,
+   installed on a phone through `CloudPoseCoordinator`, with its heatmap,
+   Base and Skeleton panels checked. Until then §8.6 is the cloud's evidence.
+   Once the worker writes version 2, the older unmerged branches'
+   dev builds can no longer install cloud poses; no shipped build is affected.
