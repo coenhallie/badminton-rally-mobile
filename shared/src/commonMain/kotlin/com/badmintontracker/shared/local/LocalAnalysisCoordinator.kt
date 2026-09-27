@@ -155,6 +155,7 @@ class LocalAnalysisCoordinator(
                     "${playerTrack.framesWithPose} pose frames",
             )
         }
+        logCamera(raw, listOf(playerTrack), log)
 
         return LocalAnalysisOutcome(
             playerTrack = playerTrack,

@@ -303,7 +303,7 @@ struct SkeletonStore {
                 confidence.append(KotlinFloat(float: c))
             }
             poses.append(PlayerPose(
-                frame: frame, timestamp: timestamp, keypoints: keypoints, confidence: confidence
+                frame: frame, timestamp: timestamp, keypoints: keypoints, confidence: confidence, camera: nil
             ))
         }
         return poses

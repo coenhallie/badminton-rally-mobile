@@ -129,7 +129,8 @@ final class AnalysisStoreTests: XCTestCase {
                 frame: Int32(frame),
                 timestamp: Double(frame) / 30,
                 keypoints: (0..<joints).map { Point(x: Double($0) + Double(frame), y: Double($0) * 2) },
-                confidence: (0..<joints).map { KotlinFloat(float: Float($0) / Float(joints)) }
+                confidence: (0..<joints).map { KotlinFloat(float: Float($0) / Float(joints)) },
+                camera: nil
             )
         }
     }

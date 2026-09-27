@@ -1,13 +1,20 @@
 package com.badmintontracker.analysis.player
 
+import com.badmintontracker.analysis.camera.CameraMotion
+import com.badmintontracker.analysis.camera.CameraSample
 import com.badmintontracker.analysis.geometry.CourtKeypoints
+import com.badmintontracker.analysis.geometry.Matrix3x3
 import com.badmintontracker.analysis.geometry.Point
+import com.badmintontracker.analysis.geometry.apply
+import com.badmintontracker.analysis.geometry.homography
+import com.badmintontracker.analysis.geometry.invert3x3
 import com.badmintontracker.analysis.raw.RawBox
 import com.badmintontracker.analysis.raw.RawFrame
 import com.badmintontracker.analysis.raw.RawHeader
 import com.badmintontracker.analysis.raw.RawInference
 import com.badmintontracker.analysis.raw.RawKeypoint
 import com.badmintontracker.analysis.raw.RawPerson
+import io.kotest.matchers.doubles.plusOrMinus
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import kotlin.test.Test
@@ -208,6 +215,121 @@ class SelectPlayersTest {
         near.poses[0].keypoints[Coco.LEFT_ANKLE].x shouldBe (NEAR_X + 40 - 8)
     }
 
+    @Test
+    fun a_panned_frame_finds_the_player_where_they_stand() {
+        // The camera panned 80 px up after marking: the person's pixels moved
+        // by the same shift.
+        val standing = Point(3.0, 11.0) // court metres, near half
+        val person = personAt(standing).movedBy(PAN)
+        val raw = rawOf(
+            listOf(frameWith(person, timestamp = 0.5)),
+            camera = CameraMotion.of(0.1, listOf(CameraSample(0.1, IDENTITY), CameraSample(0.5, PAN))),
+        )
+
+        val near = selectPlayers(raw, keypoints).first { it.side == CourtSide.NEAR }
+
+        near.track.samples.single().courtPosition.x shouldBe (3.0 plusOrMinus 0.01)
+        near.track.samples.single().courtPosition.y shouldBe (11.0 plusOrMinus 0.01)
+        near.poses.single().camera shouldBe PAN
+        // The pose keeps the frame's own pixels, for the overlay.
+        near.poses.single().keypoints shouldBe person.keypoints.map { Point(it.x.toDouble(), it.y.toDouble()) }
+    }
+
+    @Test
+    fun without_the_camera_the_same_frame_is_lost_to_the_far_side_or_placed_wrongly() {
+        // The control for the test above: the same moved pixels read through
+        // the fixed marks, which is what every frame got before the camera
+        // was followed.
+        val person = personAt(Point(3.0, 11.0)).movedBy(PAN)
+
+        val near = selectPlayers(rawOf(listOf(frameWith(person, timestamp = 0.5)), camera = null), keypoints)
+            .first { it.side == CourtSide.NEAR }
+
+        val s = near.track.samples.singleOrNull()
+        (s == null || kotlin.math.abs(s.courtPosition.y - 11.0) > 0.5) shouldBe true
+    }
+
+    @Test
+    fun a_frame_whose_camera_is_unknown_is_camera_lost_on_both_sides() {
+        // 4.9 s from the only sample: past every blend and hold, so the
+        // camera is not known here and the fixed marks must not stand in.
+        val raw = rawOf(
+            listOf(frameWith(personAt(Point(3.0, 11.0)), timestamp = 5.0)),
+            camera = CameraMotion.of(0.1, listOf(CameraSample(0.1, IDENTITY))),
+        )
+
+        selectPlayers(raw, keypoints).forEach {
+            it.track.samples shouldBe emptyList()
+            it.track.rejections[RejectionReason.CAMERA_LOST] shouldBe 1
+            it.track.framesWithPose shouldBe 1
+        }
+    }
+
+    @Test
+    fun a_camera_with_no_way_back_to_the_marking_frame_is_camera_lost_too() {
+        // A singular matrix cannot be inverted, so the frame's people have no
+        // marking-frame pixels. Falling back to the fixed marks here would be
+        // the wrong answer design §4.4 rules out for an unknown camera.
+        val singular = listOf(listOf(1.0, 0.0, 0.0), listOf(1.0, 0.0, 0.0), listOf(0.0, 0.0, 1.0))
+        val raw = rawOf(
+            listOf(frameWith(personAt(Point(3.0, 11.0)), timestamp = 0.5)),
+            camera = CameraMotion.of(0.1, listOf(CameraSample(0.5, singular))),
+        )
+
+        selectPlayers(raw, keypoints).forEach {
+            it.track.samples shouldBe emptyList()
+            it.track.rejections[RejectionReason.CAMERA_LOST] shouldBe 1
+        }
+    }
+
+    @Test
+    fun no_camera_section_is_todays_selection_exactly() {
+        val frames = listOf(frameWith(personAt(Point(3.0, 11.0)), timestamp = 0.5))
+
+        selectPlayers(rawOf(frames, camera = null), keypoints).first().poses.single().camera shouldBe null
+    }
+
+    @Test
+    fun camera_lost_comes_after_every_existing_reason() {
+        // Appended, so no stored or logged ordinal of an existing reason moves.
+        RejectionReason.entries.last() shouldBe RejectionReason.CAMERA_LOST
+        RejectionReason.BAD_COURT.ordinal shouldBe 5
+    }
+
+    /**
+     * A plausible figure whose ankle midpoint stands on [court], in the
+     * marking frame's pixels: the court point taken back through the marks'
+     * own fit, so the test and the selector agree on the geometry by
+     * construction.
+     */
+    private fun personAt(court: Point): RawPerson {
+        val pixel = invert3x3(keypoints.homography()!!)!!.apply(court.x, court.y)!!
+        return person(pixel.x, pixel.y, confidence = 0.9f)
+    }
+
+    /** This person as a camera [m] (marking-frame pixels to frame pixels) would see them. */
+    private fun RawPerson.movedBy(m: Matrix3x3): RawPerson {
+        fun moved(x: Float, y: Float): Point = m.apply(x.toDouble(), y.toDouble())!!
+        val topLeft = moved(box.x1, box.y1)
+        val bottomRight = moved(box.x2, box.y2)
+        return RawPerson(
+            box = box.copy(
+                x1 = topLeft.x.toFloat(), y1 = topLeft.y.toFloat(),
+                x2 = bottomRight.x.toFloat(), y2 = bottomRight.y.toFloat(),
+            ),
+            keypoints = keypoints.map { k ->
+                val p = moved(k.x, k.y)
+                RawKeypoint(p.x.toFloat(), p.y.toFloat(), k.confidence)
+            },
+        )
+    }
+
+    private fun frameWith(person: RawPerson, timestamp: Double) =
+        RawFrame(0, timestamp, null, emptyList(), listOf(person))
+
+    private fun rawOf(frames: List<RawFrame>, camera: CameraMotion?) =
+        inference(*frames.toTypedArray()).copy(camera = camera)
+
     private fun nearPlayer() = person(NEAR_X, NEAR_Y, confidence = 0.9f)
     private fun farPlayer() = person(FAR_X, FAR_Y, confidence = 0.8f)
 
@@ -227,5 +349,10 @@ class SelectPlayersTest {
         // court, in the rear half between the far baseline and the short
         // service line.
         const val FAR_Y = 550.0
+
+        val IDENTITY: Matrix3x3 = listOf(listOf(1.0, 0.0, 0.0), listOf(0.0, 1.0, 0.0), listOf(0.0, 0.0, 1.0))
+
+        /** The camera panned so everything sits 80 px higher in the frame than when it was marked. */
+        val PAN: Matrix3x3 = listOf(listOf(1.0, 0.0, 0.0), listOf(0.0, 1.0, -80.0), listOf(0.0, 0.0, 1.0))
     }
 }

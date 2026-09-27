@@ -189,7 +189,8 @@ final class SkeletonPanelTests: XCTestCase {
                 frame: Int32(frame),
                 timestamp: Double(frame) / 30,
                 keypoints: (0..<joints).map { Point(x: Double($0) + Double(frame), y: Double($0) * 2) },
-                confidence: (0..<joints).map { _ in KotlinFloat(float: 0.9) }
+                confidence: (0..<joints).map { _ in KotlinFloat(float: 0.9) },
+                camera: nil
             )
         }
     }
