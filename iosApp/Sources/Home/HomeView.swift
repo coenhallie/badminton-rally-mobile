@@ -94,6 +94,8 @@ struct HomeView: View {
     /// it shows joins it ("2 matches are analyzed") rather than replacing it
     /// and losing the first. Read only while a toast shows; see `announce`.
     @State private var toastRuns: Set<String> = []
+    /// Whether the app is in front. See `nothingAbove`.
+    @Environment(\.scenePhase) private var scenePhase
 
     init(rally: RallyApp, analyze: AnalyzeCoordinator, localAnalysis: LocalAnalysisRunner?) {
         self.rally = rally
@@ -175,7 +177,7 @@ struct HomeView: View {
         // retiring its entry, so without this the coach watching the list saw
         // the row vanish and nothing else - no result, and nothing saying
         // where it had gone. The two sets are unioned into one announcement so
-        // a video analysed both ways announces once. Mirrors androidApp's
+        // a video analyzed both ways announces once. Mirrors androidApp's
         // `combine` above its NavHost.
         //
         // Here, on the stack, rather than on the list: a push cancels the
@@ -291,14 +293,22 @@ struct HomeView: View {
         }
     }
 
-    /// Whether nothing covers the list: no push, no sheet, no list dialog.
-    /// Every route and sheet this view owns is listed; a new one must be
-    /// added, or a finished run is announced on a toast nobody can see (and
-    /// marked seen, so never again). `detailsTarget` counts: a video just
-    /// added is waiting to be named, and a View offered then pulls the other
-    /// way. Also pauses the empty state's hero ticker.
+    /// Whether nothing covers the list and the app is in front: no push, no
+    /// sheet, no list dialog, and the scene active. Every route and sheet
+    /// this view owns is listed; a new one must be added, or a finished run
+    /// is announced on a toast nobody can see (and marked seen, so never
+    /// again). `detailsTarget` counts: a video just added is waiting to be
+    /// named, and a View offered then pulls the other way.
+    ///
+    /// The scene phase is androidApp's RESUMED check. A cloud run can land in
+    /// the seconds after the coach leaves the app, and its toast would time
+    /// out unseen. The seen-set rule does not change for it: a run that lands
+    /// while the app is in the background is marked seen and does not
+    /// announce itself on return, as for any run that lands while the coach
+    /// is elsewhere. Also pauses the empty state's hero ticker.
     private var nothingAbove: Bool {
-        !showSettings && !showNewMatch && !showAddSheet && !showRecorder && !showImporter
+        scenePhase == .active
+            && !showSettings && !showNewMatch && !showAddSheet && !showRecorder && !showImporter
             && courtMarkingRoute == nil && matchRoute == nil
             && createFlowTarget == nil && detailsTarget == nil && !listOverlayOpen
     }
@@ -308,39 +318,29 @@ struct HomeView: View {
     /// match. The app does not move on its own: opening the match's page
     /// would take the screen from under the coach mid-scroll.
     ///
-    /// `announceFinishedRuns` in shared owns the rule - it gates on the list
-    /// being in front with nothing above it and keeps its own seen set, so a
-    /// run that landed while the coach was elsewhere does not ambush them
-    /// later. This gathers the two sets of finished ids and builds the toast.
-    ///
-    /// A device run that found nothing (no rally, no track, no skeleton) is
-    /// left out here, from its own outcome (`Done.foundSomething`): it is not
-    /// "analyzed", and its row still offers Analyze. Not decided from the
-    /// list, which can lag a run. Cloud runs are not filtered: one that finds
-    /// no rallies fails instead of finishing.
+    /// `runToastUpdate` decides which runs, and `announceFinishedRuns` in
+    /// shared under it owns the rule - it gates on the list being in front
+    /// with nothing above it and keeps its own seen set, so a run that landed
+    /// while the coach was elsewhere does not ambush them later. This reads
+    /// the inputs and builds the toast.
     ///
     /// Reading `localAnalysis?.states` here rather than in a body is
     /// deliberate: a tracked read would redraw this view at the progress
     /// bar's rate. See the `settledRuns` comment above.
     private func announce(cloudFinished: Set<String>) {
-        let onDevice = (localAnalysis?.states ?? [:]).compactMap { id, state -> String? in
-            if case .done(let done) = state, done.foundSomething { return id } else { return nil }
-        }
-        let announcement = RunAnnouncementKt.announceFinishedRuns(
-            finished: Set(onDevice).union(cloudFinished),
+        let update = runToastUpdate(
+            deviceStates: localAnalysis?.states ?? [:],
+            cloudFinished: cloudFinished,
             seen: announcedRuns,
-            onHome: nothingAbove
+            onHome: nothingAbove,
+            // `toastRuns` is stale once the toast has gone.
+            showing: toast == nil ? nil : toastRuns
         )
-        announcedRuns = announcement.seen
-        guard !announcement.announce.isEmpty else { return }
-        // Merged with the runs the toast on screen already names, if one is
-        // up: two runs landing seconds apart read as one "2 matches" toast
-        // rather than the second wiping out the first. `toastRuns` is stale
-        // once the toast has gone, so it only counts while one shows.
-        let ids = (toast == nil ? [] : toastRuns).union(announcement.announce)
+        announcedRuns = update.seen
         // Built from the list as it is now. Nil when none of the runs is a
         // row any more (a match deleted while its run was finishing).
-        guard let message = FinishedRunMessageKt.finishedRunMessage(ids: ids, list: listModel.matchList)
+        guard let ids = update.toastRuns,
+              let message = FinishedRunMessageKt.finishedRunMessage(ids: ids, list: listModel.matchList)
         else { return }
         toastRuns = ids
         let item = message.item

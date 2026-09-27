@@ -56,7 +56,8 @@ enum ShuttlPalette {
     /// near-white in dark, the opposite of the page, so the lettering takes the
     /// OTHER theme's `accentDark`, the value that theme already letters on the
     /// same ground. Plain `accent` read 1.5:1 there in dark. Mirrors
-    /// androidApp's `inversePrimary`; see ShuttlPaletteTests.testToastReadsInBothThemes.
+    /// androidApp's `inversePrimary`; see
+    /// ShuttlPaletteTests.testToastReadsInBothThemes.
     static let inverseAccent:   Pair = (accentDark.dark, accentDark.light)
     /// The match list's analysis chips: this glyph on `accent` at
     /// `analysisChipOpacity` over the row. The accent itself is 2.4:1 on that

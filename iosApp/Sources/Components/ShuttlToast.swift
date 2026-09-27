@@ -5,7 +5,11 @@ import SwiftUI
 /// inline `ErrorBanner` is for failures that stay until dealt with.
 ///
 /// Posts a VoiceOver announcement when it appears, since a message that
-/// leaves on its own is otherwise missed by anyone not looking at it.
+/// leaves on its own is otherwise missed by anyone not looking at it. While
+/// VoiceOver runs it does not leave on its own at all: four seconds is not
+/// enough to find and activate its action by swiping. It then stays until
+/// its action, a new message, or leaving the screen. Android's snackbar with
+/// an action does the same under an accessibility service.
 ///
 /// Identity is the `id`, not the text: two runs of the same match landing a
 /// minute apart are two messages, and the toast restarts its four seconds for
@@ -26,6 +30,15 @@ struct ToastMessage: Equatable {
 private struct ShuttlToast: View {
     let message: ToastMessage
     let onDone: () -> Void
+
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
+
+    /// What the timer restarts on: a new message, or VoiceOver turning on or
+    /// off while one shows.
+    private struct TimerKey: Hashable {
+        let message: UUID
+        let voiceOver: Bool
+    }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -62,31 +75,34 @@ private struct ShuttlToast: View {
         .accessibilityElement(children: .contain)
         .task(id: message.id) {
             AccessibilityNotification.Announcement(message.text).post()
-            // Cancellation ends the wait early and still dismisses: a push over
-            // the list cancels this task, and the toast must not be waiting
-            // there when the coach comes back. A replacement cancels it too;
-            // `shuttlToast`'s dismiss ignores a message that is no longer the
-            // one showing, so the new toast keeps its own four seconds.
-            try? await Task.sleep(for: .seconds(4))
+        }
+        .task(id: TimerKey(message: message.id, voiceOver: voiceOver)) {
+            guard !voiceOver else { return }
+            // A cancelled wait dismisses nothing: the task is cancelled by a
+            // replacement and by VoiceOver changing, and neither is a reason
+            // for the message on screen to go.
+            do { try await Task.sleep(for: .seconds(4)) } catch { return }
             onDone()
         }
+        // Leaving the screen ends it, timer or not: a push over the list
+        // must not leave it waiting there when the coach comes back.
+        .onDisappear(perform: onDone)
     }
 }
 
 extension View {
     /// Shows `toast` at the bottom, `bottomInset` above the edge, until it
-    /// times out or its action runs. Setting a new message while one shows
-    /// replaces it and restarts the clock.
+    /// times out (not under VoiceOver), its action runs, or the screen goes.
+    /// Setting a new message while one shows replaces it and restarts the
+    /// clock.
     func shuttlToast(_ toast: Binding<ToastMessage?>, bottomInset: CGFloat) -> some View {
         overlay(alignment: .bottom) {
             ZStack {
                 if let message = toast.wrappedValue {
                     ShuttlToast(message: message) {
                         // Only this message's own dismissal clears the
-                        // binding. The task of a message just replaced is
-                        // cancelled and ends here too, and clearing
-                        // unconditionally would take the new message down
-                        // with it.
+                        // binding, so a late call for a message already
+                        // replaced cannot take the new one down with it.
                         if toast.wrappedValue == message { toast.wrappedValue = nil }
                     }
                     .padding(.bottom, bottomInset)

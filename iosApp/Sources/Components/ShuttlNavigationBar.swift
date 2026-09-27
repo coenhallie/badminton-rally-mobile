@@ -20,9 +20,10 @@ import SwiftUI
 /// treated differently.
 ///
 /// For a page that paints `Shuttl.bg`, which is the match page, Settings and
-/// court marking. The labels screen is deliberately NOT one of them: its `List` keeps the system's own background rather than the
-/// palette's, and a `Shuttl.bg` bar over it would seam against that in dark,
-/// where the two are 0x0B0C0D and black. That screen keeps the system bar.
+/// court marking. The labels screen is deliberately NOT one of them: its
+/// `List` keeps the system's own background rather than the palette's, and a
+/// `Shuttl.bg` bar over it would seam against that in dark, where the two are
+/// 0x0B0C0D and black. That screen keeps the system bar.
 struct ShuttlNavigationBarBackground: ViewModifier {
     func body(content: Content) -> some View {
         content

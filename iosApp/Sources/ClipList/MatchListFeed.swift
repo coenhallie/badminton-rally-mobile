@@ -12,10 +12,9 @@ import SwiftUI
 /// underneath, so this feed's stored-results probe on the list stopped
 /// whenever a match was open, which is exactly when its run lands. One
 /// instance, on the one view that is always there, is both correct and
-/// cheaper. The model
-/// still does not bridge `LocalAnalysisRunner`'s `@Observable` properties into
-/// an async sequence of its own - see `ClipListModelTests`' loop-lifecycle
-/// tests for why that would be risky.
+/// cheaper. The model still does not bridge `LocalAnalysisRunner`'s
+/// `@Observable` properties into an async sequence of its own - see
+/// `ClipListModelTests`' loop-lifecycle tests for why that would be risky.
 extension View {
     func feedsMatchList(model: ClipListModel, localAnalysis: LocalAnalysisRunner?) -> some View {
         modifier(MatchListFeed(model: model, localAnalysis: localAnalysis))
