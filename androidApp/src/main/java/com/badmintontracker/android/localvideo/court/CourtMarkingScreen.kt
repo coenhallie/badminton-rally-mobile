@@ -84,8 +84,10 @@ import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.shared.analytics.METRIC_PICKER_LINE
 import com.badmintontracker.shared.local.AnalysisMetric
 import com.badmintontracker.shared.local.DeviceThroughput
+import com.badmintontracker.shared.localvideo.court.CourtFinderStatus
 import com.badmintontracker.shared.localvideo.court.CourtMarkingSpec
 import com.badmintontracker.shared.localvideo.court.CourtMarkingState
+import com.badmintontracker.shared.localvideo.court.CourtPoint
 import com.badmintontracker.shared.model.CourtKeypoints
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -181,6 +183,7 @@ fun CourtMarkingScreen(
                     marking = marking,
                     frame = state.frame,
                     showsSavedMarks = state.showsSavedMarks,
+                    status = state.status,
                     onContinue = { savedStep = SetupStep.Options },
                 )
                 else -> OptionsStep(
@@ -253,6 +256,7 @@ private fun ColumnScope.MappingStep(
     marking: CourtMarkingState,
     frame: android.graphics.Bitmap?,
     showsSavedMarks: Boolean,
+    status: CourtFinderStatus,
     onContinue: () -> Unit,
 ) {
     // The frame takes the height its own aspect ratio asks for and no more,
@@ -289,15 +293,18 @@ private fun ColumnScope.MappingStep(
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState()),
             ) {
-                InstructionRow(marking)
+                InstructionRow(marking, status)
                 PlacementProgress(placed = marking.points.size)
                 // Said above the guide, not below it: the guide is telling him
                 // to tap landmarks that are already down, and this is the line
                 // that explains why they are. iOS says the same, from the same
-                // constant.
-                if (showsSavedMarks) {
+                // constant. The finder's note sits in the same place and gives
+                // way to it: the two only meet when Find court over saved
+                // marks finds nothing, and the marks are still the saved ones.
+                val note = if (showsSavedMarks) CourtMarkingSpec.SAVED_MARKS_NOTE else status.note
+                if (note != null) {
                     Text(
-                        text = CourtMarkingSpec.SAVED_MARKS_NOTE,
+                        text = note,
                         style = MaterialTheme.typography.bodySmall,
                         color = ShuttlTheme.extended.textTertiary,
                         modifier = Modifier
@@ -308,25 +315,41 @@ private fun ColumnScope.MappingStep(
                 }
                 SchematicCourtGuide(nextIndex = marking.nextIndex, placedCount = marking.points.size)
 
-                Row(
+                // Find court on a row of its own, not a third beside Undo and
+                // Clear: a third of a 360dp phone leaves its label about 51dp
+                // inside the button's padding, and "Find court" is 74dp at the
+                // default font scale. Undo and Clear keep the row they had.
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = PagePadding, vertical = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        ShuttlButton(
+                            text = "Undo",
+                            onClick = vm::onUndo,
+                            variant = ShuttlButtonVariant.Secondary,
+                            enabled = marking.points.isNotEmpty(),
+                            modifier = Modifier.weight(1f),
+                        )
+                        ShuttlButton(
+                            text = "Clear",
+                            onClick = vm::onClear,
+                            variant = ShuttlButtonVariant.Secondary,
+                            enabled = marking.points.isNotEmpty(),
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
                     ShuttlButton(
-                        text = "Undo",
-                        onClick = vm::onUndo,
+                        text = CourtMarkingSpec.FIND_COURT,
+                        onClick = vm::onFindCourt,
                         variant = ShuttlButtonVariant.Secondary,
-                        enabled = marking.points.isNotEmpty(),
-                        modifier = Modifier.weight(1f),
-                    )
-                    ShuttlButton(
-                        text = "Clear",
-                        onClick = vm::onClear,
-                        variant = ShuttlButtonVariant.Secondary,
-                        enabled = marking.points.isNotEmpty(),
-                        modifier = Modifier.weight(1f),
+                        enabled = !status.isBusy,
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
             }
@@ -350,7 +373,8 @@ private fun ColumnScope.MappingStep(
 }
 
 @Composable
-private fun InstructionRow(marking: CourtMarkingState) {
+private fun InstructionRow(marking: CourtMarkingState, status: CourtFinderStatus) {
+    val selected = marking.selected
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -358,7 +382,36 @@ private fun InstructionRow(marking: CourtMarkingState) {
             .padding(top = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (!marking.isComplete) {
+        val busyLine = status.busyLine
+        if (busyLine != null) {
+            // The finder is looking at the frame. It stands in for the
+            // instruction only while it works: a tap that places or moves a
+            // point wins over its answer and brings the instruction back.
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CircularProgressIndicator(
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    text = busyLine,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+            }
+        } else if (selected != null) {
+            // In the point's own colour, like the placing instruction: the
+            // ring on the frame and this line name the same point.
+            Text(
+                text = CourtMarkingSpec.moveInstruction(selected),
+                style = MaterialTheme.typography.titleLarge,
+                color = Color(CourtMarkingSpec.colors[selected]),
+                modifier = Modifier.weight(1f),
+            )
+        } else if (!marking.isComplete) {
             // Named, and in the point's own colour: twelve landmarks with
             // names as close as "Service Near-Left" and "Service Far-Left"
             // are told apart by which one the app is asking for.
@@ -420,6 +473,9 @@ private fun FrameWithOverlay(
     var layoutSize by remember { mutableStateOf(IntSize.Zero) }
     val textMeasurer = rememberTextMeasurer()
     val density = LocalDensity.current
+    // Once per marking, not per pinch frame: it fits a homography.
+    val courtLines = remember(marking) { marking.courtLines() }
+    val accent = MaterialTheme.colorScheme.primary
 
     // aspectRatio inside bounded constraints picks the largest fitting box:
     // width-limited for landscape videos, height-limited for portrait ones.
@@ -446,7 +502,16 @@ private fun FrameWithOverlay(
                     val x = (tap.x - offset.x) / scale
                     val y = (tap.y - offset.y) / scale
                     if (x in 0f..layoutSize.width.toFloat() && y in 0f..layoutSize.height.toFloat()) {
-                        vm.onTap(x, y, layoutSize.width.toFloat(), layoutSize.height.toFloat())
+                        // A point's reach is 22dp on screen at any zoom, so in
+                        // the un-zoomed layout pixels x and y are in, it
+                        // shrinks as the frame is zoomed in.
+                        vm.onTap(
+                            x,
+                            y,
+                            layoutSize.width.toFloat(),
+                            layoutSize.height.toFloat(),
+                            hitRadius = HIT_RADIUS.toPx() / scale,
+                        )
                     }
                 }
             },
@@ -473,8 +538,17 @@ private fun FrameWithOverlay(
             val markerLabelFontFamily = MaterialTheme.typography.labelSmall.fontFamily
             Canvas(modifier = Modifier.fillMaxSize()) {
                 drawCourtGuide()
-                drawCornerRectangle(marking)
+                // The court drawn through the twelve marks, once there are
+                // twelve: a mark off its paint shows as a line off the court's
+                // line, which is easier to see than a dot slightly off. The
+                // corner rectangle says less and would sit on top of it.
+                if (courtLines.isEmpty()) {
+                    drawCornerRectangle(marking)
+                } else {
+                    drawCourtLines(courtLines, marking, accent, scale)
+                }
                 drawPlacedPoints(marking, scale, density.density, textMeasurer, markerLabelFontFamily)
+                drawSelection(marking, accent, scale)
             }
         }
     }
@@ -632,6 +706,42 @@ private fun DrawScope.drawCornerRectangle(marking: CourtMarkingState) {
             pathEffect = dash,
         )
     }
+}
+
+/**
+ * The court's lines through the marks, [lines] in source pixels. 2dp on
+ * screen at any zoom, like the markers: a stroke that grew with the zoom
+ * would cover the paint it is there to be compared with.
+ */
+private fun DrawScope.drawCourtLines(
+    lines: List<Pair<CourtPoint, CourtPoint>>,
+    marking: CourtMarkingState,
+    color: Color,
+    zoom: Float,
+) {
+    val toDisplay = displayFactor(marking)
+    val width = 2.dp.toPx() / zoom
+    for ((a, b) in lines) {
+        drawLine(
+            color,
+            Offset(a.x * toDisplay.x, a.y * toDisplay.y),
+            Offset(b.x * toDisplay.x, b.y * toDisplay.y),
+            strokeWidth = width,
+        )
+    }
+}
+
+/** The ring on the point a tap picked up to move, clear of its 10dp marker at any zoom. */
+private fun DrawScope.drawSelection(marking: CourtMarkingState, color: Color, zoom: Float) {
+    val i = marking.selected ?: return
+    val p = marking.points.getOrNull(i) ?: return
+    val toDisplay = displayFactor(marking)
+    drawCircle(
+        color,
+        radius = 16.dp.toPx() / zoom,
+        center = Offset(p.x * toDisplay.x, p.y * toDisplay.y),
+        style = Stroke(width = 3.dp.toPx() / zoom),
+    )
 }
 
 private fun DrawScope.drawPlacedPoints(
@@ -803,12 +913,15 @@ suspend fun loadFirstFrame(context: Context, uri: Uri): CourtFrame =
 /** Only when the container does not say; most do. */
 private const val DEFAULT_FPS = 30.0
 
+/** How far from a placed point, on screen, a tap still picks it up to move. */
+private val HIT_RADIUS = 22.dp
+
 /** The mock's page margin, and the app's elsewhere. */
 private val PagePadding = 24.dp
 
 /**
  * The legend's court. Smaller than the 160dp it was: it shares the guidance
- * area with the instruction, the progress bar and the two edit buttons, and
+ * area with the instruction, the progress bar and the edit buttons, and
  * that area is now what is left after the frame.
  */
 private val SCHEMATIC_HEIGHT = 128.dp
