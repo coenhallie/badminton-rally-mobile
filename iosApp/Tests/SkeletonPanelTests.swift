@@ -105,8 +105,8 @@ final class SkeletonPanelTests: XCTestCase {
         XCTAssertFalse(model.hasCourt)
         // One entry per pose either way: the angles are measurable without a
         // court, and only the two court-plane fields go null.
-        // Keyed by side now. A v2 file is one near track, so there is exactly
-        // one entry and it is the near one.
+        // Keyed by side now. A device save is one near track, so there is
+        // exactly one entry and it is the near one.
         XCTAssertEqual(loaded.seriesBySide.keys.map(\.self), [.near])
         XCTAssertEqual(model.shownSeries.count, 4)
         XCTAssertNil(model.shownSeries[0].metrics.stanceM)
