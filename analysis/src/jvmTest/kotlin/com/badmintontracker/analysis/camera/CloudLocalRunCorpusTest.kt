@@ -49,17 +49,11 @@ import kotlin.test.Test
  * it.
  *
  * The three bounds are checked together, so an accuracy miss is reported
- * whatever the coverage does.
- *
- * Known red on coverage (2026-09-27: 0.916 against 0.95; median 6.8 cm and
- * p95 22.7 cm pass). The misses are the cloud's own court-area pre-filter, not
- * the camera: it tests the box bottom, not the ankles, against the marked
- * corners plus 2%, so when she stands at the near baseline (frames 729-794,
- * 1736-1791, 2132-2182) the cloud drops her before the pose file is written
- * and this selection never sees her. Admitting by the ankles as well reaches
- * 0.974 (median 6.7 cm, p95 22.4 cm) but also admitted officials on another
- * video's cut shots, so it is not in; the gate stays at §8.6's bound until
- * the filter is settled.
+ * whatever the coverage does. Coverage depends on the cloud's court-area
+ * filter admitting her by her ankles while the camera is followed
+ * (badminton-tracker `court_area_admits`): with the box bottom alone it
+ * dropped her whenever she stood at the near baseline, and this read 0.916.
+ * With it, 2026-09-27: 0.974, median 6.8 cm, p95 22.4 cm.
  *
  * BLOCKED on a corpus: skips loudly unless the harness has written
  * `~/shuttl-corpus/IMG_5892/cloud-local/poses.raw` next to the corpus's
