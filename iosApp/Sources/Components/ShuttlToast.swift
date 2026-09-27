@@ -79,18 +79,24 @@ extension View {
     /// replaces it and restarts the clock.
     func shuttlToast(_ toast: Binding<ToastMessage?>, bottomInset: CGFloat) -> some View {
         overlay(alignment: .bottom) {
-            if let message = toast.wrappedValue {
-                ShuttlToast(message: message) {
-                    // Only this message's own dismissal clears the binding. The
-                    // task of a message just replaced is cancelled and ends
-                    // here too, and clearing unconditionally would take the
-                    // new message down with it.
-                    if toast.wrappedValue == message { toast.wrappedValue = nil }
+            ZStack {
+                if let message = toast.wrappedValue {
+                    ShuttlToast(message: message) {
+                        // Only this message's own dismissal clears the
+                        // binding. The task of a message just replaced is
+                        // cancelled and ends here too, and clearing
+                        // unconditionally would take the new message down
+                        // with it.
+                        if toast.wrappedValue == message { toast.wrappedValue = nil }
+                    }
+                    .padding(.bottom, bottomInset)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
-                .padding(.bottom, bottomInset)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
+            // On the toast's own container, not the screen: a run that lands
+            // changes its row in the same update that raises the toast, and
+            // the row must not animate along with it.
+            .animation(.default, value: toast.wrappedValue)
         }
-        .animation(.default, value: toast.wrappedValue)
     }
 }

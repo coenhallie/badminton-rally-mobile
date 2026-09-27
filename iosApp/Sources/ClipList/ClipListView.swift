@@ -143,10 +143,9 @@ struct MatchesList: View {
         .refreshable { await model.refresh() }
         .onChange(of: overlayOpen, initial: true) { _, open in onOverlayChange(open) }
         // If this list is torn down while one of its own sheets or dialogs is
-        // still open (a sign-out that unmounts it, say), the `onChange`
-        // above never fires false and the flag it reported upward would
-        // stick open for good, permanently blocking "nothing above the
-        // list". This is the reset for exactly that case.
+        // still open, the `onChange` above never fires false and the flag it
+        // reported upward would stick open for good, permanently blocking
+        // "nothing above the list". This is the reset for exactly that case.
         .onDisappear { onOverlayChange(false) }
     }
 
