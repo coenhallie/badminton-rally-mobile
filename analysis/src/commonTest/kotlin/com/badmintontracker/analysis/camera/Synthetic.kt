@@ -22,14 +22,40 @@ object Synthetic {
      * inside the same window, off-centring the window's gradient energy by as
      * much as 4 px from the tracked point. Lucas-Kanade fits one translation
      * per window; under a small local rotation the fit is biased by roughly
-     * the rotation angle times that off-centre distance, which measured
-     * 0.13-0.35 px against LucasKanadeTest's rotation case - over its 0.1 px
-     * bound. Confirmed not a pyramid or convergence bug: tracking the same
-     * corners through a single-level pyramid reproduced the same bias to
-     * three decimal places. The grid keeps neighbours outside the window so
-     * only the corner's own blob contributes, and a smaller sigma (0.9 to 1.4
-     * px) keeps that blob's own centre-to-corner offset small; both together
-     * bring the measured bias to 0.086 px.
+     * the rotation angle times that off-centre distance. On the unmodified
+     * random-scatter texture (seed 7) that measured 0.346 px against
+     * LucasKanadeTest's rotation case, over its bound. Confirmed not a
+     * pyramid or convergence bug: tracking the same corners through a
+     * single-level pyramid reproduced the same bias to three decimal places.
+     *
+     * The grid keeps neighbours outside the window so only the corner's own
+     * blob contributes, and a smaller sigma (0.9 to 1.4 px) keeps that
+     * blob's own centre-to-corner offset small. This is a per-point,
+     * per-texture bias, not a single number: it varies by seed because it
+     * depends on how each seed's random jitter happens to place blobs
+     * relative to the corners Shi-Tomasi picks. Measured worst case in
+     * LucasKanadeTest's rotation case on this texture, per seed:
+     *
+     * | seed | worst (px) |
+     * |------|------------|
+     * | 2    | 0.118      |
+     * | 3    | 0.113      |
+     * | 7    | 0.086      |
+     * | 11   | 0.088      |
+     * | 13   | 0.088      |
+     * | 42   | 0.083      |
+     *
+     * `LucasKanadeTest` bounds this at 0.15 px over seeds 2, 3, 7 and 11 (see
+     * its KDoc for why that bound, not a tighter one, is the right test).
+     *
+     * This configuration (pitch 22, jitter 2, sigma 0.9-1.4, amplitude 20)
+     * is a narrow working point, not a wide plateau: it was chosen from
+     * roughly a dozen pitch/jitter/sigma/amplitude combinations, and nearby
+     * ones fail differently (pitch 21 relocked the 30 px pan case onto the
+     * wrong basin at over 5 px; jitter 1.5 or 0 pushed the rotation case
+     * back over 0.11-0.13 px). Anyone editing the constants below must
+     * re-run both `CornersTest` and `LucasKanadeTest`, not just skim the
+     * diff.
      */
     fun texture(width: Int, height: Int, seed: Int): GreyImage {
         val r = Random(seed)
