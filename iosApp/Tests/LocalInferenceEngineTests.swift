@@ -246,6 +246,17 @@ final class LocalInferenceEngineTests: XCTestCase {
     /// a simulator process is the app's own container. A simulator process can
     /// read the host's files directly, so the 1080p video is read in place
     /// rather than copied into the container first.
+    /// Read as a value rather than fencing the body with `#if`, as
+    /// `ThroughputMeasurementTests` does, so the test keeps compiling on every
+    /// ordinary build and cannot rot behind a flag nobody sets.
+    private var handheldCorpusRunEnabled: Bool {
+        #if RUN_HANDHELD_CORPUS_TEST
+        return true
+        #else
+        return false
+        #endif
+    }
+
     private var corpus: URL? {
         ProcessInfo.processInfo.environment["SIMULATOR_HOST_HOME"].map {
             URL(fileURLWithPath: $0).appendingPathComponent("shuttl-corpus/IMG_5892", isDirectory: true)
@@ -268,17 +279,31 @@ final class LocalInferenceEngineTests: XCTestCase {
     /// `ref_track` does, so frame `k` is reference `k` (the cloud's frames are
     /// the ones numbered from 1).
     ///
-    /// Skips unless the corpus is on this Mac, and costs minutes when it is:
-    /// every one of the 2,182 frames pays TrackNet, the detector and pose. Run
-    /// it in the Release configuration, since the camera tracker in a Debug
-    /// Kotlin framework is some 28 times slower:
+    /// Opt-in, like `ThroughputMeasurementTests`: skipped unless the app is
+    /// built with `-D RUN_HANDHELD_CORPUS_TEST`, then skipped again unless the
+    /// corpus is on this Mac. The corpus alone cannot be the gate, because
+    /// `SIMULATOR_HOST_HOME` is set in every simulator run: on a Mac holding
+    /// the corpus every ordinary unit run would pay minutes for it, since each
+    /// of the 2,182 frames pays TrackNet, the detector and pose. A compile flag
+    /// rather than an environment variable for the reason that file gives:
+    /// `xcodebuild test` forwards neither into a unit-test bundle hosted in an
+    /// app.
+    ///
+    /// Run it in the Release configuration, since the camera tracker in a
+    /// Debug Kotlin framework is some 28 times slower (about 6.5 minutes on
+    /// the simulator in Release):
     ///
     ///     xcodebuild test -project iosApp/iosApp.xcodeproj -scheme iosApp \
     ///       -configuration Release ENABLE_TESTABILITY=YES \
     ///       -destination "platform=iOS Simulator,name=iPhone 17 Pro" \
     ///       -only-testing:iosAppTests/LocalInferenceEngineTests/testAHandheldRecordingPutsTheNearPlayerWhereTheReferenceHasHer \
-    ///       CODE_SIGNING_ALLOWED=NO
+    ///       CODE_SIGNING_ALLOWED=NO \
+    ///       OTHER_SWIFT_FLAGS='$(inherited) -D RUN_HANDHELD_CORPUS_TEST'
     func testAHandheldRecordingPutsTheNearPlayerWhereTheReferenceHasHer() async throws {
+        try XCTSkipUnless(
+            handheldCorpusRunEnabled,
+            "build with -D RUN_HANDHELD_CORPUS_TEST to analyse the handheld corpus recording"
+        )
         guard let directory = corpus else {
             throw XCTSkip("SIMULATOR_HOST_HOME is not set: this test reads the corpus off the host Mac")
         }
@@ -357,6 +382,12 @@ final class LocalInferenceEngineTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(track.coverage, 0.95, "coverage")
         XCTAssertLessThanOrEqual(median, 0.05, "median error in metres")
         XCTAssertLessThanOrEqual(p95, 0.15, "p95 error in metres")
+        // A frame the reference lacks is left out of the bounds above, so a
+        // join gone wrong (off by one, say) must not pass by shrinking them.
+        XCTAssertLessThanOrEqual(
+            Double(withoutReference), 0.01 * Double(track.samples.count),
+            "\(withoutReference) of \(track.samples.count) positions had no reference frame"
+        )
     }
 
     /// `marks_ideal.json`'s `manual_court_keypoints`, source pixels, by the
