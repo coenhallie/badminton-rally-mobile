@@ -182,9 +182,11 @@ private fun percentile(sorted: DoubleArray, q: Double): Double {
  * point at the same vanishing points) are on the other side. A line is kept
  * when its support midpoint is at least 1% of the image height floor-side;
  * when the two points are both at infinity (the horizon is itself at
- * infinity) the filter is skipped.
+ * infinity) the filter is skipped. `horizon = false` skips it too: the
+ * probe's corner-guided `search_near()` groups the lines without it, the
+ * taps being what rules out a ceiling or balcony there.
  */
-internal fun lineFamilies(lines: List<CandidateLine>, width: Int, height: Int): LineFamilies? {
+internal fun lineFamilies(lines: List<CandidateLine>, width: Int, height: Int, horizon: Boolean = true): LineFamilies? {
     val homogeneous = lines.map { doubleArrayOf(cos(it.theta), sin(it.theta), -it.rho) }
     var remaining = lines.indices.toList()
     val groups = ArrayList<List<Int>>()
@@ -215,6 +217,7 @@ internal fun lineFamilies(lines: List<CandidateLine>, width: Int, height: Int): 
     if (groups.size < 2) return null
 
     var families = groups.map { g -> g.map { lines[it] } }
+    if (!horizon) return LineFamilies(families[0], families[1])
     val hz = cross(points[0], points[1])
     val hn = hypot(hz[0], hz[1])
     if (hn > 1e-9 * max(1.0, abs(hz[2]))) {

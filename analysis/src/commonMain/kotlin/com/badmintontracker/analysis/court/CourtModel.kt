@@ -2,6 +2,7 @@ package com.badmintontracker.analysis.court
 
 import com.badmintontracker.analysis.geometry.COURT_KEYPOINT_POSITIONS
 import com.badmintontracker.analysis.geometry.Point
+import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.hypot
 import kotlin.math.max
@@ -110,5 +111,29 @@ internal object CourtModel {
                 add(doubleArrayOf(x1, y2, x1, y1, x2, y1, x2, y2))
             }
         }
+    }
+
+    /**
+     * Per [RECTANGLES] entry, the affine map taking its four corners, in
+     * their listed order, to the unit square's `(0,0), (1,0), (1,1), (0,1)`,
+     * as `[a, b, c, d, e, f]` for `u = a x + b y + c`, `v = d x + e y + f`.
+     * Every listed order walks the rectangle's boundary, so an affine map
+     * (a reflection for the orders that walk it the other way round) fitted
+     * to the first three corners also carries the fourth; checked here.
+     * Search composes a quad's unit-square homography with these, which is
+     * why it needs no per-placement solve (design §4.5).
+     */
+    val RECTANGLE_TO_SQUARE: List<DoubleArray> = RECTANGLES.map { r ->
+        // Solve M (r1 - r0) = (1, 0) and M (r2 - r1) = (0, 1), then t = -M r0.
+        val e1x = r[2] - r[0]; val e1y = r[3] - r[1]
+        val e2x = r[4] - r[2]; val e2y = r[5] - r[3]
+        val det = e1x * e2y - e2x * e1y
+        val a = e2y / det; val b = -e2x / det
+        val d = -e1y / det; val e = e1x / det
+        val m = doubleArrayOf(a, b, -(a * r[0] + b * r[1]), d, e, -(d * r[0] + e * r[1]))
+        val u3 = m[0] * r[6] + m[1] * r[7] + m[2]
+        val v3 = m[3] * r[6] + m[4] * r[7] + m[5]
+        check(abs(u3) < 1e-9 && abs(v3 - 1.0) < 1e-9) { "rectangle corners do not walk its boundary" }
+        m
     }
 }
