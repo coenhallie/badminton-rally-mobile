@@ -63,8 +63,14 @@ class LocalAnalysisCoordinatorTest {
         private val progress: List<Float> = listOf(0.25f, 0.5f, 0.75f),
     ) : LocalInferenceEngine {
         var ran = 0
-        override suspend fun run(videoPath: String, onProgress: (Float) -> Unit): RawInference {
+        var markingTimeS: Double? = null
+        override suspend fun run(
+            videoPath: String,
+            markingTimeS: Double?,
+            onProgress: (Float) -> Unit,
+        ): RawInference {
             ran++
+            this.markingTimeS = markingTimeS
             progress.forEach(onProgress)
             failure?.let { throw it }
             return inference!!
@@ -198,5 +204,42 @@ class LocalAnalysisCoordinatorTest {
         val engine = FakeEngine(twoExchanges())
         coordinator(engine).analyze("/tmp/m.mp4", keypoints)
         engine.ran shouldBe 1
+    }
+
+    @Test
+    fun the_engine_follows_the_camera_from_the_time_the_marks_carry() = runTest {
+        val engine = FakeEngine(twoExchanges())
+        val asked = mutableListOf<String>()
+
+        LocalAnalysisCoordinator(engine, legacyMarkingTime = { asked += it; 0.7 })
+            .analyze("/tmp/m.mp4", keypoints.copy(markedAtSeconds = 1.0))
+            .getOrThrow()
+
+        engine.markingTimeS shouldBe 1.0
+        // Only marks without a time need the platform's answer, which on iOS
+        // costs a frame decode.
+        asked shouldBe emptyList()
+    }
+
+    @Test
+    fun marks_without_a_time_ask_the_platform_when_they_were_drawn() = runTest {
+        val engine = FakeEngine(twoExchanges())
+        val asked = mutableListOf<String>()
+
+        LocalAnalysisCoordinator(engine, legacyMarkingTime = { asked += it; 0.7 })
+            .analyze("/tmp/m.mp4", keypoints)
+            .getOrThrow()
+
+        engine.markingTimeS shouldBe 0.7
+        asked shouldBe listOf("/tmp/m.mp4")
+    }
+
+    @Test
+    fun marks_without_a_time_default_to_the_frame_every_marking_screen_seeks_to() = runTest {
+        val engine = FakeEngine(twoExchanges())
+
+        coordinator(engine).analyze("/tmp/m.mp4", keypoints).getOrThrow()
+
+        engine.markingTimeS shouldBe 0.1
     }
 }

@@ -73,12 +73,16 @@ final class IosLocalInferenceEngine: NSObject, LocalInferenceEngine {
     /// a Kotlin caller still sees `engine.run(...)`.
     func __run(
         videoPath: String,
+        markingTimeS: KotlinDouble?,
         onProgress: @escaping (KotlinFloat) -> Void,
         completionHandler: @escaping @Sendable (RawInference?, Error?) -> Void
     ) {
         Self.queue.async {
             do {
-                let raw = try self.rawInference(videoPath: videoPath) { onProgress(KotlinFloat(float: $0)) }
+                let raw = try self.rawInference(
+                    videoPath: videoPath,
+                    markingTimeS: markingTimeS?.doubleValue
+                ) { onProgress(KotlinFloat(float: $0)) }
                 completionHandler(raw, nil)
             } catch {
                 completionHandler(nil, error)
@@ -108,7 +112,15 @@ final class IosLocalInferenceEngine: NSObject, LocalInferenceEngine {
     /// would get a process abort instead of a catchable error.
     ///
     /// So Swift callers use this, and the round trip does not exist.
-    func rawInference(videoPath: String, onProgress: @escaping (Float) -> Void) throws -> RawInference {
+    ///
+    /// - Parameter markingTimeS: when in the video the court was marked; the
+    ///   engine follows the camera from that frame when it runs pose. Nil: do
+    ///   not follow the camera.
+    func rawInference(
+        videoPath: String,
+        markingTimeS: Double?,
+        onProgress: @escaping (Float) -> Void
+    ) throws -> RawInference {
         let url = URL(fileURLWithPath: videoPath)
         guard FileManager.default.isReadableFile(atPath: url.path) else {
             throw Failure.noSuchVideo(videoPath)

@@ -45,7 +45,8 @@ final class LocalAnalysisRunnerTests: XCTestCase {
             netLeft: point(0.1, 0.55), netRight: point(0.9, 0.55),
             serviceLineNearLeft: point(0.08, 0.75), serviceLineNearRight: point(0.92, 0.75),
             serviceLineFarLeft: point(0.22, 0.3), serviceLineFarRight: point(0.78, 0.3),
-            centerNear: point(0.5, 0.9), centerFar: point(0.5, 0.2)
+            centerNear: point(0.5, 0.9), centerFar: point(0.5, 0.2),
+            markedAtSeconds: nil
         )
     }
 

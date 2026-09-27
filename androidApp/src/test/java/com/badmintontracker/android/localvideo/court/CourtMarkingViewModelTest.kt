@@ -95,6 +95,14 @@ class CourtMarkingViewModelTest {
     }
 
     @Test
+    fun marks_placed_here_carry_the_time_of_the_frame_they_were_drawn_on() = runTest {
+        val vm = vm()
+        repeat(12) { vm.onTap(displayX = 10f, displayY = 10f, displayWidth = 192f, displayHeight = 108f) }
+
+        vm.state.value.marking!!.toCourtKeypoints().markedAtSeconds shouldBe 0.1
+    }
+
+    @Test
     fun frame_load_failure_sets_error() = runTest {
         vm(loadOk = false).state.value.error shouldBe "no frame"
     }

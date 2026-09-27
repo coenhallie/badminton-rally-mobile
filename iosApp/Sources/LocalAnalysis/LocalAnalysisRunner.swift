@@ -465,7 +465,20 @@ final class LocalAnalysisRunner {
         await MainActor.run { set(.analysing(fraction: 0), for: entryId) }
 
         let engine = IosLocalInferenceEngine(wantsPose: wantsPose)
-        let coordinator = LocalAnalysisCoordinator(engine: engine, log: log)
+        // Marks saved before they carried a time were drawn on whichever frame
+        // the marking screen's generator returned, often a later sync frame
+        // than the 0.1 s it asked for. Asked again, the same way, it names that
+        // frame, and the camera is followed from there.
+        let coordinator = LocalAnalysisCoordinatorIosKt.createIosLocalAnalysisCoordinator(
+            engine: engine,
+            log: log,
+            legacyMarkingTime: { path, done in
+                Task {
+                    let seconds = await CourtFrameLoader.stillSeconds(url: URL(fileURLWithPath: path))
+                    done(KotlinDouble(value: seconds))
+                }
+            }
+        )
 
         // analyzeThrowing, not analyze: Kotlin's Result reaches Objective-C as a
         // bare id, so a failed analysis would cast to nil in Swift and read as

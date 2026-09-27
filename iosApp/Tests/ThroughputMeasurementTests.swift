@@ -77,7 +77,7 @@ final class ThroughputMeasurementTests: XCTestCase {
         for wantsPose in [false, true] {
             let engine = IosLocalInferenceEngine(wantsPose: wantsPose)
             let started = Date()
-            let raw = try engine.rawInference(videoPath: url.path) { _ in }
+            let raw = try engine.rawInference(videoPath: url.path, markingTimeS: nil) { _ in }
             let elapsed = Date().timeIntervalSince(started)
             XCTAssertEqual(raw.frames.count, frames)
             let perFrame = elapsed / Double(frames) * 1000

@@ -54,14 +54,15 @@ final class LocalInferenceEngineTests: XCTestCase {
             netLeft: point(0.1, 0.55), netRight: point(0.9, 0.55),
             serviceLineNearLeft: point(0.08, 0.75), serviceLineNearRight: point(0.92, 0.75),
             serviceLineFarLeft: point(0.22, 0.3), serviceLineFarRight: point(0.78, 0.3),
-            centerNear: point(0.5, 0.9), centerFar: point(0.5, 0.2)
+            centerNear: point(0.5, 0.9), centerFar: point(0.5, 0.2),
+            markedAtSeconds: nil
         )
     }
 
     func testTheEngineEmitsOneRecordPerDecodedFrame() throws {
         let frames = 12
         let url = try video(frames: frames)
-        let raw = try IosLocalInferenceEngine().rawInference(videoPath: url.path) { _ in }
+        let raw = try IosLocalInferenceEngine().rawInference(videoPath: url.path, markingTimeS: nil) { _ in }
 
         // Every decoded frame gets a record, present or absent. A sparse list
         // would make the rally detectors' frame arithmetic wrong: they index by
@@ -76,7 +77,7 @@ final class LocalInferenceEngineTests: XCTestCase {
 
     func testTimestampsComeFromTheContainerAndIncrease() throws {
         let url = try video(frames: 12)
-        let raw = try IosLocalInferenceEngine().rawInference(videoPath: url.path) { _ in }
+        let raw = try IosLocalInferenceEngine().rawInference(videoPath: url.path, markingTimeS: nil) { _ in }
         let timestamps = raw.frames.map(\.timestamp)
         XCTAssertEqual(timestamps, timestamps.sorted())
         XCTAssertEqual(Set(timestamps).count, timestamps.count)
@@ -91,7 +92,7 @@ final class LocalInferenceEngineTests: XCTestCase {
     /// video - shuttle positions fabricated past the end.
     func testATrailingPartialSequenceDoesNotFabricateFrames() throws {
         let url = try video(frames: 12)
-        let raw = try IosLocalInferenceEngine().rawInference(videoPath: url.path) { _ in }
+        let raw = try IosLocalInferenceEngine().rawInference(videoPath: url.path, markingTimeS: nil) { _ in }
         XCTAssertEqual(raw.frames.count, 12)
         XCTAssertTrue(raw.frames.allSatisfy { $0.frame < 12 })
     }
@@ -102,7 +103,7 @@ final class LocalInferenceEngineTests: XCTestCase {
         // over minutes of remaining work.
         let url = try video(frames: 24)
         let progress = Progress()
-        _ = try IosLocalInferenceEngine().rawInference(videoPath: url.path) { progress.record($0) }
+        _ = try IosLocalInferenceEngine().rawInference(videoPath: url.path, markingTimeS: nil) { progress.record($0) }
         XCTAssertFalse(progress.values.isEmpty, "the engine reported no progress at all")
         XCTAssertTrue(progress.values.allSatisfy { $0 < 1 }, "engine reported completion: \(progress.values)")
         XCTAssertEqual(progress.values, progress.values.sorted())
@@ -121,7 +122,7 @@ final class LocalInferenceEngineTests: XCTestCase {
         // which looks exactly like a finished analysis of a quiet match.
         do {
             _ = try IosLocalInferenceEngine()
-                .rawInference(videoPath: scratch.appendingPathComponent("absent.mp4").path) { _ in }
+                .rawInference(videoPath: scratch.appendingPathComponent("absent.mp4").path, markingTimeS: nil) { _ in }
             XCTFail("a missing video should fail the run")
         } catch {
             // Expected.
@@ -137,7 +138,11 @@ final class LocalInferenceEngineTests: XCTestCase {
     /// bridge, the error channel and the court keypoint conversion.
     func testTheSharedCoordinatorDrivesTheSwiftEngine() async throws {
         let url = try video(frames: 12)
-        let coordinator = LocalAnalysisCoordinator(engine: IosLocalInferenceEngine(), log: { _ in })
+        let coordinator = LocalAnalysisCoordinatorIosKt.createIosLocalAnalysisCoordinator(
+            engine: IosLocalInferenceEngine(),
+            log: { _ in },
+            legacyMarkingTime: { _, done in done(KotlinDouble(value: 0.1)) }
+        )
         // analyzeThrowing, not analyze: Kotlin's Result reaches Objective-C as
         // a bare id, so `analyze` cannot tell success from failure in Swift.
         // See the wrapper's own note in SwiftInterop.kt.

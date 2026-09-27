@@ -54,6 +54,7 @@ class AndroidLocalInferenceEngine(
 
     override suspend fun run(
         videoPath: String,
+        markingTimeS: Double?,
         onProgress: (Float) -> Unit,
     ): RawInference = withContext(Dispatchers.Default) {
         val file = File(videoPath)

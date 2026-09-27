@@ -124,11 +124,7 @@ struct CourtMarkingView: View {
                 // starts and were read back by nothing, so a second run over a
                 // video - cloud after device, a different metric set, a retry
                 // that falls through to here - meant placing all twelve again.
-                let restored = CourtMarkingState.companion.restored(
-                    videoWidth: Int32(loaded.image.size.width * loaded.image.scale),
-                    videoHeight: Int32(loaded.image.size.height * loaded.image.scale),
-                    keypoints: entry.keypoints
-                )
+                let restored = loaded.marking(restoring: entry.keypoints)
                 marking = restored
                 showsSavedMarks = restored.isComplete
                 // What this phone has learned about itself, if anything. Read

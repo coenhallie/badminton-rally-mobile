@@ -53,6 +53,17 @@ data class LocalAnalysisOutcome(
 class LocalAnalysisCoordinator(
     private val engine: LocalInferenceEngine,
     private val log: (String) -> Unit = {},
+    /**
+     * When in the video at [analyze]'s path marks that carry no time were
+     * drawn, asked only for such marks.
+     *
+     * 0.1 s by default: the frame Android's marking screen and the web app
+     * both seek to. iOS answers otherwise, because its marking screen lets
+     * AVFoundation hand back a later sync frame (1.0 s on a real recording,
+     * camera-motion design §3); it asks the same generator the screen used,
+     * with the same tolerances, which frame that was.
+     */
+    private val legacyMarkingTime: suspend (videoPath: String) -> Double = { DEFAULT_MARKING_TIME_S },
 ) {
 
     /**
@@ -71,7 +82,10 @@ class LocalAnalysisCoordinator(
         // Clamped below 1.0: completion is this coordinator's to report, after
         // the analysis that follows inference, not the engine's when decoding
         // stops.
-        val raw = engine.run(videoPath) { onProgress(it.coerceAtMost(0.999f)) }
+        // The marks' own time when they carry one: the camera is followed
+        // from the frame the coach drew on, whatever the video did after it.
+        val markingTimeS = keypoints.markedAtSeconds ?: legacyMarkingTime(videoPath)
+        val raw = engine.run(videoPath, markingTimeS) { onProgress(it.coerceAtMost(0.999f)) }
         log("inference produced ${raw.frames.size} frames")
 
         val outcome = analyse(raw, keypoints, videoPath)
@@ -175,4 +189,9 @@ class LocalAnalysisCoordinator(
 
     private fun durationSeconds(totalFrames: Int, fps: Double): Double =
         if (fps > 0) totalFrames / fps else 0.0
+
+    companion object {
+        /** Where Android's marking screen and the web app's `CourtSetup.vue` seek. */
+        const val DEFAULT_MARKING_TIME_S = 0.1
+    }
 }

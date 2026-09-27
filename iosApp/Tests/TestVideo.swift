@@ -45,20 +45,29 @@ enum TestVideo {
         Int(((Double(luma) - Double(lumaBase)) / Double(lumaStep)).rounded())
     }
 
+    /// - Parameter maxKeyFrameInterval: frames between sync frames, or nil for
+    ///   the encoder's own choice. Set it to make a clip whose only sync frame
+    ///   after the first is far in, the shape that sends an image generator
+    ///   with an open tolerance to a later frame than the one asked for.
     static func write(
         frames: Int,
         fps: Int32 = 30,
         width: Int = 64,
         height: Int = 64,
+        maxKeyFrameInterval: Int? = nil,
         to url: URL,
         test: XCTestCase
     ) throws {
         let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
-        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
+        var settings: [String: Any] = [
             AVVideoCodecKey: AVVideoCodecType.h264,
             AVVideoWidthKey: width,
             AVVideoHeightKey: height,
-        ])
+        ]
+        if let maxKeyFrameInterval {
+            settings[AVVideoCompressionPropertiesKey] = [AVVideoMaxKeyFrameIntervalKey: maxKeyFrameInterval]
+        }
+        let input = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
         input.expectsMediaDataInRealTime = false
         let adaptor = AVAssetWriterInputPixelBufferAdaptor(
             assetWriterInput: input,
