@@ -53,29 +53,42 @@ import kotlin.math.hypot
  * files dir, so a miss can be looked into on a computer without another run
  * on the device.
  *
+ * Opt-in, like its iOS sibling in `LocalInferenceEngineTests`: skipped unless
+ * run with `-e runHandheld true`, then skipped again unless the three corpus
+ * files are on the device. The files alone cannot be the gate. They survive
+ * reinstalls, so every later instrumented run on that device would pay twenty
+ * minutes for this, and on an emulator launched the usual way it would never
+ * finish (below).
+ *
  * Takes about twenty minutes on the emulator, which needs two things a phone
  * does not. Its hardware HEVC decoder (`c2.goldfish.hevc.decoder`) accepts
  * this recording's samples and never returns a frame, so the pass waits
- * forever: start it with `-feature -HardwareDecoder` for the software
+ * forever: launch it with `-feature -HardwareDecoder` for the software
  * decoder. And the three models at work need more than a 2 GB AVD has, so
- * give it `-memory 6144`. Run it with
- * `am instrument` on an installed build, not `connectedAndroidTest`, which
- * uninstalls the app afterwards and with it the signed-in session:
+ * give it `-memory 6144`. Note that a launch without `-no-snapshot-load`
+ * restores the AVD's quickboot snapshot, and with it that snapshot's app data.
  *
+ * Run it with `am instrument` on an installed build (`assembleDebug`,
+ * `assembleDebugAndroidTest`, then `adb install -r` of both APKs), not with
+ * `connectedAndroidTest`, which uninstalls the app afterwards and with it the
+ * signed-in session:
+ *
+ *   emulator -avd Pixel_9a -dns-server 8.8.8.8,1.1.1.1 -no-snapshot-save \
+ *     -feature -HardwareDecoder -memory 6144
  *   adb push ~/shuttl-corpus/IMG_5892/source.mov /data/local/tmp/IMG_5892.mov
  *   adb push ~/shuttl-corpus/IMG_5892/marks_ideal.json /data/local/tmp/IMG_5892.marks_ideal.json
  *   adb push ~/shuttl-corpus/IMG_5892/reference_tracks.json /data/local/tmp/IMG_5892.reference_tracks.json
- *   adb shell am instrument -w -e class com.badmintontracker.android.localanalysis.CameraFollowedRunTest \
+ *   adb shell am instrument -w -e runHandheld true \
+ *     -e class com.badmintontracker.android.localanalysis.CameraFollowedRunTest \
  *     com.badmintontracker.android.test/androidx.test.runner.AndroidJUnitRunner
  *
- * Arguments (`-e`): `frames` caps the pass for a quick check of the plumbing
- * (the bounds still apply); `entryId` also stores the run's track, skeleton,
- * clips and video under that local entry, the files `LocalAnalysisRunner`
- * leaves, so the match page can draw this run.
+ * Other arguments (`-e`): `handheldFrames` caps the pass for a quick check of
+ * the plumbing (the bounds still apply); `entryId` also stores the run's
+ * track, skeleton, clips and video under that local entry, the files
+ * `LocalAnalysisRunner` leaves, so the match page can draw this run.
  *
- * Skips, and says why, when any of the three files is not on the device. A
- * skip also prints `OK` from `am instrument`: read the `CameraFollowedRun` log
- * for the numbers.
+ * A skip also prints `OK` from `am instrument`: read the `CameraFollowedRun`
+ * log for the numbers.
  */
 @RunWith(AndroidJUnit4::class)
 class CameraFollowedRunTest {
@@ -85,6 +98,12 @@ class CameraFollowedRunTest {
 
     @Test
     fun a_handheld_recording_puts_the_near_player_where_the_reference_has_her() {
+        // First, before the files are even looked at: staging the video alone
+        // copies 76 MB.
+        assumeTrue(
+            "SKIPPED: opt-in; run with -e $OPT_IN true (see the KDoc for the command and the emulator flags)",
+            arguments.getString(OPT_IN) == "true",
+        )
         val marksFile = pushed(MARKS)
         val referenceFile = pushed(REFERENCE)
         val video = stagedCorpusVideo(context, VIDEO)
@@ -93,7 +112,7 @@ class CameraFollowedRunTest {
                 "to /data/local/tmp as $VIDEO, $MARKS and $REFERENCE (see the KDoc)",
             video != null && marksFile != null && referenceFile != null,
         )
-        val frames = arguments.getString("frames")?.toIntOrNull() ?: Int.MAX_VALUE
+        val frames = arguments.getString(FRAMES)?.toIntOrNull() ?: Int.MAX_VALUE
         val keypoints = parseMarks(marksFile!!)
         val reference = parseReference(referenceFile!!)
 
@@ -324,6 +343,8 @@ class CameraFollowedRunTest {
 
     private companion object {
         const val TAG = "CameraFollowedRun"
+        const val OPT_IN = "runHandheld"
+        const val FRAMES = "handheldFrames"
         const val VIDEO = "IMG_5892.mov"
         const val MARKS = "IMG_5892.marks_ideal.json"
         const val REFERENCE = "IMG_5892.reference_tracks.json"
