@@ -1,9 +1,9 @@
 # Design: one match page for everything about a match, and no Analytics tab
 
 **Date:** 2026-09-26
-**Status:** draft for review. The direction, the toggles, dropping the bar, the
-Match section and the announcement were agreed in conversation; the rest is new
-in this document
+**Status:** implemented on `feat/match-page-hub` (2026-09-27); real-phone checks
+and an account with cloud matches still open. Where the build differs from
+section 2, section 7 says so and why
 **Asked for:** "Investigate how we can better distinguish between matches and the
 analytics page. I think for users it's hard to know where to go for the clipped
 rallies and the other analytics like skeleton, heatmap and base." Then, choosing
@@ -229,7 +229,7 @@ state.
 | Add note | next to the player in Match |
 | Analyze again | new overflow item, same condition as the row's (`canAnalyzeAgain`) |
 | Theme toggle | removed from this page; Settings has it |
-| Running, failed, needs court marking | `AttachStatusBanner`, above the toggles, as today |
+| Running, failed, needs court marking | `StatusBanner`, above the toggles: a scored match's list row, its status and its action, drawn again (7.4) |
 
 ### 2.8 When a run finishes
 
@@ -354,3 +354,220 @@ after this and only changes the body of the device Rallies section.
 - On a real phone, handed to Coen: a finished run's announcement and its View,
   a player released when switching sections, and rotation on Match and
   Skeleton.
+
+---
+
+## 7. What shipped differently
+
+Recorded 2026-09-27 from the build on `feat/match-page-hub`. Every place the code
+differs from section 2, with the reason. Android paths are under
+`androidApp/.../android/`, iOS under `iosApp/Sources/`, shared under
+`shared/.../shared/`.
+
+### 7.1 Sections, and what the page remembers (2.3, 2.4, 2.8)
+
+- **The first section shown counts as chosen.** Once a section is on screen it
+  is pinned as the coach's choice (`match/MatchScreen.kt`,
+  `LaunchedEffect(section)`; `Match/MatchView.swift`,
+  `.onChange(of: section, initial: true)`). Without the pin, a video opened on
+  Match alone jumped to Rallies when its run landed and released the player
+  mid-watch, and 2.8 says the app does not change the screen on its own.
+  `shownSection` still falls back when the pinned section goes.
+- **The missing-match state waits until the list knows.** The page shows
+  `MatchPageCopy.MISSING` once the shared list has finished a refresh
+  (`refreshGeneration > 0`, failed refreshes included), or earlier when a lookup
+  that needs no network (the score log, the local entry) comes back empty. Until
+  then the bar shows only Back. iOS also checks its own direct lookup
+  (`foundDirectly` in `MatchView.swift`), because a match created under a push
+  is missing from the list until the page's own `start()` delivers. Before this,
+  a cloud match whose row had gone drew a blank page.
+- **The page reads the list's state instead of loading its own.** Android takes
+  the Home entry's `ClipListViewModel` and does not refresh on open. On iOS a
+  push cancels the list's `.task`, so `MatchView` runs `ClipListModel.start()`
+  itself; a temporary log line showed the cancel. The two overlap only during
+  the push transition, and both write the same values.
+- **The announcement's strings live in shared `MatchPageCopy`**, with the page's
+  other strings, not in `MatchListCopy`.
+
+### 7.2 The toggle rows (2.2)
+
+- **The Analysis panel row and every Near/Far row use a secondary, compact pill
+  style.** At one size, the section row, the panel row and Near/Far read as
+  peers, and nothing tied the second row to Analysis. `secondary = true` on
+  `ShuttlPillTabs` (`ui/components/ShuttlPillTabs.kt`,
+  `Components/ShuttlPillTabs.swift`) is 8dp/pt shorter with an 11sp/pt
+  labelSmall label, on the same tokens. A secondary row never draws its labels
+  larger than the section row above it. Android passes a `PillLabelCeiling`
+  from the section row; iOS publishes it as a preference (`setsCeiling: true`,
+  `.pillLabelCeilingHost()`).
+- **Equal-width pills shrink to a 0.75 floor, then wrap.** A pill does not break
+  inside a word while it can avoid it. First its side padding gives way from 8
+  to 6, then the whole row's labels shrink by one factor, down to 0.75
+  (`PillLabelScaleTest`, `ShuttlPillTabsTests`). Past the floor the label wraps:
+  "Analysis" breaks at font scale 2.0 on a 360dp Android screen and at AX5 on
+  iOS. Proportional widths would avoid it but give up equal shares; that was
+  ruled out, and the wrap at the largest accessibility sizes is the accepted
+  cost.
+
+### 7.3 The section bodies (2.6, 2.7, 2.9)
+
+- **Device rallies are drawn as the cloud rally rows**: full-bleed divided rows,
+  "Rally #N" over the length, with no thumbnail and no note count
+  (`match/DeviceRalliesSection.kt`; `Match/DeviceRalliesSection.swift` through
+  `Match/RallyRow.swift`). The plan had drawn cards. "#N" matches the cloud
+  rows' `clipRowTitle`, and the clip player's title uses the same format ("Rally
+  #1 · 24.1s"). On iOS the clip opens in a sheet, not a dialog.
+- **One 24dp/pt gutter for every section, Points and cloud Rallies included**,
+  and one 16dp/pt gap under the section row (`MatchPageGutter`,
+  `MatchSectionGap`, `MatchRowInset` in `MatchScreen.kt`; `MatchPageLayout` and
+  `ShuttlGutter.page` on iOS). 2.6 kept Points and cloud Rallies unchanged at
+  16dp, but then the page's left edge moved 8dp between toggles.
+- **One rally length format, "25.2s"**: shared `matchlist/RallyLength.kt`
+  (`rallyLengthText`), used by device and cloud rows on both platforms. Cloud
+  rows printed raw seconds ("25.1727S"). Tenths rather than "0:25", because
+  rallies run from seconds to about a minute and the tenths tell two short ones
+  apart.
+- **The sort control sits inside Rallies**, above the first rally
+  (`RallySortRow` in `MatchScreen.kt` and `MatchView.swift`), and only when
+  there is more than one rally. It is a borderless text button at the row's
+  trailing edge: a sort glyph and the current order in labelMedium, secondary
+  text colour, in a 48dp (Android) or 44pt (iOS) target, opening a menu of the two orders with a
+  check (Android's dropdown) or the system picker menu (iOS). Its screen-reader
+  label carries the current order ("Sort rallies, Rally order") from the
+  existing strings.
+- **Analyze sits under the transport bar**, before the label chips (iOS:
+  `ShuttlPlayer`'s `primaryAction` slot). **Add note is a compact "+ Add note"
+  pill in the notes header** on both platforms, not a control beside the
+  player.
+- **The Match section in landscape, after Back.** Back from fullscreen in
+  landscape left the portrait column in the landscape height, and the video
+  card covered the section row. Outside fullscreen in landscape the card now
+  fits the available height (`clipdetail/VideoCard.kt`, `maxHeight`) and the
+  section scrolls as one (`match/MatchVideoSection.kt`). The iOS app is
+  portrait-only outside the fullscreen cover, so there the exit button returns
+  to the portrait page.
+- **iOS lays out a player and its notes with one shared container**,
+  `Components/PlayerNotesLayout.swift`, used by the Match section and the rally
+  page (`ClipDetail/ClipDetailView.swift`). It pins the player over the notes
+  and switches to one scroll when the notes would get less than 88pt, which
+  happened at accessibility sizes and on 667pt screens. The player stays in the
+  same place in both layouts, so switching does not rebuild it.
+- **iOS keeps a paused video where it was on entering fullscreen.** Attaching a
+  paused player to the fullscreen controller snapped it to the nearest keyframe,
+  0:00 on a short clip. `Components/PlayerSurface.swift` seeks it back exactly
+  while paused.
+- **Smaller fixes found while checking the screens**, none of which changes the
+  design:
+  - Android's row overflow button is a 48dp target whose glyph lines up with
+    the header's gear and info icons (`cliplist/MatchListRow.kt`).
+  - iOS pills take taps across 44pt vertically (`Theme/ShuttlTarget.swift`).
+    Analysis takes the page's 16pt gap inside its scroll view, because UIKit
+    does not hit-test outside a scroll view's bounds.
+  - iOS row rules run edge to edge under rallies and points, as Android's do
+    (`fullBleedListSeparator` in `Match/RallyRow.swift`).
+  - iOS draws no Live Text button over a paused video
+    (`allowsVideoFrameAnalysis = false` in `PlayerSurface.swift`).
+  - The iOS clip sheet's Close is lettered in `accentDark`, with a 44pt
+    target.
+
+### 7.4 The status banner (2.7)
+
+- **The banner is `StatusBanner`, and it draws the list row.** For a scored match
+  with a status line (shared `showsStatusBanner`), it shows the row's own
+  `statusText` and action (`MatchScreen.kt`, `MatchView.swift`): running,
+  failed, court not marked, and also "Not analyzed" with Analyze for a scored
+  match whose court is marked but never run. The old `AttachStatusBanner`
+  derived its status again from the score log alone, could not see device runs,
+  and disagreed with the row.
+- **"Court not marked" after an on-device run is fixed.** Shared `attachStatus`
+  asked for the court for every entry at `LOCAL`. A device run never leaves
+  `LOCAL`, so a scored match analyzed on the phone said "Video added, court not
+  marked" forever. It now asks only while the entry has no court points, and a
+  device run or its results win over that status in `scoreItem`
+  (`scoring/AttachStatus.kt`, `matchlist/MatchListBuilder.kt`). iOS now saves the
+  court points on a device run, as Android already did (shared
+  `LocalVideoRepository.setKeypoints`, called from
+  `CourtMarking/CourtMarkingView.swift`).
+- **The page offers no video removal while a device run holds the file.** The
+  overflow's Change video and Remove video follow the row's rule (shared
+  `pageOffersVideoRemoval`). The page used to offer them mid-run.
+
+### 7.5 When a run finishes (2.8)
+
+- **A run that found nothing is not announced.** A device run counts as finished
+  only when its own result has clips, a track or a saved skeleton
+  (`LocalAnalysisState.Done.foundSomething`; `DeviceRunOutputTest`,
+  `DeviceRunOutputTests`). Judging from the list row instead could lose a run
+  for good when the row lagged behind it. Cloud runs are not filtered: a cloud
+  run that finds no rallies fails instead of finishing.
+- **Runs landing together are one message** ("2 matches are analyzed", no
+  View). On iOS, a run landing while the toast shows is merged into it and the
+  toast is rebuilt (`Home/RunToastUpdate.swift`). On Android, runs are merged
+  only while they are waiting to be shown (`announced + announcement.announce`
+  in `AuthGate.kt`). Once a snackbar is up, the next run's snackbar queues
+  behind it.
+- **View reads the row again when tapped**, on both platforms, so a cloud track
+  that landed after the run still opens on Analysis.
+- **Android.** The snackbar is shown from the screen's coroutine scope
+  (`home/HomeScreen.kt`), not from an effect keyed on the announced ids: clearing
+  the ids re-keyed that effect and cancelled the snackbar while it showed. Its
+  colours are set: `textHeading` surface, `bg` text, and the other theme's
+  `accentDark` for View. Material's defaults had drawn it purple-grey with a
+  lavender action. With View it is `SnackbarDuration.Long`: ten seconds, or
+  longer if the user has set Android's accessibility timeout ("Time to take
+  action") higher. Unlike the iOS toast, it does not stay up indefinitely for
+  a screen reader on Android 10 and later.
+- **iOS.** `Components/ShuttlToast.swift` is a rounded rectangle
+  (`ShuttlRadius.medium`, continuous corners) in the 24pt gutter, 16pt above
+  the Add button, at least 48pt tall. Its text is bodyMedium in `bg` on a
+  `textHeading` surface and wraps to two lines. View is labelMedium in
+  `Shuttl.inverseAccent`, the other theme's `accentDark`, in a 44pt target;
+  `accent` there was 1.5:1 in dark. Its side margins are the page gutter, where
+  Android's snackbar keeps Material's 12dp. It posts a VoiceOver announcement.
+  While VoiceOver runs it stays until dismissed or View, instead of leaving
+  after four seconds. Announcing also needs the app in the foreground
+  (`scenePhase == .active`), as Android needs RESUMED.
+
+### 7.6 What was deleted (2.11)
+
+- `AnalyticsRowState` went entirely. Once the Analytics list was gone only
+  comments named it, and both `AnalysisFiles` now describe the case in words.
+- Also gone: `MatchListItem.opensLocalPlayer`, `MatchListCopy.MENU_HEATMAP` and
+  `menuDeviceClips`, `RunAnnouncement.openAnalytics`, and `HomeCopy.TAB_*` and
+  `ANALYTICS_EMPTY_*`. `TAB_MATCHES` became `HomeCopy.MATCHES_TITLE`.
+
+## 8. Verification, as run
+
+- **Unit tests** at the end of the branch: shared 773, androidApp 309, iOS 318
+  (one skipped: `ThroughputMeasurementTests` needs its build flag), no failures.
+- **iOS UI tests**: 7 run. The three suites re-pointed at the gear pass
+  (`LabelSwatchGridUITests`, `ReplayPlayerUITests`, `ScoringBoardUITests`).
+  `VideoMatchDetailsUITests` gets past the gear and then skips, because the
+  simulator account has no cloud match ("cloudia"), so section 6's "not skip"
+  holds for three of the four.
+- **Screens**, light and dark, in `docs/screenshots/2026-09-26-android-*`
+  (Pixel 9a emulator) and `docs/screenshots/2026-09-26-ios-*` (iPhone 17 Pro
+  simulator): the list, Settings, a video-only match, an analyzed match, a
+  scored match with and without Analysis showing (Android at font scale 1.3 on
+  360dp; iOS at the default size, XXXL and AX5), device rallies with the clip
+  player open, fullscreen landscape, the page after leaving fullscreen, and the
+  run message with where its View lands.
+  - Android's `match-cloud-*` shows a cloud-only match with the sort control.
+    iOS has no cloud frame.
+  - The run messages came from real device runs on both platforms. Android's
+    `match-analysed-*` and dark `run-snackbar-view` used a track planted from
+    the cloud copy of the same footage, because a device pose run cannot finish
+    on the 2GB emulator. The iOS frames used only real runs.
+- **Open, needs an account with cloud matches**: the iOS cloud Rallies rows,
+  their label strip and details row, and the sort control; a shared match on
+  either platform; `VideoMatchDetailsUITests` running rather than skipping.
+- **Open, needs a real phone (Android and iPhone)**:
+  - a real finished run's snackbar or toast, and its View;
+  - rotating on Match (position kept) and on Skeleton; no Skeleton landscape
+    frame was taken on either platform;
+  - switching sections releasing the player, with no audio from a section left
+    behind;
+  - the gesture bar and the Add button's clearance;
+  - on Android, the keyboard over the list: the emulator's hardware keyboard
+    showed no inset;
+  - on iOS, a signed-in 667pt phone.
