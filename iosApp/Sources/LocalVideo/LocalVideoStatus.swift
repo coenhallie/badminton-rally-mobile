@@ -10,19 +10,6 @@ enum LocalVideoStatus {
         LocalVideoEntryKt.cloudAnalysisStatus(stage: stage, progress: progress)
     }
 
-    /// Whether this video's Analyze button should be live.
-    ///
-    /// Both pipelines, because either can be busy with it and only one of them
-    /// moves the stage. A device run leaves the stage on LOCAL for its whole
-    /// length, so a button asking the stage alone sits there live over the run
-    /// it already started: pressing it walks the coach through marking the court
-    /// again and then returns immediately on `LocalAnalysisRunner.start`'s own
-    /// guard. Android shipped exactly that, twice, before it was given
-    /// `isDeviceRunInFlight`.
-    static func canAnalyze(stage: AnalyzeStage, device: LocalAnalysisState = .idle) -> Bool {
-        (stage == .local || stage == .failed) && !isDeviceRunInFlight(device)
-    }
-
     /// What a paused device run says. `deviceRun(for:)` below hands this to the
     /// shared builder, which is what actually reaches a row's status line now
     /// (`MatchStatusLine`, via `MatchListItem.statusText`), so this is the one
@@ -68,11 +55,5 @@ enum LocalVideoStatus {
     /// stages (ANALYZED in particular) must not spin forever.
     static func isRunning(stage: AnalyzeStage) -> Bool {
         LocalVideoEntryKt.isAnalysisRunning(stage: stage)
-    }
-
-    /// "Re-analyze" once an attempt has failed (the video keeps its saved court
-    /// points and resumes from the failed step); "Analyze" for a fresh video.
-    static func analyzeButtonLabel(stage: AnalyzeStage) -> String {
-        stage == .failed ? "Re-analyze" : "Analyze"
     }
 }

@@ -148,7 +148,7 @@ private fun entryAsks(entry: LocalVideoEntry, input: MatchListInput, hasRunResul
         hasRunResults -> Asks(MatchAction.NONE, null, false)
         // Finished in the cloud, but this phone has not seen the clips: offline,
         // or deleted elsewhere. Asking to analyze it again would be a button that
-        // does nothing (canAnalyze is false for ANALYZED).
+        // does nothing.
         entry.stage == AnalyzeStage.ANALYZED -> Asks(MatchAction.NONE, MatchListCopy.ANALYZED, false)
         else -> Asks(MatchAction.ANALYZE, MatchListCopy.NOT_ANALYZED, false)
     }
