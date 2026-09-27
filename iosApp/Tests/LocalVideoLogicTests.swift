@@ -63,31 +63,24 @@ final class LocalVideoLogicTests: XCTestCase {
     }
 
     func testSweepOrphansDeletesOnlyUnreferencedFiles() throws {
-        // The store is the host app's real one: these tests run inside it. Every
-        // file already there counts as referenced, or the sweep takes the
-        // simulator's own videos with it (it did: every video on it had lost
-        // its file, and the match page could play none of them).
-        let existing = (try? FileManager.default.contentsOfDirectory(
-            atPath: LocalVideoFiles.directory.path)) ?? []
-        let keep = try LocalVideoFiles.store(tempURL: tempVideo())
-        let orphan = try LocalVideoFiles.store(tempURL: tempVideo())
+        // A scratch store, not the app's: these tests run inside the host app,
+        // and a sweep of the real store deleted every video on the simulator.
+        let store = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sweep-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: store, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: store) }
+        let keep = store.appendingPathComponent("keep.mp4")
+        let orphan = store.appendingPathComponent("orphan.mp4")
+        try Data([0x00, 0x01]).write(to: keep)
+        try Data([0x00, 0x01]).write(to: orphan)
 
-        LocalVideoFiles.sweepOrphans(
-            referenced: [keep] + existing.map { "\(LocalVideoFiles.folderName)/\($0)" }
+        let swept = LocalVideoFiles.sweepOrphans(
+            referenced: ["\(LocalVideoFiles.folderName)/keep.mp4"], in: store
         )
 
-        XCTAssertTrue(FileManager.default.fileExists(
-            atPath: LocalVideoFiles.resolve(relativePath: keep).path))
-        XCTAssertFalse(FileManager.default.fileExists(
-            atPath: LocalVideoFiles.resolve(relativePath: orphan).path))
-        LocalVideoFiles.delete(relativePath: keep)
-    }
-
-    private func tempVideo() -> URL {
-        let temp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("sweep-\(UUID().uuidString).mp4")
-        try? Data([0x00, 0x01]).write(to: temp)
-        return temp
+        XCTAssertEqual(swept, 1)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: keep.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: orphan.path))
     }
 
     func testStoreCopiesIntoLocalVideosAndDeleteRemoves() throws {
