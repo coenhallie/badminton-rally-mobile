@@ -8,10 +8,15 @@ import kotlin.test.Test
 
 class CornersTest {
     @Test fun a_textured_image_yields_the_requested_count() {
-        // This texture, quality and spacing top out at 117 well-spaced corners
-        // (measured), short of the 150 default: request a count the fixture
-        // can actually fill, so the test still proves the cap is honoured.
-        shiTomasi(Synthetic.texture(480, 270, 2), maxCorners = 100) shouldHaveSize 100
+        shiTomasi(Synthetic.texture(480, 270, 2), maxCorners = 150) shouldHaveSize 150
+    }
+
+    @Test fun the_fixtures_later_tasks_rely_on_stay_rich_enough() {
+        // Task 3's LucasKanadeTest needs more than 120 good tracks out of
+        // shiTomasi(Synthetic.texture(..., 7)); Task 4 shares seed 11. Guard
+        // both against a future texture change starving those counts again.
+        shiTomasi(Synthetic.texture(480, 270, 7)).size shouldBeGreaterThanOrEqual 140
+        shiTomasi(Synthetic.texture(480, 270, 11)).size shouldBeGreaterThanOrEqual 140
     }
 
     @Test fun corners_keep_their_distance_and_the_border() {
