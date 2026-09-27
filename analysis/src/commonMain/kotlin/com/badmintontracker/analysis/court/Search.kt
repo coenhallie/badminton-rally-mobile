@@ -95,11 +95,14 @@ private val FINE by lazy { ScoreSamples(FINE_STEP) }
  * pixels with samples 0.5 m apart, the best 60 are rescored 0.1 m apart and
  * the best of those is kept. Ties go to the lower rectangle index, then the
  * lower quad index: the probe's concatenation order.
+ *
+ * `ridge` is the work image's [ridges], taken as a parameter so a caller
+ * that needs the same line pixels afterwards (acceptance's line support)
+ * computes them once.
  */
-internal fun searchCourt(work: GreyImage): SearchResult? {
+internal fun searchCourt(work: GreyImage, ridge: RidgeMap = ridges(work)): SearchResult? {
     val w = work.width
     val h = work.height
-    val ridge = ridges(work)
     val lines = candidateLines(ridge)
     val families = lineFamilies(lines, w, h) ?: return null
     val quads = Quads.of(families, LINES_PER_FAMILY, w, h)
@@ -145,12 +148,17 @@ internal fun searchCourt(work: GreyImage): SearchResult? {
  * probe), and only placements whose four court corners each lie within
  * `radius` of a tap, matched as a set over the court's eight corner orders;
  * the best 0.1 m score among them wins. Null when no placement is that near.
+ * `ridge` as for [searchCourt].
  */
-internal fun searchCourtNear(work: GreyImage, cornersWork: List<Point>, radius: Double): SearchResult? {
+internal fun searchCourtNear(
+    work: GreyImage,
+    cornersWork: List<Point>,
+    radius: Double,
+    ridge: RidgeMap = ridges(work),
+): SearchResult? {
     require(cornersWork.size == 4) { "${cornersWork.size} corners" }
     val w = work.width
     val h = work.height
-    val ridge = ridges(work)
     val lines = candidateLines(ridge, NEAR_CANDIDATE_LINES)
     val families = lineFamilies(lines, w, h, horizon = false) ?: return null
     val quads = Quads.of(families, NEAR_LINES_PER_FAMILY, w, h)
