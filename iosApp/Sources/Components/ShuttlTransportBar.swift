@@ -35,6 +35,12 @@ struct ShuttlTransportBar: View {
     @State private var playing = false
     @State private var speed = PlaybackOptions.shared.DEFAULT_SPEED
     @State private var width: CGFloat = 0
+    /// Read so a text size change re-runs `metrics`: the measurement goes
+    /// through UIKit's font metrics, which SwiftUI does not track, and with the
+    /// width unchanged nothing else invalidates the row. Without it, a row laid
+    /// out at an accessibility size kept those metrics back at the default
+    /// size, its skip pills empty.
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     /// Measured, not guessed, so a larger text size costs the row a step rather
     /// than clipping a label. `.custom(_:size:)` scales with Dynamic Type relative
@@ -67,6 +73,7 @@ struct ShuttlTransportBar: View {
     }
 
     var body: some View {
+        let _ = dynamicTypeSize
         let metrics = metrics
         let layout = TransportRowLayout.shared
         HStack(spacing: CGFloat(metrics.gap)) {
