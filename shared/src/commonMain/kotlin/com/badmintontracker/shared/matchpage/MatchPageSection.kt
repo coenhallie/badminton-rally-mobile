@@ -73,6 +73,18 @@ fun sectionAfterRun(item: MatchListItem): MatchPageSection? {
 }
 
 /**
+ * Whether a match page draws the status banner above its sections: the row's
+ * own status line and action, repeated on the page (the 2026-08-28 design,
+ * section 4.9). Drawn from the row rather than derived again, because only the
+ * row sees the on-device run: a second derivation said "court not marked" on a
+ * match whose row, one tap back, showed the run's results.
+ *
+ * Only a scored match: a video-only match asks under its player instead, and
+ * two places asking one question is the drift this rule exists to stop.
+ */
+fun showsStatusBanner(item: MatchListItem): Boolean = item.scoreLogId != null && item.statusText != null
+
+/**
  * The id the Analysis section reads its track, skeleton and clips by: the
  * heatmap's own id (the entry's, or the cloud video's once the file has gone),
  * else the entry, for a match with a skeleton and no track.

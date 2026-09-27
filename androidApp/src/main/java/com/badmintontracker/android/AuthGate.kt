@@ -189,13 +189,12 @@ fun AuthGate(
 
             // Resume a failed cloud run whose court points are saved, else mark
             // the court. The one decision behind every Analyze and Retry: the
-            // list's rows, the match page's button under the player, and its
-            // "Analyze again". The same guard
-            // MatchScreen's onRetry keeps its own copy of, keyed by score log
-            // rather than by entry: a cloud run that failed at TRIGGER already
-            // has this video's four court corners saved, and sending the coach
-            // back to mark them again both wastes the marking and means the
-            // coordinator's resume-from-the-failed-step is never reached.
+            // list's rows, the match page's button under the player, its
+            // status banner and its "Analyze again". A cloud run that failed at
+            // TRIGGER already has this video's four court corners saved, and
+            // sending the coach back to mark them again both wastes the marking
+            // and means the coordinator's resume-from-the-failed-step is never
+            // reached.
             //
             // It reads correctly for a device failure too, and not by
             // accident: a device run never moves entry.stage, so a row
@@ -495,7 +494,7 @@ fun AuthGate(
                         factory = viewModelFactory {
                             initializer {
                                 MatchViewModel(
-                                    rally.scoreLogs, localVideos, coordinator, rally.clips,
+                                    rally.scoreLogs, localVideos, rally.clips,
                                     rally.videos, localAnnotations, args.scoreLogId,
                                 )
                             }
@@ -538,25 +537,10 @@ fun AuthGate(
                                 AttachIntent.Record -> intake.record(target)
                             }
                         },
-                        // The match page's own lookups, by score log id: it has no
-                        // row entry to go by. It shows the same status as the
-                        // list's row and must offer the same two actions on it.
-                        onMarkCourt = {
-                            localVideos.entries.value
-                                .firstOrNull { it.scoreLogId == args.scoreLogId }
-                                ?.let { nav.navigate(Route.CourtMarking(it.id)) }
-                        },
-                        onRetry = {
-                            localVideos.entries.value
-                                .firstOrNull { it.scoreLogId == args.scoreLogId }
-                                ?.let { entry ->
-                                    if (canResumeFailedAnalysis(entry)) {
-                                        coordinator.retry(entry.id)
-                                    } else {
-                                        nav.navigate(Route.CourtMarking(entry.id))
-                                    }
-                                }
-                        },
+                        // By the row's own entry, the page's status banner being
+                        // the row's: see MatchScreen's StatusBanner. Its Retry and
+                        // Analyze go through analyzeEntry below.
+                        onMarkCourt = { entryId -> nav.navigate(Route.CourtMarking(entryId)) },
                         onAnalyzeEntry = analyzeEntry,
                         matchSection = { e, fullscreen, onFullscreenChange, snackbar, analyzeLabel ->
                             val playerVm: LocalPlayerViewModel = viewModel(

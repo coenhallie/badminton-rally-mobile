@@ -2,15 +2,11 @@ package com.badmintontracker.android.match
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.badmintontracker.shared.localvideo.AnalyzeCoordinator
-import com.badmintontracker.shared.localvideo.AnalyzeProgress
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
-import com.badmintontracker.shared.model.RallyClip
 import com.badmintontracker.shared.repo.ClipsRepository
 import com.badmintontracker.shared.repo.VideosRepository
-import com.badmintontracker.shared.scoring.AttachStatus
 import com.badmintontracker.shared.scoring.MatchFormat
 import com.badmintontracker.shared.scoring.MatchState
 import com.badmintontracker.shared.scoring.ScoreLog
@@ -21,7 +17,6 @@ import com.badmintontracker.shared.scoring.buildScoreMatchCard
 import com.badmintontracker.shared.scoring.buildScoreTagSummary
 import com.badmintontracker.shared.scoring.isPlayable
 import com.badmintontracker.shared.scoring.removeMatchVideoOrMessage
-import com.badmintontracker.shared.scoring.scoreLogAttachStatus
 import com.badmintontracker.shared.scoring.scoreLogCanRemoveVideo
 import com.badmintontracker.shared.scoring.updateVideoMatchDetailsOrMessage
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -44,10 +39,6 @@ data class MatchPageState(
     /** A finished match with no video, and no video already picked for it. The
      *  one condition "Add video" is offered on. */
     val canAddVideo: Boolean = false,
-    /** What this match's video is doing right now, or null when there is
-     *  nothing to say - same derivation and same precedence as the match list's
-     *  own row, see [scoreLogAttachStatus]. */
-    val attach: AttachStatus? = null,
     /** This match has a video and nothing is in flight for it: the one condition
      *  "Change video" and "Remove video" are offered on, see
      *  [scoreLogCanRemoveVideo]. Mutually exclusive with [canAddVideo]. */
@@ -64,7 +55,6 @@ data class MatchPageState(
 class MatchViewModel(
     private val scoreLogs: ScoreLogsRepository,
     private val localVideos: LocalVideoRepository,
-    coordinator: AnalyzeCoordinator,
     private val clips: ClipsRepository,
     private val videos: VideosRepository,
     private val localAnnotations: LocalAnnotationsRepository,
@@ -73,14 +63,15 @@ class MatchViewModel(
 
     private val errors = MutableStateFlow<String?>(null)
 
+    // What the match's video is doing is not read here: the page's status
+    // banner draws the match list's own row (see MatchScreen's StatusBanner),
+    // the one place that also sees an on-device run.
     val state = combine(
         scoreLogs.logs,
         localVideos.entries,
-        coordinator.progress,
-        clips.observeClips(),
         errors,
-    ) { logs, entries, progress, allClips, error ->
-        build(logs, entries, progress, allClips, error)
+    ) { logs, entries, error ->
+        build(logs, entries, error)
     }
         // Eagerly, not WhileSubscribed: state.value is read directly in tests and
         // by the navigation callbacks, both without a collector attached. The
@@ -89,17 +80,10 @@ class MatchViewModel(
         // the match is not on this phone for the one frame before the first
         // collection lands, and a test reading state.value synchronously right
         // after construction would see that blank frame instead of the real one.
-        // clips has no synchronous snapshot to read (ClipsRepository.observeClips()
-        // is a bare Flow), so the initial build assumes none yet - correct for a
-        // freshly attached match, and self-corrects the moment the combine's first
-        // emission lands.
         .stateIn(
             viewModelScope,
             SharingStarted.Eagerly,
-            build(
-                scoreLogs.logs.value, localVideos.entries.value, coordinator.progress.value,
-                emptyList(), errors.value,
-            ),
+            build(scoreLogs.logs.value, localVideos.entries.value, errors.value),
         )
 
     /**
@@ -168,8 +152,6 @@ class MatchViewModel(
     private fun build(
         logs: List<ScoreLog>,
         entries: List<LocalVideoEntry>,
-        progress: Map<String, AnalyzeProgress>,
-        allClips: List<RallyClip>,
         error: String?,
     ): MatchPageState {
         val log = logs.firstOrNull { it.id == scoreLogId } ?: return MatchPageState(error = error)
@@ -186,12 +168,6 @@ class MatchViewModel(
             // isPlayable, not `status != LIVE`: the board's Done button leaves a
             // won match at LIVE on purpose, so undo stays reachable.
             canAddVideo = !log.isPlayable() && log.videoId == null && entry == null,
-            attach = scoreLogAttachStatus(
-                log = log,
-                entries = entries,
-                progress = progress,
-                clipCount = allClips.count { it.videoId == log.videoId },
-            ),
             canRemoveVideo = scoreLogCanRemoveVideo(log, entries),
             hasServerVideo = log.videoId != null,
             error = error,

@@ -20,6 +20,7 @@ import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
@@ -91,6 +92,27 @@ private val EVERY_KIND: List<MatchList> = listOf(
 )
 
 class MatchPageSectionTest {
+
+    // --- the status banner: the row's own status, on a scored match's page ---
+
+    @Test fun a_scored_match_with_an_unmarked_court_shows_the_rows_status_on_its_page() {
+        val item = only(list(logs = listOf(log("s1", points = 3)), entries = listOf(entry("e1", scoreLogId = "s1"))))
+        assertTrue(showsStatusBanner(item))
+    }
+
+    @Test fun a_scored_match_analyzed_on_the_phone_has_no_status_banner() {
+        // The device run's results prove the court was marked: the row asks
+        // nothing, so the page does not either.
+        val item = only(list(
+            logs = listOf(log("s1", points = 3)), entries = listOf(entry("e1", scoreLogId = "s1")),
+            deviceClips = mapOf("e1" to 1), tracks = setOf("e1"),
+        ))
+        assertFalse(showsStatusBanner(item))
+    }
+
+    @Test fun a_video_only_match_asks_under_its_player_not_in_a_banner() {
+        assertFalse(showsStatusBanner(only(EVERY_KIND[0])))
+    }
 
     // --- which sections a match has ---
 

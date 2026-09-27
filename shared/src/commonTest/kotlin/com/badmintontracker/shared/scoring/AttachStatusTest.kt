@@ -152,24 +152,10 @@ class AttachStatusTest {
     }
 
     @Test
-    fun the_per_log_derivation_finds_its_own_entry_among_others() {
-        // Both the match row and the match page call this with the whole entry
-        // list and the whole progress map - it has to pick out the one entry
-        // that actually belongs to this log, not just the first one around.
-        val status = scoreLogAttachStatus(
+    fun attachStatusFor_converts_upload_progress_to_a_percentage() {
+        val status = attachStatusFor(
             log = log(),
-            entries = listOf(entry(id = "other", scoreLogId = "log-other"), entry(id = "vid-1")),
-            progress = emptyMap(),
-            clipCount = 0,
-        )
-        status?.kind shouldBe AttachKind.COURT_NOT_MARKED
-    }
-
-    @Test
-    fun the_per_log_derivation_converts_upload_progress_the_same_way_attachStatus_does() {
-        val status = scoreLogAttachStatus(
-            log = log(),
-            entries = listOf(entry(AnalyzeStage.UPLOADING)),
+            entry = entry(AnalyzeStage.UPLOADING),
             progress = mapOf("vid-1" to AnalyzeProgress(entryId = "vid-1", uploadProgress = 0.42f)),
             clipCount = 0,
         )
@@ -177,22 +163,10 @@ class AttachStatusTest {
     }
 
     @Test
-    fun the_per_log_derivation_reads_hasVideo_off_the_log_itself() {
-        scoreLogAttachStatus(log = log(videoId = "v1"), entries = emptyList(), progress = emptyMap(), clipCount = 3)
+    fun attachStatusFor_reads_hasVideo_off_the_log_itself() {
+        attachStatusFor(log = log(videoId = "v1"), entry = null, progress = emptyMap(), clipCount = 3)
             .shouldBeNull()
-        scoreLogAttachStatus(log = log(videoId = "v1"), entries = emptyList(), progress = emptyMap(), clipCount = 0)
+        attachStatusFor(log = log(videoId = "v1"), entry = null, progress = emptyMap(), clipCount = 0)
             ?.kind shouldBe AttachKind.FINISHING_UP
-    }
-
-    @Test
-    fun attachStatusFor_is_the_same_derivation_scoreLogAttachStatus_delegates_to() {
-        // scoreLogAttachStatus is now a one-line delegate to attachStatusFor
-        // with its own scoreLogId-only lookup; a caller that has already picked
-        // an entry - the match list's builder - calls attachStatusFor directly
-        // with that entry instead, so the two can never derive a different
-        // answer for the same (log, entry) pair.
-        val theEntry = entry(AnalyzeStage.UPLOADING)
-        attachStatusFor(log(), theEntry, emptyMap(), clipCount = 0) shouldBe
-            scoreLogAttachStatus(log(), listOf(theEntry), emptyMap(), clipCount = 0)
     }
 }

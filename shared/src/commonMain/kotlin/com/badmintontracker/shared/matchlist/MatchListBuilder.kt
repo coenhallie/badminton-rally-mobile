@@ -253,10 +253,10 @@ private fun scoreItem(
     val videoId = clips.firstOrNull()?.videoId
     val (runAnalyses, heatmapId) = analysesFor(entry, videoId, clips.size, input)
     val analyses = if (started) runAnalyses + MatchAnalysis.SCORE else runAnalyses
-    // attachStatusFor with this row's own [entry], not scoreLogAttachStatus's
-    // independent (and narrower) lookup: the row's status must come from the
-    // entry the join above actually assigned it, or the two could disagree
-    // about which entry a log's video is.
+    // attachStatusFor with this row's own [entry], not an independent lookup
+    // by score log: the row's status must come from the entry the join above
+    // actually assigned it, or the two could disagree about which entry a
+    // log's video is.
     val attach = attachStatusFor(log, entry, input.cloudProgress, clips.size)
         // A device run in flight, or what one left, proves the court was
         // marked, even on an entry that has no saved points: iOS did not save

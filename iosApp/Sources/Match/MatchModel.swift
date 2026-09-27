@@ -20,10 +20,6 @@ final class MatchModel {
     /// A finished match with no video, and no video already picked for it. The
     /// one condition "Add video" is offered on.
     private(set) var canAddVideo: Bool = false
-    /// What this match's video is doing right now, or nil when there is nothing
-    /// to say - same derivation and precedence as the match list's own row, see
-    /// `AttachStatusKt.scoreLogAttachStatus`.
-    private(set) var attach: AttachStatus? = nil
     /// This match has a video and nothing is in flight for it: the one condition
     /// "Change video" and "Remove video" are offered on, see
     /// `MatchVideoRemovalKt.scoreLogCanRemoveVideo`. Mutually exclusive with
@@ -39,19 +35,15 @@ final class MatchModel {
 
     private let scoreLogs: ScoreLogsRepository
     private let localVideos: LocalVideoRepository
-    private let analyze: AnalyzeCoordinator
     private let clips: ClipsRepository
     private let videos: VideosRepository
     private let localAnnotations: LocalAnnotationsRepository
 
     private var localEntries: [LocalVideoEntry]
-    private var progressByEntryId: [String: AnalyzeProgress] = [:]
-    private var allClips: [RallyClip] = []
 
     init(
         scoreLogs: ScoreLogsRepository,
         localVideos: LocalVideoRepository,
-        analyze: AnalyzeCoordinator,
         clips: ClipsRepository,
         videos: VideosRepository,
         localAnnotations: LocalAnnotationsRepository,
@@ -59,7 +51,6 @@ final class MatchModel {
     ) {
         self.scoreLogs = scoreLogs
         self.localVideos = localVideos
-        self.analyze = analyze
         self.clips = clips
         self.videos = videos
         self.localAnnotations = localAnnotations
@@ -68,9 +59,9 @@ final class MatchModel {
         readStore()
     }
 
-    convenience init(rally: RallyApp, analyze: AnalyzeCoordinator, scoreLogId: String?) {
+    convenience init(rally: RallyApp, scoreLogId: String?) {
         self.init(
-            scoreLogs: rally.scoreLogs, localVideos: rally.localVideos, analyze: analyze,
+            scoreLogs: rally.scoreLogs, localVideos: rally.localVideos,
             clips: rally.clips, videos: rally.videos, localAnnotations: rally.localAnnotations,
             scoreLogId: scoreLogId
         )
@@ -154,30 +145,18 @@ final class MatchModel {
     /// without a manual refresh.
     ///
     /// Every loop is a structured child of that task - the same shape as
-    /// `BackgroundWorkModel.observe`. Three of them used to be unstructured
-    /// `Task {}`s, which cancellation cannot reach: leaving the page stopped one
-    /// loop and left three running for good, and each return stacked three more,
-    /// every one of them re-folding the match on every emission.
+    /// `BackgroundWorkModel.observe`. Loops here used to be unstructured
+    /// `Task {}`s, which cancellation cannot reach: leaving the page left them
+    /// running for good, and each return stacked more, every one of them
+    /// re-folding the match on every emission. What the match's video is doing
+    /// is not observed here: the page's status banner draws the match list's
+    /// own row, the one place that also sees an on-device run.
     func start() async {
         await withTaskGroup(of: Void.self) { group in
             group.addTask { @MainActor [weak self] in
                 guard let self else { return }
                 for await entries in self.localVideos.entries {
                     self.localEntries = entries
-                    self.readStore()
-                }
-            }
-            group.addTask { @MainActor [weak self] in
-                guard let self else { return }
-                for await map in self.analyze.progress {
-                    self.progressByEntryId = map
-                    self.readStore()
-                }
-            }
-            group.addTask { @MainActor [weak self] in
-                guard let self else { return }
-                for await latest in self.clips.observeClips() {
-                    self.allClips = latest
                     self.readStore()
                 }
             }
@@ -202,7 +181,6 @@ final class MatchModel {
             card = nil
             tally = ScoreTagSummary.companion.EMPTY
             canAddVideo = false
-            attach = nil
             canRemoveVideo = false
             hasServerVideo = false
             return
@@ -221,10 +199,6 @@ final class MatchModel {
         // still be undone - which leaves a won match sitting at .live. This is the
         // predicate every surface should ask, rather than either half of it.
         canAddVideo = !found.isPlayable() && found.videoId == nil && !hasPendingEntry
-        let clipCount = allClips.filter { $0.videoId == found.videoId }.count
-        attach = AttachStatusKt.scoreLogAttachStatus(
-            log: found, entries: localEntries, progress: progressByEntryId, clipCount: Int32(clipCount)
-        )
         canRemoveVideo = MatchVideoRemovalKt.scoreLogCanRemoveVideo(log: found, entries: localEntries)
         hasServerVideo = found.videoId != nil
     }

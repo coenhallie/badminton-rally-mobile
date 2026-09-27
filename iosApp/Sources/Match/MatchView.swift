@@ -151,7 +151,7 @@ struct MatchView: View {
         self.localAnalysis = localAnalysis
         self.listModel = listModel
         self.route = route
-        _matchModel = State(initialValue: MatchModel(rally: rally, analyze: analyze, scoreLogId: route.scoreLogId))
+        _matchModel = State(initialValue: MatchModel(rally: rally, scoreLogId: route.scoreLogId))
         _chosenSection = State(initialValue: route.section)
         _intake = State(initialValue: LocalVideoIntake(rally: rally))
     }
@@ -179,7 +179,7 @@ struct MatchView: View {
     }
 
     /// Under the player only for a video with no score log: a scored match's
-    /// video asks through `AttachStatusBanner` already, and two buttons for
+    /// video asks through `StatusBanner` already, and two buttons for
     /// one question is the kind of drift the shared rule exists to stop.
     private var analyzeLabel: String? {
         guard let item, item.scoreLogId == nil, item.action == .analyze || item.action == .retry else { return nil }
@@ -322,17 +322,13 @@ struct MatchView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     VStack(spacing: 0) {
-                        // Same status, same actions as the match list's own row -
-                        // see AttachStatusBanner. Without this the page was blind
-                        // about an attach in progress while simultaneously still
-                        // offering "Add video", because canAddVideo used to close
-                        // only on a videoId.
-                        if let attach = matchModel.attach {
-                            AttachStatusBanner(
-                                attach: attach,
-                                onMarkCourt: { attachMarkCourt() },
-                                onRetry: { attachRetry() }
-                            )
+                        // The match list's own row, status and action both - see
+                        // StatusBanner. Without this the page was blind about an
+                        // attach in progress while simultaneously still offering
+                        // "Add video", because canAddVideo used to close only on
+                        // a videoId.
+                        if let item, MatchPageSectionKt.showsStatusBanner(item: item) {
+                            StatusBanner(item: item) { bannerAction(item) }
                         }
                         // A row over one section is a control that does nothing,
                         // and a match with one section must look like a page, not
@@ -689,21 +685,17 @@ struct MatchView: View {
         }
     }
 
-    /// Same lookup and action as the merged row's own "Mark court" -
-    /// `ClipListView.scoreRow`'s `.courtNotMarked` case - so the match page
-    /// offers exactly what the list row offers for the same match.
-    private func attachMarkCourt() {
-        guard let entry = rally.localVideos.entries.value.first(where: { $0.scoreLogId == matchModel.scoreLogId })
-        else { return }
-        navigationTarget = CourtMarkingRoute(entryId: entry.id)
-    }
-
-    /// Same lookup and action as the merged row's own "Retry" -
-    /// `ClipListView.scoreRow`'s `.failed` case.
-    private func attachRetry() {
-        guard let entry = rally.localVideos.entries.value.first(where: { $0.scoreLogId == matchModel.scoreLogId })
-        else { return }
-        analyze.retry(entryId: entry.id)
+    /// The status banner's button, as the row's own (`ClipListView.act`): by
+    /// the row's entry, never looked up again by score log, because the
+    /// builder may have joined the entry to its log by the log's video id.
+    /// Retry is Analyze, as on the row: the same resume-or-mark-court decision.
+    private func bannerAction(_ item: MatchListItem) {
+        guard let entryId = item.entryId else { return }
+        switch item.action {
+        case .markCourt: navigationTarget = CourtMarkingRoute(entryId: entryId)
+        case .analyze, .retry: analyzeEntry(entryId)
+        case .none, .running, .paused: break
+        }
     }
 
     /// What the confirm says, built in shared
@@ -859,24 +851,24 @@ struct MatchView: View {
 /// What the match list's row says about this match's video, repeated on the
 /// match page itself: §4.9 of the 2026-08-28 design requires the page to say so
 /// and offer the same actions, not leave the coach reading a page that says
-/// nothing while "Add video" is also gone with no explanation. Same text, same
-/// three actions (Mark court / Retry / a spinner) as `ClipListView.scoreRow`.
-private struct AttachStatusBanner: View {
-    let attach: AttachStatus
-    let onMarkCourt: () -> Void
-    let onRetry: () -> Void
+/// nothing while "Add video" is also gone with no explanation. It draws the row
+/// rather than a status of its own, so the two cannot say different things:
+/// the same text in the same colour, the same button (Mark court, Retry or
+/// Analyze), a spinner while something runs. See `showsStatusBanner`.
+private struct StatusBanner: View {
+    let item: MatchListItem
+    let onAction: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
-            Text(attach.text)
+            Text(item.statusText ?? "")
                 .shuttlType(ShuttlType.titleMedium)
-                .foregroundStyle(attach.kind == .failed ? Shuttl.error : Shuttl.textSecondary)
+                .foregroundStyle(item.statusIsError ? Shuttl.error : Shuttl.textSecondary)
                 .lineLimit(2)
             Spacer()
-            switch attach.kind {
-            case .courtNotMarked:
-                Button(action: onMarkCourt) {
-                    Text("Mark court")
+            if let label = MatchListCopy.shared.actionLabel(action: item.action) {
+                Button(action: onAction) {
+                    Text(label)
                         .shuttlType(ShuttlType.labelMedium)
                         .foregroundStyle(Shuttl.onAccent)
                         .lineLimit(1)
@@ -887,20 +879,7 @@ private struct AttachStatusBanner: View {
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.borderless)
-            case .failed:
-                Button(action: onRetry) {
-                    Text("Retry")
-                        .shuttlType(ShuttlType.labelMedium)
-                        .foregroundStyle(Shuttl.onAccent)
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Shuttl.accent)
-                        .clipShape(Capsule())
-                }
-                .buttonStyle(.borderless)
-            case .uploading, .clipping, .finishingUp:
+            } else if item.action == .running {
                 ProgressView()
                     .controlSize(.small)
                     .frame(width: 24, height: 24)

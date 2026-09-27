@@ -86,12 +86,12 @@ fun attachStatus(
 
 /**
  * [attachStatus] for one match, given the entry the caller has already picked
- * for it. Pulled out of [scoreLogAttachStatus] so a caller that resolves its
- * own (log, entry) pairing - the match list's builder, which folds a log, an
- * entry and a video's clips into one row - can hand that same entry straight
- * back here, rather than asking a second, independent lookup to agree with the
- * first. A row and the status it shows can then never disagree about which
- * entry it is, because both come from the one the row already chose.
+ * for it: the match list's builder, which folds a log, an entry and a video's
+ * clips into one row, hands that same entry straight back here rather than
+ * asking a second, independent lookup to agree with the first. A row and the
+ * status it shows can then never disagree about which entry it is, because both
+ * come from the one the row already chose. The match page shows that row's
+ * status too, rather than deriving its own (see `showsStatusBanner`).
  */
 fun attachStatusFor(
     log: ScoreLog,
@@ -108,26 +108,4 @@ fun attachStatusFor(
         uploadPercent = uploadPercent,
         clipCount = clipCount,
     )
-}
-
-/**
- * [attachStatusFor], finding the entry by [LocalVideoEntry.scoreLogId] alone -
- * the same rule this function has always used.
- *
- * Deliberately not the match list's own richer join (a log's video id can also
- * pick up an entry that was never told which log claimed it): its callers, the
- * match page on each platform (`MatchViewModel`, `MatchModel`), were written
- * against this narrower rule, and widening it out from under them would change
- * what they show without anyone deciding it should. A caller that has already
- * resolved a richer pairing of its own - the match list's builder - calls
- * [attachStatusFor] directly instead.
- */
-fun scoreLogAttachStatus(
-    log: ScoreLog,
-    entries: List<LocalVideoEntry>,
-    progress: Map<String, AnalyzeProgress>,
-    clipCount: Int,
-): AttachStatus? {
-    val entry = entries.firstOrNull { it.scoreLogId == log.id }
-    return attachStatusFor(log, entry, progress, clipCount)
 }

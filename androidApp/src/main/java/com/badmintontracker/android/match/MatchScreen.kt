@@ -76,18 +76,18 @@ import com.badmintontracker.android.ui.shareText
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.matchlist.MatchAction
 import com.badmintontracker.shared.matchlist.MatchListCopy
+import com.badmintontracker.shared.matchlist.MatchListItem
 import com.badmintontracker.shared.matchpage.MatchPageCopy
 import com.badmintontracker.shared.matchpage.MatchPageSection
 import com.badmintontracker.shared.matchpage.analysisId
 import com.badmintontracker.shared.matchpage.matchPageItem
 import com.badmintontracker.shared.matchpage.matchPageSections
+import com.badmintontracker.shared.matchpage.showsStatusBanner
 import com.badmintontracker.shared.matchpage.shownSection
 import com.badmintontracker.shared.model.MatchLabelSummary
 import com.badmintontracker.shared.model.RallyClip
 import com.badmintontracker.shared.repo.MediaRepository
 import com.badmintontracker.shared.repo.SharesRepository
-import com.badmintontracker.shared.scoring.AttachKind
-import com.badmintontracker.shared.scoring.AttachStatus
 import com.badmintontracker.shared.scoring.MAX_MATCH_TITLE
 import com.badmintontracker.shared.scoring.MatchVideoAction
 import com.badmintontracker.shared.scoring.VIDEO_MATCH_TITLE_CAP
@@ -127,8 +127,7 @@ fun MatchScreen(
     onClipClick: (RallyClip) -> Unit,
     onScore: () -> Unit,
     onAddVideo: (AttachIntent) -> Unit,
-    onMarkCourt: () -> Unit = {},
-    onRetry: () -> Unit = {},
+    onMarkCourt: (entryId: String) -> Unit = {},
     onAnalyzeEntry: (entryId: String) -> Unit,
     /**
      * The three section bodies, built by AuthGate, which holds the runner and
@@ -237,7 +236,7 @@ fun MatchScreen(
     val fullscreen = videoFullscreen && section == MatchPageSection.MATCH
     val entry = matchItem?.entryId?.let { id -> state.localEntries.firstOrNull { it.id == id } }
     // Under the player only for a video with no score log. A scored match's
-    // video asks through AttachStatusBanner already; two buttons for one
+    // video asks through StatusBanner already; two buttons for one
     // question is the kind of drift the shared rule exists to stop.
     val analyzeLabel = matchItem?.takeIf { it.scoreLogId == null }?.action
         ?.takeIf { it == MatchAction.ANALYZE || it == MatchAction.RETRY }
@@ -375,12 +374,27 @@ fun MatchScreen(
         }
         Column(Modifier.fillMaxSize().padding(if (fullscreen) PaddingValues() else padding)) {
             if (!fullscreen) {
-                // Same status, same actions as the match list's own row - see
-                // AttachStatusBanner. Without this the page was blind about an
-                // attach in progress while simultaneously still offering "Add
-                // video", because canAddVideo used to close only on a videoId.
-                matchState.attach?.let { attach ->
-                    AttachStatusBanner(attach = attach, onMarkCourt = onMarkCourt, onRetry = onRetry)
+                // The match list's own row, status and action both - see
+                // StatusBanner. Without this the page was blind about an attach
+                // in progress while simultaneously still offering "Add video",
+                // because canAddVideo used to close only on a videoId.
+                if (showsStatusBanner(matchItem)) {
+                    StatusBanner(
+                        item = matchItem,
+                        // By the row's own entry, as the row's buttons go: the
+                        // builder may have joined the entry to its log by the
+                        // log's video id, which a scoreLogId lookup would miss.
+                        // Retry is Analyze, as on the row: the same
+                        // resume-or-mark-court decision either way.
+                        onAction = {
+                            val id = matchItem.entryId ?: return@StatusBanner
+                            when (matchItem.action) {
+                                MatchAction.MARK_COURT -> onMarkCourt(id)
+                                MatchAction.ANALYZE, MatchAction.RETRY -> onAnalyzeEntry(id)
+                                MatchAction.NONE, MatchAction.RUNNING, MatchAction.PAUSED -> Unit
+                            }
+                        },
+                    )
                 }
                 // A row over one section is a control that does nothing, and a
                 // match with one section must look like a page, not a picker.
@@ -580,7 +594,8 @@ internal val MatchRowInset = 14.dp
 
 /**
  * The confirm for both video gestures. What it says is built in shared
- * ([matchVideoPrompt]) rather than here, for the same reason [AttachStatus]'s
+ * ([matchVideoPrompt]) rather than here, for the same reason
+ * [com.badmintontracker.shared.scoring.AttachStatus]'s
  * text is: two platforms writing the same sentence are two chances to write it
  * differently. It has to say the points survive, which is the opposite of the
  * match list's bound-match confirm, so that wording could not be reused.
@@ -628,16 +643,16 @@ private fun MatchVideoDialog(
  * What the match list's row says about this match's video, repeated on the match
  * page itself: §4.9 of the 2026-08-28 design requires the page to say so and offer
  * the same actions, not leave the coach reading a page that says nothing while
- * "Add video" is also gone with no explanation. Same text, same three actions
- * (Mark court / Retry / a spinner) as the list's row for this match
- * ([com.badmintontracker.android.cliplist.MatchListRow]), both derived from the
- * one shared attach status so the two cannot say different things.
+ * "Add video" is also gone with no explanation. It draws the row
+ * ([com.badmintontracker.android.cliplist.MatchListRow]) rather than a status of
+ * its own, so the two cannot say different things: the same text in the same
+ * colour, the same button (Mark court, Retry or Analyze), a spinner while
+ * something runs. See [showsStatusBanner].
  */
 @Composable
-private fun AttachStatusBanner(
-    attach: AttachStatus,
-    onMarkCourt: () -> Unit,
-    onRetry: () -> Unit,
+private fun StatusBanner(
+    item: MatchListItem,
+    onAction: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -646,26 +661,27 @@ private fun AttachStatusBanner(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = attach.text,
+            text = item.statusText.orEmpty(),
             style = MaterialTheme.typography.bodyMedium,
-            color = if (attach.kind == AttachKind.FAILED) MaterialTheme.colorScheme.error
+            color = if (item.statusIsError) MaterialTheme.colorScheme.error
                     else MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
-        Spacer(Modifier.width(12.dp))
-        when (attach.kind) {
-            AttachKind.COURT_NOT_MARKED ->
-                ShuttlButton(text = "Mark court", onClick = onMarkCourt,
+        val label = MatchListCopy.actionLabel(item.action)
+        when {
+            label != null -> {
+                Spacer(Modifier.width(12.dp))
+                ShuttlButton(text = label, onClick = onAction,
                     variant = ShuttlButtonVariant.Primary, compact = true)
-            AttachKind.FAILED ->
-                ShuttlButton(text = "Retry", onClick = onRetry,
-                    variant = ShuttlButtonVariant.Primary, compact = true)
-            AttachKind.UPLOADING, AttachKind.CLIPPING, AttachKind.FINISHING_UP ->
+            }
+            item.action == MatchAction.RUNNING -> {
+                Spacer(Modifier.width(12.dp))
                 Box(modifier = Modifier.size(24.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                 }
+            }
         }
     }
 }
