@@ -5,6 +5,7 @@ import com.badmintontracker.analysis.geometry.Point
 import com.badmintontracker.analysis.player.CourtSide
 import com.badmintontracker.analysis.player.selectPlayers
 import com.badmintontracker.analysis.raw.RawInferenceCodec
+import io.kotest.assertions.assertSoftly
 import io.kotest.matchers.doubles.shouldBeGreaterThanOrEqual
 import io.kotest.matchers.doubles.shouldBeLessThanOrEqual
 import io.kotest.matchers.nulls.shouldNotBeNull
@@ -47,13 +48,18 @@ import kotlin.test.Test
  * gate is written in. The share of every frame in the file is printed beside
  * it.
  *
+ * The three bounds are checked together, so an accuracy miss is reported
+ * whatever the coverage does.
+ *
  * Known red on coverage (2026-09-27: 0.916 against 0.95; median 6.8 cm and
  * p95 22.7 cm pass). The misses are the cloud's own court-area pre-filter, not
  * the camera: it tests the box bottom, not the ankles, against the marked
  * corners plus 2%, so when she stands at the near baseline (frames 729-794,
  * 1736-1791, 2132-2182) the cloud drops her before the pose file is written
- * and this selection never sees her. The gate stays at §8.6's bound until
- * that filter is aligned with the phone's on-court gate.
+ * and this selection never sees her. Admitting by the ankles as well reaches
+ * 0.974 (median 6.7 cm, p95 22.4 cm) but also admitted officials on another
+ * video's cut shots, so it is not in; the gate stays at §8.6's bound until
+ * the filter is settled.
  *
  * BLOCKED on a corpus: skips loudly unless the harness has written
  * `~/shuttl-corpus/IMG_5892/cloud-local/poses.raw` next to the corpus's
@@ -118,9 +124,12 @@ class CloudLocalRunCorpusTest {
                 .format(median * 100, p95 * 100, errors.max() * 100, errors.size, withoutReference)
         )
 
-        track.coverage shouldBeGreaterThanOrEqual 0.95
-        median shouldBeLessThanOrEqual 0.08
-        p95 shouldBeLessThanOrEqual 0.25
+        // All three together: a coverage miss must not hide an accuracy one.
+        assertSoftly {
+            median shouldBeLessThanOrEqual 0.08
+            p95 shouldBeLessThanOrEqual 0.25
+            track.coverage shouldBeGreaterThanOrEqual 0.95
+        }
     }
 
     private fun readJson(file: File) = Json.parseToJsonElement(file.readText())
