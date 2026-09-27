@@ -59,20 +59,25 @@ data class PlacedLabel(val mark: Int, val left: Float, val top: Float)
  * Where each rally's number is drawn on the Base panel's court, so that every
  * number sits beside its own dot and nowhere else.
  *
- * Each number is tried in four slots around its dot, in order: right (the
- * default, level with the dot), left, above and below, each [gap] from the
- * dot's edge. A slot is taken when the number stays inside the canvas and
- * keeps at least that same [gap] from every number already placed, from every
- * other dot, and from the whole-match ring, treated as a solid disc because a
- * number inside the ring reads as the ring's. Keeping the gap from other dots
+ * Each number is tried in eight slots around its dot, in order: right (the
+ * default, level with the dot), left, above and below, then the diagonals
+ * below-left, below-right, above-left and above-right, each [gap] from the
+ * dot's edge (a diagonal slot's nearest corner sits at 45 degrees, the same
+ * distance from the dot's centre). A slot is taken when the number stays
+ * inside the canvas and keeps at least that same [gap] from every number
+ * already placed, from every other dot, and from the whole-match ring,
+ * treated as a solid disc because a number inside the ring reads as the
+ * ring's. Keeping the gap from other dots
  * as well as from other numbers is what stops a number reading as its
  * neighbour's: it is never closer to another dot than to its own.
  *
  * The marks are placed in the order given, which the panel gives as rally
- * order, so when a later rally's dot has no free slot left its number is
- * omitted rather than drawn over an earlier one. The list under the court
- * still names every rally, which is why dropping a number is the honest
- * choice: a number drawn where it collides says less than none.
+ * order. The diagonals are what a crowded dot falls back on: on `IMG_5892`
+ * a dot 8pt under another, with the ring below it and a number either side,
+ * has only its below-left corner free. Only when all eight slots collide is
+ * a later rally's number omitted rather than drawn over an earlier one; the
+ * list under the court still names every rally, and a number drawn where it
+ * collides says less than none.
  *
  * This replaced `rallyLabelX`, which only ever moved a number right and
  * pushed it past the ring whenever its row crossed the ring's, so a dot level
@@ -101,11 +106,16 @@ fun placeRallyLabels(
         val w = mark.labelWidth
         val h = mark.labelHeight
         val beside = dotRadius + gap
+        val corner = beside / SQRT_2
         val slots = listOf(
             mark.dotX + beside to mark.dotY - h / 2,
             mark.dotX - beside - w to mark.dotY - h / 2,
             mark.dotX - w / 2 to mark.dotY - beside - h,
             mark.dotX - w / 2 to mark.dotY + beside,
+            mark.dotX - corner - w to mark.dotY + corner,
+            mark.dotX + corner to mark.dotY + corner,
+            mark.dotX - corner - w to mark.dotY - corner - h,
+            mark.dotX + corner to mark.dotY - corner - h,
         )
         val free = slots.firstOrNull { (left, top) ->
             left >= 0f && top >= 0f && left + w <= canvasWidth && top + h <= canvasHeight &&
@@ -138,6 +148,8 @@ private fun boxNear(left: Float, top: Float, w: Float, h: Float, x: Float, y: Fl
  * a thousandth of a pixel or point, far under anything the eye can see.
  */
 private const val TOUCHING = 1e-3f
+
+private val SQRT_2 = sqrt(2f)
 
 /** Below this the two-decimal string would read "0.00 m", which is not a direction. */
 private const val HALF_CM = 0.005

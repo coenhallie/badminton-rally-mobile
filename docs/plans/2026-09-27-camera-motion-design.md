@@ -744,12 +744,17 @@ review, is entirely new work:
   side of the whole-match ring whenever the label's row crossed the ring's
   band, and let two close dots' labels overlap (rallies 2 and 5 on
   `IMG_5892`, both platforms). It is replaced by a shared
-  `placeRallyLabels`. Each number tries four slots around its own dot, in
-  order: right, left, above, below. It takes the first slot that stays on
-  the court card and keeps the label gap from every other number, every
-  other dot and the ring. A later rally with no free slot goes unnumbered,
-  and the list under the court still names it; on both platforms'
-  `IMG_5892` runs that is rally 5. Android and iOS only measure and draw.
+  `placeRallyLabels`. Each number tries eight slots around its own dot, in
+  order: right, left, above, below, then the diagonals below-left,
+  below-right, above-left, above-right, all at the same gap from the dot.
+  It takes the first slot that stays on the court card and keeps the label
+  gap from every other number, every other dot and the ring. Only when all
+  eight collide does a later rally go unnumbered (the list under the court
+  still names it). On both platforms' `IMG_5892` runs every dot is
+  numbered: on iOS rally 5's number takes its below-left diagonal, on
+  Android its left. The first version stopped at four slots and left iOS's
+  rally 5 unnumbered; the diagonals were added in the same wave. Android and
+  iOS only measure and draw.
   `RallyLabelPlacementTest` pins both runs' medians and the synthetic cases.
   The iOS Base screenshots were retaken; the Android ones were removed
   (§10).
@@ -913,10 +918,10 @@ regression, and it stays (§7, §9).
 
 - **iOS:** `docs/screenshots/2026-09-27-camera-ios-base-{light,dark}.png`
   were retaken on the signed-in iPhone 17 Pro simulator after the label fix,
-  on the same imported "IMG_5892 handheld" entry. Rallies 1 to 4 are
-  numbered to the right of their dots; rally 5's dot, 8pt below rally 2's
-  and hemmed in by the "2", the "3", dot 2 and the ring, carries no number
-  and is named by the list under the court.
+  on the same imported "IMG_5892 handheld" entry. Every dot carries its
+  number with no overlap: rallies 1 to 4 to the right of their dots, and
+  rally 5 (8pt below rally 2's dot, with the "2", the "3", dot 2 and the
+  ring around it) below-left of its dot, on the diagonal.
 - **Android:** the Base screenshots from Task 15a
   (`2026-09-27-camera-android-base-{light,dark}.png`) showed the collision
   and were removed rather than kept as a picture of a defect. Retaking them
@@ -924,8 +929,8 @@ regression, and it stays (§7, §9).
   owner (Task 15a's restart rolled it back to a 2026-09-26 snapshot), so
   there is no Android Base screenshot of the fix. Android draws through the
   same `placeRallyLabels` as iOS, and `RallyLabelPlacementTest` pins that
-  run's own medians (rally 4 beside its dot, 2 above its dot, 5 left to the
-  list). The Android Heatmap and Skeleton screenshots are unaffected.
+  run's own medians (rally 4 beside its dot, 2 above its dot, 5 to the left
+  of its dot). The Android Heatmap and Skeleton screenshots are unaffected.
 
 ### Not verified
 

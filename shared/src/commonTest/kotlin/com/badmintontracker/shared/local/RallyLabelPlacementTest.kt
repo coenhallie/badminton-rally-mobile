@@ -3,6 +3,7 @@ package com.badmintontracker.shared.local
 import com.badmintontracker.analysis.geometry.Court
 import io.kotest.assertions.withClue
 import io.kotest.matchers.collections.shouldHaveSize
+import io.kotest.matchers.floats.plusOrMinus
 import io.kotest.matchers.shouldBe
 import kotlin.math.abs
 import kotlin.math.hypot
@@ -24,7 +25,7 @@ class RallyLabelPlacementTest {
      * beside the ring, which is where their numbers ran into each other.
      */
     @Test
-    fun the_handheld_recording_labels_every_dot_it_can_and_collides_nowhere() {
+    fun the_handheld_recording_numbers_every_dot_and_collides_nowhere() {
         val rallies = listOf(
             coach(behind = 2.03, across = 1.99),
             coach(behind = 0.38, across = -0.23),
@@ -43,11 +44,11 @@ class RallyLabelPlacementTest {
         placed.single { it.mark == 0 }.left shouldBe rallies[0].x + DOT + GAP
         placed.single { it.mark == 2 }.left shouldBe rallies[2].x + DOT + GAP
         // "2" and "5" no longer share any of the card: the "2" goes above its
-        // dot, since its right is the ring and its left is dot 5, and the "5",
-        // hemmed in by the ring, dot 2, the "2" and the "4", is left to the
-        // list under the court.
+        // dot, since its right is the ring and its left is dot 5, and the "5"
+        // takes its own left, clear of the "4".
         placed.single { it.mark == 1 }.top shouldBe rallies[1].y - DOT - GAP - HEIGHT
-        placed.map { it.mark } shouldBe listOf(0, 1, 2, 3)
+        placed.single { it.mark == 4 }.left shouldBe rallies[4].x - DOT - GAP - WIDTH
+        placed.map { it.mark } shouldBe listOf(0, 1, 2, 3, 4)
     }
 
     /**
@@ -56,7 +57,7 @@ class RallyLabelPlacementTest {
      * which is where their numbers were drawn over each other.
      */
     @Test
-    fun the_handheld_recording_on_ios_keeps_2_and_5_apart() {
+    fun the_handheld_recording_on_ios_numbers_every_dot_and_keeps_2_and_5_apart() {
         val rallies = listOf(
             coach(behind = 2.00, across = 2.05),
             coach(behind = 0.39, across = -0.23),
@@ -68,11 +69,15 @@ class RallyLabelPlacementTest {
         val placed = place(rallies, ring)
 
         assertInvariants(rallies, ring, placed)
-        // 1 to 4 keep the default; the "5" has the "2" on its right, the "3"
-        // on its left, dot 2 above and the ring below, so it is left to the
-        // list rather than drawn against any of them.
-        placed.map { it.mark } shouldBe listOf(0, 1, 2, 3)
-        placed.forEach { it.left shouldBe rallies[it.mark].x + DOT + GAP }
+        // Every dot carries its number. 1 to 4 keep the default; the "5" has
+        // the "2" on its right, the "3" on its left, dot 2 above and the ring
+        // below, so it moves diagonally, below and to the left of its dot,
+        // where it used to be dropped.
+        placed.map { it.mark } shouldBe listOf(0, 1, 2, 3, 4)
+        placed.filter { it.mark < 4 }.forEach { it.left shouldBe rallies[it.mark].x + DOT + GAP }
+        val five = placed.single { it.mark == 4 }
+        five.left shouldBe (rallies[4].x - DIAGONAL - WIDTH plusOrMinus TOLERANCE)
+        five.top shouldBe (rallies[4].y + DIAGONAL plusOrMinus TOLERANCE)
     }
 
     @Test
@@ -126,7 +131,10 @@ class RallyLabelPlacementTest {
     }
 
     @Test
-    fun five_rallies_on_one_spot_try_right_left_above_below_then_drop_the_last() {
+    fun five_rallies_on_one_spot_fill_right_left_above_below_and_only_then_drop_one() {
+        // The fifth number has all eight slots tried: each diagonal corner
+        // runs into the number beside or above or below it, so with every
+        // slot colliding it, and only it, is left to the list.
         val rallies = List(5) { coach(behind = 1.0, across = 1.0) }
         val placed = place(rallies, ring = null)
 
@@ -187,7 +195,7 @@ class RallyLabelPlacementTest {
 
     /**
      * What every placement must hold whatever the medians round to: inside
-     * the card, in one of its own dot's four slots, and at least the gap it
+     * the card, in one of its own dot's eight slots, and at least the gap it
      * keeps from its own dot away from every other number, the ring and every
      * other dot; numbers come out in rally order.
      */
@@ -203,6 +211,10 @@ class RallyLabelPlacementTest {
                     own.x - DOT - GAP - WIDTH to own.y - HEIGHT / 2,
                     own.x - WIDTH / 2 to own.y - DOT - GAP - HEIGHT,
                     own.x - WIDTH / 2 to own.y + DOT + GAP,
+                    own.x - DIAGONAL - WIDTH to own.y + DIAGONAL,
+                    own.x + DIAGONAL to own.y + DIAGONAL,
+                    own.x - DIAGONAL - WIDTH to own.y - DIAGONAL - HEIGHT,
+                    own.x + DIAGONAL to own.y - DIAGONAL - HEIGHT,
                 )
                 assertTrue(slots.any { (l, t) -> abs(l - p.left) < TOLERANCE && abs(t - p.top) < TOLERANCE }, "in a slot of its own dot")
                 placed.filter { it !== p }.forEach { other ->
@@ -226,9 +238,18 @@ class RallyLabelPlacementTest {
         const val GAP = 2f
         const val REACH = 10f + 2.5f / 2f
 
-        /** One digit of an 11pt label, rounded up: both platforms measure it inside this. */
-        const val WIDTH = 8f
-        const val HEIGHT = 15f
+        /**
+         * One digit of the 11pt/11sp label both platforms draw. Archivo
+         * Medium's widest digit advances 6.31pt at 11pt, 6.87 with the role's
+         * 0.05em tracking, and Android rounds a measured width up to a whole
+         * pixel; its line box is 11 x 1.3 = 14.3 (iOS's natural line, 12.0,
+         * is shorter). Rounded up to this.
+         */
+        const val WIDTH = 7.5f
+        const val HEIGHT = 14.5f
+
+        /** A diagonal slot's near corner is DOT + GAP from the dot's centre, at 45 degrees. */
+        val DIAGONAL = ((DOT + GAP) / kotlin.math.sqrt(2.0)).toFloat()
         const val TOLERANCE = 1e-3f
     }
 }
