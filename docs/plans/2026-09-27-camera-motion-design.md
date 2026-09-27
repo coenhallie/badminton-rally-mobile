@@ -230,6 +230,8 @@ the painted lines on the same video (§8).
   it crosses one.
 - Frames sampled before the marking frame are buffered and tracked once it
   arrives: 130 KB each, ten per second of `T` (one for the usual `T = 0.1`).
+  (As shipped: about 518 KB each, and at most 50 of them, the oldest dropped
+  first; see §9.)
 - The tracker is constructed with `T` and the source size; a pass whose marks
   are unknown runs no tracker.
 - The anchored tracker does not accumulate error, so a lower rate costs only
@@ -262,6 +264,8 @@ implementation (§6) is the same algorithm by construction.
    is under 1e-4, or if it ends outside the image.
    (`winSize = (21, 21)`, `OPTFLOW_USE_INITIAL_FLOW`,
    `criteria = (COUNT | EPS, 20, 0.03)`, `minEigThreshold = 1e-4`.)
+   As shipped, the 1e-4 is the cloud's, passed to OpenCV as is; the Kotlin
+   tracker ships `LK_MIN_EIGEN = 1e-3` on its own gradient scale (§9).
 4. **RANSAC homography** over the surviving pairs: 4-point minimal fits
    through the existing DLT (`calculateHomography`), inlier threshold 1.0 px at
    tracker scale, 300 iterations from `kotlin.random.Random(seed = 0x5EED)` so a
@@ -581,6 +585,22 @@ names the task and, where the ledger records one, the ruling.
 - **`LK_MIN_EIGEN`'s KDoc states a measured value** (minimum normalised
   eigenvalue 0.248, seed 3, pyramid level 1) rather than the plan's
   unverified placeholder guess.
+- **The Kotlin tracker's eigenvalue floor is `LK_MIN_EIGEN = 1e-3`, not
+  §4.3's 1e-4; the cloud keeps 1e-4.** The Kotlin value is defined in the
+  Kotlin tracker's own gradient units: Scharr over 32, so grey levels per
+  pixel, and the structure tensor's smaller eigenvalue divided by the
+  441-pixel window. OpenCV's `minEigThreshold` is compared against
+  `calcOpticalFlowPyrLK`'s internal derivative scaling. The KDoc treats the
+  two scales as different, so OpenCV's number was not carried over. 1e-3 was
+  the plan's value for Kotlin and was kept after measuring. On its own scale
+  it rejects only a window flatter than about one grey level of gradient,
+  and the smallest normalised eigenvalue on any corner Shi-Tomasi picks in
+  the tests is 0.248, 2.5 orders of magnitude above it. So on the corners
+  the tracker actually tracks, neither floor is the one that decides. The
+  corpus gates agree: Kotlin and OpenCV both meet the painted-line gate, and
+  parity holds (§10). The cloud passes OpenCV's own 1e-4 because it calls
+  OpenCV. No one has worked out whether the two floors are the same
+  physical threshold, and nothing measured depends on it.
 
 ### The cloud tracker (Task 12)
 
@@ -653,9 +673,11 @@ names the task and, where the ledger records one, the ruling.
   whenever they differed, which silently disabled tracking on any decoder
   reporting padded dimensions (for example 1920x1088 for 1080p) without an
   explicit crop rect narrower than the buffer -- the ordinary case, since
-  `Image.getCropRect()` never returns null. Found on the S23 corpus test only
-  after tracking silently switched off partway through: `image.width/height`
-  alone was never a safe signal.
+  `Image.getCropRect()` never returns null. The case came from review
+  reasoning about how MediaCodec reports a padded 1080p buffer, not from a
+  run: no S23 or emulator decode has shown it (the emulator's decoder
+  reports a clean 1920x1080). It is covered by unit tests only
+  (`LumaPlaneTest`'s synthetic 1920x1088 plane; see "Not verified" in §10).
 
 ### The cloud loop (Task 14)
 
@@ -717,11 +739,44 @@ review, is entirely new work:
   no-op logger, so the `camera:` line the device check needs was never
   reaching Console.
 - **A pre-existing Base-panel label collision was fixed on both platforms**
-  in the final fix wave: `rallyLabelX` in
-  `shared/.../local/BasePositionFormat.kt` throws a rally's label to the far
-  side of the whole-match ring whenever the label's row crosses the ring's
-  band, without checking whether the label's own span reaches the ring --
-  visible on both platforms' new screenshots. Not part of the plan.
+  in the final fix wave, not part of the plan. `rallyLabelX` in
+  `shared/.../local/BasePositionFormat.kt` threw a rally's label to the far
+  side of the whole-match ring whenever the label's row crossed the ring's
+  band, and let two close dots' labels overlap (rallies 2 and 5 on
+  `IMG_5892`, both platforms). It is replaced by a shared
+  `placeRallyLabels`. Each number tries four slots around its own dot, in
+  order: right, left, above, below. It takes the first slot that stays on
+  the court card and keeps the label gap from every other number, every
+  other dot and the ring. A later rally with no free slot goes unnumbered,
+  and the list under the court still names it; on both platforms'
+  `IMG_5892` runs that is rally 5. Android and iOS only measure and draw.
+  `RallyLabelPlacementTest` pins both runs' medians and the synthetic cases.
+  The iOS Base screenshots were retaken; the Android ones were removed
+  (§10).
+
+### Final fix wave (after the whole-branch review)
+
+- **The pre-marking buffer is capped at 50 samples (5 s at 10 Hz).**
+  `MAX_PENDING_SAMPLES` in `CameraMotionTracker.kt`, and the same name and
+  value in `backend/camera_motion.py`. When the buffer is full the oldest
+  sample is dropped. The frames kept are the ones nearest the marking
+  frame, and a dropped frame has no sample, so `at()` gives null or `None`
+  there and selection reads `CAMERA_LOST`. Both sides test it with
+  `T = 10 s`: the first sample kept is the one at 5.0 s.
+- **Android's decode loop fails a run whose decoder stops answering.** It
+  used to hang forever. `VideoFrameSource.forEachFrame` consults
+  `DecodeStallWatch`: 15 s of wall time with input queued and no buffer
+  back, end of stream included, throws "The video's decoder stopped
+  responding". Time the loop spends on a returned frame, such as pose
+  inference, does not count against the decoder. The defect is pre-existing
+  and was found on the emulator (Task 15a): `c2.goldfish.hevc.decoder`
+  takes `IMG_5892`'s samples and never returns a frame. The watch's timing
+  is unit-tested on the JVM with a fake clock. The loop change has not run
+  on a device, because that needs the app process on the emulator (see
+  "Not verified" in §10).
+- **`CameraTrackerBenchmarkTest` runs on the JVM only.** A short
+  `CameraTrackerWarpedRunTest` keeps the same frames followed on every
+  platform, so the iOS suite no longer pays about 13 s for timings.
 
 ### Design doc corrections found by implementation
 
@@ -729,7 +784,8 @@ review, is entirely new work:
   frame is a `GreyImage` of floats (480x270x4 bytes), about 518 KB, not
   bytes. Found in Task 4's review, confirmed in Task 10: with `T` always near
   0.1 s today this is a few MB, but a `T` of 60 s (not reachable today, since
-  marking never steps to a later frame) would hold about 310 MB.
+  marking never steps to a later frame) would have held about 310 MB. The
+  final fix wave caps it at 50 frames, about 26 MB (see above).
 - **§3's claim that iOS returns the frame at 1.0 s for a 0.1 s request is
   real but is not the only value observed.** Task 8's own test clip (10 fps,
   a sync frame every 20 frames) returned the 2.0 s sync frame for the same
@@ -801,9 +857,12 @@ Share of the pass, measured (not estimated) on the full `IMG_5892`
 instrumented Android run (Task 15a, debuggable build, 545.8 ms/frame overall):
 tracker 17.1 s of a 1190.8 s pass, **1.44%**. Design §1 estimated 1-4
 ms/frame, under 1%, against an S23 pass of about 465 ms/frame; that S23
-figure is itself still unmeasured (see "Not verified" below). Task 9b's
-release-build emulator figure (1.5-1.6 ms/frame) projects to about 0.3% of a
-465 ms/frame pass.
+figure is itself still unmeasured (see "Not verified" below). The "about
+0.3% of the pass" figure is not a measurement on one device. It divides Task
+9b's release-build tracker cost on the emulator (1.5-1.6 ms/frame) by the
+S23's pass time of about 465 ms/frame. The first number comes from the
+emulator; the second is the S23 figure §1 took from before this work, which
+was not re-measured here.
 
 ### Device-path runs (§8.5), emulator/simulator, ideal marks
 
@@ -884,3 +943,8 @@ regression, and it stays (§7, §9).
   `Image.getCropRect()`/`width`/`height`. The emulator's own decoder reports
   a clean 1920x1080 with no padding, so the padded path has never run
   against a real decode.
+- **The decode stall guard's loop change (final fix wave) has not run on a
+  device.** `DecodeStallWatch` is unit-tested with a fake clock; seeing
+  `forEachFrame` fail on the goldfish decoder needs the app process on the
+  emulator, whose session state awaits the owner. Whether `codec.stop()`
+  returns promptly on a decoder in that state is unobserved.
