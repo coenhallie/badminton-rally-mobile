@@ -12,10 +12,12 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -35,6 +37,7 @@ import com.badmintontracker.android.cliplist.ClipListScreen
 import com.badmintontracker.android.cliplist.ClipListViewModel
 import com.badmintontracker.android.localanalysis.BackgroundWorkAction
 import com.badmintontracker.android.ui.icons.ShuttlIcons
+import com.badmintontracker.android.ui.theme.ShuttlRadius
 import com.badmintontracker.shared.home.HomeCopy
 import com.badmintontracker.shared.matchlist.MatchListItem
 import com.badmintontracker.shared.matchpage.MatchPageCopy
@@ -150,7 +153,14 @@ fun HomeScreen(
                 modifier = Modifier.windowInsetsPadding(HorizontalSafeDrawing),
             )
         },
-        snackbarHost = { SnackbarHost(snackbarHostState, Modifier.windowInsetsPadding(HorizontalSafeDrawing)) },
+        // The shape set here, not left to the theme's extraSmall (8dp): the
+        // iOS toast is ShuttlRadius.medium, and the two are one message. The
+        // colours come from the theme's inverse slots (ShuttlColors.kt).
+        snackbarHost = {
+            SnackbarHost(snackbarHostState, Modifier.windowInsetsPadding(HorizontalSafeDrawing)) { data ->
+                Snackbar(data, shape = RoundedCornerShape(ShuttlRadius.medium))
+            }
+        },
     ) { padding ->
         // Room for the Add button: the last row and its menu must scroll clear
         // of it. `padding` is the gesture inset alone, so the button's own
