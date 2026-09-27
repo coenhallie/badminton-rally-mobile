@@ -77,9 +77,10 @@ import com.badmintontracker.android.ui.theme.ShuttlRadius
  * [labels] and [selectedIndex] rather than a generic type: the callers keep
  * their own enum and pass its labels, which keeps this file free of them.
  *
- * [groupLabel] is read to TalkBack as the row's name ("Match sections"), as
- * iOS reads its `accessibilityLabel` to VoiceOver. Without it a screen reader
- * user meets a bare run of tabs with nothing saying what they switch.
+ * [groupLabel] names the row ("Match sections") for accessibility services,
+ * as the row's content description, the way iOS gives VoiceOver its
+ * `accessibilityLabel`. Without it a screen reader user meets a bare run of
+ * tabs with nothing saying what they switch.
  */
 @Composable
 fun ShuttlPillTabs(
