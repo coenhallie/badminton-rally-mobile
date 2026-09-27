@@ -142,8 +142,8 @@ struct PointsFacet: View {
 private extension View {
     /// A Points row's list chrome: the page's gutter either side, the given
     /// insets above and below, a separator edge to edge in the border token
-    /// rather than the system grey, no rule above a section's first row, and no fill of its
-    /// own, as `.rallyListRow()` does for a rally.
+    /// rather than the system grey, no rule above a section's first row, and
+    /// no fill of its own, as `.rallyListRow()` does for a rally.
     func pointsListRow(top: CGFloat, bottom: CGFloat) -> some View {
         listRowInsets(EdgeInsets(top: top, leading: ShuttlGutter.page, bottom: bottom, trailing: ShuttlGutter.page))
             .fullBleedListSeparator()

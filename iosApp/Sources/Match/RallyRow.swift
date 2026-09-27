@@ -41,8 +41,8 @@ enum RallyRow {
 
 extension View {
     /// A rally row's list chrome: `RallyRow.insets`, a separator edge to edge
-    /// in the border token rather than the system grey, and no row fill of its own, so the
-    /// page's background shows through.
+    /// in the border token rather than the system grey, and no row fill of its
+    /// own, so the page's background shows through.
     ///
     /// No rule above the list's first row: a plain list draws its section's
     /// top separator there, which sat 2pt under the match page's section row
