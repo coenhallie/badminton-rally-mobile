@@ -3,8 +3,10 @@ package com.badmintontracker.analysis.court
 import com.badmintontracker.analysis.camera.GreyImage
 import kotlin.math.ceil
 import kotlin.math.exp
+import kotlin.math.floor
 import kotlin.math.hypot
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.round
 import kotlin.math.sqrt
 
@@ -23,27 +25,79 @@ private fun reflect101(i: Int, n: Int): Int {
 }
 
 /**
- * The area-average box rule of `Luma.downsampleWith`, mirrored for a float
- * source: output pixel `(ox, oy)` averages source columns
- * `floor(ox*W/w) until max(that+1, floor((ox+1)*W/w))`, rows likewise, so a
- * non-integer ratio still averages whole pixels and none is skipped.
+ * A true area average, `cv2.INTER_AREA`'s rule: output pixel `ox` covers the
+ * continuous source interval `[ox*W/w, (ox+1)*W/w)` and each source pixel
+ * `[x, x+1)` is weighted by its overlap with it; rows likewise (separable,
+ * vertical pass first into one row of doubles, so the only buffers are that
+ * row and the two weight tables).
+ *
+ * This no longer mirrors `Luma.downsampleWith`'s whole-pixel box rule
+ * (`floor(ox*W/w) until floor((ox+1)*W/w)`): at a non-integer ratio that
+ * rule's boxes sit off the pixel-centre map `x_src = (x_out + 0.5) * s - 0.5`
+ * the detector maps keypoints back with (a mean shift of -1/3 source px at
+ * 1280 -> 960), and the fit image's shift would reach the keypoints. Exact
+ * overlap keeps that map for any ratio (each output's weight centroid is
+ * within a fraction of a pixel of it and the errors cancel, no shift), and
+ * at an integer ratio `k` its weights are all `1/k`, so it is the box mean
+ * there: to the bit when `k` is a power of two (1080p and 4K to the 960 work
+ * and 1920 fit images), within float rounding otherwise.
  */
 internal fun areaDownsample(src: GreyImage, outWidth: Int, outHeight: Int): GreyImage {
     val width = src.width
     val height = src.height
-    val x0 = IntArray(outWidth) { (it.toLong() * width / outWidth).toInt() }
-    val x1 = IntArray(outWidth) { max(x0[it] + 1, ((it + 1).toLong() * width / outWidth).toInt()) }
+    val xs = OverlapWeights(width, outWidth)
+    val ys = OverlapWeights(height, outHeight)
+    val row = DoubleArray(width)
     val out = FloatArray(outWidth * outHeight)
     for (oy in 0 until outHeight) {
-        val y0 = (oy.toLong() * height / outHeight).toInt()
-        val y1 = max(y0 + 1, ((oy + 1).toLong() * height / outHeight).toInt())
+        row.fill(0.0)
+        for (j in ys.start[oy] until ys.start[oy + 1]) {
+            val wy = ys.weight[j]
+            val base = ys.index[j] * width
+            for (x in 0 until width) row[x] += wy * src.pixels[base + x]
+        }
         for (ox in 0 until outWidth) {
             var sum = 0.0
-            for (y in y0 until y1) for (x in x0[ox] until x1[ox]) sum += src.pixels[y * width + x]
-            out[oy * outWidth + ox] = (sum / ((y1 - y0) * (x1[ox] - x0[ox]))).toFloat()
+            for (i in xs.start[ox] until xs.start[ox + 1]) sum += xs.weight[i] * row[xs.index[i]]
+            out[oy * outWidth + ox] = sum.toFloat()
         }
     }
     return GreyImage(outWidth, outHeight, out)
+}
+
+/**
+ * Per output pixel `o` of `n`, the source pixels of `size` overlapping
+ * `[o*size/n, (o+1)*size/n)` and their overlaps normalised to sum to 1:
+ * entries `start[o] until start[o+1]` of [index] and [weight].
+ */
+private class OverlapWeights(size: Int, n: Int) {
+    val start = IntArray(n + 1)
+    val index: IntArray
+    val weight: DoubleArray
+
+    init {
+        val idx = ArrayList<Int>(size + n)
+        val wts = ArrayList<Double>(size + n)
+        for (o in 0 until n) {
+            start[o] = idx.size
+            val a = (o.toLong() * size).toDouble() / n
+            val b = ((o + 1).toLong() * size).toDouble() / n
+            val first = floor(a).toInt()
+            val last = min(size - 1, ceil(b).toInt() - 1)
+            var total = 0.0
+            for (k in first..last) {
+                val overlap = min(b, k + 1.0) - max(a, k.toDouble())
+                if (overlap <= 0.0) continue
+                idx.add(k)
+                wts.add(overlap)
+                total += overlap
+            }
+            for (i in start[o] until idx.size) wts[i] = wts[i] / total
+        }
+        start[n] = idx.size
+        index = idx.toIntArray()
+        weight = wts.toDoubleArray()
+    }
 }
 
 /**
