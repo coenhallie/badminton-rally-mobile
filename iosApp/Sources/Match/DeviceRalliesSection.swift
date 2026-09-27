@@ -131,8 +131,13 @@ struct LocalClipPlayerSheet: View {
                 Spacer(minLength: 8)
                 Button("Close") { dismiss() }
                     .shuttlType(ShuttlType.labelMedium)
-                    .foregroundStyle(Shuttl.accent)
+                    // `accentDark`, the palette's accent for lettering: `accent`
+                    // is a fill, about 3:1 on this sheet in light.
+                    .foregroundStyle(Shuttl.accentDark)
                     .buttonStyle(.plain)
+                    // A 44pt target around a 17pt word, reaching past it rather
+                    // than making the row taller than its label.
+                    .contentShape(Rectangle().inset(by: -14))
             }
             ZStack {
                 Color.black
