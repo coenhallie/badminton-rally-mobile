@@ -192,6 +192,9 @@ class VideoFrameSource(private val file: File) {
      * [maxFrames] stops the pass early. Present for bounded measurement on a
      * device, not for production use: a partial track would silently produce
      * rallies for part of a match.
+     *
+     * Throws [IllegalStateException] when the decoder holds input and returns
+     * no frame for 15 s ([DecodeStallWatch]), rather than polling forever.
      */
     fun forEachFrame(maxFrames: Int = Int.MAX_VALUE, body: (Int, Double, android.media.Image) -> Unit) {
         val extractor = MediaExtractor()
@@ -214,6 +217,7 @@ class VideoFrameSource(private val file: File) {
         var sawInputEos = false
         var sawOutputEos = false
         val info = MediaCodec.BufferInfo()
+        val stall = DecodeStallWatch(clockMs = { System.nanoTime() / 1_000_000 })
         try {
             while (!sawOutputEos) {
                 if (!sawInputEos) {
@@ -230,6 +234,7 @@ class VideoFrameSource(private val file: File) {
                             codec.queueInputBuffer(inIndex, 0, size, extractor.sampleTime, 0)
                             extractor.advance()
                         }
+                        stall.inputQueued()
                     }
                 }
                 val outIndex = codec.dequeueOutputBuffer(info, 10_000)
@@ -241,8 +246,14 @@ class VideoFrameSource(private val file: File) {
                         }
                     }
                     codec.releaseOutputBuffer(outIndex, false)
+                    stall.outputReturned()
                     if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) sawOutputEos = true
                     if (frameIndex >= maxFrames) sawOutputEos = true
+                } else if (stall.stalled()) {
+                    // A decoder holding input and returning nothing would
+                    // otherwise keep this loop polling forever. See
+                    // DecodeStallWatch.
+                    throw IllegalStateException(DecodeStallWatch.message(frameIndex))
                 }
             }
         } finally {
