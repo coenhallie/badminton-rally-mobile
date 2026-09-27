@@ -63,10 +63,18 @@ final class LocalVideoLogicTests: XCTestCase {
     }
 
     func testSweepOrphansDeletesOnlyUnreferencedFiles() throws {
+        // The store is the host app's real one: these tests run inside it. Every
+        // file already there counts as referenced, or the sweep takes the
+        // simulator's own videos with it (it did: every video on it had lost
+        // its file, and the match page could play none of them).
+        let existing = (try? FileManager.default.contentsOfDirectory(
+            atPath: LocalVideoFiles.directory.path)) ?? []
         let keep = try LocalVideoFiles.store(tempURL: tempVideo())
         let orphan = try LocalVideoFiles.store(tempURL: tempVideo())
 
-        LocalVideoFiles.sweepOrphans(referenced: [keep])
+        LocalVideoFiles.sweepOrphans(
+            referenced: [keep] + existing.map { "\(LocalVideoFiles.folderName)/\($0)" }
+        )
 
         XCTAssertTrue(FileManager.default.fileExists(
             atPath: LocalVideoFiles.resolve(relativePath: keep).path))
