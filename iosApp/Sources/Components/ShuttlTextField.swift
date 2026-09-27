@@ -64,20 +64,30 @@ struct ShuttlTextField: View {
                 .frame(height: (lineHeight * displayScale).rounded(.up) / displayScale)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
-                .background(Shuttl.bgInput, in: RoundedRectangle(cornerRadius: ShuttlRadius.small))
+                // The whole box focuses the field, as Android's does: the
+                // text field itself only takes taps on its own line, so a tap
+                // in the padding around it used to do nothing. The gesture is
+                // on the fill behind the field, not on the field's own chain,
+                // so by construction a tap on the text reaches the field
+                // untouched (caret placement, double-tap select, the
+                // long-press menu) and only a tap that misses the text lands
+                // on the fill.
+                .background {
+                    RoundedRectangle(cornerRadius: ShuttlRadius.small)
+                        .fill(Shuttl.bgInput)
+                        .contentShape(RoundedRectangle(cornerRadius: ShuttlRadius.small))
+                        .onTapGesture { isFocused = true }
+                }
                 .overlay(
                     RoundedRectangle(cornerRadius: ShuttlRadius.small)
                         .strokeBorder(
                             isFocused ? Shuttl.accent : Shuttl.textTertiary,
                             lineWidth: isFocused ? 2 : 1
                         )
+                        // Drawn over the edge of the fill; taps go through
+                        // to it.
+                        .allowsHitTesting(false)
                 )
-                // The whole box focuses the field, as Android's does. The
-                // text field itself only takes taps on its own 22pt line, so a
-                // tap in the 10pt above or below it, or in the 12pt at either
-                // side, used to do nothing.
-                .contentShape(RoundedRectangle(cornerRadius: ShuttlRadius.small))
-                .onTapGesture { isFocused = true }
         }
         .opacity(isEnabled ? 1 : 0.6)
     }
