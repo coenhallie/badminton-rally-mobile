@@ -26,7 +26,7 @@ struct MatchVideoSection: View {
             if let model {
                 content(model)
             } else {
-                SplashView()
+                LoadingView()
             }
         }
         // Both keyed on the entry they read, so a host that swaps the entry
@@ -137,6 +137,7 @@ struct MatchVideoSection: View {
 
         if let actionError = model.actionError {
             ErrorBanner(message: actionError)
+                .padding(.horizontal, ShuttlGutter.page)
                 .padding(.top, 8)
                 .onTapGesture { model.actionError = nil }
         }

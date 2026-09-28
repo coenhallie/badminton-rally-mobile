@@ -3,6 +3,14 @@ package com.badmintontracker.shared.auth
 import io.github.jan.supabase.auth.exception.AuthRestException
 import io.github.jan.supabase.auth.exception.AuthErrorCode
 
+/**
+ * What a sign-in that never got an answer from the server says: no network, a
+ * timeout, anything that is not the server turning the credentials down.
+ * Public so iOS can show the same words when the call itself throws into
+ * Swift, rather than typing its own copy of them.
+ */
+const val SIGN_IN_UNREACHABLE_MESSAGE = "Something went wrong. Please check your connection and try again."
+
 fun friendlyAuthError(e: Throwable): String {
     if (e is AuthRestException) {
         return when (e.errorCode) {
@@ -17,5 +25,5 @@ fun friendlyAuthError(e: Throwable): String {
             else                                -> "Sign-in failed. Please try again."
         }
     }
-    return "Something went wrong. Please check your connection and try again."
+    return SIGN_IN_UNREACHABLE_MESSAGE
 }

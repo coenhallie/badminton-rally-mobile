@@ -48,6 +48,7 @@
 		39C3563A29B0C742C993740C /* KotlinThrowBridgingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C653800D88FDA4EFB8C42457 /* KotlinThrowBridgingTests.swift */; };
 		39DA9DB707B5EA1141368278 /* ReplayLabels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 689E040BE4096BDC0E420AC2 /* ReplayLabels.swift */; };
 		3AD1A4C1F76FB329D882B424 /* ScoreLogDeleteMessageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F86CA7E3C3A9EBC8035FF98 /* ScoreLogDeleteMessageTests.swift */; };
+		3CF68D737883D895238EC4BA /* ShuttlTextField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 026C1447366A9BEC22E0FBAA /* ShuttlTextField.swift */; };
 		4005B240F6260BF74A4E1E45 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FEFF2919262131269E30566 /* SettingsView.swift */; };
 		4175AE2A684D5C4E22D3025F /* PointsFacet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70E5927A0FF5276512DACA06 /* PointsFacet.swift */; };
 		45C02933D6DD284454F64FAC /* BasePositionPanelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 892AF494B3C742068295A4BE /* BasePositionPanelTests.swift */; };
@@ -71,7 +72,6 @@
 		5DBF6F864ECBB35639A57D0A /* PlayerSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = 242769BAC8EBC2E4D80F23C3 /* PlayerSurface.swift */; };
 		5E87E0064158262606D850FC /* VideoPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C2F901A70401154D8989C1D /* VideoPicker.swift */; };
 		60A6281748761094432DEA20 /* MatchVideoSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 117931940396783E0F3BACA1 /* MatchVideoSection.swift */; };
-		60AC11B9815BD71920288100 /* ShuttlCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7000786E94D92922A2812A6E /* ShuttlCard.swift */; };
 		61CDC55A414956710C008FDD /* ShuttlRadiusTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA485C2764136D1B3C77C0DD /* ShuttlRadiusTests.swift */; };
 		62E0A52B8EA38886C05814B8 /* LocalVideoFiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A34A957F901EA635D1BAA96 /* LocalVideoFiles.swift */; };
 		6619900918B060348F0F21FE /* PlaybackPositionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79A7421877A151C7C161E81E /* PlaybackPositionTests.swift */; };
@@ -91,6 +91,7 @@
 		7723DB6C8265087FC9A5B7E9 /* MatchLegendTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 739F5E2460248188119CF618 /* MatchLegendTests.swift */; };
 		77F381D4EA05BBFC12F5FFD2 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76A23487DD59B49157A3135C /* RootView.swift */; };
 		7BCE0FFBA927D82D9D9EB2F0 /* ShuttlRadius.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21A3E77B3442881360ADAFA6 /* ShuttlRadius.swift */; };
+		7D867A7B01EBE55355F05AB4 /* LoadingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C5B27600965924A07B660E8 /* LoadingView.swift */; };
 		80422B2E577D3C2F2F960B7D /* MatchGroupingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0808EB7D7A1AF8A36818AEE /* MatchGroupingTests.swift */; };
 		807D9A5115FF1AEE7E98C71E /* MatchListFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10C92BD5DB971AB2BD6F28FA /* MatchListFeed.swift */; };
 		82FCD13E2F1A2AAA98EC26F5 /* ClipDetailModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F08C072BC144799AD2F86506 /* ClipDetailModel.swift */; };
@@ -194,6 +195,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		026C1447366A9BEC22E0FBAA /* ShuttlTextField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShuttlTextField.swift; sourceTree = "<group>"; };
 		036BB7DF4026EDD84A447F30 /* ShuttlGutter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShuttlGutter.swift; sourceTree = "<group>"; };
 		03C3580E306B592D4690F013 /* ReplayPlayerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayPlayerUITests.swift; sourceTree = "<group>"; };
 		09DC5A242EBE164C182143AD /* ShuttlPaletteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShuttlPaletteTests.swift; sourceTree = "<group>"; };
@@ -259,8 +261,8 @@
 		6955A81E13F652ADD80B48B2 /* LocalInferenceEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalInferenceEngineTests.swift; sourceTree = "<group>"; };
 		6B17571954B660B726FF837C /* ShuttlPillTabs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShuttlPillTabs.swift; sourceTree = "<group>"; };
 		6B73B6510CB7E53DC4A0FF9F /* AnalysisSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalysisSection.swift; sourceTree = "<group>"; };
+		6C5B27600965924A07B660E8 /* LoadingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoadingView.swift; sourceTree = "<group>"; };
 		6D42A7D485F1B339CE936E7D /* MatchListRowViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchListRowViewTests.swift; sourceTree = "<group>"; };
-		7000786E94D92922A2812A6E /* ShuttlCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShuttlCard.swift; sourceTree = "<group>"; };
 		70E5927A0FF5276512DACA06 /* PointsFacet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PointsFacet.swift; sourceTree = "<group>"; };
 		7102866CDAE872422ABCAFA0 /* ClipCutter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipCutter.swift; sourceTree = "<group>"; };
 		739F5E2460248188119CF618 /* MatchLegendTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchLegendTests.swift; sourceTree = "<group>"; };
@@ -424,18 +426,19 @@
 				67FC6A79C22E61AFFD5C6032 /* CompactPillButtonStyle.swift */,
 				F445C67CB4C46F120008DAD3 /* ErrorBanner.swift */,
 				C930D6A6291A278327ECE0CE /* LabelBadge.swift */,
+				6C5B27600965924A07B660E8 /* LoadingView.swift */,
 				D6782F122F9F86ADCC034D76 /* OrientationLock.swift */,
 				D75E7C46412BEAF4B6640F9D /* PlaybackSettingsSheet.swift */,
 				86C0C08564A8FDFD31123955 /* PlayerNotesLayout.swift */,
 				242769BAC8EBC2E4D80F23C3 /* PlayerSurface.swift */,
 				82FC0470AAADE04383A85BE1 /* PrimaryButtonStyle.swift */,
 				689E040BE4096BDC0E420AC2 /* ReplayLabels.swift */,
-				7000786E94D92922A2812A6E /* ShuttlCard.swift */,
 				A9999B38366B71CBE818454F /* ShuttlEmptyState.swift */,
 				2CD4049AA05CFA8358E6F191 /* ShuttlNavigationBar.swift */,
 				6B17571954B660B726FF837C /* ShuttlPillTabs.swift */,
 				BA7AE2547676C60BDC65D02A /* ShuttlPlayer.swift */,
 				1A014CD4B3CFF04C915C82C4 /* ShuttlStatTile.swift */,
+				026C1447366A9BEC22E0FBAA /* ShuttlTextField.swift */,
 				913AE8A9DEC3871D49BC44C8 /* ShuttlToast.swift */,
 				58C898670F4E87CA8AEEEDF6 /* ShuttlTransportBar.swift */,
 				0F734A19C688CBEE111712AC /* ShuttlVideoCard.swift */,
@@ -936,6 +939,7 @@
 				9F9228051D999D05634145B5 /* LabelsLogic.swift in Sources */,
 				041DA79680A869A64BB02737 /* LabelsModel.swift in Sources */,
 				DE5CB6D893C56ED14B10482B /* LabelsView.swift in Sources */,
+				7D867A7B01EBE55355F05AB4 /* LoadingView.swift in Sources */,
 				6DEA1B575F60139FF71A3134 /* LocalAnalysisRunner.swift in Sources */,
 				DD0D54A07A7D5CA7A932D166 /* LocalPlayerModel.swift in Sources */,
 				9BDCF0327453D8E988B7DA68 /* LocalThumbnails.swift in Sources */,
@@ -980,7 +984,6 @@
 				0C13FDBF13DB762D4066A24C /* ScoringView.swift in Sources */,
 				4005B240F6260BF74A4E1E45 /* SettingsView.swift in Sources */,
 				D90B20576A674D829140588B /* ShareSheetView.swift in Sources */,
-				60AC11B9815BD71920288100 /* ShuttlCard.swift in Sources */,
 				AA8CAB15A365A7F79CE1EE03 /* ShuttlEmptyState.swift in Sources */,
 				BDFDF48A8D5F923F5890A7D7 /* ShuttlGutter.swift in Sources */,
 				05CC7387773D8C8BA1F41C3D /* ShuttlNavigationBar.swift in Sources */,
@@ -990,6 +993,7 @@
 				7BCE0FFBA927D82D9D9EB2F0 /* ShuttlRadius.swift in Sources */,
 				35856BEAD6E5AE44F2B15811 /* ShuttlStatTile.swift in Sources */,
 				C13B71D55CB498FFE971F6B9 /* ShuttlTarget.swift in Sources */,
+				3CF68D737883D895238EC4BA /* ShuttlTextField.swift in Sources */,
 				EB93197882D94A5AF008CD13 /* ShuttlTheme.swift in Sources */,
 				02D41C7297C5D2DCCA6DF102 /* ShuttlToast.swift in Sources */,
 				DD9A28EFDEA0A0FB6BE02F52 /* ShuttlTransportBar.swift in Sources */,

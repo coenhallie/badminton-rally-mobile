@@ -14,7 +14,7 @@ struct ClipDetailView: View {
             if let model {
                 content(model)
             } else {
-                SplashView()
+                LoadingView()
             }
         }
         .navigationBarTitleDisplayMode(.inline)
@@ -126,7 +126,9 @@ struct ClipDetailView: View {
         .padding(16)
 
         if let actionError = model.actionError {
+            // In line with the title row's 16 above it.
             ErrorBanner(message: actionError)
+                .padding(.horizontal, 16)
         }
     }
 

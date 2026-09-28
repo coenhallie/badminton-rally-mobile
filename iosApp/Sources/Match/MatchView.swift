@@ -304,11 +304,15 @@ struct MatchView: View {
         VStack(spacing: 0) {
             if let intakeError = intake.error {
                 ErrorBanner(message: intakeError)
+                    .padding(.horizontal, ShuttlGutter.page)
+                    .padding(.top, 8)
             }
             // Its own banner line, not the intake's: removing this match's video
             // is the one thing this page does that can fail on its own.
             if let removeError = matchModel.error {
                 ErrorBanner(message: removeError)
+                    .padding(.horizontal, ShuttlGutter.page)
+                    .padding(.top, 8)
             }
             Group {
                 if isMissing {

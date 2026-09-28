@@ -11,6 +11,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 
 /**
@@ -21,9 +22,19 @@ import androidx.compose.ui.unit.dp
  *
  * Draws under the status bar itself because HomeScreen's Scaffold hands its
  * content the bottom inset only.
+ *
+ * The splash and the sign-in screen draw the same bar with the wordmark as
+ * [title] in [titleStyle] (ShuttlTypeExtras.wordmark), so the title slot is
+ * one place across the launch: the wordmark holds still from the splash to
+ * sign-in, and "Matches" takes its place once signed in. The bar's fixed
+ * height keeps a smaller title centred where the headline would be.
  */
 @Composable
-fun HomeTopBar(title: String, actions: @Composable RowScope.() -> Unit = {}) {
+fun HomeTopBar(
+    title: String,
+    titleStyle: TextStyle = MaterialTheme.typography.headlineLarge,
+    actions: @Composable RowScope.() -> Unit = {},
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -34,7 +45,7 @@ fun HomeTopBar(title: String, actions: @Composable RowScope.() -> Unit = {}) {
     ) {
         Text(
             title,
-            style = MaterialTheme.typography.headlineLarge,
+            style = titleStyle,
             color = MaterialTheme.colorScheme.onBackground,
             modifier = Modifier.weight(1f),
         )

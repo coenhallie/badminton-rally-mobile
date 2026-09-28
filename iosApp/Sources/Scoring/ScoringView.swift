@@ -66,7 +66,7 @@ struct ScoringView: View {
                     }
                 }
             } else {
-                SplashView()
+                LoadingView()
             }
         }
         .navigationBarBackButtonHidden(true)
