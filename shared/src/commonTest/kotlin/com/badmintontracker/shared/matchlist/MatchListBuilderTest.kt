@@ -74,6 +74,7 @@ private fun input(
     clips = clips, currentUserId = ME, sharerByVideoId = sharers, metadataByVideoId = metadata,
     scoreLogs = logs, localEntries = entries, cloudProgress = emptyMap(), deviceRuns = deviceRuns,
     storedTrackIds = tracks, storedSkeletonIds = skeletons, deviceClipCounts = deviceClips,
+    localNoteCounts = emptyMap(),
 )
 
 private fun build(i: MatchListInput) = buildMatchList(i, TimeZone.UTC)

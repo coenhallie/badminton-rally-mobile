@@ -159,6 +159,21 @@ final class ClipListModelTests: XCTestCase {
         _ = r.annotations.add(videoId: videoId, timestampSeconds: 1, body: "n", label: nil)
     }
 
+    func testANoteMadeOnThePhoneCountsTowardItsMatch() async {
+        // The sixth loop: "Most notes" has to see a note the moment it is
+        // made on the phone's copy, as the other five inputs are followed.
+        let r = rig()
+        let loops = Task { @MainActor in await r.model.observe() }
+        defer { loops.cancel() }
+        r.localVideos.add(entry: analyzedEntry(id: "e1"))
+        note(on: "e1", r)
+        note(on: "e1", r)
+        let counted = await ObservationLifecycle.wait {
+            r.model.matchList.mine.first { $0.entryId == "e1" }?.noteCount == 2
+        }
+        XCTAssertTrue(counted, "the list did not count the phone's notes")
+    }
+
     func testDeletingAMatchEverywhereTheServerAcceptsDiscardsTheFileToo() async {
         // Review focus 4: the surviving ANALYZED entry would bring the row
         // straight back as a phone-only match.

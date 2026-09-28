@@ -153,6 +153,15 @@ private fun entryAsks(entry: LocalVideoEntry, input: MatchListInput, hasRunResul
     }
 }
 
+/**
+ * The cloud clips' notes plus the notes made on this phone's copy. Two stores
+ * that never meet: a phone note lives only in the phone's settings and nothing
+ * uploads it, and `annotation_count` counts only rally_annotations rows, which
+ * only a clip's own page writes. So adding them counts no note twice.
+ */
+private fun noteCount(entry: LocalVideoEntry?, clips: List<RallyClip>, input: MatchListInput): Int =
+    clips.sumOf { it.annotationCount } + (entry?.let { input.localNoteCounts[it.id] } ?: 0)
+
 private fun deviceRunHoldsFile(entry: LocalVideoEntry, input: MatchListInput): Boolean =
     input.deviceRuns[entry.id]?.kind.let { it == DeviceRunKind.RUNNING || it == DeviceRunKind.PAUSED }
 
@@ -234,7 +243,7 @@ private fun videoItem(
         },
         deviceClipCount = deviceClips,
         rallyCount = rallies,
-        noteCount = clips.sumOf { it.annotationCount },
+        noteCount = noteCount(entry, clips, input),
         heatmapId = heatmapId,
         accessibilityStatus = statusDescription(where, analyses, asks.text),
     )
@@ -315,7 +324,7 @@ private fun scoreItem(
         },
         deviceClipCount = entry?.let { input.deviceClipCounts[it.id] } ?: 0,
         rallyCount = rallies,
-        noteCount = clips.sumOf { it.annotationCount },
+        noteCount = noteCount(entry, clips, input),
         heatmapId = heatmapId,
         accessibilityStatus = statusDescription(where, analyses, asks.text),
     )

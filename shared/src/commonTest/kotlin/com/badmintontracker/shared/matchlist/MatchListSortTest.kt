@@ -1,6 +1,7 @@
 package com.badmintontracker.shared.matchlist
 
 import com.badmintontracker.shared.localvideo.AnalyzeStage
+import com.badmintontracker.shared.localvideo.LocalAnnotation
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.model.RallyClip
 import com.badmintontracker.shared.scoring.MatchSetup
@@ -48,11 +49,13 @@ private fun build(
     logs: List<ScoreLog> = emptyList(),
     deviceClips: Map<String, Int> = emptyMap(),
     sharers: Map<String, String> = emptyMap(),
+    localNotes: Map<String, Int> = emptyMap(),
 ) = buildMatchList(
     MatchListInput(
         clips = clips, currentUserId = ME, sharerByVideoId = sharers, metadataByVideoId = emptyMap(),
         scoreLogs = logs, localEntries = entries, cloudProgress = emptyMap(), deviceRuns = emptyMap(),
         storedTrackIds = emptySet(), storedSkeletonIds = emptySet(), deviceClipCounts = deviceClips,
+        localNoteCounts = localNotes,
     ),
     TimeZone.UTC,
 )
@@ -103,6 +106,51 @@ class MatchListSortTest {
         val onDevice = list.mine.single { it.key == "score-l2" }
         onDevice.rallyCount shouldBe 6
         onDevice.noteCount shouldBe 0
+    }
+
+    @Test
+    fun a_match_only_on_this_phone_counts_the_notes_made_on_it() {
+        val item = build(entries = listOf(entry("e1", 8)), localNotes = mapOf("e1" to 3)).mine.single()
+        item.noteCount shouldBe 3
+    }
+
+    @Test
+    fun a_match_on_the_phone_and_in_the_cloud_adds_both_kinds_of_note() {
+        // Two stores that never meet: a note on the phone's copy is never
+        // uploaded, and a clip's count only counts rally_annotations rows, so
+        // adding them counts no note twice.
+        val item = build(
+            entries = listOf(entry("v1", 8, AnalyzeStage.ANALYZED)),
+            clips = clips("v1", 8, 2, 1),
+            localNotes = mapOf("v1" to 4),
+        ).mine.single()
+        item.noteCount shouldBe 7
+    }
+
+    @Test
+    fun a_scored_match_counts_the_notes_on_its_own_entry() {
+        val item = build(
+            logs = listOf(log("l1", 8)),
+            entries = listOf(entry("e1", 8).copy(scoreLogId = "l1")),
+            localNotes = mapOf("e1" to 2),
+        ).mine.single()
+        item.key shouldBe "score-l1"
+        item.noteCount shouldBe 2
+    }
+
+    @Test
+    fun a_cloud_match_is_not_credited_with_notes_on_an_entry_it_does_not_have() {
+        // Keyed by entry id: a count for a video this phone does not hold
+        // (the entry was removed, its notes with it) has no row to land on.
+        val item = build(clips = clips("v1", 8, 1), localNotes = mapOf("v1" to 5)).mine.single()
+        item.noteCount shouldBe 1
+    }
+
+    @Test
+    fun local_note_counts_count_each_videos_notes_and_leave_out_empty_lists() {
+        fun note(id: String) = LocalAnnotation(id = id, timestampSeconds = 1f, body = "", createdAtEpochMs = 0)
+        localNoteCounts(mapOf("a" to listOf(note("1"), note("2")), "b" to emptyList(), "c" to listOf(note("3")))) shouldBe
+            mapOf("a" to 2, "c" to 1)
     }
 
     @Test
@@ -162,6 +210,17 @@ class MatchListSortTest {
             // d and b have 8 (d newer); c has 2; a has clips but no notes, and
             // e and l no clips at all: all three count 0 and go newest first.
             listOf("video-d", "video-b", "video-c", "video-e", "video-a", "score-l")
+    }
+
+    @Test
+    fun a_noted_match_only_on_this_phone_rises_under_most_notes() {
+        val list = build(
+            clips = clips("cloud", 9, 1, 1),
+            entries = listOf(entry("phone", 3)),
+            localNotes = mapOf("phone" to 5),
+        ).mine
+        list.keys() shouldBe listOf("video-cloud", "video-phone")
+        sortMatches(list, MatchListSort.MOST_NOTES).keys() shouldBe listOf("video-phone", "video-cloud")
     }
 
     @Test

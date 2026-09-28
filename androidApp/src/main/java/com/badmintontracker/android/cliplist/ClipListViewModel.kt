@@ -15,6 +15,7 @@ import com.badmintontracker.shared.matchlist.DeviceRun
 import com.badmintontracker.shared.matchlist.MatchList
 import com.badmintontracker.shared.matchlist.MatchListInput
 import com.badmintontracker.shared.matchlist.buildMatchList
+import com.badmintontracker.shared.matchlist.localNoteCounts
 import com.badmintontracker.shared.matchlist.matchTitle
 import com.badmintontracker.shared.model.MatchMetadata
 import com.badmintontracker.shared.model.RallyClip
@@ -240,7 +241,14 @@ class ClipListViewModel(
         ::PhoneSnapshot,
     )
 
-    val state = combine(cloud, phone, refreshGeneration) { c, p, generation ->
+    // Its own flow rather than a sixth PhoneSnapshot field (combine's typed
+    // overloads stop at five), reduced to counts before it meets the list so a
+    // note's text changing does not rebuild every row.
+    private val localNoteCounts = localAnnotations.byVideoId
+        .map { localNoteCounts(it) }
+        .distinctUntilChanged()
+
+    val state = combine(cloud, phone, refreshGeneration, localNoteCounts) { c, p, generation, notes ->
         val userId = auth.currentUserId()
         val matches = c.clips.toMatches(userId, c.sharerByVideoId, c.metadataByVideoId)
         val (owned, shared) = matches.partition { it.isOwned }
@@ -263,6 +271,7 @@ class ClipListViewModel(
                     storedTrackIds = p.stored.trackIds,
                     storedSkeletonIds = p.stored.skeletonIds,
                     deviceClipCounts = p.stored.clipCounts,
+                    localNoteCounts = notes,
                 ),
             ),
             storedResults = p.stored,

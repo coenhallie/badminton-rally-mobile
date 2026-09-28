@@ -37,14 +37,16 @@ final class MatchListBridgingTests: XCTestCase {
         deviceRuns: [String: DeviceRun] = [:],
         tracks: Set<String> = [],
         skeletons: Set<String> = [],
-        clipCounts: [String: KotlinInt] = [:]
+        clipCounts: [String: KotlinInt] = [:],
+        localNotes: [String: KotlinInt] = [:]
     ) -> MatchListInput {
         MatchListInput(
             clips: clips, currentUserId: "user-self",
             sharerByVideoId: [:], metadataByVideoId: [:], scoreLogs: [],
             localEntries: entries, cloudProgress: [:], deviceRuns: deviceRuns,
             storedTrackIds: tracks, storedSkeletonIds: skeletons,
-            deviceClipCounts: clipCounts
+            deviceClipCounts: clipCounts,
+            localNoteCounts: localNotes
         )
     }
 

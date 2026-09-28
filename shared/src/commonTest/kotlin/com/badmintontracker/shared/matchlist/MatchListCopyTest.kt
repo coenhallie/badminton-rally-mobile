@@ -157,6 +157,7 @@ class MatchListCopyTest {
             clips = clips, currentUserId = "me", sharerByVideoId = emptyMap(), metadataByVideoId = emptyMap(),
             scoreLogs = logs, localEntries = entries, cloudProgress = emptyMap(), deviceRuns = emptyMap(),
             storedTrackIds = tracks, storedSkeletonIds = skeletons, deviceClipCounts = deviceClips,
+            localNoteCounts = emptyMap(),
         ),
         TimeZone.UTC,
     ).mine.single().also { it.canRemoveFromPhone shouldBe true }
@@ -238,6 +239,7 @@ class MatchListCopyTest {
                 storedTrackIds = if (withStored) setOf("club") else emptySet(),
                 storedSkeletonIds = emptySet(),
                 deviceClipCounts = if (withStored) mapOf("club" to 3) else emptyMap(),
+                localNoteCounts = emptyMap(),
             ),
             TimeZone.UTC,
         )

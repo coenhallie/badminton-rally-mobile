@@ -73,8 +73,9 @@ class ClipListViewModelMatchListTest {
     private val scoreLogs =
         ScoreLogsRepository(MapSettings(), now = { Instant.fromEpochMilliseconds(0) }, ownerId = { "user-self" })
 
+    private val annotations = LocalAnnotationsRepository(MapSettings())
+
     private fun newViewModel(scoreLogs: ScoreLogsRepository = this.scoreLogs): ClipListViewModel {
-        val annotations = LocalAnnotationsRepository(MapSettings())
         val coordinator = AnalyzeCoordinator(
             localVideos, FakeVideosRepository(), FakeClipsRepository(),
             CoroutineScope(dispatcher),
@@ -128,6 +129,23 @@ class ClipListViewModelMatchListTest {
         mine.single().where shouldBe MatchWhere.BOTH
         mine.single().entryId shouldBe "v1"
         mine.single().videoId shouldBe "v1"
+    }
+
+    @Test
+    fun a_note_made_on_the_phone_counts_toward_its_match_as_it_is_added_and_deleted() = runTest {
+        localVideos.add(entry("e1"))
+        val vm = newViewModel()
+        subscribe(vm)
+        vm.state.value.matchList.mine.single().noteCount shouldBe 0
+
+        val first = annotations.add("e1", 1f, "late split step", label = null)
+        annotations.add("e1", 4f, "", label = null)
+        advanceUntilIdle()
+        vm.state.value.matchList.mine.single().noteCount shouldBe 2
+
+        annotations.delete("e1", first.id)
+        advanceUntilIdle()
+        vm.state.value.matchList.mine.single().noteCount shouldBe 1
     }
 
     @Test

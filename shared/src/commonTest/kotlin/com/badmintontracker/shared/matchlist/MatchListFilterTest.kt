@@ -44,6 +44,7 @@ private fun input(
     clips = clips, currentUserId = ME, sharerByVideoId = emptyMap(), metadataByVideoId = emptyMap(),
     scoreLogs = logs, localEntries = entries, cloudProgress = emptyMap(), deviceRuns = emptyMap(),
     storedTrackIds = emptySet(), storedSkeletonIds = emptySet(), deviceClipCounts = emptyMap(),
+    localNoteCounts = emptyMap(),
 )
 
 private fun build(i: MatchListInput) = buildMatchList(i, TimeZone.UTC)
