@@ -1,13 +1,14 @@
 package com.badmintontracker.shared.home
 
 /**
- * Every string the tab host, the Settings tab and the empty Matches tab draw.
- * One place for both clients, the way MatchListCopy holds the list's.
+ * The match list's title, its Add button and empty state, and the Settings
+ * page's contents. One place for both clients, the way MatchListCopy holds the
+ * list's rows. The Settings title and the gear's label are
+ * `MatchPageCopy.SETTINGS`.
  */
 object HomeCopy {
-    const val TAB_MATCHES = "Matches"
-    const val TAB_ANALYTICS = "Analytics"
-    const val TAB_SETTINGS = "Settings"
+    /** The match list's title: the app's root screen. */
+    const val MATCHES_TITLE = "Matches"
 
     /**
      * Not "New match", which the mock drew: the sheet this opens lists "New
@@ -16,12 +17,9 @@ object HomeCopy {
      */
     const val ADD_MATCH = "Add match"
 
-    /** Under the hero on an empty Matches tab. Names what the Add button does. */
+    /** Under the hero on an empty match list. Names what the Add button does. */
     const val EMPTY_BODY =
         "Score a match courtside, or record or import a video to cut it into rallies. Your matches will show up here."
-
-    const val ANALYTICS_EMPTY_TITLE = "No matches yet"
-    const val ANALYTICS_EMPTY_BODY = "Add a match on the Matches tab and it will be listed here, ready to analyze."
 
     const val SETTINGS_LABELS = "Labels"
     const val SETTINGS_LABELS_DETAIL = "Tags you add to rallies"

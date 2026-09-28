@@ -46,7 +46,7 @@ fun SwipeToRemoveRow(
     // The state is remembered once per row, and its confirmValueChange with it:
     // passed onSwiped directly, a row went on calling the callback of its first
     // composition, closed over whatever that composition knew. A row on the
-    // Matches tab's list is first composed before the stored results are read,
+    // match list is first composed before the stored results are read,
     // so its swipe opened "Remove video?" for the row as it was then, without
     // the rallies and the heatmap it was by then drawing. Read through
     // rememberUpdatedState, the swipe always calls the latest callback.

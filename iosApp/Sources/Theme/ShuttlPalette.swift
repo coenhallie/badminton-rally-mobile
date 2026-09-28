@@ -51,6 +51,14 @@ enum ShuttlPalette {
     /// jump from a dark-only design into a light theme.
     static let onAccent:        Pair = (0x04240F, 0x06210F)
     static let accentDark:      Pair = (0x15803D, 0x22C55E)
+    /// Accent-coloured text on an inverse surface: `textHeading` as the fill,
+    /// which is what the toast draws on. That ground is near-black in light and
+    /// near-white in dark, the opposite of the page, so the lettering takes the
+    /// OTHER theme's `accentDark`, the value that theme already letters on the
+    /// same ground. Plain `accent` read 1.5:1 there in dark. Mirrors
+    /// androidApp's `inversePrimary`; see
+    /// ShuttlPaletteTests.testToastReadsInBothThemes.
+    static let inverseAccent:   Pair = (accentDark.dark, accentDark.light)
     /// The match list's analysis chips: this glyph on `accent` at
     /// `analysisChipOpacity` over the row. The accent itself is 2.4:1 on that
     /// chip in light, under the 3:1 a glyph that alone carries meaning needs,

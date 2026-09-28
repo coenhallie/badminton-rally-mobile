@@ -20,7 +20,7 @@ import com.badmintontracker.shared.home.HomeCopy
 fun addButtonExpanded(firstVisibleItemIndex: Int): Boolean = firstVisibleItemIndex == 0
 
 /**
- * The Matches tab's bottom-right "Add match". Opens the same three-option
+ * The list's bottom-right "Add match". Opens the same three-option
  * sheet the Home pill used to.
  *
  * Every colour and the shape are set here rather than left to Material: the

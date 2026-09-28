@@ -1,5 +1,6 @@
 package com.badmintontracker.shared.localvideo
 
+import com.badmintontracker.shared.model.CourtKeypoints
 import com.badmintontracker.shared.util.SyncLock
 import com.badmintontracker.shared.util.withLock
 import com.russhwolf.settings.Settings
@@ -31,11 +32,11 @@ enum class LocalVideoRemoval {
      * The video, the cut clips and the SKELETON go - the skeleton is drawn over
      * playback, so without the file it is an artifact nothing can display. The
      * tracks stay, because the heatmap and the base position are computed
-     * entirely from them and work with no video at all. That is what
-     * `AnalyticsRowState.READY_NO_VIDEO` is for - for a match that also has a
-     * cloud copy, whose row lists the kept track. A match only on this phone
-     * leaves the match list with its entry, so nothing lists its track again
-     * (`MatchListCopy.removeFromPhoneDetail` tells the coach so).
+     * entirely from them and work with no video at all: a track kept after its
+     * file is gone still opens the match page's Analysis, for a match that
+     * also has a cloud copy, whose row lists the kept track. A match only on
+     * this phone leaves the match list with its entry, so nothing lists its
+     * track again (`MatchListCopy.removeFromPhoneDetail` tells the coach so).
      */
     VIDEO_ONLY,
 }
@@ -126,6 +127,16 @@ class LocalVideoRepository(
 /** Marks a FAILED entry's result dialog as seen (Swift-friendly single-purpose mutation). */
 fun LocalVideoRepository.acknowledgeResult(id: String) =
     update(id) { it.copy(resultSeen = true) }
+
+/**
+ * Saves the court points marked for this video (Swift-friendly single-purpose
+ * mutation). Every run saves them before it starts, cloud and on-device alike:
+ * they are how the match list tells a marked court from an unmarked one (an
+ * on-device run never moves the stage off LOCAL), they let a failed cloud run
+ * resume without re-marking, and they prefill the marking screen next time.
+ */
+fun LocalVideoRepository.setKeypoints(id: String, keypoints: CourtKeypoints) =
+    update(id) { it.copy(keypoints = keypoints) }
 
 /**
  * Stores the match name and description (Swift-friendly single-purpose mutation).

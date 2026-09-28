@@ -41,6 +41,11 @@ struct ShuttlPlayer<Overlay: View, ErrorContent: View>: View {
     /// Whether the card offers fullscreen. Off for the skeleton view, whose panels
     /// under the card are the point of it.
     var allowsFullscreen = false
+    /// A primary button under the transport, above the label chips: the match
+    /// page's Analyze. Here rather than under this whole view because the chips
+    /// are this view's, and Android draws the button between the transport and
+    /// its chips.
+    var primaryAction: PlayerPrimaryAction? = nil
     /// Drawn over the frame and scaled with it.
     @ViewBuilder var overlay: Overlay
     @ViewBuilder var errorContent: ErrorContent
@@ -87,11 +92,22 @@ struct ShuttlPlayer<Overlay: View, ErrorContent: View>: View {
                 )
                 .padding(.top, PlayerMetrics.transportGap)
             }
+            if let primaryAction {
+                Button(primaryAction.label, action: primaryAction.perform)
+                    .buttonStyle(PrimaryButtonStyle())
+                    .padding(.horizontal, ShuttlGutter.page)
+                    .padding(.top, PlayerMetrics.actionGap)
+            }
             if onTag != nil {
                 ReplayLabelRow(labels: labels, message: tagMessage, onTag: tag)
                     .padding(.top, PlayerMetrics.labelGap)
             }
         }
+        // Its own height, whatever the host has left: the card is sized by its
+        // ratio, and next to a list that takes all the room there is (the match
+        // page's notes) it was handed a share of the height instead and drew a
+        // third narrower than the gutter, centred.
+        .fixedSize(horizontal: false, vertical: true)
         // Long enough to read at a glance, short enough not to be there for the
         // next rally. Keyed on a counter, so the same label twice restarts it.
         .task(id: tagMessageClock) {
@@ -257,14 +273,24 @@ struct ShuttlPlayer<Overlay: View, ErrorContent: View>: View {
 
 }
 
-/// Mirrors the mock's `margin-top: 14px` between the card and the transport.
-/// A file-scope constant rather than a nested one: `ShuttlPlayer` is generic over
-/// its overlay, and a generic type cannot hold a static stored property.
+/// The gaps down the player, androidApp's: 16 between the card and the
+/// transport, as every Android host sets it, and 16 again above the primary
+/// action and above the chips. A file-scope constant rather than a nested one:
+/// `ShuttlPlayer` is generic over its overlay, and a generic type cannot hold a
+/// static stored property.
 private enum PlayerMetrics {
-    static let transportGap: CGFloat = 14
+    static let transportGap: CGFloat = 16
+    static let actionGap: CGFloat = 16
     static let labelGap: CGFloat = 16
     /// Android's fullscreen transport sits 24dp off the bottom edge.
     static let fullscreenTransportInset: CGFloat = 24
+}
+
+/// A full-width primary button a host puts under the transport. See
+/// `ShuttlPlayer.primaryAction`.
+struct PlayerPrimaryAction {
+    let label: String
+    let perform: () -> Void
 }
 
 extension ShuttlPlayer where Overlay == EmptyView, ErrorContent == EmptyView {

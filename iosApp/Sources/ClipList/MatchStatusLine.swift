@@ -6,7 +6,7 @@ import SwiftUI
 ///
 /// Sized to fit the row's text column in the former 330pt drawer, measured
 /// there at 130pt on the iPhone 17 Pro (see `MatchListRowView`); the
-/// full-width Matches tab's column is wider. Two bare 14pt where-glyphs 2pt
+/// full-width list's column is wider. Two bare 14pt where-glyphs 2pt
 /// apart, a divider with 6pt either side, and up to four 18pt analysis chips
 /// 4pt apart is 127pt. Mirrors androidApp's MatchStatusLine.kt number for
 /// number.

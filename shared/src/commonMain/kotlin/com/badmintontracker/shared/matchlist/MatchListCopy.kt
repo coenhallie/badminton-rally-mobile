@@ -66,8 +66,6 @@ object MatchListCopy {
     const val MENU_SHARE = "Share"
     const val MENU_EDIT_DETAILS = "Edit details"
     const val MENU_ANALYZE_AGAIN = "Analyze again"
-    const val MENU_HEATMAP = "Player heatmap"
-    fun menuDeviceClips(count: Int) = "Clips on this phone ($count)"
     const val MENU_REMOVE_FROM_PHONE = "Remove video from this phone"
     const val MENU_DELETE = "Delete match"
     const val MENU_LEAVE_SHARE = "Remove from my list"

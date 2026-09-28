@@ -39,60 +39,19 @@ struct ClipDetailView: View {
 
     @ViewBuilder
     private func content(_ model: ClipDetailModel) -> some View {
-        VStack(spacing: 0) {
-            // The card takes the video's own ratio rather than a share of the
-            // screen: the mock sizes it that way, and the 60% slab this replaced
-            // letterboxed a 16:9 clip with black above and below it.
-            ShuttlPlayer(
-                player: model.player,
-                prefs: rally.playbackPrefs,
-                step: { model.stepFrames($0) },
-                // Tagging is the owner's, like the "+" beside the title: a viewer
-                // of a shared match gets no chips rather than chips that do nothing.
-                labels: model.isOwner ? model.labels : [],
-                onTag: model.isOwner ? { label, _ in Task { await model.add(label: label, body: "") } } : nil,
-                tagError: model.actionError,
-                allowsFullscreen: true
-            )
-            .padding(.top, 8)
-            .padding(.bottom, 8)
-
-            if let error = model.error {
-                VStack(spacing: 8) {
-                    ErrorBanner(message: error)
-                    Button("Retry") { Task { await model.retry() } }
-                        .buttonStyle(PrimaryButtonStyle())
-                        .frame(maxWidth: 160)
-                }
-                .padding(16)
-            }
-
-            HStack {
-                Text(model.displayTitle ?? "")
-                    .shuttlType(ShuttlType.headlineMedium)
-                    .foregroundStyle(Shuttl.textHeading)
-                Spacer()
-                if model.isOwner {
-                    Button {
-                        showAddSheet = true
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-                }
-            }
-            .padding(16)
-
-            if let actionError = model.actionError {
-                ErrorBanner(message: actionError)
-            }
-
-            List {
-                ForEach(model.annotations, id: \.id) { annotation in
-                    annotationRow(annotation, model: model)
-                }
-            }
-            .listStyle(.plain)
+        // The player and the title pinned, the notes scrolling under them, or
+        // all of it as one scroll where that leaves the notes no room: the
+        // player keeps its own height, so at a large text size the list had
+        // none left. The notes take the title's 16pt inset.
+        PlayerNotesLayout(notes: model.annotations, id: \.id, rowInsets: Self.noteInsets) {
+            head(model)
+        } row: { annotation in
+            annotationRow(annotation, model: model)
         }
+        // The page's own colour, as the Match section draws it. The notes list
+        // is clear, so without this the page showed the system background,
+        // which in dark is pure black against the palette's near-black.
+        .background(Shuttl.bg)
         .sheet(isPresented: $showAddSheet) {
             AddAnnotationSheet(
                 labels: model.labels,
@@ -113,6 +72,61 @@ struct ClipDetailView: View {
                 }
                 deleteTarget = nil
             }
+        }
+    }
+
+    /// A note row's insets: the title's 16 either side, and UIKit's own cell
+    /// margin above and below, which is what the list gave these rows before.
+    private static let noteInsets = EdgeInsets(top: 11, leading: 16, bottom: 11, trailing: 16)
+
+    /// The player, the load error, the title with the owner's add, and the
+    /// last action's error.
+    @ViewBuilder
+    private func head(_ model: ClipDetailModel) -> some View {
+        // The card takes the video's own ratio rather than a share of the
+        // screen: the mock sizes it that way, and the 60% slab this replaced
+        // letterboxed a 16:9 clip with black above and below it.
+        ShuttlPlayer(
+            player: model.player,
+            prefs: rally.playbackPrefs,
+            step: { model.stepFrames($0) },
+            // Tagging is the owner's, like the "+" beside the title: a viewer
+            // of a shared match gets no chips rather than chips that do nothing.
+            labels: model.isOwner ? model.labels : [],
+            onTag: model.isOwner ? { label, _ in Task { await model.add(label: label, body: "") } } : nil,
+            tagError: model.actionError,
+            allowsFullscreen: true
+        )
+        .padding(.top, 8)
+        .padding(.bottom, 8)
+
+        if let error = model.error {
+            VStack(spacing: 8) {
+                ErrorBanner(message: error)
+                Button("Retry") { Task { await model.retry() } }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .frame(maxWidth: 160)
+            }
+            .padding(16)
+        }
+
+        HStack {
+            Text(model.displayTitle ?? "")
+                .shuttlType(ShuttlType.headlineMedium)
+                .foregroundStyle(Shuttl.textHeading)
+            Spacer()
+            if model.isOwner {
+                Button {
+                    showAddSheet = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+            }
+        }
+        .padding(16)
+
+        if let actionError = model.actionError {
+            ErrorBanner(message: actionError)
         }
     }
 

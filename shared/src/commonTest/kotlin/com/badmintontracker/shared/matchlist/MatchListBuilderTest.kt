@@ -4,6 +4,7 @@ import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.AnalyzeStep
 import com.badmintontracker.shared.localvideo.DevicePhase
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
+import com.badmintontracker.shared.model.CourtKeypoints
 import com.badmintontracker.shared.model.MatchMetadata
 import com.badmintontracker.shared.model.RallyClip
 import com.badmintontracker.shared.scoring.MatchSetup
@@ -31,13 +32,18 @@ private fun entry(
     title: String? = null,
     addedAt: String = SEP_8,
     failureMessage: String? = null,
+    keypoints: CourtKeypoints? = null,
 ) = LocalVideoEntry(
     id = id, uri = "content://x/$id", displayName = "$id.mp4",
     durationMs = 48_000, sizeBytes = 10, addedAtEpochMs = Instant.parse(addedAt).toEpochMilliseconds(),
     title = title, stage = stage,
     failedStep = if (stage == AnalyzeStage.FAILED) AnalyzeStep.PROCESSING else null,
-    failureMessage = failureMessage, scoreLogId = scoreLogId,
+    failureMessage = failureMessage, scoreLogId = scoreLogId, keypoints = keypoints,
 )
+
+private val COURT = List(12) { listOf(0f, 0f) }.let {
+    CourtKeypoints(it[0], it[1], it[2], it[3], it[4], it[5], it[6], it[7], it[8], it[9], it[10], it[11])
+}
 
 private fun clip(videoId: String, index: Int, owner: String = ME, at: String = SEP_8, title: String? = null) = RallyClip(
     id = "$videoId-$index", videoId = videoId, ownerId = owner, rallyIndex = index,
@@ -91,7 +97,6 @@ class MatchListBuilderTest {
         item.entryId shouldBe "v1"
         item.videoId shouldBe "v1"
         item.analyses shouldContainExactly listOf(MatchAnalysis.RALLIES)
-        item.opensLocalPlayer shouldBe false
     }
 
     @Test
@@ -101,7 +106,6 @@ class MatchListBuilderTest {
         item.analyses.shouldBeEmpty()
         item.action shouldBe MatchAction.ANALYZE
         item.statusText shouldBe MatchListCopy.NOT_ANALYZED
-        item.opensLocalPlayer shouldBe true
         item.detail shouldBe "0:48 · Sep 8, 2026"
     }
 
@@ -292,7 +296,8 @@ class MatchListBuilderTest {
 
     @Test
     fun the_skeleton_is_not_offered_once_the_video_has_left_the_phone() {
-        // Same rule as AnalyticsRowState.READY_NO_VIDEO: it is drawn over playback.
+        // A track kept after its file is gone still has a heatmap; the
+        // skeleton does not, because it is drawn over playback.
         val item = build(input(
             clips = listOf(clip("v1", 1)), tracks = setOf("v1"), skeletons = setOf("v1"),
         )).mine.single()
@@ -347,6 +352,87 @@ class MatchListBuilderTest {
         )).mine.single()
         item.action shouldBe MatchAction.MARK_COURT
         item.where shouldBe MatchWhere.PHONE
+    }
+
+    // A device run never moves the entry off LOCAL, so on a scored match the
+    // run and what it left must speak, not "court not marked".
+
+    @Test
+    fun a_scored_match_analyzed_on_the_device_shows_its_analyses_and_asks_nothing() {
+        val item = build(input(
+            logs = listOf(log("l1", points = 6)),
+            entries = listOf(entry("v1", scoreLogId = "l1", keypoints = COURT)),
+            tracks = setOf("v1"), skeletons = setOf("v1"), deviceClips = mapOf("v1" to 1),
+        )).mine.single()
+        item.analyses shouldContainExactly listOf(
+            MatchAnalysis.RALLIES, MatchAnalysis.HEATMAP, MatchAnalysis.SKELETON, MatchAnalysis.SCORE,
+        )
+        item.action shouldBe MatchAction.NONE
+        item.statusText.shouldBeNull()
+    }
+
+    @Test
+    fun a_scored_match_analyzed_on_the_device_before_its_court_was_saved_asks_nothing() {
+        // iOS did not save the court points on a device run, so its older
+        // entries have results and no points. The results prove the marking.
+        val item = build(input(
+            logs = listOf(log("l1", points = 6)),
+            entries = listOf(entry("v1", scoreLogId = "l1")),
+            tracks = setOf("v1"), deviceClips = mapOf("v1" to 1),
+        )).mine.single()
+        item.action shouldBe MatchAction.NONE
+        item.statusText.shouldBeNull()
+    }
+
+    @Test
+    fun a_scored_match_with_a_device_run_in_flight_says_so() {
+        val item = build(input(
+            logs = listOf(log("l1", points = 6)),
+            entries = listOf(entry("v1", scoreLogId = "l1")),
+            deviceRuns = mapOf("v1" to DeviceRun(DeviceRunKind.RUNNING, DevicePhase.ANALYSING)),
+        )).mine.single()
+        item.action shouldBe MatchAction.RUNNING
+        item.statusText shouldBe "Analyzing on device…"
+    }
+
+    @Test
+    fun a_scored_match_whose_device_run_failed_asks_for_a_retry_in_red() {
+        val item = build(input(
+            logs = listOf(log("l1", points = 6)),
+            entries = listOf(entry("v1", scoreLogId = "l1", keypoints = COURT)),
+            deviceRuns = mapOf("v1" to DeviceRun(DeviceRunKind.FAILED, message = "Out of memory")),
+        )).mine.single()
+        item.action shouldBe MatchAction.RETRY
+        item.statusText shouldBe "Analysis failed: Out of memory"
+        item.statusIsError shouldBe true
+    }
+
+    @Test
+    fun a_scored_match_with_a_marked_court_and_nothing_run_asks_to_analyze() {
+        val item = build(input(
+            logs = listOf(log("l1", points = 6)),
+            entries = listOf(entry("v1", scoreLogId = "l1", keypoints = COURT)),
+        )).mine.single()
+        item.action shouldBe MatchAction.ANALYZE
+        item.statusText shouldBe MatchListCopy.NOT_ANALYZED
+    }
+
+    @Test
+    fun a_scored_match_in_the_cloud_pipeline_still_speaks_through_its_stage() {
+        // Cloud runs save the court points too; the stage keeps the say.
+        val uploading = build(input(
+            logs = listOf(log("l1", points = 6)),
+            entries = listOf(entry("v1", AnalyzeStage.UPLOADING, scoreLogId = "l1", keypoints = COURT)),
+        )).mine.single()
+        uploading.action shouldBe MatchAction.RUNNING
+        uploading.statusText shouldBe "Uploading…"
+        val failed = build(input(
+            logs = listOf(log("l1", points = 6)),
+            entries = listOf(entry("v1", AnalyzeStage.FAILED, scoreLogId = "l1", failureMessage = "Upload failed", keypoints = COURT)),
+        )).mine.single()
+        failed.action shouldBe MatchAction.RETRY
+        failed.statusText shouldBe "Upload failed"
+        failed.statusIsError shouldBe true
     }
 
     // --- removal and delete (review focus 4) ---

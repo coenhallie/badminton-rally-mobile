@@ -1,11 +1,17 @@
 import SwiftUI
 import Shared
 
-/// The points half of a match: the score header, the tag tally and one row per
-/// point, newest first. Lifted from `ScoreMatchView` unchanged: same header, same
-/// tally gate, same newest-first point list. The Score/Resume button is omitted
-/// rather than disabled once there is nothing left to score - undo lives on the
-/// board itself, not on this page.
+/// The match page's Points section: the score header, the tag tally and one row
+/// per point, newest first. Lifted from `ScoreMatchView`: same header, same tally
+/// gate, same newest-first point list. The Score/Resume button is omitted rather
+/// than disabled once there is nothing left to score - undo lives on the board
+/// itself, not on this page.
+///
+/// Every row sits in the page's 24pt gutter, as every other section does: at the
+/// list's own inset, switching from Points to Match moved the page's left edge.
+/// The vertical insets are androidApp's `PointsFacet`'s, the header's top being
+/// `MatchPageLayout.rowInset` like a rally row's, which the page's gap under the
+/// section row counts on.
 struct PointsFacet: View {
     let log: ScoreLog
     let card: ScoreMatchCard?
@@ -48,7 +54,7 @@ struct PointsFacet: View {
                     .padding(.top, 8)
                 }
             }
-            .padding(.vertical, 4)
+            .pointsListRow(top: MatchPageLayout.rowInset, bottom: 16)
         }
 
         // How the match was tagged courtside, in the rally page's visual language
@@ -72,7 +78,7 @@ struct PointsFacet: View {
                         }
                     }
                 }
-                .padding(.vertical, 4)
+                .pointsListRow(top: 12, bottom: 12)
             }
         }
 
@@ -87,6 +93,7 @@ struct PointsFacet: View {
                 ) { EmptyView() }
                 .listRowInsets(EdgeInsets())
                 .listRowSeparator(.hidden)
+                .listSectionSeparator(.hidden, edges: .top)
                 .listRowBackground(Color.clear)
             }
         } else {
@@ -94,6 +101,7 @@ struct PointsFacet: View {
             Section {
                 ForEach(points.reversed(), id: \.ordinal) { point in
                     pointRow(point)
+                        .pointsListRow(top: 10, bottom: 10)
                 }
             }
         }
@@ -121,12 +129,26 @@ struct PointsFacet: View {
                 Text(comment).shuttlType(ShuttlType.bodySmall).foregroundStyle(Shuttl.textSecondary)
             }
         }
-        .padding(.vertical, 2)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// "21 points, best of 3". Rules are shared; this sentence is iOS copy.
     private func rulesSummary(_ rules: ScoringRules) -> String {
         let games = rules.gamesToWin == 1 ? "single game" : "best of \(rules.gamesToWin * 2 - 1)"
         return "\(rules.pointsToWin) points, \(games)"
+    }
+}
+
+private extension View {
+    /// A Points row's list chrome: the page's gutter either side, the given
+    /// insets above and below, a separator edge to edge in the border token
+    /// rather than the system grey, no rule above a section's first row, and
+    /// no fill of its own, as `.rallyListRow()` does for a rally.
+    func pointsListRow(top: CGFloat, bottom: CGFloat) -> some View {
+        listRowInsets(EdgeInsets(top: top, leading: ShuttlGutter.page, bottom: bottom, trailing: ShuttlGutter.page))
+            .fullBleedListSeparator()
+            .listRowSeparatorTint(Shuttl.border)
+            .listSectionSeparator(.hidden, edges: .top)
+            .listRowBackground(Color.clear)
     }
 }

@@ -4,23 +4,10 @@ enum LocalVideoStatus {
     /// How a cloud run reads on this row. Forwards the shared rule rather than
     /// porting it: this used to be a hand-copied version of Android's own
     /// mapping, and the copy that mattered was the third one - Android's
-    /// Analytics list wrote its own and drifted to "Uploading" with no
-    /// percentage while this said "Uploading 42%…" for the same run.
+    /// since-deleted Analytics list wrote its own and drifted to "Uploading"
+    /// with no percentage while this said "Uploading 42%…" for the same run.
     static func text(stage: AnalyzeStage, progress: AnalyzeProgress?) -> String? {
         LocalVideoEntryKt.cloudAnalysisStatus(stage: stage, progress: progress)
-    }
-
-    /// Whether this video's Analyze button should be live.
-    ///
-    /// Both pipelines, because either can be busy with it and only one of them
-    /// moves the stage. A device run leaves the stage on LOCAL for its whole
-    /// length, so a button asking the stage alone sits there live over the run
-    /// it already started: pressing it walks the coach through marking the court
-    /// again and then returns immediately on `LocalAnalysisRunner.start`'s own
-    /// guard. Android shipped exactly that, twice, before it was given
-    /// `isDeviceRunInFlight`.
-    static func canAnalyze(stage: AnalyzeStage, device: LocalAnalysisState = .idle) -> Bool {
-        (stage == .local || stage == .failed) && !isDeviceRunInFlight(device)
     }
 
     /// What a paused device run says. `deviceRun(for:)` below hands this to the
@@ -68,11 +55,5 @@ enum LocalVideoStatus {
     /// stages (ANALYZED in particular) must not spin forever.
     static func isRunning(stage: AnalyzeStage) -> Bool {
         LocalVideoEntryKt.isAnalysisRunning(stage: stage)
-    }
-
-    /// "Re-analyze" once an attempt has failed (the video keeps its saved court
-    /// points and resumes from the failed step); "Analyze" for a fresh video.
-    static func analyzeButtonLabel(stage: AnalyzeStage) -> String {
-        stage == .failed ? "Re-analyze" : "Analyze"
     }
 }

@@ -17,10 +17,10 @@ final class VideoMatchDetailsUITests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
 
-        // Gated on the tab bar, which only exists behind sign-in, rather than on
-        // a control this test otherwise needs - the Matches tab's list is on
-        // screen at launch, with nothing to open first.
-        guard app.tabBars.buttons["Settings"].firstMatch.waitForExistence(timeout: 15) else {
+        // Gated on the list's Settings gear, which only exists behind sign-in,
+        // rather than on a control this test otherwise needs - the match list
+        // is on screen at launch, with nothing to open first.
+        guard app.buttons["Settings"].firstMatch.waitForExistence(timeout: 15) else {
             throw XCTSkip("not signed in on this simulator - cannot reach a match")
         }
         // Scrolled to, not assumed on screen: the list carries the videos on this

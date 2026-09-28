@@ -9,7 +9,7 @@ struct RowMenuItem: Identifiable {
     var id: String { label }
 }
 
-/// One match on the Matches tab's list: thumbnail, title, detail, players, the
+/// One match on the match list: thumbnail, title, detail, players, the
 /// status line, then whatever the match is asking of the coach.
 ///
 /// The list keeps exactly one raised surface, and since it became one list it
@@ -22,8 +22,8 @@ struct RowMenuItem: Identifiable {
 /// the menu, with no gap of its own before the menu: the 44pt menu box is
 /// trailing-aligned, so its glyph already sits well clear of the text. Sized
 /// to fit the former 330pt drawer, measured there on the iPhone 17 Pro: 250pt
-/// inside the row padding, 130pt for the text. The full-width Matches tab
-/// gives the column more than that now. The old local card spent 24pt more on
+/// inside the row padding, 130pt for the text. The full-width list gives the
+/// column more than that now. The old local card spent 24pt more on
 /// the gaps either side of a Spacer, which left 106pt, too narrow for a full
 /// status line.
 struct MatchListRowView: View {

@@ -80,12 +80,11 @@ internal fun heatmapSource(
 /**
  * One entry's court heatmap, or an honest line saying why there is none.
  *
- * Two screens show this: the standalone heatmap route a row's "Player heatmap"
- * menu item opens, and the Analytics detail's Heatmap tab. They resolve the
- * same track from the same two places, so the resolution lives here once. Two
- * copies is how the menu item's path rots while the newer one still looks fine,
- * and the menu item's path is how a coach returns to a run that cost half an
- * hour.
+ * AnalysisSection's Heatmap tab draws this. Which track it draws is
+ * [heatmapSource]'s, which BasePositionPanel calls too: one resolution for the
+ * two panels on the same court, since a second copy is how one of them rots
+ * while the other still looks fine, and this is how a coach returns to a run
+ * that cost half an hour.
  */
 @Composable
 fun HeatmapPanel(
@@ -98,14 +97,14 @@ fun HeatmapPanel(
     // one is not an option.
     //
     // The disk is read once per entry even when a run is in memory, because that
-    // run may be a pose-less one whose empty track must fall through. This is a
-    // detail screen reached by an explicit tap, so it is one parse per opening,
-    // not the per-row cost the Analytics list had to avoid.
+    // run may be a pose-less one whose empty track must fall through. This is
+    // the match page's Analysis section, reached by an explicit tap, so it is
+    // one parse per opening, not a per-row cost on the list.
     //
     // One parse, and not on the thread drawing the frame: `remember` runs its
     // block during composition, so the megabyte of track this reads was parsed
-    // on the main thread and the tab opened frozen for as long as it took.
-    // iOS reads it the same way, in AnalyticsDetailView.reload.
+    // on the main thread and the section opened frozen for as long as it took.
+    // iOS reads it the same way, in AnalysisSection.reload.
     val done = runner.stateFor(entryId) as? LocalAnalysisState.Done
     val loaded = produceState<Loaded?>(null, entryId, done) {
         value = withContext(Dispatchers.Default) {
@@ -141,7 +140,10 @@ fun HeatmapPanel(
                         sides = source.tracks.map { it.side },
                         selected = shown.side,
                         onSelect = { side = it },
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        // The court's gutter, as on Base and Skeleton: at 16dp this
+                        // row stood wider than the section and panel rows above it
+                        // and jumped sideways on every switch to Base.
+                        modifier = Modifier.padding(horizontal = COURT_GUTTER, vertical = 8.dp),
                     )
                 }
                 CourtHeatmapView(track = shown.track, fps = source.fps)
@@ -170,6 +172,9 @@ internal fun SideToggle(
         selectedIndex = sides.indexOf(selected).coerceAtLeast(0),
         onSelect = { onSelect(sides[it]) },
         modifier = modifier,
+        // Inside a panel, under the section and panel rows: the lowest of the
+        // three, never their peer.
+        secondary = true,
     )
 }
 

@@ -2,8 +2,8 @@ import Shared
 import XCTest
 @testable import iosApp
 
-/// The local player's loops, held to what `LocalPlayerView`'s `.task` does to
-/// them.
+/// `LocalPlayerModel`'s loops, held to what `MatchVideoSection`'s `.task` does
+/// to them.
 ///
 /// The defect these guard against lived in the view, where no unit test can
 /// reach it: the loops sat behind `guard model == nil`, so the first

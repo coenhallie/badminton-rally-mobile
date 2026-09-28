@@ -132,15 +132,16 @@ final class ScoringBoardUITests: XCTestCase {
         // rather than reporting a failure that says nothing about the board.
         // The same guard LabelSwatchGridUITests uses, and for the same reason.
         //
-        // Gated on the tab bar rather than on the Add button this test goes on
-        // to tap: the tab bar only exists behind sign-in, so it proves the app
-        // is signed in without also being the control a rename or a loss of
-        // "Add match" would need to fail on instead of silently skip.
-        guard app.tabBars.buttons["Settings"].firstMatch.waitForExistence(timeout: 15) else {
+        // Gated on the list's Settings gear rather than on the Add button this
+        // test goes on to tap: the gear only exists behind sign-in, so it
+        // proves the app is signed in without also being the control a rename
+        // or a loss of "Add match" would need to fail on instead of silently
+        // skip.
+        guard app.buttons["Settings"].firstMatch.waitForExistence(timeout: 15) else {
             throw XCTSkip("not signed in on this simulator - cannot reach the board")
         }
         // "Add" was the list's own toolbar icon, then Home's "Add new match"
-        // pill; the Matches tab's own round "Add match" button opens the same
+        // pill; the match list's own round "Add match" button opens the same
         // three-row sheet now.
         app.buttons["Add match"].firstMatch.tap()
         let newMatch = app.buttons["New match"].firstMatch
@@ -200,9 +201,8 @@ final class ScoringBoardUITests: XCTestCase {
     /// back to a clean device stays red for a reason that is not about the board.
     private func deleteMatch(_ app: XCUIApplication) throws {
         app.buttons["Back"].firstMatch.tap()
-        // Back lands on the tab host, on the Matches tab the board was created
-        // from, with the list already on screen - no hamburger, no drawer to
-        // open first.
+        // Back lands on the match list the board was created from, already on
+        // screen - no hamburger, no drawer to open first.
         //
         // Scrolled to, not assumed on screen. The list carries videos on this
         // phone above matches, and a SwiftUI List is lazy, so a row below the

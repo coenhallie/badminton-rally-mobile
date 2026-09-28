@@ -4,6 +4,7 @@ import com.badmintontracker.shared.localvideo.AnalyzeProgress
 import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.AnalyzeStep
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
+import com.badmintontracker.shared.model.CourtKeypoints
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import kotlinx.datetime.Instant
@@ -16,6 +17,7 @@ class AttachStatusTest {
         failureMessage: String? = null,
         id: String = "vid-1",
         scoreLogId: String? = "log-1",
+        keypoints: CourtKeypoints? = null,
     ) = LocalVideoEntry(
         id = id, uri = "content://x/$id", displayName = "m.mp4",
         durationMs = 1000, sizeBytes = 10, addedAtEpochMs = 0,
@@ -23,7 +25,12 @@ class AttachStatusTest {
         failedStep = if (stage == AnalyzeStage.FAILED) AnalyzeStep.PROCESSING else null,
         failureMessage = failureMessage,
         scoreLogId = scoreLogId,
+        keypoints = keypoints,
     )
+
+    private val court = List(12) { listOf(0f, 0f) }.let {
+        CourtKeypoints(it[0], it[1], it[2], it[3], it[4], it[5], it[6], it[7], it[8], it[9], it[10], it[11])
+    }
 
     private fun log(videoId: String? = null) = ScoreLog(
         id = "log-1",
@@ -47,6 +54,31 @@ class AttachStatusTest {
         val status = attachStatus(hasVideo = false, entry = entry(), uploadPercent = null, clipCount = 0)
         status?.kind shouldBe AttachKind.COURT_NOT_MARKED
         status?.text shouldBe "Video added, court not marked"
+    }
+
+    @Test
+    fun a_picked_video_whose_court_is_marked_is_not_asked_for_the_court() {
+        // A device run never moves the stage off LOCAL, so LOCAL alone does not
+        // mean unmarked: the saved court points do. What the marked video is
+        // doing next is the device run's to say, not the attach status's.
+        attachStatus(hasVideo = false, entry = entry(keypoints = court), uploadPercent = null, clipCount = 0).shouldBeNull()
+    }
+
+    @Test
+    fun a_marked_local_entry_on_a_bound_match_is_not_finishing_up() {
+        // Nothing is uploading for a LOCAL entry, so the no-clips-yet gap the
+        // FINISHING_UP spinner stands for is not this one.
+        attachStatus(hasVideo = true, entry = entry(keypoints = court), uploadPercent = null, clipCount = 0).shouldBeNull()
+    }
+
+    @Test
+    fun saved_court_points_do_not_change_what_a_cloud_stage_says() {
+        attachStatus(false, entry(AnalyzeStage.UPLOADING, keypoints = court), uploadPercent = 42, clipCount = 0)
+            ?.kind shouldBe AttachKind.UPLOADING
+        attachStatus(true, entry(AnalyzeStage.PROCESSING, keypoints = court), null, clipCount = 0)
+            ?.kind shouldBe AttachKind.CLIPPING
+        attachStatus(true, entry(AnalyzeStage.FAILED, "Upload failed", keypoints = court), null, clipCount = 0)
+            ?.kind shouldBe AttachKind.FAILED
     }
 
     @Test
@@ -120,24 +152,10 @@ class AttachStatusTest {
     }
 
     @Test
-    fun the_per_log_derivation_finds_its_own_entry_among_others() {
-        // Both the match row and the match page call this with the whole entry
-        // list and the whole progress map - it has to pick out the one entry
-        // that actually belongs to this log, not just the first one around.
-        val status = scoreLogAttachStatus(
+    fun attachStatusFor_converts_upload_progress_to_a_percentage() {
+        val status = attachStatusFor(
             log = log(),
-            entries = listOf(entry(id = "other", scoreLogId = "log-other"), entry(id = "vid-1")),
-            progress = emptyMap(),
-            clipCount = 0,
-        )
-        status?.kind shouldBe AttachKind.COURT_NOT_MARKED
-    }
-
-    @Test
-    fun the_per_log_derivation_converts_upload_progress_the_same_way_attachStatus_does() {
-        val status = scoreLogAttachStatus(
-            log = log(),
-            entries = listOf(entry(AnalyzeStage.UPLOADING)),
+            entry = entry(AnalyzeStage.UPLOADING),
             progress = mapOf("vid-1" to AnalyzeProgress(entryId = "vid-1", uploadProgress = 0.42f)),
             clipCount = 0,
         )
@@ -145,22 +163,10 @@ class AttachStatusTest {
     }
 
     @Test
-    fun the_per_log_derivation_reads_hasVideo_off_the_log_itself() {
-        scoreLogAttachStatus(log = log(videoId = "v1"), entries = emptyList(), progress = emptyMap(), clipCount = 3)
+    fun attachStatusFor_reads_hasVideo_off_the_log_itself() {
+        attachStatusFor(log = log(videoId = "v1"), entry = null, progress = emptyMap(), clipCount = 3)
             .shouldBeNull()
-        scoreLogAttachStatus(log = log(videoId = "v1"), entries = emptyList(), progress = emptyMap(), clipCount = 0)
+        attachStatusFor(log = log(videoId = "v1"), entry = null, progress = emptyMap(), clipCount = 0)
             ?.kind shouldBe AttachKind.FINISHING_UP
-    }
-
-    @Test
-    fun attachStatusFor_is_the_same_derivation_scoreLogAttachStatus_delegates_to() {
-        // scoreLogAttachStatus is now a one-line delegate to attachStatusFor
-        // with its own scoreLogId-only lookup; a caller that has already picked
-        // an entry - the match list's builder - calls attachStatusFor directly
-        // with that entry instead, so the two can never derive a different
-        // answer for the same (log, entry) pair.
-        val theEntry = entry(AnalyzeStage.UPLOADING)
-        attachStatusFor(log(), theEntry, emptyMap(), clipCount = 0) shouldBe
-            scoreLogAttachStatus(log(), listOf(theEntry), emptyMap(), clipCount = 0)
     }
 }

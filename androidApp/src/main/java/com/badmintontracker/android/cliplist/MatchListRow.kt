@@ -1,6 +1,8 @@
 package com.badmintontracker.android.cliplist
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
@@ -17,9 +19,9 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -36,6 +38,9 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
@@ -55,7 +60,7 @@ import com.badmintontracker.shared.repo.MediaRepository
 data class RowMenuItem(val label: String, val onClick: () -> Unit)
 
 /**
- * One match on the Matches tab's list: thumbnail, title, detail, players, the
+ * One match on the list: thumbnail, title, detail, players, the
  * status line, then whatever the match is asking of the coach.
  *
  * The list keeps exactly one raised surface, and since it became one list it
@@ -99,12 +104,16 @@ private fun MatchListRowContent(
     refreshGeneration: Int,
 ) {
     val hasMenu = menu.isNotEmpty()
-    // An IconButton carries 12dp of its own padding inside a 48dp box. Backing
-    // that out of the row's end inset is what puts the glyph the same 16dp from
-    // the card's edge as the thumbnail on the other side, instead of an optical
-    // 28dp that reads as a misaligned card. Whatever spans the row's full width
-    // below adds the 12dp back, so it ends flush with the card's right inset.
-    val menuCompensation = if (hasMenu) 12.dp else 0.dp
+    // The overflow glyph sits in one column with the icons above the list, the
+    // Settings gear and the legend's info button, whose centres are 36dp from
+    // the screen edge (12dp inside the list's 24dp margin). A row's card ends
+    // at that margin, so the menu takes the row's whole end inset and draws
+    // its glyph at the end of its 48dp target, 12dp from the card's edge; see
+    // RowMenu. It had sat 16dp in, in line with the thumbnail's inset, which
+    // left a column of dots 16dp short of the icons over them. Whatever spans
+    // the row's full width below takes the inset back, so it still ends flush
+    // with the card's right inset.
+    val menuCompensation = if (hasMenu) DrawerList.rowPaddingH else 0.dp
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -177,14 +186,32 @@ private fun RowText(text: String, primary: Boolean = false) {
     )
 }
 
+/**
+ * The row's overflow menu: a full 48dp touch target that ends at the card's
+ * edge, with the glyph drawn at its end rather than its centre, so the glyph
+ * lines up with the header icons (see MatchListRowContent) while the whole
+ * target stays inside the card, whose clip would otherwise cut into it. The
+ * ripple is centred on the glyph, not on the target.
+ */
 @Composable
 private fun RowMenu(menu: List<RowMenuItem>) {
     var open by remember { mutableStateOf(false) }
+    val interaction = remember { MutableInteractionSource() }
     // The menu must share a Box with its anchor: DropdownMenu positions itself
-    // relative to its parent, not the IconButton.
+    // relative to its parent.
     Box {
-        IconButton(onClick = { open = true }) {
-            Icon(Icons.Default.MoreVert, contentDescription = MatchListCopy.MATCH_MENU)
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clickable(interactionSource = interaction, indication = null, role = Role.Button) { open = true }
+                .semantics { contentDescription = MatchListCopy.MATCH_MENU },
+            contentAlignment = Alignment.CenterEnd,
+        ) {
+            Icon(
+                Icons.Default.MoreVert,
+                contentDescription = null,
+                modifier = Modifier.indication(interaction, ripple(bounded = false, radius = 20.dp)),
+            )
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             menu.forEach { entry ->

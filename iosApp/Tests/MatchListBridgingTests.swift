@@ -8,7 +8,7 @@ import XCTest
 /// platform's device-run state reduced to the list's.
 ///
 /// The builder's own rules are pinned in shared's MatchListBuilderTest; this
-/// only pins the shape the Matches tab's list compiles against.
+/// only pins the shape the match list compiles against.
 final class MatchListBridgingTests: XCTestCase {
 
     private func entry(id: String, stage: AnalyzeStage) -> LocalVideoEntry {
@@ -101,7 +101,8 @@ final class MatchListBridgingTests: XCTestCase {
         XCTAssertNil(LocalVideoStatus.deviceRun(for: .idle))
         let done = LocalAnalysisState.Done(
             rallies: 1, shuttleVisible: 1, totalFrames: 1, clips: [], elapsedSeconds: 1,
-            playerTrack: PlayerTrack(samples: [], framesWithPose: 0, rejections: [:]), fps: 30
+            playerTrack: PlayerTrack(samples: [], framesWithPose: 0, rejections: [:]), fps: 30,
+            skeletonSaved: false
         )
         XCTAssertNil(LocalVideoStatus.deviceRun(for: .done(done)))
     }

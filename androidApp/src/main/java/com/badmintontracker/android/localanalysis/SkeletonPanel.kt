@@ -231,7 +231,7 @@ private fun SkeletonPlayer(
     val player = remember { frameExactPlayer(context) }
     var playbackError by remember { mutableStateOf<String?>(null) }
     DisposableEffect(player) {
-        // Mirrors LocalPlayerScreen: the analysed file can be moved or
+        // Mirrors MatchVideoSection: the analysed file can be moved or
         // deleted behind us, and without a listener the player just
         // freezes silently instead of saying so.
         val listener = object : Player.Listener {

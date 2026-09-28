@@ -10,7 +10,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 
 /**
- * The three ways a match starts, behind the Matches tab's "Add match" button.
+ * The three ways a match starts, behind the list's "Add match" button.
  *
  * Mirrors iosApp's AddMatchSheet.swift. The actions are unchanged from the
  * three item menu this replaces; only the way in is different.

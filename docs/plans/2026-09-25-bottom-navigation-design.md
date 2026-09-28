@@ -2,6 +2,8 @@
 
 **Date:** 2026-09-25
 **Status:** implemented on `feat/bottom-navigation` (2026-09-26); real-phone checks open
+Superseded in part by `2026-09-26-match-page-hub-design.md`: the tab bar and the
+Analytics tab are gone.
 **Asked for:** "We can list recent matches on the landing page instead of just showing
 3 buttons (two big buttons and one link your matches). The add match button can be on
 the bottom right corner." Plus: can a bottom navigation bar carry Analytics and

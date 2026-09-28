@@ -8,8 +8,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.badmintontracker.android.cliplist.ClipRow
 import com.badmintontracker.android.cliplist.MatchLabelStrip
@@ -31,12 +33,12 @@ fun sortClips(clips: List<RallyClip>, sort: ClipSort): List<RallyClip> = when (s
 /**
  * The rally half of a match: the label summary strip, who played, the match
  * description and one row per clip. A `LazyListScope` extension rather than a
- * screen, because the match page renders it inside the same list as the points
- * facet and one scroll container per page is the whole point of merging the two
- * screens.
+ * screen, because the match page's Rallies section renders it inside a list the
+ * page owns, under the section's own sort row: one scroll container for the
+ * section, not one nested in another.
  *
  * @param details "Coen vs Marco · Doubles" from [matchDetailsLine], or null. The
- *   points facet has its own legend for this; here it is what a match that was
+ *   Points section has its own legend for this; here it is what a match that was
  *   only ever filmed has to say about itself once its details are filled in.
  */
 fun LazyListScope.ralliesFacet(
@@ -63,14 +65,14 @@ fun LazyListScope.ralliesFacet(
                 summary = summary,
                 onClick = onSummaryClick,
             )
-            HorizontalDivider()
+            HorizontalDivider(color = RallyDivider)
         }
     }
     // One block for both lines, so a match with a players line and a description
     // gets one divider under them rather than a ruled row each.
     if (details != null || description != null) {
         item(key = "match-details") {
-            Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Column(Modifier.padding(horizontal = MatchPageGutter, vertical = MatchRowInset)) {
                 details?.let { d ->
                     Text(
                         text = d,
@@ -87,7 +89,7 @@ fun LazyListScope.ralliesFacet(
                     )
                 }
             }
-            HorizontalDivider()
+            HorizontalDivider(color = RallyDivider)
         }
     }
     // Matches MatchClipsScreen's original gate: while a refresh is in flight an
@@ -110,7 +112,15 @@ fun LazyListScope.ralliesFacet(
     } else if (clips.isNotEmpty()) {
         items(clips, key = { it.id }) { clip ->
             ClipRow(clip, media, onClick = { onClipClick(clip) }, matchTitle = matchTitle)
-            HorizontalDivider()
+            HorizontalDivider(color = RallyDivider)
         }
     }
 }
+
+/**
+ * The rule between rally rows, cloud and device alike: the border token, set
+ * here rather than left to DividerDefaults so the two lists cannot drift.
+ */
+internal val RallyDivider: Color
+    @Composable get() = MaterialTheme.colorScheme.outlineVariant
+

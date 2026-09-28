@@ -41,12 +41,16 @@ enum LocalVideoFiles {
     ///
     /// Call only at startup: an import stores its file before adding its entry, so a
     /// sweep racing one would delete the video the user just picked.
+    ///
+    /// `store` is the folder swept, the app's own unless a test hands it a
+    /// scratch one: the tests run inside the app, and a sweep of the real store
+    /// from a test takes every video on the device with it.
     @discardableResult
-    static func sweepOrphans(referenced: [String]) -> Int {
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+    static func sweepOrphans(referenced: [String], in store: URL = directory) -> Int {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: store.path)) ?? []
         let orphans = LocalVideoLogic.orphanedFileNames(inStore: names, referenced: referenced)
         for name in orphans {
-            try? FileManager.default.removeItem(at: directory.appendingPathComponent(name))
+            try? FileManager.default.removeItem(at: store.appendingPathComponent(name))
         }
         return orphans.count
     }

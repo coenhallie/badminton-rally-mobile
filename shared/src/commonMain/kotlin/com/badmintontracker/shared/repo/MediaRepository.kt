@@ -15,7 +15,7 @@ import kotlinx.datetime.Instant
  * Signed thumbnail URLs, reused while their signature holds.
  *
  * A signed URL is new on every call, and a new URL is a cache miss for every
- * image loader downstream. The Matches tab draws a cover for every cloud match
+ * image loader downstream. The match list draws a cover for every cloud match
  * each time its list comes on screen, so without this it would re-sign and
  * re-download all of them.
  * 50 minutes against the one-hour signature leaves a margin for a slow load.

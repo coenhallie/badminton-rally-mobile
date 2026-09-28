@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The Matches tab list's shared metrics, from the `Rally Drawer` mock (the
-/// list's home before the bottom bar replaced the drawer it sat in).
+/// The match list's shared metrics, from the `Rally Drawer` mock (the list's
+/// home before it became the root screen).
 ///
 /// The list is an inset one now, not a full-bleed one: rows are cards sitting on
 /// the panel with a margin either side, separated by a gap rather than by a
@@ -25,10 +25,10 @@ enum DrawerList {
     static let labelGap: CGFloat = 4
     /// The list's own top inset. On Android the LazyColumn carries it as
     /// contentPadding and every label carries `sectionGap`, which puts the first
-    /// label 26dp below the tab's own header; `firstSectionGap` is that same sum,
+    /// label 26dp below the screen's own header; `firstSectionGap` is that same sum,
     /// stated once, because a SwiftUI row carries its whole inset itself.
     static let listTopInset: CGFloat = 4
-    /// Above the FIRST label, measured from the tab's own header. Unlike a
+    /// Above the FIRST label, measured from the screen's own header. Unlike a
     /// later label there is no row above it to contribute `rowGap`.
     static let firstSectionGap: CGFloat = sectionGap + listTopInset
     static let thumbWidth: CGFloat = 64
@@ -58,14 +58,12 @@ extension View {
     }
 }
 
-/// A section's label on the Matches tab list: 12pt, secondary, sentence case.
+/// A section's label on the match list: 12pt, secondary, sentence case.
 ///
 /// Deliberately not `Shuttl.sectionLabel`, the uppercase tracked `labelSmall`
 /// the app's older lists use: the mocks for this redesign carry no uppercase and
-/// no positive tracking anywhere. AnalyticsListView.swift has since moved to
-/// this form and states its own spacing, so it draws the label itself rather
-/// than calling this; the two want one shared component. ShareSheetView.swift is
-/// the last screen still on the older form.
+/// no positive tracking anywhere. ShareSheetView.swift is the last screen still
+/// on the older form.
 struct DrawerSectionLabel: View {
     let text: String
 

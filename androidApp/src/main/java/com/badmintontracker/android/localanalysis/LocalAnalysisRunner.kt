@@ -63,7 +63,23 @@ sealed interface LocalAnalysisState {
         /** Empty unless a metric that needs pose was asked for. */
         val playerTrack: PlayerTrack,
         val fps: Double,
-    ) : LocalAnalysisState
+        /**
+         * Whether this run stored a skeleton. Carried because the track can
+         * be empty while the skeleton is not (the poses were found but the
+         * near/far gate kept no player), and that is still a result.
+         */
+        val skeletonSaved: Boolean = false,
+    ) : LocalAnalysisState {
+        /**
+         * Whether the run left anything to show: a cut rally, a track or a
+         * skeleton. A clips-only run on a clip with no rally in it finishes
+         * with none, and must not be announced as analyzed over a row that
+         * still says "Not analyzed". Decided from the run's own outcome, not
+         * from the match list, which can lag a run.
+         */
+        val foundSomething: Boolean
+            get() = clips.isNotEmpty() || playerTrack.samples.isNotEmpty() || skeletonSaved
+    }
     data class Failed(val message: String) : LocalAnalysisState
 }
 
@@ -334,7 +350,8 @@ class LocalAnalysisRunner(
                 // save throws, the outer catch turns it into Failed: a skeleton
                 // the coach asked for that could not be written is a failed
                 // run, not a silent omission.
-                when (skeletonAction(metrics, result.poses)) {
+                val skeleton = skeletonAction(metrics, result.poses)
+                when (skeleton) {
                     SkeletonAction.SAVE ->
                         skeletons.save(
                             entryId, result.poses, result.result.fps,
@@ -360,6 +377,7 @@ class LocalAnalysisRunner(
                         elapsedSeconds = (System.currentTimeMillis() - started) / 1000.0,
                         playerTrack = result.playerTrack,
                         fps = result.result.fps,
+                        skeletonSaved = skeleton == SkeletonAction.SAVE,
                     ),
                 )
                 log("local analysis done: ${clips.size} clips in ${(System.currentTimeMillis() - started) / 1000}s")

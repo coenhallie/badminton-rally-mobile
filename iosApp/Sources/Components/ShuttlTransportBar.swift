@@ -35,12 +35,22 @@ struct ShuttlTransportBar: View {
     @State private var playing = false
     @State private var speed = PlaybackOptions.shared.DEFAULT_SPEED
     @State private var width: CGFloat = 0
+    /// The text size the row is drawn at, which the measurement follows: the
+    /// environment's, not the app-wide setting, so a row under a size override
+    /// measures what it draws. Reading it also re-runs `metrics` when the size
+    /// changes, which nothing else did with the width unchanged: a row laid out
+    /// at an accessibility size kept those metrics back at the default size,
+    /// its skip pills empty. The same measurement as `ShuttlPillTabs`.
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     /// Measured, not guessed, so a larger text size costs the row a step rather
     /// than clipping a label. `.custom(_:size:)` scales with Dynamic Type relative
-    /// to the body style, so the measurement does too.
-    private static func textWidth(_ text: String, _ role: ShuttlType.Role) -> CGFloat {
-        let size = UIFontMetrics(forTextStyle: .body).scaledValue(for: role.size)
+    /// to the body style, so the measurement does too, at `dynamicTypeSize`.
+    private static func textWidth(
+        _ text: String, _ role: ShuttlType.Role, _ dynamicTypeSize: DynamicTypeSize
+    ) -> CGFloat {
+        let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
+        let size = UIFontMetrics(forTextStyle: .body).scaledValue(for: role.size, compatibleWith: traits)
         let font = UIFont(name: role.weight.rawValue, size: size) ?? .systemFont(ofSize: size)
         return ceil((text as NSString).size(withAttributes: [.font: font, .kern: role.kerning]).width)
     }
@@ -50,13 +60,14 @@ struct ShuttlTransportBar: View {
         func pill(_ forward: Bool, _ icons: Bool) -> CGFloat {
             Self.textWidth(
                 layout.pillLabel(skipSeconds: Int32(skipSeconds), forward: forward, showPillIcons: icons),
-                ShuttlType.bodySmall
+                ShuttlType.bodySmall,
+                dynamicTypeSize
             )
         }
         // The widest the readout gets, not what it says now: the row must not
         // re-space itself when the speed changes.
         let readout = PlaybackOptions.shared.speedOptions
-            .map { Self.textWidth(PlaybackOptions.shared.formatSpeed(speed: $0.floatValue), ShuttlType.labelMedium) }
+            .map { Self.textWidth(PlaybackOptions.shared.formatSpeed(speed: $0.floatValue), ShuttlType.labelMedium, dynamicTypeSize) }
             .max() ?? 0
         return layout.fit(
             availableWidth: Float(width),

@@ -2,12 +2,10 @@ package com.badmintontracker.android.match
 
 import com.badmintontracker.android.testing.FakeClipsRepository
 import com.badmintontracker.android.testing.FakeVideosRepository
-import com.badmintontracker.shared.localvideo.AnalyzeCoordinator
 import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
-import com.badmintontracker.shared.scoring.AttachKind
 import com.badmintontracker.shared.scoring.MATCH_VIDEO_REMOVE_FAILED_MESSAGE
 import com.badmintontracker.shared.scoring.MatchFormat
 import com.badmintontracker.shared.scoring.MatchSetup
@@ -17,8 +15,6 @@ import com.badmintontracker.shared.scoring.ScoringRules
 import com.badmintontracker.shared.scoring.Side
 import com.russhwolf.settings.MapSettings
 import io.kotest.matchers.shouldBe
-import io.ktor.utils.io.ByteReadChannel
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -58,16 +54,9 @@ class MatchViewModelTest {
 
     /**
      * Nothing under test here exercises the attach pipeline itself, so a real
-     * LocalVideoRepository (empty, or carrying one hand-added entry) and a
-     * coordinator wired to fakes is enough to satisfy the constructor.
+     * LocalVideoRepository (empty, or carrying one hand-added entry) is enough.
      */
     private fun localVideos() = LocalVideoRepository(MapSettings())
-    private fun coordinator(localVideos: LocalVideoRepository) = AnalyzeCoordinator(
-        localVideos, FakeVideosRepository(), FakeClipsRepository(),
-        CoroutineScope(dispatcher),
-        openChannel = { _, _ -> ByteReadChannel(ByteArray(0)) },
-        localAnnotations = LocalAnnotationsRepository(MapSettings()),
-    )
     private fun clips() = FakeClipsRepository()
 
     private fun matchViewModel(
@@ -77,7 +66,7 @@ class MatchViewModelTest {
         videos: FakeVideosRepository = FakeVideosRepository(),
         localAnnotations: LocalAnnotationsRepository = LocalAnnotationsRepository(MapSettings()),
     ) = MatchViewModel(
-        store, localVideos, coordinator(localVideos), clips(), videos, localAnnotations, scoreLogId,
+        store, localVideos, clips(), videos, localAnnotations, scoreLogId,
     )
 
     private fun entry(scoreLogId: String, id: String = "e1", stage: AnalyzeStage = AnalyzeStage.LOCAL) =
@@ -145,23 +134,6 @@ class MatchViewModelTest {
             )
         )
         matchViewModel(store, scoreLogId = log.id, localVideos = videos).state.value.canAddVideo shouldBe false
-    }
-
-    @Test
-    fun the_match_page_shows_the_same_status_the_list_row_would() {
-        val store = store()
-        val log = store.newMatch()
-        store.finish(log.id)
-        val videos = localVideos()
-        videos.add(
-            LocalVideoEntry(
-                id = "e1", uri = "content://x/e1", displayName = "m.mp4",
-                durationMs = 1000, sizeBytes = 10, addedAtEpochMs = 0,
-                scoreLogId = log.id,
-            )
-        )
-        val vm = matchViewModel(store, scoreLogId = log.id, localVideos = videos)
-        vm.state.value.attach?.kind shouldBe AttachKind.COURT_NOT_MARKED
     }
 
     @Test

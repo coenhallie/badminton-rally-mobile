@@ -38,7 +38,8 @@ class CloudPoseCoordinator(
         // The marks ride on the artifact, from the same videos row. Not taken
         // as a parameter: a match uploaded from another of this coach's
         // phones has no LocalVideoEntry here and so no local copy of them,
-        // and that match is exactly what READY_NO_VIDEO exists for.
+        // and that match, a track with no file on this phone, is exactly the
+        // one whose Analysis must work without the video.
         val artifact = repository.artifact(videoId).getOrThrow()
             ?: run {
                 // Said out loud, because this is the one outcome that is

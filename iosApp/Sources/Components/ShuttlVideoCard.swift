@@ -69,8 +69,11 @@ struct ShuttlVideoCard<Overlay: View, ErrorContent: View>: View {
             } else {
                 layers
                     .aspectRatio(ratio, contentMode: .fit)
-                    .frame(maxWidth: .infinity)
+                    // The video's own box, before the full width: clipped after
+                    // it, a card held short by its height kept square corners on
+                    // a frame narrower than the rounded one.
                     .clipShape(RoundedRectangle(cornerRadius: ShuttlRadius.large))
+                    .frame(maxWidth: .infinity)
                     .padding(.horizontal, CardMetrics.gutter)
             }
         }

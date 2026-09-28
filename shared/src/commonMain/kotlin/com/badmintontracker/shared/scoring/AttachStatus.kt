@@ -39,8 +39,18 @@ fun attachStatus(
 ): AttachStatus? {
     if (entry != null) {
         when (entry.stage) {
-            AnalyzeStage.LOCAL ->
-                return AttachStatus("Video added, court not marked", AttachKind.COURT_NOT_MARKED)
+            // LOCAL alone is not "unmarked": an on-device run never moves the
+            // stage, so a video analyzed on this phone stays LOCAL for good. The
+            // saved court points are what say the court was marked (both
+            // platforms save them before any run starts), and past that the
+            // device run speaks for itself, on the match list's row. Null, not a
+            // fall-through: nothing is uploading for a LOCAL entry, so a bound
+            // one with no clips is not "Finishing up…" either.
+            AnalyzeStage.LOCAL -> return if (entry.keypoints == null) {
+                AttachStatus("Video added, court not marked", AttachKind.COURT_NOT_MARKED)
+            } else {
+                null
+            }
             AnalyzeStage.UPLOADING -> return AttachStatus(
                 uploadPercent?.let { "Uploading $it%" } ?: "Uploading…",
                 AttachKind.UPLOADING,
@@ -55,15 +65,14 @@ fun attachStatus(
             AnalyzeStage.FAILED ->
                 return AttachStatus(entry.failureMessage ?: "Analysis failed", AttachKind.FAILED)
             // ANALYZED means the pipeline succeeded, not that clips have synced -
-            // the same gap the no-entry path below exists to cover. Today this is
+            // the same gap the no-entry path below exists to cover. This is
             // reachable only when the entry also carries local annotations (the
-            // only reason the pipeline keeps an entry past success), and an
-            // attached entry can no longer be opened in the local player to
-            // acquire any - so in practice clipCount is already > 0 by the time
-            // ANALYZED shows up here. That's correct by accident, not by
-            // guarantee: it rests on a chain of "you cannot get there from here"
-            // that later work can change. Fall through to the same clip-count
-            // question rather than assume the accident holds.
+            // only reason the pipeline keeps an entry past success). An attached
+            // entry once had no way to acquire any, because the local player
+            // would not open it; the match page's Match section now opens any
+            // entry on this phone, bound or not, so that chain of "you cannot
+            // get there from here" no longer holds. Fall through to the same
+            // clip-count question rather than assume clips have landed.
             AnalyzeStage.ANALYZED -> Unit
         }
     }
@@ -76,12 +85,12 @@ fun attachStatus(
 
 /**
  * [attachStatus] for one match, given the entry the caller has already picked
- * for it. Pulled out of [scoreLogAttachStatus] so a caller that resolves its
- * own (log, entry) pairing - the match list's builder, which folds a log, an
- * entry and a video's clips into one row - can hand that same entry straight
- * back here, rather than asking a second, independent lookup to agree with the
- * first. A row and the status it shows can then never disagree about which
- * entry it is, because both come from the one the row already chose.
+ * for it: the match list's builder, which folds a log, an entry and a video's
+ * clips into one row, hands that same entry straight back here rather than
+ * asking a second, independent lookup to agree with the first. A row and the
+ * status it shows can then never disagree about which entry it is, because both
+ * come from the one the row already chose. The match page shows that row's
+ * status too, rather than deriving its own (see `showsStatusBanner`).
  */
 fun attachStatusFor(
     log: ScoreLog,
@@ -98,26 +107,4 @@ fun attachStatusFor(
         uploadPercent = uploadPercent,
         clipCount = clipCount,
     )
-}
-
-/**
- * [attachStatusFor], finding the entry by [LocalVideoEntry.scoreLogId] alone -
- * the same rule this function has always used.
- *
- * Deliberately not the match list's own richer join (a log's video id can also
- * pick up an entry that was never told which log claimed it): its callers, the
- * match page on each platform (`MatchViewModel`, `MatchModel`), were written
- * against this narrower rule, and widening it out from under them would change
- * what they show without anyone deciding it should. A caller that has already
- * resolved a richer pairing of its own - the match list's builder - calls
- * [attachStatusFor] directly instead.
- */
-fun scoreLogAttachStatus(
-    log: ScoreLog,
-    entries: List<LocalVideoEntry>,
-    progress: Map<String, AnalyzeProgress>,
-    clipCount: Int,
-): AttachStatus? {
-    val entry = entries.firstOrNull { it.scoreLogId == log.id }
-    return attachStatusFor(log, entry, progress, clipCount)
 }

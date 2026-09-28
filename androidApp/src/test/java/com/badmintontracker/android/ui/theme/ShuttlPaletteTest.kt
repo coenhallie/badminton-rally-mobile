@@ -183,6 +183,26 @@ class ShuttlPaletteTest {
         (luminance(ShuttlPalette.bgRaised.dark) > luminance(ShuttlPalette.bgTertiary.dark)) shouldBe true
     }
 
+    /**
+     * The snackbar: the page colour on the heading colour, and its action in
+     * the other theme's accentDark (ShuttlColors' inverse slots). Both are
+     * text, so both clear 4.5:1. The accent itself would not in dark, where
+     * the snackbar is light: 1.5:1.
+     */
+    @Test
+    fun snackbar_text_and_action_clear_aa_on_the_inverse_surface() {
+        val others = mapOf("light" to { t: ShuttlPalette.Tone -> t.dark }, "dark" to { t: ShuttlPalette.Tone -> t.light })
+        for ((theme, pick) in themes) {
+            val surface = pick(ShuttlPalette.textHeading)
+            withClue("$theme bg on textHeading") {
+                contrast(pick(ShuttlPalette.bg), surface).shouldBeGreaterThanOrEqual(4.5)
+            }
+            withClue("$theme other theme's accentDark on textHeading") {
+                contrast(others.getValue(theme)(ShuttlPalette.accentDark), surface).shouldBeGreaterThanOrEqual(4.5)
+            }
+        }
+    }
+
     @Test
     fun dark_palette_matches_the_mock() {
         ShuttlPalette.bg.dark shouldBe 0x0B0C0DL

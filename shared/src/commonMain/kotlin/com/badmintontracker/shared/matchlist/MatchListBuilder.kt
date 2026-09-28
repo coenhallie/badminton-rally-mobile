@@ -148,7 +148,7 @@ private fun entryAsks(entry: LocalVideoEntry, input: MatchListInput, hasRunResul
         hasRunResults -> Asks(MatchAction.NONE, null, false)
         // Finished in the cloud, but this phone has not seen the clips: offline,
         // or deleted elsewhere. Asking to analyze it again would be a button that
-        // does nothing (canAnalyze is false for ANALYZED).
+        // does nothing.
         entry.stage == AnalyzeStage.ANALYZED -> Asks(MatchAction.NONE, MatchListCopy.ANALYZED, false)
         else -> Asks(MatchAction.ANALYZE, MatchListCopy.NOT_ANALYZED, false)
     }
@@ -233,7 +233,6 @@ private fun videoItem(
             entry != null && !removable -> MatchDelete.NONE
             else -> MatchDelete.VIDEO_MATCH
         },
-        opensLocalPlayer = entry != null && videoId == null,
         deviceClipCount = deviceClips,
         heatmapId = heatmapId,
         accessibilityStatus = statusDescription(where, analyses, asks.text),
@@ -253,19 +252,31 @@ private fun scoreItem(
     val videoId = clips.firstOrNull()?.videoId
     val (runAnalyses, heatmapId) = analysesFor(entry, videoId, clips.size, input)
     val analyses = if (started) runAnalyses + MatchAnalysis.SCORE else runAnalyses
-    // attachStatusFor with this row's own [entry], not scoreLogAttachStatus's
-    // independent (and narrower) lookup: the row's status must come from the
-    // entry the join above actually assigned it, or the two could disagree
-    // about which entry a log's video is.
+    // attachStatusFor with this row's own [entry], not an independent lookup
+    // by score log: the row's status must come from the entry the join above
+    // actually assigned it, or the two could disagree about which entry a
+    // log's video is.
     val attach = attachStatusFor(log, entry, input.cloudProgress, clips.size)
+        // A device run in flight, or what one left, proves the court was
+        // marked, even on an entry that has no saved points: iOS did not save
+        // them for a device run before 2026-09-27, and those entries keep
+        // their results.
+        ?.takeUnless {
+            it.kind == AttachKind.COURT_NOT_MARKED && entry != null &&
+                (runAnalyses.isNotEmpty() || input.deviceRuns[entry.id] != null)
+        }
     val asks = when (attach?.kind) {
         AttachKind.COURT_NOT_MARKED -> Asks(MatchAction.MARK_COURT, attach.text, false)
         AttachKind.FAILED -> Asks(MatchAction.RETRY, attach.text, true)
         AttachKind.UPLOADING, AttachKind.CLIPPING, AttachKind.FINISHING_UP -> Asks(MatchAction.RUNNING, attach.text, false)
         null -> entry?.let { e ->
-            // Only the device run can still be asking here: the cloud stages are
-            // what the attach status above already speaks for.
-            entryAsks(e, input, hasRunResults = true).takeIf { input.deviceRuns[e.id] != null }
+            // The device run, or for a LOCAL entry what the phone has done with
+            // it: a device run never leaves LOCAL, so its running line, its
+            // retry, its results or "Not analyzed" are all this row has to say.
+            // Any other stage is the cloud's, which the attach status above
+            // already speaks for.
+            entryAsks(e, input, hasRunResults = runAnalyses.isNotEmpty())
+                .takeIf { input.deviceRuns[e.id] != null || e.stage == AnalyzeStage.LOCAL }
         } ?: Asks(MatchAction.NONE, null, false)
     }
     val rallies = clips.size.takeIf { it > 0 } ?: (entry?.let { input.deviceClipCounts[it.id] } ?: 0)
@@ -301,7 +312,6 @@ private fun scoreItem(
             videoId != null -> MatchDelete.BOUND_MATCH
             else -> MatchDelete.SCORE_MATCH
         },
-        opensLocalPlayer = false,
         deviceClipCount = entry?.let { input.deviceClipCounts[it.id] } ?: 0,
         heatmapId = heatmapId,
         accessibilityStatus = statusDescription(where, analyses, asks.text),

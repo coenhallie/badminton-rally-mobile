@@ -40,10 +40,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.badmintontracker.android.home.MatchesEmptyState
 import com.badmintontracker.android.localvideo.MatchDetailsSheet
+import com.badmintontracker.android.match.MatchPageGutter
 import com.badmintontracker.android.share.ShareSheet
 import com.badmintontracker.android.ui.components.ConfirmDialog
 import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
+import com.badmintontracker.shared.matchlist.rallyLengthText
 import com.badmintontracker.shared.matchlist.MatchAction
 import com.badmintontracker.shared.matchlist.MatchConfirmation
 import com.badmintontracker.shared.matchlist.MatchDelete
@@ -62,12 +64,13 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 
 /**
- * The Matches tab's list: one row per match, wherever its video is, with
+ * The match list: one row per match, wherever its video is, with
  * "Shared with me" below it.
  *
  * Every row comes from the shared builder ([ClipListState.matchList]); this
  * screen only draws them and turns their taps, menus and swipes into the
- * callbacks below. Navigation takes ids, which is all the routes take.
+ * callbacks below. A tap hands the whole row up: the match page is found by
+ * whichever of its ids the list still has, so the caller needs them all.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -75,17 +78,12 @@ fun ClipListScreen(
     vm: ClipListViewModel,
     shares: SharesRepository,
     media: MediaRepository,
-    onMatchClick: (videoId: String) -> Unit,
-    onScoreMatchClick: (scoreLogId: String) -> Unit,
-    /** A file on this phone with nothing else to it: the local player. */
-    onLocalClick: (entryId: String) -> Unit = {},
+    /** Every row opens its match page, whatever the match has: see matchPageSections. */
+    onOpenMatch: (MatchListItem) -> Unit,
     /** Analyze, or analyze again: court marking, or a resume when the run can resume. */
     onAnalyze: (entryId: String) -> Unit = {},
     /** Court marking for this entry: a scored match's video that has not been marked yet. */
     onMarkCourt: (entryId: String) -> Unit = {},
-    /** Opens a stored player heatmap, by the id its track is keyed by. */
-    onOpenHeatmap: (heatmapId: String) -> Unit = {},
-    onOpenLocalClips: (entryId: String) -> Unit = {},
     /** Frees the file and keeps the tracks: see LocalVideoListViewModel.remove. */
     onRemoveFromPhone: (entryId: String) -> Unit = {},
     onLocalResultSeen: (entryId: String) -> Unit = {},
@@ -93,19 +91,19 @@ fun ClipListScreen(
     /** Entry just imported or recorded: its details sheet opens once, unprompted. */
     autoDetailsEntryId: String? = null,
     onAutoDetailsShown: () -> Unit = {},
-    /** Hoisted to the tab host: the Add button reads it, and it must outlive a tab switch. */
+    /** Hoisted to HomeScreen: the Add button reads it, and it is not inside the list. */
     listState: LazyListState,
-    /** The tab host's one host, so a snackbar sits above the bar and the Add button, not under them. */
+    /** HomeScreen's one host, so a snackbar sits above the Add button, not under it. */
     snackbarHostState: SnackbarHostState,
     /**
-     * Whether any sheet or dialog this list owns is open. The tab host folds it
-     * into "nothing above the tabs", which gates a finished run switching tabs:
-     * without it a run could switch tabs under a half-typed details sheet.
+     * Whether any sheet or dialog this list owns is open. HomeScreen folds it
+     * into "nothing above the list", which gates a finished run's snackbar:
+     * without it a run could offer View over a half-typed details sheet.
      */
     onOverlayChange: (Boolean) -> Unit = {},
-    /** The empty state's hero ticker stops while the tab is not on screen. */
+    /** The empty state's hero ticker stops while the add sheet covers it. */
     heroPaused: Boolean = false,
-    /** Room at the bottom so the last row and its menu scroll clear of the bar and the Add button. */
+    /** Room at the bottom so the last row and its menu scroll clear of the gesture bar and the Add button. */
     contentPadding: PaddingValues = PaddingValues(),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -187,17 +185,6 @@ fun ClipListScreen(
         choiceTarget != null || deleteTarget != null || removeTarget != null || resultEntry != null
     LaunchedEffect(overlayOpen) { onOverlayChange(overlayOpen) }
 
-    fun open(item: MatchListItem) {
-        val entryId = item.entryId
-        val scoreLogId = item.scoreLogId
-        val videoId = item.videoId
-        when {
-            item.opensLocalPlayer && entryId != null -> onLocalClick(entryId)
-            scoreLogId != null -> onScoreMatchClick(scoreLogId)
-            videoId != null -> onMatchClick(videoId)
-        }
-    }
-
     fun act(item: MatchListItem) {
         val entryId = item.entryId
         when (item.action) {
@@ -227,10 +214,6 @@ fun ClipListScreen(
         val entryId = item.entryId
         val videoId = item.videoId
         if (item.canShare && videoId != null) add(RowMenuItem(MatchListCopy.MENU_SHARE) { sheetVideoId = videoId })
-        if (item.deviceClipCount > 0 && entryId != null) {
-            add(RowMenuItem(MatchListCopy.menuDeviceClips(item.deviceClipCount)) { onOpenLocalClips(entryId) })
-        }
-        item.heatmapId?.let { id -> add(RowMenuItem(MatchListCopy.MENU_HEATMAP) { onOpenHeatmap(id) }) }
         if (item.canEditDetails) {
             state.localEntries.firstOrNull { it.id == entryId }?.let { entry ->
                 add(RowMenuItem(MatchListCopy.MENU_EDIT_DETAILS) { detailsTarget = DetailsTarget(entry, autoOpened = false) })
@@ -253,7 +236,7 @@ fun ClipListScreen(
             MatchListRow(
                 item = item,
                 media = media,
-                onClick = { open(item) },
+                onClick = { onOpenMatch(item) },
                 onAction = { act(item) },
                 menu = menuFor(item),
                 swipeLabel = swipe?.label,
@@ -270,9 +253,9 @@ fun ClipListScreen(
         }
     }
 
-    // No Scaffold: the tab host owns the Scaffold, the bar, the Add button and
-    // the one snackbar host. This is tab content, not a screen of its own, so
-    // a plain Box is all it needs to lay its own two states (empty, list) on
+    // No Scaffold: HomeScreen owns the Scaffold, the title bar, the Add button
+    // and the one snackbar host. This is its content, not a screen of its own,
+    // so a plain Box is all it needs to lay its own two states (empty, list) on
     // top of pull to refresh.
     Box(Modifier.fillMaxSize()) {
         PullToRefreshBox(
@@ -357,7 +340,7 @@ fun ClipListScreen(
 
     detailsTarget?.let { target ->
         // No drawer to open on close: the coach is already looking at the new
-        // row, on the Matches tab, whether this sheet auto-opened or the coach
+        // row, on the list, whether this sheet auto-opened or the coach
         // opened it from a row's menu.
         fun close() {
             detailsTarget = null
@@ -478,11 +461,10 @@ private val MONTHS = listOf(
 
 /**
  * "Sep 8, 2026". Used by [com.badmintontracker.android.match.MatchScreen]'s own
- * headline and by [com.badmintontracker.android.analytics.AnalyticsDetailScreen]'s
- * subtitle; the Matches list and the Analytics picker read the shared builder's own
- * `formatMatchDate` instead (`MatchListItem.detail`), which is where
- * `matchRowPrimary`/`matchRowSecondary` used to draw their own headline and
- * sub-line for those two screens before Task 4 moved them onto `MatchListItem`.
+ * headline; the match list reads the shared builder's own `formatMatchDate`
+ * instead (`MatchListItem.detail`), which is where `matchRowPrimary` and
+ * `matchRowSecondary` used to draw its headline and sub-line before they moved
+ * onto `MatchListItem`.
  */
 internal fun formatDate(instant: Instant): String {
     val ldt = instant.toLocalDateTime(TimeZone.currentSystemDefault())
@@ -504,7 +486,8 @@ internal fun ClipRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            // The match page's gutter: its Rallies section is where this row lives.
+            .padding(horizontal = MatchPageGutter, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AsyncImage(
@@ -520,7 +503,12 @@ internal fun ClipRow(
                 color = MaterialTheme.colorScheme.onBackground,
             )
             Text(
-                "${clip.durationSeconds}s · ${clip.annotationCount} notes".uppercase(Locale.ROOT),
+                // The length through the shared formatter: the stored float
+                // printed as it came ("25.1727S"). Left out, not "0.0s", when
+                // the clip has none.
+                listOfNotNull(rallyLengthText(clip.durationSeconds.toDouble()), "${clip.annotationCount} notes")
+                    .joinToString(" · ")
+                    .uppercase(Locale.ROOT),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

@@ -6,9 +6,10 @@ final class ClipListModel {
     let rally: RallyApp
     let analyze: AnalyzeCoordinator
     private(set) var clips: [RallyClip] = []
-    /// The Matches tab's and Analytics' rows: one per match wherever its video
-    /// is, built by the shared `buildMatchList` from everything below, so this
-    /// list and Android's cannot disagree about what a match is or what it has.
+    /// The match list's rows, which the match page finds its match in too: one
+    /// per match wherever its video is, built by the shared `buildMatchList`
+    /// from everything below, so this list and Android's cannot disagree about
+    /// what a match is or what it has.
     private(set) var matchList = MatchList(mine: [], shared: [])
     /// The single source of truth for every video on this phone. `ClipListView`
     /// reads this rather than keeping its own copy, so the rows and the attach
@@ -86,11 +87,14 @@ final class ClipListModel {
         self.liveDeviceRuns = liveDeviceRuns
     }
 
-    /// Runs for as long as the list is on screen: the Matches tab's
-    /// (`MatchesList`'s) and the Analytics tab's `.task` call this on every
-    /// appearance and cancel it on every disappearance - opening a match, or
-    /// selecting another tab, is a disappearance. Not idempotent: each call
-    /// runs its own five loops, and only the initial refresh is latched.
+    /// Runs for as long as a screen that reads the list is on screen: the
+    /// list's (`MatchesList`'s) and the match page's `.task` call this on
+    /// every appearance and cancel it on every disappearance - opening a
+    /// match, or Settings, is a disappearance of the list. The match page runs
+    /// it because it reads `matchList` for its sections, and the list's own
+    /// loops stop under it.
+    /// Not idempotent: each call runs its own five loops, and only the initial
+    /// refresh is latched.
     ///
     /// This used to latch on a `started` flag, to stop each return to the list
     /// stacking another set of loops. The latch was covering for the real

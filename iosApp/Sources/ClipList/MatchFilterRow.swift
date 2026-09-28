@@ -14,7 +14,7 @@ struct MatchFilterRow: View {
     var body: some View {
         HStack(spacing: 0) {
             if showChips {
-                // One line at the tab's width; at a large text size it
+                // One line at the screen's width; at a large text size it
                 // scrolls rather than wrapping into a second row of chips.
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
@@ -61,7 +61,7 @@ struct MatchFilterRow: View {
     /// three pills are then 229pt with their gaps, and the drawer's row left
     /// them 234pt beside the info button. In labelMedium they came to 257pt and
     /// "Not analyzed" sat half under the scroll edge at rest. The full-width
-    /// Matches tab leaves them more room than that now.
+    /// list leaves them more room than that now.
     private func pill(_ text: String, _ filter: MatchListFilter) -> some View {
         let isSelected = selected == filter
         return Button { onSelect(filter) } label: {

@@ -30,18 +30,16 @@ final class MatchModelTests: XCTestCase {
     }
 
     /// Nothing under test here exercises the attach pipeline itself, so a fresh
-    /// `testLocalVideoRepository()` (empty, or carrying one hand-added entry) and
-    /// a coordinator wired to test doubles is enough to satisfy the initializer.
+    /// `testLocalVideoRepository()` (empty, or carrying one hand-added entry) is
+    /// enough.
     private func model(
         scoreLogs: ScoreLogsRepository,
         scoreLogId: String?,
         localVideos: LocalVideoRepository = IosTestDoublesKt.testLocalVideoRepository(),
         videos: RecordingVideosRepository = IosTestDoublesKt.testVideosRepository()
     ) -> MatchModel {
-        let clips = IosTestDoublesKt.testClipsRepository()
-        let analyze = IosTestDoublesKt.testAnalyzeCoordinator(localVideos: localVideos, clips: clips)
-        return MatchModel(
-            scoreLogs: scoreLogs, localVideos: localVideos, analyze: analyze, clips: clips,
+        MatchModel(
+            scoreLogs: scoreLogs, localVideos: localVideos, clips: IosTestDoublesKt.testClipsRepository(),
             videos: videos, localAnnotations: IosTestDoublesKt.testLocalAnnotationsRepository(),
             scoreLogId: scoreLogId
         )
@@ -115,22 +113,6 @@ final class MatchModelTests: XCTestCase {
         ))
         let m = model(scoreLogs: store, scoreLogId: log.id, localVideos: videos)
         XCTAssertFalse(m.canAddVideo)
-    }
-
-    func testTheMatchPageShowsTheSameStatusTheListRowWould() {
-        let store = store()
-        let log = newMatch(store)
-        store.finish(id: log.id)
-        let videos = IosTestDoublesKt.testLocalVideoRepository()
-        videos.add(entry: LocalVideoEntry(
-            id: "e1", uri: "content://x/e1", displayName: "m.mp4",
-            durationMs: 1000, sizeBytes: 10, addedAtEpochMs: 0,
-            title: nil, description: nil, keypoints: nil,
-            stage: .local, failedStep: nil, failureMessage: nil, resultSeen: false,
-            scoreLogId: log.id
-        ))
-        let m = model(scoreLogs: store, scoreLogId: log.id, localVideos: videos)
-        XCTAssertEqual(m.attach?.kind, .courtNotMarked)
     }
 
     func testAMatchWithNoVideoIsOfferedNeitherChangeNorRemove() {

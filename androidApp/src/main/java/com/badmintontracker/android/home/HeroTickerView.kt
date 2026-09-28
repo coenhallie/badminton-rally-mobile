@@ -114,7 +114,7 @@ fun HeroTickerView(
         )
         // Sized to the tallest phrase, not the current one: some phrases wrap
         // to two lines on a phone-width screen and some do not, and the empty
-        // Matches tab sets body copy straight under the hero, so a box that
+        // match list sets body copy straight under the hero, so a box that
         // followed the current phrase would jump that copy a line up and down
         // on every rotation. The invisible copies only take up room; their
         // semantics are cleared so the merged hero still reads as one line.

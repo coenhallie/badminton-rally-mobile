@@ -16,8 +16,10 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -44,6 +46,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -53,6 +56,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.badmintontracker.android.R
 import com.badmintontracker.android.localvideo.formatDuration
+import com.badmintontracker.android.match.MatchPageGutter
 import com.badmintontracker.android.ui.icons.ShuttlIcons
 import com.badmintontracker.android.ui.theme.ShuttlRadius
 import com.badmintontracker.android.ui.theme.ShuttlVideoOverlay
@@ -120,6 +124,13 @@ fun VideoCard(
     onSettingsTap: () -> Unit,
     modifier: Modifier = Modifier,
     aspectRatio: Float? = null,
+    /**
+     * The tallest the card may be outside fullscreen, or null for no limit.
+     * With a limit the card fits both ways, narrower than the gutter allows
+     * and centred, instead of taking the full width and overflowing the
+     * height: the Match section in landscape outside fullscreen.
+     */
+    maxHeight: Dp? = null,
     fullscreen: Boolean = false,
     onFullscreenToggle: (() -> Unit)? = null,
     overlay: @Composable BoxScope.() -> Unit = {},
@@ -143,10 +154,15 @@ fun VideoCard(
     val ratio = (aspectRatio ?: measured ?: (16f / 9f)).coerceAtLeast(1f)
 
     val shape = RoundedCornerShape(ShuttlRadius.large)
-    val frame = if (fullscreen) {
-        modifier.fillMaxSize()
-    } else {
-        modifier.padding(horizontal = 24.dp).fillMaxWidth().aspectRatio(ratio).clip(shape)
+    // The match page's gutter, which the rally page and the skeleton panel
+    // share: the card lines up with the page's other rows on all three.
+    val frame = when {
+        fullscreen -> modifier.fillMaxSize()
+        maxHeight == null -> modifier.padding(horizontal = MatchPageGutter).fillMaxWidth().aspectRatio(ratio).clip(shape)
+        // wrapContentWidth lets aspectRatio pick the width the height allows
+        // (it tries the full width first, then the height's), centred.
+        else -> modifier.padding(horizontal = MatchPageGutter).fillMaxWidth().wrapContentWidth()
+            .heightIn(max = maxHeight).aspectRatio(ratio).clip(shape)
     }
 
     // Pinch to zoom, drag to pan once zoomed, double-tap to zoom in on a

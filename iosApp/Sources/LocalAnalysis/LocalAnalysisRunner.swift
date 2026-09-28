@@ -72,10 +72,25 @@ enum LocalAnalysisState: Equatable {
         /// Empty unless a metric that needs pose was asked for.
         let playerTrack: PlayerTrack
         let fps: Double
+        /// Whether this run stored a skeleton. Carried because the track can
+        /// be empty while the skeleton is not (the poses were found but the
+        /// near/far gate kept no player), and that is still a result.
+        let skeletonSaved: Bool
+
+        /// Whether the run left anything to show: a cut rally, a track or a
+        /// skeleton. A clips-only run on a video with no rally in it finishes
+        /// with none, and must not be announced as analyzed over a row that
+        /// still says "Not analyzed". Decided from the run's own outcome, not
+        /// from the match list, which can lag a run. Mirrors androidApp's
+        /// `LocalAnalysisState.Done.foundSomething`.
+        var foundSomething: Bool {
+            !clips.isEmpty || !playerTrack.samples.isEmpty || skeletonSaved
+        }
 
         static func == (lhs: Done, rhs: Done) -> Bool {
             lhs.rallies == rhs.rallies && lhs.totalFrames == rhs.totalFrames
                 && lhs.clips == rhs.clips && lhs.fps == rhs.fps
+                && lhs.skeletonSaved == rhs.skeletonSaved
         }
     }
 }
@@ -488,7 +503,8 @@ final class LocalAnalysisRunner {
         // so what the detail offers always belongs to the latest run and a coach
         // who declined it stops paying for it. The rule itself is shared, so the
         // two platforms cannot disagree about it.
-        switch SkeletonDecisionKt.skeletonAction(metrics: metrics, poses: result.poses) {
+        let skeleton = SkeletonDecisionKt.skeletonAction(metrics: metrics, poses: result.poses)
+        switch skeleton {
         case .save:
             try skeletons.save(
                 entryId: entryId, poses: result.poses, fps: result.result.fps,
@@ -523,7 +539,8 @@ final class LocalAnalysisRunner {
                 clips: clips,
                 elapsedSeconds: elapsed,
                 playerTrack: result.playerTrack,
-                fps: result.result.fps
+                fps: result.result.fps,
+                skeletonSaved: skeleton == .save
             )), for: entryId)
         }
         log("local analysis done: \(clips.count) clips in \(Int(elapsed))s")

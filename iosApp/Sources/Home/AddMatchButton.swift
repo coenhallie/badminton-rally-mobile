@@ -1,9 +1,9 @@
 import SwiftUI
 import Shared
 
-/// The Matches tab's round "Add match", bottom right, above the tab bar. Fixed
-/// size: resizing on scroll needs a scroll-position API iOS 17 does not have
-/// cleanly. Opens the same three-option sheet the Home pill used to.
+/// The match list's round "Add match", bottom right, above the home indicator.
+/// Fixed size: resizing on scroll needs a scroll-position API iOS 17 does not
+/// have cleanly. Opens the same three-option sheet the Home pill used to.
 struct AddMatchButton: View {
     let action: () -> Void
 

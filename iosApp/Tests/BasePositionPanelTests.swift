@@ -167,7 +167,8 @@ final class BasePositionPanelTests: XCTestCase {
             clips: [],
             elapsedSeconds: 9.0,
             playerTrack: trackWith(samples: samples),
-            fps: fps
+            fps: fps,
+            skeletonSaved: false
         )
     }
 

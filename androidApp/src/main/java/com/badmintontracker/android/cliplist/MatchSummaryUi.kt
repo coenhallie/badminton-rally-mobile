@@ -31,6 +31,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.badmintontracker.android.clipdetail.LabelBadge
+import com.badmintontracker.android.match.MatchPageGutter
+import com.badmintontracker.android.match.MatchRowInset
 import com.badmintontracker.shared.model.LabelColor
 import com.badmintontracker.shared.model.LabelCount
 import com.badmintontracker.shared.model.MatchLabelSummary
@@ -59,7 +61,10 @@ fun MatchLabelStrip(
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .semantics(mergeDescendants = true) { contentDescription = description }
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            // The match page's gutter and row inset: this strip heads its
+            // Rallies section, and its first line lands where every
+            // section's does (see MatchSectionGap).
+            .padding(horizontal = MatchPageGutter, vertical = MatchRowInset),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {

@@ -63,23 +63,24 @@ final class LocalVideoLogicTests: XCTestCase {
     }
 
     func testSweepOrphansDeletesOnlyUnreferencedFiles() throws {
-        let keep = try LocalVideoFiles.store(tempURL: tempVideo())
-        let orphan = try LocalVideoFiles.store(tempURL: tempVideo())
+        // A scratch store, not the app's: these tests run inside the host app,
+        // and a sweep of the real store deleted every video on the simulator.
+        let store = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sweep-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: store, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: store) }
+        let keep = store.appendingPathComponent("keep.mp4")
+        let orphan = store.appendingPathComponent("orphan.mp4")
+        try Data([0x00, 0x01]).write(to: keep)
+        try Data([0x00, 0x01]).write(to: orphan)
 
-        LocalVideoFiles.sweepOrphans(referenced: [keep])
+        let swept = LocalVideoFiles.sweepOrphans(
+            referenced: ["\(LocalVideoFiles.folderName)/keep.mp4"], in: store
+        )
 
-        XCTAssertTrue(FileManager.default.fileExists(
-            atPath: LocalVideoFiles.resolve(relativePath: keep).path))
-        XCTAssertFalse(FileManager.default.fileExists(
-            atPath: LocalVideoFiles.resolve(relativePath: orphan).path))
-        LocalVideoFiles.delete(relativePath: keep)
-    }
-
-    private func tempVideo() -> URL {
-        let temp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("sweep-\(UUID().uuidString).mp4")
-        try? Data([0x00, 0x01]).write(to: temp)
-        return temp
+        XCTAssertEqual(swept, 1)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: keep.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: orphan.path))
     }
 
     func testStoreCopiesIntoLocalVideosAndDeleteRemoves() throws {
@@ -92,5 +93,47 @@ final class LocalVideoLogicTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: stored.path))
         LocalVideoFiles.delete(relativePath: rel)
         XCTAssertFalse(FileManager.default.fileExists(atPath: stored.path))
+    }
+
+    // MARK: - analyseAction
+
+    private func entry(
+        id: String,
+        stage: AnalyzeStage = .local,
+        keypoints: CourtKeypoints? = nil
+    ) -> LocalVideoEntry {
+        LocalVideoEntry(
+            id: id, uri: "LocalVideos/\(id).mp4", displayName: "\(id).mp4",
+            durationMs: 60_000, sizeBytes: 1_000_000, addedAtEpochMs: 1_787_940_000_000,
+            title: nil, description: nil, keypoints: keypoints,
+            stage: stage, failedStep: nil, failureMessage: nil,
+            resultSeen: false, scoreLogId: nil
+        )
+    }
+
+    private func court() -> CourtKeypoints {
+        let p = [KotlinFloat(float: 0), KotlinFloat(float: 0)]
+        return CourtKeypoints(
+            topLeft: p, topRight: p, bottomRight: p, bottomLeft: p,
+            netLeft: p, netRight: p,
+            serviceLineNearLeft: p, serviceLineNearRight: p,
+            serviceLineFarLeft: p, serviceLineFarRight: p,
+            centerNear: p, centerFar: p
+        )
+    }
+
+    func testAFailedRunWithItsCourtAlreadySavedResumesFromTheFailedStep() {
+        XCTAssertEqual(
+            analyseAction(for: entry(id: "e1", stage: .failed, keypoints: court())),
+            .resume(entryId: "e1")
+        )
+    }
+
+    func testAFailedRunWithNoCourtMustBeMarkedAgain() {
+        XCTAssertEqual(analyseAction(for: entry(id: "e1", stage: .failed)), .markCourt(entryId: "e1"))
+    }
+
+    func testAFreshVideoStartsAtCourtMarking() {
+        XCTAssertEqual(analyseAction(for: entry(id: "e1")), .markCourt(entryId: "e1"))
     }
 }

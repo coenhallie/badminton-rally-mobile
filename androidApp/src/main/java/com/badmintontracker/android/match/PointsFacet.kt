@@ -32,8 +32,8 @@ import com.badmintontracker.shared.scoring.sideName
 /**
  * The points half of a match: the score header, the tag tally and one row per
  * point, newest first. A `LazyListScope` extension rather than a screen, for the
- * same reason [com.badmintontracker.android.match.ralliesFacet] is - the match page
- * renders whichever facet is selected inside one shared scroll container.
+ * same reason [com.badmintontracker.android.match.ralliesFacet] is - the match
+ * page's Points section renders it inside a list the page owns.
  *
  * Lifted from `ScoreMatchScreen` unchanged: same header, same tally gate, same
  * newest-first point list. The Score/Resume button, not [onScore] itself, is
@@ -49,7 +49,7 @@ fun LazyListScope.pointsFacet(
 ) {
     item(key = "points-header") {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            modifier = Modifier.fillMaxWidth().padding(start = MatchPageGutter, end = MatchPageGutter, top = MatchRowInset, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(
@@ -114,7 +114,7 @@ fun LazyListScope.pointsFacet(
 @Composable
 private fun TagTally(tally: ScoreTagSummary) {
     Column(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = MatchPageGutter, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
@@ -131,7 +131,7 @@ private fun TagTally(tally: ScoreTagSummary) {
 @Composable
 private fun PointRow(point: ScoredPoint, winner: String) {
     Column(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = MatchPageGutter, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Row(

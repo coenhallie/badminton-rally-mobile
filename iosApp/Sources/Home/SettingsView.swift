@@ -2,17 +2,20 @@ import SwiftUI
 import Shared
 
 /// Everything Home's overflow menu and the drawer's footer used to hold, in one
-/// place: the version line used to be drawn twice. The sign-in screen keeps its
-/// own theme toggle; it is outside the tabs.
+/// place: the version line used to be drawn twice. A page pushed from the
+/// match list's gear, with a back button. The sign-in screen keeps its own
+/// theme toggle; it is outside the signed-in stack.
 struct SettingsView: View {
     let rally: RallyApp
-    let onLabels: () -> Void
 
     @State private var themeMode: ThemeMode
+    /// Registered here rather than on HomeView: Labels is pushed from this
+    /// page, and a destination belongs on the view that is on screen when it
+    /// is pushed, not on one under it.
+    @State private var showLabels = false
 
-    init(rally: RallyApp, onLabels: @escaping () -> Void) {
+    init(rally: RallyApp) {
         self.rally = rally
-        self.onLabels = onLabels
         // Seeded from the stored preference, not a fixed .light: the `.task`
         // below only delivers it after the first frame, so a coach in dark
         // theme saw the switch start off and flip on.
@@ -20,81 +23,88 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // The indicator on every tab's header, as on every other screen's bar.
-            TabHeader(HomeCopy.shared.TAB_SETTINGS) { BackgroundWorkAction() }
-            ScrollView {
-                VStack(spacing: 12) {
-                    card {
-                        Button(action: onLabels) {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(HomeCopy.shared.SETTINGS_LABELS)
-                                        .shuttlType(ShuttlType.bodyLarge)
-                                        .foregroundStyle(Shuttl.textHeading)
-                                    Text(HomeCopy.shared.SETTINGS_LABELS_DETAIL)
-                                        .shuttlType(ShuttlType.bodySmall)
-                                        .foregroundStyle(Shuttl.textSecondary)
-                                }
-                                Spacer()
-                                Image(systemName: "chevron.right")
+        ScrollView {
+            VStack(spacing: 12) {
+                card {
+                    Button { showLabels = true } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(HomeCopy.shared.SETTINGS_LABELS)
+                                    .shuttlType(ShuttlType.bodyLarge)
+                                    .foregroundStyle(Shuttl.textHeading)
+                                Text(HomeCopy.shared.SETTINGS_LABELS_DETAIL)
                                     .shuttlType(ShuttlType.bodySmall)
                                     .foregroundStyle(Shuttl.textSecondary)
                             }
-                            .settingsRow()
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .shuttlType(ShuttlType.bodySmall)
+                                .foregroundStyle(Shuttl.textSecondary)
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(HomeCopy.shared.SETTINGS_LABELS)
-                        Divider().overlay(Shuttl.border)
-                        Toggle(isOn: Binding(
-                            get: { themeMode == .dark },
-                            set: { _ in rally.themePrefs.toggle() }
-                        )) {
-                            Text(HomeCopy.shared.SETTINGS_DARK_THEME)
+                        .settingsRow()
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(HomeCopy.shared.SETTINGS_LABELS)
+                    Divider().overlay(Shuttl.border)
+                    Toggle(isOn: Binding(
+                        get: { themeMode == .dark },
+                        set: { _ in rally.themePrefs.toggle() }
+                    )) {
+                        Text(HomeCopy.shared.SETTINGS_DARK_THEME)
+                            .shuttlType(ShuttlType.bodyLarge)
+                            .foregroundStyle(Shuttl.textHeading)
+                    }
+                    .tint(Shuttl.accent)
+                    .settingsRow()
+                }
+                card {
+                    if let email = rally.auth.currentUserEmail() {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(HomeCopy.shared.SETTINGS_SIGNED_IN_AS)
+                                .shuttlType(ShuttlType.bodySmall)
+                                .foregroundStyle(Shuttl.textSecondary)
+                            Text(email)
                                 .shuttlType(ShuttlType.bodyLarge)
                                 .foregroundStyle(Shuttl.textHeading)
                         }
-                        .tint(Shuttl.accent)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .settingsRow()
+                        Divider().overlay(Shuttl.border)
                     }
-                    card {
-                        if let email = rally.auth.currentUserEmail() {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(HomeCopy.shared.SETTINGS_SIGNED_IN_AS)
-                                    .shuttlType(ShuttlType.bodySmall)
-                                    .foregroundStyle(Shuttl.textSecondary)
-                                Text(email)
-                                    .shuttlType(ShuttlType.bodyLarge)
-                                    .foregroundStyle(Shuttl.textHeading)
-                            }
+                    Button {
+                        Task { _ = try? await SwiftInteropKt.signOutOrMessage(rally.auth) }
+                    } label: {
+                        Text(HomeCopy.shared.SETTINGS_SIGN_OUT)
+                            .shuttlType(ShuttlType.bodyLarge)
+                            .foregroundStyle(Shuttl.error)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .settingsRow()
-                            Divider().overlay(Shuttl.border)
-                        }
-                        Button {
-                            Task { _ = try? await SwiftInteropKt.signOutOrMessage(rally.auth) }
-                        } label: {
-                            Text(HomeCopy.shared.SETTINGS_SIGN_OUT)
-                                .shuttlType(ShuttlType.bodyLarge)
-                                .foregroundStyle(Shuttl.error)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .settingsRow()
-                        }
-                        .buttonStyle(.plain)
                     }
-                    Text(versionLabel())
-                        .shuttlType(ShuttlType.bodySmall)
-                        .foregroundStyle(Shuttl.textTertiary)
-                        .padding(.top, 6)
+                    .buttonStyle(.plain)
                 }
-                // The page gutter, so each card's edge sits under the tab's
-                // title as on Analytics and on Android.
-                .padding(.horizontal, ShuttlGutter.page)
-                .padding(.top, 8)
-                .padding(.bottom, 24)
+                Text(versionLabel())
+                    .shuttlType(ShuttlType.bodySmall)
+                    .foregroundStyle(Shuttl.textTertiary)
+                    .padding(.top, 6)
             }
+            // The page gutter, so each card's edge sits in the column the
+            // other pages and Android lay their content in.
+            .padding(.horizontal, ShuttlGutter.page)
+            .padding(.top, 8)
+            .padding(.bottom, 24)
         }
         .background(Shuttl.bg)
+        .navigationTitle(MatchPageCopy.shared.SETTINGS)
+        .navigationBarTitleDisplayMode(.inline)
+        .shuttlNavigationBarBackground()
+        .toolbar {
+            // The chrome indicator, on every bar androidApp puts it on. See
+            // `BackgroundWorkAction`.
+            ToolbarItem(placement: .topBarTrailing) { BackgroundWorkAction() }
+        }
+        .navigationDestination(isPresented: $showLabels) {
+            LabelsView(rally: rally)
+        }
         .task {
             for await mode in rally.themePrefs.mode { themeMode = mode }
         }
