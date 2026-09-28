@@ -138,20 +138,27 @@ internal fun gaussianBlur(src: GreyImage, sigma: Double): GreyImage {
 
     val w = src.width
     val h = src.height
+    // Each row is read through a copy padded by reflection, and each output
+    // row from precomputed reflected row offsets, so the taps need no border
+    // test. The same values are summed in the same order: identical results.
     val horizontal = FloatArray(w * h)
+    val padded = FloatArray(w + 2 * radius)
     for (y in 0 until h) {
         val row = y * w
+        for (j in padded.indices) padded[j] = src.pixels[row + reflect101(j - radius, w)]
         for (x in 0 until w) {
             var acc = 0.0
-            for (k in -radius..radius) acc += kernel[k + radius] * src.pixels[row + reflect101(x + k, w)]
+            for (k in 0..2 * radius) acc += kernel[k] * padded[x + k]
             horizontal[row + x] = acc.toFloat()
         }
     }
     val out = FloatArray(w * h)
+    val rows = IntArray(2 * radius + 1)
     for (y in 0 until h) {
+        for (k in rows.indices) rows[k] = reflect101(y + k - radius, h) * w
         for (x in 0 until w) {
             var acc = 0.0
-            for (k in -radius..radius) acc += kernel[k + radius] * horizontal[reflect101(y + k, h) * w + x]
+            for (k in rows.indices) acc += kernel[k] * horizontal[rows[k] + x]
             out[y * w + x] = acc.toFloat()
         }
     }
@@ -166,8 +173,9 @@ private fun convX(src: FloatArray, w: Int, h: Int, k0: Float, k1: Float, k2: Flo
     for (y in 0 until h) {
         val row = y * w
         for (x in 0 until w) {
-            val xm1 = reflect101(x - 1, w)
-            val xp1 = reflect101(x + 1, w)
+            // Reflection is only needed at the two ends of the row.
+            val xm1 = if (x == 0) reflect101(-1, w) else x - 1
+            val xp1 = if (x == w - 1) reflect101(w, w) else x + 1
             out[row + x] = k0 * src[row + xm1] + k1 * src[row + x] + k2 * src[row + xp1]
         }
     }
@@ -201,32 +209,43 @@ internal fun sobel2(src: GreyImage): SecondDerivatives {
     return SecondDerivatives(dxx, dyy, dxy)
 }
 
-private fun boxSum1D(line: DoubleArray, n: Int, radius: Int): DoubleArray {
-    val out = DoubleArray(n)
-    var sum = 0.0
-    for (k in -radius..radius) sum += line[reflect101(k, n)]
-    out[0] = sum
-    for (i in 1 until n) {
-        sum += line[reflect101(i + radius, n)] - line[reflect101(i - radius - 1, n)]
-        out[i] = sum
-    }
-    return out
-}
-
+/**
+ * The sums over `2 radius + 1` wide windows along each row, then along each
+ * column, `BORDER_REFLECT_101`: each window sum is the previous one plus the
+ * entering value minus the leaving one. The column pass runs every column in
+ * step, row by row, for memory order; each column still adds the same values
+ * in the same order, so the sums are the same as one column at a time.
+ */
 private fun boxSum2D(data: DoubleArray, w: Int, h: Int, radius: Int): DoubleArray {
     val rowPass = DoubleArray(w * h)
-    val rowBuf = DoubleArray(w)
+    // A row padded by reflection: index `j` holds the row's `j - radius - 1`.
+    val padded = DoubleArray(w + 2 * radius + 1)
     for (y in 0 until h) {
-        for (x in 0 until w) rowBuf[x] = data[y * w + x]
-        val summed = boxSum1D(rowBuf, w, radius)
-        for (x in 0 until w) rowPass[y * w + x] = summed[x]
+        val row = y * w
+        for (j in padded.indices) padded[j] = data[row + reflect101(j - radius - 1, w)]
+        var sum = 0.0
+        for (k in 1..2 * radius + 1) sum += padded[k]
+        rowPass[row] = sum
+        for (x in 1 until w) {
+            sum += padded[x + 2 * radius + 1] - padded[x]
+            rowPass[row + x] = sum
+        }
     }
     val out = DoubleArray(w * h)
-    val colBuf = DoubleArray(h)
-    for (x in 0 until w) {
-        for (y in 0 until h) colBuf[y] = rowPass[y * w + x]
-        val summed = boxSum1D(colBuf, h, radius)
-        for (y in 0 until h) out[y * w + x] = summed[y]
+    val sums = DoubleArray(w)
+    for (k in -radius..radius) {
+        val row = reflect101(k, h) * w
+        for (x in 0 until w) sums[x] += rowPass[row + x]
+    }
+    sums.copyInto(out, 0)
+    for (y in 1 until h) {
+        val entering = reflect101(y + radius, h) * w
+        val leaving = reflect101(y - radius - 1, h) * w
+        val row = y * w
+        for (x in 0 until w) {
+            sums[x] += rowPass[entering + x] - rowPass[leaving + x]
+            out[row + x] = sums[x]
+        }
     }
     return out
 }
@@ -260,36 +279,39 @@ internal fun boxMeanStd(src: GreyImage, size: Int): Pair<FloatArray, FloatArray>
 /**
  * The 1-D lower-envelope distance transform of Felzenszwalb & Huttenlocher
  * ("Distance Transforms of Sampled Functions"), over squared distances. `f`
- * holds `0` at a source pixel and a very large sentinel elsewhere; the result
- * is the squared distance, per index, to the nearest zero.
+ * holds `0` at a source pixel and a very large sentinel elsewhere; [run]
+ * writes to `d` the squared distance, per index, to the nearest zero. One
+ * instance serves every row (or column) of a length, reusing its buffers.
  */
-private fun dt1d(f: DoubleArray): DoubleArray {
-    val n = f.size
+private class Dt1d(private val n: Int) {
+    val f = DoubleArray(n)
     val d = DoubleArray(n)
-    val v = IntArray(n)
-    val z = DoubleArray(n + 1)
-    var k = 0
-    v[0] = 0
-    z[0] = Double.NEGATIVE_INFINITY
-    z[1] = Double.POSITIVE_INFINITY
-    for (q in 1 until n) {
-        var s = ((f[q] + q.toDouble() * q) - (f[v[k]] + v[k].toDouble() * v[k])) / (2.0 * (q - v[k]))
-        while (s <= z[k]) {
-            k--
-            s = ((f[q] + q.toDouble() * q) - (f[v[k]] + v[k].toDouble() * v[k])) / (2.0 * (q - v[k]))
+    private val v = IntArray(n)
+    private val z = DoubleArray(n + 1)
+
+    fun run() {
+        var k = 0
+        v[0] = 0
+        z[0] = Double.NEGATIVE_INFINITY
+        z[1] = Double.POSITIVE_INFINITY
+        for (q in 1 until n) {
+            var s = ((f[q] + q.toDouble() * q) - (f[v[k]] + v[k].toDouble() * v[k])) / (2.0 * (q - v[k]))
+            while (s <= z[k]) {
+                k--
+                s = ((f[q] + q.toDouble() * q) - (f[v[k]] + v[k].toDouble() * v[k])) / (2.0 * (q - v[k]))
+            }
+            k++
+            v[k] = q
+            z[k] = s
+            z[k + 1] = Double.POSITIVE_INFINITY
         }
-        k++
-        v[k] = q
-        z[k] = s
-        z[k + 1] = Double.POSITIVE_INFINITY
+        k = 0
+        for (q in 0 until n) {
+            while (z[k + 1] < q) k++
+            val vk = v[k]
+            d[q] = (q - vk).toDouble() * (q - vk) + f[vk]
+        }
     }
-    k = 0
-    for (q in 0 until n) {
-        while (z[k + 1] < q) k++
-        val vk = v[k]
-        d[q] = (q - vk).toDouble() * (q - vk) + f[vk]
-    }
-    return d
 }
 
 private const val DT_NO_PIXEL = 1e20
@@ -297,7 +319,7 @@ private const val DT_NO_PIXEL_THRESHOLD = 1e19
 
 /**
  * The exact Euclidean distance to the nearest `true` pixel of `mask`, by two
- * passes of [dt1d] over squared distances - columns, then rows - per this
+ * passes of [Dt1d] over squared distances - columns, then rows - per this
  * task's brief. `court_probe.py` calls `cv2.distanceTransform(mask, DIST_L2,
  * 3)`, which is only a 3x3-mask chamfer approximation (about 4.5% low on
  * the diagonal); this port is intentionally more accurate, not a match to
@@ -305,23 +327,21 @@ private const val DT_NO_PIXEL_THRESHOLD = 1e19
  * [Float.MAX_VALUE] everywhere.
  */
 internal fun distanceTransform(mask: BooleanArray, width: Int, height: Int): FloatArray {
-    val f = DoubleArray(width * height) { if (mask[it]) 0.0 else DT_NO_PIXEL }
-
     val columns = DoubleArray(width * height)
-    val colBuf = DoubleArray(height)
+    val col = Dt1d(height)
     for (x in 0 until width) {
-        for (y in 0 until height) colBuf[y] = f[y * width + x]
-        val transformed = dt1d(colBuf)
-        for (y in 0 until height) columns[y * width + x] = transformed[y]
+        for (y in 0 until height) col.f[y] = if (mask[y * width + x]) 0.0 else DT_NO_PIXEL
+        col.run()
+        for (y in 0 until height) columns[y * width + x] = col.d[y]
     }
 
     val out = FloatArray(width * height)
-    val rowBuf = DoubleArray(width)
+    val row = Dt1d(width)
     for (y in 0 until height) {
-        for (x in 0 until width) rowBuf[x] = columns[y * width + x]
-        val transformed = dt1d(rowBuf)
+        columns.copyInto(row.f, 0, y * width, (y + 1) * width)
+        row.run()
         for (x in 0 until width) {
-            val sq = transformed[x]
+            val sq = row.d[x]
             out[y * width + x] = if (sq >= DT_NO_PIXEL_THRESHOLD) Float.MAX_VALUE else sqrt(sq).toFloat()
         }
     }
