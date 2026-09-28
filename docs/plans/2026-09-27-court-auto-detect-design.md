@@ -5,6 +5,8 @@
 the feature. Only pause when there are either breaking changes, or other really
 important questions. Implement it as accurate as possible, test it too"). Coen
 delegated the design calls; a reviewer agent reviewed the approach in his place.
+Implemented on 2026-09-28 on `feat/court-auto-detect` (not pushed). What
+changed on the way is in §9; what was run, and what was not, is in §10.
 **Repo:** `badminton-rally-mobile` only. Nothing here changes the wire format of
 the marks, so neither the cloud worker nor the web app changes.
 **Follows:** `2026-09-27-camera-motion-design.md` (`marked_at_s`, the frame the
@@ -125,7 +127,22 @@ random tap error:
 | 8 px | 24 / 24 |
 | 15 px | 24 / 24 |
 | 25 px | 24 / 24 |
-| 40 px | 20 / 24 (the misses are caught by §4.7) |
+| 40 px | 20 / 24 (see below: §4.7 does not catch every miss) |
+
+Correction (2026-09-28, Task 4): the original note here said the 40 px misses
+"are caught by §4.7". That is not true in general. On a synthetic court
+(`cams[2]`, three taps exact, one moved), the Kotlin port *accepted a wrong
+court* with the top-left tap 90 px off: the corner-guided search picked a wrong
+placement whose corners all lay within the tap radius, refinement settled on the
+wrong lines, and every §4.7 check passed (the far corners wrong, the centre-far
+point 51 px from the truth). At 70 px off it picked the right court. The
+reference implementation accepted a wrong court at both 70 and 90 px, with
+corners up to 37 px off. Line support and the model residual cannot tell a
+wrong line assignment from the right one. Whether the 4 misses at 40 px above
+were refused or accepted was not recorded. What protects the coach is the
+screen, not the acceptance rule: the court lines are drawn through all twelve
+points, so a wrong court shows as lines that miss the paint, and Undo returns
+to the four raw taps (§5.3). Ruling: accepted as a known limit (§9).
 
 **Cost, reference implementation** (Python + NumPy, host, 1080p): search 0.3 to
 3.8 s, refinement about 0.3 s. It tries up to ~470,000 court placements in
@@ -413,3 +430,391 @@ not changed: the cloud reads them literally.
    phone.
 5. **Not verifiable here:** a real phone's timing (the S23 and an iPhone), and
    club halls beyond the one recorded.
+
+---
+
+## 9. What shipped differently
+
+Deviations from this design and from `2026-09-27-court-auto-detect-plan.md`.
+Source of truth: the SDD ledger,
+`.superpowers/sdd/2026-09-27-court-auto-detect-plan/progress.md` (every
+`Ruling:` line and every deferred minor recorded there), and the per-task
+reports beside it. Each entry names the task and, where the ledger records
+one, the ruling.
+
+### The detector port (Tasks 1-5)
+
+- **The work image is never upscaled.** §4.2 says the work image is
+  area-averaged to a long side of 960; `longSideSize` caps the long side and
+  never grows a frame, where the reference implementation always resizes to
+  exactly 960, upscaling smaller frames. A deliberate choice of the port
+  (Task 1).
+- **Four numeric choices differ from the reference implementation on
+  purpose, and are documented in the KDoc as "close to", not "same as",
+  OpenCV:** luma is unrounded float BT.601 (OpenCV rounds to `uint8`); the
+  Gaussian kernel radius is `ceil(3 σ)` (OpenCV's float path is about 4 σ);
+  the distance transform is the exact Euclidean one (the probe's
+  `DIST_L2, 3` is a 3x3 chamfer, 0.955 for a unit step); bilinear samples are
+  exact (the probe's `cv2.remap` is 1/32 px fixed point). Refinement solves
+  with an analytic Jacobian (checked against central differences to 1e-5)
+  and Householder QR, where the probe uses forward differences and `lstsq`.
+  Effect, measured in Task 5: the intermediate stages do not match the
+  probe's exactly (hall_5: 296 quads against the probe's 208; ridge masks
+  0.93 to 0.96 Jaccard), but the final keypoints do (median of per-frame
+  medians 0.0028 px, worst 0.13 px, §10), and 5 of the 27 no-court frames
+  are refused for a different reason than the probe gives (all still
+  refused).
+- **Area downsampling is exact-overlap averaging (`cv2.INTER_AREA`'s rule),
+  not the whole-pixel box rule the plan specified.** Ruling (Task 5 fix,
+  `b6092b1`): the box rule broke the pixel-centre mapping at non-integer
+  ratios (at 4/3 it shifted the image by 1/3 source px toward the origin, and
+  the 1280x720 frames' work images differed from the probe's by up to 108
+  grey levels). A second ruling: the ramp test checks OpenCV's exact values
+  (per-pixel error at most 1/12 px, zero net shift) instead of the plan's
+  1e-4, which exact box means cannot meet. After the fix the cz_3 work image
+  is within 1 grey level of the probe's (mask Jaccard 0.396 -> 0.913); every
+  corpus number the test prints was unchanged, and 1080p and 4K sources give
+  bit-identical images to before (integer ratios).
+- **`searchCourtNear` skips the horizon filter** (`lineFamilies(horizon =
+  false)`), as the probe's `search_near` does. Ruling: the corner-completion
+  numbers in §3 were measured that way; the cost is a possible ceiling-line
+  candidate near a tap, bounded by the tap radius.
+- **`fromCorners` can accept a wrong court when one tap is 70-90 px off**
+  (Task 4, found by scratch runs; the probe does the same, worse). Ruling:
+  accepted as a known limit; the overlay shows the fit and Undo returns to
+  the raw taps. §3's table note is corrected accordingly. The fallback branch
+  (four taps seeding refinement at a 30 px tolerance) is not exercised by any
+  test.
+- **Line support (§4.7.4) counts the two centre-line halves as along-lines**,
+  as the probe does, and reads its visibility from each piece's first point.
+- **Two no-court frames are refused by one gate where the probe used two.**
+  `foot_2400` and `foot_4000` (football broadcasts with a drawn pitch
+  diagram) refine cleanly onto a wrong placement (residual 0.19 and 0.10 px,
+  last step under 0.002 px) and are refused only because keypoints fall
+  outside the frame (§4.7.3); the probe's refinement failed its gates first.
+  It fits §3's stated margin (wrong fits either keep a residual of 2.2 px or
+  more *or* put keypoints outside the frame) but is thinner than the probe's
+  on these two frames. Recorded as acceptable: the marking frame is from a
+  badminton video.
+- **The synthetic accuracy test uses 3 camera positions, not §8.1's 5.**
+  `CourtFinderTest` renders 3 cameras x 4 floor/line colours with blur,
+  noise, distractor lines and occluders; one camera (`cams[1]`) puts two
+  keypoints outside 1280x720 and is not scored, so the numbers in §10 are
+  over 8 scenes (96 keypoints), plus one portrait scene.
+- **The four-corner test uses `cams[2]`, not the plan's `cams[1]`.** Ruling
+  (Task 4): `cams[1]`'s near corners lie outside the frame, which §4.7.3
+  refuses by design, so no correct implementation could pass the plan's test.
+- **The ridge map is built once per call** and shared by the search and the
+  line-support check (Task 4); Task 10 made the distance transform shared
+  too, which resolved the deferred "line support recomputes the EDT" minor.
+
+### Performance (Task 10, not in the plan)
+
+- Added by ruling after Task 9a measured `find` at 2.1 s on the emulator's
+  non-debuggable ART and 10-42 s in the debuggable app. Ten commits
+  (`117168c6..3cde6a71`), all inside `analysis/.../court/`: Hough peaks from
+  per-row maxima; border handling out of the filters' inner loops; one
+  `atan2` per ridge pixel, only where it is read; one shared distance
+  transform; a branch-and-bound coarse score (exact top 60, same tie order);
+  fine scores bounded by the best so far; tap corners checked before the
+  gates in the corner-guided search; blur taps across the row;
+  segment-by-segment scoring that skips segments wholly out of frame;
+  per-line trigonometry computed once; profile samples without border clamps
+  inside the image.
+- **Results are bit-identical**: a dump of every corpus frame's reason,
+  residual and the raw bits of all nine homography entries (plus `fromCorners`
+  with fixed jittered taps, 8 odd-sized frames and intermediate-stage hashes)
+  compared equal with `cmp` before and after; the synthetic tests' printed
+  lines are identical on JVM and iOS; the corpus test's printed numbers are
+  unchanged. Timings are in §10.
+- **The cold first call stays slow on Android.** Ruling: the 1.76 s cold call
+  on the emulator is accepted, because detection runs in the background under
+  "Finding the court..." and the coach can tap meanwhile; a baseline profile
+  (ahead-of-time compilation) is a follow-up.
+
+### The marking model (Task 6)
+
+- **History is `List<CourtMarkingStep>` (points and `markedAtSeconds`), not
+  `List<List<CourtPoint>>`.** Ruling: Undo must restore the marks' own time.
+  Clear and Find court are undoable and can replace restored marks drawn on
+  another frame, and legacy marks have no time at all; restoring them with
+  the on-screen frame's time would be a guess recorded as a measurement.
+- **`withDetected` always stamps `markedAtSeconds = frameSeconds`**, not only
+  over an empty marking. Ruling: detection runs on the frame on screen,
+  including Find court over existing marks; Undo restores the previous time.
+- Every edit (place, move, Clear, a detection) is one history step and clears
+  the selection; Clear on an empty marking is not a step.
+- `COURT_LINE_SEGMENTS` (a public addition to `:analysis`, by ruling) uses the
+  BWF dimension segments, not the line-centre ones, because the keypoints sit
+  at the dimension positions.
+
+### The screens (Tasks 7, 8)
+
+- **Find court is on its own full-width row under Undo | Clear**, not
+  "beside" them (§5.1). Ruling: at 360 dp (the Galaxy S23's class) a third of
+  the row leaves the label 50.7 dp where "Find court" needs 74.3 dp, and
+  `ShuttlButton` clips silently. iOS mirrors it.
+- **An edit cancels an in-flight finder call** and resets the status. Ruling
+  (parity for iOS): an edit is a tap that changes the points, Undo or Clear; a
+  tap that only selects is not. Without it, a tap during "Finding the
+  court..." left that line in place of "Tap: Top-Right Corner" until the
+  finder answered.
+- **New status `FIND_FAILED`, "Couldn't find the court. Your marks are
+  unchanged."**, when Find court finds nothing over at least one point.
+  Ruling: the `NOT_FOUND` note told the coach to tap corners he had already
+  placed. Over no points it is still `NOT_FOUND`.
+- **The finder's note wins over the saved-marks note** (`screenNote`).
+  Ruling: with the saved-marks note winning, a failed Find court over saved
+  marks was silent. In every reachable state this means `FIND_FAILED` wins.
+- **The rules for what a finder answer does are shared functions**, not
+  duplicated in the Android view model and the Swift view (Task 8 review,
+  fix round 1): `afterOpeningFind`, `afterFindCourt` and `afterCorners`
+  return a `CourtFinderOutcome(marking, status, edited)`, and a throw reads
+  as not found. `isBusy` is a member of the shared `CourtFinderStatus`, by
+  ruling. What stays per platform is the plumbing: cancellation, the
+  `Task.isCancelled` drop on iOS, refusing Find court while busy.
+- The court-line and ring strokes are divided by the zoom, so 2 dp stays 2 dp
+  on screen at 6x (Task 7).
+- Each answer is logged, tag/category `CourtFinder`, one line with the call
+  (`find`, `find on demand`, `fromCorners`), reason, residual and
+  milliseconds: logcat on Android, `os.Logger` on iOS.
+- iOS reads the frame through a new `BulkInterop.rgbImage` (RGBA rows,
+  `bytesPerRow` apart) from `CourtFrame.cgImage`, and runs the finder in a
+  detached task. The finder is not cooperatively cancellable on either
+  platform: a cancelled call keeps its thread and buffers (about 16 MB at
+  1080p) until it finishes, and its answer is dropped.
+
+### Marking-screen fixes from the device run (Task 11, not in the plan)
+
+Added by ruling after Task 9a's screenshots showed these defects.
+
+- **Instructions are in the text colour with a colour swatch.** "Tap: X" and
+  "Tap the new spot for X" were drawn in the point's own colour, and yellow
+  (Bottom-Left) was unreadable on the light theme (pre-existing for "Tap:").
+  Both are now the heading text colour, preceded by a 10 dp/pt circle in the
+  point's colour, centred on the first line's capitals (measured on device:
+  0.5 px off on both platforms).
+- **A complete marking draws small dots**: radius 5 dp/pt (divided by the
+  zoom) with a 1.5 dp ring and no label, except the selected point, which
+  keeps the full marker and its label. The full labelled markers buried each
+  other and the lines the coach is meant to check (TL under SNL, NL under
+  SNL/SFL).
+- **A tap within 6 dp/pt of the selected point cancels; any other tap moves
+  it.** §5.2's rule (a tap within 22 dp cancels) made a move of under 22 dp,
+  about 105 source px at phone width, impossible without zooming. Selecting
+  still uses 22 dp. Both radii are shared constants,
+  `CourtMarkingSpec.SELECT_RADIUS = 22f` and `CANCEL_RADIUS = 6f`, and the
+  cancel radius is a required parameter of `tap`. Measured on device: a
+  10 dp/pt move lands (9.9-10.25 dp/pt moved); a tap 3 dp/pt away cancels.
+- **The court lines are magenta, `CourtMarkingSpec.COURT_LINE_COLOR =
+  0xFFFF2D95`**, on both platforms, for the lines and the selection ring, not
+  the theme accent (§5.1). Ruling from the screenshot review: the theme green
+  vanished on green courts.
+- **The guide's first sentence ("Tap each court landmark in the order
+  shown.") shows only while points remain** (`guideLines(placedCount)`, shared
+  copy); beside a complete marking it contradicted the found note.
+- **iOS layout.** The frame is pinned to the top with an aspect-derived,
+  capped height (`min(width, height x 0.62 x aspect)`), so it no longer moves
+  when the text below it changes height (in 9a it moved between 170 and
+  239.7 pt, including under the finger after selecting a point). The text and
+  buttons scroll below it; Continue is pinned and always drawn, disabled until
+  complete. Undo | Clear | Find court use the app's secondary pill style, like
+  Android. The schematic guide is inset so its corner dots are no longer
+  clipped. A landmark's name is drawn with non-breaking hyphens so the move
+  instruction never breaks at "Bottom-".
+
+### Left open (deferred in the ledger)
+
+- The `fromCorners` KDoc does not state the 70-90 px tap-error limit.
+- A detection can land after a tap that was undone back to empty
+  (`applyFinding` checks the points, not the history).
+- Find court twice pushes two identical history steps; history is unbounded
+  (12 points a step, at tapping rate).
+- Android's `onTap` keeps a `cancelRadius = 0f` default, a silent default the
+  shared `tap` deliberately does not have.
+- The iOS cancel and arrival-guard plumbing has no iOS unit test (it lives in
+  `@State`); the rules themselves are shared and tested. On Android the
+  arrival guards and Undo/Clear during an in-flight call are untested too.
+- No committed test that the Task 10 pruning is result-neutral; the
+  bit-identity check was a harness outside the repo.
+- A 4K source's full-resolution luma (33 MB) is built before downsampling.
+- The selected marker and its ring are clipped at the frame edge (hall
+  Bottom-Right, both platforms). The small dots are not.
+- The found and lined-up notes stay after the coach moves a point; they
+  remain true.
+- Outside this work: a pre-existing compiler warning,
+  `PoseMetricsTest.kt:250` (unnecessary `!!`).
+
+---
+
+## 10. Verification, as run
+
+Numbers below are from the per-task reports in
+`.superpowers/sdd/2026-09-27-court-auto-detect-plan/` (`task-4-report.md`,
+`task-5-report.md`, `task-9a-report.md`, `task-10-report.md`,
+`task-11-report.md`, `task-9b-report.md`) and the ledger, except the gates,
+which were run for this record on `c530a424`.
+
+### Gates
+
+Run on 2026-09-28 at `c530a424`, `JAVA_HOME` the Android Studio JBR,
+`DEVELOPER_DIR` Xcode. Counts are from the test-result XMLs (timestamped
+from this run) and the xcodebuild log, not exit codes. The first Gradle
+invocation reported the test tasks up to date, so they were rerun with
+`--rerun` on each task.
+
+| gate | result |
+|---|---|
+| `:analysis:jvmTest` | 298 tests, 0 failures, 0 skipped (includes `CourtCorpusTest`, the corpus being present) |
+| `:analysis:iosSimulatorArm64Test` | 286 tests, 0 failures, 0 skipped |
+| `:shared:jvmTest` | 842 tests, 0 failures, 0 skipped |
+| `:shared:iosSimulatorArm64Test` | 850 tests, 0 failures, 0 skipped |
+| `:androidApp:testDebugUnitTest` | 368 tests, 0 failures, 0 skipped |
+| `:androidApp:lintDebug` | passed: 0 errors, 22 warnings, 3 hints; none in a file this work added, and the one in a touched file (`AuthGate.kt:594`, `UseKtx` on `Uri.parse`) is on a pre-existing line |
+| `ANALYSIS_REQUIRE_CORPUS=1 ... --tests '*CourtCorpusTest*' -i --rerun` | 5 / 5 passed; numbers below, identical to Task 10's |
+| iOS `iosAppTests` (iPhone 17 Pro simulator, Debug) | 343 tests, 0 failures, 2 skipped |
+| iOS `iosAppUITests` | 7 tests, 0 failures, 1 skipped; `** TEST SUCCEEDED **` |
+
+The three skips, all opt-in or account-dependent and none in court code:
+`LocalInferenceEngineTests.testAHandheldRecordingPutsTheNearPlayerWhereTheReferenceHasHer`
+(needs `-D RUN_HANDHELD_CORPUS_TEST`),
+`ThroughputMeasurementTests.testMeasurePerFrameCost` (needs
+`-D MEASURE_THROUGHPUT`), and
+`VideoMatchDetailsUITests.testAVideoBornMatchOffersTheDetailsEditorWithADescription`
+("the cloudia match is not on this account"). The log's one
+`unable to find utility "simctl"` line is xcodebuild's diagnostics
+collection after the tests, not a test.
+
+### Synthetic accuracy (`CourtFinderTest`, JVM and iOS)
+
+8 scenes (2 cameras fully in frame x 4 floor/line colours, blur, noise,
+distractor lines, occluders), 1280x720, 96 keypoints against the renderer's
+exact truth: **median 0.034 px, max 0.170 px** (gate < 0.1 / < 0.5 px). The
+reference implementation on the same scenes, with its own renderer: median
+0.031, max 0.169 px. The centred camera carries a 0.15 px bias in both,
+at least partly the renderer's 3x supersampling (0.158 px at 3x, 0.091 px at
+9x in the probe). Portrait 720x1280: found, top-left 0.094 px from the truth.
+Four tapped corners 10 px off (`cams[2]`): within 0.5 px. JVM and iOS agree
+to about 1e-12.
+
+### Corpus test (host JVM), `~/shuttl-corpus/court-detect`
+
+`CourtCorpusTest`, `ANALYSIS_REQUIRE_CORPUS=1`, 81 frames from 12 videos:
+
+| check | gate | Task 5 (first run) | Task 10 (after the performance pass) | this record (2026-09-28, `c530a424`) |
+|---|---|---|---|---|
+| labels reproduced | all 81 | 81 / 81 | 81 / 81 | **81 / 81**: tune 32/32 courts found, 7/7 rejected; held-out 22/22, 20/20 |
+| accepted residual (1920-scaled) | <= 1.5 px | 0.290-0.660 px | same | 0.290-0.660 px |
+| port check vs `court_probe.py`, 54 frames | median <= 1 px, max <= 3 px per frame | median of medians 0.0028 px, worst max 0.1265 px (hk1_30) | same | **0.0028 / 0.1265 px** |
+| `IMG_5892` near half vs the per-line reference | median <= 3 cm | 2.28 cm median, 3.58 cm p90, 6.60 cm max | same | **2.28 / 3.58 / 6.60 cm** |
+| `IMG_5892` keypoints vs the reference marks | none | median 2.74 px, max 9.22 px | same | 2.74 / 9.22 px |
+| Paris 2024 vs the hand marks, 60 distances | median <= 6 px | 4.43 px median, 6.77 px p90 | same | **4.43 / 6.77 px** |
+| four corners, 15 px tap error, 8 frames x 3 | every trial within 2 px | 24 / 24 | 24 / 24 | **24 / 24**, every trial 0.0000 px from `find` (worst single tap 58.5 px off) |
+| 4K (`m5892_2` nearest-upscaled 2x) vs 1080p x 2 + 0.5 | <= 1.5 px | 0.000000 px | same | **0.000000 px** |
+| `find` time over 81 frames | none | median 200 ms | median 129 ms, 10.1 s total | median 129 ms, max 230 ms, 10.1 s total |
+| `fromCorners` time | none | median 190 ms | median 88 ms | median 88 ms, max 98 ms |
+
+Every gated number is identical across the three runs. The rejection reasons
+that differ from the probe's (5 of 27 no-court frames, §9) are the same in
+all three.
+
+### Detection time, by where it was measured
+
+`millis` is the finder only, not the frame decode. The table's "before" is
+the code before Task 10's performance work, "after" is after it.
+
+| where | build | clip | `find` before -> after | `fromCorners` before -> after |
+|---|---|---|---|---|
+| host JVM, corpus test, 81 frames | warm | all | median 218 -> 129 ms (4K frame 249 -> 149 ms) | median 223 -> 88 ms |
+| host JVM, `Bench.java` | warm | IMG_5892 | 269 -> 164 ms (cold 474 -> 392 ms) | 234 -> 105 ms |
+| host JVM, `Bench.java` | warm | hall | 143 -> 83 ms | 162 -> 72 ms |
+| Android emulator (Pixel_9a), `app_process`, non-debuggable ART | warm, median of 9 | IMG_5892 | **2146 -> 933 ms** (range 891-1010) | 2179 -> 691 ms |
+| same | cold (first call) | IMG_5892 | 3257 -> 1756 ms | 2322 -> 824 ms |
+| same | warm | hall | 1419 -> 580 ms | 1687 -> 521 ms |
+| Android emulator, the debuggable app, as seen in the UI (log) | debug | IMG_5892 | 27.4 s -> 14.0 s | 41.8 s -> 8.1 s |
+| same | debug | hall | 10.1 s -> 6.3 s | 14.3 s -> 5.2 s |
+| iOS simulator (iPhone 17 Pro), the app, Release | release | IMG_5892 | 291 ms (Find court on demand 286 ms), before only | 270 ms, before only |
+| same | release | hall | 186 ms, before only | 199 ms, before only |
+| iOS simulator, Kotlin/Native debug test binary | debug | synthetic 1280x720 | about 2.7 s, before only | - |
+
+The emulator's "before" warm figures for `find` are from the controller's
+measurement in Task 9a (2.1 s IMG_5892, 1.4 s hall) and the base runs of
+Task 10's interleaved benchmark (3 invocations each, spread about +-8%). No
+iOS figure was taken after Task 10. §8.4's target, under 2 s on the
+debuggable emulator, was **not met**: the debuggable app still takes 5-14 s.
+It is met only by the non-debuggable runtime (0.58-0.93 s warm, 1.76 s
+cold), which is the closer model of a release build; the host runs about 7x
+faster than the emulator's ART for the same code. Where the rest goes on the
+emulator (IMG_5892, warm, after): coarse scoring about 300 ms, ridges about
+260 ms, placements and gates about 60 ms, refinement 69 ms.
+
+### Screenshots, emulator and simulator
+
+Android: Pixel_9a emulator, debuggable build. iOS: iPhone 17 Pro simulator,
+Release build. Both signed in; each clip imported through the app's own Add
+match flow and the marking screen reached from it. Retaken after Task 11's fixes
+(`a93bd27a`, iOS again in `c530a424`), downscaled to 1080 px tall. The
+`-selected` shots are beyond the plan's three per clip. In every shot the
+found court was checked at full resolution: the magenta lines sit on the
+paint, and on the hall clip no other sport's line was picked and the net
+line meets both post bases.
+
+- `docs/screenshots/2026-09-27-court-detect-android-5892-found.png`: IMG_5892
+  (All England, handheld), court found on opening, small dots, found note.
+- `docs/screenshots/2026-09-27-court-detect-android-5892-selected.png`:
+  Bottom-Left selected, yellow swatch, full marker in a magenta ring.
+- `docs/screenshots/2026-09-27-court-detect-android-5892-moved.png`:
+  Bottom-Left moved about 10 dp, back to a small dot.
+- `docs/screenshots/2026-09-27-court-detect-android-5892-corners.png`: after
+  Clear and four corner taps, the court lined up ("Lined up with the court's
+  lines...").
+- `docs/screenshots/2026-09-27-court-detect-android-hall-found.png`: the
+  club-hall clip (`IMG_4795`, wood floor, multi-sport lines, low corner
+  camera), court found on opening.
+- `docs/screenshots/2026-09-27-court-detect-android-hall-selected.png`:
+  Bottom-Right selected, the instruction wrapping to two lines; the ring is
+  clipped at the frame edge.
+- `docs/screenshots/2026-09-27-court-detect-android-hall-moved.png`:
+  Bottom-Right moved about 10 dp.
+- `docs/screenshots/2026-09-27-court-detect-android-hall-corners.png`: the
+  hall court completed from four corner taps.
+- `docs/screenshots/2026-09-27-court-detect-ios-5892-found.png`,
+  `-ios-5892-selected.png`, `-ios-5892-moved.png`, `-ios-5892-corners.png`:
+  the same four states for IMG_5892 on iOS (a fresh import, entry "IMG_5892
+  court"). The frame's top edge measured 116 pt in every state checked
+  (found, a two-line move instruction, cleared, three corners, lined up), on
+  both clips.
+- `docs/screenshots/2026-09-27-court-detect-ios-hall-found.png`,
+  `-ios-hall-selected.png`, `-ios-hall-moved.png`, `-ios-hall-corners.png`:
+  the same four states for the hall clip on iOS.
+
+The busy states ("Finding the court...", "Lining the points up with the
+court...") were seen on both platforms but only kept in scratch; on the
+simulator detection takes 0.2-0.3 s. The corner completion converged to
+exactly the court `find` found on every device run.
+
+### Not verified
+
+- **No real phone.** Every device number above is from the Pixel_9a emulator
+  or the iPhone 17 Pro simulator. The Galaxy S23's and a real iPhone's
+  timing, and how the screen feels under a thumb (the 22 dp select and 6 dp
+  cancel reach, the dot size), are unmeasured. The emulator is software
+  emulated and the simulator runs natively on the Mac, so neither is a phone
+  number.
+- **No iOS timing after the performance pass** (Task 10 measured the JVM and
+  the Android emulator only).
+- **Footage the corpus does not cover:** HDR frames through the iOS bridge
+  (the IMG_5892 run found the court, but the import went through the photo
+  picker and whether the frame the finder saw was still HDR was not checked;
+  no test covers a wide-gamut or 16-bit `CGImage`), portrait video (one
+  synthetic portrait scene only), real 4K sources (the corpus's 4K frame is a
+  nearest 2x upscale of a 1080p one), a source above 1920 px at a non-integer
+  ratio (e.g. 2560x1440; the downsample fix is shown by unit test only), a
+  dark or fading-in frame at 0.1 s on Android, and outdoor courts.
+- **Club halls beyond one.** The hall clip is `IMG_4795`; 15 of the corpus's
+  81 frames come from it.
+- **Android cold start.** The first call on the emulator's non-debuggable
+  runtime is 1.76 s, mostly interpretation and JIT; no baseline profile was
+  built or measured.
+- **Lens distortion** (ultra-wide 0.5x recordings): the fit is a homography,
+  and no corpus frame is from an ultra-wide lens.
