@@ -87,4 +87,84 @@ class CourtAutoMarkingTest {
         CourtFinderStatus.IDLE.screenNote(showsSavedMarks = false) shouldBe null
         CourtFinderStatus.FOUND.screenNote(showsSavedMarks = false) shouldBe CourtMarkingSpec.FOUND_NOTE
     }
+
+    // --- What each finder answer does to the marking ------------------------
+
+    private val notFound = CourtFinding(null, null, "no hypothesis", null, 5)
+    private val empty = CourtMarkingState.restored(1920, 1080, null, frameSeconds = 0.1)
+
+    /** Taps at (100 + 10k, 200 + 10k) display pixels on a 1920x1080 frame shown at its own size. */
+    private fun tapped(n: Int): CourtMarkingState =
+        (0 until n).fold(empty) { s, k -> s.tap(100f + 10 * k, 200f + 10 * k, 1920f, 1080f, 22f) }
+
+    private val found = List(12) { CourtPoint(1f + 10 * it, 2f + 10 * it) }
+
+    @Test
+    fun opening_find_fills_an_empty_marking() {
+        val out = afterOpeningFind(empty, foundFinding())
+        out shouldBe CourtFinderOutcome(empty.withDetected(found), CourtFinderStatus.FOUND, edited = true)
+    }
+
+    @Test
+    fun opening_find_after_a_tap_is_discarded_quietly() {
+        val one = tapped(1)
+        afterOpeningFind(one, foundFinding()) shouldBe CourtFinderOutcome(one, CourtFinderStatus.IDLE, edited = false)
+    }
+
+    @Test
+    fun opening_find_that_finds_nothing_or_throws_asks_for_the_corners() {
+        afterOpeningFind(empty, notFound) shouldBe CourtFinderOutcome(empty, CourtFinderStatus.NOT_FOUND, edited = false)
+        afterOpeningFind(empty, null) shouldBe CourtFinderOutcome(empty, CourtFinderStatus.NOT_FOUND, edited = false)
+    }
+
+    @Test
+    fun find_court_replaces_any_marking() {
+        val four = tapped(4)
+        afterFindCourt(four, foundFinding()) shouldBe
+            CourtFinderOutcome(four.withDetected(found), CourtFinderStatus.FOUND, edited = true)
+        afterFindCourt(empty, foundFinding()) shouldBe
+            CourtFinderOutcome(empty.withDetected(found), CourtFinderStatus.FOUND, edited = true)
+    }
+
+    @Test
+    fun find_court_that_finds_nothing_over_marks_leaves_them() {
+        val one = tapped(1)
+        afterFindCourt(one, notFound) shouldBe CourtFinderOutcome(one, CourtFinderStatus.FIND_FAILED, edited = false)
+        afterFindCourt(one, null) shouldBe CourtFinderOutcome(one, CourtFinderStatus.FIND_FAILED, edited = false)
+    }
+
+    @Test
+    fun find_court_that_finds_nothing_on_an_empty_marking_asks_for_the_corners() {
+        afterFindCourt(empty, notFound) shouldBe CourtFinderOutcome(empty, CourtFinderStatus.NOT_FOUND, edited = false)
+        afterFindCourt(empty, null) shouldBe CourtFinderOutcome(empty, CourtFinderStatus.NOT_FOUND, edited = false)
+    }
+
+    @Test
+    fun corners_are_completed_onto_the_same_four_taps() {
+        val four = tapped(4)
+        afterCorners(four, four.points, foundFinding()) shouldBe
+            CourtFinderOutcome(four.withDetected(found), CourtFinderStatus.ALIGNED, edited = true)
+    }
+
+    @Test
+    fun corners_that_cannot_be_completed_keep_the_taps() {
+        val four = tapped(4)
+        afterCorners(four, four.points, notFound) shouldBe
+            CourtFinderOutcome(four, CourtFinderStatus.ALIGN_FAILED, edited = false)
+        afterCorners(four, four.points, null) shouldBe
+            CourtFinderOutcome(four, CourtFinderStatus.ALIGN_FAILED, edited = false)
+    }
+
+    @Test
+    fun a_completion_for_taps_since_changed_is_dropped() {
+        val four = tapped(4)
+        val five = tapped(5)
+        val undone = four.undo()
+        afterCorners(five, four.points, foundFinding()) shouldBe
+            CourtFinderOutcome(five, CourtFinderStatus.IDLE, edited = false)
+        afterCorners(undone, four.points, foundFinding()) shouldBe
+            CourtFinderOutcome(undone, CourtFinderStatus.IDLE, edited = false)
+        afterCorners(undone, four.points, notFound) shouldBe
+            CourtFinderOutcome(undone, CourtFinderStatus.IDLE, edited = false)
+    }
 }

@@ -7,8 +7,10 @@ import com.badmintontracker.analysis.court.CourtFinding
 import com.badmintontracker.shared.localvideo.court.CourtFinderStatus
 import com.badmintontracker.shared.localvideo.court.CourtMarkingState
 import com.badmintontracker.shared.localvideo.court.CourtPoint
-import com.badmintontracker.shared.localvideo.court.applyFinding
-import com.badmintontracker.shared.localvideo.court.toCourtPoints
+import com.badmintontracker.shared.localvideo.court.CourtFinderOutcome
+import com.badmintontracker.shared.localvideo.court.afterCorners
+import com.badmintontracker.shared.localvideo.court.afterFindCourt
+import com.badmintontracker.shared.localvideo.court.afterOpeningFind
 import com.badmintontracker.shared.model.CourtKeypoints
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -154,31 +156,15 @@ class CourtMarkingViewModel(
     fun onFindCourt() {
         if (state.value.marking == null || state.value.status.isBusy) return
         runFinder(CourtFinderStatus.FINDING) {
-            val found = ask("find on demand") { finder.find(it) }?.toCourtPoints()
-            state.update { s ->
-                val marking = s.marking ?: return@update s
-                if (found == null) {
-                    val failed = if (marking.points.isEmpty()) CourtFinderStatus.NOT_FOUND else CourtFinderStatus.FIND_FAILED
-                    s.copy(status = failed)
-                } else {
-                    s.copy(marking = marking.withDetected(found), status = CourtFinderStatus.FOUND, showsSavedMarks = false)
-                }
-            }
+            val finding = ask("find on demand") { finder.find(it) }
+            state.update { s -> s.marking?.let { s.with(afterFindCourt(it, finding)) } ?: s }
         }
     }
 
     /** The finder on an empty marking, as the screen opens. A tap before it answers wins. */
     private fun findOnOpening() = runFinder(CourtFinderStatus.FINDING) {
         val finding = ask("find") { finder.find(it) }
-        state.update { s ->
-            val marking = s.marking ?: return@update s
-            when {
-                finding?.found != true -> s.copy(status = CourtFinderStatus.NOT_FOUND)
-                else -> applyFinding(marking, finding)
-                    ?.let { s.copy(marking = it, status = CourtFinderStatus.FOUND) }
-                    ?: s.copy(status = CourtFinderStatus.IDLE)
-            }
-        }
+        state.update { s -> s.marking?.let { s.with(afterOpeningFind(it, finding)) } ?: s }
     }
 
     /**
@@ -188,16 +174,18 @@ class CourtMarkingViewModel(
      */
     private fun completeFromCorners(corners: List<CourtPoint>) =
         runFinder(CourtFinderStatus.ALIGNING) {
-            val found = ask("fromCorners") { finder.fromCorners(it, corners) }?.toCourtPoints()
+            val finding = ask("fromCorners") { finder.fromCorners(it, corners) }
             state.update { s ->
-                val marking = s.marking
-                when {
-                    marking == null || marking.points != corners -> s.copy(status = CourtFinderStatus.IDLE)
-                    found == null -> s.copy(status = CourtFinderStatus.ALIGN_FAILED)
-                    else -> s.copy(marking = marking.withDetected(found), status = CourtFinderStatus.ALIGNED)
-                }
+                s.marking?.let { s.with(afterCorners(it, corners, finding)) } ?: s.copy(status = CourtFinderStatus.IDLE)
             }
         }
+
+    /** The screen after a finder answer; an applied one is an edit, which ends the saved-marks note. */
+    private fun CourtMarkingUiState.with(outcome: CourtFinderOutcome) = copy(
+        marking = outcome.marking,
+        status = outcome.status,
+        showsSavedMarks = showsSavedMarks && !outcome.edited,
+    )
 
     private fun runFinder(busy: CourtFinderStatus, block: suspend () -> Unit) {
         cancelFinder()

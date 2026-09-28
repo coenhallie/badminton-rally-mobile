@@ -41,14 +41,14 @@ final class CourtFinderBridgeTests: XCTestCase {
     // MARK: - The finder
 
     func test_a_grey_frame_is_not_found_and_not_an_error() async throws {
-        let finding = await CourtFinderBridge.find(try Self.filled(width: 64, height: 64, grey: 128))
+        let finding = await CourtFinderBridge.find(try Self.filled(width: 64, height: 64, grey: 128), call: "find")
 
         XCTAssertFalse(finding.found)
         XCTAssertFalse(finding.reason.hasPrefix("error"), "unexpected reason: \(finding.reason)")
     }
 
     func test_a_drawn_court_is_found_on_its_lines() async throws {
-        let finding = await CourtFinderBridge.find(try Self.drawnCourt())
+        let finding = await CourtFinderBridge.find(try Self.drawnCourt(), call: "find")
 
         XCTAssertEqual(finding.reason, "ok")
         try Self.assertOnTruth(finding)
@@ -74,8 +74,10 @@ final class CourtFinderBridgeTests: XCTestCase {
     // MARK: - The drawn court
 
     /// `SyntheticCourt.camera(w = 1280, h = 720, f = 1000.0)` in `:analysis`'
-    /// tests, court metres to pixels, row-major: the scene the Kotlin tests
-    /// find the court in, printed from Kotlin.
+    /// tests (`CourtFinderTest.cams[0]`), court metres to pixels, row-major:
+    /// the scene the Kotlin tests find the court in. Printed by a throwaway
+    /// jvmTest in `analysis/src/jvmTest/.../court/` running
+    /// `println(SyntheticCourt.camera(w = 1280, h = 720, f = 1000.0).joinToString())`.
     private static let homography: [Double] = [
         -50.53324098099143, -30.484191576341743, 794.1263849920239,
         0.0, -0.27003713010538777, 246.9219517683682,
@@ -83,8 +85,9 @@ final class CourtFinderBridgeTests: XCTestCase {
     ]
 
     /// `SyntheticCourt.truth` for the same camera: the twelve keypoints in
-    /// table order (TL, TR, BR, BL, NL, NR, SNL, SNR, SFL, SFR, CTN, CTF),
-    /// printed from Kotlin.
+    /// table order (TL, TR, BR, BL, NL, NR, SNL, SNR, SFL, SFR, CTN, CTF).
+    /// Printed by the same throwaway test running
+    /// `println(SyntheticCourt.truth(SyntheticCourt.camera(w = 1280, h = 720, f = 1000.0)).joinToString { "(${it.x}, ${it.y})" })`.
     private static let truth: [(x: Double, y: Double)] = [
         (485.8736150079762, 246.9219517683682),
         (794.1263849920239, 246.9219517683682),

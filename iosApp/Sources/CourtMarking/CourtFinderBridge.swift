@@ -21,9 +21,11 @@ import Shared
 /// Every answer is logged, for tuning the finder on real videos.
 enum CourtFinderBridge {
 
-    /// Looks for the court on `image`.
-    static func find(_ image: CGImage) async -> CourtFinding {
-        await run("find", image) { CourtFinder.shared.find(image: $0) }
+    /// Looks for the court on `image`. `call` names the call in the log, as
+    /// Android's view model names it: "find" on opening, "find on demand" for
+    /// Find court.
+    static func find(_ image: CGImage, call: String) async -> CourtFinding {
+        await run(call, image) { CourtFinder.shared.find(image: $0) }
     }
 
     /// Completes the court from the four `corners` the coach tapped (TL, TR,

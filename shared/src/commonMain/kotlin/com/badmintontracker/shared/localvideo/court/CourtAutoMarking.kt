@@ -80,3 +80,66 @@ fun applyFinding(state: CourtMarkingState, finding: CourtFinding): CourtMarkingS
     val points = finding.toCourtPoints() ?: return null
     return state.withDetected(points)
 }
+
+/**
+ * What one finder answer does to the marking screen: the [marking] to show
+ * and the [status] to say. [edited] is true when the answer was applied as an
+ * edit (one Undo step), which ends the saved-marks note like any other edit.
+ *
+ * The three functions below produce it, one per kind of finder call, so
+ * Android and iOS apply an answer by the same rules. What stays on each
+ * platform is the plumbing around them: running the call off the main
+ * thread, and dropping an answer the coach cancelled by editing first.
+ *
+ * Each takes `finding = null` for a call that threw (out of memory
+ * included), which reads exactly as nothing found: a finder that fails must
+ * leave the coach able to mark by hand.
+ */
+data class CourtFinderOutcome(
+    val marking: CourtMarkingState,
+    val status: CourtFinderStatus,
+    val edited: Boolean,
+)
+
+/**
+ * The finder's answer on opening, over an empty marking: the court placed
+ * ([CourtFinderStatus.FOUND]); discarded because the coach has since tapped
+ * ([applyFinding]), which says nothing ([CourtFinderStatus.IDLE]); or nothing
+ * found, so tap the corners ([CourtFinderStatus.NOT_FOUND]).
+ */
+fun afterOpeningFind(marking: CourtMarkingState, finding: CourtFinding?): CourtFinderOutcome {
+    if (finding?.found != true) return CourtFinderOutcome(marking, CourtFinderStatus.NOT_FOUND, edited = false)
+    val applied = applyFinding(marking, finding)
+        ?: return CourtFinderOutcome(marking, CourtFinderStatus.IDLE, edited = false)
+    return CourtFinderOutcome(applied, CourtFinderStatus.FOUND, edited = true)
+}
+
+/**
+ * Find court's answer: the court replaces whatever is marked, saved marks
+ * included, as one step Undo reverses. Nothing found leaves the marking
+ * alone and says so: [CourtFinderStatus.FIND_FAILED] over marks, and
+ * [CourtFinderStatus.NOT_FOUND] (tap the corners) over none.
+ */
+fun afterFindCourt(marking: CourtMarkingState, finding: CourtFinding?): CourtFinderOutcome {
+    val found = finding?.toCourtPoints()
+    if (found == null) {
+        val status = if (marking.points.isEmpty()) CourtFinderStatus.NOT_FOUND else CourtFinderStatus.FIND_FAILED
+        return CourtFinderOutcome(marking, status, edited = false)
+    }
+    return CourtFinderOutcome(marking.withDetected(found), CourtFinderStatus.FOUND, edited = true)
+}
+
+/**
+ * The completion of the four tapped [corners]: applied only onto those same
+ * four taps ([CourtFinderStatus.ALIGNED]); anything the coach did in between
+ * wins and the answer is dropped quietly ([CourtFinderStatus.IDLE]). Nothing
+ * found keeps the taps, and the coach taps on
+ * ([CourtFinderStatus.ALIGN_FAILED]). Undo after a completion gives the four
+ * taps back.
+ */
+fun afterCorners(marking: CourtMarkingState, corners: List<CourtPoint>, finding: CourtFinding?): CourtFinderOutcome {
+    if (marking.points != corners) return CourtFinderOutcome(marking, CourtFinderStatus.IDLE, edited = false)
+    val found = finding?.toCourtPoints()
+        ?: return CourtFinderOutcome(marking, CourtFinderStatus.ALIGN_FAILED, edited = false)
+    return CourtFinderOutcome(marking.withDetected(found), CourtFinderStatus.ALIGNED, edited = true)
+}

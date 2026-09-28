@@ -193,7 +193,7 @@ struct CourtMarkingView: View {
         // otherwise go unsaid.
         if let note = finderStatus.screenNote(showsSavedMarks: showsSavedMarks) {
             Text(note)
-                .font(.footnote)
+                .shuttlType(ShuttlType.bodySmall)
                 .foregroundStyle(Shuttl.textTertiary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 16)
@@ -368,33 +368,20 @@ struct CourtMarkingView: View {
     private func onFindCourt() {
         guard marking != nil, !finderStatus.isBusy else { return }
         runFinder(.finding) { image in
-            let finding = await CourtFinderBridge.find(image)
+            let finding = await CourtFinderBridge.find(image, call: "find on demand")
             guard !Task.isCancelled, let marking else { return }
-            if let found = finding.toCourtPoints() {
-                self.marking = marking.withDetected(points: found)
-                finderStatus = .found
-                showsSavedMarks = false
-            } else {
-                finderStatus = marking.points.isEmpty ? .notFound : .findFailed
-            }
+            apply(CourtAutoMarkingKt.afterFindCourt(marking: marking, finding: finding))
         }
     }
 
     /// The finder on an empty marking, as the screen opens. A tap before it
-    /// answers wins: `applyFinding` discards a court found after the coach
-    /// started by hand.
+    /// answers wins: a court found after the coach started by hand is
+    /// discarded (`afterOpeningFind`).
     private func findOnOpening() {
         runFinder(.finding) { image in
-            let finding = await CourtFinderBridge.find(image)
+            let finding = await CourtFinderBridge.find(image, call: "find")
             guard !Task.isCancelled, let marking else { return }
-            if !finding.found {
-                finderStatus = .notFound
-            } else if let applied = CourtAutoMarkingKt.applyFinding(state: marking, finding: finding) {
-                self.marking = applied
-                finderStatus = .found
-            } else {
-                finderStatus = .idle
-            }
+            apply(CourtAutoMarkingKt.afterOpeningFind(marking: marking, finding: finding))
         }
     }
 
@@ -405,17 +392,21 @@ struct CourtMarkingView: View {
         runFinder(.aligning) { image in
             let finding = await CourtFinderBridge.fromCorners(image, corners: corners)
             guard !Task.isCancelled else { return }
-            guard let marking, marking.points == corners else {
+            guard let marking else {
                 finderStatus = .idle
                 return
             }
-            if let found = finding.toCourtPoints() {
-                self.marking = marking.withDetected(points: found)
-                finderStatus = .aligned
-            } else {
-                finderStatus = .alignFailed
-            }
+            apply(CourtAutoMarkingKt.afterCorners(marking: marking, corners: corners, finding: finding))
         }
+    }
+
+    /// The screen after a finder answer, by the shared rules androidApp
+    /// applies too. An applied answer is an edit, which ends the saved-marks
+    /// note.
+    private func apply(_ outcome: CourtFinderOutcome) {
+        marking = outcome.marking
+        finderStatus = outcome.status
+        if outcome.edited { showsSavedMarks = false }
     }
 
     /// Starts `work` on the frame on screen with the status `busy`, in place
@@ -497,10 +488,10 @@ struct CourtMarkingView: View {
                         .foregroundStyle(specColor(Int(marking.nextIndex)))
                 }
             }
-            .font(.body.weight(.medium))
+            .shuttlType(ShuttlType.titleLarge)
             Spacer()
             Text("\(marking.points.count) / \(CourtMarkingSpec.shared.TOTAL) points")
-                .font(.footnote)
+                .shuttlType(ShuttlType.bodySmall)
                 .foregroundStyle(Shuttl.textSecondary)
         }
         .padding(.horizontal, 16)
