@@ -141,7 +141,8 @@ internal fun searchCourt(work: GreyImage, ridge: RidgeMap = ridges(work)): Searc
         val r = top.rect[k]
         val q = top.quad[k]
         placement(quads.homographies, r, hm, q * 9)
-        val s = scorer.score(hm, FINE)
+        // Only a higher score replaces the best: one sure to end below it can stop early.
+        val s = scorer.score(hm, FINE, cutoff = bestScore)
         if (s > bestScore) {
             bestScore = s
             bestRect = r
@@ -184,12 +185,16 @@ internal fun searchCourtNear(
     val cx = DoubleArray(4)
     val cy = DoubleArray(4)
     val hm = DoubleArray(9)
+    val origins = Origins.of
+    val originNear = BooleanArray(origins.count)
     var bestScore = Double.NEGATIVE_INFINITY
     var bestRect = -1
     var bestQuad = -1
     val rects = CourtModel.RECTANGLES.size
     for (q in 0 until quads.count) {
+        origins.nearTaps(quads.homographies, q * 9, tx, ty, radius, originNear)
         rects@ for (r in 0 until rects) {
+            if (!originNear[origins.group[r]]) continue
             if (!placement(quads.homographies, r, hm, q * 9)) continue
             // The corners first, each checked against the taps as it comes:
             // a corner farther than `radius` from every tap is that far from
@@ -205,7 +210,8 @@ internal fun searchCourtNear(
             }
             if (!gatesPass(hm, w, h)) continue
             if (cornerMismatch(cx, cy, tx, ty) > radius) continue
-            val s = scorer.score(hm, FINE)
+            // A score below the best so far cannot win, even on a tie-break: it may stop early.
+            val s = scorer.score(hm, FINE, cutoff = bestScore)
             if (s == Double.NEGATIVE_INFINITY) continue
             // Rect-major is the probe's order: a tie goes to the lower rectangle, then the lower quad.
             if (s > bestScore || (s == bestScore && (r < bestRect || (r == bestRect && q < bestQuad)))) {
@@ -218,6 +224,44 @@ internal fun searchCourtNear(
     if (bestRect < 0) return null
     placement(quads.homographies, bestRect, hm, bestQuad * 9)
     return SearchResult(canonical(hm), bestScore, lines.size, quads.count)
+}
+
+/**
+ * The distinct points of the unit square where the rectangles of
+ * [CourtModel.RECTANGLES] put the court's `(0,0)` corner: the translation
+ * `(a[2], a[5])` of each [CourtModel.RECTANGLE_TO_SQUARE] map, and per
+ * rectangle the index of its own in [group].
+ *
+ * [placement] computes that corner's image position as
+ * `(p0 a[2] + p1 a[5] + p2) / h33` per row, and projecting model `(0,0)`
+ * through a finite placement adds only zeros to it and divides by 1, so
+ * the corner-guided search's first corner is exactly the value [nearTaps]
+ * computes for the rectangle's group, once per quad for every rectangle
+ * sharing it. A placement with a non-finite entry fails the gates.
+ */
+private class Origins(val count: Int, val u: DoubleArray, val v: DoubleArray, val group: IntArray) {
+    /** Per group, into `out`, false when the corner is farther than `radius` from every tap (NaN is not). */
+    fun nearTaps(hq: DoubleArray, offset: Int, tx: DoubleArray, ty: DoubleArray, radius: Double, out: BooleanArray) {
+        for (g in 0 until count) {
+            val h33 = hq[offset + 6] * u[g] + hq[offset + 7] * v[g] + hq[offset + 8]
+            val x = (hq[offset] * u[g] + hq[offset + 1] * v[g] + hq[offset + 2]) / h33
+            val y = (hq[offset + 3] * u[g] + hq[offset + 4] * v[g] + hq[offset + 5]) / h33
+            out[g] = !(nearestTap(x, y, tx, ty) > radius)
+        }
+    }
+
+    companion object {
+        val of: Origins by lazy {
+            val us = ArrayList<Double>()
+            val vs = ArrayList<Double>()
+            val group = IntArray(CourtModel.RECTANGLES.size) { r ->
+                val a = CourtModel.RECTANGLE_TO_SQUARE[r]
+                val found = us.indices.firstOrNull { us[it].toRawBits() == a[2].toRawBits() && vs[it].toRawBits() == a[5].toRawBits() }
+                found ?: us.size.also { us.add(a[2]); vs.add(a[5]) }
+            }
+            Origins(us.size, us.toDoubleArray(), vs.toDoubleArray(), group)
+        }
+    }
 }
 
 /** The corner orders the probe's `search_near()` tries: the court rectangle's eight symmetries. */
@@ -418,7 +462,10 @@ internal fun gatesPass(h: DoubleArray, width: Int, height: Int): Boolean {
     return sqrt(dx * dx + dy * dy) > MIN_NET * width
 }
 
-/** Slack on each segment's bound, relative to its coordinates plus absolute, px: far above the rounding it covers. */
+/**
+ * Slack on each segment's bound, px: a multiple of [roundingScale] plus an
+ * absolute amount, many orders of magnitude above the rounding it covers.
+ */
 private const val BOUND_SLACK_RELATIVE = 1e-9
 private const val BOUND_SLACK_PX = 1e-3
 
@@ -427,6 +474,9 @@ private const val BOUND_SLACK_PX = 1e-3
  * transform `dist` of a `width x height` image.
  */
 private class Scorer(private val dist: FloatArray, private val width: Int, private val height: Int) {
+    /** Per segment `k`, a bound on the weight its samples in frame can sum to. */
+    private val gain = DoubleArray(CourtModel.SEGMENTS.size)
+
     /** Per segment `k`, a bound on what segments `k` onwards can still add. */
     private val remaining = DoubleArray(CourtModel.SEGMENTS.size + 1)
 
@@ -444,7 +494,10 @@ private class Scorer(private val dist: FloatArray, private val width: Int, priva
      * the score is sure to end below `cutoff`: the caller keeps only scores
      * of at least `cutoff`, so it keeps the same placements. The samples are
      * summed in the same order either way, so a score that is returned is
-     * the same number.
+     * the same number. Sure means the total so far plus [bound]'s bound on
+     * the segments still to come plus what is left of the current segment's
+     * bound (the in-frame weight it has not used yet) is below `cutoff`;
+     * that sum only drops when a sample in frame is off every line.
      */
     fun score(h: DoubleArray, samples: ScoreSamples, cutoff: Double = Double.NEGATIVE_INFINITY): Double {
         val xs = samples.x
@@ -468,6 +521,7 @@ private class Scorer(private val dist: FloatArray, private val width: Int, priva
         var px = (h0 * xs[0] + h1 * ys[0] + h2) / z
         var py = (h3 * xs[0] + h4 * ys[0] + h5) / z
         var total = 0.0
+        var used = 0.0
         for (i in 0 until n) {
             var nx = 0.0
             var ny = 0.0
@@ -483,12 +537,21 @@ private class Scorer(private val dist: FloatArray, private val width: Int, priva
                 val dx = nx - px
                 val dy = ny - py
                 val weight = min(sqrt(dx * dx + dy * dy), MAX_WEIGHT)
-                total += if (dist[py.toInt() * width + px.toInt()] <= ON_LINE) weight else -OFF_LINE_COST * weight
+                used += weight
+                if (dist[py.toInt() * width + px.toInt()] <= ON_LINE) {
+                    total += weight
+                } else {
+                    total += -OFF_LINE_COST * weight
+                    if (bounded && total + (remaining[segment + 1] + (gain[segment] - used)) < cutoff) {
+                        return Double.NEGATIVE_INFINITY
+                    }
+                }
             }
             px = nx
             py = ny
             if (bounded && i + 1 == starts[segment + 1]) {
                 segment++
+                used = 0.0
                 if (total + remaining[segment] < cutoff) return Double.NEGATIVE_INFINITY
             }
         }
@@ -501,14 +564,21 @@ private class Scorer(private val dist: FloatArray, private val width: Int, priva
      *
      * A segment's samples project, in order, onto the straight image
      * segment between its first and last sample, so their weights sum to at
-     * most that segment's length (and to at most [MAX_WEIGHT] each): the
-     * most the segment can add. The slack covers the rounding of the
-     * projected points and of the running total; a NaN bound never prunes.
+     * most that segment's length, and to at most [MAX_WEIGHT] each. Only
+     * samples in frame count, and they run consecutively along it: they add
+     * at most the length inside the frame plus one capped weight reaching
+     * out of it, and nothing when it misses the frame. The slack covers the
+     * rounding of the projected points (which sit a few ulps of
+     * [roundingScale] off their exact positions) and of the running total;
+     * the frame is widened by it too. A NaN bound never prunes.
      */
     private fun bound(h: DoubleArray, samples: ScoreSamples): Boolean {
         val xs = samples.x
         val ys = samples.y
         val segments = samples.segments
+        val slack = BOUND_SLACK_RELATIVE * roundingScale(h) + BOUND_SLACK_PX
+        val maxX = (width - 1).toDouble()
+        val maxY = (height - 1).toDouble()
         remaining[segments] = 0.0
         for (k in segments - 1 downTo 0) {
             val a = samples.starts[k]
@@ -521,11 +591,67 @@ private class Scorer(private val dist: FloatArray, private val width: Int, priva
             val bx = (h[0] * xs[b] + h[1] * ys[b] + h[2]) / zb
             val by = (h[3] * xs[b] + h[4] * ys[b] + h[5]) / zb
             val length = sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay))
-            val slack = BOUND_SLACK_RELATIVE * (abs(ax) + abs(ay) + abs(bx) + abs(by) + length) + BOUND_SLACK_PX
-            remaining[k] = remaining[k + 1] + (min(samples.maxGain[k], length) + slack)
+            val inFrame = clippedLength(ax, ay, bx, by, length, maxX, maxY, slack)
+            val most = if (inFrame == 0.0) 0.0 else min(min(samples.maxGain[k], length), inFrame + MAX_WEIGHT)
+            gain[k] = most + slack
+            remaining[k] = remaining[k + 1] + gain[k]
         }
         return true
     }
+}
+
+/**
+ * A bound on the magnitude of the terms that make up a projected court
+ * point through `h`, px: the rounding error of a projected sample is a few
+ * ulps of this. Model coordinates are within `[0, L]`, and the depth over
+ * the court is smallest at a corner; infinity when a corner is not in front.
+ */
+private fun roundingScale(h: DoubleArray): Double {
+    val w = CourtModel.W
+    val l = CourtModel.L
+    val zMin = min(min(h[8], h[6] * w + h[8]), min(h[6] * w + h[7] * l + h[8], h[7] * l + h[8]))
+    if (!(zMin > 0.0)) return Double.POSITIVE_INFINITY
+    val numerator = (abs(h[0]) + abs(h[1]) + abs(h[3]) + abs(h[4])) * l + abs(h[2]) + abs(h[5])
+    val depth = (abs(h[6]) + abs(h[7])) * l + abs(h[8])
+    return (numerator + numerator / zMin * depth) / zMin
+}
+
+/**
+ * The length of image segment `a`-`b` (of length `length`) inside the
+ * frame `[0, maxX] x [0, maxY]` widened by `margin` on every side, by
+ * Liang-Barsky clipping: 0 when it misses, NaN for a NaN end.
+ */
+private fun clippedLength(
+    ax: Double, ay: Double, bx: Double, by: Double, length: Double,
+    maxX: Double, maxY: Double, margin: Double,
+): Double {
+    val lo = -margin
+    val hiX = maxX + margin
+    val hiY = maxY + margin
+    if (ax >= lo && ax <= hiX && ay >= lo && ay <= hiY && bx >= lo && bx <= hiX && by >= lo && by <= hiY) return length
+    if ((ax < lo && bx < lo) || (ax > hiX && bx > hiX) || (ay < lo && by < lo) || (ay > hiY && by > hiY)) return 0.0
+    val dx = bx - ax
+    val dy = by - ay
+    var t0 = 0.0
+    var t1 = 1.0
+    for (edge in 0..3) {
+        val p: Double
+        val q: Double
+        when (edge) {
+            0 -> { p = -dx; q = ax + margin }
+            1 -> { p = dx; q = maxX + margin - ax }
+            2 -> { p = -dy; q = ay + margin }
+            else -> { p = dy; q = maxY + margin - ay }
+        }
+        if (p == 0.0) {
+            if (q < 0.0) return 0.0
+        } else {
+            val r = q / p
+            if (p < 0.0) t0 = max(t0, r) else t1 = min(t1, r)
+        }
+    }
+    if (t0 > t1) return 0.0
+    return (t1 - t0) * length
 }
 
 /**
