@@ -316,16 +316,18 @@ private class Quads(val count: Int, val homographies: DoubleArray) {
             val out = DoubleArray(9 * pairsA * pairsB)
             val quad = DoubleArray(8)
             val corner = DoubleArray(2)
+            val na = Normals(a)
+            val nb = Normals(b)
             var count = 0
             for (i in a.indices) for (j in i + 1 until a.size) {
                 for (k in b.indices) for (l in k + 1 until b.size) {
-                    if (!crossing(a[i], b[k], corner)) continue
+                    if (!crossing(na, i, nb, k, corner)) continue
                     quad[0] = corner[0]; quad[1] = corner[1]
-                    if (!crossing(a[i], b[l], corner)) continue
+                    if (!crossing(na, i, nb, l, corner)) continue
                     quad[2] = corner[0]; quad[3] = corner[1]
-                    if (!crossing(a[j], b[l], corner)) continue
+                    if (!crossing(na, j, nb, l, corner)) continue
                     quad[4] = corner[0]; quad[5] = corner[1]
-                    if (!crossing(a[j], b[k], corner)) continue
+                    if (!crossing(na, j, nb, k, corner)) continue
                     quad[6] = corner[0]; quad[7] = corner[1]
                     if (!withinReach(quad, width, height) || !strictlyConvex(quad)) continue
                     if (!squareToQuad(quad, out, outOffset = 9 * count)) continue
@@ -337,14 +339,21 @@ private class Quads(val count: Int, val homographies: DoubleArray) {
     }
 }
 
-/** `court_probe.py`'s `inter()`: where two lines cross, false for a near-parallel pair. */
-private fun crossing(p: CandidateLine, q: CandidateLine, out: DoubleArray): Boolean {
-    val c1 = cos(p.theta); val s1 = sin(p.theta)
-    val c2 = cos(q.theta); val s2 = sin(q.theta)
+/** Lines' normals `(cos theta, sin theta)` and distances `rho`, the trigonometry done once per line. */
+private class Normals(lines: List<CandidateLine>) {
+    val c = DoubleArray(lines.size) { cos(lines[it].theta) }
+    val s = DoubleArray(lines.size) { sin(lines[it].theta) }
+    val rho = DoubleArray(lines.size) { lines[it].rho }
+}
+
+/** `court_probe.py`'s `inter()`: where line `i` of `p` and line `j` of `q` cross, false for a near-parallel pair. */
+private fun crossing(p: Normals, i: Int, q: Normals, j: Int, out: DoubleArray): Boolean {
+    val c1 = p.c[i]; val s1 = p.s[i]
+    val c2 = q.c[j]; val s2 = q.s[j]
     val det = c1 * s2 - s1 * c2
     if (abs(det) < PARALLEL_DET) return false
-    out[0] = (p.rho * s2 - s1 * q.rho) / det
-    out[1] = (c1 * q.rho - p.rho * c2) / det
+    out[0] = (p.rho[i] * s2 - s1 * q.rho[j]) / det
+    out[1] = (c1 * q.rho[j] - p.rho[i] * c2) / det
     return true
 }
 

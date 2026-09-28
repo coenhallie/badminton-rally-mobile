@@ -169,12 +169,16 @@ private fun firstMaxInRow(acc: IntArray, t: Int, rhoBins: Int): Int {
 private fun supported(rho: Double, theta: Double, votes: Double, xs: IntArray, ys: IntArray): CandidateLine? {
     val c = cos(theta)
     val s = sin(theta)
-    val along = ArrayList<Double>()
+    var along = DoubleArray(256)
+    var count = 0
     for (p in xs.indices) {
-        if (abs(xs[p] * c + ys[p] * s - rho) < SUPPORT_BAND) along += -s * xs[p] + c * ys[p]
+        if (abs(xs[p] * c + ys[p] * s - rho) < SUPPORT_BAND) {
+            if (count == along.size) along = along.copyOf(2 * count)
+            along[count++] = -s * xs[p] + c * ys[p]
+        }
     }
-    if (along.size < MIN_SUPPORT) return null
-    val sorted = along.toDoubleArray().also { it.sort() }
+    if (count < MIN_SUPPORT) return null
+    val sorted = along.copyOf(count).also { it.sort() }
     val lo = percentile(sorted, 2.0)
     val hi = percentile(sorted, 98.0)
     val baseX = c * rho
@@ -218,6 +222,7 @@ private fun percentile(sorted: DoubleArray, q: Double): Double {
  */
 internal fun lineFamilies(lines: List<CandidateLine>, width: Int, height: Int, horizon: Boolean = true): LineFamilies? {
     val homogeneous = lines.map { doubleArrayOf(cos(it.theta), sin(it.theta), -it.rho) }
+    val pointing = lines.map { Pointing(it) }
     var remaining = lines.indices.toList()
     val groups = ArrayList<List<Int>>()
     val points = ArrayList<DoubleArray>()
@@ -230,12 +235,13 @@ internal fun lineFamilies(lines: List<CandidateLine>, width: Int, height: Int, h
             val norm = sqrt(vp[0] * vp[0] + vp[1] * vp[1] + vp[2] * vp[2])
             if (norm < 1e-12) continue
             for (i in 0..2) vp[i] /= norm
-            val inliers = remaining.filter { angleToPoint(lines[it], vp) < VP_INLIER_DEGREES }
-            val weight = inliers.sumOf { lines[it].votes }
+            // The inliers' votes summed in order, as `sumOf` over the list; the list itself only for a new best.
+            var weight = 0.0
+            for (i in remaining) if (pointing[i].angleTo(vp) < VP_INLIER_DEGREES) weight += lines[i].votes
             if (weight > bestWeight) {
                 bestWeight = weight
                 bestPoint = vp
-                bestInliers = inliers
+                bestInliers = remaining.filter { pointing[it].angleTo(vp) < VP_INLIER_DEGREES }
             }
         }
         if (bestPoint == null) break
@@ -261,27 +267,36 @@ internal fun lineFamilies(lines: List<CandidateLine>, width: Int, height: Int, h
 }
 
 /**
- * The angle, degrees, between a line's support direction and the direction
- * from its support midpoint to the vanishing point `vp` (or `vp`'s own
- * direction when it is at infinity). 0 for a degenerate line or a point on
- * the midpoint, as the probe's `err()`.
+ * A line's support direction (unit) and midpoint, computed once per line for
+ * [angleTo].
  */
-private fun angleToPoint(l: CandidateLine, vp: DoubleArray): Double {
-    val len = max(1e-9, hypot(l.bx - l.ax, l.by - l.ay))
-    val dx = (l.bx - l.ax) / len
-    val dy = (l.by - l.ay) / len
-    val vx: Double
-    val vy: Double
-    if (abs(vp[2]) < 1e-9) {
-        vx = vp[0]
-        vy = vp[1]
-    } else {
-        vx = vp[0] / vp[2] - (l.ax + l.bx) / 2
-        vy = vp[1] / vp[2] - (l.ay + l.by) / 2
+private class Pointing(l: CandidateLine) {
+    private val len = max(1e-9, hypot(l.bx - l.ax, l.by - l.ay))
+    private val dx = (l.bx - l.ax) / len
+    private val dy = (l.by - l.ay) / len
+    private val mx = (l.ax + l.bx) / 2
+    private val my = (l.ay + l.by) / 2
+
+    /**
+     * The angle, degrees, between the line's support direction and the
+     * direction from its support midpoint to the vanishing point `vp` (or
+     * `vp`'s own direction when it is at infinity). 0 for a degenerate line
+     * or a point on the midpoint, as the probe's `err()`.
+     */
+    fun angleTo(vp: DoubleArray): Double {
+        val vx: Double
+        val vy: Double
+        if (abs(vp[2]) < 1e-9) {
+            vx = vp[0]
+            vy = vp[1]
+        } else {
+            vx = vp[0] / vp[2] - mx
+            vy = vp[1] / vp[2] - my
+        }
+        val n = hypot(vx, vy)
+        if (n < 1e-9) return 0.0
+        return acos(min(1.0, abs(dx * vx / n + dy * vy / n))) * 180.0 / PI
     }
-    val n = hypot(vx, vy)
-    if (n < 1e-9) return 0.0
-    return acos(min(1.0, abs(dx * vx / n + dy * vy / n))) * 180.0 / PI
 }
 
 private fun cross(a: DoubleArray, b: DoubleArray) = doubleArrayOf(
