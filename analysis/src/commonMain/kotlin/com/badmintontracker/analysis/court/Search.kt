@@ -480,6 +480,9 @@ private class Scorer(private val dist: FloatArray, private val width: Int, priva
     /** Per segment `k`, a bound on what segments `k` onwards can still add. */
     private val remaining = DoubleArray(CourtModel.SEGMENTS.size + 1)
 
+    /** Per segment, true when none of its samples can be in frame or behind the camera: it adds exactly 0. */
+    private val outside = BooleanArray(CourtModel.SEGMENTS.size)
+
     /**
      * The score of placement `h`: each sample, weighted by its image
      * distance to the next sample on the same segment (capped at
@@ -504,7 +507,6 @@ private class Scorer(private val dist: FloatArray, private val width: Int, priva
         val ys = samples.y
         val weighed = samples.weighed
         val starts = samples.starts
-        val n = xs.size
         val h0 = h[0]; val h1 = h[1]; val h2 = h[2]
         val h3 = h[3]; val h4 = h[4]; val h5 = h[5]
         val h6 = h[6]; val h7 = h[7]; val h8 = h[8]
@@ -515,45 +517,47 @@ private class Scorer(private val dist: FloatArray, private val width: Int, priva
             if (!bound(h, samples)) return Double.NEGATIVE_INFINITY
             if (remaining[0] < cutoff) return Double.NEGATIVE_INFINITY
         }
-        var segment = 0
-        var z = h6 * xs[0] + h7 * ys[0] + h8
-        if (z <= MIN_DEPTH) return Double.NEGATIVE_INFINITY
-        var px = (h0 * xs[0] + h1 * ys[0] + h2) / z
-        var py = (h3 * xs[0] + h4 * ys[0] + h5) / z
         var total = 0.0
-        var used = 0.0
-        for (i in 0 until n) {
-            var nx = 0.0
-            var ny = 0.0
-            if (i + 1 < n) {
-                val mx = xs[i + 1]
-                val my = ys[i + 1]
-                z = h6 * mx + h7 * my + h8
+        for (k in 0 until samples.segments) {
+            // A segment that adds exactly 0 and cannot end the loop is skipped.
+            if (!(bounded && outside[k])) {
+                val end = starts[k + 1]
+                var z = h6 * xs[starts[k]] + h7 * ys[starts[k]] + h8
                 if (z <= MIN_DEPTH) return Double.NEGATIVE_INFINITY
-                nx = (h0 * mx + h1 * my + h2) / z
-                ny = (h3 * mx + h4 * my + h5) / z
-            }
-            if (weighed[i] && px >= 0.0 && px < maxX && py >= 0.0 && py < maxY) {
-                val dx = nx - px
-                val dy = ny - py
-                val weight = min(sqrt(dx * dx + dy * dy), MAX_WEIGHT)
-                used += weight
-                if (dist[py.toInt() * width + px.toInt()] <= ON_LINE) {
-                    total += weight
-                } else {
-                    total += -OFF_LINE_COST * weight
-                    if (bounded && total + (remaining[segment + 1] + (gain[segment] - used)) < cutoff) {
-                        return Double.NEGATIVE_INFINITY
+                var px = (h0 * xs[starts[k]] + h1 * ys[starts[k]] + h2) / z
+                var py = (h3 * xs[starts[k]] + h4 * ys[starts[k]] + h5) / z
+                var used = 0.0
+                for (i in starts[k] until end) {
+                    // The segment's last sample is not weighed: nothing reads its next point.
+                    var nx = 0.0
+                    var ny = 0.0
+                    if (i + 1 < end) {
+                        val mx = xs[i + 1]
+                        val my = ys[i + 1]
+                        z = h6 * mx + h7 * my + h8
+                        if (z <= MIN_DEPTH) return Double.NEGATIVE_INFINITY
+                        nx = (h0 * mx + h1 * my + h2) / z
+                        ny = (h3 * mx + h4 * my + h5) / z
                     }
+                    if (weighed[i] && px >= 0.0 && px < maxX && py >= 0.0 && py < maxY) {
+                        val dx = nx - px
+                        val dy = ny - py
+                        val weight = min(sqrt(dx * dx + dy * dy), MAX_WEIGHT)
+                        used += weight
+                        if (dist[py.toInt() * width + px.toInt()] <= ON_LINE) {
+                            total += weight
+                        } else {
+                            total += -OFF_LINE_COST * weight
+                            if (bounded && total + (remaining[k + 1] + (gain[k] - used)) < cutoff) {
+                                return Double.NEGATIVE_INFINITY
+                            }
+                        }
+                    }
+                    px = nx
+                    py = ny
                 }
             }
-            px = nx
-            py = ny
-            if (bounded && i + 1 == starts[segment + 1]) {
-                segment++
-                used = 0.0
-                if (total + remaining[segment] < cutoff) return Double.NEGATIVE_INFINITY
-            }
+            if (bounded && total + remaining[k + 1] < cutoff) return Double.NEGATIVE_INFINITY
         }
         return total
     }
@@ -571,12 +575,18 @@ private class Scorer(private val dist: FloatArray, private val width: Int, priva
      * rounding of the projected points (which sit a few ulps of
      * [roundingScale] off their exact positions) and of the running total;
      * the frame is widened by it too. A NaN bound never prunes.
+     *
+     * A segment that misses the widened frame has no sample in frame, and
+     * when both its ends are in front of the camera by more than the
+     * rounding of a depth, so is every sample between them (depth is affine
+     * along it): it is marked [outside].
      */
     private fun bound(h: DoubleArray, samples: ScoreSamples): Boolean {
         val xs = samples.x
         val ys = samples.y
         val segments = samples.segments
         val slack = BOUND_SLACK_RELATIVE * roundingScale(h) + BOUND_SLACK_PX
+        val inFront = MIN_DEPTH + BOUND_SLACK_RELATIVE * ((abs(h[6]) + abs(h[7])) * CourtModel.L + abs(h[8]))
         val maxX = (width - 1).toDouble()
         val maxY = (height - 1).toDouble()
         remaining[segments] = 0.0
@@ -592,6 +602,7 @@ private class Scorer(private val dist: FloatArray, private val width: Int, priva
             val by = (h[3] * xs[b] + h[4] * ys[b] + h[5]) / zb
             val length = sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay))
             val inFrame = clippedLength(ax, ay, bx, by, length, maxX, maxY, slack)
+            outside[k] = inFrame == 0.0 && za > inFront && zb > inFront
             val most = if (inFrame == 0.0) 0.0 else min(min(samples.maxGain[k], length), inFrame + MAX_WEIGHT)
             gain[k] = most + slack
             remaining[k] = remaining[k + 1] + gain[k]
