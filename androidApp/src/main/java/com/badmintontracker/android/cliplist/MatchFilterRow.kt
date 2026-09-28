@@ -199,7 +199,7 @@ private fun Modifier.fadedEdges(scroll: ScrollState): Modifier = this
 
 /**
  * The list's order, as its name and a chevron, opening the four orders.
- * Plain text rather than a fifth pill: the pills are one choice of what to
+ * Plain text rather than a fourth pill: the pills are one choice of what to
  * show, and an outlined "Newest" among them read as another filter.
  *
  * As wide as its widest name at any choice, so picking an order never moves
