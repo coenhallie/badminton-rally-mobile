@@ -50,11 +50,20 @@ struct CourtMarkingView: View {
     @State private var marking: CourtMarkingState? = nil
     /// Whether the marks on screen are the ones the last run used, untouched.
     ///
-    /// Set when the screen opens on them and cleared by the first edit, which
-    /// from a complete marking means Undo or Clear: a tap on a marking that
-    /// already has its twelve points is ignored. androidApp keeps the same flag
-    /// in `CourtMarkingUiState`.
+    /// Set when the screen opens on them and cleared by the first edit: Undo,
+    /// Clear, moving a point or Find court. Picking a point up to move it is
+    /// not an edit yet. androidApp keeps the same flag in `CourtMarkingUiState`.
     @State private var showsSavedMarks = false
+    /// Where the court finder stands, which the instruction line and the note
+    /// say. androidApp keeps the same in `CourtMarkingUiState.status`, and the
+    /// functions below mirror its `CourtMarkingViewModel` one for one.
+    @State private var finderStatus: CourtFinderStatus = .idle
+    /// The finder call in flight, if any. An edit by the coach cancels it: his
+    /// hand wins over an answer about a marking he has since changed, and the
+    /// busy line would otherwise stand in for the instruction he needs while
+    /// he taps. The search itself cannot be stopped, so every answer checks
+    /// for the cancel before it touches the screen.
+    @State private var finderTask: Task<Void, Never>? = nil
     @State private var error: String? = nil
     /// Whether the "what each run produces" sheet is up.
     @State private var showCapabilities = false
@@ -131,10 +140,15 @@ struct CourtMarkingView: View {
                 // here rather than in the selector so the selector stays a view
                 // over values it is given.
                 throughput = rally.deviceThroughput.throughput.value
+                // Saved marks are what the coach used last time: opening on
+                // them is a review, and the finder stays out of it unless he
+                // asks (Find court).
+                if restored.points.isEmpty { findOnOpening() }
             } catch {
                 self.error = error.localizedDescription   // "Couldn't extract video frame"
             }
         }
+        .onDisappear { cancelFinder() }
     }
 
     @ViewBuilder
@@ -173,9 +187,12 @@ struct CourtMarkingView: View {
         instructionRow(marking: marking)
         // Above the guide, not below it: the guide is asking him to tap
         // landmarks that are already down, and this is the line that says why
-        // they are. androidApp says the same, from the same constant.
-        if showsSavedMarks {
-            Text(CourtMarkingSpec.shared.SAVED_MARKS_NOTE)
+        // they are. androidApp says the same, from the same constant. The
+        // finder's note sits in the same place and wins over it: the two only
+        // meet when Find court over saved marks finds nothing, which would
+        // otherwise go unsaid.
+        if let note = finderStatus.screenNote(showsSavedMarks: showsSavedMarks) {
+            Text(note)
                 .font(.footnote)
                 .foregroundStyle(Shuttl.textTertiary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -185,17 +202,20 @@ struct CourtMarkingView: View {
         SchematicCourtGuide(placedCount: Int(marking.points.count))
             .padding(.vertical, 8)
 
-        HStack(spacing: 12) {
-            Button("Undo") {
-                self.marking = marking.undo()
-                showsSavedMarks = false
+        // Find court on a row of its own under Undo and Clear, as androidApp
+        // lays it out: a third of a narrow phone is too little for its label.
+        VStack(spacing: 8) {
+            HStack(spacing: 12) {
+                Button("Undo") { onUndo() }
+                    .disabled(marking.points.isEmpty)
+                Button("Clear") { onClear() }
+                    .disabled(marking.points.isEmpty)
             }
-            .disabled(marking.points.isEmpty)
-            Button("Clear") {
-                self.marking = marking.clear()
-                showsSavedMarks = false
+            Button { onFindCourt() } label: {
+                Text(CourtMarkingSpec.shared.FIND_COURT)
+                    .frame(maxWidth: .infinity)
             }
-            .disabled(marking.points.isEmpty)
+            .disabled(finderStatus.isBusy)
         }
         .padding(.horizontal, 16)
 
@@ -293,17 +313,128 @@ struct CourtMarkingView: View {
 
     private func tapGesture(displaySize: CGSize) -> some Gesture {
         SpatialTapGesture().onEnded { value in
-            guard let marking, !marking.isComplete else { return }
             let p = CourtTapMath.inverse(
                 tapX: value.location.x, tapY: value.location.y,
                 offsetX: offset.width, offsetY: offset.height, scale: scale
             )
             guard p.x >= 0, p.y >= 0, p.x <= displaySize.width, p.y <= displaySize.height else { return }
-            self.marking = marking.place(
-                displayX: Float(p.x), displayY: Float(p.y),
-                displayWidth: Float(displaySize.width), displayHeight: Float(displaySize.height)
-            )
+            onTap(p, displaySize: displaySize)
         }
+    }
+
+    // MARK: - Marking and the court finder
+
+    /// How far from a placed point a tap still picks it up, on screen.
+    private static let hitRadius: CGFloat = 22
+
+    /// A tap at `p`, in the un-zoomed display units of `displaySize`, which
+    /// is what `place` maps from: places the next point, or on a complete
+    /// marking picks a point up or moves it (`CourtMarkingState.tap`).
+    private func onTap(_ p: CGPoint, displaySize: CGSize) {
+        guard let before = marking else { return }
+        // A point's reach is 22 pt on screen at any zoom, so in the un-zoomed
+        // units `p` is in, it shrinks as the frame is zoomed in.
+        let after = before.tap(
+            displayX: Float(p.x), displayY: Float(p.y),
+            displayWidth: Float(displaySize.width), displayHeight: Float(displaySize.height),
+            hitRadiusDisplay: Float(Self.hitRadius / scale)
+        )
+        if after == before { return }
+        let edited = after.points != before.points
+        if edited && finderStatus.isBusy { cancelFinder() }
+        marking = after
+        if edited { showsSavedMarks = false }
+        if after.justReachedFourCorners(previous: before) { completeFromCorners(after.points) }
+    }
+
+    private func onUndo() {
+        cancelFinder()
+        marking = marking?.undo()
+        showsSavedMarks = false
+        finderStatus = .idle
+    }
+
+    private func onClear() {
+        cancelFinder()
+        marking = marking?.clear()
+        showsSavedMarks = false
+        finderStatus = .idle
+    }
+
+    /// Find court: the finder on demand, replacing whatever is marked (saved
+    /// marks included) as one step Undo reverses. Nothing found leaves the
+    /// marking alone, and says so: `.findFailed` over marks, `.notFound` (tap
+    /// the corners) over none. Ignored while the finder is already working.
+    private func onFindCourt() {
+        guard marking != nil, !finderStatus.isBusy else { return }
+        runFinder(.finding) { image in
+            let finding = await CourtFinderBridge.find(image)
+            guard !Task.isCancelled, let marking else { return }
+            if let found = finding.toCourtPoints() {
+                self.marking = marking.withDetected(points: found)
+                finderStatus = .found
+                showsSavedMarks = false
+            } else {
+                finderStatus = marking.points.isEmpty ? .notFound : .findFailed
+            }
+        }
+    }
+
+    /// The finder on an empty marking, as the screen opens. A tap before it
+    /// answers wins: `applyFinding` discards a court found after the coach
+    /// started by hand.
+    private func findOnOpening() {
+        runFinder(.finding) { image in
+            let finding = await CourtFinderBridge.find(image)
+            guard !Task.isCancelled, let marking else { return }
+            if !finding.found {
+                finderStatus = .notFound
+            } else if let applied = CourtAutoMarkingKt.applyFinding(state: marking, finding: finding) {
+                self.marking = applied
+                finderStatus = .found
+            } else {
+                finderStatus = .idle
+            }
+        }
+    }
+
+    /// The fourth corner was just tapped: ask the finder to complete the court
+    /// from `corners`. Applied only onto those same four taps; anything the
+    /// coach did in between wins. Undo afterwards gives the four taps back.
+    private func completeFromCorners(_ corners: [CourtPoint]) {
+        runFinder(.aligning) { image in
+            let finding = await CourtFinderBridge.fromCorners(image, corners: corners)
+            guard !Task.isCancelled else { return }
+            guard let marking, marking.points == corners else {
+                finderStatus = .idle
+                return
+            }
+            if let found = finding.toCourtPoints() {
+                self.marking = marking.withDetected(points: found)
+                finderStatus = .aligned
+            } else {
+                finderStatus = .alignFailed
+            }
+        }
+    }
+
+    /// Starts `work` on the frame on screen with the status `busy`, in place
+    /// of any call already in flight.
+    ///
+    /// `work` must check `Task.isCancelled` after the finder answers: the
+    /// search runs on a detached task that a cancel does not stop, so without
+    /// the check a cancelled answer would land over whatever came after it.
+    private func runFinder(_ busy: CourtFinderStatus, _ work: @escaping @MainActor (CGImage) async -> Void) {
+        cancelFinder()
+        guard let image = courtFrame?.cgImage else { return }
+        finderStatus = busy
+        finderTask = Task { await work(image) }
+    }
+
+    private func cancelFinder() {
+        finderTask?.cancel()
+        finderTask = nil
+        if finderStatus.isBusy { finderStatus = .idle }
     }
 
     private func magnifyGesture() -> some Gesture {
@@ -341,15 +472,32 @@ struct CourtMarkingView: View {
 
     private func instructionRow(marking: CourtMarkingState) -> some View {
         HStack {
-            if marking.isComplete {
-                Text("All points placed")
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(Shuttl.accent)
-            } else {
-                Text("Tap: \(CourtMarkingSpec.shared.fullLabels[Int(marking.nextIndex)])")
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(specColor(Int(marking.nextIndex)))
+            Group {
+                if let busyLine = finderStatus.busyLine {
+                    // The finder is looking at the frame. It stands in for the
+                    // instruction only while it works: a tap that places or
+                    // moves a point wins over its answer and brings the
+                    // instruction back.
+                    HStack(spacing: 10) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text(busyLine)
+                            .foregroundStyle(Shuttl.textHeading)
+                    }
+                } else if let selected = marking.selected?.intValue {
+                    // In the point's own colour, like the placing instruction:
+                    // the ring on the frame and this line name the same point.
+                    Text(CourtMarkingSpec.shared.moveInstruction(index: Int32(selected)))
+                        .foregroundStyle(specColor(selected))
+                } else if marking.isComplete {
+                    Text("All points placed")
+                        .foregroundStyle(Shuttl.accent)
+                } else {
+                    Text("Tap: \(CourtMarkingSpec.shared.fullLabels[Int(marking.nextIndex)])")
+                        .foregroundStyle(specColor(Int(marking.nextIndex)))
+                }
             }
+            .font(.body.weight(.medium))
             Spacer()
             Text("\(marking.points.count) / \(CourtMarkingSpec.shared.TOTAL) points")
                 .font(.footnote)
@@ -361,16 +509,60 @@ struct CourtMarkingView: View {
 
     @ViewBuilder
     private func frameCanvas(frame: UIImage, marking: CourtMarkingState, displaySize: CGSize) -> some View {
+        // The court drawn through the twelve marks, once there are twelve: a
+        // mark off its paint shows as a line off the court's line, which is
+        // easier to see than a dot slightly off.
+        let courtLines = marking.courtLines()
         ZStack(alignment: .topLeading) {
             Image(uiImage: frame)
                 .resizable()
                 .frame(width: displaySize.width, height: displaySize.height)
             Canvas { context, size in
                 drawCourtGuide(context: &context, size: size)
-                drawCornerRectangle(context: &context, size: size, marking: marking)
+                // The corner rectangle says less than the court's lines and
+                // would sit on top of them.
+                if courtLines.isEmpty {
+                    drawCornerRectangle(context: &context, size: size, marking: marking)
+                } else {
+                    drawCourtLines(context: &context, size: size, marking: marking, lines: courtLines)
+                }
                 drawPlacedPoints(context: &context, size: size, marking: marking)
+                drawSelection(context: &context, size: size, marking: marking)
             }
         }
+    }
+
+    /// The court's lines through the marks, `lines` in source pixels. 2 pt on
+    /// screen at any zoom, like the markers: a stroke that grew with the zoom
+    /// would cover the paint it is there to be compared with.
+    private func drawCourtLines(
+        context: inout GraphicsContext,
+        size: CGSize,
+        marking: CourtMarkingState,
+        lines: [KotlinPair<CourtPoint, CourtPoint>]
+    ) {
+        let fx = size.width / CGFloat(truncating: marking.videoWidth as NSNumber)
+        let fy = size.height / CGFloat(truncating: marking.videoHeight as NSNumber)
+        var path = Path()
+        for line in lines {
+            guard let a = line.first, let b = line.second else { continue }
+            path.move(to: CGPoint(x: CGFloat(a.x) * fx, y: CGFloat(a.y) * fy))
+            path.addLine(to: CGPoint(x: CGFloat(b.x) * fx, y: CGFloat(b.y) * fy))
+        }
+        context.stroke(path, with: .color(Shuttl.accent), lineWidth: 2 / scale)
+    }
+
+    /// The ring on the point a tap picked up to move, clear of its 10 pt
+    /// marker at any zoom.
+    private func drawSelection(context: inout GraphicsContext, size: CGSize, marking: CourtMarkingState) {
+        guard let i = marking.selected?.intValue, i < marking.points.count else { return }
+        let p = marking.points[i]
+        let fx = size.width / CGFloat(truncating: marking.videoWidth as NSNumber)
+        let fy = size.height / CGFloat(truncating: marking.videoHeight as NSNumber)
+        let centre = CGPoint(x: CGFloat(p.x) * fx, y: CGFloat(p.y) * fy)
+        let radius = 16 / scale
+        let ring = Path(ellipseIn: CGRect(x: centre.x - radius, y: centre.y - radius, width: radius * 2, height: radius * 2))
+        context.stroke(ring, with: .color(Shuttl.accent), lineWidth: 3 / scale)
     }
 
     private func drawCourtGuide(context: inout GraphicsContext, size: CGSize) {

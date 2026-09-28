@@ -38,6 +38,7 @@
 		27D47564638D6299811A5A5B /* MatchGrouping.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94F21AB0AEE5F66047B679 /* MatchGrouping.swift */; };
 		2AB0842817D586F21A4AFC8E /* AddMatchSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EC80F89EBB792162FD96152 /* AddMatchSheet.swift */; };
 		2AB5089784DDFA9FAA82B3C3 /* OnnxSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2B6C5DE171A479978CF2184 /* OnnxSessionTests.swift */; };
+		2D3E8D3FABA880413592F5BE /* CourtFinderBridgeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C89EF8CB443FE927F9732439 /* CourtFinderBridgeTests.swift */; };
 		2E71C6E8CEB45C9A1AF67518 /* FrameStepMath.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDDECE8F42B9ED83E1030453 /* FrameStepMath.swift */; };
 		2F6E3F9479FC9B91BFAB3F39 /* ShuttlPaletteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09DC5A242EBE164C182143AD /* ShuttlPaletteTests.swift */; };
 		2F7D97729B7F863FC85FE3FD /* MetricSelector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9636B8DE06074EE38B4BCA36 /* MetricSelector.swift */; };
@@ -63,6 +64,7 @@
 		521BA70452F31751FF57239A /* CourtHeatmapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D624F5633DF1C622984C898 /* CourtHeatmapView.swift */; };
 		569E50442DC8A653DC9A3FF3 /* MatchesScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED8E8537BB85C7A07846B057 /* MatchesScreen.swift */; };
 		588606F944E2E70F3F3FA598 /* PlaybackSettingsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D75E7C46412BEAF4B6640F9D /* PlaybackSettingsSheet.swift */; };
+		58E24D3639A6727B82A3F3FF /* CourtFinderBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DCB567F4053F69F6CEA0D8B /* CourtFinderBridge.swift */; };
 		5930DD47734FB4CDA5C26024 /* MatchFilterRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A78E53A943648E539F90C52B /* MatchFilterRow.swift */; };
 		5963E2DD0B26C0580BE5B774 /* HomeHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C4ED8388F875D14FC7E1FFC /* HomeHeader.swift */; };
 		5ADBEFAA75F6EF54B2F3D085 /* LabelBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = C930D6A6291A278327ECE0CE /* LabelBadge.swift */; };
@@ -237,6 +239,7 @@
 		3A34A957F901EA635D1BAA96 /* LocalVideoFiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalVideoFiles.swift; sourceTree = "<group>"; };
 		3A9896412F77DC2290D32532 /* MatchModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchModelTests.swift; sourceTree = "<group>"; };
 		3CEBABF3818F4829339E77D7 /* ShareSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareSheetView.swift; sourceTree = "<group>"; };
+		3DCB567F4053F69F6CEA0D8B /* CourtFinderBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CourtFinderBridge.swift; sourceTree = "<group>"; };
 		3FA21129D859F17CC0DF1D93 /* ScoringEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoringEngineTests.swift; sourceTree = "<group>"; };
 		451E1BE87D67E7ADFCCAE734 /* MatchListRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchListRowView.swift; sourceTree = "<group>"; };
 		482622C0504DD57A384A6C0D /* TypographyAdoptionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TypographyAdoptionTests.swift; sourceTree = "<group>"; };
@@ -338,6 +341,7 @@
 		C31833453FB35FF6A77236BF /* LabelSwatchGridUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabelSwatchGridUITests.swift; sourceTree = "<group>"; };
 		C59114F647E69202552CE362 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		C653800D88FDA4EFB8C42457 /* KotlinThrowBridgingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KotlinThrowBridgingTests.swift; sourceTree = "<group>"; };
+		C89EF8CB443FE927F9732439 /* CourtFinderBridgeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CourtFinderBridgeTests.swift; sourceTree = "<group>"; };
 		C8F0982C6053F4BFEB29954C /* LabelsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabelsView.swift; sourceTree = "<group>"; };
 		C930D6A6291A278327ECE0CE /* LabelBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabelBadge.swift; sourceTree = "<group>"; };
 		C9F2370F7CE20C2A273FC7CD /* ClipListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipListView.swift; sourceTree = "<group>"; };
@@ -486,6 +490,7 @@
 				E0C593C73982CBDE7E42D277 /* ClipListModelTests.swift */,
 				25C15D0B8A64F98A767DDCCE /* ClipSortTests.swift */,
 				B1FE3D69A014F7DA5F65898B /* CloudAnalysisPanelsTests.swift */,
+				C89EF8CB443FE927F9732439 /* CourtFinderBridgeTests.swift */,
 				5BD6BB2F8B0790D0731F4DBF /* CourtFrameLoaderTests.swift */,
 				7F3FB619BC2DFED2E13C3209 /* CourtTapMathTests.swift */,
 				327CF7F26B706A73DCE67AB7 /* DeviceRalliesTests.swift */,
@@ -591,6 +596,7 @@
 			isa = PBXGroup;
 			children = (
 				AEE513D22FA9B52F4A75C60E /* CapabilitySheet.swift */,
+				3DCB567F4053F69F6CEA0D8B /* CourtFinderBridge.swift */,
 				13C657999F25FF0FA886E1CD /* CourtFrameLoader.swift */,
 				82A81ED0D3F2E7DDEE4F2A41 /* CourtMarkingView.swift */,
 				B1918CECF45DC06DFCAE89CF /* CourtTapMath.swift */,
@@ -922,6 +928,7 @@
 				ADB1A8FA16544D50471033AA /* ClipSort.swift in Sources */,
 				ECC4BF8B5BD59A51628A59F4 /* CompactPillButtonStyle.swift in Sources */,
 				FAB79A300959A2B5080B2DFF /* CourtCard.swift in Sources */,
+				58E24D3639A6727B82A3F3FF /* CourtFinderBridge.swift in Sources */,
 				CCACC800E2B9DFB80BDD7351 /* CourtFrameLoader.swift in Sources */,
 				521BA70452F31751FF57239A /* CourtHeatmapView.swift in Sources */,
 				A0D4B364A2C644E52BE9AD50 /* CourtMarkingView.swift in Sources */,
@@ -1027,6 +1034,7 @@
 				D497C74080C76DF6F26A3E05 /* ClipListModelTests.swift in Sources */,
 				98C7929FEE3E00A1456DBFB7 /* ClipSortTests.swift in Sources */,
 				A9CAB50C902EE5F4477E8ED0 /* CloudAnalysisPanelsTests.swift in Sources */,
+				2D3E8D3FABA880413592F5BE /* CourtFinderBridgeTests.swift in Sources */,
 				820C4230D5FF9582766BBE84 /* CourtFrameLoaderTests.swift in Sources */,
 				EC56A892E716930456F75F35 /* CourtTapMathTests.swift in Sources */,
 				AB45CF295A0B52BD824A44E2 /* DeviceRalliesTests.swift in Sources */,
