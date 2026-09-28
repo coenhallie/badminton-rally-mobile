@@ -103,7 +103,7 @@ internal fun candidateLines(r: RidgeMap, maxLines: Int = 40): List<CandidateLine
         val offset = dt * PI / 180.0
         for (p in 0 until count) {
             // The trailing mod guards a floor-mod that rounds up to exactly pi.
-            val ti = (((th[p] + offset).mod(PI)) / PI * ANGLE_BINS).toInt() % ANGLE_BINS
+            val ti = (modPi(th[p] + offset) / PI * ANGLE_BINS).toInt() % ANGLE_BINS
             val rho = round(xs[p] * cosT[ti] + ys[p] * sinT[ti]).toInt() + d
             acc[ti * rhoBins + rho]++
         }
@@ -136,6 +136,20 @@ internal fun candidateLines(r: RidgeMap, maxLines: Int = 40): List<CandidateLine
         if (line != null) lines += line
     }
     return lines
+}
+
+/**
+ * `v.mod(PI)`, bit for bit, without the floating-point remainder (a library
+ * call on Android) for the votes' range: `v % PI` is `v` itself on
+ * `(-pi, pi)` and exactly `v - pi` on `[pi, 2 pi)` (and `v - pi` rounds to
+ * nothing there, `v` being within a factor of two of `pi`); `mod` then adds
+ * `pi` to a negative remainder. Anything else goes to `mod`.
+ */
+private fun modPi(v: Double): Double = when {
+    v >= PI && v < 2 * PI -> v - PI
+    v < 0.0 && v > -PI -> v + PI
+    v >= 0.0 && v < PI -> v
+    else -> v.mod(PI)
 }
 
 /** The index into `acc` of the first maximum of angle row `t`. */

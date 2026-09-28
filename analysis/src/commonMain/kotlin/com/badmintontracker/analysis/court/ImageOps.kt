@@ -142,19 +142,21 @@ internal fun gaussianBlur(src: GreyImage, sigma: Double): GreyImage {
     // row from precomputed reflected row offsets, so the taps need no border
     // test. The taps run outermost, each added across the whole row: every
     // pixel still sums the same values in the same order, so the results are
-    // identical to summing one pixel at a time.
+    // identical to summing one pixel at a time. The buffers hold the same
+    // values widened to Double once, rather than at every tap.
     val acc = DoubleArray(w)
-    val horizontal = FloatArray(w * h)
-    val padded = FloatArray(w + 2 * radius)
+    val horizontal = DoubleArray(w * h)
+    val padded = DoubleArray(w + 2 * radius)
     for (y in 0 until h) {
         val row = y * w
-        for (j in padded.indices) padded[j] = src.pixels[row + reflect101(j - radius, w)]
+        for (j in padded.indices) padded[j] = src.pixels[row + reflect101(j - radius, w)].toDouble()
         acc.fill(0.0)
         for (k in 0..2 * radius) {
             val c = kernel[k]
             for (x in 0 until w) acc[x] += c * padded[x + k]
         }
-        for (x in 0 until w) horizontal[row + x] = acc[x].toFloat()
+        // Rounded to Float as a Float image would store it.
+        for (x in 0 until w) horizontal[row + x] = acc[x].toFloat().toDouble()
     }
     val out = FloatArray(w * h)
     for (y in 0 until h) {
@@ -215,43 +217,68 @@ internal fun sobel2(src: GreyImage): SecondDerivatives {
 
 /**
  * The sums over `2 radius + 1` wide windows along each row, then along each
- * column, `BORDER_REFLECT_101`: each window sum is the previous one plus the
- * entering value minus the leaving one. The column pass runs every column in
- * step, row by row, for memory order; each column still adds the same values
- * in the same order, so the sums are the same as one column at a time.
+ * column, `BORDER_REFLECT_101`, of the pixels (into [sum]) and of their
+ * squares (into [sumSq]), as Doubles: each window sum is the previous one
+ * plus the entering value minus the leaving one. The column pass runs every
+ * column in step, row by row, for memory order; each column still adds the
+ * same values in the same order, so the sums are the same as one column at
+ * a time.
  */
-private fun boxSum2D(data: DoubleArray, w: Int, h: Int, radius: Int): DoubleArray {
-    val rowPass = DoubleArray(w * h)
-    // A row padded by reflection: index `j` holds the row's `j - radius - 1`.
-    val padded = DoubleArray(w + 2 * radius + 1)
-    for (y in 0 until h) {
-        val row = y * w
-        for (j in padded.indices) padded[j] = data[row + reflect101(j - radius - 1, w)]
-        var sum = 0.0
-        for (k in 1..2 * radius + 1) sum += padded[k]
-        rowPass[row] = sum
+private class BoxSums(src: GreyImage, radius: Int) {
+    val sum: DoubleArray
+    val sumSq: DoubleArray
+
+    init {
+        val w = src.width
+        val h = src.height
+        val rows = DoubleArray(w * h)
+        val rowsSq = DoubleArray(w * h)
+        // A row padded by reflection: index `j` holds the row's `j - radius - 1`.
+        val padded = DoubleArray(w + 2 * radius + 1)
+        val paddedSq = DoubleArray(w + 2 * radius + 1)
+        for (y in 0 until h) {
+            val row = y * w
+            for (j in padded.indices) {
+                val v = src.pixels[row + reflect101(j - radius - 1, w)].toDouble()
+                padded[j] = v
+                paddedSq[j] = v * v
+            }
+            slide(padded, rows, row, w, radius)
+            slide(paddedSq, rowsSq, row, w, radius)
+        }
+        sum = columns(rows, w, h, radius)
+        sumSq = columns(rowsSq, w, h, radius)
+    }
+
+    private fun slide(padded: DoubleArray, out: DoubleArray, row: Int, w: Int, radius: Int) {
+        var s = 0.0
+        for (k in 1..2 * radius + 1) s += padded[k]
+        out[row] = s
         for (x in 1 until w) {
-            sum += padded[x + 2 * radius + 1] - padded[x]
-            rowPass[row + x] = sum
+            s += padded[x + 2 * radius + 1] - padded[x]
+            out[row + x] = s
         }
     }
-    val out = DoubleArray(w * h)
-    val sums = DoubleArray(w)
-    for (k in -radius..radius) {
-        val row = reflect101(k, h) * w
-        for (x in 0 until w) sums[x] += rowPass[row + x]
-    }
-    sums.copyInto(out, 0)
-    for (y in 1 until h) {
-        val entering = reflect101(y + radius, h) * w
-        val leaving = reflect101(y - radius - 1, h) * w
-        val row = y * w
-        for (x in 0 until w) {
-            sums[x] += rowPass[entering + x] - rowPass[leaving + x]
-            out[row + x] = sums[x]
+
+    private fun columns(rows: DoubleArray, w: Int, h: Int, radius: Int): DoubleArray {
+        val out = DoubleArray(w * h)
+        val sums = DoubleArray(w)
+        for (k in -radius..radius) {
+            val row = reflect101(k, h) * w
+            for (x in 0 until w) sums[x] += rows[row + x]
         }
+        sums.copyInto(out, 0)
+        for (y in 1 until h) {
+            val entering = reflect101(y + radius, h) * w
+            val leaving = reflect101(y - radius - 1, h) * w
+            val row = y * w
+            for (x in 0 until w) {
+                sums[x] += rows[entering + x] - rows[leaving + x]
+                out[row + x] = sums[x]
+            }
+        }
+        return out
     }
-    return out
 }
 
 /**
@@ -263,11 +290,9 @@ internal fun boxMeanStd(src: GreyImage, size: Int): Pair<FloatArray, FloatArray>
     require(size >= 1 && size % 2 == 1) { "size must be odd and >= 1: $size" }
     val w = src.width
     val h = src.height
-    val radius = size / 2
-    val data = DoubleArray(w * h) { src.pixels[it].toDouble() }
-    val sq = DoubleArray(w * h) { data[it] * data[it] }
-    val sumX = boxSum2D(data, w, h, radius)
-    val sumX2 = boxSum2D(sq, w, h, radius)
+    val sums = BoxSums(src, size / 2)
+    val sumX = sums.sum
+    val sumX2 = sums.sumSq
     val area = size.toDouble() * size.toDouble()
     val mean = FloatArray(w * h)
     val std = FloatArray(w * h)
