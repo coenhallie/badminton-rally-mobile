@@ -298,10 +298,10 @@ private fun ColumnScope.MappingStep(
                 // Said above the guide, not below it: the guide is telling him
                 // to tap landmarks that are already down, and this is the line
                 // that explains why they are. iOS says the same, from the same
-                // constant. The finder's note sits in the same place and gives
-                // way to it: the two only meet when Find court over saved
-                // marks finds nothing, and the marks are still the saved ones.
-                val note = if (showsSavedMarks) CourtMarkingSpec.SAVED_MARKS_NOTE else status.note
+                // constant. The finder's note sits in the same place and wins
+                // over it: the two only meet when Find court over saved marks
+                // finds nothing, which would otherwise go unsaid.
+                val note = status.screenNote(showsSavedMarks)
                 if (note != null) {
                     Text(
                         text = note,

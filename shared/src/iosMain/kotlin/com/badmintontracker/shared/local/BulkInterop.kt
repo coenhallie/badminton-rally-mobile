@@ -2,6 +2,7 @@ package com.badmintontracker.shared.local
 
 import com.badmintontracker.analysis.camera.GreyImage
 import com.badmintontracker.analysis.camera.Luma
+import com.badmintontracker.analysis.court.RgbImage
 import com.badmintontracker.analysis.shuttle.HEATMAP_MAX_AREA
 import com.badmintontracker.analysis.shuttle.HEATMAP_THRESHOLD
 import com.badmintontracker.analysis.shuttle.HeatmapCoord
@@ -121,6 +122,35 @@ object BulkInterop {
         outHeight: Int,
     ): GreyImage = Luma.downsampleWith(width, height, outWidth, outHeight) { x, y ->
         plane[y.toLong() * rowStride + x].toInt() and 0xFF
+    }
+
+    /**
+     * The court finder's input from an RGBA8 bitmap Swift has drawn a frame
+     * into: [pixels] holds [height] rows [bytesPerRow] apart (at least
+     * `4 * width`), each pixel red, green, blue, alpha. Alpha is ignored, a
+     * video frame is opaque. Read through the pointer into one ARGB int per
+     * pixel, the layout [RgbImage] takes on both platforms.
+     *
+     * `@Throws` so a bad size reaches Swift as an error it can catch: the
+     * marking screen must stay usable when the finder cannot run.
+     */
+    @Throws(Throwable::class)
+    fun rgbImage(pixels: CPointer<ByteVar>, width: Int, height: Int, bytesPerRow: Int): RgbImage {
+        require(width >= 1 && height >= 1) { "empty image $width x $height" }
+        require(bytesPerRow >= 4 * width) { "$bytesPerRow bytes per row for $width pixels" }
+        val argb = IntArray(width * height)
+        for (y in 0 until height) {
+            val row = y.toLong() * bytesPerRow
+            val out = y * width
+            for (x in 0 until width) {
+                val at = row + 4L * x
+                val r = pixels[at].toInt() and 0xFF
+                val g = pixels[at + 1].toInt() and 0xFF
+                val b = pixels[at + 2].toInt() and 0xFF
+                argb[out + x] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
+            }
+        }
+        return RgbImage(width, height, argb)
     }
 
     /**

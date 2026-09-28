@@ -39,6 +39,23 @@ enum class CourtFinderStatus(val note: String?, val busyLine: String?) {
      * next. An empty marking gets [NOT_FOUND].
      */
     FIND_FAILED(note = CourtMarkingSpec.FIND_FAILED_NOTE, busyLine = null),
+    ;
+
+    /**
+     * Whether the finder is working on the frame: Find court waits, and the
+     * instruction line says so. A member, not an extension, so iOS reads it
+     * off the Swift enum SKIE makes of this one.
+     */
+    val isBusy: Boolean get() = busyLine != null
+
+    /**
+     * The note under the instruction line, where the saved-marks note also
+     * sits. The finder's note wins: the two meet only when Find court over
+     * saved marks finds nothing ([FIND_FAILED]), and a silent failure there
+     * would leave the coach waiting for a court that is not coming.
+     */
+    fun screenNote(showsSavedMarks: Boolean): String? =
+        note ?: CourtMarkingSpec.SAVED_MARKS_NOTE.takeIf { showsSavedMarks }
 }
 
 /**

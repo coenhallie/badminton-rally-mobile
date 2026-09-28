@@ -58,9 +58,6 @@ data class CourtMarkingUiState(
     val status: CourtFinderStatus = CourtFinderStatus.IDLE,
 )
 
-/** Whether the finder is working on the frame: Find court waits, the instruction line says so. */
-val CourtFinderStatus.isBusy: Boolean get() = busyLine != null
-
 class CourtMarkingViewModel(
     val entryId: String,
     /**

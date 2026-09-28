@@ -68,4 +68,23 @@ class CourtAutoMarkingTest {
         CourtFinderStatus.FIND_FAILED.note shouldBe CourtMarkingSpec.FIND_FAILED_NOTE
         CourtFinderStatus.FIND_FAILED.busyLine shouldBe null
     }
+
+    @Test
+    fun the_finder_is_busy_only_while_it_works_on_the_frame() {
+        CourtFinderStatus.entries.filter { it.isBusy } shouldBe
+            listOf(CourtFinderStatus.FINDING, CourtFinderStatus.ALIGNING)
+    }
+
+    @Test
+    fun a_failed_find_court_over_saved_marks_says_so() {
+        CourtFinderStatus.FIND_FAILED.screenNote(showsSavedMarks = true) shouldBe CourtMarkingSpec.FIND_FAILED_NOTE
+    }
+
+    @Test
+    fun saved_marks_are_explained_while_the_finder_has_nothing_to_say() {
+        CourtFinderStatus.IDLE.screenNote(showsSavedMarks = true) shouldBe CourtMarkingSpec.SAVED_MARKS_NOTE
+        CourtFinderStatus.FINDING.screenNote(showsSavedMarks = true) shouldBe CourtMarkingSpec.SAVED_MARKS_NOTE
+        CourtFinderStatus.IDLE.screenNote(showsSavedMarks = false) shouldBe null
+        CourtFinderStatus.FOUND.screenNote(showsSavedMarks = false) shouldBe CourtMarkingSpec.FOUND_NOTE
+    }
 }
