@@ -117,7 +117,8 @@ class CourtMarkingViewModel(
 
     /**
      * A tap on the frame, in display coordinates, with [hitRadius] the reach of
-     * a placed point in the same units (see [CourtMarkingState.tap]).
+     * a placed point and [cancelRadius] the reach of the selected point's
+     * cancel, in the same units (see [CourtMarkingState.tap]).
      */
     fun onTap(
         displayX: Float,
@@ -125,9 +126,10 @@ class CourtMarkingViewModel(
         displayWidth: Float,
         displayHeight: Float,
         hitRadius: Float = 0f,
+        cancelRadius: Float = 0f,
     ) {
         val before = state.value.marking ?: return
-        val after = before.tap(displayX, displayY, displayWidth, displayHeight, hitRadius)
+        val after = before.tap(displayX, displayY, displayWidth, displayHeight, hitRadius, cancelRadius)
         if (after == before) return
         val edited = after.points != before.points
         if (edited && state.value.status.isBusy) cancelFinder()

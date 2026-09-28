@@ -86,6 +86,44 @@ object CourtMarkingSpec {
 
     /** The instruction line while the point at [index] is selected to be moved. */
     fun moveInstruction(index: Int): String = "Tap the new spot for ${fullLabels[index]}"
+
+    /** The guide's first sentence, said only while points remain to be tapped ([guideLines]). */
+    const val GUIDE_ORDER = "Tap each court landmark in the order shown."
+
+    /** The guide's second sentence, said throughout. */
+    const val GUIDE_WHY =
+        "Twelve points give precise homography for player tracking, speeds and zones. Pinch to zoom for accuracy."
+
+    /**
+     * What the guide beside the schematic court says with [placedCount] points
+     * down. Once all twelve are placed there is no order left to follow, and
+     * asking for it beside a complete marking (a found court, restored marks)
+     * reads as if the coach still had work to do.
+     */
+    fun guideLines(placedCount: Int): List<String> =
+        if (placedCount < TOTAL) listOf(GUIDE_ORDER, GUIDE_WHY) else listOf(GUIDE_WHY)
+
+    /**
+     * How far from a point, on screen (dp, pt), a tap on a complete marking
+     * still picks it up to move. Divided by the zoom, so it is this far at any
+     * zoom. See [CourtMarkingState.tap].
+     */
+    const val SELECT_RADIUS = 22f
+
+    /**
+     * How close to the selected point, on screen (dp, pt), a tap must land to
+     * put it back down unmoved. Much smaller than [SELECT_RADIUS], so a
+     * correction of a few dp is a move rather than a cancel. Divided by the
+     * zoom like [SELECT_RADIUS].
+     */
+    const val CANCEL_RADIUS = 6f
+
+    /**
+     * The court's lines drawn through a complete marking, and the ring on a
+     * selected point: a fixed magenta rather than the theme's green, which
+     * disappears on the green courts many halls have.
+     */
+    const val COURT_LINE_COLOR = 0xFFFF2D95
 }
 
 data class CourtMarkingState(
@@ -135,16 +173,21 @@ data class CourtMarkingState(
 
     /**
      * A tap on the frame, in display coordinates, with [hitRadiusDisplay] the
-     * reach of a point in the same units.
+     * reach of a point and [cancelRadiusDisplay] the reach of the selected
+     * point's cancel, both in the same units (the platforms pass
+     * [CourtMarkingSpec.SELECT_RADIUS] and [CourtMarkingSpec.CANCEL_RADIUS]
+     * divided by the zoom).
      *
      * An incomplete marking places the next point ([place]). A complete one
      * edits by selecting and moving: with nothing selected, the tap selects
-     * the nearest point within the radius, or does nothing; with a point
-     * selected, a tap within the radius of that point puts it down where it
-     * was, and a tap anywhere else, even on another point, moves it there.
-     * Distances are measured in source pixels, the radius scaled by the same
-     * x scale [place] uses, so a point's reach on screen is the same at any
-     * size the frame is shown.
+     * the nearest point within [hitRadiusDisplay], or does nothing; with a
+     * point selected, a tap within [cancelRadiusDisplay] of that point puts it
+     * down where it was, and a tap anywhere else, even on another point, moves
+     * it there. The cancel reach is the smaller one so that a correction of a
+     * few dp is a move: within the whole hit radius, a fine correction was
+     * only possible zoomed in. Distances are measured in source pixels, both
+     * radii scaled by the same x scale [place] uses, so their reach on screen
+     * is the same at any size the frame is shown.
      */
     fun tap(
         displayX: Float,
@@ -152,10 +195,12 @@ data class CourtMarkingState(
         displayWidth: Float,
         displayHeight: Float,
         hitRadiusDisplay: Float,
+        cancelRadiusDisplay: Float,
     ): CourtMarkingState {
         if (!isComplete) return place(displayX, displayY, displayWidth, displayHeight)
         val at = toSource(displayX, displayY, displayWidth, displayHeight)
-        val radius = hitRadiusDisplay * (videoWidth / displayWidth)
+        val toSource = videoWidth / displayWidth
+        val radius = hitRadiusDisplay * toSource
         val picked = selected?.takeIf { it in points.indices }
         if (picked == null) {
             val nearest = points.indices
@@ -164,7 +209,8 @@ data class CourtMarkingState(
                 .minByOrNull { (_, d) -> d }
             return if (nearest == null) this else copy(selected = nearest.first)
         }
-        if (distanceSquared(points[picked], at) <= radius * radius) return copy(selected = null)
+        val cancel = cancelRadiusDisplay * toSource
+        if (distanceSquared(points[picked], at) <= cancel * cancel) return copy(selected = null)
         return edited(points.toMutableList().also { it[picked] = at }, markedAtSeconds)
     }
 

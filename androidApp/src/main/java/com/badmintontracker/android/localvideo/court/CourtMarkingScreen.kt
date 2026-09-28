@@ -64,7 +64,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.FirstBaseline
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
@@ -403,22 +405,21 @@ private fun InstructionRow(marking: CourtMarkingState, status: CourtFinderStatus
                 )
             }
         } else if (selected != null) {
-            // In the point's own colour, like the placing instruction: the
-            // ring on the frame and this line name the same point.
-            Text(
+            // The same swatch as the placing instruction: the ring on the
+            // frame and this line name the same point.
+            PointInstruction(
                 text = CourtMarkingSpec.moveInstruction(selected),
-                style = MaterialTheme.typography.titleLarge,
-                color = Color(CourtMarkingSpec.colors[selected]),
+                index = selected,
                 modifier = Modifier.weight(1f),
             )
         } else if (!marking.isComplete) {
-            // Named, and in the point's own colour: twelve landmarks with
-            // names as close as "Service Near-Left" and "Service Far-Left"
-            // are told apart by which one the app is asking for.
-            Text(
+            // Named, and with the point's own colour beside it: twelve
+            // landmarks with names as close as "Service Near-Left" and
+            // "Service Far-Left" are told apart by which one the app is
+            // asking for.
+            PointInstruction(
                 text = "Tap: ${CourtMarkingSpec.fullLabels[marking.nextIndex]}",
-                style = MaterialTheme.typography.titleLarge,
-                color = Color(CourtMarkingSpec.colors[marking.nextIndex]),
+                index = marking.nextIndex,
                 modifier = Modifier.weight(1f),
             )
         } else {
@@ -433,6 +434,56 @@ private fun InstructionRow(marking: CourtMarkingState, status: CourtFinderStatus
             text = "${marking.points.size} / ${CourtMarkingSpec.TOTAL} points",
             style = MaterialTheme.typography.bodySmall,
             color = ShuttlTheme.extended.textTertiary,
+        )
+    }
+}
+
+/**
+ * An instruction about the point at [index]: its colour as a swatch, the
+ * words in the heading colour.
+ *
+ * The words used to be drawn in the point's colour, and five of the twelve
+ * (Bottom-Left's yellow, Center-Near's white, the lime, green and cyan) are
+ * unreadable on the light theme's white page. The swatch keeps the colour
+ * telling the coach which point is meant, ringed in the schematic's grey so
+ * the white and yellow ones still show. It sits on the first line, not the
+ * middle of the block, when a long label wraps.
+ */
+@Composable
+private fun PointInstruction(text: String, index: Int, modifier: Modifier = Modifier) {
+    val style = MaterialTheme.typography.titleLarge
+    // Centred on the first line's capitals, as iOS centres it: the swatch's
+    // centre sits half a cap height above the first baseline. The line box's
+    // centre is lower, by the room it keeps for descenders.
+    val density = LocalDensity.current
+    val typeface = LocalFontFamilyResolver.current.resolve(
+        fontFamily = style.fontFamily,
+        fontWeight = style.fontWeight ?: FontWeight.Normal,
+    ).value as? android.graphics.Typeface
+    val capHeight = remember(typeface, style.fontSize, density) {
+        val paint = android.graphics.Paint().apply {
+            this.typeface = typeface
+            textSize = with(density) { style.fontSize.toPx() }
+        }
+        val bounds = android.graphics.Rect()
+        paint.getTextBounds("H", 0, 1, bounds)
+        bounds.height()
+    }
+    Row(modifier = modifier) {
+        Box(
+            Modifier
+                .alignBy { it.measuredHeight / 2 + capHeight / 2 }
+                .size(INSTRUCTION_SWATCH)
+                .clip(CircleShape)
+                .background(Color(CourtMarkingSpec.colors[index]))
+                .border(1.dp, MaterialTheme.colorScheme.onSurfaceVariant, CircleShape),
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = text,
+            style = style,
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.alignBy(FirstBaseline),
         )
     }
 }
@@ -475,7 +526,6 @@ private fun FrameWithOverlay(
     val density = LocalDensity.current
     // Once per marking, not per pinch frame: it fits a homography.
     val courtLines = remember(marking) { marking.courtLines() }
-    val accent = MaterialTheme.colorScheme.primary
 
     // aspectRatio inside bounded constraints picks the largest fitting box:
     // width-limited for landscape videos, height-limited for portrait ones.
@@ -502,15 +552,17 @@ private fun FrameWithOverlay(
                     val x = (tap.x - offset.x) / scale
                     val y = (tap.y - offset.y) / scale
                     if (x in 0f..layoutSize.width.toFloat() && y in 0f..layoutSize.height.toFloat()) {
-                        // A point's reach is 22dp on screen at any zoom, so in
-                        // the un-zoomed layout pixels x and y are in, it
-                        // shrinks as the frame is zoomed in.
+                        // A point's reach (22dp) and the selected point's
+                        // cancel (6dp) are that far on screen at any zoom, so
+                        // in the un-zoomed layout pixels x and y are in, they
+                        // shrink as the frame is zoomed in.
                         vm.onTap(
                             x,
                             y,
                             layoutSize.width.toFloat(),
                             layoutSize.height.toFloat(),
-                            hitRadius = HIT_RADIUS.toPx() / scale,
+                            hitRadius = CourtMarkingSpec.SELECT_RADIUS.dp.toPx() / scale,
+                            cancelRadius = CourtMarkingSpec.CANCEL_RADIUS.dp.toPx() / scale,
                         )
                     }
                 }
@@ -545,10 +597,10 @@ private fun FrameWithOverlay(
                 if (courtLines.isEmpty()) {
                     drawCornerRectangle(marking)
                 } else {
-                    drawCourtLines(courtLines, marking, accent, scale)
+                    drawCourtLines(courtLines, marking, scale)
                 }
                 drawPlacedPoints(marking, scale, density.density, textMeasurer, markerLabelFontFamily)
-                drawSelection(marking, accent, scale)
+                drawSelection(marking, scale)
             }
         }
     }
@@ -711,19 +763,20 @@ private fun DrawScope.drawCornerRectangle(marking: CourtMarkingState) {
 /**
  * The court's lines through the marks, [lines] in source pixels. 2dp on
  * screen at any zoom, like the markers: a stroke that grew with the zoom
- * would cover the paint it is there to be compared with.
+ * would cover the paint it is there to be compared with. In the fixed
+ * [CourtMarkingSpec.COURT_LINE_COLOR], not the theme's green, which vanishes
+ * on a green court.
  */
 private fun DrawScope.drawCourtLines(
     lines: List<Pair<CourtPoint, CourtPoint>>,
     marking: CourtMarkingState,
-    color: Color,
     zoom: Float,
 ) {
     val toDisplay = displayFactor(marking)
     val width = 2.dp.toPx() / zoom
     for ((a, b) in lines) {
         drawLine(
-            color,
+            CourtLineColor,
             Offset(a.x * toDisplay.x, a.y * toDisplay.y),
             Offset(b.x * toDisplay.x, b.y * toDisplay.y),
             strokeWidth = width,
@@ -732,12 +785,12 @@ private fun DrawScope.drawCourtLines(
 }
 
 /** The ring on the point a tap picked up to move, clear of its 10dp marker at any zoom. */
-private fun DrawScope.drawSelection(marking: CourtMarkingState, color: Color, zoom: Float) {
+private fun DrawScope.drawSelection(marking: CourtMarkingState, zoom: Float) {
     val i = marking.selected ?: return
     val p = marking.points.getOrNull(i) ?: return
     val toDisplay = displayFactor(marking)
     drawCircle(
-        color,
+        CourtLineColor,
         radius = 16.dp.toPx() / zoom,
         center = Offset(p.x * toDisplay.x, p.y * toDisplay.y),
         style = Stroke(width = 3.dp.toPx() / zoom),
@@ -754,7 +807,23 @@ private fun DrawScope.drawPlacedPoints(
     val toDisplay = displayFactor(marking)
     // Constant on-screen size regardless of pinch-zoom (markers are presentation only).
     val radius = 10f * density / zoom
+    // A complete marking is being checked against the paint, and twelve
+    // labelled 10dp markers at phone width bury each other and the lines
+    // they mark. Each point is a small dot then, except the one picked up to
+    // move, which keeps its full marker and label under the ring. Drawn last,
+    // so it sits over any dot it overlaps.
+    val selected = marking.selected.takeIf { marking.isComplete }
+    if (marking.isComplete) {
+        val dot = COMPLETE_DOT_RADIUS * density / zoom
+        marking.points.forEachIndexed { i, p ->
+            if (i == selected) return@forEachIndexed
+            val center = Offset(p.x * toDisplay.x, p.y * toDisplay.y)
+            drawCircle(Color(CourtMarkingSpec.colors[i]), dot, center)
+            drawCircle(Color.Black, dot, center, style = Stroke(width = COMPLETE_DOT_RING * density / zoom))
+        }
+    }
     marking.points.forEachIndexed { i, p ->
+        if (marking.isComplete && i != selected) return@forEachIndexed
         val center = Offset(p.x * toDisplay.x, p.y * toDisplay.y)
         drawCircle(Color(CourtMarkingSpec.colors[i]), radius, center)
         drawCircle(Color.Black, radius, center, style = Stroke(width = 2f * density / zoom))
@@ -864,18 +933,19 @@ private fun SchematicCourtGuide(nextIndex: Int, placedCount: Int) {
             }
         }
         Spacer(Modifier.width(16.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                "Tap each court landmark in the order shown.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "Twelve points give precise homography for player tracking, speeds and zones. Pinch to zoom for accuracy.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        // The order sentence only while points remain: beside a complete
+        // marking (a found court, restored marks) there is no order left.
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            CourtMarkingSpec.guideLines(placedCount).forEach { line ->
+                Text(
+                    line,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }
@@ -913,8 +983,15 @@ suspend fun loadFirstFrame(context: Context, uri: Uri): CourtFrame =
 /** Only when the container does not say; most do. */
 private const val DEFAULT_FPS = 30.0
 
-/** How far from a placed point, on screen, a tap still picks it up to move. */
-private val HIT_RADIUS = 22.dp
+/** [CourtMarkingSpec.COURT_LINE_COLOR]: the court's lines and the selection ring. */
+private val CourtLineColor = Color(CourtMarkingSpec.COURT_LINE_COLOR)
+
+/** A point's dot on a complete marking, radius and ring width in dp, at any zoom. */
+private const val COMPLETE_DOT_RADIUS = 5f
+private const val COMPLETE_DOT_RING = 1.5f
+
+/** The swatch before an instruction that names a point. */
+private val INSTRUCTION_SWATCH = 10.dp
 
 /** The mock's page margin, and the app's elsewhere. */
 private val PagePadding = 24.dp

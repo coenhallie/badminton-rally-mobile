@@ -166,7 +166,7 @@ class CourtMarkingModelTest {
 
     // --- history, selection, moving, detection, overlay -------------------
 
-    private fun tap(s: CourtMarkingState, x: Float, y: Float) = s.tap(x, y, 1920f, 1080f, 22f)
+    private fun tap(s: CourtMarkingState, x: Float, y: Float) = s.tap(x, y, 1920f, 1080f, 22f, 6f)
 
     /**
      * The 12 table points seen by a real camera: court metres to pixels
@@ -193,9 +193,9 @@ class CourtMarkingModelTest {
     fun undo_reverses_a_move() {
         var s = complete()
         val before = s.points
-        s = s.tap(100f, 100f, 1920f, 1080f, 22f)   // select point 0 at (100,100) in a 1920x1080 display = source
+        s = s.tap(100f, 100f, 1920f, 1080f, 22f, 6f)   // select point 0 at (100,100) in a 1920x1080 display = source
         s.selected shouldBe 0
-        s = s.tap(300f, 300f, 1920f, 1080f, 22f)
+        s = s.tap(300f, 300f, 1920f, 1080f, 22f, 6f)
         s.points[0] shouldBe CourtPoint(300f, 300f)
         s.selected shouldBe null
         s.undo().points shouldBe before
@@ -203,15 +203,50 @@ class CourtMarkingModelTest {
 
     @Test
     fun tapping_the_selected_point_again_cancels() {
-        var s = complete().tap(100f, 100f, 1920f, 1080f, 22f)
-        s = s.tap(105f, 102f, 1920f, 1080f, 22f)
+        var s = complete().tap(100f, 100f, 1920f, 1080f, 22f, 6f)
+        s = s.tap(105f, 102f, 1920f, 1080f, 22f, 6f)
         s.selected shouldBe null
         s.points shouldBe complete().points
     }
 
     @Test
+    fun a_selected_point_moves_by_less_than_the_hit_radius() {
+        // 10 units from the selected point is well inside its 22-unit reach,
+        // and used to put it down where it was: a fine correction was only
+        // possible zoomed in. Only a tap within 6 units cancels now.
+        var s = complete().tap(100f, 100f, 1920f, 1080f, 22f, 6f)
+        s.selected shouldBe 0
+        s = s.tap(110f, 100f, 1920f, 1080f, 22f, 6f)
+        s.selected shouldBe null
+        s.points[0] shouldBe CourtPoint(110f, 100f)
+        s.points.drop(1) shouldBe complete().points.drop(1)
+    }
+
+    @Test
+    fun the_cancel_radius_scales_with_the_display_like_the_hit_radius() {
+        // Shown at a tenth of its size, 6 display units are 60 source px.
+        val s = complete().tap(10f, 10f, 192f, 108f, 22f, 6f)
+        s.selected shouldBe 0
+        // 50 source px from the point at (100,100): a cancel.
+        val cancelled = s.tap(15f, 10f, 192f, 108f, 22f, 6f)
+        cancelled.selected shouldBe null
+        cancelled.points shouldBe complete().points
+        // 70 source px from it: a move.
+        val moved = s.tap(17f, 10f, 192f, 108f, 22f, 6f)
+        moved.selected shouldBe null
+        moved.points[0].x shouldBe (170f plusOrMinus 0.001f)
+        moved.points[0].y shouldBe (100f plusOrMinus 0.001f)
+    }
+
+    @Test
+    fun selecting_still_reaches_the_hit_radius_not_the_cancel_radius() {
+        // 15 units from point 0: outside the cancel radius, inside the reach.
+        complete().tap(115f, 100f, 1920f, 1080f, 22f, 6f).selected shouldBe 0
+    }
+
+    @Test
     fun a_tap_away_from_every_point_selects_nothing() {
-        complete().tap(1500f, 50f, 1920f, 1080f, 22f).selected shouldBe null
+        complete().tap(1500f, 50f, 1920f, 1080f, 22f, 6f).selected shouldBe null
     }
 
     @Test
@@ -225,8 +260,8 @@ class CourtMarkingModelTest {
     @Test
     fun the_fourth_tap_triggers_completion_and_undo_does_not() {
         var s = CourtMarkingState(1920, 1080)
-        repeat(3) { s = s.tap(10f + it, 10f, 1920f, 1080f, 22f) }
-        val four = s.tap(50f, 50f, 1920f, 1080f, 22f)
+        repeat(3) { s = s.tap(10f + it, 10f, 1920f, 1080f, 22f, 6f) }
+        val four = s.tap(50f, 50f, 1920f, 1080f, 22f, 6f)
         four.justReachedFourCorners(s) shouldBe true
         four.undo().justReachedFourCorners(four) shouldBe false
     }
@@ -243,17 +278,17 @@ class CourtMarkingModelTest {
         // px: points 0 (100,100) and 1 (240,170) are both within it of
         // (190,140), and point 1 is the nearer.
         val s = complete()
-        s.tap(19f, 14f, 192f, 108f, 22f).selected shouldBe 1
-        s.tap(11.5f, 11f, 192f, 108f, 22f).selected shouldBe 0
+        s.tap(19f, 14f, 192f, 108f, 22f, 6f).selected shouldBe 1
+        s.tap(11.5f, 11f, 192f, 108f, 22f, 6f).selected shouldBe 0
         // At full size the same source spot is 58 px from point 1: nothing.
-        s.tap(190f, 140f, 1920f, 1080f, 22f).selected shouldBe null
+        s.tap(190f, 140f, 1920f, 1080f, 22f, 6f).selected shouldBe null
     }
 
     @Test
     fun a_move_lands_where_place_would_put_it() {
-        val s = complete().tap(10f, 10f, 192f, 108f, 22f)
+        val s = complete().tap(10f, 10f, 192f, 108f, 22f, 6f)
         s.selected shouldBe 0
-        s.tap(50f, 40f, 192f, 108f, 22f).points[0] shouldBe CourtPoint(500f, 400f)
+        s.tap(50f, 40f, 192f, 108f, 22f, 6f).points[0] shouldBe CourtPoint(500f, 400f)
     }
 
     @Test
@@ -410,5 +445,28 @@ class CourtMarkingModelTest {
         CourtMarkingSpec.FIND_FAILED_NOTE shouldBe "Couldn't find the court. Your marks are unchanged."
         CourtMarkingSpec.FIND_COURT shouldBe "Find court"
         CourtMarkingSpec.moveInstruction(6) shouldBe "Tap the new spot for Service Near-Left"
+    }
+
+    @Test
+    fun guide_copy_is_verbatim() {
+        CourtMarkingSpec.GUIDE_ORDER shouldBe "Tap each court landmark in the order shown."
+        CourtMarkingSpec.GUIDE_WHY shouldBe
+            "Twelve points give precise homography for player tracking, speeds and zones. Pinch to zoom for accuracy."
+    }
+
+    @Test
+    fun the_order_sentence_is_said_only_while_points_remain() {
+        CourtMarkingSpec.guideLines(placedCount = 0) shouldBe
+            listOf(CourtMarkingSpec.GUIDE_ORDER, CourtMarkingSpec.GUIDE_WHY)
+        CourtMarkingSpec.guideLines(placedCount = 11) shouldBe
+            listOf(CourtMarkingSpec.GUIDE_ORDER, CourtMarkingSpec.GUIDE_WHY)
+        CourtMarkingSpec.guideLines(placedCount = 12) shouldBe listOf(CourtMarkingSpec.GUIDE_WHY)
+    }
+
+    @Test
+    fun tap_radii_and_line_colour_are_pinned() {
+        CourtMarkingSpec.SELECT_RADIUS shouldBe 22f
+        CourtMarkingSpec.CANCEL_RADIUS shouldBe 6f
+        CourtMarkingSpec.COURT_LINE_COLOR shouldBe 0xFFFF2D95
     }
 }

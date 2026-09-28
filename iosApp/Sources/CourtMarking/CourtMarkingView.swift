@@ -153,77 +153,97 @@ struct CourtMarkingView: View {
 
     @ViewBuilder
     private func content(frame: UIImage, marking: CourtMarkingState) -> some View {
+        // The frame is pinned to the top of the step at a height fixed by its
+        // aspect ratio and the width, capped at `frameMaxShare` of the step,
+        // and everything under it scrolls; Continue is pinned under that. The
+        // frame used to be centred in a flexible GeometryReader, so it moved
+        // whenever the text below it changed height: a note appearing, a
+        // selection instruction wrapping to two lines, Continue appearing. A
+        // point picked up to move then slid under the finger about to tap its
+        // new spot. androidApp's MappingStep lays the step out the same way,
+        // with the same cap, measured over the same region (Continue excluded).
         GeometryReader { geo in
             let aspect = CGFloat(truncating: marking.videoWidth as NSNumber)
                 / CGFloat(truncating: marking.videoHeight as NSNumber)
-            let displayW = min(geo.size.width, geo.size.height * aspect)
+            let displayW = min(geo.size.width, geo.size.height * Self.frameMaxShare * aspect)
             let displayH = displayW / aspect
-            ZStack(alignment: .topLeading) {
-                frameCanvas(frame: frame, marking: marking, displaySize: CGSize(width: displayW, height: displayH))
-                    .frame(width: displayW, height: displayH)
-                    .scaleEffect(scale, anchor: .topLeading)
-                    .offset(offset)
+            let displaySize = CGSize(width: displayW, height: displayH)
+            VStack(spacing: 0) {
+                ZStack(alignment: .topLeading) {
+                    frameCanvas(frame: frame, marking: marking, displaySize: displaySize)
+                        .frame(width: displayW, height: displayH)
+                        .scaleEffect(scale, anchor: .topLeading)
+                        .offset(offset)
+                }
+                .frame(width: displayW, height: displayH)
+                .clipped()
+                .contentShape(Rectangle())
+                // Every gesture goes on the FRAME-SIZED view, before anything
+                // that lays it out in a larger space (the centring below), and
+                // the order is the whole point: a gesture attached after a
+                // modifier that fills its parent reports locations in the
+                // parent's space while `place` reads them as the frame's. That
+                // was a shipped bug with `.position`: every mark landed the
+                // letterbox inset too low, and the near half of the court could
+                // not be marked at all.
+                .gesture(tapGesture(displaySize: displaySize))
+                .simultaneousGesture(magnifyGesture())
+                .simultaneousGesture(panGesture)
+                .frame(maxWidth: .infinity)
+
+                ScrollView {
+                    VStack(spacing: 0) {
+                        instructionRow(marking: marking)
+                        // Above the guide, not below it: the guide is asking
+                        // him to tap landmarks that are already down, and this
+                        // is the line that says why they are. androidApp says
+                        // the same, from the same constant. The finder's note
+                        // sits in the same place and wins over it: the two only
+                        // meet when Find court over saved marks finds nothing,
+                        // which would otherwise go unsaid.
+                        if let note = finderStatus.screenNote(showsSavedMarks: showsSavedMarks) {
+                            Text(note)
+                                .shuttlType(ShuttlType.bodySmall)
+                                .foregroundStyle(Shuttl.textTertiary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 16)
+                                .padding(.top, 10)
+                        }
+                        SchematicCourtGuide(placedCount: Int(marking.points.count))
+                            .padding(.top, 12)
+
+                        // Undo | Clear in equal halves, Find court on a row of
+                        // its own under them, as androidApp lays it out: a
+                        // third of a narrow phone is too little for its label.
+                        VStack(spacing: 8) {
+                            HStack(spacing: 8) {
+                                Button("Undo") { onUndo() }
+                                    .buttonStyle(SecondaryPillButtonStyle())
+                                    .disabled(marking.points.isEmpty)
+                                Button("Clear") { onClear() }
+                                    .buttonStyle(SecondaryPillButtonStyle())
+                                    .disabled(marking.points.isEmpty)
+                            }
+                            Button(CourtMarkingSpec.shared.FIND_COURT) { onFindCourt() }
+                                .buttonStyle(SecondaryPillButtonStyle())
+                                .disabled(finderStatus.isBusy)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 16)
+                    }
+                }
             }
-            .frame(width: displayW, height: displayH)
-            .clipped()
-            .contentShape(Rectangle())
-            // Every gesture goes on the FRAMED view, above `.position`, and the
-            // order is the whole point. `.position` returns a view that fills
-            // its parent and draws the child at a point inside it, so a gesture
-            // attached after it reports locations in the GEOMETRYREADER's space
-            // while `place` reads them as the frame's. The court is 16:9 in a
-            // tall column, so that space is about twice as tall as the picture:
-            // every mark landed the letterbox inset too low, and a tap below
-            // about 40% of the frame mapped past its bottom edge and was
-            // silently dropped by `tapGesture`'s own bounds guard. Which is to
-            // say the near half of the court - the half this pipeline tracks a
-            // player on - could not be marked at all.
-            .gesture(tapGesture(displaySize: CGSize(width: displayW, height: displayH)))
-            .simultaneousGesture(magnifyGesture())
-            .simultaneousGesture(panGesture)
-            .position(x: geo.size.width / 2, y: geo.size.height / 2)
         }
 
-        instructionRow(marking: marking)
-        // Above the guide, not below it: the guide is asking him to tap
-        // landmarks that are already down, and this is the line that says why
-        // they are. androidApp says the same, from the same constant. The
-        // finder's note sits in the same place and wins over it: the two only
-        // meet when Find court over saved marks finds nothing, which would
-        // otherwise go unsaid.
-        if let note = finderStatus.screenNote(showsSavedMarks: showsSavedMarks) {
-            Text(note)
-                .shuttlType(ShuttlType.bodySmall)
-                .foregroundStyle(Shuttl.textTertiary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 16)
-                .padding(.top, 10)
-        }
-        SchematicCourtGuide(placedCount: Int(marking.points.count))
-            .padding(.vertical, 8)
-
-        // Find court on a row of its own under Undo and Clear, as androidApp
-        // lays it out: a third of a narrow phone is too little for its label.
-        VStack(spacing: 8) {
-            HStack(spacing: 12) {
-                Button("Undo") { onUndo() }
-                    .disabled(marking.points.isEmpty)
-                Button("Clear") { onClear() }
-                    .disabled(marking.points.isEmpty)
-            }
-            Button { onFindCourt() } label: {
-                Text(CourtMarkingSpec.shared.FIND_COURT)
-                    .frame(maxWidth: .infinity)
-            }
-            .disabled(finderStatus.isBusy)
-        }
-        .padding(.horizontal, 16)
-
-        if marking.isComplete {
-            Button("Continue") { step = .options }
-                .buttonStyle(PrimaryButtonStyle())
-                .padding(16)
-        }
+        // Drawn whatever the count, and disabled until the twelve are down,
+        // as androidApp does: a button that materialises under a finger is how
+        // the wrong thing gets pressed, and its arrival changed the height the
+        // frame was laid out in.
+        Button("Continue") { step = .options }
+            .buttonStyle(PrimaryButtonStyle())
+            .disabled(!marking.isComplete)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 16)
     }
 
     // MARK: - Step two: what the run should produce
@@ -324,20 +344,32 @@ struct CourtMarkingView: View {
 
     // MARK: - Marking and the court finder
 
-    /// How far from a placed point a tap still picks it up, on screen.
-    private static let hitRadius: CGFloat = 22
+    /// The most of the step the frame may take: androidApp's FRAME_MAX_SHARE.
+    /// Only a portrait video reaches it; a landscape one is width-limited.
+    private static let frameMaxShare: CGFloat = 0.62
+
+    /// A point's dot on a complete marking, radius and ring width in points,
+    /// at any zoom. androidApp's COMPLETE_DOT_RADIUS and COMPLETE_DOT_RING.
+    private static let completeDotRadius: CGFloat = 5
+    private static let completeDotRing: CGFloat = 1.5
+
+    /// The swatch before an instruction that names a point.
+    private static let swatchSize: CGFloat = 10
 
     /// A tap at `p`, in the un-zoomed display units of `displaySize`, which
     /// is what `place` maps from: places the next point, or on a complete
     /// marking picks a point up or moves it (`CourtMarkingState.tap`).
     private func onTap(_ p: CGPoint, displaySize: CGSize) {
         guard let before = marking else { return }
-        // A point's reach is 22 pt on screen at any zoom, so in the un-zoomed
-        // units `p` is in, it shrinks as the frame is zoomed in.
+        // A point's reach (22 pt) and the selected point's cancel (6 pt) are
+        // that far on screen at any zoom, so in the un-zoomed units `p` is in,
+        // they shrink as the frame is zoomed in.
+        let spec = CourtMarkingSpec.shared
         let after = before.tap(
             displayX: Float(p.x), displayY: Float(p.y),
             displayWidth: Float(displaySize.width), displayHeight: Float(displaySize.height),
-            hitRadiusDisplay: Float(Self.hitRadius / scale)
+            hitRadiusDisplay: spec.SELECT_RADIUS / Float(scale),
+            cancelRadiusDisplay: spec.CANCEL_RADIUS / Float(scale)
         )
         if after == before { return }
         let edited = after.points != before.points
@@ -476,16 +508,24 @@ struct CourtMarkingView: View {
                             .foregroundStyle(Shuttl.textHeading)
                     }
                 } else if let selected = marking.selected?.intValue {
-                    // In the point's own colour, like the placing instruction:
-                    // the ring on the frame and this line name the same point.
-                    Text(CourtMarkingSpec.shared.moveInstruction(index: Int32(selected)))
-                        .foregroundStyle(specColor(selected))
+                    // The same swatch as the placing instruction: the ring on
+                    // the frame and this line name the same point.
+                    pointInstruction(
+                        CourtMarkingSpec.shared.moveInstruction(index: Int32(selected)),
+                        index: selected
+                    )
                 } else if marking.isComplete {
                     Text("All points placed")
                         .foregroundStyle(Shuttl.accent)
                 } else {
-                    Text("Tap: \(CourtMarkingSpec.shared.fullLabels[Int(marking.nextIndex)])")
-                        .foregroundStyle(specColor(Int(marking.nextIndex)))
+                    // Named, and with the point's own colour beside it: twelve
+                    // landmarks with names as close as "Service Near-Left" and
+                    // "Service Far-Left" are told apart by which one the app
+                    // is asking for.
+                    pointInstruction(
+                        "Tap: \(CourtMarkingSpec.shared.fullLabels[Int(marking.nextIndex)])",
+                        index: Int(marking.nextIndex)
+                    )
                 }
             }
             .shuttlType(ShuttlType.titleLarge)
@@ -495,8 +535,38 @@ struct CourtMarkingView: View {
                 .foregroundStyle(Shuttl.textSecondary)
         }
         .padding(.horizontal, 16)
-        .padding(.top, 8)
+        .padding(.top, 12)
     }
+
+    /// An instruction about the point at `index`: its colour as a swatch, the
+    /// words in the heading colour. androidApp's `PointInstruction`.
+    ///
+    /// The words used to be drawn in the point's colour, and five of the
+    /// twelve (Bottom-Left's yellow, Center-Near's white, the lime, green and
+    /// cyan) are unreadable on the light theme's white page. The swatch keeps
+    /// the colour telling the coach which point is meant, ringed in the
+    /// schematic's grey so the white and yellow ones still show, and centred
+    /// on the first line's capitals when a long label wraps.
+    private func pointInstruction(_ text: String, index: Int) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Circle()
+                .fill(specColor(index))
+                .overlay(Circle().strokeBorder(Shuttl.textSecondary, lineWidth: 1))
+                .frame(width: Self.swatchSize, height: Self.swatchSize)
+                .alignmentGuide(.firstTextBaseline) { d in
+                    d[VerticalAlignment.center] + Self.instructionCapHeight / 2
+                }
+            Text(text)
+                .foregroundStyle(Shuttl.textHeading)
+        }
+    }
+
+    /// The instruction's cap height, which the swatch centres on.
+    private static let instructionCapHeight: CGFloat = {
+        let role = ShuttlType.titleLarge
+        return UIFont(name: role.weight.rawValue, size: role.size)?.capHeight
+            ?? UIFont.systemFont(ofSize: role.size).capHeight
+    }()
 
     @ViewBuilder
     private func frameCanvas(frame: UIImage, marking: CourtMarkingState, displaySize: CGSize) -> some View {
@@ -525,7 +595,9 @@ struct CourtMarkingView: View {
 
     /// The court's lines through the marks, `lines` in source pixels. 2 pt on
     /// screen at any zoom, like the markers: a stroke that grew with the zoom
-    /// would cover the paint it is there to be compared with.
+    /// would cover the paint it is there to be compared with. In the fixed
+    /// `COURT_LINE_COLOR`, not the theme's green, which vanishes on a green
+    /// court.
     private func drawCourtLines(
         context: inout GraphicsContext,
         size: CGSize,
@@ -540,7 +612,7 @@ struct CourtMarkingView: View {
             path.move(to: CGPoint(x: CGFloat(a.x) * fx, y: CGFloat(a.y) * fy))
             path.addLine(to: CGPoint(x: CGFloat(b.x) * fx, y: CGFloat(b.y) * fy))
         }
-        context.stroke(path, with: .color(Shuttl.accent), lineWidth: 2 / scale)
+        context.stroke(path, with: .color(courtLineColor), lineWidth: 2 / scale)
     }
 
     /// The ring on the point a tap picked up to move, clear of its 10 pt
@@ -553,7 +625,7 @@ struct CourtMarkingView: View {
         let centre = CGPoint(x: CGFloat(p.x) * fx, y: CGFloat(p.y) * fy)
         let radius = 16 / scale
         let ring = Path(ellipseIn: CGRect(x: centre.x - radius, y: centre.y - radius, width: radius * 2, height: radius * 2))
-        context.stroke(ring, with: .color(Shuttl.accent), lineWidth: 3 / scale)
+        context.stroke(ring, with: .color(courtLineColor), lineWidth: 3 / scale)
     }
 
     private func drawCourtGuide(context: inout GraphicsContext, size: CGSize) {
@@ -598,7 +670,23 @@ struct CourtMarkingView: View {
         let fx = size.width / CGFloat(truncating: marking.videoWidth as NSNumber)
         let fy = size.height / CGFloat(truncating: marking.videoHeight as NSNumber)
         let radius = 10 / scale
-        for (i, p) in marking.points.enumerated() {
+        // A complete marking is being checked against the paint, and twelve
+        // labelled 10 pt markers at phone width bury each other and the lines
+        // they mark. Each point is a small dot then, except the one picked up
+        // to move, which keeps its full marker and label under the ring. Drawn
+        // last, so it sits over any dot it overlaps. androidApp draws the same.
+        let complete = marking.isComplete
+        let selected = complete ? marking.selected?.intValue : nil
+        if complete {
+            let dot = Self.completeDotRadius / scale
+            for (i, p) in marking.points.enumerated() where i != selected {
+                let dp = CGPoint(x: CGFloat(p.x) * fx, y: CGFloat(p.y) * fy)
+                let circle = Path(ellipseIn: CGRect(x: dp.x - dot, y: dp.y - dot, width: dot * 2, height: dot * 2))
+                context.fill(circle, with: .color(specColor(i)))
+                context.stroke(circle, with: .color(.black), lineWidth: Self.completeDotRing / scale)
+            }
+        }
+        for (i, p) in marking.points.enumerated() where !complete || i == selected {
             let dp = CGPoint(x: CGFloat(p.x) * fx, y: CGFloat(p.y) * fy)
             let circle = Path(ellipseIn: CGRect(x: dp.x - radius, y: dp.y - radius, width: radius * 2, height: radius * 2))
             context.fill(circle, with: .color(specColor(i)))
@@ -612,6 +700,9 @@ struct CourtMarkingView: View {
         }
     }
 }
+
+/// `CourtMarkingSpec.COURT_LINE_COLOR`: the court's lines and the selection ring.
+private let courtLineColor = Color(rgb: UInt32(truncatingIfNeeded: CourtMarkingSpec.shared.COURT_LINE_COLOR) & 0x00FFFFFF)
 
 /// Spec colors are 0xAARRGGBB Longs from shared CourtMarkingSpec.
 func specColor(_ index: Int) -> Color {

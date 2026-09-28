@@ -17,7 +17,6 @@ final class TypographyAdoptionTests: XCTestCase {
     /// NOT in here that still calls `.font(` is a regression.
     private let allowed: Set<String> = [
         "CourtMarkingView.swift",     // sizes text inside a scaled Canvas
-        "SchematicCourtGuide.swift",  // same
         // Sizes an SF Symbol glyph, not text. SF Symbols take their height from
         // a font's point size, so drawing Android's 24-unit icon at a matching
         // height inside the 64pt disc has to say `.font(.system(size:))` - there

@@ -19,7 +19,7 @@ class CourtAutoMarkingTest {
 
     @Test
     fun a_finding_is_discarded_once_the_coach_has_tapped() {
-        val tapped = CourtMarkingState(1920, 1080).tap(10f, 10f, 1920f, 1080f, 22f)
+        val tapped = CourtMarkingState(1920, 1080).tap(10f, 10f, 1920f, 1080f, 22f, 6f)
         applyFinding(tapped, foundFinding()) shouldBe null
     }
 
@@ -95,7 +95,7 @@ class CourtAutoMarkingTest {
 
     /** Taps at (100 + 10k, 200 + 10k) display pixels on a 1920x1080 frame shown at its own size. */
     private fun tapped(n: Int): CourtMarkingState =
-        (0 until n).fold(empty) { s, k -> s.tap(100f + 10 * k, 200f + 10 * k, 1920f, 1080f, 22f) }
+        (0 until n).fold(empty) { s, k -> s.tap(100f + 10 * k, 200f + 10 * k, 1920f, 1080f, 22f, 6f) }
 
     private val found = List(12) { CourtPoint(1f + 10 * it, 2f + 10 * it) }
 

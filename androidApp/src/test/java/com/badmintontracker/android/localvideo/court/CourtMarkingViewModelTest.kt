@@ -2,6 +2,7 @@ package com.badmintontracker.android.localvideo.court
 
 import com.badmintontracker.analysis.court.CourtFinding
 import com.badmintontracker.shared.localvideo.court.CourtFinderStatus
+import com.badmintontracker.shared.localvideo.court.CourtMarkingSpec
 import com.badmintontracker.shared.localvideo.court.CourtPoint
 import com.badmintontracker.shared.model.CourtKeypoints
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -116,14 +117,37 @@ class CourtMarkingViewModelTest {
         val vm = vm(savedKeypoints = savedKeypoints())
 
         // Picking the top-left mark up is not an edit yet ...
-        vm.onTap(1f, 2f, 1920f, 1080f, 22f)
+        vm.onTap(1f, 2f, 1920f, 1080f, 22f, 6f)
         vm.state.value.marking!!.selected shouldBe 0
         vm.state.value.showsSavedMarks.shouldBeTrue()
 
         // ... putting it down somewhere else is.
-        vm.onTap(500f, 500f, 1920f, 1080f, 22f)
+        vm.onTap(500f, 500f, 1920f, 1080f, 22f, 6f)
         vm.state.value.marking!!.points[0] shouldBe CourtPoint(500f, 500f)
         vm.state.value.showsSavedMarks shouldBe false
+    }
+
+    @Test
+    fun a_fine_move_inside_the_hit_radius_moves_the_point() = runTest {
+        val vm = vm(savedKeypoints = savedKeypoints())
+        vm.onTap(1f, 2f, 1920f, 1080f, CourtMarkingSpec.SELECT_RADIUS, CourtMarkingSpec.CANCEL_RADIUS)
+        vm.state.value.marking!!.selected shouldBe 0
+
+        // 10 units away: inside the 22-unit reach, outside the 6-unit cancel.
+        vm.onTap(11f, 2f, 1920f, 1080f, CourtMarkingSpec.SELECT_RADIUS, CourtMarkingSpec.CANCEL_RADIUS)
+        vm.state.value.marking!!.points[0] shouldBe CourtPoint(11f, 2f)
+        vm.state.value.marking!!.selected shouldBe null
+        vm.state.value.showsSavedMarks shouldBe false
+    }
+
+    @Test
+    fun a_tap_on_the_selected_point_puts_it_back_and_is_not_an_edit() = runTest {
+        val vm = vm(savedKeypoints = savedKeypoints())
+        vm.onTap(1f, 2f, 1920f, 1080f, CourtMarkingSpec.SELECT_RADIUS, CourtMarkingSpec.CANCEL_RADIUS)
+        vm.onTap(4f, 2f, 1920f, 1080f, CourtMarkingSpec.SELECT_RADIUS, CourtMarkingSpec.CANCEL_RADIUS)
+        vm.state.value.marking!!.selected shouldBe null
+        vm.state.value.marking!!.points[0] shouldBe CourtPoint(1f, 2f)
+        vm.state.value.showsSavedMarks.shouldBeTrue()
     }
 
     @Test
@@ -153,7 +177,7 @@ class CourtMarkingViewModelTest {
     private val fourCorners = listOf(10f to 10f, 1900f to 10f, 1900f to 1000f, 10f to 1000f)
 
     private fun CourtMarkingViewModel.tapCorners() =
-        fourCorners.forEach { (x, y) -> onTap(x, y, 1920f, 1080f, 22f) }
+        fourCorners.forEach { (x, y) -> onTap(x, y, 1920f, 1080f, 22f, 6f) }
 
     @Test
     fun detection_fills_an_empty_marking() = runTest {
@@ -167,7 +191,7 @@ class CourtMarkingViewModelTest {
         val gate = CompletableDeferred<CourtFinding>()
         val vm = vm(finder = CourtFinderPort(find = { gate.await() }, fromCorners = { _, _ -> notFound() }))
         vm.state.value.status shouldBe CourtFinderStatus.FINDING
-        vm.onTap(10f, 10f, 1920f, 1080f, 22f)
+        vm.onTap(10f, 10f, 1920f, 1080f, 22f, 6f)
         gate.complete(found12())
         vm.state.value.marking!!.points.size shouldBe 1
         // The coach is marking by hand now: nothing about the finder to say.
@@ -183,7 +207,7 @@ class CourtMarkingViewModelTest {
         )
         vm.state.value.status shouldBe CourtFinderStatus.NOT_FOUND
         log.failures.single().second.message shouldBe "boom"
-        vm.onTap(10f, 10f, 1920f, 1080f, 22f)
+        vm.onTap(10f, 10f, 1920f, 1080f, 22f, 6f)
         vm.state.value.marking!!.points.size shouldBe 1
     }
 
@@ -221,7 +245,7 @@ class CourtMarkingViewModelTest {
         vm.state.value.marking!!.points shouldBe taps
         vm.state.value.status shouldBe CourtFinderStatus.IDLE
 
-        vm.onTap(960f, 540f, 1920f, 1080f, 22f)
+        vm.onTap(960f, 540f, 1920f, 1080f, 22f, 6f)
         vm.state.value.marking!!.points.size shouldBe 5
         asks shouldBe 1
     }
@@ -241,7 +265,7 @@ class CourtMarkingViewModelTest {
         vm.tapCorners()
         vm.state.value.status shouldBe CourtFinderStatus.ALIGNING
 
-        vm.onTap(960f, 540f, 1920f, 1080f, 22f)
+        vm.onTap(960f, 540f, 1920f, 1080f, 22f, 6f)
         gate.complete(found12())
 
         vm.state.value.marking!!.points.size shouldBe 5
@@ -276,7 +300,7 @@ class CourtMarkingViewModelTest {
     @Test
     fun find_court_that_finds_nothing_leaves_the_marks() = runTest {
         val vm = vm(finder = CourtFinderPort(find = { notFound() }, fromCorners = { _, _ -> notFound() }))
-        vm.onTap(10f, 10f, 1920f, 1080f, 22f)
+        vm.onTap(10f, 10f, 1920f, 1080f, 22f, 6f)
         vm.onFindCourt()
         vm.state.value.marking!!.points.size shouldBe 1
         // Not NOT_FOUND: "tap the four corners" is wrong once a point is down.
