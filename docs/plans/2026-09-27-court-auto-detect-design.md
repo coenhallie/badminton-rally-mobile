@@ -692,8 +692,12 @@ report beside it (`final-fix-report.md`).
 - The iOS cancel and arrival-guard plumbing has no iOS unit test (it lives in
   `@State`); the rules themselves are shared and tested, including from Swift
   (`allowsContinue`, `afterEdit`). On Android, taps, Undo and Continue during
-  an in-flight call are tested; the arrival guards behind the cancel are
-  reached by the shared tests only.
+  an in-flight call are tested; Clear during one is not (it cancels through
+  the same path as Undo); the arrival guards behind the cancel are reached by
+  the shared tests only.
+- Android process death on step 2 was checked on the emulator on 2026-09-28
+  (step 2, home, `adb shell am kill`, relaunch): the app reopened on step 1
+  with the found court on screen. There is no automated test for it.
 - A 4K source's full-resolution luma (33 MB) is built before downsampling.
 - The selected marker and its ring are clipped at the frame edge (hall
   Bottom-Right, both platforms). The small dots are not.
