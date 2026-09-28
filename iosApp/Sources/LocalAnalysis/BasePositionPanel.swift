@@ -227,7 +227,8 @@ private struct CourtBaseView: View {
     /// The whole-match ring, drawn around the dots rather than over them.
     private static let ringRadius: CGFloat = 10
     private static let ringLineWidth: CGFloat = 2.5
-    /// Between a marker's edge and the number beside it.
+    /// Between a dot's edge and its number, and the least a number keeps
+    /// from every other number, dot and the ring (see `placeRallyLabels`).
     private static let labelGap: CGFloat = 2
 
     var body: some View {
@@ -247,32 +248,47 @@ private struct CourtBaseView: View {
                         lineWidth: Self.ringLineWidth
                     )
                 }
-                // Numbers last, and clear of both circles, so neither the
-                // whole-match marker nor the dot itself sits on the one label
-                // that says which rally a dot is. `rallyLabelX` owns where
-                // "clear" is; Android draws the same picture through the same
-                // function.
+                // Numbers last, each beside its own dot and clear of every
+                // other number, dot and the whole-match marker, so none of
+                // them sits on the one label that says which rally a dot is.
+                // `placeRallyLabels` owns where that is, and which number to
+                // leave to the list when a dot has no room; Android draws the
+                // same picture through the same function.
                 let ringCentre = bases.overall.map { CourtLayout.point($0, in: size) }
-                for rally in bases.rallies {
+                let labels = bases.rallies.map { rally in
+                    context.resolve(
+                        Text("\(rally.index)")
+                            .shuttlCanvasType(ShuttlType.labelSmall)
+                            .foregroundStyle(Shuttl.text)
+                    )
+                }
+                let marks = zip(bases.rallies, labels).map { rally, label in
                     let centre = CourtLayout.point(rally.position, in: size)
-                    let label = Text("\(rally.index)")
-                        .shuttlCanvasType(ShuttlType.labelSmall)
-                        .foregroundStyle(Shuttl.text)
-                    let x = BasePositionFormatKt.rallyLabelX(
+                    let measured = label.measure(in: size)
+                    return RallyMark(
                         dotX: Float(centre.x),
                         dotY: Float(centre.y),
-                        dotRadius: Float(Self.dotRadius),
-                        gap: Float(Self.labelGap),
-                        ringX: Float(ringCentre?.x ?? 0),
-                        ringY: Float(ringCentre?.y ?? 0),
-                        // The stroke straddles the radius, so the outer edge is
-                        // half a line width past it.
-                        ringReach: ringCentre == nil ? 0 : Float(Self.ringRadius + Self.ringLineWidth / 2)
+                        labelWidth: Float(measured.width),
+                        labelHeight: Float(measured.height)
                     )
+                }
+                let spots = BasePositionFormatKt.placeRallyLabels(
+                    marks: marks,
+                    dotRadius: Float(Self.dotRadius),
+                    gap: Float(Self.labelGap),
+                    ringX: Float(ringCentre?.x ?? 0),
+                    ringY: Float(ringCentre?.y ?? 0),
+                    // The stroke straddles the radius, so the outer edge is
+                    // half a line width past it.
+                    ringReach: ringCentre == nil ? 0 : Float(Self.ringRadius + Self.ringLineWidth / 2),
+                    canvasWidth: Float(size.width),
+                    canvasHeight: Float(size.height)
+                )
+                for spot in spots {
                     context.draw(
-                        context.resolve(label),
-                        at: CGPoint(x: CGFloat(x), y: centre.y),
-                        anchor: .leading
+                        labels[Int(spot.mark)],
+                        at: CGPoint(x: CGFloat(spot.left), y: CGFloat(spot.top)),
+                        anchor: .topLeading
                     )
                 }
             }

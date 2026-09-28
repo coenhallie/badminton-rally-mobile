@@ -1,14 +1,22 @@
 package com.badmintontracker.analysis.raw
 
+import com.badmintontracker.analysis.camera.CameraMotion
+import com.badmintontracker.analysis.camera.CameraSample
 import com.badmintontracker.analysis.corpus.readResourceBytesOrNull
+import io.kotest.assertions.throwables.shouldThrow
+import io.kotest.matchers.nulls.shouldBeNull
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import kotlin.test.Test
 import kotlin.test.assertFailsWith
 
 class RawInferenceCodecTest {
 
+    // encode() always writes RawInferenceCodec.VERSION regardless of this field
+    // (only decode's output ever reflects the wire), so this must track VERSION
+    // for decode(encode(sample)) shouldBe sample to hold.
     private val header = RawHeader(
-        version = 1,
+        version = RawInferenceCodec.VERSION,
         fps = 59.94,
         totalFrames = 1234,
         videoWidth = 1920,
@@ -81,11 +89,51 @@ class RawInferenceCodecTest {
 
     @Test
     fun an_unknown_version_is_rejected_by_name() {
-        // A future writer must fail loudly here rather than be misread as v1.
+        // A future writer must fail loudly here rather than be misread as a
+        // version this build understands. Version 2 is now readable, so this
+        // pokes 3 instead.
         val bytes = RawInferenceCodec.encode(sample)
-        bytes[RawInferenceCodec.VERSION_OFFSET] = 2
+        bytes[RawInferenceCodec.VERSION_OFFSET] = 3
         val e = assertFailsWith<IllegalArgumentException> { RawInferenceCodec.decode(bytes) }
         (e.message?.contains("version") == true) shouldBe true
+    }
+
+    @Test fun a_camera_round_trips() {
+        val m = listOf(listOf(1.001, 0.002, 14.5), listOf(-0.003, 0.999, -8.25), listOf(1e-6, -2e-6, 1.0))
+        val raw = sample.copy(camera = CameraMotion.of(0.1, listOf(
+            CameraSample(0.1, listOf(listOf(1.0, 0.0, 0.0), listOf(0.0, 1.0, 0.0), listOf(0.0, 0.0, 1.0))),
+            CameraSample(0.2, m),
+        )))
+        RawInferenceCodec.decode(RawInferenceCodec.encode(raw)) shouldBe raw
+    }
+
+    @Test fun no_camera_round_trips_as_no_camera() {
+        val raw = sample
+        RawInferenceCodec.decode(RawInferenceCodec.encode(raw)).camera shouldBe null
+    }
+
+    @Test fun encode_writes_version_2() {
+        val bytes = RawInferenceCodec.encode(sample)
+        (bytes[RawInferenceCodec.VERSION_OFFSET].toInt() and 0xFF) shouldBe 2
+    }
+
+    @Test fun a_version_1_stream_still_reads_with_no_camera() {
+        // Encode, then rewrite it as the version 1 a deployed worker produced:
+        // version byte 1 and no camera section (the trailing hasCamera byte removed).
+        val v2 = RawInferenceCodec.encode(sample)
+        val v1 = v2.copyOf(v2.size - 1).also { it[RawInferenceCodec.VERSION_OFFSET] = 1 }
+        RawInferenceCodec.decode(v1).camera shouldBe null
+    }
+
+    @Test fun bytes_after_the_camera_section_are_rejected() {
+        val bytes = RawInferenceCodec.encode(sample) + byteArrayOf(0)
+        shouldThrow<IllegalArgumentException> { RawInferenceCodec.decode(bytes) }
+    }
+
+    @Test fun a_truncated_camera_section_is_rejected() {
+        val m = listOf(listOf(1.0, 0.0, 3.0), listOf(0.0, 1.0, 0.0), listOf(0.0, 0.0, 1.0))
+        val bytes = RawInferenceCodec.encode(sample.copy(camera = CameraMotion.of(0.1, listOf(CameraSample(0.1, m)))))
+        shouldThrow<IllegalArgumentException> { RawInferenceCodec.decode(bytes.copyOf(bytes.size - 4)) }
     }
 
     @Test
@@ -179,6 +227,13 @@ class RawInferenceCodecTest {
      * Null on native, where readResourceBytesOrNull has no resources to read.
      * Skipped rather than failed for the reason the corpus fixtures are:
      * a guard that cannot run on a target must not stop that target's suite.
+     *
+     * `cloud-poses.rawi` is frozen at version 1: `raw_inference_codec.py` can
+     * no longer write version 1 (its `VERSION` constant is 2), so this fixture
+     * will never be regenerated. It stays only to prove the reader keeps
+     * reading version 1 files a deployed worker already produced.
+     * [the_python_v2_writer_and_this_reader_agree] is the version 2 version of
+     * this check.
      */
     @Test
     fun the_python_writer_and_this_reader_agree() {
@@ -187,6 +242,7 @@ class RawInferenceCodecTest {
         val decoded = RawInferenceCodec.decode(bytes)
 
         decoded.header.version shouldBe 1
+        decoded.camera.shouldBeNull()
         decoded.header.fps shouldBe 59.94
         decoded.header.totalFrames shouldBe 1234
         decoded.header.videoWidth shouldBe 1920
@@ -219,5 +275,71 @@ class RawInferenceCodecTest {
         second.frame shouldBe 8
         second.timestamp shouldBe (2.0 / 3.0)
         second.persons shouldBe emptyList()
+    }
+
+    /**
+     * The version 2 counterpart of [the_python_writer_and_this_reader_agree]:
+     * same header and frames (verified byte-identical to `cloud-poses.rawi`
+     * except the version field), plus a two-sample camera section. Generated
+     * by `python backend/scripts/verify_raw_inference_codec.py --fixture <path>`
+     * in `badminton-tracker`; the values below are that script's fixture
+     * definition, copied by hand.
+     */
+    @Test
+    fun the_python_v2_writer_and_this_reader_agree() {
+        val bytes = readResourceBytesOrNull("/raw/cloud-poses-v2.rawi") ?: return
+
+        val decoded = RawInferenceCodec.decode(bytes)
+
+        decoded.header.version shouldBe 2
+        decoded.header.fps shouldBe 59.94
+        decoded.header.totalFrames shouldBe 1234
+        decoded.header.videoWidth shouldBe 1920
+        decoded.header.videoHeight shouldBe 1080
+        decoded.header.modelVersion shouldBe "cloud:yolo11x-pose:abc123"
+
+        decoded.frames.size shouldBe 2
+
+        val first = decoded.frames[0]
+        first.frame shouldBe 7
+        first.timestamp shouldBe (1.0 / 3.0)
+        first.shuttle shouldBe null
+        first.boxes shouldBe emptyList()
+        first.persons.size shouldBe 2
+
+        val near = first.persons[0]
+        near.box shouldBe RawBox(classId = 1, confidence = 0.9f, x1 = 10f, y1 = 20f, x2 = 30f, y2 = 40f)
+        near.keypoints.size shouldBe 17
+        near.keypoints[0] shouldBe RawKeypoint(0f, 0f, 0f)
+        near.keypoints[16] shouldBe RawKeypoint((16 * 1.5).toFloat(), (16 * 2.5).toFloat(), (16 * 0.01).toFloat())
+
+        val far = first.persons[1]
+        far.box.confidence shouldBe 0.7f
+        far.keypoints[16] shouldBe RawKeypoint((16 * 1.25).toFloat(), (16 * 2.25).toFloat(), (16 * 0.02).toFloat())
+
+        val second = decoded.frames[1]
+        second.frame shouldBe 8
+        second.timestamp shouldBe (2.0 / 3.0)
+        second.persons shouldBe emptyList()
+
+        val camera = decoded.camera.shouldNotBeNull()
+        camera.referenceTimestamp shouldBe 0.5
+        camera.samples.size shouldBe 2
+
+        val sample0 = camera.samples[0]
+        sample0.timestamp shouldBe 0.1
+        sample0.referenceToFrame shouldBe listOf(
+            listOf(1.1, 0.05, 12.0),
+            listOf(0.02, 0.95, -8.0),
+            listOf(0.0003, -0.0004, 1.0),
+        )
+
+        val sample1 = camera.samples[1]
+        sample1.timestamp shouldBe 0.6
+        sample1.referenceToFrame shouldBe listOf(
+            listOf(0.98, -0.03, -5.5),
+            listOf(0.04, 1.02, 6.25),
+            listOf(-0.0002, 0.0005, 1.0),
+        )
     }
 }

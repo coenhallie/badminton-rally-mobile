@@ -1,6 +1,8 @@
 package com.badmintontracker.android.localanalysis
 
 import android.content.Context
+import com.badmintontracker.analysis.camera.CameraMotion
+import com.badmintontracker.analysis.camera.CameraMotionTracker
 import com.badmintontracker.analysis.raw.RawBox
 import com.badmintontracker.analysis.raw.RawFrame
 import com.badmintontracker.analysis.raw.RawHeader
@@ -50,10 +52,13 @@ class AndroidLocalInferenceEngine(
      * must not pay for a player track it will not read.
      */
     private val poseModelPath: String? = null,
+    /** Where the pass says what it did beyond its result, for logcat. */
+    private val log: (String) -> Unit = {},
 ) : LocalInferenceEngine {
 
     override suspend fun run(
         videoPath: String,
+        markingTimeS: Double?,
         onProgress: (Float) -> Unit,
     ): RawInference = withContext(Dispatchers.Default) {
         val file = File(videoPath)
@@ -70,6 +75,20 @@ class AndroidLocalInferenceEngine(
         // that would show.
         val timestamps = HashMap<Int, Double>()
         val pose = poseModelPath?.let { PoseRunner(it) }
+        // Design 2026-09-27-camera-motion-design.md §5.5: follow the camera only
+        // when there is a player track for it to correct, and only when the
+        // marks' moment is known, since the tracker's reference frame is the
+        // one the marks were drawn on.
+        val camera = if (pose != null && markingTimeS != null) {
+            CameraMotionTracker(markingTimeS, meta.width, meta.height)
+        } else {
+            null
+        }
+        val luma = LumaPlane()
+        // Cleared on the first failure. A tracker failure never fails the run
+        // (§5.5): the frames it did not reach read as camera lost, and a pass
+        // that never reached the marking frame keeps the fixed marks.
+        var following = camera != null
         val track = try {
             DetectorRunner(context).use { detector ->
                 TrackNetRunner(context, source).track(
@@ -79,6 +98,9 @@ class AndroidLocalInferenceEngine(
                     onProgress = onProgress,
                     onFrame = { index, seconds, image ->
                         timestamps[index] = seconds
+                        if (camera != null && following && camera.wants(seconds)) {
+                            following = follow(camera, luma, seconds, image, meta)
+                        }
                         val found = detector.detect(image)
                         if (found.isNotEmpty()) detections[index] = found
                         // Same frame, same decode. Emitted raw: which person is
@@ -146,6 +168,45 @@ class AndroidLocalInferenceEngine(
                 modelVersion = ModelCatalog.VERSION,
             ),
             frames = frames,
+            camera = camera?.let { finish(it) },
         )
+    }
+
+    /**
+     * Offers one sampled frame to [camera]; false once following has to stop.
+     *
+     * The frame is the decoder's visible picture of the container's size
+     * (`visibleRegion`): a 1920x1088 buffer holding 1080p is followed, and a
+     * picture of some other size stops following rather than being rescaled.
+     */
+    private fun follow(
+        camera: CameraMotionTracker,
+        luma: LumaPlane,
+        seconds: Double,
+        image: android.media.Image,
+        meta: VideoFrameSource.Metadata,
+    ): Boolean = try {
+        camera.offer(
+            seconds,
+            luma.downsample(image, meta.width, meta.height, camera.trackerWidth, camera.trackerHeight),
+        )
+        true
+    } catch (e: Exception) {
+        log("camera: stopped following at ${seconds}s: $e")
+        false
+    }
+
+    private fun finish(camera: CameraMotionTracker): CameraMotion? {
+        val motion = try {
+            camera.finish()
+        } catch (e: Exception) {
+            log("camera: could not finish: $e")
+            null
+        }
+        log(
+            "camera: ${camera.acceptedSamples} samples followed, ${camera.droppedSamples} dropped" +
+                if (motion == null) ", no marking frame followed, the fixed marks apply" else "",
+        )
+        return motion
     }
 }

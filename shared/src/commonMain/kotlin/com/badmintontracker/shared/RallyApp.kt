@@ -1,6 +1,5 @@
 package com.badmintontracker.shared
 
-import com.badmintontracker.shared.local.LocalInferenceEngine
 import com.badmintontracker.shared.localvideo.AnalyzeCoordinator
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.local.DeviceThroughputRepository
@@ -123,24 +122,9 @@ class RallyApp(
     )
 
     /**
-     * Builds the on-device analyze pipeline. Both platforms call this rather
-     * than constructing a coordinator themselves, for the same reason as
-     * [analyzeCoordinator] below: the sequencing must not be able to differ
-     * per platform.
-     *
-     * The platform supplies only [engine] - decode and inference. Everything
-     * downstream of raw model output is shared code, which is what the
-     * section 5.1 boundary is for.
-     */
-    fun localAnalysisCoordinator(
-        engine: LocalInferenceEngine,
-        log: (String) -> Unit = {},
-    ): LocalAnalysisCoordinator = LocalAnalysisCoordinator(engine = engine, log = log)
-
-    /**
-     * The cloud sibling of [localAnalysisCoordinator]. Built here rather than
-     * per platform so both phones fetch and decode a pose artifact the same
-     * way; only the sink that stores the result differs.
+     * The cloud sibling of the on-device [LocalAnalysisCoordinator]. Built
+     * here rather than per platform so both phones fetch and decode a pose
+     * artifact the same way; only the sink that stores the result differs.
      */
     fun cloudPoseCoordinator(log: (String) -> Unit = {}): CloudPoseCoordinator =
         CloudPoseCoordinator(repository = cloudPoses, log = log)

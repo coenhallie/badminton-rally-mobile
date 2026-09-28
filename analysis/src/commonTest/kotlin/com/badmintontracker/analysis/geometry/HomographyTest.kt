@@ -1,5 +1,6 @@
 package com.badmintontracker.analysis.geometry
 
+import io.kotest.matchers.doubles.plusOrMinus
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
@@ -209,6 +210,18 @@ class HomographyTest {
         // 6.1m across 1219px at the near baseline, across 628px at the far one.
         if (near < 0.0045 || near > 0.0055) throw AssertionError("near scale $near m/px")
         if (far < 0.0090 || far > 0.0105) throw AssertionError("far scale $far m/px")
+    }
+
+    @Test fun court_fit_at_a_camera_is_h_times_the_cameras_inverse() {
+        val h = listOf(listOf(0.01, 0.0, 0.0), listOf(0.0, 0.02, 0.0), listOf(0.0, 0.0, 1.0))
+        val shift = listOf(listOf(1.0, 0.0, 30.0), listOf(0.0, 1.0, -12.0), listOf(0.0, 0.0, 1.0))
+        val fit = courtFitAt(h, shift)!!
+        // The marking-frame pixel (100, 50) is at (130, 38) in this frame; both must land on the same court point.
+        val a = h.apply(100.0, 50.0)!!
+        val b = fit.apply(130.0, 38.0)!!
+        b.x shouldBe (a.x plusOrMinus 1e-9)
+        b.y shouldBe (a.y plusOrMinus 1e-9)
+        courtFitAt(h, null) shouldBe h
     }
 
 }

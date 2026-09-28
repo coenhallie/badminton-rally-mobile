@@ -1,5 +1,7 @@
 package com.badmintontracker.shared.local
 
+import com.badmintontracker.analysis.camera.CameraMotion
+import com.badmintontracker.analysis.camera.CameraSample
 import com.badmintontracker.analysis.raw.RawBox
 import com.badmintontracker.analysis.raw.RawFrame
 import com.badmintontracker.analysis.raw.RawHeader
@@ -61,8 +63,14 @@ class LocalAnalysisCoordinatorTest {
         private val progress: List<Float> = listOf(0.25f, 0.5f, 0.75f),
     ) : LocalInferenceEngine {
         var ran = 0
-        override suspend fun run(videoPath: String, onProgress: (Float) -> Unit): RawInference {
+        var markingTimeS: Double? = null
+        override suspend fun run(
+            videoPath: String,
+            markingTimeS: Double?,
+            onProgress: (Float) -> Unit,
+        ): RawInference {
             ran++
+            this.markingTimeS = markingTimeS
             progress.forEach(onProgress)
             failure?.let { throw it }
             return inference!!
@@ -89,6 +97,36 @@ class LocalAnalysisCoordinatorTest {
         assertEquals(listOf(7), outcome.playerTrack.samples.map { it.frame })
         assertEquals(1920, outcome.videoWidth)
         assertEquals(1080, outcome.videoHeight)
+    }
+
+    @Test
+    fun a_followed_camera_and_the_frames_it_lost_are_said_in_the_log() = runTest {
+        // One sample at 0 s. Frame 2 (0.067 s) is held from it; frame 7
+        // (0.233 s) is past the 0.15 s hold, so its camera is unknown and it
+        // yields no position. The log is where a thin track explains itself.
+        val identity = listOf(listOf(1.0, 0.0, 0.0), listOf(0.0, 1.0, 0.0), listOf(0.0, 0.0, 1.0))
+        val raw = withPerson(withPerson(twoExchanges(), frame = 2), frame = 7)
+            .copy(camera = CameraMotion.of(0.0, listOf(CameraSample(0.0, identity))))
+        val lines = mutableListOf<String>()
+
+        val outcome = LocalAnalysisCoordinator(FakeEngine(raw), log = { lines += it })
+            .analyze("/tmp/m.mp4", keypoints) {}
+            .getOrThrow()
+
+        outcome.playerTrack.samples.map { it.frame } shouldBe listOf(2)
+        lines.contains("camera: followed with 1 samples") shouldBe true
+        lines.contains("camera: 1 of 2 pose frames not followed; no positions taken for them") shouldBe true
+    }
+
+    @Test
+    fun a_run_that_did_not_follow_the_camera_says_nothing_about_it() = runTest {
+        val lines = mutableListOf<String>()
+
+        LocalAnalysisCoordinator(FakeEngine(withPerson(twoExchanges(), frame = 7)), log = { lines += it })
+            .analyze("/tmp/m.mp4", keypoints) {}
+            .getOrThrow()
+
+        lines.none { it.startsWith("camera:") } shouldBe true
     }
 
     @Test
@@ -166,5 +204,42 @@ class LocalAnalysisCoordinatorTest {
         val engine = FakeEngine(twoExchanges())
         coordinator(engine).analyze("/tmp/m.mp4", keypoints)
         engine.ran shouldBe 1
+    }
+
+    @Test
+    fun the_engine_follows_the_camera_from_the_time_the_marks_carry() = runTest {
+        val engine = FakeEngine(twoExchanges())
+        val asked = mutableListOf<String>()
+
+        LocalAnalysisCoordinator(engine, legacyMarkingTime = { asked += it; 0.7 })
+            .analyze("/tmp/m.mp4", keypoints.copy(markedAtSeconds = 1.0))
+            .getOrThrow()
+
+        engine.markingTimeS shouldBe 1.0
+        // Only marks without a time need the platform's answer, which on iOS
+        // costs a frame decode.
+        asked shouldBe emptyList()
+    }
+
+    @Test
+    fun marks_without_a_time_ask_the_platform_when_they_were_drawn() = runTest {
+        val engine = FakeEngine(twoExchanges())
+        val asked = mutableListOf<String>()
+
+        LocalAnalysisCoordinator(engine, legacyMarkingTime = { asked += it; 0.7 })
+            .analyze("/tmp/m.mp4", keypoints)
+            .getOrThrow()
+
+        engine.markingTimeS shouldBe 0.7
+        asked shouldBe listOf("/tmp/m.mp4")
+    }
+
+    @Test
+    fun marks_without_a_time_default_to_the_frame_every_marking_screen_seeks_to() = runTest {
+        val engine = FakeEngine(twoExchanges())
+
+        coordinator(engine).analyze("/tmp/m.mp4", keypoints).getOrThrow()
+
+        engine.markingTimeS shouldBe 0.1
     }
 }

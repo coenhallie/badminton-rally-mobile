@@ -118,7 +118,8 @@ final class LocalVideoLogicTests: XCTestCase {
             netLeft: p, netRight: p,
             serviceLineNearLeft: p, serviceLineNearRight: p,
             serviceLineFarLeft: p, serviceLineFarRight: p,
-            centerNear: p, centerFar: p
+            centerNear: p, centerFar: p,
+            markedAtSeconds: nil
         )
     }
 

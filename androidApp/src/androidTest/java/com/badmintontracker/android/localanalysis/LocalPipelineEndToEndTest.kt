@@ -47,10 +47,14 @@ class LocalPipelineEndToEndTest {
         assumeTrue("SKIPPED: push corpus-743d7fb1.mp4 to /data/local/tmp", vid != null)
 
         val engine = object : com.badmintontracker.shared.local.LocalInferenceEngine {
-            override suspend fun run(videoPath: String, onProgress: (Float) -> Unit) =
+            override suspend fun run(
+                videoPath: String,
+                markingTimeS: Double?,
+                onProgress: (Float) -> Unit,
+            ) =
                 // A prefix, so the test finishes. The real engine over the
                 // whole file is the same call without the cap.
-                BoundedEngine(context, 320).run(videoPath, onProgress)
+                BoundedEngine(context, 320).run(videoPath, markingTimeS, onProgress)
         }
 
         val progress = ArrayList<Float>()
@@ -80,7 +84,7 @@ class LocalPipelineEndToEndTest {
 
         // And the engine's own output must survive a round trip through the
         // format the two halves agree on.
-        val raw = BoundedEngine(context, 32).run(vid.path) {}
+        val raw = BoundedEngine(context, 32).run(vid.path, markingTimeS = null) {}
         assertEquals(raw, RawInferenceCodec.decode(RawInferenceCodec.encode(raw)))
     }
 
@@ -89,7 +93,7 @@ class LocalPipelineEndToEndTest {
         private val context: android.content.Context,
         private val maxFrames: Int,
     ) : com.badmintontracker.shared.local.LocalInferenceEngine {
-        override suspend fun run(videoPath: String, onProgress: (Float) -> Unit) =
-            AndroidLocalInferenceEngine(context, maxFrames).run(videoPath, onProgress)
+        override suspend fun run(videoPath: String, markingTimeS: Double?, onProgress: (Float) -> Unit) =
+            AndroidLocalInferenceEngine(context, maxFrames).run(videoPath, markingTimeS, onProgress)
     }
 }

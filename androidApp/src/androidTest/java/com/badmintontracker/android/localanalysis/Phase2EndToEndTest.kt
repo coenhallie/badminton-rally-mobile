@@ -66,7 +66,7 @@ class Phase2EndToEndTest {
                 context = context,
                 maxFrames = frames,
                 poseModelPath = pose!!.path,
-            ).run(video!!.path) {}
+            ).run(video!!.path, markingTimeS = null) {}
         }
 
         // The timestamps are the container's, not i / fps. The corpus is a

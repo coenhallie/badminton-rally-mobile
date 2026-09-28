@@ -22,6 +22,13 @@ data class CourtFrame(
      */
     val fps: Double = 0.0,
     val frameCount: Int = 0,
+    /**
+     * When in the video [frame] was taken, seconds, which the marks carry as
+     * `marked_at_s` for the camera tracker. 0.1 rather than read back:
+     * `OPTION_CLOSEST` does not report which frame it returned, and the frame
+     * nearest 0.1 s is within one frame of it.
+     */
+    val markedAtSeconds: Double = 0.1,
 )
 
 data class CourtMarkingUiState(
@@ -59,7 +66,9 @@ class CourtMarkingViewModel(
         viewModelScope.launch {
             runCatching { loadFrame() }
                 .onSuccess { f ->
-                    val restored = CourtMarkingState.restored(f.width, f.height, savedKeypoints)
+                    val restored = CourtMarkingState.restored(
+                        f.width, f.height, savedKeypoints, frameSeconds = f.markedAtSeconds,
+                    )
                     state.update {
                         it.copy(
                             frame = f.frame,

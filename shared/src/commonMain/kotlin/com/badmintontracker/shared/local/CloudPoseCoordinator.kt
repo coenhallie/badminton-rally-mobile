@@ -1,5 +1,8 @@
 package com.badmintontracker.shared.local
 
+import com.badmintontracker.analysis.player.PlayerTrack
+import com.badmintontracker.analysis.player.RejectionReason
+import com.badmintontracker.analysis.raw.RawInference
 import com.badmintontracker.analysis.raw.RawInferenceCodec
 import com.badmintontracker.shared.repo.CloudPoseRepository
 
@@ -69,9 +72,29 @@ class CloudPoseCoordinator(
                     "${selection.track.framesWithPose} pose frames",
             )
         }
+        logCamera(raw, outcome.selections.map { it.track }, log)
 
         save(outcome)
         onProgress(1f)
         true
     }
+}
+
+/**
+ * What following the camera did to a run, for both coordinators.
+ *
+ * A frame whose camera was not known takes no position on either side, so a
+ * track thinned by a lost camera looks like a track thinned by a bad model
+ * unless the log says which. The count is the same on every side, because the
+ * frame is rejected before any person is examined, so the first side that has
+ * one speaks for all of them.
+ */
+internal fun logCamera(raw: RawInference, tracks: List<PlayerTrack>, log: (String) -> Unit) {
+    val camera = raw.camera ?: return
+    log("camera: followed with ${camera.samples.size} samples")
+    val lost = tracks.firstOrNull { (it.rejections[RejectionReason.CAMERA_LOST] ?: 0) > 0 } ?: return
+    log(
+        "camera: ${lost.rejections.getValue(RejectionReason.CAMERA_LOST)} of ${lost.framesWithPose} " +
+            "pose frames not followed; no positions taken for them",
+    )
 }

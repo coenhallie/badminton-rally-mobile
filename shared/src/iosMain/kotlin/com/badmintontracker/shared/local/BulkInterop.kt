@@ -1,5 +1,7 @@
 package com.badmintontracker.shared.local
 
+import com.badmintontracker.analysis.camera.GreyImage
+import com.badmintontracker.analysis.camera.Luma
 import com.badmintontracker.analysis.shuttle.HEATMAP_MAX_AREA
 import com.badmintontracker.analysis.shuttle.HEATMAP_THRESHOLD
 import com.badmintontracker.analysis.shuttle.HeatmapCoord
@@ -17,11 +19,14 @@ import platform.posix.memcpy
 /**
  * Bulk buffers across the Swift boundary, by pointer.
  *
- * Two functions in `:analysis` take arrays of pixels: [heatmapToCoord] takes a
- * `FloatArray` of 147,456 floats, and the median background reduces 300 frames
- * of 442,368 bytes each. Both are the shared implementations the whole port exists to
- * reuse - the design's section 3.1 is explicit that reimplementing the blob
- * detector in Swift is the one thing this stage must not do.
+ * Three functions in `:analysis` take arrays of pixels: [heatmapToCoord] takes
+ * a `FloatArray` of 147,456 floats, the median background reduces 300 frames
+ * of 442,368 bytes each, and the camera tracker's [Luma.downsample]
+ * ([lumaDownsample] here) reads a 1080p luma plane of about 2 MB ten times a
+ * second of video. All three are the shared implementations the whole port
+ * exists to reuse - the design's section 3.1 is explicit that reimplementing
+ * the blob detector in Swift is the one thing this stage must not do, and the
+ * camera design keeps one tracker for both phones for the same reason.
  *
  * They cannot be called from Swift as they stand. `KotlinFloatArray` is
  * constructed from Swift one element at a time through a boxing closure, and
@@ -32,7 +37,8 @@ import platform.posix.memcpy
  * So the boundary moves: Swift passes a raw pointer to memory it already holds,
  * and the copy into Kotlin's heap happens here as a `memcpy` on the native
  * side. One 590KB copy per sequence against an inference that costs hundreds of
- * milliseconds.
+ * milliseconds. [lumaDownsample] copies nothing at all: it reads the locked
+ * plane through the pointer and returns only the 480x270 tracker image.
  *
  * **The caller owns the memory and must keep it alive across the call.** Every
  * function here reads its pointer and returns before Swift's buffer goes out of
@@ -86,6 +92,35 @@ object BulkInterop {
             frames[frame.toLong() * frameLength + index].toInt() and 0xFF
         }
         median.usePinned { memcpy(out, it.addressOf(0), frameLength.toULong()) }
+    }
+
+    /**
+     * [Luma.downsample] over a luma plane Swift has locked: the camera
+     * tracker's input, read in place.
+     *
+     * [plane] is the decoded `CVPixelBuffer`'s plane 0
+     * (`CVPixelBufferGetBaseAddressOfPlane(buf, 0)`), its rows
+     * [rowStride] bytes apart (`CVPixelBufferGetBytesPerRowOfPlane(buf, 0)`),
+     * which is at least [width] and is often more. The buffer must stay locked
+     * for the call. Reading through the pointer rather than copying first is
+     * the point: at 1080p the plane is 2 MB, and a `ByteArray` of it built
+     * from Swift would cross the bridge one element at a time, ten times a
+     * second of video. What comes back is the tracker-size image, 480x270.
+     *
+     * `@Throws` so that a failure reaches Swift as an error it can catch: the
+     * camera is an extra, and losing it must not end the run, let alone the
+     * process.
+     */
+    @Throws(Throwable::class)
+    fun lumaDownsample(
+        plane: CPointer<ByteVar>,
+        width: Int,
+        height: Int,
+        rowStride: Int,
+        outWidth: Int,
+        outHeight: Int,
+    ): GreyImage = Luma.downsampleWith(width, height, outWidth, outHeight) { x, y ->
+        plane[y.toLong() * rowStride + x].toInt() and 0xFF
     }
 
     /**

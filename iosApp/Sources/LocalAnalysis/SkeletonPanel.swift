@@ -24,7 +24,9 @@ final class SkeletonPanelModel {
     struct Loaded {
         let stored: SkeletonStore.Stored?
         /// The resolved court fit from the file's marks; non-nil only when
-        /// `courtFit` is `.ok`.
+        /// `courtFit` is `.ok`. It fits the marking frame: a pose is measured
+        /// through `poseCourtFit(h:pose:)`, which carries it through that
+        /// pose's camera.
         let homography: [[KotlinDouble]]?
         let courtFit: CourtFit
         /// One entry per pose, in pose order, for the graph - per side, because
@@ -126,7 +128,10 @@ final class SkeletonPanelModel {
             let courtFit: CourtFit = marks == nil ? .none : (homography == nil ? .bad : .ok)
             // Per side, and here rather than on selection: the metrics for a
             // 30-minute match are the expensive part of this read, and moving
-            // them to the toggle would put them on the main actor.
+            // them to the toggle would put them on the main actor. Each pose
+            // through its own frame's fit: the gate above judged the marks on
+            // the frame they were placed on, and a pose from a frame the camera
+            // had moved in reaches the court through its camera.
             var seriesBySide: [CourtSide: [MetricSample]] = [:]
             for track in stored?.tracks ?? [] {
                 seriesBySide[track.side] = track.poses.map { pose in
@@ -135,7 +140,7 @@ final class SkeletonPanelModel {
                         metrics: PoseMetricsKt.poseMetrics(
                             keypoints: pose.keypoints,
                             confidence: pose.confidence,
-                            homography: homography,
+                            homography: PoseMetricsKt.poseCourtFit(h: homography, pose: pose),
                             minConfidence: NearPlayerSelector.companion.MIN_KEYPOINT_CONFIDENCE
                         )
                     )
@@ -207,7 +212,7 @@ final class SkeletonPanelModel {
             PoseMetricsKt.poseMetrics(
                 keypoints: found.keypoints,
                 confidence: found.confidence,
-                homography: loaded.homography,
+                homography: PoseMetricsKt.poseCourtFit(h: loaded.homography, pose: found),
                 minConfidence: NearPlayerSelector.companion.MIN_KEYPOINT_CONFIDENCE
             )
         }

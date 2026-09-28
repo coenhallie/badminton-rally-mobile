@@ -17,9 +17,16 @@ import com.badmintontracker.analysis.raw.RawInference
  */
 interface LocalInferenceEngine {
     /**
+     * @param markingTimeS when in the video the court was marked; the engine
+     *   follows the camera from that frame when it runs pose. Null: do not
+     *   follow the camera.
      * @param onProgress fraction in [0, 1) of the decode and inference pass.
      *   The coordinator owns reporting completion, so an engine must not
      *   report 1.0.
      */
-    suspend fun run(videoPath: String, onProgress: (Float) -> Unit): RawInference
+    suspend fun run(
+        videoPath: String,
+        markingTimeS: Double?,
+        onProgress: (Float) -> Unit,
+    ): RawInference
 }

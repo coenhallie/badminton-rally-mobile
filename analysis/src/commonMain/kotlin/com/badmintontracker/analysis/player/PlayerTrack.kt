@@ -1,7 +1,10 @@
 package com.badmintontracker.analysis.player
 
 import com.badmintontracker.analysis.geometry.CourtKeypoints
+import com.badmintontracker.analysis.geometry.Matrix3x3
 import com.badmintontracker.analysis.geometry.Point
+import com.badmintontracker.analysis.geometry.apply
+import com.badmintontracker.analysis.geometry.invert3x3
 import com.badmintontracker.analysis.raw.RawInference
 import com.badmintontracker.analysis.raw.RawPerson
 
@@ -40,6 +43,12 @@ data class PlayerPose(
     /** COCO-17 order. */
     val keypoints: List<Point>,
     val confidence: List<Float>,
+    /**
+     * This frame's camera, marking-frame pixels to these keypoints' pixels,
+     * when the pass followed the camera; null when it did not. A court
+     * reading of these keypoints goes through `courtFitAt(h, camera)`.
+     */
+    val camera: Matrix3x3? = null,
 )
 
 /**
@@ -93,6 +102,14 @@ data class PlayerSelection(
  * One pass, not two: a second pass over a 54,000-frame stream to find the
  * other player would double the work and, worse, would let the two halves
  * disagree about framesWithPose if the loop ever grew a condition.
+ *
+ * When [RawInference.camera] is present the marks describe the marking frame
+ * only, so each frame's people are taken back into it through that frame's
+ * camera before the unchanged gates run (design §5.2). The poses keep the
+ * frame's own pixels, which is what the overlay draws on, and carry the camera
+ * that relates the two. A frame whose camera is unknown is [RejectionReason.CAMERA_LOST]
+ * on both sides rather than read through the fixed marks. With no camera the
+ * selection is exactly what it was before the camera was followed.
  */
 fun selectPlayers(raw: RawInference, keypoints: CourtKeypoints): List<PlayerSelection> {
     val selector = NearPlayerSelector(
@@ -122,15 +139,36 @@ fun selectPlayers(raw: RawInference, keypoints: CourtKeypoints): List<PlayerSele
         // player, so they must not dilute coverage on either side.
         if (frame.persons.isEmpty()) continue
         framesWithPose++
-        val poseFrame = PoseFrame(frame.frame, frame.persons.map { it.toPosePerson() })
+        val camera = raw.camera
+        val m = camera?.at(frame.timestamp)
+        // Null both when the camera is unknown here and when its matrix cannot
+        // be inverted: a camera with no way back to the marking frame is the
+        // same fact as not knowing where it was.
+        val back = m?.let { invert3x3(it) }
+        if (camera != null && back == null) {
+            for (side in CourtSide.entries) {
+                val counts = rejections.getValue(side)
+                counts[RejectionReason.CAMERA_LOST] = (counts[RejectionReason.CAMERA_LOST] ?: 0) + 1
+            }
+            continue
+        }
+        val originals = frame.persons.map { it.toPosePerson() }
+        // A joint the inverse sends to the horizon line has no marking-frame
+        // pixel. NaN rather than a dropped joint keeps COCO order, and the
+        // gates read a NaN ankle as no ground point and a NaN torso as
+        // unmeasurable.
+        val inMarkingFrame = if (back == null) originals else originals.map { p ->
+            p.copy(keypoints = p.keypoints.map { k -> back.apply(k.x, k.y) ?: Point(Double.NaN, Double.NaN) })
+        }
+        val poseFrame = PoseFrame(frame.frame, inMarkingFrame)
         for (side in CourtSide.entries) {
             val result = selector.select(poseFrame, side)
             val sample = result.sample
-            val person = result.person
-            if (sample != null && person != null) {
+            if (sample != null && result.personIndex >= 0) {
+                val original = originals[result.personIndex]
                 samples.getValue(side).add(sample)
                 poses.getValue(side).add(
-                    PlayerPose(frame.frame, frame.timestamp, person.keypoints, person.keypointConfidence),
+                    PlayerPose(frame.frame, frame.timestamp, original.keypoints, original.keypointConfidence, m),
                 )
             } else {
                 result.rejection?.let { r ->

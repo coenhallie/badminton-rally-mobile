@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Shared
 import SwiftUI
 
@@ -234,6 +235,21 @@ final class LocalAnalysisRunner {
         self.log = log
     }
 
+    /// The sink the app hands its runners: the system log, under this app's
+    /// bundle id and the category Android's logcat tag uses.
+    ///
+    /// Without it the engine's and the coordinator's lines went nowhere, and
+    /// the one that says how the camera tracking went ("camera: N samples
+    /// followed, M dropped") is the only way to tell a run that followed the
+    /// camera from one that fell back to the fixed marks. Notice level, and
+    /// public, so `log show` prints the lines rather than `<private>` and
+    /// without being asked for info messages. Tests keep the silent default.
+    nonisolated static let systemLog: @Sendable (String) -> Void = { line in
+        logger.notice("\(line, privacy: .public)")
+    }
+
+    private nonisolated static let logger = Logger(subsystem: "com.badmintontracker.ios", category: "LocalAnalysis")
+
     func state(for entryId: String) -> LocalAnalysisState { states[entryId] ?? .idle }
 
     /// Every run the chrome indicator should show.
@@ -464,8 +480,21 @@ final class LocalAnalysisRunner {
         let source = URL(fileURLWithPath: videoPath)
         await MainActor.run { set(.analysing(fraction: 0), for: entryId) }
 
-        let engine = IosLocalInferenceEngine(wantsPose: wantsPose)
-        let coordinator = LocalAnalysisCoordinator(engine: engine, log: log)
+        let engine = IosLocalInferenceEngine(wantsPose: wantsPose, log: log)
+        // Marks saved before they carried a time were drawn on whichever frame
+        // the marking screen's generator returned, often a later sync frame
+        // than the 0.1 s it asked for. Asked again, the same way, it names that
+        // frame, and the camera is followed from there.
+        let coordinator = LocalAnalysisCoordinatorIosKt.createIosLocalAnalysisCoordinator(
+            engine: engine,
+            log: log,
+            legacyMarkingTime: { path, done in
+                Task {
+                    let seconds = await CourtFrameLoader.stillSeconds(url: URL(fileURLWithPath: path))
+                    done(KotlinDouble(value: seconds))
+                }
+            }
+        )
 
         // analyzeThrowing, not analyze: Kotlin's Result reaches Objective-C as a
         // bare id, so a failed analysis would cast to nil in Swift and read as

@@ -4,6 +4,7 @@ import com.badmintontracker.analysis.geometry.Court
 import com.badmintontracker.analysis.geometry.Matrix3x3
 import com.badmintontracker.analysis.geometry.Point
 import com.badmintontracker.analysis.geometry.apply
+import com.badmintontracker.analysis.geometry.courtFitAt
 import kotlin.math.PI
 import kotlin.math.acos
 import kotlin.math.atan2
@@ -177,6 +178,19 @@ fun jointAngleDeg(a: Point, vertex: Point, c: Point): Double? {
     val cos = ((ux * vx + uy * vy) / (lu * lv)).coerceIn(-1.0, 1.0)
     return acos(cos) * 180.0 / PI
 }
+
+/**
+ * The court fit to measure [pose] with: [h], the marking frame's fit, carried
+ * through the camera [pose] was taken with (`h · camera⁻¹`), or [h] itself
+ * when the pose has no camera. Null when there is no court, or when the
+ * camera cannot be inverted and so has no way back to the marking frame.
+ *
+ * One function both Skeleton panels call, so neither platform composes
+ * matrices itself (design §5.3). [h] is the residual-gated fit: whether the
+ * marks fit is a property of the marking frame, and the camera does not
+ * change it.
+ */
+fun poseCourtFit(h: Matrix3x3?, pose: PlayerPose): Matrix3x3? = h?.let { courtFitAt(it, pose.camera) }
 
 /**
  * Measures one frame. [homography] is the resolved court fit

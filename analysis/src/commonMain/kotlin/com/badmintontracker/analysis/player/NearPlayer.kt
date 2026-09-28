@@ -56,6 +56,8 @@ data class PlayerSample(
  * Ordered by how far through the gates a person got, because [NearPlayerSelector]
  * reports the furthest gate reached. [BAD_COURT] is outside that order: it is
  * about the marks, not about any person, and applies to every frame at once.
+ * [CAMERA_LOST] is outside it too, and last, so every existing ordinal stays
+ * where it was.
  */
 enum class RejectionReason {
     NO_PEOPLE,
@@ -69,6 +71,16 @@ enum class RejectionReason {
      */
     WRONG_SCALE,
     BAD_COURT,
+
+    /**
+     * The pass followed the camera and did not know where it was at this
+     * frame (design §4.4). The frame is not mapped through the fixed marks,
+     * which is exactly the wrong answer when the camera has moved. Outside
+     * the gate order, like [BAD_COURT]: it is about the frame, not any
+     * person. It never reaches the selector's `worse()`, because the frame
+     * is rejected before any person is examined.
+     */
+    CAMERA_LOST,
 }
 
 /**
@@ -159,9 +171,10 @@ class NearPlayerSelector(
         var best: PlayerSample? = null
         var bestConfidence = Float.NEGATIVE_INFINITY
         var bestPerson: PosePerson? = null
+        var bestIndex = -1
         var reason = RejectionReason.NO_GROUND_POINT
 
-        for (person in frame.people) {
+        for ((index, person) in frame.people.withIndex()) {
             val ground = groundPoint(person) ?: continue
             if (sideOf(ground) != side) {
                 reason = worse(reason, RejectionReason.WRONG_SIDE)
@@ -182,9 +195,10 @@ class NearPlayerSelector(
                 bestConfidence = person.boxConfidence
                 best = PlayerSample(frame.frame, court)
                 bestPerson = person
+                bestIndex = index
             }
         }
-        return Result(best, if (best == null) reason else null, bestPerson)
+        return Result(best, if (best == null) reason else null, bestPerson, bestIndex)
     }
 
     /**
@@ -212,6 +226,10 @@ class NearPlayerSelector(
      * which are exactly not the lunges and net-dives where a fallback would
      * be used. A missing sample costs coverage, which the summary reports; a
      * wrong one costs the map its meaning.
+     *
+     * A NaN ankle is no ground point either, however confident: NaN is what
+     * an ankle becomes when the camera's inverse sends it to the horizon line
+     * on the way into the marking frame.
      */
     private fun groundPoint(person: PosePerson): Point? {
         if (person.keypoints.size < Coco.COUNT || person.keypointConfidence.size < Coco.COUNT) return null
@@ -219,6 +237,7 @@ class NearPlayerSelector(
         if (person.keypointConfidence[Coco.RIGHT_ANKLE] < minKeypointConfidence) return null
         val p = person.keypoints[Coco.LEFT_ANKLE]
         val q = person.keypoints[Coco.RIGHT_ANKLE]
+        if (p.x.isNaN() || p.y.isNaN() || q.x.isNaN() || q.y.isNaN()) return null
         return Point((p.x + q.x) / 2.0, (p.y + q.y) / 2.0)
     }
 
@@ -232,7 +251,8 @@ class NearPlayerSelector(
      * 1.4m and were being drawn onto the heatmap as on-court positions. A
      * torso is only ever foreshortened by lean or camera tilt, so a single
      * upper bound is the whole test. Shoulders or hips below the confidence
-     * threshold, or a scale the homography cannot give, pass: an unmeasurable
+     * threshold, a scale the homography cannot give, or a joint the camera's
+     * inverse sent to the horizon line (a NaN length), pass: an unmeasurable
      * torso is not evidence.
      *
      * What it does not catch, said plainly, because the bound sits above the
@@ -268,6 +288,7 @@ class NearPlayerSelector(
         val hx = (k[Coco.LEFT_HIP].x + k[Coco.RIGHT_HIP].x) / 2.0
         val hy = (k[Coco.LEFT_HIP].y + k[Coco.RIGHT_HIP].y) / 2.0
         val torsoM = sqrt((sx - hx) * (sx - hx) + (sy - hy) * (sy - hy)) * metresPerPixel
+        if (torsoM.isNaN()) return true
         return torsoM <= MAX_TORSO_M
     }
 
@@ -303,11 +324,16 @@ class NearPlayerSelector(
      * [person] is the detection [sample] was taken from, so a caller that
      * wants the joints as well as the court position gets the same person
      * the heatmap got, by construction rather than by a second pass.
+     * [personIndex] is its position in the frame's people, -1 when there is
+     * no [person]: a caller that handed the selector transformed copies (the
+     * camera-followed pass) finds the original by position, since equal
+     * copies of two people would make a lookup by value ambiguous.
      */
     data class Result(
         val sample: PlayerSample?,
         val rejection: RejectionReason?,
         val person: PosePerson? = null,
+        val personIndex: Int = -1,
     )
 
     companion object {

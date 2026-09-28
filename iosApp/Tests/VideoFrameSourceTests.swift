@@ -109,4 +109,70 @@ final class VideoFrameSourceTests: XCTestCase {
         // rallies in it, which looks like a finished analysis.
         XCTAssertThrowsError(try source.metadata())
     }
+
+    // MARK: - The camera tracker's read of the decoded plane
+
+    /// The camera tracker fed straight from this pass's locked pixel buffers,
+    /// at the size a phone records.
+    ///
+    /// Here rather than beside the engine tests because it needs no model, so
+    /// it runs in a build without the ONNX graphs too, and it is the one check
+    /// on a real decoded `CVPixelBuffer`: a 1080p plane that decoded as 1088
+    /// rows, or a padded stride, would show here as a camera that stopped at
+    /// the first frame.
+    func testTheCameraIsFollowedFromTheDecodedLumaPlaneAt1080p() throws {
+        let url = scratch.appendingPathComponent("textured.mp4")
+        let pan = 2
+        try TestVideo.write(
+            frames: 30, width: 1920, height: 1080, panPixelsPerFrame: pan, to: url, test: self
+        )
+        let source = VideoFrameSource(url: url)
+        let metadata = try source.metadata()
+        var lines: [String] = []
+        let follower = try XCTUnwrap(CameraFollower(
+            markingTimeS: 0.1, sourceWidth: metadata.width, sourceHeight: metadata.height,
+            log: { lines.append($0) }
+        ))
+        try source.forEachFrame { frame in follower.follow(seconds: frame.seconds, buffer: frame.pixelBuffer) }
+        let camera = try XCTUnwrap(follower.finish(), "\(lines)")
+
+        // One second at 10 Hz: every bucket from 0.0 to 0.9 is a sample.
+        XCTAssertEqual(camera.samples.count, 10, "\(lines)")
+        let last = try XCTUnwrap(camera.samples.last)
+        let movedFrames = ((last.timestamp - camera.referenceTimestamp) * 30).rounded()
+        let m = last.referenceToFrame.map { $0.map(\.doubleValue) }
+        // In source pixels: the tracker's scale is undone on the way out.
+        XCTAssertEqual(m[0][2], movedFrames * Double(pan), accuracy: 1, "\(m)")
+        XCTAssertEqual(m[1][2], 0, accuracy: 1, "\(m)")
+        // The Kotlin framework is built in the configuration the test is:
+        // Debug Kotlin/Native is unoptimised and many times slower, so a
+        // figure means nothing without it.
+        #if DEBUG
+        let configuration = "Debug"
+        #else
+        let configuration = "Release"
+        #endif
+        print("CAMERA simulator 1920x1080, \(configuration): \(lines)")
+    }
+
+    /// A plane that is not the size the tracker was built for stops the
+    /// tracker, once, rather than reading a wrongly scaled image: a camera from
+    /// that would put every skeleton in the wrong place with confidence.
+    func testAPlaneOfTheWrongSizeStopsTheCameraRatherThanScalingIt() throws {
+        let source = VideoFrameSource(url: try writeVideo(frames: 12))
+        var lines: [String] = []
+        // The clip is 64x64; the tracker is told otherwise.
+        let follower = try XCTUnwrap(CameraFollower(
+            markingTimeS: 0.1, sourceWidth: 128, sourceHeight: 64, log: { lines.append($0) }
+        ))
+        try source.forEachFrame { frame in follower.follow(seconds: frame.seconds, buffer: frame.pixelBuffer) }
+        XCTAssertNil(follower.finish())
+        XCTAssertEqual(lines.filter { $0.contains("64x64") }.count, 1, "\(lines)")
+    }
+
+    /// No size, no tracker: its constructor would throw into Swift, where a
+    /// Kotlin throw from a function not marked `@Throws` ends the process.
+    func testAnEmptySourceSizeBuildsNoCameraFollower() {
+        XCTAssertNil(CameraFollower(markingTimeS: 0.1, sourceWidth: 0, sourceHeight: 1080, log: { _ in }))
+    }
 }

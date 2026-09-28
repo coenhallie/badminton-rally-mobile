@@ -49,9 +49,14 @@ final class IosLocalInferenceEngine: NSObject, LocalInferenceEngine {
     /// it will not read.
     private let wantsPose: Bool
 
-    init(maxFrames: Int = .max, wantsPose: Bool = false) {
+    /// Where the pass says how the camera tracking went. The same sink the
+    /// coordinator logs to, so one run reads as one stream.
+    private let log: @Sendable (String) -> Void
+
+    init(maxFrames: Int = .max, wantsPose: Bool = false, log: @escaping @Sendable (String) -> Void = { _ in }) {
         self.maxFrames = maxFrames
         self.wantsPose = wantsPose
+        self.log = log
     }
 
     /// The `LocalInferenceEngine` contract.
@@ -73,12 +78,16 @@ final class IosLocalInferenceEngine: NSObject, LocalInferenceEngine {
     /// a Kotlin caller still sees `engine.run(...)`.
     func __run(
         videoPath: String,
+        markingTimeS: KotlinDouble?,
         onProgress: @escaping (KotlinFloat) -> Void,
         completionHandler: @escaping @Sendable (RawInference?, Error?) -> Void
     ) {
         Self.queue.async {
             do {
-                let raw = try self.rawInference(videoPath: videoPath) { onProgress(KotlinFloat(float: $0)) }
+                let raw = try self.rawInference(
+                    videoPath: videoPath,
+                    markingTimeS: markingTimeS?.doubleValue
+                ) { onProgress(KotlinFloat(float: $0)) }
                 completionHandler(raw, nil)
             } catch {
                 completionHandler(nil, error)
@@ -108,7 +117,15 @@ final class IosLocalInferenceEngine: NSObject, LocalInferenceEngine {
     /// would get a process abort instead of a catchable error.
     ///
     /// So Swift callers use this, and the round trip does not exist.
-    func rawInference(videoPath: String, onProgress: @escaping (Float) -> Void) throws -> RawInference {
+    ///
+    /// - Parameter markingTimeS: when in the video the court was marked; the
+    ///   engine follows the camera from that frame when it runs pose. Nil: do
+    ///   not follow the camera.
+    func rawInference(
+        videoPath: String,
+        markingTimeS: Double?,
+        onProgress: @escaping (Float) -> Void
+    ) throws -> RawInference {
         let url = URL(fileURLWithPath: videoPath)
         guard FileManager.default.isReadableFile(atPath: url.path) else {
             throw Failure.noSuchVideo(videoPath)
@@ -132,6 +149,13 @@ final class IosLocalInferenceEngine: NSObject, LocalInferenceEngine {
         // when pose was asked for: Phase 1 is a complete analysis on its own,
         // and refusing the whole run would withhold the rally clips too.
         let pose = try wantsPose ? ModelCatalog.path(.pose).map { try PoseRunner(modelPath: $0) } : nil
+        // Only beside pose: the camera corrects where a skeleton stands on the
+        // court, and a rallies-only pass has none. Only with a marking time:
+        // the camera is followed relative to the frame the marks were drawn
+        // on, and without it there is nothing to anchor to.
+        let camera = pose == nil ? nil : markingTimeS.flatMap {
+            CameraFollower(markingTimeS: $0, sourceWidth: metadata.width, sourceHeight: metadata.height, log: log)
+        }
 
         let track = try TrackNetRunner(source: source, modelPath: trackNetPath).track(
             sourceWidth: metadata.width,
@@ -140,6 +164,9 @@ final class IosLocalInferenceEngine: NSObject, LocalInferenceEngine {
             onProgress: onProgress,
             onFrame: { index, seconds, buffer in
                 timestamps[index] = seconds
+                // Inside this callback, while the decoder holds the buffer
+                // locked: the plane is read in place and never outlives it.
+                camera?.follow(seconds: seconds, buffer: buffer)
                 let found = try detector.detect(buffer)
                 if !found.isEmpty { detections[index] = found }
                 // Same frame, same decode. Emitted raw: which person is the
@@ -199,7 +226,122 @@ final class IosLocalInferenceEngine: NSObject, LocalInferenceEngine {
                 // this line: the model lookup above already failed.
                 modelVersion: ModelCatalog.version ?? "unpinned"
             ),
-            frames: frames
+            frames: frames,
+            camera: camera?.finish()
         )
+    }
+}
+
+/// The camera tracker as the decode pass drives it. Design
+/// `2026-09-27-camera-motion-design.md` §4.1, §4.2 and §5.5.
+///
+/// Its own type rather than lines in the engine's frame callback because the
+/// rules around the shared `CameraMotionTracker` are this platform's, and a
+/// test must be able to hold a real decoded buffer to them without running
+/// three models: the luma plane is read in place through `BulkInterop`, a plane
+/// of the wrong size stops the tracking rather than being scaled, and nothing
+/// the tracker does can fail the run.
+///
+/// That last is the rule everything here bends to. The camera refines where a
+/// skeleton stands; without it the analysis falls back to the fixed marks, as
+/// it did before there was a camera. So any failure is logged once and the
+/// tracker is offered nothing more, and `finish` hands back what it followed
+/// until then, the frames after it reading as camera lost.
+///
+/// Single-threaded, like the tracker: the decode queue owns it.
+final class CameraFollower {
+
+    private let tracker: CameraMotionTracker
+    private let sourceWidth: Int
+    private let sourceHeight: Int
+    private let log: (String) -> Void
+    private var stopped = false
+    private var offered = 0
+    private var nanoseconds: UInt64 = 0
+    private var readingNanoseconds: UInt64 = 0
+
+    /// Nil for a source with no size, which no decodable video has. Checked
+    /// here because the tracker's constructor would throw on it, and a Kotlin
+    /// constructor throwing into Swift ends the process.
+    init?(markingTimeS: Double, sourceWidth: Int, sourceHeight: Int, log: @escaping (String) -> Void) {
+        guard sourceWidth > 0, sourceHeight > 0 else { return nil }
+        self.tracker = CameraMotionTracker(
+            markingTimeS: markingTimeS, sourceWidth: Int32(sourceWidth), sourceHeight: Int32(sourceHeight)
+        )
+        self.sourceWidth = sourceWidth
+        self.sourceHeight = sourceHeight
+        self.log = log
+    }
+
+    /// One decoded frame. `buffer` must be locked for reading, as
+    /// `VideoFrameSource.forEachFrame` holds it for its callback; the plane is
+    /// only read, and only during this call.
+    func follow(seconds: Double, buffer: CVPixelBuffer) {
+        guard !stopped, tracker.wants(timestamp: seconds) else { return }
+        // Plane 0 of the 420v the decoder is asked for: 8-bit luma, one byte
+        // per pixel, rows padded out to its own stride.
+        guard let plane = CVPixelBufferGetBaseAddressOfPlane(buffer, 0) else {
+            return stop("the decoded frame at \(seconds)s has no luma plane")
+        }
+        let width = CVPixelBufferGetWidthOfPlane(buffer, 0)
+        let height = CVPixelBufferGetHeightOfPlane(buffer, 0)
+        // The tracker maps its samples back to source pixels with the scale it
+        // was built for. A plane of another size would give a camera in the
+        // wrong units, wrong everywhere and confidently so; no camera is the
+        // honest answer.
+        guard width == sourceWidth, height == sourceHeight else {
+            return stop(
+                "the luma plane is \(width)x\(height), the video says \(sourceWidth)x\(sourceHeight)"
+            )
+        }
+        let started = DispatchTime.now().uptimeNanoseconds
+        do {
+            let image = try BulkInterop.shared.lumaDownsample(
+                plane: plane,
+                width: Int32(width),
+                height: Int32(height),
+                rowStride: Int32(CVPixelBufferGetBytesPerRowOfPlane(buffer, 0)),
+                outWidth: tracker.trackerWidth,
+                outHeight: tracker.trackerHeight
+            )
+            readingNanoseconds += DispatchTime.now().uptimeNanoseconds - started
+            try tracker.offer(timestamp: seconds, image: image)
+        } catch {
+            return stop("the tracker failed at \(seconds)s: \(error.localizedDescription)")
+        }
+        nanoseconds += DispatchTime.now().uptimeNanoseconds - started
+        offered += 1
+    }
+
+    /// The camera as followed, or nil when the marking frame was never
+    /// tracked. Logs how the tracking went either way: a run with no camera
+    /// looks exactly like one that was never asked to follow it, and this is
+    /// the line that tells them apart.
+    func finish() -> CameraMotion? {
+        let motion: CameraMotion?
+        do {
+            motion = try tracker.finish()
+        } catch {
+            log("camera: finishing failed: \(error.localizedDescription)")
+            motion = nil
+        }
+        // The first sample's cost includes tracking the frames buffered
+        // before the marking frame, so this is a mean, not a steady rate.
+        // The plane read is reported apart because it is the one part that
+        // scales with the recording's resolution rather than the tracker's.
+        func ms(_ total: UInt64) -> String {
+            String(format: "%.1f", offered == 0 ? 0 : Double(total) / Double(offered) / 1_000_000)
+        }
+        log(
+            "camera: \(tracker.acceptedSamples) samples followed, \(tracker.droppedSamples) dropped, "
+                + "\(ms(nanoseconds)) ms per sample (\(ms(readingNanoseconds)) reading the plane)"
+                + (motion == nil ? ", no camera" : "")
+        )
+        return motion
+    }
+
+    private func stop(_ reason: String) {
+        stopped = true
+        log("camera: stopped following, \(reason)")
     }
 }

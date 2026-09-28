@@ -306,6 +306,7 @@ class LocalAnalysisRunner(
                         } else {
                             null
                         },
+                        log = log,
                     ),
                     log = log,
                 ).analyze(local.path, keypoints) { f ->

@@ -44,6 +44,25 @@ data class CourtMarkingState(
     val videoWidth: Int,
     val videoHeight: Int,
     val points: List<CourtPoint> = emptyList(),
+    /**
+     * When in the video the frame [points] were drawn on was taken, seconds,
+     * or null for restored marks saved without a time. Written into the marks
+     * as `marked_at_s`, the frame the camera tracker anchors to.
+     */
+    val markedAtSeconds: Double? = null,
+    /**
+     * When in the video the frame on screen was taken, seconds: what a mark
+     * placed now is drawn on.
+     *
+     * Differs from [markedAtSeconds] only while restored marks are shown,
+     * because saved marks belong to the frame they were drawn on, not to the
+     * one this screen happened to load. Once none of them is left (Clear, or
+     * Undo down to nothing) the marking is on this frame again. Undoing some
+     * and placing others mixes the two frames; that is not modelled, because
+     * both screens load the same frame every time for the same file, so the
+     * two times only differ for marks saved without one.
+     */
+    val frameSeconds: Double? = markedAtSeconds,
 ) {
     val isComplete: Boolean get() = points.size == CourtMarkingSpec.TOTAL
     val nextIndex: Int get() = points.size
@@ -56,9 +75,12 @@ data class CourtMarkingState(
         return copy(points = points + CourtPoint(displayX * scaleX, displayY * scaleY))
     }
 
-    fun undo(): CourtMarkingState = if (points.isEmpty()) this else copy(points = points.dropLast(1))
+    fun undo(): CourtMarkingState = if (points.isEmpty()) this else withPoints(points.dropLast(1))
 
-    fun clear(): CourtMarkingState = copy(points = emptyList())
+    fun clear(): CourtMarkingState = withPoints(emptyList())
+
+    private fun withPoints(kept: List<CourtPoint>): CourtMarkingState =
+        copy(points = kept, markedAtSeconds = if (kept.isEmpty()) frameSeconds else markedAtSeconds)
 
     companion object {
         /**
@@ -76,13 +98,25 @@ data class CourtMarkingState(
          * A malformed pair yields a fresh state rather than a partial marking:
          * the points are positional, so eleven of twelve would silently label
          * every mark after the missing one as its neighbour.
+         *
+         * @param frameSeconds when in the video the frame on screen was taken.
+         *   Restored marks keep their own time instead, including none: marks
+         *   saved without one are left for the platform to place (see
+         *   `LocalAnalysisCoordinator`), not stamped with a frame they may not
+         *   have been drawn on.
          */
         fun restored(
             videoWidth: Int,
             videoHeight: Int,
             keypoints: CourtKeypoints?,
+            frameSeconds: Double?,
         ): CourtMarkingState {
-            val empty = CourtMarkingState(videoWidth, videoHeight)
+            val empty = CourtMarkingState(
+                videoWidth = videoWidth,
+                videoHeight = videoHeight,
+                markedAtSeconds = frameSeconds,
+                frameSeconds = frameSeconds,
+            )
             val k = keypoints ?: return empty
             val ordered = listOf(
                 k.topLeft, k.topRight, k.bottomRight, k.bottomLeft,
@@ -92,7 +126,10 @@ data class CourtMarkingState(
                 k.centerNear, k.centerFar,
             )
             if (ordered.any { it.size < 2 }) return empty
-            return empty.copy(points = ordered.map { CourtPoint(it[0], it[1]) })
+            return empty.copy(
+                points = ordered.map { CourtPoint(it[0], it[1]) },
+                markedAtSeconds = k.markedAtSeconds,
+            )
         }
     }
 
@@ -106,6 +143,7 @@ data class CourtMarkingState(
             serviceLineNearLeft = p(6), serviceLineNearRight = p(7),
             serviceLineFarLeft = p(8), serviceLineFarRight = p(9),
             centerNear = p(10), centerFar = p(11),
+            markedAtSeconds = markedAtSeconds,
         )
     }
 }

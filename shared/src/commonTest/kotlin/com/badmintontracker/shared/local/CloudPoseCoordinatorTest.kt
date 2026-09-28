@@ -1,8 +1,14 @@
 package com.badmintontracker.shared.local
 
+import com.badmintontracker.analysis.camera.CameraMotion
+import com.badmintontracker.analysis.camera.CameraSample
+import com.badmintontracker.analysis.raw.RawBox
+import com.badmintontracker.analysis.raw.RawFrame
 import com.badmintontracker.analysis.raw.RawHeader
 import com.badmintontracker.analysis.raw.RawInference
 import com.badmintontracker.analysis.raw.RawInferenceCodec
+import com.badmintontracker.analysis.raw.RawKeypoint
+import com.badmintontracker.analysis.raw.RawPerson
 import com.badmintontracker.shared.model.CourtKeypoints
 import com.badmintontracker.shared.repo.CloudPoseArtifact
 import com.badmintontracker.shared.repo.CloudPoseRepository
@@ -108,6 +114,29 @@ class CloudPoseCoordinatorTest {
         // Both sides always, even from an empty stream: a panel needs to tell
         // "nobody was found" from "this build predates the far player".
         saved!!.selections.size shouldBe 2
+    }
+
+    @Test
+    fun a_followed_camera_and_the_frames_it_lost_are_said_in_the_log() = runTest {
+        // The cloud's version 2 file carries the camera. Its one sample is
+        // 5 s from the only pose frame, so that frame's camera is unknown and
+        // neither side takes a position from it.
+        val identity = listOf(listOf(1.0, 0.0, 0.0), listOf(0.0, 1.0, 0.0), listOf(0.0, 0.0, 1.0))
+        val person = RawPerson(RawBox(0, 0.9f, 0f, 0f, 1f, 1f), List(17) { RawKeypoint(950f, 800f, 0.9f) })
+        val bytes = RawInferenceCodec.encode(
+            RawInference(
+                header = RawHeader(2, 30.0, 1, 1920, 1080, "cloud:test"),
+                frames = listOf(RawFrame(1, 5.0, null, emptyList(), listOf(person))),
+                camera = CameraMotion.of(0.0, listOf(CameraSample(0.0, identity))),
+            ),
+        )
+        val repository = FakeRepository(artifact = CloudPoseArtifact("v1", "uid/v1/poses.raw", 1, marks), bytes = bytes)
+        val lines = mutableListOf<String>()
+
+        CloudPoseCoordinator(repository, log = { lines += it }).install("v1") {}.getOrThrow()
+
+        lines.contains("camera: followed with 1 samples") shouldBe true
+        lines.contains("camera: 1 of 1 pose frames not followed; no positions taken for them") shouldBe true
     }
 
     @Test

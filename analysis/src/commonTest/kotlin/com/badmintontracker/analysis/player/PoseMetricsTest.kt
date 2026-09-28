@@ -219,4 +219,41 @@ class PoseMetricsTest {
         assertTrue(MetricKind.entries.filter { it.isAngle }.all { it.range == 0.0..180.0 || it in signed })
         assertTrue(signed.all { it.range == -45.0..45.0 })
     }
+
+    // Design §5.3: the camera moved after the marks were placed, so a pose's
+    // court reading goes through that frame's fit, not the marking frame's.
+
+    /** A figure whose ankles stand on the near half at [dx], [dy] off where the marks were placed. */
+    private fun standing(dx: Double, dy: Double): PlayerPose {
+        val (kps, conf) = figure(Point(950.0 + dx, 850.0 + dy))
+        kps[Coco.LEFT_ANKLE] = Point(900.0 + dx, 900.0 + dy)
+        kps[Coco.RIGHT_ANKLE] = Point(1000.0 + dx, 905.0 + dy)
+        val camera = if (dx == 0.0 && dy == 0.0) null else listOf(
+            listOf(1.0, 0.0, dx),
+            listOf(0.0, 1.0, dy),
+            listOf(0.0, 0.0, 1.0),
+        )
+        return PlayerPose(0, 0.0, kps, conf, camera)
+    }
+
+    @Test
+    fun a_panned_pose_measures_through_its_own_frames_fit() {
+        val still = standing(0.0, 0.0)
+        val panned = standing(30.0, -12.0)
+        val expected = poseMetrics(still.keypoints, still.confidence, h)
+        val actual = poseMetrics(panned.keypoints, panned.confidence, poseCourtFit(h, panned))
+        near(expected.stanceM!!, actual.stanceM, 1e-9, "stance")
+        near(expected.behindServiceLineM!!, actual.behindServiceLineM, 1e-9, "behind the service line")
+        // And through the marking frame's fit it would not: the pan is what
+        // the fit is there to undo.
+        val unmapped = poseMetrics(panned.keypoints, panned.confidence, h)
+        assertTrue(abs(expected.behindServiceLineM!! - unmapped.behindServiceLineM!!) > 0.05)
+    }
+
+    @Test
+    fun a_pose_with_no_camera_measures_through_h_and_no_court_is_no_fit() {
+        val still = standing(0.0, 0.0)
+        assertEquals(h, poseCourtFit(h, still))
+        assertNull(poseCourtFit(null, standing(30.0, -12.0)))
+    }
 }

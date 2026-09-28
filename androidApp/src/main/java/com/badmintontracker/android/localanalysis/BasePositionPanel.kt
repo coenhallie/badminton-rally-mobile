@@ -30,7 +30,8 @@ import com.badmintontracker.analysis.player.RallyWindow
 import com.badmintontracker.analysis.player.basePositions
 import com.badmintontracker.shared.local.describeBase
 import com.badmintontracker.shared.local.describeRally
-import com.badmintontracker.shared.local.rallyLabelX
+import com.badmintontracker.shared.local.RallyMark
+import com.badmintontracker.shared.local.placeRallyLabels
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -180,30 +181,30 @@ private fun CourtBaseView(bases: BasePositions) {
         bases.overall?.let {
             drawCircle(dot, radius = ring, center = at(it), style = Stroke(width = ringStroke))
         }
-        // Numbers last, and clear of both circles, so neither the whole-match
-        // marker nor the dot itself sits on the one label that says which
-        // rally a dot is. `rallyLabelX` owns where "clear" is; iOS draws the
-        // same picture through the same function.
+        // Numbers last, each beside its own dot and clear of every other
+        // number, dot and the whole-match marker, so none of them sits on the
+        // one label that says which rally a dot is. `placeRallyLabels` owns
+        // where that is, and which number to leave to the list when a dot has
+        // no room; iOS draws the same picture through the same function.
         val overall = bases.overall?.let { at(it) }
-        val gap = 2.dp.toPx()
-        bases.rallies.forEach { rally ->
-            val centre = at(rally.position)
-            val measured = measurer.measure(rally.index.toString(), label)
-            val x = rallyLabelX(
-                dotX = centre.x,
-                dotY = centre.y,
-                dotRadius = radius,
-                gap = gap,
-                ringX = overall?.x ?: 0f,
-                ringY = overall?.y ?: 0f,
-                // The stroke straddles the radius, so the outer edge is half a
-                // line width past it.
-                ringReach = if (overall == null) 0f else ring + ringStroke / 2f,
-            )
-            drawText(
-                textLayoutResult = measured,
-                topLeft = Offset(x, centre.y - measured.size.height / 2f),
-            )
+        val texts = bases.rallies.map { measurer.measure(it.index.toString(), label) }
+        val spots = placeRallyLabels(
+            marks = bases.rallies.mapIndexed { i, rally ->
+                val centre = at(rally.position)
+                RallyMark(centre.x, centre.y, texts[i].size.width.toFloat(), texts[i].size.height.toFloat())
+            },
+            dotRadius = radius,
+            gap = 2.dp.toPx(),
+            ringX = overall?.x ?: 0f,
+            ringY = overall?.y ?: 0f,
+            // The stroke straddles the radius, so the outer edge is half a
+            // line width past it.
+            ringReach = if (overall == null) 0f else ring + ringStroke / 2f,
+            canvasWidth = size.width,
+            canvasHeight = size.height,
+        )
+        spots.forEach { spot ->
+            drawText(textLayoutResult = texts[spot.mark], topLeft = Offset(spot.left, spot.top))
         }
     }
 }

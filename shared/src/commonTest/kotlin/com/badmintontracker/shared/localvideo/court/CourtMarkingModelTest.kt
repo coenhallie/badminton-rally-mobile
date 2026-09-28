@@ -71,7 +71,7 @@ class CourtMarkingModelTest {
         var s = CourtMarkingState(1920, 1080)
         repeat(12) { i -> s = s.place(i.toFloat(), (i * 2).toFloat(), 1920f, 1080f) }
 
-        val restored = CourtMarkingState.restored(1920, 1080, s.toCourtKeypoints())
+        val restored = CourtMarkingState.restored(1920, 1080, s.toCourtKeypoints(), frameSeconds = 0.1)
 
         restored.points shouldBe s.points
         restored.isComplete shouldBe true
@@ -81,7 +81,7 @@ class CourtMarkingModelTest {
 
     @Test
     fun restored_without_saved_keypoints_is_an_empty_marking() {
-        val restored = CourtMarkingState.restored(1920, 1080, null)
+        val restored = CourtMarkingState.restored(1920, 1080, null, frameSeconds = 0.1)
         restored.points shouldBe emptyList()
         restored.videoWidth shouldBe 1920
         restored.videoHeight shouldBe 1080
@@ -100,6 +100,54 @@ class CourtMarkingModelTest {
             centerNear = listOf(21f), centerFar = listOf(23f, 24f),
         )
 
-        CourtMarkingState.restored(1920, 1080, truncated).points shouldBe emptyList()
+        CourtMarkingState.restored(1920, 1080, truncated, frameSeconds = 0.1).points shouldBe emptyList()
+    }
+
+    private fun complete(state: CourtMarkingState): CourtMarkingState {
+        var s = state
+        repeat(12) { i -> s = s.place(i.toFloat(), (i * 2).toFloat(), 1920f, 1080f) }
+        return s
+    }
+
+    @Test
+    fun marks_carry_the_time_of_the_frame_they_were_drawn_on() {
+        complete(CourtMarkingState(1920, 1080, markedAtSeconds = 1.0))
+            .toCourtKeypoints().markedAtSeconds shouldBe 1.0
+    }
+
+    @Test
+    fun restored_marks_keep_their_own_time_not_the_frame_on_screen() {
+        val saved = complete(CourtMarkingState(1920, 1080, markedAtSeconds = 0.5)).toCourtKeypoints()
+
+        CourtMarkingState.restored(1920, 1080, saved, frameSeconds = 0.1)
+            .toCourtKeypoints().markedAtSeconds shouldBe 0.5
+    }
+
+    @Test
+    fun restored_marks_saved_without_a_time_stay_without_one() {
+        // Null means "ask the platform", which on iOS recovers the frame the
+        // legacy marks were drawn on. Stamping the frame on screen here would
+        // be a guess dressed as a measurement.
+        val legacy = complete(CourtMarkingState(1920, 1080, markedAtSeconds = null)).toCourtKeypoints()
+
+        CourtMarkingState.restored(1920, 1080, legacy, frameSeconds = 1.0)
+            .toCourtKeypoints().markedAtSeconds shouldBe null
+    }
+
+    @Test
+    fun marks_drawn_after_clearing_restored_ones_carry_the_frame_on_screen() {
+        val saved = complete(CourtMarkingState(1920, 1080, markedAtSeconds = 0.5)).toCourtKeypoints()
+        val restored = CourtMarkingState.restored(1920, 1080, saved, frameSeconds = 0.1)
+
+        complete(restored.clear()).toCourtKeypoints().markedAtSeconds shouldBe 0.1
+
+        var undone = restored
+        repeat(12) { undone = undone.undo() }
+        complete(undone).toCourtKeypoints().markedAtSeconds shouldBe 0.1
+    }
+
+    @Test
+    fun a_fresh_marking_is_on_the_frame_on_screen() {
+        CourtMarkingState.restored(1920, 1080, null, frameSeconds = 1.0).markedAtSeconds shouldBe 1.0
     }
 }

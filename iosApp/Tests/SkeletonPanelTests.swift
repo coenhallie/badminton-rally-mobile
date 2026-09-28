@@ -105,8 +105,8 @@ final class SkeletonPanelTests: XCTestCase {
         XCTAssertFalse(model.hasCourt)
         // One entry per pose either way: the angles are measurable without a
         // court, and only the two court-plane fields go null.
-        // Keyed by side now. A v2 file is one near track, so there is exactly
-        // one entry and it is the near one.
+        // Keyed by side now. A device save is one near track, so there is
+        // exactly one entry and it is the near one.
         XCTAssertEqual(loaded.seriesBySide.keys.map(\.self), [.near])
         XCTAssertEqual(model.shownSeries.count, 4)
         XCTAssertNil(model.shownSeries[0].metrics.stanceM)
@@ -176,6 +176,54 @@ final class SkeletonPanelTests: XCTestCase {
         XCTAssertEqual(model.selected, .elbowLeft)
     }
 
+    // MARK: - The camera
+
+    @MainActor
+    func testEachPoseIsMeasuredThroughItsOwnFramesCourtFit() async throws {
+        // The camera panned by (30, -12) between the marking frame and frame
+        // 0, and was back by frame 1: the same stance, seen at two places in
+        // the image. Measured through the marking frame's fit alone, frame 0
+        // would read the pan as footwork.
+        let panned = standing(frame: 0, dx: 30, dy: -12)
+        let still = standing(frame: 1, dx: 0, dy: 0)
+        try SkeletonStore().save(
+            entryId: entry, poses: [panned, still], fps: 30,
+            videoWidth: 1920, videoHeight: 1080, marks: fittingMarks()
+        )
+        let model = SkeletonPanelModel(
+            entryId: entry, runner: LocalAnalysisRunner(), racketArmPrefs: prefs()
+        )
+        await model.loadSkeleton(videoRelativePath: nil)
+
+        guard case .loaded(let loaded) = model.load else { return XCTFail("still loading") }
+        XCTAssertEqual(loaded.courtFit, .ok)
+        let expected = PoseMetricsKt.poseMetrics(
+            keypoints: still.keypoints, confidence: still.confidence,
+            homography: loaded.homography,
+            minConfidence: NearPlayerSelector.companion.MIN_KEYPOINT_CONFIDENCE
+        )
+        let stance = try XCTUnwrap(expected.stanceM?.doubleValue)
+        let behind = try XCTUnwrap(expected.behindServiceLineM?.doubleValue)
+
+        // The series, one sample per pose.
+        XCTAssertEqual(model.shownSeries.count, 2)
+        for sample in model.shownSeries {
+            XCTAssertEqual(try XCTUnwrap(sample.metrics.stanceM?.doubleValue), stance, accuracy: 1e-9)
+            XCTAssertEqual(try XCTUnwrap(sample.metrics.behindServiceLineM?.doubleValue), behind, accuracy: 1e-9)
+        }
+        // The frame under the playhead, which at 0 s is the panned one.
+        XCTAssertEqual(model.pose?.frame, 0)
+        XCTAssertEqual(try XCTUnwrap(model.metrics?.behindServiceLineM?.doubleValue), behind, accuracy: 1e-9)
+        // And the pan is large enough to matter, so the two lines above are
+        // not passing on a fit that ignores it.
+        let unmapped = PoseMetricsKt.poseMetrics(
+            keypoints: panned.keypoints, confidence: panned.confidence,
+            homography: loaded.homography,
+            minConfidence: NearPlayerSelector.companion.MIN_KEYPOINT_CONFIDENCE
+        )
+        XCTAssertGreaterThan(abs(try XCTUnwrap(unmapped.behindServiceLineM?.doubleValue) - behind), 0.05)
+    }
+
     // MARK: - Fixtures
 
     private func prefs() -> RacketArmPreferenceRepository {
@@ -189,9 +237,39 @@ final class SkeletonPanelTests: XCTestCase {
                 frame: Int32(frame),
                 timestamp: Double(frame) / 30,
                 keypoints: (0..<joints).map { Point(x: Double($0) + Double(frame), y: Double($0) * 2) },
-                confidence: (0..<joints).map { _ in KotlinFloat(float: 0.9) }
+                confidence: (0..<joints).map { _ in KotlinFloat(float: 0.9) },
+                camera: nil
             )
         }
+    }
+
+    /// A figure whose ankles stand on the near half, `dx`, `dy` off where they
+    /// stood in the marking frame, with the camera that moved them there.
+    private func standing(frame: Int32, dx: Double, dy: Double) -> PlayerPose {
+        let joints = Int(Coco.shared.COUNT)
+        var keypoints = (0..<joints).map { _ in Point(x: 950 + dx, y: 850 + dy) }
+        keypoints[Int(Coco.shared.LEFT_ANKLE)] = Point(x: 900 + dx, y: 900 + dy)
+        keypoints[Int(Coco.shared.RIGHT_ANKLE)] = Point(x: 1000 + dx, y: 905 + dy)
+        return PlayerPose(
+            frame: frame,
+            timestamp: Double(frame) / 30,
+            keypoints: keypoints,
+            confidence: (0..<joints).map { _ in KotlinFloat(float: 0.9) },
+            camera: [[1, 0, dx], [0, 1, dy], [0, 0, 1]].map { $0.map { KotlinDouble(double: $0) } }
+        )
+    }
+
+    /// 743d7fb1's marks, which the analysis tests fit a court to.
+    private func fittingMarks() -> AnalysisCourtKeypoints {
+        func point(_ x: Double, _ y: Double) -> Point { Point(x: x, y: y) }
+        return AnalysisCourtKeypoints(
+            topLeft: point(649.5, 484.8), topRight: point(1277.3, 481.2),
+            bottomRight: point(1579.4, 998.6), bottomLeft: point(360.0, 1004.0),
+            netLeft: point(550.0, 663.9), netRight: point(1382.2, 665.7),
+            serviceLineNearLeft: point(504.8, 743.5), serviceLineNearRight: point(1422.0, 738.1),
+            serviceLineFarLeft: point(588.0, 595.2), serviceLineFarRight: point(1338.8, 595.2),
+            centerNear: point(966.1, 593.4), centerFar: point(966.1, 736.3)
+        )
     }
 
     /// Twelve marks on one line. No homography fits them, which is what makes

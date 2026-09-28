@@ -45,20 +45,59 @@ enum TestVideo {
         Int(((Double(luma) - Double(lumaBase)) / Double(lumaStep)).rounded())
     }
 
+    /// The luma of the panning texture at pattern position `(u, v)`.
+    ///
+    /// Blocks of random grey, not a checkerboard: a periodic pattern gives the
+    /// camera tracker's window matcher several equally good answers and its
+    /// homography fit a family of them. The ramp under the blocks gives the
+    /// coarse pyramid levels, where the blocks average out, a slope to follow.
+    /// Blocks scale with the frame so the tracker, which sees every frame at
+    /// 480 px across, still sees blocks several pixels wide.
+    static func texture(u: Int, v: Int, width: Int, height: Int) -> UInt8 {
+        let block = max(6, width / 60)
+        // Floor division, so a pattern panned past zero keeps its blocks whole.
+        let bx = u >= 0 ? u / block : (u - block + 1) / block
+        let by = v / block
+        var hash = UInt32(truncatingIfNeeded: bx &* 73_856_093) ^ UInt32(truncatingIfNeeded: by &* 19_349_663)
+        hash = (hash ^ (hash >> 13)) &* 0x5bd1_e995
+        hash ^= hash >> 15
+        let ramp = max(0, min(50, 50 * (u + v) / (width + height)))
+        return UInt8(30 + Int(hash % 140) + ramp)
+    }
+
+    /// - Parameter maxKeyFrameInterval: frames between sync frames, or nil for
+    ///   the encoder's own choice. Set it to make a clip whose only sync frame
+    ///   after the first is far in, the shape that sends an image generator
+    ///   with an open tolerance to a later frame than the one asked for.
+    /// - Parameter panPixelsPerFrame: nil for the solid grey that encodes each
+    ///   frame's index. Set, every frame is instead one fixed `texture` moved
+    ///   this many pixels right per frame: a scene with corners for the camera
+    ///   tracker, and a camera move it can be checked against. Frame `k`'s
+    ///   pixel `(x, y)` is the texture at `(x - k * pan, y)`.
     static func write(
         frames: Int,
         fps: Int32 = 30,
         width: Int = 64,
         height: Int = 64,
+        maxKeyFrameInterval: Int? = nil,
+        panPixelsPerFrame: Int? = nil,
         to url: URL,
         test: XCTestCase
     ) throws {
         let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
-        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
+        var settings: [String: Any] = [
             AVVideoCodecKey: AVVideoCodecType.h264,
             AVVideoWidthKey: width,
             AVVideoHeightKey: height,
-        ])
+        ]
+        var compression: [String: Any] = [:]
+        if let maxKeyFrameInterval { compression[AVVideoMaxKeyFrameIntervalKey] = maxKeyFrameInterval }
+        // The encoder's default rate for a clip this size smears fine texture
+        // into the flat grey the tracker cannot follow. Generous rather than
+        // tuned: these clips are a second or two long.
+        if panPixelsPerFrame != nil { compression[AVVideoAverageBitRateKey] = width * height * Int(fps) }
+        if !compression.isEmpty { settings[AVVideoCompressionPropertiesKey] = compression }
+        let input = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
         input.expectsMediaDataInRealTime = false
         let adaptor = AVAssetWriterInputPixelBufferAdaptor(
             assetWriterInput: input,
@@ -81,9 +120,20 @@ enum TestVideo {
             let lumaPlane = CVPixelBufferGetBaseAddressOfPlane(pixels, 0)!
                 .assumingMemoryBound(to: UInt8.self)
             let lumaStride = CVPixelBufferGetBytesPerRowOfPlane(pixels, 0)
-            let value = luma(forFrame: index)
-            for row in 0..<height {
-                for column in 0..<width { lumaPlane[row * lumaStride + column] = value }
+            // Every pixel, every frame: the pool hands back buffers the
+            // previous frames wrote.
+            if let pan = panPixelsPerFrame {
+                for row in 0..<height {
+                    for column in 0..<width {
+                        lumaPlane[row * lumaStride + column] =
+                            texture(u: column - index * pan, v: row, width: width, height: height)
+                    }
+                }
+            } else {
+                let value = luma(forFrame: index)
+                for row in 0..<height {
+                    for column in 0..<width { lumaPlane[row * lumaStride + column] = value }
+                }
             }
             let chromaPlane = CVPixelBufferGetBaseAddressOfPlane(pixels, 1)!
                 .assumingMemoryBound(to: UInt8.self)
