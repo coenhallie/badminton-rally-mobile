@@ -171,7 +171,9 @@ private fun FilterPill(text: String, selected: Boolean, onClick: () -> Unit) {
 /**
  * Fades the chips out toward an edge they continue past, and only then. A
  * chip cut off square at the sort's edge read as "Not ar Most notes", one
- * run of text; faded, it reads as more to scroll to.
+ * run of text; faded, it reads as more to scroll to. The fade is fully clear
+ * for its last [ChipFadeGap] (the gradient clamps past its end), so even the
+ * faintest letters keep a gap from the sort's name.
  */
 private fun Modifier.fadedEdges(scroll: ScrollState): Modifier = this
     // Offscreen, so the DstIn below masks the chips alone and not the list
@@ -180,15 +182,16 @@ private fun Modifier.fadedEdges(scroll: ScrollState): Modifier = this
     .drawWithContent {
         drawContent()
         val fade = ChipFade.toPx()
+        val gap = ChipFadeGap.toPx()
         if (scroll.canScrollBackward) {
             drawRect(
-                Brush.horizontalGradient(listOf(Color.Transparent, Color.Black), startX = 0f, endX = fade),
+                Brush.horizontalGradient(listOf(Color.Transparent, Color.Black), startX = gap, endX = fade),
                 blendMode = BlendMode.DstIn,
             )
         }
         if (scroll.canScrollForward) {
             drawRect(
-                Brush.horizontalGradient(listOf(Color.Black, Color.Transparent), startX = size.width - fade, endX = size.width),
+                Brush.horizontalGradient(listOf(Color.Black, Color.Transparent), startX = size.width - fade, endX = size.width - gap),
                 blendMode = BlendMode.DstIn,
             )
         }
@@ -281,3 +284,4 @@ private val PillGap = 8.dp
 private val SortPaddingStart = 6.dp
 private val SortPaddingEnd = 4.dp
 private val ChipFade = 24.dp
+private val ChipFadeGap = 6.dp
