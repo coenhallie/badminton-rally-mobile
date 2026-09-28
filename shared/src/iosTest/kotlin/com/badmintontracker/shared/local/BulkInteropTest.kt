@@ -63,4 +63,38 @@ class BulkInteropTest {
             nativeHeap.free(plane.rawValue)
         }
     }
+
+    /**
+     * A 2x2 RGBA buffer as a `CGContext` lays it down, rows [bytesPerRow]
+     * apart, read into the court finder's ARGB ints: red, green, blue and a
+     * colour whose channels differ, alpha ignored. Padding past each row is
+     * filled with a value no pixel uses, so a stride taken as the width shows.
+     */
+    private fun assertReadsRgba(bytesPerRow: Int) {
+        val rows = listOf(
+            listOf(255, 0, 0, 255, 0, 255, 0, 255),
+            listOf(0, 0, 255, 255, 10, 20, 30, 255),
+        )
+        val size = bytesPerRow * rows.size
+        val buffer = nativeHeap.allocArray<ByteVar>(size)
+        try {
+            for (i in 0 until size) buffer[i] = 0x77
+            rows.forEachIndexed { y, row -> row.forEachIndexed { x, v -> buffer[y * bytesPerRow + x] = v.toByte() } }
+            val image = BulkInterop.rgbImage(buffer, 2, 2, bytesPerRow)
+            assertEquals(2, image.width)
+            assertEquals(2, image.height)
+            assertContentEquals(
+                intArrayOf(0xFFFF0000.toInt(), 0xFF00FF00.toInt(), 0xFF0000FF.toInt(), 0xFF0A141E.toInt()),
+                image.argb,
+            )
+        } finally {
+            nativeHeap.free(buffer.rawValue)
+        }
+    }
+
+    @Test
+    fun rgba_rows_become_argb_pixels() = assertReadsRgba(bytesPerRow = 8)
+
+    @Test
+    fun padded_rgba_rows_read_the_same() = assertReadsRgba(bytesPerRow = 12)
 }

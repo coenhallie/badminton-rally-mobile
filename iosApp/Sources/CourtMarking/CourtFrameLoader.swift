@@ -11,6 +11,9 @@ import UIKit
 /// the mistake that made an earlier routing threshold wrong.
 struct CourtFrame {
     let image: UIImage
+    /// `image`'s pixels, at the source resolution the marks are in: what the
+    /// court finder looks at, so it sees exactly the frame on screen.
+    let cgImage: CGImage
     let fps: Double
     let frameCount: Int
     /// When in the video `image` was taken, seconds: the generator's own
@@ -33,11 +36,11 @@ enum CourtFrameLoader {
 
     static func loadFirstFrame(relativePath: String) async throws -> CourtFrame {
         let url = LocalVideoFiles.resolve(relativePath: relativePath)
-        let image: UIImage
+        let cgImage: CGImage
         let markedAtSeconds: Double
         do {
             let found = try await still(url: url)
-            image = UIImage(cgImage: found.image)
+            cgImage = found.image
             markedAtSeconds = found.seconds
         } catch {
             throw NSError(
@@ -60,7 +63,8 @@ enum CourtFrameLoader {
         }.value
 
         return CourtFrame(
-            image: image,
+            image: UIImage(cgImage: cgImage),
+            cgImage: cgImage,
             fps: metadata?.fps ?? 0,
             frameCount: metadata?.frameCount ?? 0,
             markedAtSeconds: markedAtSeconds

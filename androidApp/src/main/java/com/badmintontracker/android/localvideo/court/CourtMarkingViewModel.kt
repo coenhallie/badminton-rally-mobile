@@ -3,8 +3,17 @@ package com.badmintontracker.android.localvideo.court
 import android.graphics.Bitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.badmintontracker.analysis.court.CourtFinding
+import com.badmintontracker.shared.localvideo.court.CourtFinderStatus
 import com.badmintontracker.shared.localvideo.court.CourtMarkingState
+import com.badmintontracker.shared.localvideo.court.CourtPoint
+import com.badmintontracker.shared.localvideo.court.CourtFinderOutcome
+import com.badmintontracker.shared.localvideo.court.afterCorners
+import com.badmintontracker.shared.localvideo.court.afterFindCourt
+import com.badmintontracker.shared.localvideo.court.afterOpeningFind
 import com.badmintontracker.shared.model.CourtKeypoints
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -41,13 +50,21 @@ data class CourtMarkingUiState(
     /**
      * Whether the marks on screen are the ones the last run used, untouched.
      *
-     * True from the moment the screen opens on them until the coach edits them,
-     * which from a complete marking means Undo or Clear: a tap on a marking that
-     * already has its twelve points is ignored. What it drives is one line
-     * saying where the dots came from.
+     * True from the moment the screen opens on them until the coach edits them:
+     * Undo, Clear, moving a point or Find court. Picking a point up to move it
+     * is not an edit yet. What it drives is one line saying where the dots
+     * came from.
      */
     val showsSavedMarks: Boolean = false,
-)
+    /** Where the court finder stands, which the instruction line and the note say. */
+    val status: CourtFinderStatus = CourtFinderStatus.IDLE,
+) {
+    /**
+     * Whether Continue is enabled: twelve points down and no finder answer on
+     * its way to replace them ([CourtFinderStatus.allowsContinue]).
+     */
+    val canContinue: Boolean get() = marking?.isComplete == true && status.allowsContinue
+}
 
 class CourtMarkingViewModel(
     val entryId: String,
@@ -58,14 +75,29 @@ class CourtMarkingViewModel(
      */
     private val savedKeypoints: CourtKeypoints? = null,
     private val loadFrame: suspend () -> CourtFrame,
+    private val finder: CourtFinderPort = DefaultCourtFinderPort,
+    private val log: CourtFinderLog = LogcatCourtFinderLog,
 ) : ViewModel() {
 
     val state = MutableStateFlow(CourtMarkingUiState())
+
+    /** The frame on screen, which every finder call looks at. */
+    private var loaded: CourtFrame? = null
+
+    /**
+     * The finder call in flight, if any. An edit by the coach cancels it: his
+     * hand wins over an answer to a question about a marking he has since
+     * changed, and the busy line would otherwise stand in for the instruction
+     * he needs while he taps. The arrival checks below guard the same thing
+     * for an answer that is already on its way back.
+     */
+    private var finderJob: Job? = null
 
     init {
         viewModelScope.launch {
             runCatching { loadFrame() }
                 .onSuccess { f ->
+                    loaded = f
                     val restored = CourtMarkingState.restored(
                         f.width, f.height, savedKeypoints, frameSeconds = f.markedAtSeconds,
                     )
@@ -78,6 +110,10 @@ class CourtMarkingViewModel(
                             showsSavedMarks = restored.isComplete,
                         )
                     }
+                    // Saved marks are what the coach used last time: opening
+                    // on them is a review, and the finder stays out of it
+                    // unless he asks (Find court).
+                    if (restored.points.isEmpty()) findOnOpening()
                 }
                 .onFailure { e ->
                     state.update { it.copy(error = e.message ?: "Couldn't load frame") }
@@ -85,12 +121,125 @@ class CourtMarkingViewModel(
         }
     }
 
-    fun onTap(displayX: Float, displayY: Float, displayWidth: Float, displayHeight: Float) {
-        state.update { s ->
-            s.copy(marking = s.marking?.place(displayX, displayY, displayWidth, displayHeight))
+    /**
+     * A tap on the frame, in display coordinates, with [hitRadius] the reach of
+     * a placed point and [cancelRadius] the reach of the selected point's
+     * cancel, in the same units (see [CourtMarkingState.tap]). Neither has a
+     * default, as the shared `tap` has none: a silent 0 makes every point
+     * unselectable, or every tap on the selected point a move.
+     *
+     * Any tap while the finder works cancels it, one that only selects a point
+     * or lands on none included: the coach has started on the marking by
+     * hand, and a late answer would replace the points under him and drop a
+     * selection he just made.
+     */
+    fun onTap(
+        displayX: Float,
+        displayY: Float,
+        displayWidth: Float,
+        displayHeight: Float,
+        hitRadius: Float,
+        cancelRadius: Float,
+    ) {
+        val before = state.value.marking ?: return
+        if (state.value.status.isBusy) cancelFinder()
+        val after = before.tap(displayX, displayY, displayWidth, displayHeight, hitRadius, cancelRadius)
+        if (after == before) return
+        val edited = after.points != before.points
+        state.update {
+            it.copy(
+                marking = after,
+                showsSavedMarks = it.showsSavedMarks && !edited,
+                status = if (edited) it.status.afterEdit(after) else it.status,
+            )
+        }
+        if (after.justReachedFourCorners(before)) completeFromCorners(after.points)
+    }
+
+    /**
+     * Continue, to the options step. Continue is disabled while the finder
+     * works ([CourtMarkingUiState.canContinue]); cancelling here as well means
+     * no answer can land on the marks once the coach has left them, whatever
+     * gets him off the step.
+     */
+    fun onContinue() = cancelFinder()
+
+    fun onUndo() {
+        cancelFinder()
+        state.update { it.copy(marking = it.marking?.undo(), showsSavedMarks = false, status = CourtFinderStatus.IDLE) }
+    }
+
+    fun onClear() {
+        cancelFinder()
+        state.update { it.copy(marking = it.marking?.clear(), showsSavedMarks = false, status = CourtFinderStatus.IDLE) }
+    }
+
+    /**
+     * Find court: the finder on demand, replacing whatever is marked (saved
+     * marks included) as one step Undo reverses. Nothing found leaves the
+     * marking alone, and says so: FIND_FAILED over marks, NOT_FOUND (tap the
+     * corners) over none. Ignored while the finder is already working.
+     */
+    fun onFindCourt() {
+        if (state.value.marking == null || state.value.status.isBusy) return
+        runFinder(CourtFinderStatus.FINDING) {
+            val finding = ask("find on demand") { finder.find(it) }
+            state.update { s -> s.marking?.let { s.with(afterFindCourt(it, finding)) } ?: s }
         }
     }
 
-    fun onUndo() = state.update { it.copy(marking = it.marking?.undo(), showsSavedMarks = false) }
-    fun onClear() = state.update { it.copy(marking = it.marking?.clear(), showsSavedMarks = false) }
+    /** The finder on an empty marking, as the screen opens. A tap before it answers wins. */
+    private fun findOnOpening() = runFinder(CourtFinderStatus.FINDING) {
+        val finding = ask("find") { finder.find(it) }
+        state.update { s -> s.marking?.let { s.with(afterOpeningFind(it, finding)) } ?: s }
+    }
+
+    /**
+     * The fourth corner was just tapped: ask the finder to complete the court
+     * from [corners]. Applied only onto those same four taps; anything the
+     * coach did in between wins. Undo afterwards gives the four taps back.
+     */
+    private fun completeFromCorners(corners: List<CourtPoint>) =
+        runFinder(CourtFinderStatus.ALIGNING) {
+            val finding = ask("fromCorners") { finder.fromCorners(it, corners) }
+            state.update { s ->
+                s.marking?.let { s.with(afterCorners(it, corners, finding)) } ?: s.copy(status = CourtFinderStatus.IDLE)
+            }
+        }
+
+    /** The screen after a finder answer; an applied one is an edit, which ends the saved-marks note. */
+    private fun CourtMarkingUiState.with(outcome: CourtFinderOutcome) = copy(
+        marking = outcome.marking,
+        status = outcome.status,
+        showsSavedMarks = showsSavedMarks && !outcome.edited,
+    )
+
+    private fun runFinder(busy: CourtFinderStatus, block: suspend () -> Unit) {
+        cancelFinder()
+        state.update { it.copy(status = busy) }
+        finderJob = viewModelScope.launch { block() }
+    }
+
+    private fun cancelFinder() {
+        finderJob?.cancel()
+        finderJob = null
+        state.update { if (it.status.isBusy) it.copy(status = CourtFinderStatus.IDLE) else it }
+    }
+
+    /**
+     * One finder call on the frame on screen, logged. Null when it threw, out
+     * of memory included, which the screen treats as nothing found: a finder
+     * that fails must leave the coach able to mark by hand.
+     */
+    private suspend fun ask(call: String, work: suspend (CourtFrame) -> CourtFinding): CourtFinding? {
+        val frame = loaded ?: return null
+        return try {
+            work(frame).also { log.answered(call, it) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            log.failed(call, e)
+            null
+        }
+    }
 }

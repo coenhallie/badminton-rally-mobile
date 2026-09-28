@@ -1,14 +1,21 @@
 import Shared
 import SwiftUI
 
-/// Mini-court showing which landmark is next — mirror of Android's SchematicCourtGuide.
-/// Court meters from homography.ts: 6.1 wide × 13.4 long, service line 1.98 from net.
+/// Mini-court showing which landmark is next, mirror of Android's SchematicCourtGuide.
+/// Court meters from homography.ts: 6.1 wide x 13.4 long, service line 1.98 from net.
 struct SchematicCourtGuide: View {
     let placedCount: Int
 
     private static let courtW: CGFloat = 6.1
     private static let courtL: CGFloat = 13.4
     private static let serviceLine: CGFloat = 1.98
+    /// The court's height, androidApp's SCHEMATIC_HEIGHT: the guide shares the
+    /// scrolling area under the frame with the instruction and the buttons.
+    private static let courtHeight: CGFloat = 128
+    /// Room around the court for the next point's 6 pt marker, which sits on
+    /// the court's edge at the corners and was clipped to a sliver there by
+    /// the canvas bounds.
+    private static let inset: CGFloat = 7
 
     /// Landmark positions in court meters (x across width, y along length),
     /// index-aligned with CourtMarkingSpec order.
@@ -28,25 +35,34 @@ struct SchematicCourtGuide: View {
     ]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .top, spacing: 12) {
-                canvas
-                    .frame(width: 160 * Self.courtW / Self.courtL, height: 160)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Tap each court landmark in the order shown.")
-                        .font(.footnote)
-                        .foregroundStyle(Shuttl.text)
-                    Text("12 points give precise homography for player tracking, speeds and zones. Pinch to zoom for accuracy.")
-                        .font(.footnote)
+        HStack(alignment: .center, spacing: 16 - Self.inset) {
+            canvas
+                .frame(
+                    width: Self.courtHeight * Self.courtW / Self.courtL + Self.inset * 2,
+                    height: Self.courtHeight + Self.inset * 2
+                )
+            // The order sentence only while points remain: beside a complete
+            // marking (a found court, restored marks) there is no order left.
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(CourtMarkingSpec.shared.guideLines(placedCount: Int32(placedCount)), id: \.self) { line in
+                    Text(line)
+                        .shuttlType(ShuttlType.bodySmall)
                         .foregroundStyle(Shuttl.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.horizontal, 16)
+        // The inset is the canvas's own margin, so only the leading gutter
+        // gives it back; the text keeps the page's 16 on the trailing side.
+        .padding(.leading, 16 - Self.inset)
+        .padding(.trailing, 16)
     }
 
     private var canvas: some View {
-        Canvas { context, size in
+        Canvas { context, canvasSize in
+            context.translateBy(x: Self.inset, y: Self.inset)
+            let size = CGSize(width: canvasSize.width - Self.inset * 2, height: canvasSize.height - Self.inset * 2)
             let sx = size.width / Self.courtW
             let sy = size.height / Self.courtL
             let line = Shuttl.accent

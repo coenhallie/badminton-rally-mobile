@@ -66,6 +66,7 @@ import com.badmintontracker.android.localvideo.LocalVideoListViewModel
 import com.badmintontracker.android.localvideo.MatchTarget
 import com.badmintontracker.android.localvideo.court.CourtMarkingScreen
 import com.badmintontracker.android.localvideo.court.CourtMarkingViewModel
+import com.badmintontracker.android.localvideo.court.DefaultCourtFinderPort
 import com.badmintontracker.android.localvideo.court.loadFirstFrame
 import com.badmintontracker.android.localvideo.rememberVideoIntake
 import com.badmintontracker.android.labels.LabelsScreen
@@ -587,9 +588,12 @@ fun AuthGate(
                         factory = viewModelFactory {
                             initializer {
                                 val e = localVideos.get(args.entryId) ?: error("Local video not found")
-                                CourtMarkingViewModel(args.entryId, e.keypoints) {
-                                    loadFirstFrame(appCtx, Uri.parse(e.uri))
-                                }
+                                CourtMarkingViewModel(
+                                    entryId = args.entryId,
+                                    savedKeypoints = e.keypoints,
+                                    loadFrame = { loadFirstFrame(appCtx, Uri.parse(e.uri)) },
+                                    finder = DefaultCourtFinderPort,
+                                )
                             }
                         }
                     )
