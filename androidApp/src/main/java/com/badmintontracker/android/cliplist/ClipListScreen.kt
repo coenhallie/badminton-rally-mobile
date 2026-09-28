@@ -51,10 +51,13 @@ import com.badmintontracker.shared.matchlist.MatchConfirmation
 import com.badmintontracker.shared.matchlist.MatchDelete
 import com.badmintontracker.shared.matchlist.MatchListCopy
 import com.badmintontracker.shared.matchlist.MatchListFilter
+import com.badmintontracker.shared.matchlist.MatchListSort
 import com.badmintontracker.shared.matchlist.MatchListItem
 import com.badmintontracker.shared.matchlist.effectiveFilter
+import com.badmintontracker.shared.matchlist.effectiveSort
 import com.badmintontracker.shared.matchlist.passes
 import com.badmintontracker.shared.matchlist.showsFilters
+import com.badmintontracker.shared.matchlist.sortMatches
 import com.badmintontracker.shared.model.RallyClip
 import com.badmintontracker.shared.repo.MediaRepository
 import com.badmintontracker.shared.repo.SharesRepository
@@ -133,6 +136,7 @@ fun ClipListScreen(
     }
 
     var filter by rememberSaveable { mutableStateOf(MatchListFilter.ALL) }
+    var sort by rememberSaveable { mutableStateOf(MatchListSort.NEWEST) }
     val mine = state.matchList.mine
     val shared = state.matchList.shared
     // Review focus 5: a filter whose chips have gone would go on hiding
@@ -141,17 +145,23 @@ fun ClipListScreen(
     // empty initial state, and resetting against that would wipe a filter the
     // coach chose before a rotation or a process restore. effectiveFilter
     // already stops a filter applying while its chips are hidden; this makes
-    // the choice itself forget once they go.
+    // the choice itself forget once they go. The sort sits in the same row
+    // and goes with it, on the same rule.
     val chipsShown by rememberUpdatedState(showsFilters(mine.size))
     LaunchedEffect(Unit) {
         var wereShown = false
         snapshotFlow { chipsShown }.collect { shown ->
-            if (wereShown && !shown) filter = MatchListFilter.ALL
+            if (wereShown && !shown) {
+                filter = MatchListFilter.ALL
+                sort = MatchListSort.NEWEST
+            }
             wereShown = shown
         }
     }
     val applied = effectiveFilter(filter, mine.size)
-    val visible = mine.filter { it.passes(applied) }
+    val appliedSort = effectiveSort(sort, mine.size)
+    val visible = sortMatches(mine.filter { it.passes(applied) }, appliedSort)
+    val sharedVisible = sortMatches(shared, appliedSort)
 
     // The entry is persisted before this runs, so a dismissed sheet, a
     // backgrounded app or a crash never costs the user the video they just took.
@@ -293,6 +303,8 @@ fun ClipListScreen(
                             showChips = showsFilters(mine.size),
                             selected = applied,
                             onSelect = { filter = it },
+                            sort = appliedSort,
+                            onSort = { sort = it },
                             onLegend = { legendOpen = true },
                         )
                     }
@@ -312,8 +324,9 @@ fun ClipListScreen(
                         item(key = "header-shared") { DrawerSectionLabel(MatchListCopy.SHARED_SECTION) }
                         // Never filtered: the chips are about the coach's own
                         // matches, and a shared one is neither on this phone
-                        // nor waiting on this coach to analyze it.
-                        rows(shared)
+                        // nor waiting on this coach to analyze it. Sorted,
+                        // though: the order is the whole list's.
+                        rows(sharedVisible)
                     }
                 }
             }
