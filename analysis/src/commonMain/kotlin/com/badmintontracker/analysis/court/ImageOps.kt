@@ -140,27 +140,31 @@ internal fun gaussianBlur(src: GreyImage, sigma: Double): GreyImage {
     val h = src.height
     // Each row is read through a copy padded by reflection, and each output
     // row from precomputed reflected row offsets, so the taps need no border
-    // test. The same values are summed in the same order: identical results.
+    // test. The taps run outermost, each added across the whole row: every
+    // pixel still sums the same values in the same order, so the results are
+    // identical to summing one pixel at a time.
+    val acc = DoubleArray(w)
     val horizontal = FloatArray(w * h)
     val padded = FloatArray(w + 2 * radius)
     for (y in 0 until h) {
         val row = y * w
         for (j in padded.indices) padded[j] = src.pixels[row + reflect101(j - radius, w)]
-        for (x in 0 until w) {
-            var acc = 0.0
-            for (k in 0..2 * radius) acc += kernel[k] * padded[x + k]
-            horizontal[row + x] = acc.toFloat()
+        acc.fill(0.0)
+        for (k in 0..2 * radius) {
+            val c = kernel[k]
+            for (x in 0 until w) acc[x] += c * padded[x + k]
         }
+        for (x in 0 until w) horizontal[row + x] = acc[x].toFloat()
     }
     val out = FloatArray(w * h)
-    val rows = IntArray(2 * radius + 1)
     for (y in 0 until h) {
-        for (k in rows.indices) rows[k] = reflect101(y + k - radius, h) * w
-        for (x in 0 until w) {
-            var acc = 0.0
-            for (k in rows.indices) acc += kernel[k] * horizontal[rows[k] + x]
-            out[y * w + x] = acc.toFloat()
+        acc.fill(0.0)
+        for (k in 0..2 * radius) {
+            val c = kernel[k]
+            val from = reflect101(y + k - radius, h) * w
+            for (x in 0 until w) acc[x] += c * horizontal[from + x]
         }
+        for (x in 0 until w) out[y * w + x] = acc[x].toFloat()
     }
     return GreyImage(w, h, out)
 }
