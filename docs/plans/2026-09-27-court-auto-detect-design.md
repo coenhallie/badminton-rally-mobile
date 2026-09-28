@@ -558,7 +558,7 @@ one, the ruling.
   (parity for iOS): an edit is a tap that changes the points, Undo or Clear; a
   tap that only selects is not. Without it, a tap during "Finding the
   court..." left that line in place of "Tap: Top-Right Corner" until the
-  finder answered.
+  finder answered. The final fix wave widened this to any tap (below).
 - **New status `FIND_FAILED`, "Couldn't find the court. Your marks are
   unchanged."**, when Find court finds nothing over at least one point.
   Ruling: the `NOT_FOUND` note told the coach to tap corners he had already
@@ -623,25 +623,82 @@ Added by ruling after Task 9a's screenshots showed these defects.
   clipped. A landmark's name is drawn with non-breaking hyphens so the move
   instruction never breaks at "Bottom-".
 
+### Final fix wave (from the whole-branch review)
+
+Brief: `.superpowers/sdd/2026-09-27-court-auto-detect-plan/final-fix-brief.md`;
+report beside it (`final-fix-report.md`).
+
+- **Continue waits for the finder.** Over a complete marking, Find court left
+  Continue enabled; its answer could then replace the marks under the options
+  step, and the analysis ran on marks the coach never saw. Continue is now
+  enabled only for a complete marking and a status whose shared
+  `CourtFinderStatus.allowsContinue` holds (false while `FINDING` or
+  `ALIGNING`), on both screens (Android `CourtMarkingUiState.canContinue`).
+  Continue also cancels any call in flight (Android `onContinue`, iOS the
+  button's action), so no answer can land on marks the coach has left. §5.1's
+  "Continue is enabled" holds once the finder has answered.
+- **Android: process death on the options step.** The step survives in the
+  saved-state bundle and the marking does not, so the screen came back on an
+  empty marking with step two saved; the opening find's answer, or a twelfth
+  tap, then jumped to step two unseen. The saved step is now put back to court
+  mapping whenever the marking is missing or incomplete.
+- **Any tap while the finder works cancels it**, on both platforms, a tap that
+  only selects a point or lands on none included: a late answer would
+  otherwise replace the points and drop a selection just made.
+- **Stale failure notes end with an edit** (shared
+  `CourtFinderStatus.afterEdit(marking)`, applied after a tap that changes the
+  points): `FIND_FAILED` ("Your marks are unchanged") ends with any edit,
+  `ALIGN_FAILED` ("Tap the rest") once the marking is complete; the others
+  stay. Undo and Clear still end every note.
+- **Find court that finds the marks already there adds no Undo step**
+  (`afterFindCourt`): same points on the frame on screen means the same
+  marking; the answer still says `FOUND` and puts a selection down. The same
+  points saved with another frame's time are still a step.
+- **Android `onTap` has no default radii**: `hitRadius` and `cancelRadius`
+  are required, as they are in the shared `tap`.
+- **§4.7.5's label check is now made.** The design said acceptance checks
+  that `courtPositions()` resolves the found points exactly as the table does;
+  the code ran only the residual check. `accept` now also refuses keypoints
+  whose `courtPositions()` differs from `COURT_KEYPOINT_POSITIONS`, reason
+  "labels resolve differently", as the last check so no frame refused before
+  changes its reason. No synthetic scene or corpus frame reaches it: every
+  corpus line printed is identical before and after (§10).
+- **The portrait scene is asserted found** (`portrait_frame_is_handled`), not
+  "found or refused", as §10 reports it.
+- **iOS fits the court lines once per marking**, not on every body evaluation
+  (a pinch frame is one), like Android's `remember(marking)`.
+- **The out-of-memory claim is qualified**: a thrown `OutOfMemoryError` reads
+  as not found on the JVM and Android; on Kotlin/Native a failed allocation
+  ends the process, and nothing can catch it.
+- **The Task 10 pruning has a committed test**
+  (`analysis/src/jvmTest/.../SearchPruningTest.kt`): `searchCourt` and
+  `searchCourtNear` take an internal `pruning` flag (default on) that turns
+  off the early score stop and the corner-guided search's two corner
+  shortcuts; on six synthetic scenes and nine tap sets the homography, score
+  and counts are bit-identical either way. A deliberately broken bound fails
+  it.
+- **Pixel conventions, documented and not converted** (ruling). The finder's
+  marks use pixel centres: `x = i` is the centre of pixel column `i`, the
+  convention of the camera tracker (`Luma.trackerToSource`). A tap uses the
+  display edge mapping inherited from the desktop app (`x = displayX x
+  videoWidth / displayWidth`, so a tap on the centre of pixel `i` reads
+  `i + 0.5`). The two differ by 0.5 source px, about 1 cm at the far baseline
+  at 1080p, below what a mark can be measured to, so neither is converted.
+
 ### Left open (deferred in the ledger)
 
 - The `fromCorners` KDoc does not state the 70-90 px tap-error limit.
-- A detection can land after a tap that was undone back to empty
-  (`applyFinding` checks the points, not the history).
-- Find court twice pushes two identical history steps; history is unbounded
-  (12 points a step, at tapping rate).
-- Android's `onTap` keeps a `cancelRadius = 0f` default, a silent default the
-  shared `tap` deliberately does not have.
+- History is unbounded (12 points a step, at tapping rate).
 - The iOS cancel and arrival-guard plumbing has no iOS unit test (it lives in
-  `@State`); the rules themselves are shared and tested. On Android the
-  arrival guards and Undo/Clear during an in-flight call are untested too.
-- No committed test that the Task 10 pruning is result-neutral; the
-  bit-identity check was a harness outside the repo.
+  `@State`); the rules themselves are shared and tested, including from Swift
+  (`allowsContinue`, `afterEdit`). On Android, taps, Undo and Continue during
+  an in-flight call are tested; the arrival guards behind the cancel are
+  reached by the shared tests only.
 - A 4K source's full-resolution luma (33 MB) is built before downsampling.
 - The selected marker and its ring are clipped at the frame edge (hall
   Bottom-Right, both platforms). The small dots are not.
 - The found and lined-up notes stay after the coach moves a point; they
-  remain true.
+  remain true. (The two failure notes no longer stay, above.)
 - Outside this work: a pre-existing compiler warning,
   `PoseMetricsTest.kt:250` (unnecessary `!!`).
 
@@ -674,6 +731,24 @@ invocation reported the test tasks up to date, so they were rerun with
 | `ANALYSIS_REQUIRE_CORPUS=1 ... --tests '*CourtCorpusTest*' -i --rerun` | 5 / 5 passed; numbers below, identical to Task 10's |
 | iOS `iosAppTests` (iPhone 17 Pro simulator, Debug) | 343 tests, 0 failures, 2 skipped |
 | iOS `iosAppUITests` | 7 tests, 0 failures, 1 skipped; `** TEST SUCCEEDED **` |
+
+Rerun after the final fix wave (§9), 2026-09-28, on the tree of its commit,
+the same way (`--rerun` on each test task):
+
+| gate | result |
+|---|---|
+| `:analysis:jvmTest` | 302 tests, 0 failures, 0 skipped (+2 label-resolution tests, +2 in `SearchPruningTest`) |
+| `:analysis:iosSimulatorArm64Test` | 288 tests, 0 failures, 0 skipped |
+| `:shared:jvmTest` | 848 tests, 0 failures, 0 skipped |
+| `:shared:iosSimulatorArm64Test` | 856 tests, 0 failures, 0 skipped |
+| `:androidApp:testDebugUnitTest` | 377 tests, 0 failures, 0 skipped |
+| `:androidApp:assembleDebug` | built |
+| `:androidApp:lintDebug` | passed: 0 errors, 22 warnings, 3 hints (unchanged) |
+| `ANALYSIS_REQUIRE_CORPUS=1 ... --tests '*CourtCorpusTest*' -i --rerun` | 5 / 5 passed; all 177 printed lines other than timings identical to the run before the wave |
+| iOS `iosAppTests` (iPhone 17 Pro simulator, Debug) | 345 tests, 0 failures, 2 skipped (the same two); `** TEST SUCCEEDED **` |
+
+`iosAppUITests` was not rerun: the wave's only visible change is Continue
+disabled while the finder works.
 
 The three skips, all opt-in or account-dependent and none in court code:
 `LocalInferenceEngineTests.testAHandheldRecordingPutsTheNearPlayerWhereTheReferenceHasHer`
