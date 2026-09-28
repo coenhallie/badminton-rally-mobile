@@ -235,7 +235,7 @@ private fun accept(frames: Frames, ridge: RidgeMap, ref: Refinement?, mark: Time
 private fun lineSupport(ridge: RidgeMap, h: DoubleArray): Pair<Int, Int> {
     val w = ridge.width
     val ht = ridge.height
-    val dist = distanceTransform(ridge.mask, w, ht)
+    val dist = ridge.distance
     val minVisible = SUPPORT_MIN_VISIBLE * max(w, ht)
     val px = DoubleArray(SUPPORT_POINTS)
     val py = DoubleArray(SUPPORT_POINTS)

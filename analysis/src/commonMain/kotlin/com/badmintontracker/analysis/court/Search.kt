@@ -63,19 +63,28 @@ private const val MIN_PROJECT_DEPTH = 1e-12
 /**
  * The model sampled for scoring: positions, and whether the next sample is
  * on the same segment (a sample's weight is its image distance to that
- * next one, 0 for the last sample of a segment).
+ * next one, 0 for the last sample of a segment). Segment `k`'s samples are
+ * `starts[k] until starts[k + 1]`; [maxGain] is the most it can add,
+ * [MAX_WEIGHT] per weighed sample.
  */
 private class ScoreSamples(step: Double) {
     val x: DoubleArray
     val y: DoubleArray
     val weighed: BooleanArray
+    val starts: IntArray
+    val maxGain: DoubleArray
 
     init {
         val s = CourtModel.samples(step)
         x = s.x
         y = s.y
         weighed = BooleanArray(x.size) { it + 1 < x.size && s.segment[it + 1] == s.segment[it] }
+        val segments = CourtModel.SEGMENTS.size
+        starts = IntArray(segments + 1) { k -> s.segment.indexOfFirst { it >= k }.let { i -> if (i < 0) x.size else i } }
+        maxGain = DoubleArray(segments) { k -> MAX_WEIGHT * (starts[k + 1] - starts[k] - 1) }
     }
+
+    val segments get() = maxGain.size
 }
 
 private val COARSE by lazy { ScoreSamples(COARSE_STEP) }
@@ -107,7 +116,7 @@ internal fun searchCourt(work: GreyImage, ridge: RidgeMap = ridges(work)): Searc
     val families = lineFamilies(lines, w, h) ?: return null
     val quads = Quads.of(families, LINES_PER_FAMILY, w, h)
     if (quads.count == 0) return null
-    val dist = distanceTransform(ridge.mask, w, h)
+    val scorer = Scorer(ridge.distance, w, h)
 
     val top = TopScores(RESCORED)
     val hm = DoubleArray(9)
@@ -116,7 +125,10 @@ internal fun searchCourt(work: GreyImage, ridge: RidgeMap = ridges(work)): Searc
         for (r in 0 until rects) {
             if (!placement(quads.homographies, r, hm, q * 9)) continue
             if (!gatesPass(hm, w, h)) continue
-            top.offer(score(hm, dist, w, h, COARSE), r, q)
+            // Once 60 are kept, a placement that cannot beat the lowest of
+            // them would not be kept: its scoring may stop early.
+            val cutoff = if (top.size < RESCORED) Double.NEGATIVE_INFINITY else top.lowest
+            top.offer(scorer.score(hm, COARSE, cutoff), r, q)
         }
     }
     if (top.size == 0) return null
@@ -129,7 +141,7 @@ internal fun searchCourt(work: GreyImage, ridge: RidgeMap = ridges(work)): Searc
         val r = top.rect[k]
         val q = top.quad[k]
         placement(quads.homographies, r, hm, q * 9)
-        val s = score(hm, dist, w, h, FINE)
+        val s = scorer.score(hm, FINE)
         if (s > bestScore) {
             bestScore = s
             bestRect = r
@@ -163,10 +175,12 @@ internal fun searchCourtNear(
     val families = lineFamilies(lines, w, h, horizon = false) ?: return null
     val quads = Quads.of(families, NEAR_LINES_PER_FAMILY, w, h)
     if (quads.count == 0) return null
-    val dist = distanceTransform(ridge.mask, w, h)
+    val scorer = Scorer(ridge.distance, w, h)
 
     val tx = DoubleArray(4) { cornersWork[it].x }
     val ty = DoubleArray(4) { cornersWork[it].y }
+    val kx = DoubleArray(4) { CourtModel.KEYPOINTS[it].x }
+    val ky = DoubleArray(4) { CourtModel.KEYPOINTS[it].y }
     val cx = DoubleArray(4)
     val cy = DoubleArray(4)
     val hm = DoubleArray(9)
@@ -175,17 +189,23 @@ internal fun searchCourtNear(
     var bestQuad = -1
     val rects = CourtModel.RECTANGLES.size
     for (q in 0 until quads.count) {
-        for (r in 0 until rects) {
+        rects@ for (r in 0 until rects) {
             if (!placement(quads.homographies, r, hm, q * 9)) continue
-            if (!gatesPass(hm, w, h)) continue
+            // The corners first, each checked against the taps as it comes:
+            // a corner farther than `radius` from every tap is that far from
+            // its tap under every corner order, so [cornerMismatch] would
+            // exceed `radius` too. Checked before the gates (both must pass,
+            // neither has side effects); a placement that passes the gates
+            // has no NaN corner, so this drops nothing the mismatch keeps.
             for (c in 0..3) {
-                val kp = CourtModel.KEYPOINTS[c]
-                val z = hm[6] * kp.x + hm[7] * kp.y + hm[8]
-                cx[c] = (hm[0] * kp.x + hm[1] * kp.y + hm[2]) / z
-                cy[c] = (hm[3] * kp.x + hm[4] * kp.y + hm[5]) / z
+                val z = hm[6] * kx[c] + hm[7] * ky[c] + hm[8]
+                cx[c] = (hm[0] * kx[c] + hm[1] * ky[c] + hm[2]) / z
+                cy[c] = (hm[3] * kx[c] + hm[4] * ky[c] + hm[5]) / z
+                if (nearestTap(cx[c], cy[c], tx, ty) > radius) continue@rects
             }
+            if (!gatesPass(hm, w, h)) continue
             if (cornerMismatch(cx, cy, tx, ty) > radius) continue
-            val s = score(hm, dist, w, h, FINE)
+            val s = scorer.score(hm, FINE)
             if (s == Double.NEGATIVE_INFINITY) continue
             // Rect-major is the probe's order: a tie goes to the lower rectangle, then the lower quad.
             if (s > bestScore || (s == bestScore && (r < bestRect || (r == bestRect && q < bestQuad)))) {
@@ -206,7 +226,12 @@ private val CORNER_ORDERS = arrayOf(
     intArrayOf(0, 3, 2, 1), intArrayOf(3, 0, 1, 2), intArrayOf(1, 2, 3, 0), intArrayOf(2, 1, 0, 3),
 )
 
-/** The farthest any projected corner is from its tap, under the best of [CORNER_ORDERS]. */
+/**
+ * The farthest any projected corner is from its tap, under the best of
+ * [CORNER_ORDERS]. Compared squared, one square root at the end: the
+ * rounded square root is monotone, so the max and min pick the same values
+ * either way (a NaN still wins both).
+ */
 private fun cornerMismatch(cx: DoubleArray, cy: DoubleArray, tx: DoubleArray, ty: DoubleArray): Double {
     var best = Double.POSITIVE_INFINITY
     for (perm in CORNER_ORDERS) {
@@ -214,11 +239,22 @@ private fun cornerMismatch(cx: DoubleArray, cy: DoubleArray, tx: DoubleArray, ty
         for (i in 0..3) {
             val dx = cx[perm[i]] - tx[i]
             val dy = cy[perm[i]] - ty[i]
-            worst = max(worst, sqrt(dx * dx + dy * dy))
+            worst = max(worst, dx * dx + dy * dy)
         }
         best = min(best, worst)
     }
-    return best
+    return sqrt(best)
+}
+
+/** The distance from `(x, y)` to the nearest tap, computed as [cornerMismatch] does; NaN for a NaN corner. */
+private fun nearestTap(x: Double, y: Double, tx: DoubleArray, ty: DoubleArray): Double {
+    var best = Double.POSITIVE_INFINITY
+    for (i in 0..3) {
+        val dx = x - tx[i]
+        val dy = y - ty[i]
+        best = min(best, dx * dx + dy * dy)
+    }
+    return sqrt(best)
 }
 
 /**
@@ -382,48 +418,114 @@ internal fun gatesPass(h: DoubleArray, width: Int, height: Int): Boolean {
     return sqrt(dx * dx + dy * dy) > MIN_NET * width
 }
 
+/** Slack on each segment's bound, relative to its coordinates plus absolute, px: far above the rounding it covers. */
+private const val BOUND_SLACK_RELATIVE = 1e-9
+private const val BOUND_SLACK_PX = 1e-3
+
 /**
- * `court_probe.py`'s `score()` for one placement: each sample, weighted by
- * its image distance to the next sample on the same segment (capped at
- * [MAX_WEIGHT]), adds its weight when within [ON_LINE] px of a line pixel
- * and costs half of it when in frame and not; out of frame it counts 0.
- * In frame is `0 <= x < w - 1, 0 <= y < h - 1`, the distance read at the
- * pixel the position truncates to. A sample behind the camera makes the
- * whole placement minus infinity (the probe's `-1e9`), and ends the loop.
+ * `court_probe.py`'s `score()` for placements against one distance
+ * transform `dist` of a `width x height` image.
  */
-private fun score(h: DoubleArray, dist: FloatArray, width: Int, height: Int, samples: ScoreSamples): Double {
-    val xs = samples.x
-    val ys = samples.y
-    val weighed = samples.weighed
-    val n = xs.size
-    val maxX = (width - 1).toDouble()
-    val maxY = (height - 1).toDouble()
-    var z = h[6] * xs[0] + h[7] * ys[0] + h[8]
-    if (z <= MIN_DEPTH) return Double.NEGATIVE_INFINITY
-    var px = (h[0] * xs[0] + h[1] * ys[0] + h[2]) / z
-    var py = (h[3] * xs[0] + h[4] * ys[0] + h[5]) / z
-    var total = 0.0
-    for (i in 0 until n) {
-        var nx = 0.0
-        var ny = 0.0
-        if (i + 1 < n) {
-            val mx = xs[i + 1]
-            val my = ys[i + 1]
-            z = h[6] * mx + h[7] * my + h[8]
-            if (z <= MIN_DEPTH) return Double.NEGATIVE_INFINITY
-            nx = (h[0] * mx + h[1] * my + h[2]) / z
-            ny = (h[3] * mx + h[4] * my + h[5]) / z
+private class Scorer(private val dist: FloatArray, private val width: Int, private val height: Int) {
+    /** Per segment `k`, a bound on what segments `k` onwards can still add. */
+    private val remaining = DoubleArray(CourtModel.SEGMENTS.size + 1)
+
+    /**
+     * The score of placement `h`: each sample, weighted by its image
+     * distance to the next sample on the same segment (capped at
+     * [MAX_WEIGHT]), adds its weight when within [ON_LINE] px of a line
+     * pixel and costs half of it when in frame and not; out of frame it
+     * counts 0. In frame is `0 <= x < w - 1, 0 <= y < h - 1`, the distance
+     * read at the pixel the position truncates to. A sample behind the
+     * camera makes the whole placement minus infinity (the probe's `-1e9`),
+     * and ends the loop.
+     *
+     * With a finite `cutoff`, scoring stops with minus infinity as soon as
+     * the score is sure to end below `cutoff`: the caller keeps only scores
+     * of at least `cutoff`, so it keeps the same placements. The samples are
+     * summed in the same order either way, so a score that is returned is
+     * the same number.
+     */
+    fun score(h: DoubleArray, samples: ScoreSamples, cutoff: Double = Double.NEGATIVE_INFINITY): Double {
+        val xs = samples.x
+        val ys = samples.y
+        val weighed = samples.weighed
+        val starts = samples.starts
+        val n = xs.size
+        val h0 = h[0]; val h1 = h[1]; val h2 = h[2]
+        val h3 = h[3]; val h4 = h[4]; val h5 = h[5]
+        val h6 = h[6]; val h7 = h[7]; val h8 = h[8]
+        val maxX = (width - 1).toDouble()
+        val maxY = (height - 1).toDouble()
+        val bounded = cutoff > Double.NEGATIVE_INFINITY
+        if (bounded) {
+            if (!bound(h, samples)) return Double.NEGATIVE_INFINITY
+            if (remaining[0] < cutoff) return Double.NEGATIVE_INFINITY
         }
-        if (weighed[i] && px >= 0.0 && px < maxX && py >= 0.0 && py < maxY) {
-            val dx = nx - px
-            val dy = ny - py
-            val weight = min(sqrt(dx * dx + dy * dy), MAX_WEIGHT)
-            total += if (dist[py.toInt() * width + px.toInt()] <= ON_LINE) weight else -OFF_LINE_COST * weight
+        var segment = 0
+        var z = h6 * xs[0] + h7 * ys[0] + h8
+        if (z <= MIN_DEPTH) return Double.NEGATIVE_INFINITY
+        var px = (h0 * xs[0] + h1 * ys[0] + h2) / z
+        var py = (h3 * xs[0] + h4 * ys[0] + h5) / z
+        var total = 0.0
+        for (i in 0 until n) {
+            var nx = 0.0
+            var ny = 0.0
+            if (i + 1 < n) {
+                val mx = xs[i + 1]
+                val my = ys[i + 1]
+                z = h6 * mx + h7 * my + h8
+                if (z <= MIN_DEPTH) return Double.NEGATIVE_INFINITY
+                nx = (h0 * mx + h1 * my + h2) / z
+                ny = (h3 * mx + h4 * my + h5) / z
+            }
+            if (weighed[i] && px >= 0.0 && px < maxX && py >= 0.0 && py < maxY) {
+                val dx = nx - px
+                val dy = ny - py
+                val weight = min(sqrt(dx * dx + dy * dy), MAX_WEIGHT)
+                total += if (dist[py.toInt() * width + px.toInt()] <= ON_LINE) weight else -OFF_LINE_COST * weight
+            }
+            px = nx
+            py = ny
+            if (bounded && i + 1 == starts[segment + 1]) {
+                segment++
+                if (total + remaining[segment] < cutoff) return Double.NEGATIVE_INFINITY
+            }
         }
-        px = nx
-        py = ny
+        return total
     }
-    return total
+
+    /**
+     * Fills [remaining] for placement `h`; false when a segment end is
+     * behind the camera (the score is minus infinity then anyway).
+     *
+     * A segment's samples project, in order, onto the straight image
+     * segment between its first and last sample, so their weights sum to at
+     * most that segment's length (and to at most [MAX_WEIGHT] each): the
+     * most the segment can add. The slack covers the rounding of the
+     * projected points and of the running total; a NaN bound never prunes.
+     */
+    private fun bound(h: DoubleArray, samples: ScoreSamples): Boolean {
+        val xs = samples.x
+        val ys = samples.y
+        val segments = samples.segments
+        remaining[segments] = 0.0
+        for (k in segments - 1 downTo 0) {
+            val a = samples.starts[k]
+            val b = samples.starts[k + 1] - 1
+            val za = h[6] * xs[a] + h[7] * ys[a] + h[8]
+            val zb = h[6] * xs[b] + h[7] * ys[b] + h[8]
+            if (za <= MIN_DEPTH || zb <= MIN_DEPTH) return false
+            val ax = (h[0] * xs[a] + h[1] * ys[a] + h[2]) / za
+            val ay = (h[3] * xs[a] + h[4] * ys[a] + h[5]) / za
+            val bx = (h[0] * xs[b] + h[1] * ys[b] + h[2]) / zb
+            val by = (h[3] * xs[b] + h[4] * ys[b] + h[5]) / zb
+            val length = sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay))
+            val slack = BOUND_SLACK_RELATIVE * (abs(ax) + abs(ay) + abs(bx) + abs(by) + length) + BOUND_SLACK_PX
+            remaining[k] = remaining[k + 1] + (min(samples.maxGain[k], length) + slack)
+        }
+        return true
+    }
 }
 
 /**
@@ -443,6 +545,9 @@ private class TopScores(private val capacity: Int) {
 
     private fun below(s1: Double, r1: Int, q1: Int, s2: Double, r2: Int, q2: Int): Boolean =
         s1 < s2 || (s1 == s2 && (r1 > r2 || (r1 == r2 && q1 > q2)))
+
+    /** The lowest score kept, once [capacity] are. */
+    val lowest: Double get() = score[0]
 
     fun offer(s: Double, r: Int, q: Int) {
         if (size < capacity) {

@@ -16,7 +16,10 @@ import kotlin.math.sqrt
  * with. [normal] is computed only where the ridge response passes the
  * contrast test (every [mask] pixel does) and is 0 elsewhere.
  */
-internal class RidgeMap(val width: Int, val height: Int, val mask: BooleanArray, val normal: FloatArray)
+internal class RidgeMap(val width: Int, val height: Int, val mask: BooleanArray, val normal: FloatArray) {
+    /** [distanceTransform] of [mask], computed on first use and shared by search and acceptance. */
+    val distance: FloatArray by lazy { distanceTransform(mask, width, height) }
+}
 
 /** Hessian scales, px: a line responds most at a scale matched to its width, so three cover thin far lines to wider near ones. */
 private val RIDGE_SCALES = doubleArrayOf(1.0, 1.8, 3.0)
