@@ -10,6 +10,20 @@ The mobile app is versioned independently from the web app.
 ## [Unreleased]
 
 ### Added
+- **The court is found automatically.** When court mapping opens, the app looks
+  for the court's painted lines and places all twelve points itself, then draws
+  the court's lines over the frame so a wrong fit is easy to spot. Tap a point to
+  select it and tap again where it should go; Undo takes back the last change.
+  If the court cannot be found, tap the four corners and the other eight are
+  placed and lined up with the lines. "Find court" runs the search again at any
+  time. Placing the court this way puts the player within a few centimetres,
+  where marking by thumb was often ten or more off.
+- **Handheld recordings map onto the court.** A phone that pans or tilts while
+  filming no longer moves the heatmap: the analysis follows the camera from the
+  frame the court was marked on, on the phone and in the cloud. A video has to
+  be analysed again to benefit.
+- **Sort the match list** by newest, oldest, most rallies or most notes, from a
+  button next to the filters. Notes made on the phone count too.
 - **iPhone can analyze a match on the phone.** Everything the Android app has
   done on device since the summer now runs on iOS too: the video is decoded
   once, three models run on each frame, the rallies are cut into their own
@@ -133,6 +147,11 @@ The mobile app is versioned independently from the web app.
   of the screen red, "Court mapping" and the status bar included.
 
 ### Changed
+- **One page per match.** Points, the full video, rallies and analysis
+  (heatmap, base position, skeleton) are sections of the match's own page, and
+  the Analytics tab is gone. Settings opens from the gear on the match list.
+- Sign-in and the splash screen follow the match list's layout, with clearer
+  fields and an error that screen readers announce.
 - Undo on the scoring board now takes back the whole last rally, with its tags
   and note, in one tap. Before, it took a tagged rally's tags off one at a time
   first and the score did not move, so a wrongly given point looked impossible
