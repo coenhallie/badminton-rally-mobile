@@ -76,6 +76,34 @@ class CourtAutoMarkingTest {
     }
 
     @Test
+    fun continue_waits_while_the_finder_works_on_the_frame() {
+        // An answer that lands after Continue would replace the marks under
+        // the options step: the analysis would run on marks nobody saw.
+        CourtFinderStatus.entries.filter { !it.allowsContinue } shouldBe
+            listOf(CourtFinderStatus.FINDING, CourtFinderStatus.ALIGNING)
+    }
+
+    @Test
+    fun a_failed_find_court_note_ends_with_any_edit() {
+        CourtFinderStatus.FIND_FAILED.afterEdit(tapped(2)) shouldBe CourtFinderStatus.IDLE
+        CourtFinderStatus.FIND_FAILED.afterEdit(empty.withDetected(found)) shouldBe CourtFinderStatus.IDLE
+    }
+
+    @Test
+    fun a_failed_completion_note_stays_until_the_marking_is_complete() {
+        CourtFinderStatus.ALIGN_FAILED.afterEdit(tapped(5)) shouldBe CourtFinderStatus.ALIGN_FAILED
+        CourtFinderStatus.ALIGN_FAILED.afterEdit(tapped(12)) shouldBe CourtFinderStatus.IDLE
+    }
+
+    @Test
+    fun other_notes_survive_an_edit() {
+        val others = CourtFinderStatus.entries - CourtFinderStatus.FIND_FAILED - CourtFinderStatus.ALIGN_FAILED
+        for (marking in listOf(tapped(3), tapped(12))) {
+            others.map { it.afterEdit(marking) } shouldBe others
+        }
+    }
+
+    @Test
     fun a_failed_find_court_over_saved_marks_says_so() {
         CourtFinderStatus.FIND_FAILED.screenNote(showsSavedMarks = true) shouldBe CourtMarkingSpec.FIND_FAILED_NOTE
     }
@@ -124,6 +152,31 @@ class CourtAutoMarkingTest {
             CourtFinderOutcome(four.withDetected(found), CourtFinderStatus.FOUND, edited = true)
         afterFindCourt(empty, foundFinding()) shouldBe
             CourtFinderOutcome(empty.withDetected(found), CourtFinderStatus.FOUND, edited = true)
+    }
+
+    @Test
+    fun find_court_that_finds_the_marks_already_there_adds_no_undo_step() {
+        val onScreen = empty.withDetected(found)
+        val out = afterFindCourt(onScreen, foundFinding())
+        out shouldBe CourtFinderOutcome(onScreen, CourtFinderStatus.FOUND, edited = true)
+        out.marking.history.size shouldBe onScreen.history.size
+
+        // A selection is still put down, as any answer puts it down.
+        val selected = onScreen.tap(1f, 2f, 1920f, 1080f, 22f, 6f)
+        selected.selected shouldBe 0
+        afterFindCourt(selected, foundFinding()).marking shouldBe onScreen
+    }
+
+    @Test
+    fun find_court_that_finds_the_same_points_on_another_frame_is_a_step() {
+        // The same pixels, but saved with another frame's time: stamping them
+        // with the frame on screen changes the marks, and Undo gives the old
+        // time back.
+        val saved = CourtMarkingState(1920, 1080, points = found, markedAtSeconds = 3.5, frameSeconds = 0.1)
+        val out = afterFindCourt(saved, foundFinding())
+        out.marking shouldBe saved.withDetected(found)
+        out.marking.markedAtSeconds shouldBe 0.1
+        out.marking.undo() shouldBe saved
     }
 
     @Test

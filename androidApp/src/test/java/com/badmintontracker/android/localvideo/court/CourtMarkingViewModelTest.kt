@@ -61,7 +61,7 @@ class CourtMarkingViewModelTest {
     @Test
     fun tap_undo_complete_flow() = runTest {
         val vm = vm()
-        repeat(12) { vm.onTap(displayX = 10f, displayY = 10f, displayWidth = 192f, displayHeight = 108f) }
+        repeat(12) { vm.onTap(10f, 10f, 192f, 108f, CourtMarkingSpec.SELECT_RADIUS, CourtMarkingSpec.CANCEL_RADIUS) }
         vm.state.value.marking!!.isComplete.shouldBeTrue()
         vm.onUndo()
         vm.state.value.marking!!.points.size shouldBe 11
@@ -96,8 +96,9 @@ class CourtMarkingViewModelTest {
 
         // A tap on a complete marking that lands on no point does nothing, so
         // it does not count as an edit; Undo and Clear do (and moving a point,
-        // below).
-        vm.onTap(displayX = 10f, displayY = 10f, displayWidth = 192f, displayHeight = 108f)
+        // below). (1500, 900) source px: over 1000 px from every saved mark.
+        vm.onTap(150f, 90f, 192f, 108f, CourtMarkingSpec.SELECT_RADIUS, CourtMarkingSpec.CANCEL_RADIUS)
+        vm.state.value.marking!!.selected shouldBe null
         vm.state.value.showsSavedMarks.shouldBeTrue()
 
         vm.onUndo()
@@ -153,7 +154,7 @@ class CourtMarkingViewModelTest {
     @Test
     fun marks_placed_here_carry_the_time_of_the_frame_they_were_drawn_on() = runTest {
         val vm = vm()
-        repeat(12) { vm.onTap(displayX = 10f, displayY = 10f, displayWidth = 192f, displayHeight = 108f) }
+        repeat(12) { vm.onTap(10f, 10f, 192f, 108f, CourtMarkingSpec.SELECT_RADIUS, CourtMarkingSpec.CANCEL_RADIUS) }
 
         vm.state.value.marking!!.toCourtKeypoints().markedAtSeconds shouldBe 0.1
     }
@@ -342,6 +343,123 @@ class CourtMarkingViewModelTest {
         val vm = vm(finder = CourtFinderPort(find = { found12() }, fromCorners = { _, _ -> notFound() }))
         vm.onClear()
         vm.state.value.marking!!.points shouldBe emptyList()
+        vm.state.value.status shouldBe CourtFinderStatus.IDLE
+    }
+
+    // --- Continue, and taps, while the finder works --------------------------
+
+    @Test
+    fun continue_waits_for_find_court_over_saved_marks() = runTest {
+        val gate = CompletableDeferred<CourtFinding>()
+        val vm = vm(savedKeypoints = savedKeypoints(), finder = CourtFinderPort(find = { gate.await() }, fromCorners = { _, _ -> notFound() }))
+        vm.state.value.canContinue.shouldBeTrue()
+
+        // Twelve marks on screen, but an answer on its way that will replace
+        // them: Continue now would run the analysis on marks nobody saw.
+        vm.onFindCourt()
+        vm.state.value.marking!!.isComplete.shouldBeTrue()
+        vm.state.value.canContinue shouldBe false
+
+        gate.complete(found12())
+        vm.state.value.marking!!.points[0] shouldBe CourtPoint(100f, 200f)
+        vm.state.value.canContinue.shouldBeTrue()
+    }
+
+    @Test
+    fun continue_waits_for_a_completion() = runTest {
+        val gate = CompletableDeferred<CourtFinding>()
+        val vm = vm(finder = CourtFinderPort(find = { notFound() }, fromCorners = { _, _ -> gate.await() }))
+        vm.tapCorners()
+        vm.state.value.canContinue shouldBe false
+        gate.complete(found12())
+        vm.state.value.canContinue.shouldBeTrue()
+    }
+
+    @Test
+    fun continue_needs_twelve_points() = runTest {
+        val vm = vm(finder = CourtFinderPort(find = { notFound() }, fromCorners = { _, _ -> notFound() }))
+        vm.state.value.status shouldBe CourtFinderStatus.NOT_FOUND
+        vm.state.value.canContinue shouldBe false
+    }
+
+    @Test
+    fun leaving_the_mapping_step_cancels_the_finder() = runTest {
+        val saved = savedKeypoints()
+        val gate = CompletableDeferred<CourtFinding>()
+        val vm = vm(savedKeypoints = saved, finder = CourtFinderPort(find = { gate.await() }, fromCorners = { _, _ -> notFound() }))
+        vm.onFindCourt()
+
+        vm.onContinue()
+        vm.state.value.status shouldBe CourtFinderStatus.IDLE
+        gate.complete(found12())
+
+        vm.state.value.marking!!.toCourtKeypoints() shouldBe saved
+        vm.state.value.status shouldBe CourtFinderStatus.IDLE
+    }
+
+    @Test
+    fun a_tap_that_selects_during_find_court_cancels_it() = runTest {
+        val saved = savedKeypoints()
+        val gate = CompletableDeferred<CourtFinding>()
+        val vm = vm(savedKeypoints = saved, finder = CourtFinderPort(find = { gate.await() }, fromCorners = { _, _ -> notFound() }))
+        vm.onFindCourt()
+
+        vm.onTap(1f, 2f, 1920f, 1080f, CourtMarkingSpec.SELECT_RADIUS, CourtMarkingSpec.CANCEL_RADIUS)
+        vm.state.value.status shouldBe CourtFinderStatus.IDLE
+        gate.complete(found12())
+
+        // The late answer does not clear the selection from under him.
+        vm.state.value.marking!!.selected shouldBe 0
+        vm.state.value.marking!!.toCourtKeypoints() shouldBe saved
+    }
+
+    @Test
+    fun a_tap_on_no_point_during_find_court_cancels_it() = runTest {
+        val saved = savedKeypoints()
+        val gate = CompletableDeferred<CourtFinding>()
+        val vm = vm(savedKeypoints = saved, finder = CourtFinderPort(find = { gate.await() }, fromCorners = { _, _ -> notFound() }))
+        vm.onFindCourt()
+
+        vm.onTap(1500f, 900f, 1920f, 1080f, CourtMarkingSpec.SELECT_RADIUS, CourtMarkingSpec.CANCEL_RADIUS)
+        vm.state.value.status shouldBe CourtFinderStatus.IDLE
+        gate.complete(found12())
+        vm.state.value.marking!!.toCourtKeypoints() shouldBe saved
+    }
+
+    @Test
+    fun undo_during_find_court_cancels_it() = runTest {
+        val gate = CompletableDeferred<CourtFinding>()
+        val vm = vm(savedKeypoints = savedKeypoints(), finder = CourtFinderPort(find = { gate.await() }, fromCorners = { _, _ -> notFound() }))
+        vm.onFindCourt()
+        vm.onUndo()
+        gate.complete(found12())
+        vm.state.value.marking!!.points.size shouldBe 11
+        vm.state.value.status shouldBe CourtFinderStatus.IDLE
+    }
+
+    // --- Notes after an edit -----------------------------------------------------
+
+    @Test
+    fun a_failed_find_court_note_ends_with_the_next_edit() = runTest {
+        val vm = vm(finder = CourtFinderPort(find = { notFound() }, fromCorners = { _, _ -> notFound() }))
+        vm.onTap(10f, 10f, 1920f, 1080f, 22f, 6f)
+        vm.onFindCourt()
+        vm.state.value.status shouldBe CourtFinderStatus.FIND_FAILED
+
+        vm.onTap(1900f, 10f, 1920f, 1080f, 22f, 6f)
+        vm.state.value.status shouldBe CourtFinderStatus.IDLE
+    }
+
+    @Test
+    fun a_failed_completion_note_stays_until_the_twelfth_point() = runTest {
+        val vm = vm(finder = CourtFinderPort(find = { notFound() }, fromCorners = { _, _ -> notFound() }))
+        vm.tapCorners()
+        repeat(7) { vm.onTap(100f + 50 * it, 500f, 1920f, 1080f, 22f, 6f) }
+        vm.state.value.marking!!.points.size shouldBe 11
+        vm.state.value.status shouldBe CourtFinderStatus.ALIGN_FAILED
+
+        vm.onTap(900f, 800f, 1920f, 1080f, 22f, 6f)
+        vm.state.value.marking!!.isComplete.shouldBeTrue()
         vm.state.value.status shouldBe CourtFinderStatus.IDLE
     }
 }

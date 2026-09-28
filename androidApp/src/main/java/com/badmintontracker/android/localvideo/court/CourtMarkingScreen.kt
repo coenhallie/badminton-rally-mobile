@@ -41,6 +41,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -144,6 +145,14 @@ fun CourtMarkingScreen(
     // crash.
     val marking = state.marking
     val step = if (marking?.isComplete == true) savedStep else SetupStep.Mapping
+    // ... and the saved step is put back whenever the marking is not complete,
+    // not only read past. Deriving alone left Options saved under the empty
+    // marking the process came back to, so the moment it became complete again
+    // (the opening find answering, or a twelfth tap) the screen jumped to step
+    // two without the coach having seen the court or pressed Continue.
+    LaunchedEffect(marking?.isComplete) {
+        if (marking?.isComplete != true) savedStep = SetupStep.Mapping
+    }
 
     // The system back gesture unwinds the steps before it leaves the screen,
     // which is what the bar's own back arrow does.
@@ -186,7 +195,11 @@ fun CourtMarkingScreen(
                     frame = state.frame,
                     showsSavedMarks = state.showsSavedMarks,
                     status = state.status,
-                    onContinue = { savedStep = SetupStep.Options },
+                    canContinue = state.canContinue,
+                    onContinue = {
+                        vm.onContinue()
+                        savedStep = SetupStep.Options
+                    },
                 )
                 else -> OptionsStep(
                     frames = state.frameCount,
@@ -259,6 +272,7 @@ private fun ColumnScope.MappingStep(
     frame: android.graphics.Bitmap?,
     showsSavedMarks: Boolean,
     status: CourtFinderStatus,
+    canContinue: Boolean,
     onContinue: () -> Unit,
 ) {
     // The frame takes the height its own aspect ratio asks for and no more,
@@ -361,12 +375,13 @@ private fun ColumnScope.MappingStep(
     // Drawn whatever the count, and disabled until the twelve are down, rather
     // than appearing on the twelfth tap: a button that materialises under a
     // finger is how the wrong thing gets pressed, and toCourtKeypoints()
-    // throws on an incomplete marking.
+    // throws on an incomplete marking. Disabled too while the finder works:
+    // its answer would replace the marks under the options step.
     ShuttlButton(
         text = "Continue",
         onClick = onContinue,
         variant = ShuttlButtonVariant.Primary,
-        enabled = marking.isComplete,
+        enabled = canContinue,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = PagePadding)

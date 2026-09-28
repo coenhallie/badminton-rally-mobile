@@ -1,7 +1,9 @@
 package com.badmintontracker.analysis.court
 
+import com.badmintontracker.analysis.geometry.CourtKeypoints
 import com.badmintontracker.analysis.geometry.Point
 import io.kotest.matchers.doubles.shouldBeLessThan
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldNotStartWith
 import kotlin.math.hypot
@@ -78,16 +80,38 @@ class CourtFinderTest {
         }
     }
 
+    /** Found, not merely "found or refused": design §10 reports this scene found, 0.094 px off. */
     @Test fun portrait_frame_is_handled() {
         val cam = SyntheticCourt.camera(w = 720, h = 1280, f = 700.0, height = 6.0, back = 8.0)
         val img = SyntheticCourt.render(cam, 720, 1280, 0xFF3C8C46.toInt(), 0xFFEBEBEB.toInt())
         val f = CourtFinder.find(img)
-        val k = f.keypoints
-        if (k != null) {
-            val t = SyntheticCourt.truth(cam)[0]
-            println("portrait: found, top-left off by ${hypot(k.topLeft.x - t.x, k.topLeft.y - t.y)} px")
-            hypot(k.topLeft.x - t.x, k.topLeft.y - t.y) shouldBeLessThan 1.0
-        } else println("portrait: not found (${f.reason})")
+        f.reason shouldBe "ok"
+        val k = f.keypoints.shouldNotBeNull()
+        val t = SyntheticCourt.truth(cam)[0]
+        println("portrait: found, top-left off by ${hypot(k.topLeft.x - t.x, k.topLeft.y - t.y)} px")
+        hypot(k.topLeft.x - t.x, k.topLeft.y - t.y) shouldBeLessThan 1.0
+    }
+
+    /** A court drawn straight onto the image: table point i at `(100 + 50 x, 80 + 30 y)`. */
+    private fun upright(): CourtKeypoints {
+        val p = CourtModel.KEYPOINTS.map { Point(100.0 + 50 * it.x, 80.0 + 30 * it.y) }
+        return CourtKeypoints(p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9], p[10], p[11])
+    }
+
+    @Test fun keypoints_on_the_table_resolve_as_the_table() {
+        upright().resolvesAsTheTable() shouldBe true
+    }
+
+    /**
+     * §4.7.5: what the finder labels "near" must be what `courtPositions()`
+     * reads as near, or the analysis would fit these marks to a different
+     * court than the one the finder found.
+     */
+    @Test fun keypoints_whose_labels_resolve_differently_are_caught() {
+        val k = upright()
+        k.copy(serviceLineNearLeft = k.serviceLineFarLeft, serviceLineFarLeft = k.serviceLineNearLeft)
+            .resolvesAsTheTable() shouldBe false
+        k.copy(centerNear = k.centerFar, centerFar = k.centerNear).resolvesAsTheTable() shouldBe false
     }
 
     /**

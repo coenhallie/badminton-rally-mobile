@@ -49,6 +49,35 @@ enum class CourtFinderStatus(val note: String?, val busyLine: String?) {
     val isBusy: Boolean get() = busyLine != null
 
     /**
+     * Whether Continue may take the marking to the options step: not while
+     * the finder works on the frame. Its answer replaces the marks, and one
+     * that landed under the options step would send the analysis marks the
+     * coach never saw. Both screens enable Continue on this and a complete
+     * marking together.
+     */
+    val allowsContinue: Boolean get() = !isBusy
+
+    /**
+     * The status once the coach has changed the points to [marking] (a
+     * placed or moved point), so a note about how things stood before the
+     * edit does not stay on screen after it stops being true.
+     *
+     * [FIND_FAILED]'s "Your marks are unchanged" ends with any edit.
+     * [ALIGN_FAILED]'s "Tap the rest" ends once there is no rest to tap.
+     * The others stay: [FOUND] and [ALIGNED] ask him to check the points and
+     * move them, which an edit is; [NOT_FOUND] tells him to tap the corners,
+     * which he is doing. A busy status is not changed here: the platforms
+     * cancel the finder on any tap first, which leaves [IDLE].
+     *
+     * Undo and Clear do not use this: they end every note.
+     */
+    fun afterEdit(marking: CourtMarkingState): CourtFinderStatus = when (this) {
+        FIND_FAILED -> IDLE
+        ALIGN_FAILED -> if (marking.isComplete) IDLE else this
+        else -> this
+    }
+
+    /**
      * The note under the instruction line, where the saved-marks note also
      * sits. The finder's note wins: the two meet only when Find court over
      * saved marks finds nothing ([FIND_FAILED]), and a silent failure there
@@ -83,17 +112,22 @@ fun applyFinding(state: CourtMarkingState, finding: CourtFinding): CourtMarkingS
 
 /**
  * What one finder answer does to the marking screen: the [marking] to show
- * and the [status] to say. [edited] is true when the answer was applied as an
- * edit (one Undo step), which ends the saved-marks note like any other edit.
+ * and the [status] to say. [edited] is true when the answer placed a court,
+ * which ends the saved-marks note like any other edit. It is one Undo step,
+ * except where the court found is the marking already there
+ * ([afterFindCourt]).
  *
  * The three functions below produce it, one per kind of finder call, so
  * Android and iOS apply an answer by the same rules. What stays on each
  * platform is the plumbing around them: running the call off the main
  * thread, and dropping an answer the coach cancelled by editing first.
  *
- * Each takes `finding = null` for a call that threw (out of memory
- * included), which reads exactly as nothing found: a finder that fails must
- * leave the coach able to mark by hand.
+ * Each takes `finding = null` for a call that threw, which reads exactly as
+ * nothing found: a finder that fails must leave the coach able to mark by
+ * hand. Out of memory is included where it can be caught: on the JVM and
+ * Android it is an `OutOfMemoryError` like any other throwable, but on
+ * Kotlin/Native (iOS) running out of memory ends the process, and no caller
+ * sees it.
  */
 data class CourtFinderOutcome(
     val marking: CourtMarkingState,
@@ -119,6 +153,12 @@ fun afterOpeningFind(marking: CourtMarkingState, finding: CourtFinding?): CourtF
  * included, as one step Undo reverses. Nothing found leaves the marking
  * alone and says so: [CourtFinderStatus.FIND_FAILED] over marks, and
  * [CourtFinderStatus.NOT_FOUND] (tap the corners) over none.
+ *
+ * A court found exactly where the marks already are, on the frame on screen
+ * (Find court pressed twice, say), is the same answer without the step: an
+ * Undo that changes nothing on screen would read as a broken Undo. It is
+ * still an answer, so it says [CourtFinderStatus.FOUND] and puts down a
+ * selection like any other.
  */
 fun afterFindCourt(marking: CourtMarkingState, finding: CourtFinding?): CourtFinderOutcome {
     val found = finding?.toCourtPoints()
@@ -126,7 +166,9 @@ fun afterFindCourt(marking: CourtMarkingState, finding: CourtFinding?): CourtFin
         val status = if (marking.points.isEmpty()) CourtFinderStatus.NOT_FOUND else CourtFinderStatus.FIND_FAILED
         return CourtFinderOutcome(marking, status, edited = false)
     }
-    return CourtFinderOutcome(marking.withDetected(found), CourtFinderStatus.FOUND, edited = true)
+    val unchanged = found == marking.points && marking.markedAtSeconds == marking.frameSeconds
+    val placed = if (unchanged) marking.copy(selected = null) else marking.withDetected(found)
+    return CourtFinderOutcome(placed, CourtFinderStatus.FOUND, edited = true)
 }
 
 /**

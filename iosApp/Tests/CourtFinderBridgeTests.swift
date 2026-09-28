@@ -38,6 +38,29 @@ final class CourtFinderBridgeTests: XCTestCase {
         XCTAssertEqual(argb, [0xFFFF_0000, 0xFF00_FF00, 0xFF00_00FF, 0xFF0A_141E])
     }
 
+    // MARK: - The shared rules the marking screen reads
+
+    /// Continue is disabled while the finder works, from the shared predicate
+    /// the view reads through SKIE.
+    func test_continue_waits_while_the_finder_works() {
+        XCTAssertFalse(CourtFinderStatus.finding.allowsContinue)
+        XCTAssertFalse(CourtFinderStatus.aligning.allowsContinue)
+        XCTAssertTrue(CourtFinderStatus.found.allowsContinue)
+        XCTAssertTrue(CourtFinderStatus.idle.allowsContinue)
+    }
+
+    /// The notes a tap ends, by the shared rule the view applies after a tap
+    /// that changes the points.
+    func test_an_edit_ends_the_notes_it_makes_untrue() {
+        let few = CourtMarkingState(
+            videoWidth: 1920, videoHeight: 1080, points: [CourtPoint(x: 1, y: 2)],
+            markedAtSeconds: nil, frameSeconds: nil, history: [], selected: nil
+        )
+        XCTAssertEqual(CourtFinderStatus.findFailed.afterEdit(marking: few), .idle)
+        XCTAssertEqual(CourtFinderStatus.alignFailed.afterEdit(marking: few), .alignFailed)
+        XCTAssertEqual(CourtFinderStatus.found.afterEdit(marking: few), .found)
+    }
+
     // MARK: - The finder
 
     func test_a_grey_frame_is_not_found_and_not_an_error() async throws {

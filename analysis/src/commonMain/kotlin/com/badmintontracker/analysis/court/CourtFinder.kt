@@ -1,10 +1,12 @@
 package com.badmintontracker.analysis.court
 
 import com.badmintontracker.analysis.camera.GreyImage
+import com.badmintontracker.analysis.geometry.COURT_KEYPOINT_POSITIONS
 import com.badmintontracker.analysis.geometry.CourtKeypoints
 import com.badmintontracker.analysis.geometry.Matrix3x3
 import com.badmintontracker.analysis.geometry.Point
 import com.badmintontracker.analysis.geometry.calculateHomography
+import com.badmintontracker.analysis.geometry.courtPositions
 import com.badmintontracker.analysis.geometry.homography
 import com.badmintontracker.analysis.geometry.maxResidualM
 import kotlin.math.abs
@@ -180,8 +182,9 @@ private fun rescale(p: Point, fw: Int, fh: Int, tw: Int, th: Int): Point {
 
 /**
  * Design §4.7, in order, on a refinement in fit pixels: each failure is its
- * own reason. The accepted homography is relabelled ([canonical]) and mapped
- * to source pixels before the keypoints are read from it.
+ * own reason, the last "labels resolve differently" ([resolvesAsTheTable]).
+ * The accepted homography is relabelled ([canonical]) and mapped to source
+ * pixels before the keypoints are read from it.
  */
 private fun accept(frames: Frames, ridge: RidgeMap, ref: Refinement?, mark: TimeSource.Monotonic.ValueTimeMark): CourtFinding {
     if (ref == null || ref.h.any { !it.isFinite() }) return notFound("refinement failed", mark)
@@ -213,6 +216,8 @@ private fun accept(frames: Frames, ridge: RidgeMap, ref: Refinement?, mark: Time
         val shown = modelResidual?.let { "${fixed(it, 3)} m" } ?: "at infinity"
         return notFound("model residual $shown", mark, residual)
     }
+    // Last, so no frame refused today changes its reason.
+    if (!keypoints.resolvesAsTheTable()) return notFound("labels resolve differently", mark, residual)
     val matrix = listOf(
         listOf(sourceH[0], sourceH[1], sourceH[2]),
         listOf(sourceH[3], sourceH[4], sourceH[5]),
@@ -220,6 +225,18 @@ private fun accept(frames: Frames, ridge: RidgeMap, ref: Refinement?, mark: Time
     )
     return CourtFinding(keypoints, matrix, "ok", residual, mark.elapsedNow().inWholeMilliseconds)
 }
+
+/**
+ * Whether `courtPositions()` puts every point where the table does
+ * (`COURT_KEYPOINT_POSITIONS`, design §4.7.5). The finder labels by the
+ * table, but the analysis matches the service-line and centre pairs to the
+ * court by which side of the marked net their pixels fall on, not by their
+ * labels. Keypoints on which the two disagree would be fitted to another
+ * court than the one found. The model residual check reads the positions
+ * the same way, so it catches a disagreement only when the swap also breaks
+ * the fit; this says it directly.
+ */
+internal fun CourtKeypoints.resolvesAsTheTable(): Boolean = courtPositions() == COURT_KEYPOINT_POSITIONS
 
 /**
  * `court_probe.py`'s `line_support()`: how many across lines (the six of

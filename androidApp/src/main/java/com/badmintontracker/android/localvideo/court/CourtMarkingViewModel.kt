@@ -58,7 +58,13 @@ data class CourtMarkingUiState(
     val showsSavedMarks: Boolean = false,
     /** Where the court finder stands, which the instruction line and the note say. */
     val status: CourtFinderStatus = CourtFinderStatus.IDLE,
-)
+) {
+    /**
+     * Whether Continue is enabled: twelve points down and no finder answer on
+     * its way to replace them ([CourtFinderStatus.allowsContinue]).
+     */
+    val canContinue: Boolean get() = marking?.isComplete == true && status.allowsContinue
+}
 
 class CourtMarkingViewModel(
     val entryId: String,
@@ -118,26 +124,45 @@ class CourtMarkingViewModel(
     /**
      * A tap on the frame, in display coordinates, with [hitRadius] the reach of
      * a placed point and [cancelRadius] the reach of the selected point's
-     * cancel, in the same units (see [CourtMarkingState.tap]).
+     * cancel, in the same units (see [CourtMarkingState.tap]). Neither has a
+     * default, as the shared `tap` has none: a silent 0 makes every point
+     * unselectable, or every tap on the selected point a move.
+     *
+     * Any tap while the finder works cancels it, one that only selects a point
+     * or lands on none included: the coach has started on the marking by
+     * hand, and a late answer would replace the points under him and drop a
+     * selection he just made.
      */
     fun onTap(
         displayX: Float,
         displayY: Float,
         displayWidth: Float,
         displayHeight: Float,
-        hitRadius: Float = 0f,
-        cancelRadius: Float = 0f,
+        hitRadius: Float,
+        cancelRadius: Float,
     ) {
         val before = state.value.marking ?: return
+        if (state.value.status.isBusy) cancelFinder()
         val after = before.tap(displayX, displayY, displayWidth, displayHeight, hitRadius, cancelRadius)
         if (after == before) return
         val edited = after.points != before.points
-        if (edited && state.value.status.isBusy) cancelFinder()
         state.update {
-            it.copy(marking = after, showsSavedMarks = it.showsSavedMarks && !edited)
+            it.copy(
+                marking = after,
+                showsSavedMarks = it.showsSavedMarks && !edited,
+                status = if (edited) it.status.afterEdit(after) else it.status,
+            )
         }
         if (after.justReachedFourCorners(before)) completeFromCorners(after.points)
     }
+
+    /**
+     * Continue, to the options step. Continue is disabled while the finder
+     * works ([CourtMarkingUiState.canContinue]); cancelling here as well means
+     * no answer can land on the marks once the coach has left them, whatever
+     * gets him off the step.
+     */
+    fun onContinue() = cancelFinder()
 
     fun onUndo() {
         cancelFinder()

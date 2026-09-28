@@ -64,6 +64,10 @@ struct CourtMarkingView: View {
     /// he taps. The search itself cannot be stopped, so every answer checks
     /// for the cancel before it touches the screen.
     @State private var finderTask: Task<Void, Never>? = nil
+    /// The court's lines through the marking, fitted once per marking rather
+    /// than on every body evaluation (each pinch frame is one): androidApp's
+    /// `remember(marking)`.
+    @State private var courtLinesCache = CourtLinesCache()
     @State private var error: String? = nil
     /// Whether the "what each run produces" sheet is up.
     @State private var showCapabilities = false
@@ -238,10 +242,15 @@ struct CourtMarkingView: View {
         // Drawn whatever the count, and disabled until the twelve are down,
         // as androidApp does: a button that materialises under a finger is how
         // the wrong thing gets pressed, and its arrival changed the height the
-        // frame was laid out in.
-        Button("Continue") { step = .options }
+        // frame was laid out in. Disabled too while the finder works: its
+        // answer would replace the marks under the options step. Continue
+        // cancels it as well, so nothing can land on marks the coach has left.
+        Button("Continue") {
+            cancelFinder()
+            step = .options
+        }
             .buttonStyle(PrimaryButtonStyle())
-            .disabled(!marking.isComplete)
+            .disabled(!(marking.isComplete && finderStatus.allowsContinue))
             .padding(.horizontal, 16)
             .padding(.bottom, 16)
     }
@@ -359,8 +368,14 @@ struct CourtMarkingView: View {
     /// A tap at `p`, in the un-zoomed display units of `displaySize`, which
     /// is what `place` maps from: places the next point, or on a complete
     /// marking picks a point up or moves it (`CourtMarkingState.tap`).
+    ///
+    /// Any tap while the finder works cancels it, one that only selects a
+    /// point or lands on none included, as androidApp's `onTap`: a late
+    /// answer would replace the points under the coach and drop a selection
+    /// he just made.
     private func onTap(_ p: CGPoint, displaySize: CGSize) {
         guard let before = marking else { return }
+        if finderStatus.isBusy { cancelFinder() }
         // A point's reach (22 pt) and the selected point's cancel (6 pt) are
         // that far on screen at any zoom, so in the un-zoomed units `p` is in,
         // they shrink as the frame is zoomed in.
@@ -373,9 +388,11 @@ struct CourtMarkingView: View {
         )
         if after == before { return }
         let edited = after.points != before.points
-        if edited && finderStatus.isBusy { cancelFinder() }
         marking = after
-        if edited { showsSavedMarks = false }
+        if edited {
+            showsSavedMarks = false
+            finderStatus = finderStatus.afterEdit(marking: after)
+        }
         if after.justReachedFourCorners(previous: before) { completeFromCorners(after.points) }
     }
 
@@ -585,7 +602,7 @@ struct CourtMarkingView: View {
         // The court drawn through the twelve marks, once there are twelve: a
         // mark off its paint shows as a line off the court's line, which is
         // easier to see than a dot slightly off.
-        let courtLines = marking.courtLines()
+        let courtLines = courtLinesCache.lines(for: marking)
         ZStack(alignment: .topLeading) {
             Image(uiImage: frame)
                 .resizable()
@@ -710,6 +727,23 @@ struct CourtMarkingView: View {
                 at: dp
             )
         }
+    }
+}
+
+/// `CourtMarkingState.courtLines()` for the last marking asked about. It fits
+/// a homography, and SwiftUI evaluates the body on every pinch and pan frame.
+/// A reference type held in `@State` so the view can fill it while it draws
+/// without that being a state change: the lines are a pure function of the
+/// marking, and nothing on screen reads the cache but the draw that asks.
+private final class CourtLinesCache {
+    private var marking: CourtMarkingState?
+    private var lines: [KotlinPair<CourtPoint, CourtPoint>] = []
+
+    func lines(for marking: CourtMarkingState) -> [KotlinPair<CourtPoint, CourtPoint>] {
+        if let cached = self.marking, cached == marking { return lines }
+        self.marking = marking
+        lines = marking.courtLines()
+        return lines
     }
 }
 

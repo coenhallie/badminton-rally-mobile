@@ -108,8 +108,12 @@ private val FINE by lazy { ScoreSamples(FINE_STEP) }
  * `ridge` is the work image's [ridges], taken as a parameter so a caller
  * that needs the same line pixels afterwards (acceptance's line support)
  * computes them once.
+ *
+ * `pruning = false` scores every placement in full instead of stopping once
+ * it cannot make the cut; the result is the same to the bit (Task 10). Only
+ * the test that checks so turns it off.
  */
-internal fun searchCourt(work: GreyImage, ridge: RidgeMap = ridges(work)): SearchResult? {
+internal fun searchCourt(work: GreyImage, ridge: RidgeMap = ridges(work), pruning: Boolean = true): SearchResult? {
     val w = work.width
     val h = work.height
     val lines = candidateLines(ridge)
@@ -127,7 +131,7 @@ internal fun searchCourt(work: GreyImage, ridge: RidgeMap = ridges(work)): Searc
             if (!gatesPass(hm, w, h)) continue
             // Once 60 are kept, a placement that cannot beat the lowest of
             // them would not be kept: its scoring may stop early.
-            val cutoff = if (top.size < RESCORED) Double.NEGATIVE_INFINITY else top.lowest
+            val cutoff = if (!pruning || top.size < RESCORED) Double.NEGATIVE_INFINITY else top.lowest
             top.offer(scorer.score(hm, COARSE, cutoff), r, q)
         }
     }
@@ -142,7 +146,7 @@ internal fun searchCourt(work: GreyImage, ridge: RidgeMap = ridges(work)): Searc
         val q = top.quad[k]
         placement(quads.homographies, r, hm, q * 9)
         // Only a higher score replaces the best: one sure to end below it can stop early.
-        val s = scorer.score(hm, FINE, cutoff = bestScore)
+        val s = scorer.score(hm, FINE, cutoff = if (pruning) bestScore else Double.NEGATIVE_INFINITY)
         if (s > bestScore) {
             bestScore = s
             bestRect = r
@@ -161,13 +165,16 @@ internal fun searchCourt(work: GreyImage, ridge: RidgeMap = ridges(work)): Searc
  * probe), and only placements whose four court corners each lie within
  * `radius` of a tap, matched as a set over the court's eight corner orders;
  * the best 0.1 m score among them wins. Null when no placement is that near.
- * `ridge` as for [searchCourt].
+ * `ridge` as for [searchCourt]. `pruning = false` turns off the early score
+ * stop and both corner shortcuts (the per-quad origin check and the corners
+ * checked before the gates), for the test that checks they change nothing.
  */
 internal fun searchCourtNear(
     work: GreyImage,
     cornersWork: List<Point>,
     radius: Double,
     ridge: RidgeMap = ridges(work),
+    pruning: Boolean = true,
 ): SearchResult? {
     require(cornersWork.size == 4) { "${cornersWork.size} corners" }
     val w = work.width
@@ -192,9 +199,9 @@ internal fun searchCourtNear(
     var bestQuad = -1
     val rects = CourtModel.RECTANGLES.size
     for (q in 0 until quads.count) {
-        origins.nearTaps(quads.homographies, q * 9, tx, ty, radius, originNear)
+        if (pruning) origins.nearTaps(quads.homographies, q * 9, tx, ty, radius, originNear)
         rects@ for (r in 0 until rects) {
-            if (!originNear[origins.group[r]]) continue
+            if (pruning && !originNear[origins.group[r]]) continue
             if (!placement(quads.homographies, r, hm, q * 9)) continue
             // The corners first, each checked against the taps as it comes:
             // a corner farther than `radius` from every tap is that far from
@@ -206,12 +213,12 @@ internal fun searchCourtNear(
                 val z = hm[6] * kx[c] + hm[7] * ky[c] + hm[8]
                 cx[c] = (hm[0] * kx[c] + hm[1] * ky[c] + hm[2]) / z
                 cy[c] = (hm[3] * kx[c] + hm[4] * ky[c] + hm[5]) / z
-                if (nearestTap(cx[c], cy[c], tx, ty) > radius) continue@rects
+                if (pruning && nearestTap(cx[c], cy[c], tx, ty) > radius) continue@rects
             }
             if (!gatesPass(hm, w, h)) continue
             if (cornerMismatch(cx, cy, tx, ty) > radius) continue
             // A score below the best so far cannot win, even on a tie-break: it may stop early.
-            val s = scorer.score(hm, FINE, cutoff = bestScore)
+            val s = scorer.score(hm, FINE, cutoff = if (pruning) bestScore else Double.NEGATIVE_INFINITY)
             if (s == Double.NEGATIVE_INFINITY) continue
             // Rect-major is the probe's order: a tie goes to the lower rectangle, then the lower quad.
             if (s > bestScore || (s == bestScore && (r < bestRect || (r == bestRect && q < bestQuad)))) {
