@@ -320,7 +320,7 @@ private fun measure(
         for (j in 0 until m) {
             val o = -half + j * PROFILE_STEP
             offs[j] = o
-            r[j] = fit.sample(px + o * nx, py + o * ny)
+            r[j] = sampleInside(fit, px + o * nx, py + o * ny)
         }
         val edge = max(MIN_BASELINE, (BASELINE_FRACTION * m).toInt())
         val base = profile.baseline
@@ -368,6 +368,28 @@ private fun measure(
         val mid = (xl + xr) / 2
         obs.add(segments[samples.segment[i]], px + mid * nx, py + mid * ny, sgn)
     }
+}
+
+/**
+ * [GreyImage.sample], with its border handling skipped where it has none to
+ * do: at least one pixel inside the right and bottom edges, where the clamps
+ * change nothing. The window test in [measure] keeps every profile point
+ * there; any other point goes to [GreyImage.sample]. The same arithmetic, so
+ * the same value.
+ */
+private fun sampleInside(img: GreyImage, x: Double, y: Double): Double {
+    if (!(x >= 0.0 && x <= img.width - 2.0 && y >= 0.0 && y <= img.height - 2.0)) return img.sample(x, y)
+    val x0 = floor(x).toInt()
+    val y0 = floor(y).toInt()
+    val fx = x - x0
+    val fy = y - y0
+    val p = img.pixels
+    val i = y0 * img.width + x0
+    val a = p[i]
+    val b = p[i + 1]
+    val c = p[i + img.width]
+    val d = p[i + img.width + 1]
+    return (a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + d * fx) * fy
 }
 
 /** The median of `v[0 until n]` (the mean of the middle two for an even count), `v` reordered. */
