@@ -529,10 +529,17 @@ struct CourtMarkingView: View {
                 }
             }
             .shuttlType(ShuttlType.titleLarge)
-            Spacer()
+            // First claim on the width, as the weight(1f) does on Android:
+            // without it the spacer takes a share and a long move
+            // instruction wraps at the hyphen in "Bottom-Left".
+            .layoutPriority(1)
+            Spacer(minLength: 8)
             Text("\(marking.points.count) / \(CourtMarkingSpec.shared.TOTAL) points")
                 .shuttlType(ShuttlType.bodySmall)
                 .foregroundStyle(Shuttl.textSecondary)
+                // Never wraps: the instruction's priority would otherwise
+                // squeeze it to one word per line.
+                .fixedSize()
         }
         .padding(.horizontal, 16)
         .padding(.top, 12)
@@ -556,7 +563,12 @@ struct CourtMarkingView: View {
                 .alignmentGuide(.firstTextBaseline) { d in
                     d[VerticalAlignment.center] + Self.instructionCapHeight / 2
                 }
-            Text(text)
+            // Non-breaking hyphens (Archivo has U+2011): a landmark's name
+            // never splits across lines. UIKit's line breaking avoids leaving
+            // one word alone on the last line, so "Tap the new spot for
+            // Bottom-Left Corner" otherwise wrapped at the hyphen, "Bottom-"
+            // on one line and "Left Corner" on the next.
+            Text(text.replacingOccurrences(of: "-", with: "\u{2011}"))
                 .foregroundStyle(Shuttl.textHeading)
         }
     }

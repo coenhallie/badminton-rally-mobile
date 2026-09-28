@@ -53,7 +53,10 @@ struct SchematicCourtGuide: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.horizontal, 16 - Self.inset)
+        // The inset is the canvas's own margin, so only the leading gutter
+        // gives it back; the text keeps the page's 16 on the trailing side.
+        .padding(.leading, 16 - Self.inset)
+        .padding(.trailing, 16)
     }
 
     private var canvas: some View {
