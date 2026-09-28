@@ -13,8 +13,8 @@ import kotlin.math.sqrt
 /**
  * The work image's line pixels (design §4.3) and, per pixel, the direction
  * of the line's normal in radians - the orientation the Hough stage votes
- * with. [normal] is defined for every pixel, meaningful only where [mask] is
- * set.
+ * with. [normal] is computed only where the ridge response passes the
+ * contrast test (every [mask] pixel does) and is 0 elsewhere.
  */
 internal class RidgeMap(val width: Int, val height: Int, val mask: BooleanArray, val normal: FloatArray)
 
@@ -61,7 +61,14 @@ internal fun ridges(work: GreyImage): RidgeMap {
     val h = work.height
     val n = w * h
     val best = FloatArray(n)
-    val normal = FloatArray(n)
+    // The winning scale's derivatives and polarity, per pixel: the normal is
+    // computed from them once, and only where the response passes the
+    // contrast test (the only pixels it is read at), instead of one atan2 per
+    // scale that improves on the last. The same floats give the same angle.
+    val winDxx = FloatArray(n)
+    val winDyy = FloatArray(n)
+    val winDxy = FloatArray(n)
+    val winBright = BooleanArray(n)
     for (s in RIDGE_SCALES) {
         val d = sobel2(gaussianBlur(work, s))
         val s2 = s * s
@@ -78,18 +85,26 @@ internal fun ridges(work: GreyImage): RidgeMap {
             val r = max(bright, dark)
             if (r > best[i]) {
                 best[i] = r.toFloat()
-                val theta = 0.5 * atan2(2 * dxy, dxx - dyy)
-                normal[i] = (if (bright >= dark) theta + PI / 2 else theta).toFloat()
+                winDxx[i] = d.dxx[i]
+                winDyy[i] = d.dyy[i]
+                winDxy[i] = d.dxy[i]
+                winBright[i] = bright >= dark
             }
         }
     }
 
     val (_, sd) = boxMeanStd(work, CONTRAST_BOX)
+    val normal = FloatArray(n)
     val mask = BooleanArray(n)
     for (y in 0 until h) for (x in 0 until w) {
         val i = y * w + x
         val b = best[i].toDouble()
         if (b <= MIN_RESPONSE || b / (sd[i] + CONTRAST_FLOOR) <= CONTRAST_RATIO) continue
+        val dxx = winDxx[i].toDouble()
+        val dyy = winDyy[i].toDouble()
+        val dxy = winDxy[i].toDouble()
+        val theta = 0.5 * atan2(2 * dxy, dxx - dyy)
+        normal[i] = (if (winBright[i]) theta + PI / 2 else theta).toFloat()
         val nx = cos(normal[i].toDouble())
         val ny = sin(normal[i].toDouble())
         if (b < sampleZeroBorder(best, w, h, x + nx, y + ny)) continue
