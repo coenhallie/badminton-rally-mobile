@@ -46,8 +46,8 @@ class MatchListCopyTest {
             MatchListCopy.REMOVE_VIDEO_TITLE, MatchListCopy.CONFIRM_REMOVE, MatchListCopy.CONFIRM_DELETE,
             MatchListCopy.MATCH_MENU, MatchListCopy.FILTER_GROUP, MatchListCopy.PAUSED,
             MatchListCopy.ANALYSIS_FAILED, MatchListCopy.analysisFailed(null), MatchListCopy.analysisFailed("x"),
-            MatchListCopy.sharedBy("coach@club.es"),
-        )
+            MatchListCopy.sharedBy("coach@club.es"), MatchListCopy.SORT,
+        ) + MatchListSort.entries.flatMap { listOf(MatchListCopy.sortLabel(it), MatchListCopy.sortDescription(it)) }
         val produced = removableRows().flatMap { item ->
             listOf(MatchListCopy.removeFromPhoneDetail(item), MatchListCopy.choiceMessage(item))
         } + MatchAction.entries.mapNotNull { MatchListCopy.actionLabel(it) } +

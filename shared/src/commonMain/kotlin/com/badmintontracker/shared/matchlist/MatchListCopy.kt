@@ -17,6 +17,27 @@ object MatchListCopy {
     const val LEGEND_TITLE = "What the icons mean"
     /** What a screen reader calls the three filter chips, as one control. */
     const val FILTER_GROUP = "Filter"
+    const val SORT = "Sort matches"
+    const val SORT_NEWEST = "Newest"
+    const val SORT_OLDEST = "Oldest"
+    const val SORT_MOST_RALLIES = "Most rallies"
+    const val SORT_MOST_NOTES = "Most notes"
+
+    /** The sort button's text, and the menu item for [sort]. */
+    fun sortLabel(sort: MatchListSort): String = when (sort) {
+        MatchListSort.NEWEST -> SORT_NEWEST
+        MatchListSort.OLDEST -> SORT_OLDEST
+        MatchListSort.MOST_RALLIES -> SORT_MOST_RALLIES
+        MatchListSort.MOST_NOTES -> SORT_MOST_NOTES
+    }
+
+    /**
+     * The sort button to a screen reader: what it does and the order the list
+     * is in, since the label replaces the visible text. Worded as the match
+     * page's rally sort is ("Sort rallies, Most notes").
+     */
+    fun sortDescription(sort: MatchListSort): String = "$SORT, ${sortLabel(sort)}"
+
     /** The row's overflow button, to a screen reader. */
     const val MATCH_MENU = "Match menu"
 

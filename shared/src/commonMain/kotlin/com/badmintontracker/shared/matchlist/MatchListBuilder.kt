@@ -127,8 +127,7 @@ internal fun buildMatchList(input: MatchListInput, timeZone: TimeZone): MatchLis
         else shared += videoItem(null, clips, input, timeZone, sharer = input.sharerByVideoId[videoId])
     }
 
-    val order = compareByDescending<MatchListItem> { it.sortAtEpochMs }.thenBy { it.key }
-    return MatchList(mine = mine.sortedWith(order), shared = shared.sortedWith(order))
+    return MatchList(mine = mine.sortedWith(NEWEST_FIRST), shared = shared.sortedWith(NEWEST_FIRST))
 }
 
 private fun RallyClip.isOwnedBy(userId: String?) = userId != null && ownerId == userId
@@ -234,6 +233,8 @@ private fun videoItem(
             else -> MatchDelete.VIDEO_MATCH
         },
         deviceClipCount = deviceClips,
+        rallyCount = rallies,
+        noteCount = clips.sumOf { it.annotationCount },
         heatmapId = heatmapId,
         accessibilityStatus = statusDescription(where, analyses, asks.text),
     )
@@ -313,6 +314,8 @@ private fun scoreItem(
             else -> MatchDelete.SCORE_MATCH
         },
         deviceClipCount = entry?.let { input.deviceClipCounts[it.id] } ?: 0,
+        rallyCount = rallies,
+        noteCount = clips.sumOf { it.annotationCount },
         heatmapId = heatmapId,
         accessibilityStatus = statusDescription(where, analyses, asks.text),
     )
