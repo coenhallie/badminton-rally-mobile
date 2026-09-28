@@ -32,6 +32,13 @@ enum class CourtFinderStatus(val note: String?, val busyLine: String?) {
 
     /** The four corners could not be completed: the coach taps on. */
     ALIGN_FAILED(note = CourtMarkingSpec.ALIGN_FAILED_NOTE, busyLine = null),
+
+    /**
+     * Find court found nothing over a marking that has points: they stay, and
+     * [NOT_FOUND]'s "tap the four corners" would be wrong about what comes
+     * next. An empty marking gets [NOT_FOUND].
+     */
+    FIND_FAILED(note = CourtMarkingSpec.FIND_FAILED_NOTE, busyLine = null),
 }
 
 /**

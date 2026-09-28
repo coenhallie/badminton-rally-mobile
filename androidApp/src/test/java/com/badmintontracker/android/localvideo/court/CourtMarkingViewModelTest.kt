@@ -274,11 +274,31 @@ class CourtMarkingViewModelTest {
     }
 
     @Test
-    fun find_court_that_finds_nothing_leaves_the_marking() = runTest {
+    fun find_court_that_finds_nothing_leaves_the_marks() = runTest {
         val vm = vm(finder = CourtFinderPort(find = { notFound() }, fromCorners = { _, _ -> notFound() }))
         vm.onTap(10f, 10f, 1920f, 1080f, 22f)
         vm.onFindCourt()
         vm.state.value.marking!!.points.size shouldBe 1
+        // Not NOT_FOUND: "tap the four corners" is wrong once a point is down.
+        vm.state.value.status shouldBe CourtFinderStatus.FIND_FAILED
+    }
+
+    @Test
+    fun find_court_that_throws_over_marks_leaves_them() = runTest {
+        var calls = 0
+        val vm = vm(finder = CourtFinderPort(find = { if (calls++ == 0) notFound() else error("boom") }, fromCorners = { _, _ -> notFound() }))
+        vm.tapCorners()
+        vm.onFindCourt()
+        vm.state.value.marking!!.points.size shouldBe 4
+        vm.state.value.status shouldBe CourtFinderStatus.FIND_FAILED
+    }
+
+    @Test
+    fun find_court_that_finds_nothing_on_an_empty_marking_says_tap_the_corners() = runTest {
+        val vm = vm(finder = CourtFinderPort(find = { notFound() }, fromCorners = { _, _ -> notFound() }))
+        vm.onClear()
+        vm.onFindCourt()
+        vm.state.value.marking!!.points shouldBe emptyList()
         vm.state.value.status shouldBe CourtFinderStatus.NOT_FOUND
     }
 

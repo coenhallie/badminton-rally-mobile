@@ -65,5 +65,7 @@ class CourtAutoMarkingTest {
         CourtFinderStatus.ALIGNED.busyLine shouldBe null
         CourtFinderStatus.ALIGN_FAILED.note shouldBe CourtMarkingSpec.ALIGN_FAILED_NOTE
         CourtFinderStatus.ALIGN_FAILED.busyLine shouldBe null
+        CourtFinderStatus.FIND_FAILED.note shouldBe CourtMarkingSpec.FIND_FAILED_NOTE
+        CourtFinderStatus.FIND_FAILED.busyLine shouldBe null
     }
 }

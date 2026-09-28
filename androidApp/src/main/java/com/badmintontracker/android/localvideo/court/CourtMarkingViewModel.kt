@@ -151,7 +151,8 @@ class CourtMarkingViewModel(
     /**
      * Find court: the finder on demand, replacing whatever is marked (saved
      * marks included) as one step Undo reverses. Nothing found leaves the
-     * marking alone. Ignored while the finder is already working.
+     * marking alone, and says so: FIND_FAILED over marks, NOT_FOUND (tap the
+     * corners) over none. Ignored while the finder is already working.
      */
     fun onFindCourt() {
         if (state.value.marking == null || state.value.status.isBusy) return
@@ -160,7 +161,8 @@ class CourtMarkingViewModel(
             state.update { s ->
                 val marking = s.marking ?: return@update s
                 if (found == null) {
-                    s.copy(status = CourtFinderStatus.NOT_FOUND)
+                    val failed = if (marking.points.isEmpty()) CourtFinderStatus.NOT_FOUND else CourtFinderStatus.FIND_FAILED
+                    s.copy(status = failed)
                 } else {
                     s.copy(marking = marking.withDetected(found), status = CourtFinderStatus.FOUND, showsSavedMarks = false)
                 }

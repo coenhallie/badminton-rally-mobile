@@ -407,6 +407,7 @@ class CourtMarkingModelTest {
         CourtMarkingSpec.ALIGNING shouldBe "Lining the points up with the court..."
         CourtMarkingSpec.ALIGNED_NOTE shouldBe "Lined up with the court's lines. Check them; tap a point to move it."
         CourtMarkingSpec.ALIGN_FAILED_NOTE shouldBe "Couldn't line the points up. Tap the rest."
+        CourtMarkingSpec.FIND_FAILED_NOTE shouldBe "Couldn't find the court. Your marks are unchanged."
         CourtMarkingSpec.FIND_COURT shouldBe "Find court"
         CourtMarkingSpec.moveInstruction(6) shouldBe "Tap the new spot for Service Near-Left"
     }

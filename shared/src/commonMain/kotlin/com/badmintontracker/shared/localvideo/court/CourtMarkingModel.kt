@@ -78,6 +78,9 @@ object CourtMarkingSpec {
     /** The note when four tapped corners could not be completed. */
     const val ALIGN_FAILED_NOTE = "Couldn't line the points up. Tap the rest."
 
+    /** The note when Find court found nothing and the marks on screen stay. */
+    const val FIND_FAILED_NOTE = "Couldn't find the court. Your marks are unchanged."
+
     /** The button that runs the court finder on demand. */
     const val FIND_COURT = "Find court"
 
