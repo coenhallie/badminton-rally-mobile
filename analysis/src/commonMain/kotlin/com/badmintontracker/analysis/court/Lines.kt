@@ -111,22 +111,38 @@ internal fun candidateLines(r: RidgeMap, maxLines: Int = 40): List<CandidateLine
 
     val minVotes = MIN_PEAK_VOTES * max(w, h)
     val lines = ArrayList<CandidateLine>()
+    // Each angle row's first maximum, so a peak costs a scan of the rows'
+    // maxima rather than of the whole accumulator. The first row with the
+    // largest maximum, at that row's first maximum, is exactly the first
+    // maximum in row-major order; suppression only lowers entries, so only
+    // the rows it touched need rescanning.
+    val rowBest = IntArray(ANGLE_BINS) { firstMaxInRow(acc, it, rhoBins) }
     for (peak in 0 until maxLines) {
         // First maximum in row-major order, as numpy's argmax.
-        var bestIndex = 0
-        for (i in 1 until acc.size) if (acc[i] > acc[bestIndex]) bestIndex = i
+        var bestRow = 0
+        for (t in 1 until ANGLE_BINS) if (acc[rowBest[t]] > acc[rowBest[bestRow]]) bestRow = t
+        val bestIndex = rowBest[bestRow]
         val votes = acc[bestIndex]
         if (votes < minVotes) break
         val ti = bestIndex / rhoBins
         val ri = bestIndex % rhoBins
         for (dti in -PEAK_SUPPRESSION..PEAK_SUPPRESSION) {
-            val row = (ti + dti).mod(ANGLE_BINS) * rhoBins
+            val t = (ti + dti).mod(ANGLE_BINS)
+            val row = t * rhoBins
             for (rr in max(0, ri - PEAK_SUPPRESSION)..min(rhoBins - 1, ri + PEAK_SUPPRESSION)) acc[row + rr] = 0
+            rowBest[t] = firstMaxInRow(acc, t, rhoBins)
         }
         val line = supported((ri - d).toDouble(), ti * PI / ANGLE_BINS, votes.toDouble(), xs, ys)
         if (line != null) lines += line
     }
     return lines
+}
+
+/** The index into `acc` of the first maximum of angle row `t`. */
+private fun firstMaxInRow(acc: IntArray, t: Int, rhoBins: Int): Int {
+    var best = t * rhoBins
+    for (i in best + 1 until (t + 1) * rhoBins) if (acc[i] > acc[best]) best = i
+    return best
 }
 
 /**
