@@ -10,6 +10,12 @@ The mobile app is versioned independently from the web app.
 ## [Unreleased]
 
 ### Added
+- **Both players, not just the near one.** A cloud analysis now finds the
+  player at the far end of the court too, and the heatmap, base position and
+  skeleton each have a Near and a Far view. The cloud looks closer at a player
+  who is small in the frame, which found the far player in a club-hall match
+  where he was missed in every frame before, and places him about twice as
+  precisely on the others. A video has to be analysed again to benefit.
 - **The court is found automatically.** When court mapping opens, the app looks
   for the court's painted lines and places all twelve points itself, then draws
   the court's lines over the frame so a wrong fit is easy to spot. Tap a point to
@@ -89,6 +95,14 @@ The mobile app is versioned independently from the web app.
   not fit says which, because the two need different fixes.
 
 ### Fixed
+- **Each side keeps its own player.** When the near player walked up to the
+  net and her feet crossed it, the far side's heatmap could take her for the
+  far player for a moment. Each side now follows its player through the video
+  rather than taking whoever is most clearly seen in each frame.
+- **The far player's base position reads from his own side.** It was measured
+  from the near player's service line and the camera's left and right, so a
+  far player at the back of his court read as several metres "in front of the
+  service line". It now reads from his own service line, left and right his own.
 - **Court mapping on iPhone placed every mark in the wrong place, and the near
   half of the court could not be marked at all.** A tap landed roughly 60% of the
   frame's height below your finger, and anything below about the service line was

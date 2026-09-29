@@ -79,3 +79,32 @@ tasks.register<JavaExec>("compareResults") {
     classpath = jvmMain.output.allOutputs + jvmMain.runtimeDependencyFiles
     mainClass.set("com.badmintontracker.analysis.compare.ComparatorCli")
 }
+
+// What a phone makes of a local cloud run, for the two-player references and
+// their audit (docs/plans/2026-09-29-two-player-tracking-design.md section 3.2).
+//
+//   ./gradlew :analysis:exportCorpusRun --args="$HOME/shuttl-corpus/<id> [poses file] [out]"
+tasks.register<JavaExec>("exportCorpusRun") {
+    group = "verification"
+    description = "Write a local cloud run's per-frame cameras and the phone's picks as JSON."
+    val jvmMain = kotlin.jvm().compilations.getByName("main")
+    classpath = jvmMain.output.allOutputs + jvmMain.runtimeDependencyFiles
+    mainClass.set("com.badmintontracker.analysis.compare.CorpusRunExport")
+}
+
+// The corpus tests read ~/shuttl-corpus straight off the filesystem and take
+// their options from the environment. Declared as inputs, so a changed pose
+// file, reference or option re-runs them instead of Gradle reporting the
+// previous run's results as up to date.
+tasks.named<Test>("jvmTest") {
+    val corpus = File(System.getProperty("user.home"), "shuttl-corpus")
+    inputs.files(
+        fileTree(corpus) {
+            include("*/cloud-local/*.raw", "*/device-style/*.raw", "*/players_reference.json")
+            include("*/reference_tracks.json", "*/marks_ideal.json", "*/video.json")
+        },
+    ).withPropertyName("shuttlCorpus").optional()
+    listOf("TWO_PLAYER_POSES", "TWO_PLAYER_MAX_FRAME", "TWO_PLAYER_GATES", "ANALYSIS_REQUIRE_CORPUS").forEach {
+        inputs.property(it, System.getenv(it) ?: "")
+    }
+}
