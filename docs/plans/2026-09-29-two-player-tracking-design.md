@@ -239,27 +239,40 @@ reason to build it. If none show, this stage is recorded as measured and not
 needed, and not built.
 
 `selectPlayers` keeps its gates and replaces the per-frame argmax with a
-shortest path per side over the whole run:
+shortest path per side over the whole run (`SidePath.kt`, as built):
 
 - nodes are (frame, person) pairs that pass the side's gates;
-- an edge joins two nodes up to `MAX_SKIP_S = 0.5` apart; it costs
-  `skip x frames skipped + motion x metres moved`, and does not exist when
-  the implied speed exceeds `MAX_SPEED_MPS = 8.0` (faster than any badminton
-  movement, slow enough to rule out a jump from player to umpire);
-- a node costs `-ln(box confidence)`, so among equally plausible paths the
-  more confident detections still win, plus a fixed cost for every frame the
-  person stands outside the court lines of that half. Without it a still
-  umpire, detected every frame, is a cheaper path than a moving player who
-  drops out now and then; with it he pays on every frame and the player only
-  on a wide lunge;
-- a path may start and end anywhere, and a frame the path skips produces no
-  sample and counts as a rejection (`RejectionReason.NOT_ON_PATH`, appended
-  last so every stored ordinal stays where it is).
+- a node earns `REWARD = 5`, less `-ln(box confidence)`, plus
+  `OUTSIDE_PER_M = 3` for each metre it stands further outside the half's
+  lines than the frame's least-outside candidate. Relative, as built, rather
+  than the absolute cost first planned: an absolute cost steep enough to beat
+  an umpire detected in every frame also dropped lone candidates the gates
+  accept, and a mild one let the umpire's unbroken path out-earn a player who
+  drops out now and then. Relative, a lone candidate pays nothing and is kept
+  exactly as the per-frame pick kept it, and an umpire beside a player pays
+  for his metre on every frame;
+- an edge joins two nodes up to `MAX_SKIP_S = 0.5` apart and costs
+  `0.5 x frames skipped + 1.0 x metres`; it does not exist beyond
+  `MAX_SPEED_MPS = 8.0 x dt + NOISE_M = 1.0`. The allowance was found while
+  planning: a far player's ground point moves a metre between frames when a
+  foot lifts, while a jump to another person is several metres;
+- a path starts free, and picking up again after an earlier piece costs
+  `RESTART = 10`, so the path can be several stretches;
+- a frame the path skips produces no sample and counts as
+  `RejectionReason.NOT_ON_PATH`, appended last so every stored ordinal stays.
+
+**The other player reaching across the net** (`crossedFrom`, found on the
+corpus). On `IMG_5892` the near player walks to the net with her ankles
+across it while the far player is hidden behind her, so she is the ONLY
+person on the far side for a few frames and no path can refuse her. A piece
+of one side's track that lasts at most `MAX_CROSSING_S = 1.0`, overlaps no
+sample of the other side, and starts or ends within reach of the other
+side's track is that player, and is dropped (`NOT_ON_PATH`). The length
+bound keeps a genuine player re-found at the net beside the other one.
 
 With one candidate per frame and no implausible jumps the path is exactly
-today's selection, which is what device runs and single-candidate cloud files
-should see; unit tests pin that equivalence. The same function serves device
-and cloud runs, as today.
+today's selection; the 326 pre-existing `:analysis` JVM tests pass unchanged.
+The same function serves device and cloud runs, as today.
 
 ## 6. Decisions
 

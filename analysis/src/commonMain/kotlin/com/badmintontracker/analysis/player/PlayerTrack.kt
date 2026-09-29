@@ -5,6 +5,7 @@ import com.badmintontracker.analysis.geometry.Matrix3x3
 import com.badmintontracker.analysis.geometry.Point
 import com.badmintontracker.analysis.geometry.apply
 import com.badmintontracker.analysis.geometry.invert3x3
+import com.badmintontracker.analysis.normalizeFps
 import com.badmintontracker.analysis.raw.RawInference
 import com.badmintontracker.analysis.raw.RawPerson
 
@@ -129,9 +130,10 @@ fun selectPlayers(raw: RawInference, keypoints: CourtKeypoints): List<PlayerSele
         }
     }
 
-    val samples = CourtSide.entries.associateWith { ArrayList<PlayerSample>() }
-    val poses = CourtSide.entries.associateWith { ArrayList<PlayerPose>() }
     val rejections = CourtSide.entries.associateWith { mutableMapOf<RejectionReason, Int>() }
+    // Per side, the frames where somebody passed the gates, for the path to
+    // choose among once every frame has been read.
+    val seen = CourtSide.entries.associateWith { ArrayList<SeenFrame>() }
     var framesWithPose = 0
 
     for (frame in raw.frames) {
@@ -162,16 +164,11 @@ fun selectPlayers(raw: RawInference, keypoints: CourtKeypoints): List<PlayerSele
         }
         val poseFrame = PoseFrame(frame.frame, inMarkingFrame)
         for (side in CourtSide.entries) {
-            val result = selector.select(poseFrame, side)
-            val sample = result.sample
-            if (sample != null && result.personIndex >= 0) {
-                val original = originals[result.personIndex]
-                samples.getValue(side).add(sample)
-                poses.getValue(side).add(
-                    PlayerPose(frame.frame, frame.timestamp, original.keypoints, original.keypointConfidence, m),
-                )
+            val found = selector.candidates(poseFrame, side)
+            if (found.passed.isNotEmpty()) {
+                seen.getValue(side).add(SeenFrame(frame.frame, frame.timestamp, m, originals, found.passed))
             } else {
-                result.rejection?.let { r ->
+                found.rejection?.let { r ->
                     val counts = rejections.getValue(side)
                     counts[r] = (counts[r] ?: 0) + 1
                 }
@@ -179,14 +176,58 @@ fun selectPlayers(raw: RawInference, keypoints: CourtKeypoints): List<PlayerSele
         }
     }
 
-    return CourtSide.entries.map { side ->
-        PlayerSelection(
-            side,
-            PlayerTrack(samples.getValue(side), framesWithPose, rejections.getValue(side)),
-            poses.getValue(side),
+    val fps = normalizeFps(raw.header.fps).fps
+    // Each side's path first, then each side's pieces that are the other
+    // side's player reaching across the net (crossedFrom), judged against the
+    // other side's path.
+    val paths = CourtSide.entries.associateWith { side ->
+        val frames = seen.getValue(side)
+        val chosen = chooseSidePath(
+            frames.map { f ->
+                f.passed.map { p ->
+                    SideCandidate(
+                        p.sample.frame, p.sample.courtPosition, p.person.boxConfidence,
+                        outsideLinesM(p.sample.courtPosition, side),
+                    )
+                }
+            },
+            fps,
         )
+        frames.mapIndexed { i, f -> f to f.passed.getOrNull(chosen[i]) }
+    }
+    return CourtSide.entries.map { side ->
+        val own = paths.getValue(side)
+        val otherSide = if (side == CourtSide.NEAR) CourtSide.FAR else CourtSide.NEAR
+        val crossed = crossedFrom(
+            own.mapNotNull { it.second?.sample },
+            paths.getValue(otherSide).mapNotNull { it.second?.sample },
+            fps,
+        )
+        val samples = ArrayList<PlayerSample>()
+        val poses = ArrayList<PlayerPose>()
+        val counts = rejections.getValue(side)
+        for ((f, pick) in own) {
+            if (pick == null || pick.sample.frame in crossed) {
+                counts[RejectionReason.NOT_ON_PATH] = (counts[RejectionReason.NOT_ON_PATH] ?: 0) + 1
+                continue
+            }
+            val original = f.originals[pick.personIndex]
+            samples.add(pick.sample)
+            poses.add(PlayerPose(f.frame, f.timestamp, original.keypoints, original.keypointConfidence, f.camera))
+        }
+        PlayerSelection(side, PlayerTrack(samples, framesWithPose, counts), poses)
     }
 }
+
+/** One frame where somebody passed the gates on a side, kept until the path has chosen. */
+private class SeenFrame(
+    val frame: Int,
+    val timestamp: Double,
+    val camera: Matrix3x3?,
+    /** The frame's people in its own pixels, which is what a pose keeps. */
+    val originals: List<PosePerson>,
+    val passed: List<NearPlayerSelector.Passed>,
+)
 
 /** [buildNearPlayerTrack], keeping the chosen person's joints as well. */
 fun selectNearPlayer(raw: RawInference, keypoints: CourtKeypoints): NearPlayerSelection {

@@ -290,10 +290,69 @@ class SelectPlayersTest {
     }
 
     @Test
-    fun camera_lost_comes_after_every_existing_reason() {
+    fun new_reasons_are_appended_so_no_ordinal_moves() {
         // Appended, so no stored or logged ordinal of an existing reason moves.
-        RejectionReason.entries.last() shouldBe RejectionReason.CAMERA_LOST
         RejectionReason.BAD_COURT.ordinal shouldBe 5
+        RejectionReason.CAMERA_LOST.ordinal shouldBe 6
+        RejectionReason.entries.last() shouldBe RejectionReason.NOT_ON_PATH
+    }
+
+    @Test
+    fun the_other_player_reaching_across_the_net_does_not_take_the_far_side() {
+        // IMG_5892 frames 1375-1378: the near player walks to the net and her
+        // ankles cross it, more confidently detected than the far player. Each
+        // side keeps its player over time (design §5), not the most confident
+        // person of each frame.
+        val frames = (1..20).map { f ->
+            val far = personAt(Point(3.0, 2.0 + 0.01 * f), confidence = 0.6f)
+            val atTheNet = personAt(Point(4.5, 6.4), confidence = 0.95f)
+            RawFrame(f, f / 30.0, null, emptyList(), if (f in 8..11) listOf(atTheNet, far) else listOf(far))
+        }
+
+        val far = selectPlayers(inference(*frames.toTypedArray()), keypoints).first { it.side == CourtSide.FAR }
+
+        far.track.samples.size shouldBe 20
+        far.track.samples.all { it.courtPosition.y < 3.0 } shouldBe true
+        far.poses.size shouldBe 20
+    }
+
+    @Test
+    fun the_near_player_crossing_the_net_while_the_far_player_is_hidden_stays_off_the_far_track() {
+        // IMG_5892 frames 1376-1380, audited: she walks up to the net, her
+        // ankles cross it, and the far player behind her is not detected, so
+        // for four frames she is the only person on the far side.
+        val frames = (1..60).map { f ->
+            val people = when {
+                f <= 20 -> listOf(personAt(Point(1.0, 7.8 - 0.05 * f)), personAt(Point(3.0, 2.0)))
+                f <= 24 -> listOf(personAt(Point(1.0, 6.55)))
+                else -> listOf(personAt(Point(1.0, 7.0 + 0.02 * (f - 24))), personAt(Point(3.0, 2.0)))
+            }
+            RawFrame(f, f / 30.0, null, emptyList(), people)
+        }
+
+        val selections = selectPlayers(inference(*frames.toTypedArray()), keypoints)
+        val far = selections.first { it.side == CourtSide.FAR }
+
+        far.track.samples.none { it.frame in 21..24 } shouldBe true
+        far.track.samples.size shouldBe 56
+        far.track.rejections[RejectionReason.NOT_ON_PATH] shouldBe 4
+        far.poses.size shouldBe far.track.samples.size
+    }
+
+    @Test
+    fun a_one_frame_jump_to_someone_else_is_not_on_the_path() {
+        val frames = (1..20).map { f ->
+            val who = if (f == 10) personAt(Point(5.5, 5.5), confidence = 0.99f) else personAt(Point(3.0, 2.0))
+            RawFrame(f, f / 30.0, null, emptyList(), listOf(who))
+        }
+
+        val far = selectPlayers(inference(*frames.toTypedArray()), keypoints).first { it.side == CourtSide.FAR }
+
+        far.track.samples.size shouldBe 19
+        far.track.samples.none { it.frame == 10 } shouldBe true
+        far.track.rejections[RejectionReason.NOT_ON_PATH] shouldBe 1
+        // Every pose frame is either a sample or a counted rejection.
+        (far.track.samples.size + far.track.rejections.values.sum()) shouldBe far.track.framesWithPose
     }
 
     /**
@@ -302,9 +361,9 @@ class SelectPlayersTest {
      * own fit, so the test and the selector agree on the geometry by
      * construction.
      */
-    private fun personAt(court: Point): RawPerson {
+    private fun personAt(court: Point, confidence: Float = 0.9f): RawPerson {
         val pixel = invert3x3(keypoints.homography()!!)!!.apply(court.x, court.y)!!
-        return person(pixel.x, pixel.y, confidence = 0.9f)
+        return person(pixel.x, pixel.y, confidence = confidence)
     }
 
     /** This person as a camera [m] (marking-frame pixels to frame pixels) would see them. */

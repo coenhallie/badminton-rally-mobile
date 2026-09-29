@@ -81,6 +81,17 @@ enum class RejectionReason {
      * is rejected before any person is examined.
      */
     CAMERA_LOST,
+
+    /**
+     * Somebody passed every gate on this side, but not the side's player:
+     * the per-side path (SidePath.kt) chose no one here, because everyone who
+     * passed was out of reach of where the player was a moment ago, or the
+     * one it chose was the other side's player reaching across the net
+     * (`crossedFrom`). Outside
+     * the gate order like the two above, and appended last so every stored
+     * or logged ordinal stays where it was.
+     */
+    NOT_ON_PATH,
 }
 
 /**
@@ -165,13 +176,27 @@ class NearPlayerSelector(
      * taken for NEAR here is the same track this returned before FAR existed.
      */
     fun select(frame: PoseFrame, side: CourtSide): Result {
-        if (homography == null || !usable) return Result(null, RejectionReason.BAD_COURT)
-        if (frame.people.isEmpty()) return Result(null, RejectionReason.NO_PEOPLE)
+        val found = candidates(frame, side)
+        // The most confident, the first on a tie: the strict `>` this pick
+        // has always made.
+        var best: Passed? = null
+        for (p in found.passed) if (best == null || p.person.boxConfidence > best.person.boxConfidence) best = p
+        return Result(best?.sample, found.rejection, best?.person, best?.personIndex ?: -1)
+    }
 
-        var best: PlayerSample? = null
-        var bestConfidence = Float.NEGATIVE_INFINITY
-        var bestPerson: PosePerson? = null
-        var bestIndex = -1
+    /**
+     * Everyone on [side] who passes every gate, in detection order, or the
+     * furthest gate anyone on that side reached.
+     *
+     * [select] keeps the most confident of them for one frame; selectPlayers
+     * hands them all to the per-side path (SidePath.kt), which decides over
+     * the whole run which of them is the side's player.
+     */
+    fun candidates(frame: PoseFrame, side: CourtSide): Candidates {
+        if (homography == null || !usable) return Candidates(emptyList(), RejectionReason.BAD_COURT)
+        if (frame.people.isEmpty()) return Candidates(emptyList(), RejectionReason.NO_PEOPLE)
+
+        val passed = ArrayList<Passed>()
         var reason = RejectionReason.NO_GROUND_POINT
 
         for ((index, person) in frame.people.withIndex()) {
@@ -191,15 +216,16 @@ class NearPlayerSelector(
                 reason = worse(reason, RejectionReason.WRONG_SCALE)
                 continue
             }
-            if (person.boxConfidence > bestConfidence) {
-                bestConfidence = person.boxConfidence
-                best = PlayerSample(frame.frame, court)
-                bestPerson = person
-                bestIndex = index
-            }
+            passed.add(Passed(PlayerSample(frame.frame, court), person, index))
         }
-        return Result(best, if (best == null) reason else null, bestPerson, bestIndex)
+        return Candidates(passed, if (passed.isEmpty()) reason else null)
     }
+
+    /** One person who passed every gate: where they stand, and which detection they are. */
+    data class Passed(val sample: PlayerSample, val person: PosePerson, val personIndex: Int)
+
+    /** Everyone who passed on one side of one frame, or, when nobody did, why. */
+    data class Candidates(val passed: List<Passed>, val rejection: RejectionReason?)
 
     /**
      * The point on the court plane this person is standing on: the ankle
