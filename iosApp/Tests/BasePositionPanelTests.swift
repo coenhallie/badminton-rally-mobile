@@ -125,7 +125,7 @@ final class BasePositionPanelTests: XCTestCase {
         // a coach reads it: y 9.0 is 0.32 m behind the near service line at
         // 8.68, and x 3.05 is the centre line itself.
         XCTAssertEqual(
-            BasePositionFormatKt.describeRally(base: bases.rallies[0]),
+            BasePositionFormatKt.describeRally(base: bases.rallies[0], side: .near),
             "Rally 1 · 0.32 m behind the service line, on the centre line · found in 100% of frames"
         )
     }

@@ -83,6 +83,17 @@ class SidePathTest {
     }
 
     @Test
+    fun a_lone_frame_far_in_time_from_any_other_is_kept_as_the_per_frame_pick_kept_it() {
+        // Review finding: a 1-2 frame stretch more than MAX_SKIP_S from its
+        // neighbours never paid back a restart, so the path dropped it where
+        // the per-frame pick kept it. Nothing within reach can compete there.
+        val frames = ((1..30) + listOf(61) + (92..120)).map { f -> listOf(at(f, 2.0, 3.0)) }
+        chosen(frames).all { it != null } shouldBe true
+        val two = ((1..30) + listOf(61, 62) + (92..120)).map { f -> listOf(at(f, 4.0, 2.0)) }
+        chosen(two).all { it != null } shouldBe true
+    }
+
+    @Test
     fun frames_without_candidates_choose_nothing() {
         val frames = listOf(listOf(at(1, 2.0, 3.0)), emptyList(), listOf(at(3, 2.0, 3.0)))
         chooseSidePath(frames, fps).toList() shouldBe listOf(0, -1, 0)
@@ -112,6 +123,15 @@ class SidePathTest {
         val far = (10..14).map { sample(it, 0.95, 6.55) }
         val near = listOf(sample(17, 1.0, 6.9)) + (18..40).map { sample(it, 1.0, 7.0 + 0.02 * it) }
         crossedFrom(far, near, fps) shouldBe (10..14).toSet()
+    }
+
+    @Test
+    fun a_short_stretch_while_the_other_player_is_seen_on_their_own_side_is_kept() {
+        // Both players at the net and both seen: the short far stretch cannot
+        // be the near player, who is on her own side in the same frames.
+        val near = (50..70).map { sample(it, 1.2, 7.1) }
+        val far = (60..64).map { sample(it, 1.0, 6.4) }
+        crossedFrom(far, near, fps) shouldBe emptySet()
     }
 
     @Test

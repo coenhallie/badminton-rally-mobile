@@ -166,7 +166,7 @@ fun selectPlayers(raw: RawInference, keypoints: CourtKeypoints): List<PlayerSele
         for (side in CourtSide.entries) {
             val found = selector.candidates(poseFrame, side)
             if (found.passed.isNotEmpty()) {
-                seen.getValue(side).add(SeenFrame(frame.frame, frame.timestamp, m, originals, found.passed))
+                seen.getValue(side).add(SeenFrame(frame.frame, frame.timestamp, m, frame.persons, found.passed))
             } else {
                 found.rejection?.let { r ->
                     val counts = rejections.getValue(side)
@@ -211,7 +211,10 @@ fun selectPlayers(raw: RawInference, keypoints: CourtKeypoints): List<PlayerSele
                 counts[RejectionReason.NOT_ON_PATH] = (counts[RejectionReason.NOT_ON_PATH] ?: 0) + 1
                 continue
             }
-            val original = f.originals[pick.personIndex]
+            // Converted here, for the chosen person only: a device file hands
+            // over every person, and keeping all of them converted for the
+            // whole run until the path chose would double what a long match holds.
+            val original = f.persons[pick.personIndex].toPosePerson()
             samples.add(pick.sample)
             poses.add(PlayerPose(f.frame, f.timestamp, original.keypoints, original.keypointConfidence, f.camera))
         }
@@ -225,7 +228,7 @@ private class SeenFrame(
     val timestamp: Double,
     val camera: Matrix3x3?,
     /** The frame's people in its own pixels, which is what a pose keeps. */
-    val originals: List<PosePerson>,
+    val persons: List<RawPerson>,
     val passed: List<NearPlayerSelector.Passed>,
 )
 

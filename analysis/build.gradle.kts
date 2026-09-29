@@ -91,3 +91,20 @@ tasks.register<JavaExec>("exportCorpusRun") {
     classpath = jvmMain.output.allOutputs + jvmMain.runtimeDependencyFiles
     mainClass.set("com.badmintontracker.analysis.compare.CorpusRunExport")
 }
+
+// The corpus tests read ~/shuttl-corpus straight off the filesystem and take
+// their options from the environment. Declared as inputs, so a changed pose
+// file, reference or option re-runs them instead of Gradle reporting the
+// previous run's results as up to date.
+tasks.named<Test>("jvmTest") {
+    val corpus = File(System.getProperty("user.home"), "shuttl-corpus")
+    inputs.files(
+        fileTree(corpus) {
+            include("*/cloud-local/*.raw", "*/device-style/*.raw", "*/players_reference.json")
+            include("*/reference_tracks.json", "*/marks_ideal.json", "*/video.json")
+        },
+    ).withPropertyName("shuttlCorpus").optional()
+    listOf("TWO_PLAYER_POSES", "TWO_PLAYER_MAX_FRAME", "TWO_PLAYER_GATES", "ANALYSIS_REQUIRE_CORPUS").forEach {
+        inputs.property(it, System.getenv(it) ?: "")
+    }
+}

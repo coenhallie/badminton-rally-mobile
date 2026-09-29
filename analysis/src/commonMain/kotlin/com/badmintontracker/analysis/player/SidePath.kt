@@ -57,8 +57,9 @@ fun outsideLinesM(court: Point, side: CourtSide): Double {
  *    there because a far player's ground point moves a metre between frames
  *    when a foot lifts; a jump to another person is several metres;
  *  - a path starts free, and picking up again after an earlier piece costs
- *    [RESTART], so the path can be several stretches when the player was
- *    lost for longer than a skip allows.
+ *    [RESTART] when that piece ended within [MAX_SKIP_S] (a jump to someone
+ *    else) and nothing when it ended longer ago, so the path can be several
+ *    stretches when the player was lost for longer than a skip allows.
  *
  * With one candidate per frame moving plausibly, every frame is chosen: the
  * per-frame pick's result. Returns, per input frame, the index of the chosen
@@ -85,15 +86,22 @@ fun chooseSidePath(frames: List<List<SideCandidate>>, fps: Double): IntArray {
         for ((j, c) in candidates.withIndex()) {
             val own = -REWARD - ln(max(c.confidence.toDouble(), 1e-3)) +
                 OUTSIDE_PER_M * (c.outsideM - leastOutside)
-            // A path's first node starts free; picking up again after an
-            // earlier piece costs RESTART and keeps that piece.
+            // A path's first node starts free. Picking up again after an
+            // earlier piece keeps that piece; it costs RESTART only when the
+            // piece ended within MAX_SKIP_S, where a restart is a jump to
+            // someone else. Further back nothing within reach could compete,
+            // so it is free, as the per-frame pick was.
             var choice = 0.0
             var pf = -1
             var pi = -1
-            if (bestFrame >= 0 && bestCost + RESTART < choice) {
-                choice = bestCost + RESTART
-                pf = bestFrame
-                pi = bestIndex
+            if (bestFrame >= 0) {
+                val recent = c.frame - frames[bestFrame][0].frame <= maxSkipFrames
+                val restart = bestCost + if (recent) RESTART else 0.0
+                if (restart < choice) {
+                    choice = restart
+                    pf = bestFrame
+                    pi = bestIndex
+                }
             }
             for (s in seen.indices.reversed()) {
                 val k = seen[s]
@@ -163,6 +171,18 @@ fun crossedFrom(own: List<PlayerSample>, other: List<PlayerSample>, fps: Double)
         hypot(a.courtPosition.x - b.courtPosition.x, a.courtPosition.y - b.courtPosition.y)
 
     val sortedOther = other.sortedBy { it.frame }
+    val otherFrames = IntArray(sortedOther.size) { sortedOther[it].frame }
+
+    /** Index of the first of [other]'s samples at or after [frame]. */
+    fun firstAtOrAfter(frame: Int): Int {
+        var lo = 0
+        var hi = otherFrames.size
+        while (lo < hi) {
+            val mid = (lo + hi) ushr 1
+            if (otherFrames[mid] < frame) lo = mid + 1 else hi = mid
+        }
+        return lo
+    }
     val pieces = ArrayList<MutableList<PlayerSample>>()
     for (sample in own.sortedBy { it.frame }) {
         val last = pieces.lastOrNull()?.last()
@@ -179,9 +199,11 @@ fun crossedFrom(own: List<PlayerSample>, other: List<PlayerSample>, fps: Double)
         val first = piece.first()
         val last = piece.last()
         if ((last.frame - first.frame + 1) / fps > MAX_CROSSING_S) continue
-        if (sortedOther.any { it.frame in first.frame..last.frame }) continue
-        val before = sortedOther.lastOrNull { it.frame < first.frame && first.frame - it.frame <= maxSkipFrames }
-        val after = sortedOther.firstOrNull { it.frame > last.frame && it.frame - last.frame <= maxSkipFrames }
+        val at = firstAtOrAfter(first.frame)
+        if (at < otherFrames.size && otherFrames[at] <= last.frame) continue
+        val before = sortedOther.getOrNull(at - 1)?.takeIf { first.frame - it.frame <= maxSkipFrames }
+        val after = sortedOther.getOrNull(firstAtOrAfter(last.frame + 1))
+            ?.takeIf { it.frame - last.frame <= maxSkipFrames }
         val fromOther = before != null && dist(before, first) <= reach(first.frame - before.frame)
         val toOther = after != null && dist(last, after) <= reach(after.frame - last.frame)
         if (fromOther || toOther) piece.forEach { crossed.add(it.frame) }

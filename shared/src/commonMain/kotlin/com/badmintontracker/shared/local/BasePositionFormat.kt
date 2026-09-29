@@ -47,15 +47,10 @@ fun describeBase(p: Point, side: CourtSide): String {
     return "$depth, $lateral"
 }
 
-/** The near player's base: what every caller meant before there were two sides. */
-fun describeBase(p: Point): String = describeBase(p, CourtSide.NEAR)
-
 /** One list row: the rally, where its base was, and how much of the rally that rests on. */
 fun describeRally(base: RallyBase, side: CourtSide): String =
     "Rally ${base.index} · ${describeBase(base.position, side)} · found in ${(base.coverage * 100).toInt()}% of frames"
 
-/** A near player's row. */
-fun describeRally(base: RallyBase): String = describeRally(base, CourtSide.NEAR)
 
 /**
  * A rally's dot on the Base panel's canvas, and the size its number measures
