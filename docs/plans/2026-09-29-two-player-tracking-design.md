@@ -245,7 +245,11 @@ shortest path per side over the whole run:
   the implied speed exceeds `MAX_SPEED_MPS = 8.0` (faster than any badminton
   movement, slow enough to rule out a jump from player to umpire);
 - a node costs `-ln(box confidence)`, so among equally plausible paths the
-  more confident detections still win;
+  more confident detections still win, plus a fixed cost for every frame the
+  person stands outside the court lines of that half. Without it a still
+  umpire, detected every frame, is a cheaper path than a moving player who
+  drops out now and then; with it he pays on every frame and the player only
+  on a wide lunge;
 - a path may start and end anywhere, and a frame the path skips produces no
   sample and counts as a rejection (`RejectionReason.NOT_ON_PATH`, appended
   last so every stored ordinal stays where it is).
