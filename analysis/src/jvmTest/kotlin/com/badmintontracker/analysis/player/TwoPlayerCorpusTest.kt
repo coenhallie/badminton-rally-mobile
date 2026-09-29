@@ -166,8 +166,8 @@ class TwoPlayerCorpusTest {
             (ASASA to CourtSide.NEAR) to Baseline(1.000, 601, 0),
             (ASASA to CourtSide.FAR) to Baseline(0.000, 0, 0),
             ("743d7fb1-ad6e-44d2-bd35-f9a6c0892a87" to CourtSide.NEAR) to Baseline(0.9607603, 3067, 0),
-            ("743d7fb1-ad6e-44d2-bd35-f9a6c0892a87" to CourtSide.FAR) to Baseline(0.8044145, 2491, 0),
-            ("IMG_5892" to CourtSide.NEAR) to Baseline(0.9738652, 2047, 0),
+            ("743d7fb1-ad6e-44d2-bd35-f9a6c0892a87" to CourtSide.FAR) to Baseline(0.8034949, 2488, 0),
+            ("IMG_5892" to CourtSide.NEAR) to Baseline(0.9734068, 2046, 0),
             ("IMG_5892" to CourtSide.FAR) to Baseline(0.8505273, 1597, 0),
         )
 

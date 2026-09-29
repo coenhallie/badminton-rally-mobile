@@ -190,7 +190,8 @@ running mean of its height, and how many frames the slot has been empty.
   player height at the far edge, run at 1.5x its width (the aSASa far half
   runs at `imgsz=1600`). Keep the most confident detection whose ankles lie
   inside the court lines of that half, or within `ACQUIRE_MARGIN_M = 0.5` of
-  them (added as built: strictly inside, a far player serving from behind the
+  them, the one with the highest mean keypoint confidence, which is the box
+  confidence the pose file carries (added as built: strictly inside, a far player serving from behind the
   baseline was not re-found for seconds; the umpire and bystanders on the
   corpus stand a metre and more out), not in the wider search margin: this is
   what keeps the umpire and bystanders from being adopted. After `SEARCH_BACKOFF_S = 1.0` of
@@ -268,7 +269,10 @@ shortest path per side over the whole run (`SidePath.kt`, as built):
   planning: a far player's ground point moves a metre between frames when a
   foot lifts, while a jump to another person is several metres;
 - a path starts free, and picking up again after an earlier piece costs
-  `RESTART = 10`, so the path can be several stretches;
+  `RESTART = 10` when that piece ended within `MAX_SKIP_S` (a jump to
+  someone else) and nothing when it ended longer ago (added after the
+  whole-branch review: with a fixed restart cost a lone sighting between two
+  stretches was dropped where the per-frame pick kept it);
 - a frame the path skips produces no sample and counts as
   `RejectionReason.NOT_ON_PATH`, appended last so every stored ordinal stays.
 
@@ -402,35 +406,47 @@ did not remove them.
 ### 10.3 The worker, before and after (full length, the phone as built)
 
 Baseline is the worker as deployed before this work (badminton-tracker
-`df8dede`); final is `7521b11` (zoom pass, trigger 120, acquisition margin
-0.5 m, double reports removed before merging). Both read by the phone with
-the per-side path.
+`df8dede`); final is `7370cfb` (zoom pass, trigger 120, acquisition margin
+0.5 m, double reports removed before merging, same-person merge, the zoom
+guarded). Both read by the phone as built (mobile `9fe13f06`: per-side path
+with a free start after a gap, crossing rule). "Unknown" samples fall where
+the reference has nobody; their identity rests on the audit (10.1), not on
+the reference.
 
-| video | side | baseline: coverage, right, wrong, median | final: coverage, right, wrong, median |
+| video | side | baseline: coverage, right, wrong, unknown, median | final: coverage, right, wrong, unknown, median |
 |---|---|---|---|
-| aSASa | Near | 0.998, 601, 0, 6.9 cm | 0.998, 601, 0, **3.1 cm** |
-| aSASa | Far | 0.000, 0, 0, - | **0.814, 378, 0, 12.6 cm** |
-| `743d7fb1` | Near | 0.961, 3067, 0, 4.1 cm | 0.957, 3058, 0, 4.1 cm |
-| `743d7fb1` | Far | 0.804, 2491, 0, 8.1 cm | **0.958, 2953, 0**, 10.2 cm |
-| `IMG_5892` | Near | 0.974, 2047, 0, 7.5 cm | 0.973, 2044, 0, 7.4 cm |
-| `IMG_5892` | Far | 0.851, 1597, 0, 33.1 cm | **0.922, 1695, 0, 15.2 cm** |
+| aSASa | Near | 1.000, 601, 0, 1, 6.9 cm | 0.998, 601, 0, 1, **3.1 cm** |
+| aSASa | Far | 0.000, 0, 0, 0, - | **0.814, 378, 0**, 113, **12.6 cm** |
+| `743d7fb1` | Near | 0.961, 3067, 0, 67, 4.1 cm | 0.957, 3058, 0, 67, 4.1 cm |
+| `743d7fb1` | Far | 0.803, 2488, 0, 133, 8.1 cm | **0.958, 2953, 0**, 178, 10.3 cm |
+| `IMG_5892` | Near | 0.973, 2046, 0, 77, 7.5 cm | 0.972, 2043, 0, 76, 7.4 cm |
+| `IMG_5892` | Far | 0.851, 1597, 0, 258, 33.1 cm | **0.926, 1696, 0**, 322, **15.2 cm** |
 
 `743d7fb1`'s coverage leaves out 2649 camera-lost frames (cuts and
 replays). Its Far median rose 2 cm because the zoom placed him in about 460
 frames the baseline never did, which are the harder ones. `IMG_5892`'s Near gate from the
-camera-motion work still holds on the final file (`CloudLocalRunCorpusTest`).
-`TwoPlayerCorpusTest` asserts every §7 gate against these baselines; with
-`TWO_PLAYER_GATES=1` on the baseline file it fails the three Far gates, and on
-the final file it passes, with `ANALYSIS_REQUIRE_CORPUS=1`.
+camera-motion work still holds on the final file (`CloudLocalRunCorpusTest`:
+0.9725, 6.9 cm, 23.6 cm). `TwoPlayerCorpusTest` asserts every §7 gate against
+these baselines; with `TWO_PLAYER_GATES=1` on the baseline file it fails the
+three Far gates, and on the final file it passes, with
+`ANALYSIS_REQUIRE_CORPUS=1`.
 
-Local CPU time per frame, baseline and final run back to back on this
-machine with nothing else heavy running (not a GPU figure; see §7):
+Two reference frames were cleared after the final run: `IMG_5892` Far 1377
+and 2040, where the far player's feet are half hidden behind the near player
+and the reference and the system sit about 12 px apart on him (a metre of
+depth at the far baseline). The earlier audit had seen both and judged them
+position errors on the right person; the final run scored 2040 as a wrong
+person, which is what prompted the clear. They join 368-373 and 1745 under
+the same rule: no reliable ground point.
+
+Local CPU time per frame, baseline and final run on this machine with
+nothing else heavy running (not a GPU figure; see §7):
 
 | video | baseline | final | ratio |
 |---|---|---|---|
-| aSASa | 0.107 s | 0.256 s | 2.40x |
-| `IMG_5892` | 0.104 s | 0.209 s | 2.00x |
-| `743d7fb1` | 0.103 s | 0.162 s | 1.56x |
+| aSASa | 0.107 s | 0.255 s | 2.39x |
+| `IMG_5892` | 0.104 s | 0.209 s | 2.01x |
+| `743d7fb1` | 0.103 s | 0.162 s | 1.57x |
 
 ### 10.4 What was tried and not kept
 
@@ -444,6 +460,15 @@ machine with nothing else heavy running (not a GPU figure; see §7):
 
 ### 10.5 Not verified here
 
-- **The A10G.** CPU ratios only; the first deployed run's Phase 2 time per
-  frame against the previous deploy is the owner's to record.
+- **The A10G.** CPU ratios only. The first deployed run's Phase 2 time per
+  frame against the previous deploy is the owner's to record, and a go/no-go:
+  Phase 2's timeout is 7200 s and long matches already run long on a T4.
+  `SHUTTL_ZOOM_PASS=0` in the worker's environment turns the zoom off without
+  a code change, and each run's zoom call counts are logged
+  ("Zoom pass: ...") and returned in `tracking_state["player_zoom"]`.
+- **The iOS far-side panels on a simulator.** Android was checked on the
+  emulator (planted track, light and dark); iOS compiles and its Base and
+  cloud-panel tests pass, but no far-side panel was looked at on iOS.
+- **The Skeleton panel's far player** on a device: only the track was
+  planted; the skeleton file comes with a real install after the deploy.
 - **Doubles, and footage outside the three corpus videos.**
