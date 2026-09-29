@@ -70,6 +70,9 @@ fun readCorpusMarks(dir: File): CourtKeypoints {
 fun exportRun(raw: RawInference, marks: CourtKeypoints): JsonObject {
     val selections = selectPlayers(raw, marks)
     return buildJsonObject {
+        // The marking frame's time, so a tool rebuilding the camera for
+        // another pose file of the same video (the device-style file) keeps it.
+        put("cameraReferenceTimestamp", raw.camera?.referenceTimestamp?.let { JsonPrimitive(it) } ?: JsonNull)
         putJsonArray("frames") {
             for (frame in raw.frames) {
                 add(

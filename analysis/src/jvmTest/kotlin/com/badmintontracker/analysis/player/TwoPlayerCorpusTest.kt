@@ -25,8 +25,10 @@ import kotlin.test.Test
  * [selectPlayers] exactly as a phone installs it. The references come from
  * `tools/models/players_reference.py`, audited by hand (§3.2).
  *
- * `-Dtwo.player.poses=baseline.raw` scores another file in each video's
+ * `TWO_PLAYER_POSES=baseline.raw` scores another file in each video's
  * `cloud-local/`, so today's worker and a changed one are read by one test.
+ * Where `device-style/poses.raw` exists (`tools/models/device_style_poses.py`)
+ * a `NEAR-dev` row scores the device path's Near side too.
  *
  * BLOCKED on a corpus: a video whose files are missing is skipped loudly;
  * `ANALYSIS_REQUIRE_CORPUS=1` turns a skip into a failure.
@@ -34,7 +36,7 @@ import kotlin.test.Test
 class TwoPlayerCorpusTest {
 
     private val root = File(System.getProperty("user.home"), "shuttl-corpus")
-    private val posesName = System.getProperty("two.player.poses") ?: "poses.raw"
+    private val posesName = System.getenv("TWO_PLAYER_POSES") ?: "poses.raw"
 
     @Test
     fun both_players_of_each_corpus_video() {
@@ -57,7 +59,21 @@ class TwoPlayerCorpusTest {
                     selection.track.samples, selection.track.framesWithPose,
                     reference.getValue(selection.side), lost, lostWithPose,
                 )
-                println(row(id, selection.side, score, lost.size))
+                println(row(id, selection.side.name, score, lost.size))
+            }
+            // The device path hands selectPlayers every person its nano graph
+            // finds; device runs keep Near only, so only Near is read (§5).
+            val device = File(dir, "device-style/poses.raw")
+            if (device.isFile) {
+                val deviceRaw = RawInferenceCodec.decode(device.readBytes())
+                val near = selectPlayers(deviceRaw, readCorpusMarks(dir)).first { it.side == CourtSide.NEAR }
+                val deviceLost = cameraLostFrames(deviceRaw)
+                val deviceLostWithPose = deviceRaw.frames.count { it.frame in deviceLost && it.persons.isNotEmpty() }
+                val score = scoreSide(
+                    near.track.samples, near.track.framesWithPose,
+                    reference.getValue(CourtSide.NEAR), deviceLost, deviceLostWithPose,
+                )
+                println(row(id, "NEAR-dev", score, deviceLost.size))
             }
         }
     }
@@ -89,9 +105,9 @@ class TwoPlayerCorpusTest {
         println(text)
     }
 
-    private fun row(id: String, side: CourtSide, s: SideScore, lost: Int): String =
-        "%-9s %-4s %7d %6.3f %6d %6d %7d %6d %8s %8s %6d".format(
-            id.take(8), side.name, s.samples, s.coverage, s.right, s.wrong, s.unknown, s.falsePositives,
+    private fun row(id: String, side: String, s: SideScore, lost: Int): String =
+        "%-9s %-8s %7d %6.3f %6d %6d %7d %6d %8s %8s %6d".format(
+            id.take(8), side, s.samples, s.coverage, s.right, s.wrong, s.unknown, s.falsePositives,
             s.medianM?.let { "%.1f".format(it * 100) } ?: "-", s.p95M?.let { "%.1f".format(it * 100) } ?: "-", lost,
         )
 
@@ -101,6 +117,6 @@ class TwoPlayerCorpusTest {
             "743d7fb1-ad6e-44d2-bd35-f9a6c0892a87",
             "IMG_5892",
         )
-        const val HEADER = "video     side samples  cover  right  wrong unknown falsep median_cm  p95_cm  lost"
+        const val HEADER = "video     side     samples  cover  right  wrong unknown falsep median_cm  p95_cm  lost"
     }
 }

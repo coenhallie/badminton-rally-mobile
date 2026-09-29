@@ -1,5 +1,7 @@
 package com.badmintontracker.analysis.compare
 
+import com.badmintontracker.analysis.camera.CameraMotion
+import com.badmintontracker.analysis.camera.CameraSample
 import com.badmintontracker.analysis.geometry.CourtKeypoints
 import com.badmintontracker.analysis.geometry.Point
 import com.badmintontracker.analysis.raw.RawBox
@@ -75,6 +77,14 @@ class CorpusRunExportTest {
         assertEquals(listOf(966.0, 900.0), ankle)
         val farAnkle = far[0].jsonObject.getValue("ankle").jsonArray.map { it.jsonPrimitive.double }
         assertEquals(listOf(966.0, 560.0), farAnkle)
+    }
+
+    @Test
+    fun the_camera_reference_timestamp_is_null_without_a_camera_and_carried_with_one() {
+        assertEquals(JsonNull, exportRun(raw(), marks).getValue("cameraReferenceTimestamp"))
+        val identity = listOf(listOf(1.0, 0.0, 0.0), listOf(0.0, 1.0, 0.0), listOf(0.0, 0.0, 1.0))
+        val followed = raw().copy(camera = CameraMotion(0.1, listOf(CameraSample(0.0, identity))))
+        assertEquals(0.1, exportRun(followed, marks).getValue("cameraReferenceTimestamp").jsonPrimitive.double)
     }
 
     @Test
