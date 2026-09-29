@@ -113,7 +113,9 @@ struct ScoreEditSheet: View {
         let name = log.sideName(side: side)
         let text = side == .home ? $homeText : $awayText
         let value = Int(text.wrappedValue)
-        let serve: ServeMark = plan?.server == side ? .serving
+        // While a field is blank there is no plan: the serve shows where it is
+        // now, as a refused plan does too.
+        let serve: ServeMark = (plan == nil ? match.server : plan?.server) == side ? .serving
             : (plan?.servers.of(side: side) == true ? .available : .none)
 
         VStack(spacing: 12) {
@@ -175,8 +177,11 @@ struct ScoreEditSheet: View {
     private func serveToggle(_ mark: ServeMark, onServe: @escaping () -> Void) -> some View {
         let serving = mark == .serving
         Button(action: onServe) {
-            Text("SERVES NEXT")
+            // The board's own word, so the pill reads the same in both places.
+            // "Serves next" did not fit a tile on one line at the largest size.
+            Text("SERVE")
                 .shuttlType(ShuttlType.labelMedium)
+                .lineLimit(1)
                 .foregroundStyle(serving ? Color.black : Color.white.opacity(0.85))
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
@@ -192,6 +197,7 @@ struct ScoreEditSheet: View {
         .disabled(mark != .available)
         .opacity(mark == .none ? 0 : 1)
         .accessibilityHidden(mark == .none)
+        .accessibilityLabel(mark == .serving ? "Serves next" : "Serve")
         .accessibilityHint(mark == .available ? "Serve next" : "")
     }
 

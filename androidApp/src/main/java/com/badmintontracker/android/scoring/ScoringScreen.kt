@@ -612,10 +612,15 @@ private fun ControlBar(
                 )
             }
 
-            Row(
+            // Wraps rather than squeezes. At the largest font a finished match
+            // has Edit score, Note and Done on this row, and together they are
+            // wider than the phone: in a Row, Done was the one squeezed, down to
+            // "Don / e". Here it drops to a line of its own, at the right.
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                itemVerticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 // Outlined and filled rather than a text button like Note: this is
                 // the control reached for in a hurry after a mis-tap or a run of

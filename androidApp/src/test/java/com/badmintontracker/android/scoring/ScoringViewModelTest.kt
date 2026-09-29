@@ -283,6 +283,40 @@ class ScoringViewModelTest {
     }
 
     @Test
+    fun editing_the_score_saves_it_and_moves_the_tag_row_to_the_last_rally() = runTest(dispatcher) {
+        // As after a tap: a rally just added can be tagged straight away.
+        val (_, _, vm) = fixture()
+        vm.score(Side.HOME)
+        vm.editScore(home = 3, away = 2, nextServer = Side.AWAY)
+        advanceUntilIdle()
+        vm.state.value.match!!.currentGame shouldBe SideScore(home = 3, away = 2)
+        vm.state.value.match!!.server shouldBe Side.AWAY
+        vm.state.value.pendingTagOrdinal shouldBe 4
+    }
+
+    @Test
+    fun an_edit_retires_a_pending_redo() = runTest(dispatcher) {
+        // Putting the old log back after an edit would erase the edit.
+        val (_, _, vm) = fixture()
+        vm.score(Side.HOME)
+        vm.score(Side.HOME)
+        vm.undo()
+        vm.editScore(home = 4, away = 0, nextServer = null)
+        advanceUntilIdle()
+        vm.state.value.undoneNotice.shouldBeNull()
+    }
+
+    @Test
+    fun a_score_that_cannot_be_reached_is_not_saved() = runTest(dispatcher) {
+        val (_, _, vm) = fixture()
+        vm.score(Side.HOME)
+        vm.editScore(home = 30, away = 2, nextServer = null)
+        advanceUntilIdle()
+        vm.state.value.match!!.currentGame shouldBe SideScore(home = 1, away = 0)
+        vm.state.value.pendingTagOrdinal shouldBe 0
+    }
+
+    @Test
     fun finishing_ends_the_match_and_closes_the_row() = runTest(dispatcher) {
         val (repo, id, vm) = fixture()
         vm.score(Side.HOME)

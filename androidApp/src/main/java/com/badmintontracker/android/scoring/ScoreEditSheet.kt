@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -19,6 +20,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.LocalTextSelectionColors
+import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -27,6 +30,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -106,10 +110,19 @@ internal fun ScoreEditSheet(
         containerColor = MaterialTheme.colorScheme.surfaceVariant,
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp)
+                // Keeps the summary and Save above the number pad, as MatchDetailsSheet does.
+                .imePadding(),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text(match.scoreEditTitle(), style = MaterialTheme.typography.headlineMedium)
+            Text(
+                match.scoreEditTitle(),
+                style = MaterialTheme.typography.headlineMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
 
             Row(
                 // Equal heights, so a two-line pair of names on one side does not
@@ -127,7 +140,9 @@ internal fun ScoreEditSheet(
                         text = text,
                         onText = setText,
                         serve = when {
-                            plan?.server == side -> ServeMark.Serving
+                            // While a field is blank there is no plan: the serve
+                            // shows where it is now, as a refused plan does too.
+                            (if (plan == null) match.server else plan.server) == side -> ServeMark.Serving
                             plan?.servers?.of(side) == true -> ServeMark.Available
                             else -> ServeMark.None
                         },
@@ -215,42 +230,51 @@ private fun ScoreTile(
 
             ServeToggle(serve, onServe)
 
-            BasicTextField(
-                value = field,
-                onValueChange = { next ->
-                    val digits = next.text.filter { it.isDigit() }.take(2)
-                    field = next.copy(text = digits)
-                    onText(digits)
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .onFocusChanged { state ->
-                        if (state.isFocused) field = field.copy(selection = TextRange(0, field.text.length))
-                    }
-                    .semantics { contentDescription = "$name score" },
-                // The type scale's display role, bold like the board's numerals.
-                // iOS draws the same role, so the two sheets match.
-                textStyle = ShuttlTypeExtras.display.copy(
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
+            // White rather than the accent: the accent's selection is green on
+            // a green tile, and a selected number is what says typing replaces it.
+            CompositionLocalProvider(
+                LocalTextSelectionColors provides TextSelectionColors(
+                    handleColor = Color.White,
+                    backgroundColor = Color.White.copy(alpha = 0.35f),
                 ),
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { focus.clearFocus() }),
-                cursorBrush = SolidColor(Color.White),
-                decorationBox = { inner ->
-                    // The field is drawn as a field: a well in the tile, so it
-                    // reads as something to tap and type into, not just a number.
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color.White.copy(alpha = 0.16f), RoundedCornerShape(ShuttlRadius.small))
-                            .padding(vertical = 4.dp),
-                        contentAlignment = Alignment.Center,
-                    ) { inner() }
-                },
-            )
+            ) {
+                BasicTextField(
+                    value = field,
+                    onValueChange = { next ->
+                        val digits = next.text.filter { it.isDigit() }.take(2)
+                        field = next.copy(text = digits)
+                        onText(digits)
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onFocusChanged { state ->
+                            if (state.isFocused) field = field.copy(selection = TextRange(0, field.text.length))
+                        }
+                        .semantics { contentDescription = "$name score" },
+                    // The type scale's display role, bold like the board's numerals.
+                    // iOS draws the same role, so the two sheets match.
+                    textStyle = ShuttlTypeExtras.display.copy(
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                    ),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { focus.clearFocus() }),
+                    cursorBrush = SolidColor(Color.White),
+                    decorationBox = { inner ->
+                        // The field is drawn as a field: a well in the tile, so it
+                        // reads as something to tap and type into, not just a number.
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color.White.copy(alpha = 0.16f), RoundedCornerShape(ShuttlRadius.small))
+                                .padding(vertical = 4.dp),
+                            contentAlignment = Alignment.Center,
+                        ) { inner() }
+                    },
+                )
+            }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -277,14 +301,19 @@ private fun ServeToggle(mark: ServeMark, onServe: () -> Unit) {
             .then(
                 if (mark == ServeMark.Available) {
                     Modifier.clickable(onClickLabel = "Serve next", role = Role.Button, onClick = onServe)
+                } else if (mark == ServeMark.Serving) {
+                    Modifier.semantics { contentDescription = "Serves next" }
                 } else Modifier,
             ),
         shape = RoundedCornerShape(ShuttlRadius.extraSmall),
         color = if (serving) Color.White else Color.Transparent,
         border = if (serving) null else BorderStroke(1.dp, Color.White.copy(alpha = 0.6f)),
     ) {
+        // The board's own word, so the pill reads the same in both places.
+        // "Serves next" did not fit a tile on one line at the largest font.
         Text(
-            text = "SERVES NEXT",
+            text = "SERVE",
+            maxLines = 1,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Bold,
