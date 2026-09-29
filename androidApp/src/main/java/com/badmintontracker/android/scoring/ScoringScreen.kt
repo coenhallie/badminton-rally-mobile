@@ -616,9 +616,14 @@ private fun ControlBar(
             // has Edit score, Note and Done on this row, and together they are
             // wider than the phone: in a Row, Done was the one squeezed, down to
             // "Don / e". Here it drops to a line of its own, at the right.
+            //
+            // Each item is centred on its line by its own `align`, not by
+            // FlowRow's `itemVerticalAlignment`: that parameter arrived in
+            // Compose Foundation 1.8, and the release build resolves the BOM's
+            // 1.7.6 (only the debug classpath is pulled up to 1.9), so it broke
+            // every release build.
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                itemVerticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
@@ -627,6 +632,7 @@ private fun ControlBar(
                 // unscored rallies, so it has to read as a button at a glance.
                 OutlinedButton(
                     onClick = onEditScore,
+                    modifier = Modifier.align(Alignment.CenterVertically),
                     enabled = canEditScore,
                     contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
                     // Filled like ShuttlButton's Secondary: the outline alone all
@@ -646,7 +652,7 @@ private fun ControlBar(
                 }
                 Text(
                     text = tagRowCaption(match, pendingTagOrdinal),
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).align(Alignment.CenterVertically),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     // Two lines: the opening hint does not fit beside the Edit
@@ -654,12 +660,16 @@ private fun ControlBar(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-                TextButton(onClick = onToggleNote, enabled = point != null) { Text("Note") }
+                TextButton(
+                    onClick = onToggleNote,
+                    modifier = Modifier.align(Alignment.CenterVertically),
+                    enabled = point != null,
+                ) { Text("Note") }
                 // Only once the match is actually over. While it is live, finishing
                 // lives in the overflow behind a confirm: a call to action sitting
                 // beside a board being tapped every rally is a match ended by accident.
                 if (match.isOver) {
-                    Button(onClick = onDone) { Text("Done") }
+                    Button(onClick = onDone, modifier = Modifier.align(Alignment.CenterVertically)) { Text("Done") }
                 }
             }
         }
