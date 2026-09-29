@@ -1,0 +1,106 @@
+package com.badmintontracker.analysis.player
+
+import com.badmintontracker.analysis.compare.readCorpusMarks
+import com.badmintontracker.analysis.geometry.Point
+import com.badmintontracker.analysis.geometry.invert3x3
+import com.badmintontracker.analysis.raw.RawInference
+import com.badmintontracker.analysis.raw.RawInferenceCodec
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.double
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import java.io.File
+import kotlin.test.Test
+
+/**
+ * Both players of a local cloud run, scored against the audited references
+ * (design `docs/plans/2026-09-29-two-player-tracking-design.md` §3.3).
+ *
+ * Each pose file comes from badminton-tracker's
+ * `backend/scripts/run_phase2_locally.py --video-id <id>`, the worker's own
+ * loop run on this machine, and goes through [RawInferenceCodec.decode] and
+ * [selectPlayers] exactly as a phone installs it. The references come from
+ * `tools/models/players_reference.py`, audited by hand (§3.2).
+ *
+ * `-Dtwo.player.poses=baseline.raw` scores another file in each video's
+ * `cloud-local/`, so today's worker and a changed one are read by one test.
+ *
+ * BLOCKED on a corpus: a video whose files are missing is skipped loudly;
+ * `ANALYSIS_REQUIRE_CORPUS=1` turns a skip into a failure.
+ */
+class TwoPlayerCorpusTest {
+
+    private val root = File(System.getProperty("user.home"), "shuttl-corpus")
+    private val posesName = System.getProperty("two.player.poses") ?: "poses.raw"
+
+    @Test
+    fun both_players_of_each_corpus_video() {
+        println("pose file: cloud-local/$posesName")
+        println(HEADER)
+        for (id in CORPUS_IDS) {
+            val dir = File(root, id)
+            val poses = File(dir, "cloud-local/$posesName")
+            val reference = references(dir)
+            if (!poses.isFile || reference == null) {
+                skip("$id: needs ${poses.path} and ${File(dir, "players_reference.json").path}")
+                continue
+            }
+            val raw = RawInferenceCodec.decode(poses.readBytes())
+            val selections = selectPlayers(raw, readCorpusMarks(dir))
+            val lost = cameraLostFrames(raw)
+            val lostWithPose = raw.frames.count { it.frame in lost && it.persons.isNotEmpty() }
+            for (selection in selections) {
+                val score = scoreSide(
+                    selection.track.samples, selection.track.framesWithPose,
+                    reference.getValue(selection.side), lost, lostWithPose,
+                )
+                println(row(id, selection.side, score, lost.size))
+            }
+        }
+    }
+
+    /** Pose-file frames whose camera the phone could not read: [RejectionReason.CAMERA_LOST]'s frames. */
+    private fun cameraLostFrames(raw: RawInference): Set<Int> {
+        val camera = raw.camera ?: return emptySet()
+        return raw.frames.filter { f -> camera.at(f.timestamp)?.let { invert3x3(it) } == null }.map { it.frame }.toSet()
+    }
+
+    private fun references(dir: File): Map<CourtSide, SideReference>? {
+        val file = File(dir, "players_reference.json")
+        if (!file.isFile) return null
+        val sides = Json.parseToJsonElement(file.readText()).jsonObject.getValue("sides").jsonObject
+        return CourtSide.entries.associateWith { side -> sideReference(sides.getValue(side.name).jsonObject) }
+    }
+
+    private fun sideReference(side: JsonObject): SideReference = SideReference(
+        empty = side["empty"]?.jsonPrimitive?.boolean ?: false,
+        positions = side.getValue("positions").jsonObject.entries.associate { (k, v) ->
+            val xy = v.jsonArray
+            k.toInt() to Point(xy[0].jsonPrimitive.double, xy[1].jsonPrimitive.double)
+        },
+    )
+
+    private fun skip(message: String) {
+        val text = "SKIPPED: $message"
+        if (System.getenv("ANALYSIS_REQUIRE_CORPUS") == "1") error(text)
+        println(text)
+    }
+
+    private fun row(id: String, side: CourtSide, s: SideScore, lost: Int): String =
+        "%-9s %-4s %7d %6.3f %6d %6d %7d %6d %8s %8s %6d".format(
+            id.take(8), side.name, s.samples, s.coverage, s.right, s.wrong, s.unknown, s.falsePositives,
+            s.medianM?.let { "%.1f".format(it * 100) } ?: "-", s.p95M?.let { "%.1f".format(it * 100) } ?: "-", lost,
+        )
+
+    companion object {
+        val CORPUS_IDS = listOf(
+            "d71b0798-c4ec-4038-bd3f-6967429c36f8",
+            "743d7fb1-ad6e-44d2-bd35-f9a6c0892a87",
+            "IMG_5892",
+        )
+        const val HEADER = "video     side samples  cover  right  wrong unknown falsep median_cm  p95_cm  lost"
+    }
+}

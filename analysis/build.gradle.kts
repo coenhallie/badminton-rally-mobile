@@ -79,3 +79,15 @@ tasks.register<JavaExec>("compareResults") {
     classpath = jvmMain.output.allOutputs + jvmMain.runtimeDependencyFiles
     mainClass.set("com.badmintontracker.analysis.compare.ComparatorCli")
 }
+
+// What a phone makes of a local cloud run, for the two-player references and
+// their audit (docs/plans/2026-09-29-two-player-tracking-design.md section 3.2).
+//
+//   ./gradlew :analysis:exportCorpusRun --args="$HOME/shuttl-corpus/<id> [poses file] [out]"
+tasks.register<JavaExec>("exportCorpusRun") {
+    group = "verification"
+    description = "Write a local cloud run's per-frame cameras and the phone's picks as JSON."
+    val jvmMain = kotlin.jvm().compilations.getByName("main")
+    classpath = jvmMain.output.allOutputs + jvmMain.runtimeDependencyFiles
+    mainClass.set("com.badmintontracker.analysis.compare.CorpusRunExport")
+}

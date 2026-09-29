@@ -92,7 +92,7 @@ Traced on the same video, off-device (scripts and numbers in section 9):
 |---|---|
 | `d71b0798` "aSASa" (new to the corpus, `~/shuttl-corpus/d71b0798-.../`) | club hall, fixed camera, small far player, umpire and bystanders just off the court |
 | `743d7fb1` (Paris 2024 broadcast) | far player about as small, seated line judges, umpire's chair, photographers, cuts to other cameras |
-| `IMG_5892` (handheld) | camera followed; the far half is EMPTY, so every Far sample is a false positive |
+| `IMG_5892` (handheld) | camera followed while it pans; a small far player at the net, an umpire in a high chair and a seated line judge |
 
 aSASa's source and marks (with `marked_at_s`) are copied off the emulator
 into the corpus layout (`source.mov`, `video.json`).
@@ -102,8 +102,11 @@ into the corpus layout (`source.mov`, `video.json`).
 Per video, `players_reference.json`: for each side, per frame (0-based
 decode order), the true player's ankle ground point in court metres, or
 absent where the oracle could not place them. A side can instead be declared
-`empty` (nobody plays there), which is `IMG_5892`'s Far side. `IMG_5892`'s
-Near side keeps its existing `ref_track`.
+`empty` (nobody plays there); no corpus video has one today, so the scorer's
+false-positive count is kept for such a video and no gate reads it.
+`IMG_5892`'s existing `ref_track` stays the yardstick of its own Near gate
+(`CloudLocalRunCorpusTest`); its two-player reference comes from the oracle
+like the others'.
 
 Built by an oracle much stronger than anything under test (`yolo26x-pose` on
 the full frame at 1920 plus 2x crops of each half, the phone's gates, and
@@ -132,8 +135,7 @@ exactly as a phone installs it, and prints per side:
 - **wrong person**: samples more than 1.0 m from the reference;
 - **unknown**: samples in frames where the reference has nobody, counted and
   otherwise ignored, so an oracle miss is never scored as a system error;
-- **false positives**: any sample on a side declared `empty` (every Far
-  sample on `IMG_5892`);
+- **false positives**: any sample on a side declared `empty`;
 - **position error**: median and p95 over right-person samples.
 
 **One frame join, in the scorer only.** The worker numbers frames from 1 and
@@ -280,8 +282,7 @@ and cloud runs, as today.
     than 1 percentage point below baseline, wrong person no higher.
   - `743d7fb1` Far: coverage above baseline, wrong person no higher.
   - `IMG_5892`: Near still passes §8.6's gates (coverage 0.95, median 8 cm,
-    p95 25 cm); Far samples (all wrong by construction) no more than
-    baseline.
+    p95 25 cm); Far coverage above baseline, wrong person no higher.
   - Cost, local only: Phase 2 wall time per frame on this machine's CPU at
     most 2.5x baseline on each video. This is not a GPU claim. On the A10G
     the full-frame pass is batched eight frames at a time and the zoom calls
@@ -292,8 +293,8 @@ and cloud runs, as today.
   and before anything is tuned for aSASa. Its player measures 96 to 161 px at
   the model's input (median 134, 22 sampled frames), above the 80 px trigger,
   so its existing Near gate (0.974 / 6.8 cm today) checks that the zoom leaves
-  a large player alone, and its empty far half checks that the Find search,
-  which runs there throughout, adopts nobody.
+  a large player alone, while its small far player, whom the camera pans
+  away from and back to, exercises Follow and Find under a moving camera.
   `743d7fb1` iterates on `--max-frames` runs; its full length is run for the
   final numbers.
 - **Unit tests.** badminton-tracker's `scripts/verify_*.py` convention for

@@ -18,14 +18,14 @@
 - Zoom constants: `ZOOM_TRIGGER_MODEL_PX = 80`, `ZOOM_IMGSZ = 640`, follow window `2.6 h x 1.8 h` (min 200 x 160 px), continuation radius `0.6 h`, `LOST_FRAMES = 3`, search margin 2 m, headroom 2.5 m, search scale 1.5x (imgsz capped at 1920), `SEARCH_BACKOFF_S = 1.0` then every fifth frame, merge IoU 0.3, `ZOOM_TRACK_ID_BASE = 1_000_000`, ankle confidence 0.5.
 - Every test against the marks maps ankles into the marking frame through `frame_to_marking` first; no Find search on a frame whose camera is lost.
 - Scorer: right person within 1.0 m; reference-absent frames are unknown and excluded; camera-lost frames excluded from denominators; pose-file frame `k` joins reference frame `k - 1`.
-- Gates (design section 7): aSASa Far coverage >= 0.70, wrong 0, median <= 15 cm; Near sides no more than 1 point below baseline, wrong no higher; `743d7fb1` Far coverage above baseline, wrong no higher; `IMG_5892` Near 0.95 / 8 cm / 25 cm, Far samples <= baseline; local CPU time per frame <= 2.5x baseline.
+- Gates (design section 7): aSASa Far coverage >= 0.70, wrong 0, median <= 15 cm; Near sides no more than 1 point below baseline, wrong no higher; `743d7fb1` Far coverage above baseline, wrong no higher; `IMG_5892` Near 0.95 / 8 cm / 25 cm, Far coverage above baseline and wrong no higher; local CPU time per frame <= 2.5x baseline.
 - Deploying the worker is the owner's step. No em dashes in prose, comments, commits.
 - Commits: no agent attribution trailer (owner's standing instruction).
 
 ## Review Focus
 
 1. A handheld video whose camera pans: the zoom's side-of-net and inside-the-lines tests must read ankles in the marking frame. Pinned in Task 6 (non-identity camera case).
-2. A side that is empty all video (`IMG_5892` Far): the Find search must adopt nobody and back off. Pinned in Task 6 (backoff case) and measured in Task 7.
+2. A side that is empty for long stretches (a player off court between rallies, or no opponent in a practice video): the Find search must adopt nobody off the court and back off. Pinned in Task 6 (backoff and acquisition cases).
 3. The umpire or a bystander standing still just off the court: acquisition requires ankles inside the lines; the oracle and any phone path pay a per-frame cost outside the lines. Pinned in Task 6 (acquisition rejects margin-only person) and Task 2 (oracle path).
 4. A zoom detection that overlaps a full-frame detection of the same person: replaced, not duplicated, and the BoT-SORT track id kept. Pinned in Task 6 (merge cases).
 5. A video shorter than the warm-up, or a frame where the full-frame pass found nobody (`boxes is None`): merge must still produce well-formed arrays. Pinned in Task 6 (empty-frame merge).
@@ -57,7 +57,7 @@
 - [ ] `CorpusRunExport` (JVM main): args `<corpusDir> [poses file]`; decodes the pose file, reads marks, runs `selectPlayers`, writes `frames.json`. Camera per frame = `raw.camera?.at(frame.timestamp)` exactly as `selectPlayers` reads it (null when not followed or lost).
 - [ ] `players_reference.py --video-id <id>`: decodes sequentially; per frame `i` detects with `yolo26x-pose.pt` at `imgsz=1920` on the full frame plus 2x crops of each half (the half-court region of design 4.1), dedupes by IoU 0.5; per detection: ankles >= 0.5, midpoint mapped through the inverse of pose-file frame `i+1`'s camera into the marking frame, then to court metres through the 12-point resolved homography (`pose_metrics_probe.resolved_homography`), side by net line, on court within 2 m, torso <= 0.9 m. Frames whose camera is null while the pose file has a camera are skipped (camera-lost).
 - [ ] Identity per side by shortest path: nodes are candidates; edges up to 15 frames apart, forbidden above 8 m/s; edge cost `0.5 * frames skipped + 1.0 * metres`; node cost `-ln(conf) + 3.0 if outside the lines of that half`. Writes `positions` (the path) and `candidates` (all, for audit choices).
-- [ ] Run for aSASa and `743d7fb1` (MPS, background). `IMG_5892`: `NEAR` from `reference_tracks.json` `ref_track`, `FAR` `{"empty": true}`.
+- [ ] Run for aSASa, `743d7fb1` and `IMG_5892` (MPS, background).
 - [ ] Commit (mobile): `feat(tools): a player reference for both sides, and a corpus run export`.
 
 ### Task 3: The two-player scorer (JVM)
@@ -132,7 +132,7 @@
 - [ ] Per frame, before `distinct_people`: `requests = player_zoom.plan(sides=identity_tracker.court_sides, camera_now=camera_now, marks_describe_frame=(not camera_tracking) or camera_following)`; follow requests share one `zoom_model.predict([crops], imgsz=ZOOM_IMGSZ, conf=0.15, iou=0.5, half=yolo_half, verbose=False)`; each search runs alone at its own imgsz; picks are mapped back and merged into `kpts_data`, `kpts_conf`, `boxes`, `track_ids`.
 - [ ] After `matched_players`: `player_zoom.observe({pid: emitted _orig bbox or None for pid in (0, 1)})`.
 - [ ] Log once per run: zoom calls, search calls, picks merged vs appended.
-- [ ] Canary: harness on `IMG_5892`, then `CloudLocalRunCorpusTest` (must still pass 0.95 / 8 cm / 25 cm) and the scorer's `IMG_5892` Far false positives (<= baseline).
+- [ ] Canary: harness on `IMG_5892`, then `CloudLocalRunCorpusTest` (must still pass 0.95 / 8 cm / 25 cm) and the scorer's `IMG_5892` rows (Far wrong person no higher than baseline).
 - [ ] aSASa, then `743d7fb1 --max-frames 1500`, scorer tables; iterate on constants only with a recorded reason.
 - [ ] Commit (badminton-tracker): `feat(backend): Phase 2 zooms in on a small player and searches a lost one's half`.
 
