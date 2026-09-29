@@ -347,3 +347,43 @@ the references and the scorer above):
 | `track2.py` | follow window vs half crop, phone's own pick | follow: 467 far player, 0 wrong; half crop: 76 far player, 527 umpire |
 | `half_inside.py` | half crop with the pick limited to near the lines | 0 m: 338; 0.5 m: 398; 1.0 m: 454; 0 wrong at each |
 | `record.py` + `chain.py` | the worker's own filter chain on today's and the zoomed detections | today: 0 sent; zoomed: 455 sent, 12 lost to the sitting filter, 0 wrong on the phone; Near 602 either way |
+
+## 10. Verification, as run
+
+Every table below is `TwoPlayerCorpusTest` (JVM, `--rerun`) over pose files
+from badminton-tracker's `run_phase2_locally.py`, the worker's own loop run
+on this machine's CPU. Columns: samples, coverage (samples over pose frames,
+camera-lost frames excluded), right person (within 1 m of the reference),
+wrong person, unknown (the reference has nobody there), median and p95
+position error over right-person samples.
+
+### 10.1 The references
+
+- `IMG_5892`'s oracle Near path against its independent `ref_track` (ORB
+  camera, app rules): 2044 common frames, median 8.4 cm, p95 27.1 cm, none
+  over 1 m.
+- The audit (`tools/models/players_reference_audit.py`) against the zoomed
+  runs, every flagged crop viewed:
+  - aSASa: no disagreements. Every Far sample off the reference path is the
+    far player serving or standing deep behind the baseline, which the
+    oracle's per-metre outside cost left out. No corrections.
+  - `IMG_5892`: 12 Far disagreements. Frames 368-373 and 1745 are the far
+    player with a foot lifted (both picks on him, a metre apart at the far
+    baseline): cleared as having no reliable ground point. Frames 1375-1378
+    and 1394 are the near player walking to the net with her ankles across
+    it: the reference (the far player) is right, the system wrong. Every
+    off-path sample viewed is the right person (jumps, lunges, occlusion).
+
+### 10.2 The phone's selection, per-frame pick against the per-side path
+
+| file | side | per-frame pick | per-side path + crossing rule |
+|---|---|---|---|
+| `IMG_5892` baseline | Far | 1597 right, 5 wrong | 1597 right, 0 wrong |
+| `IMG_5892` zoomed | Far | 1617 right, 4 wrong | 1617 right, 0 wrong |
+
+Every other row was unchanged by the path: aSASa Near 601 right, 0 wrong;
+`IMG_5892` Near 2047 (baseline) and 2049 (zoomed) right, 0 wrong; device-style
+Near on aSASa 589 right, 0 wrong. The five `IMG_5892` frames were the near
+player as the ONLY far candidate (the far player hidden behind her, never in
+the file), which is what the crossing rule is for; the per-side path alone
+did not remove them.
