@@ -29,6 +29,8 @@ import kotlin.test.Test
  * `cloud-local/`, so today's worker and a changed one are read by one test.
  * Where `device-style/poses.raw` exists (`tools/models/device_style_poses.py`)
  * a `NEAR-dev` row scores the device path's Near side too.
+ * `TWO_PLAYER_MAX_FRAME=<n>` scores only each file's first n frames, so a
+ * `--max-frames` run compares with a full one.
  *
  * BLOCKED on a corpus: a video whose files are missing is skipped loudly;
  * `ANALYSIS_REQUIRE_CORPUS=1` turns a skip into a failure.
@@ -37,10 +39,17 @@ class TwoPlayerCorpusTest {
 
     private val root = File(System.getProperty("user.home"), "shuttl-corpus")
     private val posesName = System.getenv("TWO_PLAYER_POSES") ?: "poses.raw"
+    private val maxFrame = System.getenv("TWO_PLAYER_MAX_FRAME")?.toInt()
+
+    /** The file, cut to its first [maxFrame] frames when set, so a partial run and a full one compare. */
+    private fun read(file: File): RawInference {
+        val raw = RawInferenceCodec.decode(file.readBytes())
+        return maxFrame?.let { n -> raw.copy(frames = raw.frames.filter { it.frame <= n }) } ?: raw
+    }
 
     @Test
     fun both_players_of_each_corpus_video() {
-        println("pose file: cloud-local/$posesName")
+        println("pose file: cloud-local/$posesName" + (maxFrame?.let { ", frames 1..$it" } ?: ""))
         println(HEADER)
         for (id in CORPUS_IDS) {
             val dir = File(root, id)
@@ -50,7 +59,7 @@ class TwoPlayerCorpusTest {
                 skip("$id: needs ${poses.path} and ${File(dir, "players_reference.json").path}")
                 continue
             }
-            val raw = RawInferenceCodec.decode(poses.readBytes())
+            val raw = read(poses)
             val selections = selectPlayers(raw, readCorpusMarks(dir))
             val lost = cameraLostFrames(raw)
             val lostWithPose = raw.frames.count { it.frame in lost && it.persons.isNotEmpty() }
@@ -65,7 +74,7 @@ class TwoPlayerCorpusTest {
             // finds; device runs keep Near only, so only Near is read (§5).
             val device = File(dir, "device-style/poses.raw")
             if (device.isFile) {
-                val deviceRaw = RawInferenceCodec.decode(device.readBytes())
+                val deviceRaw = read(device)
                 val near = selectPlayers(deviceRaw, readCorpusMarks(dir)).first { it.side == CourtSide.NEAR }
                 val deviceLost = cameraLostFrames(deviceRaw)
                 val deviceLostWithPose = deviceRaw.frames.count { it.frame in deviceLost && it.persons.isNotEmpty() }
