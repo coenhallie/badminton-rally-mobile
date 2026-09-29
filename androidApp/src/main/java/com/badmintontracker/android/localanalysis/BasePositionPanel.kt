@@ -123,10 +123,12 @@ fun BasePositionPanel(
             return@Column
         }
         requireNotNull(bases)
+        // The sentences measure from the shown player's own lines.
+        val shownSide = shown?.side ?: CourtSide.NEAR
         CourtBaseView(bases)
         bases.overall?.let {
             Text(
-                "Whole match: ${describeBase(it)}",
+                "Whole match: ${describeBase(it, shownSide)}",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onBackground,
                 modifier = Modifier.padding(start = COURT_GUTTER, end = COURT_GUTTER, top = 18.dp),
@@ -141,7 +143,7 @@ fun BasePositionPanel(
         )
         bases.rallies.forEach { rally ->
             Text(
-                describeRally(rally),
+                describeRally(rally, shownSide),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = COURT_GUTTER, vertical = 4.dp),

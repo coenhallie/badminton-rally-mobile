@@ -97,9 +97,9 @@ struct BasePositionPanel: View {
     @ViewBuilder
     private func content(_ bases: BasePositions) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            CourtBaseView(bases: bases)
+            CourtBaseView(bases: bases, side: shownSide)
             if let overall = bases.overall {
-                Text("Whole match: \(BasePositionFormatKt.describeBase(p: overall))")
+                Text("Whole match: \(BasePositionFormatKt.describeBase(p: overall, side: shownSide))")
                     .shuttlType(ShuttlType.bodyMedium)
                     .foregroundStyle(Shuttl.text)
                     .padding(.horizontal, ShuttlGutter.page)
@@ -114,7 +114,7 @@ struct BasePositionPanel: View {
             .padding(.horizontal, ShuttlGutter.page)
             .padding(.vertical, 8)
             ForEach(bases.rallies, id: \.index) { rally in
-                Text(BasePositionFormatKt.describeRally(base: rally))
+                Text(BasePositionFormatKt.describeRally(base: rally, side: shownSide))
                     .shuttlType(ShuttlType.bodySmall)
                     .foregroundStyle(Shuttl.textSecondary)
                     .padding(.horizontal, ShuttlGutter.page)
@@ -149,6 +149,9 @@ struct BasePositionPanel: View {
 
     /// The side on screen. Held by side rather than by index so a reload that
     /// reordered or dropped one cannot silently swap which player is measured.
+    /// The side the sentences are about: the shown track's, near when none is shown.
+    private var shownSide: CourtSide { shown?.side ?? .near }
+
     private var shown: PlayerTrackStore.SideTrack? {
         source.map { $0.tracks.first { $0.side == side } ?? $0.tracks[0] }
     }
@@ -220,6 +223,8 @@ func baseMessage(
 /// and that is the picture: a player whose base does not move draws one spot.
 private struct CourtBaseView: View {
     let bases: BasePositions
+    /// Whose base this is: the sentences measure from that player's own lines.
+    let side: CourtSide
 
     /// Big enough to find on a 300pt court, small enough that two rallies a
     /// stride apart are still two dots.
@@ -292,16 +297,16 @@ private struct CourtBaseView: View {
                     )
                 }
             }
-            .accessibilityLabel(Self.spoken(bases))
+            .accessibilityLabel(Self.spoken(bases, side: side))
         }
     }
 
     /// The picture in words, because a canvas of dots says nothing to a screen
     /// reader and the sentence under it only covers the whole match.
-    private static func spoken(_ bases: BasePositions) -> String {
+    private static func spoken(_ bases: BasePositions, side: CourtSide) -> String {
         guard let overall = bases.overall else { return "Base positions" }
         return "Base position over \(bases.rallies.count) rallies. "
-            + "Whole match: \(BasePositionFormatKt.describeBase(p: overall))"
+            + "Whole match: \(BasePositionFormatKt.describeBase(p: overall, side: side))"
     }
 
     private static func circle(at centre: CGPoint, radius: CGFloat) -> Path {
