@@ -110,6 +110,7 @@ fun ScoringScreen(
     var confirming by remember { mutableStateOf<Confirmation?>(null) }
     var noteOpen by remember { mutableStateOf(false) }
     var editingDetails by remember { mutableStateOf(false) }
+    var editingScore by remember { mutableStateOf(false) }
 
     // Fires on the transition to un-scoreable, from either exit: the last point
     // the rules allow, and "Finish match" in the overflow. The rule is shared
@@ -135,6 +136,8 @@ fun ScoringScreen(
             log = log,
             match = match,
             undoneNotice = state.undoneNotice,
+            canUndo = state.canUndo,
+            onUndo = vm::undo,
             onRedo = vm::redo,
             onBack = onBack,
             onEditDetails = { editingDetails = true },
@@ -174,12 +177,12 @@ fun ScoringScreen(
             labels = state.labels,
             hasAnyLabels = state.hasAnyLabels,
             pendingTagOrdinal = state.pendingTagOrdinal,
-            canUndo = state.canUndo,
+            canEditScore = state.canEditScore,
             noteOpen = noteOpen,
             onToggleTag = { ordinal, label -> vm.toggleTag(ordinal, label) },
             onSetComment = { ordinal, text -> vm.setComment(ordinal, text) },
             onToggleNote = { noteOpen = !noteOpen },
-            onUndo = { vm.undo() },
+            onEditScore = { editingScore = true },
             onDone = { onFinished(null) },
         )
     }
@@ -229,6 +232,18 @@ fun ScoringScreen(
         )
     }
 
+    if (editingScore) {
+        ScoreEditSheet(
+            log = log,
+            match = match,
+            onSave = { home, away, server ->
+                vm.editScore(home, away, server)
+                editingScore = false
+            },
+            onDismiss = { editingScore = false },
+        )
+    }
+
     if (editingDetails) {
         EditMatchDetailsDialog(
             initial = log.detailsDraft(),
@@ -252,7 +267,7 @@ private const val UNDO_NOTICE_MILLIS = 5_000L
 /** Where finishing a match can take the coach next, chosen on the "add the video?" prompt. */
 enum class AttachIntent { Import, Record }
 
-/** The two irreversible controls, both behind a confirm. Undo is not one of them. */
+/** The two irreversible controls, both behind a confirm. Undo and the score editor are not among them. */
 private enum class Confirmation(val title: String, val body: String, val confirm: String) {
     ResetGame(
         title = "Reset this game?",
@@ -280,6 +295,8 @@ private fun StatusStrip(
     log: ScoreLog,
     match: MatchState,
     undoneNotice: String?,
+    canUndo: Boolean,
+    onUndo: () -> Unit,
     onRedo: () -> Unit,
     onBack: () -> Unit,
     onEditDetails: () -> Unit,
@@ -321,6 +338,15 @@ private fun StatusStrip(
                     Icon(Icons.Default.MoreVert, contentDescription = "Match options")
                 }
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    // Here rather than on the bar since the score editor took its
+                    // place: the editor only reaches the game being played, and a
+                    // mis-tap that ends a game has already moved the board on to
+                    // the next one. Its notice and Redo still come up in the strip.
+                    DropdownMenuItem(
+                        text = { Text("Undo last rally") },
+                        enabled = canUndo,
+                        onClick = { menuOpen = false; onUndo() },
+                    )
                     // Names and format are not asked for when the match is created,
                     // so courtside, between games, is one of the places they get
                     // filled in. Never disabled: it does not touch the score.
@@ -516,12 +542,12 @@ private fun ControlBar(
     labels: List<AnnotationLabel>,
     hasAnyLabels: Boolean,
     pendingTagOrdinal: Int?,
-    canUndo: Boolean,
+    canEditScore: Boolean,
     noteOpen: Boolean,
     onToggleTag: (Int, AnnotationLabel) -> Unit,
     onSetComment: (Int, String) -> Unit,
     onToggleNote: () -> Unit,
-    onUndo: () -> Unit,
+    onEditScore: () -> Unit,
     onDone: () -> Unit,
 ) {
     val point = pendingTagOrdinal?.let { match.points.getOrNull(it) }
@@ -586,17 +612,22 @@ private fun ControlBar(
                 )
             }
 
-            Row(
+            // Wraps rather than squeezes. At the largest font a finished match
+            // has Edit score, Note and Done on this row, and together they are
+            // wider than the phone: in a Row, Done was the one squeezed, down to
+            // "Don / e". Here it drops to a line of its own, at the right.
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                itemVerticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 // Outlined and filled rather than a text button like Note: this is
-                // the control reached for in a hurry after a mis-tap, so it has to
-                // read as a button at a glance. It takes the whole last rally back.
+                // the control reached for in a hurry after a mis-tap or a run of
+                // unscored rallies, so it has to read as a button at a glance.
                 OutlinedButton(
-                    onClick = onUndo,
-                    enabled = canUndo,
+                    onClick = onEditScore,
+                    enabled = canEditScore,
                     contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
                     // Filled like ShuttlButton's Secondary: the outline alone all
                     // but disappears against the dark theme's bar.
@@ -606,20 +637,20 @@ private fun ControlBar(
                     ),
                 ) {
                     Icon(
-                        ShuttlIcons.Undo,
+                        ShuttlIcons.Pencil,
                         contentDescription = null,
                         modifier = Modifier.size(ButtonDefaults.IconSize),
                     )
                     Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                    Text("Undo")
+                    Text("Edit score")
                 }
                 Text(
                     text = tagRowCaption(match, pendingTagOrdinal),
                     modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    // Two lines: the opening hint does not fit beside the Undo
-                    // button on a narrow phone, and cut short it loses "server".
+                    // Two lines: the opening hint does not fit beside the Edit
+                    // score button on a narrow phone, and cut short it loses "server".
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )

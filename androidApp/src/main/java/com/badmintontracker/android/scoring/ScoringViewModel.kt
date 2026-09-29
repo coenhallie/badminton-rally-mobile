@@ -34,6 +34,8 @@ data class ScoringUiState(
     val pendingTagOrdinal: Int? = null,
     val canScore: Boolean = false,
     val canUndo: Boolean = false,
+    /** Whether the board offers the score editor. See [MatchScorer.canEditScore]. */
+    val canEditScore: Boolean = false,
     /** True until the first point: the window in which the board can hand the opening serve across. */
     val canSwitchFirstServer: Boolean = false,
     /**
@@ -109,6 +111,7 @@ class ScoringViewModel(
             pendingTagOrdinal = pendingOrdinal?.takeIf { match != null && it < match.pointCount },
             canScore = match?.isOver == false,
             canUndo = (match?.pointCount ?: 0) > 0,
+            canEditScore = log != null && scorer.canEditScore(),
             canSwitchFirstServer = log != null && log.isPlayable() && log.events.isEmpty(),
             hasAnyLabels = allLabels.isNotEmpty(),
             undoneNotice = live?.let { log?.undoneNotice(it) },
@@ -175,6 +178,16 @@ class ScoringViewModel(
     /** The notice timed out. The undo stands. */
     fun dismissUndoNotice() {
         lastUndo.value = null
+    }
+
+    /**
+     * The score editor's save. The tag row follows to the last rally, as it does
+     * after a tap, so a rally just added can be tagged straight away.
+     */
+    fun editScore(home: Int, away: Int, nextServer: Side?) {
+        if (!scorer.editScore(home, away, nextServer)) return
+        lastUndo.value = null
+        pending.value = lastOrdinal()
     }
 
     fun resetCurrentGame() {

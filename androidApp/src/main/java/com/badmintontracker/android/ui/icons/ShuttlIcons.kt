@@ -32,9 +32,18 @@ object ShuttlIcons {
     val Video: ImageVector by lazy { buildLucide("ShuttlVideo") { video() } }
     val ListOrdered: ImageVector by lazy { buildLucide("ShuttlListOrdered") { listOrdered() } }
     val Tag: ImageVector by lazy { buildLucide("ShuttlTag") { tag() } }
-    // The scoring board's Undo. Lucide's undo-2 at its stock stroke, drawn at
-    // 18dp beside the label like ShuttlButton's leading icon.
-    val Undo: ImageVector by lazy { buildLucide("ShuttlUndo") { undo() } }
+    // The scoring board's Edit score, drawn at 18dp beside the label like
+    // ShuttlButton's leading icon, and the score editor's steppers. Lucide
+    // 0.460.0's pencil, minus and plus at their stock stroke.
+    val Pencil: ImageVector by lazy {
+        buildLucideSvg(
+            "ShuttlPencil",
+            "M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z",
+            "m15 5 4 4",
+        )
+    }
+    val Minus: ImageVector by lazy { buildLucideSvg("ShuttlMinus", "M5 12h14") }
+    val Plus: ImageVector by lazy { buildLucideSvg("ShuttlPlus", "M5 12h14", "M12 5v14") }
 
     // The match list's status line: where a match's video is, then what
     // analysis it has. Lucide 0.460.0's own path strings (rects, lines and
@@ -401,14 +410,4 @@ private fun androidx.compose.ui.graphics.vector.PathBuilder.tag() {
     arcTo(0.5f, 0.5f, 0f, true, true, 8f, 7.5f)
     arcTo(0.5f, 0.5f, 0f, true, true, 7f, 7.5f)
     close()
-}
-
-private fun androidx.compose.ui.graphics.vector.PathBuilder.undo() {
-    // <path d="M9 14 4 9l5-5"/>
-    moveTo(9f, 14f); lineTo(4f, 9f); lineTo(9f, 4f)
-    // <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/>
-    moveTo(4f, 9f); lineTo(14.5f, 9f)
-    arcToRelative(5.5f, 5.5f, 0f, false, true, 5.5f, 5.5f)
-    arcToRelative(5.5f, 5.5f, 0f, false, true, -5.5f, 5.5f)
-    lineTo(11f, 20f)
 }

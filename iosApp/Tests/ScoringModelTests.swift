@@ -246,6 +246,34 @@ final class ScoringModelTests: XCTestCase {
         XCTAssertNil(model.undoneNotice)
     }
 
+    func testEditingTheScoreSavesItAndMovesTheTagRowToTheLastRally() {
+        // As after a tap: a rally just added can be tagged straight away.
+        let (_, _, model) = fixture()
+        model.score(.home)
+        model.editScore(home: 3, away: 2, nextServer: .away)
+        XCTAssertEqual(model.match?.currentGame, SideScore(home: 3, away: 2))
+        XCTAssertEqual(model.match?.server, .away)
+        XCTAssertEqual(model.pendingTagOrdinal, 4)
+    }
+
+    func testAnEditRetiresAPendingRedo() {
+        // Putting the old log back after an edit would erase the edit.
+        let (_, _, model) = fixture()
+        model.score(.home)
+        model.score(.home)
+        model.undo()
+        model.editScore(home: 4, away: 0, nextServer: nil)
+        XCTAssertNil(model.undoneNotice)
+    }
+
+    func testAScoreThatCannotBeReachedIsNotSaved() {
+        let (_, _, model) = fixture()
+        model.score(.home)
+        model.editScore(home: 30, away: 2, nextServer: nil)
+        XCTAssertEqual(model.match?.currentGame, SideScore(home: 1, away: 0))
+        XCTAssertEqual(model.pendingTagOrdinal, 0)
+    }
+
     func testFinishingEndsTheMatchAndClosesTheRow() {
         let (repo, id, model) = fixture()
         model.score(.home)

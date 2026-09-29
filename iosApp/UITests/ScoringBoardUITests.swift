@@ -70,7 +70,11 @@ final class ScoringBoardUITests: XCTestCase {
         // took the tag first and left the score where it was.
         app.buttons["Good shot"].firstMatch.tap()
 
-        app.buttons["Undo"].firstMatch.tap()
+        // In the menu since the score editor took its place on the bar.
+        app.buttons["Match options"].firstMatch.tap()
+        let undo = app.buttons["Undo last rally"].firstMatch
+        XCTAssertTrue(undo.waitForExistence(timeout: 5), "the board's menu does not offer undo")
+        undo.tap()
         XCTAssertTrue(
             app.staticTexts["Point to Away undone"].waitForExistence(timeout: 5),
             "undo did not say what it took back"
@@ -82,6 +86,40 @@ final class ScoringBoardUITests: XCTestCase {
         app.buttons["Redo"].firstMatch.tap()
         XCTAssertTrue(app.staticTexts["Point 2: 1-1"].waitForExistence(timeout: 5), "redo did not put the rally back")
         XCTAssertFalse(app.buttons["Redo"].exists, "redo was still offered after it was used")
+
+        try deleteMatch(app)
+    }
+
+    func testTheScoreEditorSetsBothScoresInOneSave() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        try createMatch(app)
+        scoreLeftHalf(app)
+        XCTAssertTrue(app.staticTexts["Point 1: 1-0"].waitForExistence(timeout: 5), "the first tap did not score")
+
+        app.buttons["Edit score"].firstMatch.tap()
+        let plus = app.buttons["Add a point for Away"].firstMatch
+        XCTAssertTrue(plus.waitForExistence(timeout: 5), "the score editor did not open")
+        // A stepper for the one-point fix, and typing for the jump.
+        plus.tap()
+        plus.tap()
+        let home = app.textFields["Home score"].firstMatch
+        home.tap()
+        home.typeText("5")
+        XCTAssertTrue(
+            app.staticTexts["Adds 4 rallies for Home and 2 for Away."].waitForExistence(timeout: 5),
+            "the editor did not say what saving would do"
+        )
+        // Held for the screenshot loop that runs beside this test.
+        Thread.sleep(forTimeInterval: 3)
+        app.buttons["Save"].firstMatch.tap()
+
+        XCTAssertTrue(
+            app.staticTexts["Point 7: 5-2"].waitForExistence(timeout: 5),
+            "the board did not take the edited score"
+        )
+        Thread.sleep(forTimeInterval: 2)
 
         try deleteMatch(app)
     }

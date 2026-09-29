@@ -43,6 +43,8 @@ struct ScoringView: View {
     @State private var confirming: Confirmation?
     @State private var noteOpen = false
     @State private var editingDetails = false
+    @State private var editingScore = false
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     // Fires on the transition to un-scoreable, from either exit: the last point
     // the rules allow, and "Finish match" in the menu. The rule is shared with
@@ -123,6 +125,11 @@ struct ScoringView: View {
             }
             try? await Task.sleep(for: Self.undoNoticeDuration)
             if !Task.isCancelled { model.dismissUndoNotice() }
+        }
+        .sheet(isPresented: $editingScore) {
+            ScoreEditSheet(log: log, match: match) { home, away, server in
+                model.editScore(home: home, away: away, nextServer: server)
+            }
         }
         .sheet(isPresented: $editingDetails) {
             EditMatchDetailsSheet(initial: MatchDetailsDraft(log: log), titleCap: Int(ScoreLogKt.MAX_MATCH_TITLE)) { draft in
@@ -257,6 +264,12 @@ struct ScoringView: View {
             }
 
             Menu {
+                // Here rather than on the bar since the score editor took its
+                // place: the editor only reaches the game being played, and a
+                // mis-tap that ends a game has already moved the board on to
+                // the next one. Its notice and Redo still come up in the strip.
+                Button("Undo last rally") { model.undo() }
+                    .disabled(!model.canUndo)
                 // Names and format are not asked for when the match is created, so
                 // courtside, between games, is one of the places they get filled
                 // in. Never disabled: it does not touch the score.
@@ -389,7 +402,7 @@ struct ScoringView: View {
             .clipShape(RoundedRectangle(cornerRadius: ShuttlRadius.extraSmall))
     }
 
-    /// The tag row and Undo. The row is on screen before the rally it will tag,
+    /// The tag row and Edit score. The row is on screen before the rally it will tag,
     /// which is the whole reason tagging costs one tap rather than a dialog.
     @ViewBuilder
     private func controlBar(_ model: ScoringModel, _ match: MatchState) -> some View {
@@ -437,30 +450,40 @@ struct ScoringView: View {
 
             HStack(spacing: 8) {
                 // Outlined rather than plain text like Note beside it: this is the
-                // control reached for in a hurry after a mis-tap, so it has to read
-                // as a button at a glance. It takes the whole last rally back.
-                Button { model.undo() } label: {
+                // control reached for in a hurry after a mis-tap or a run of
+                // unscored rallies, so it has to read as a button at a glance.
+                Button { editingScore = true } label: {
                     // Not a `Label`: its icon gap is wider than this pill wants.
                     HStack(spacing: 6) {
-                        Image(systemName: "arrow.uturn.backward")
-                        Text("Undo")
+                        Image(systemName: "pencil")
+                        // The pencil alone at the accessibility sizes, where the
+                        // words truncated to "✎ …", which says nothing at all.
+                        // By size rather than ViewThatFits: inside this row that
+                        // measured against an even share and dropped the words
+                        // at sizes where they fit.
+                        if !typeSize.isAccessibilitySize {
+                            Text("Edit score").lineLimit(1)
+                        }
                     }
                 }
-                .accessibilityLabel("Undo")
+                .accessibilityLabel("Edit score")
                 .buttonStyle(OutlinedPillButtonStyle())
-                .disabled(!model.canUndo)
+                // Offered its width before the caption, or the row's even split
+                // leaves it the pencil alone at sizes where the words fit.
+                .layoutPriority(1)
+                .disabled(!model.canEditScore)
                 Text(Self.caption(match, model.pendingTagOrdinal))
                     .shuttlType(ShuttlType.bodySmall)
                     .foregroundStyle(Shuttl.textSecondary)
-                    // Two lines: the opening hint does not fit beside the Undo
-                    // pill on a narrow phone, and cut short it loses "server".
+                    // Two lines: the opening hint does not fit beside the Edit
+                    // score pill on a narrow phone, and cut short it loses "server".
                     .lineLimit(2)
                 Spacer()
                 // Outside the wrapping area on purpose: it used to be the last
                 // chip in a horizontally scrolling row, which is exactly why it
                 // became unreachable once a few labels existed.
                 Button("Note") { noteOpen.toggle() }
-                    // Accent like Undo beside it, and like Android's Note, rather
+                    // Accent like Edit score beside it, and like Android's Note, rather
                     // than the system blue it fell back to.
                     .tint(Shuttl.accent)
                     .disabled(point == nil)
@@ -590,7 +613,7 @@ struct ScoringView: View {
     }
 }
 
-/// The board's Undo: accent text on the app's secondary fill and outline (the
+/// The board's Edit score: accent text on the app's secondary fill and outline (the
 /// outline alone all but disappears in dark), the partner
 /// to the filled Done pill beside it. The visible pill is shorter than the 44pt
 /// tap target it sits in, like the rest of the row.
