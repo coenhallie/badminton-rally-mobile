@@ -99,15 +99,26 @@ into the corpus layout (`source.mov`, `video.json`).
 
 ### 3.2 References
 
-Per video, `players_reference.json`: for each side, per frame, the true
-player's ankle ground point in court metres, or absent where they are not
-visible. Built by an oracle much stronger than anything under test
-(`yolo26x-pose` on the full frame at 1920 plus 2x crops of each half, the
-phone's gates, and identity by a shortest path over the whole video with a
-court-speed limit), then audited by eye: montages of 40 evenly spaced frames
-per video and side with the chosen person drawn, every mismatch corrected by
-hand and recorded in the file's `audit` block. `IMG_5892`'s Near side keeps
-its existing `ref_track`; its Far side is empty by construction.
+Per video, `players_reference.json`: for each side, per frame (0-based
+decode order), the true player's ankle ground point in court metres, or
+absent where the oracle could not place them. A side can instead be declared
+`empty` (nobody plays there), which is `IMG_5892`'s Far side. `IMG_5892`'s
+Near side keeps its existing `ref_track`.
+
+Built by an oracle much stronger than anything under test (`yolo26x-pose` on
+the full frame at 1920 plus 2x crops of each half, the phone's gates, and
+identity by a shortest path over the whole video with a court-speed limit).
+The oracle shares ideas with the system it scores (crops, gates, a path), so
+agreement alone proves little, and the audit is aimed where a wrong reference
+would change a gate: montages, with both the oracle's and the system's pick
+drawn, of every frame where the two disagree by more than 1 m or where
+exactly one of them has somebody, plus 20 evenly spaced frames per side as a
+control. Each correction is made by hand and recorded in the file's `audit`
+block, with the frame and what was wrong.
+
+Frames the phone rejects as `CAMERA_LOST` (the cut and replay stretches of
+`743d7fb1`) describe a view the marks do not, so they carry no reference and
+are left out of every denominator; the scorer reports how many were excluded.
 
 ### 3.3 The scorer
 
@@ -118,9 +129,19 @@ exactly as a phone installs it, and prints per side:
 - **coverage**: samples over pose frames, the app's own
   `PlayerTrack.coverage`;
 - **right person**: samples within 1.0 m of the reference in the same frame;
-- **wrong person**: samples more than 1.0 m from the reference, or present
-  where the reference has nobody (every Far sample on `IMG_5892`);
+- **wrong person**: samples more than 1.0 m from the reference;
+- **unknown**: samples in frames where the reference has nobody, counted and
+  otherwise ignored, so an oracle miss is never scored as a system error;
+- **false positives**: any sample on a side declared `empty` (every Far
+  sample on `IMG_5892`);
 - **position error**: median and p95 over right-person samples.
+
+**One frame join, in the scorer only.** The worker numbers frames from 1 and
+its timestamps run one frame late (`CloudLocalRunCorpusTest`'s KDoc), while
+references count decoded frames from 0, so pose-file frame `k` is reference
+frame `k - 1` for every video. Joining by timestamp, or by `k`, would pair
+each sample with a neighbouring frame and put one frame of motion into every
+error figure.
 
 The baseline (today's worker) is recorded before stage 1 changes anything.
 Once stage 1 lands, the test asserts the section 7 gates. It skips loudly
@@ -130,6 +151,12 @@ as the existing corpus tests do.
 `run_phase2_locally.py` gains `--video-id` and a per-video corpus layout
 (`<corpus>/<id>/cloud-local/poses.raw`), so one command produces each pose
 file. It keeps running on the CPU, which is what it measures timing on.
+
+A **device-style file** per video, for stage 2's trigger: every person the
+device's nano graph finds (`tools/models/pose_dump.py`, the deployed
+`posen.960.fp16.onnx`), encoded through badminton-tracker's
+`raw_inference_codec`, unfiltered, as the device path hands them to
+`selectPlayers`.
 
 ## 4. Stage 1: the worker finds small players
 
@@ -172,10 +199,12 @@ running mean of its height, and how many frames the slot has been empty.
   area, sitting, top two, identity, the pose file) is unchanged and still
   decides.
 - **The camera.** Follow windows come from emitted boxes, which are already
-  frame pixels, so they need no mapping. The Find region goes through
-  `camera_now` (marking frame to this frame) when the camera is known and is
-  skipped for a frame whose camera is lost: the marks do not describe that
-  view.
+  frame pixels, so they need no mapping. Every test against the marks does:
+  "on the slot's side of the net" and "inside the court lines" map the
+  detection's ankles into the marking frame through `frame_to_marking` first,
+  as every other decision in the loop does, and the Find region goes the other
+  way through `camera_now` (marking frame to this frame). A frame whose camera
+  is lost gets no Find search: the marks do not describe that view.
 - **Batching.** The full-frame pass stays batched. Zoom calls are per frame,
   because a window depends on the previous frame's result; when both slots
   need one, their crops share one call. A second `YOLO` instance runs them, so
@@ -201,9 +230,10 @@ scorer shows a gain with no regression on any video (section 7):
 ## 5. Stage 2: the phone keeps each side's player over time
 
 Built if the stage 0 and 1 measurements show any wrong-person samples under
-today's per-frame pick, on a cloud file or on a device-style file (every
-person the device's nano model finds, which the device path passes through
-unfiltered). If they show none, this stage is recorded as measured and not
+today's per-frame pick: on either side of a cloud file (after stage 1), or on
+the Near side of a device-style file. Device runs only ever keep Near, so a
+device-style file's Far side (where the umpire is known to win) is not a
+reason to build it. If none show, this stage is recorded as measured and not
 needed, and not built.
 
 `selectPlayers` keeps its gates and replaces the per-frame argmax with a
@@ -248,10 +278,23 @@ and cloud runs, as today.
   - `IMG_5892`: Near still passes §8.6's gates (coverage 0.95, median 8 cm,
     p95 25 cm); Far samples (all wrong by construction) no more than
     baseline.
-  - Cost: Phase 2 local wall time per frame at most 2.5x baseline on each
-    video.
+  - Cost, local only: Phase 2 wall time per frame on this machine's CPU at
+    most 2.5x baseline on each video. This is not a GPU claim. On the A10G
+    the full-frame pass is batched eight frames at a time and the zoom calls
+    are one per frame, so per-call overhead weighs more there than here; the
+    A10G's number comes from the first deployed run and is part of the
+    owner's deploy check.
+- **Order.** `IMG_5892` is the canary, run first after the zoom is wired in
+  and before anything is tuned for aSASa. Its player measures 96 to 161 px at
+  the model's input (median 134, 22 sampled frames), above the 80 px trigger,
+  so its existing Near gate (0.974 / 6.8 cm today) checks that the zoom leaves
+  a large player alone, and its empty far half checks that the Find search,
+  which runs there throughout, adopts nobody.
+  `743d7fb1` iterates on `--max-frames` runs; its full length is run for the
+  final numbers.
 - **Unit tests.** badminton-tracker's `scripts/verify_*.py` convention for
   `player_zoom` (window geometry, clipping, the Find region through a camera,
+  the side and inside-the-lines tests through a non-identity camera,
   continuation and acquisition picks, merge and track ids, search backoff) and
   for each adopted filter change. Kotlin tests for stage 2 if built, including
   the equivalence with today's pick.
