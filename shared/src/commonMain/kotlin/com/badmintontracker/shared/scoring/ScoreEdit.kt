@@ -36,6 +36,9 @@ data class ScoreEditPlan(
 /** Highest number the editor's fields and steppers go to. Two digits, like the board. */
 const val MAX_EDIT_SCORE = 99
 
+/** What the editor says while a field has been cleared and not yet typed into. */
+const val SCORE_EDIT_BLANK = "Enter a score for both sides."
+
 /** The editor's heading. Names the game only when the match has more than one. */
 fun MatchState.scoreEditTitle(): String =
     if (rules.gamesToWin > 1) "Set the score · Game ${gameIndex + 1}" else "Set the score"

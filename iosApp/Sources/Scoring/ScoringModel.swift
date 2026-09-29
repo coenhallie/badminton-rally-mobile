@@ -33,6 +33,9 @@ final class ScoringModel {
 
     var canScore: Bool { match?.isOver == false }
     var canUndo: Bool { (match?.points.count ?? 0) > 0 }
+    /// Whether the board offers the score editor. See `MatchScorer.canEditScore`.
+    /// Reads `log` first so the view is re-asked when it changes.
+    var canEditScore: Bool { log != nil && scorer.canEditScore() }
 
     /// The last undo while it can still be put back, nil otherwise. Read against
     /// the log rather than cleared by each caller, so a change from anywhere - a
@@ -179,6 +182,15 @@ final class ScoringModel {
     /// The notice timed out. The undo stands.
     func dismissUndoNotice() {
         lastUndo = nil
+    }
+
+    /// The score editor's save. The tag row follows to the last rally, as it
+    /// does after a tap, so a rally just added can be tagged straight away.
+    func editScore(home: Int, away: Int, nextServer: Side?) {
+        guard scorer.editScore(home: Int32(home), away: Int32(away), nextServer: nextServer) else { return }
+        lastUndo = nil
+        readStore()
+        pendingTagOrdinal = lastOrdinal
     }
 
     func resetCurrentGame() {
