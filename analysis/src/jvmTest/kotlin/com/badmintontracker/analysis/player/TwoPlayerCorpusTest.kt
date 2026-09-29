@@ -41,6 +41,16 @@ class TwoPlayerCorpusTest {
     private val posesName = System.getenv("TWO_PLAYER_POSES") ?: "poses.raw"
     private val maxFrame = System.getenv("TWO_PLAYER_MAX_FRAME")?.toInt()
 
+    /**
+     * The gates (design §7) hold the current worker's files, poses.raw, to
+     * account; another file is scored and printed only, unless
+     * TWO_PLAYER_GATES=1 asks for the gates anyway (which is how they were
+     * seen to fail on the baseline).
+     */
+    private val gated = maxFrame == null &&
+        (System.getenv("TWO_PLAYER_GATES") == "1" || posesName == "poses.raw")
+    private val misses = ArrayList<String>()
+
     /** The file, cut to its first [maxFrame] frames when set, so a partial run and a full one compare. */
     private fun read(file: File): RawInference {
         val raw = RawInferenceCodec.decode(file.readBytes())
@@ -69,6 +79,7 @@ class TwoPlayerCorpusTest {
                     reference.getValue(selection.side), lost, lostWithPose,
                 )
                 println(row(id, selection.side.name, score, lost.size))
+                if (gated) gate(id, selection.side, score)
             }
             // The device path hands selectPlayers every person its nano graph
             // finds; device runs keep Near only, so only Near is read (§5).
@@ -84,6 +95,27 @@ class TwoPlayerCorpusTest {
                 )
                 println(row(id, "NEAR-dev", score, deviceLost.size))
             }
+        }
+        if (misses.isNotEmpty()) error("two-player gates missed:\n" + misses.joinToString("\n"))
+    }
+
+    /** Design §7's gates, against the baseline (the worker before the zoom pass, df8dede). */
+    private fun gate(id: String, side: CourtSide, s: SideScore) {
+        fun need(ok: Boolean, what: String) {
+            if (!ok) misses.add("$id $side: $what")
+        }
+        val base = BASELINE[id to side] ?: return
+        need(s.wrong <= base.wrong, "wrong person ${s.wrong} > baseline ${base.wrong}")
+        when {
+            id == ASASA && side == CourtSide.FAR -> {
+                need(s.coverage >= 0.70, "coverage ${s.coverage} < 0.70")
+                need((s.medianM ?: 1.0) <= 0.15, "median ${s.medianM} > 0.15 m")
+            }
+            side == CourtSide.NEAR -> {
+                need(s.coverage >= base.coverage - 0.01, "coverage ${s.coverage} more than 1 point below ${base.coverage}")
+                need(s.right >= base.right * 0.99, "right person ${s.right} more than 1% below ${base.right}")
+            }
+            else -> need(s.coverage > base.coverage, "coverage ${s.coverage} not above baseline ${base.coverage}")
         }
     }
 
@@ -115,17 +147,35 @@ class TwoPlayerCorpusTest {
     }
 
     private fun row(id: String, side: String, s: SideScore, lost: Int): String =
-        "%-9s %-8s %7d %6.3f %6d %6d %7d %6d %8s %8s %6d".format(
+        "%-9s %-8s %7d %10.7f %6d %6d %7d %6d %8s %8s %6d".format(
             id.take(8), side, s.samples, s.coverage, s.right, s.wrong, s.unknown, s.falsePositives,
             s.medianM?.let { "%.1f".format(it * 100) } ?: "-", s.p95M?.let { "%.1f".format(it * 100) } ?: "-", lost,
         )
 
+    private data class Baseline(val coverage: Double, val right: Int, val wrong: Int)
+
     companion object {
+        const val ASASA = "d71b0798-c4ec-4038-bd3f-6967429c36f8"
+
+        /**
+         * The worker before the zoom pass (df8dede), read by today's phone (design §10).
+         * Coverages to seven places, rounded up, so the baseline file never passes
+         * its own "above baseline" gate by rounding.
+         */
+        private val BASELINE = mapOf(
+            (ASASA to CourtSide.NEAR) to Baseline(1.000, 601, 0),
+            (ASASA to CourtSide.FAR) to Baseline(0.000, 0, 0),
+            ("743d7fb1-ad6e-44d2-bd35-f9a6c0892a87" to CourtSide.NEAR) to Baseline(0.9607603, 3067, 0),
+            ("743d7fb1-ad6e-44d2-bd35-f9a6c0892a87" to CourtSide.FAR) to Baseline(0.8044145, 2491, 0),
+            ("IMG_5892" to CourtSide.NEAR) to Baseline(0.9738652, 2047, 0),
+            ("IMG_5892" to CourtSide.FAR) to Baseline(0.8505273, 1597, 0),
+        )
+
         val CORPUS_IDS = listOf(
-            "d71b0798-c4ec-4038-bd3f-6967429c36f8",
+            ASASA,
             "743d7fb1-ad6e-44d2-bd35-f9a6c0892a87",
             "IMG_5892",
         )
-        const val HEADER = "video     side     samples  cover  right  wrong unknown falsep median_cm  p95_cm  lost"
+        const val HEADER = "video     side     samples      cover  right  wrong unknown falsep median_cm  p95_cm  lost"
     }
 }

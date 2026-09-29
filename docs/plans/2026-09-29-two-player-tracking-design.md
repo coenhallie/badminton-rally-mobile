@@ -398,3 +398,52 @@ Near on aSASa 589 right, 0 wrong. The five `IMG_5892` frames were the near
 player as the ONLY far candidate (the far player hidden behind her, never in
 the file), which is what the crossing rule is for; the per-side path alone
 did not remove them.
+
+### 10.3 The worker, before and after (full length, the phone as built)
+
+Baseline is the worker as deployed before this work (badminton-tracker
+`df8dede`); final is `7521b11` (zoom pass, trigger 120, acquisition margin
+0.5 m, double reports removed before merging). Both read by the phone with
+the per-side path.
+
+| video | side | baseline: coverage, right, wrong, median | final: coverage, right, wrong, median |
+|---|---|---|---|
+| aSASa | Near | 0.998, 601, 0, 6.9 cm | 0.998, 601, 0, **3.1 cm** |
+| aSASa | Far | 0.000, 0, 0, - | **0.814, 378, 0, 12.6 cm** |
+| `743d7fb1` | Near | 0.961, 3067, 0, 4.1 cm | 0.957, 3058, 0, 4.1 cm |
+| `743d7fb1` | Far | 0.804, 2491, 0, 8.1 cm | **0.958, 2953, 0**, 10.2 cm |
+| `IMG_5892` | Near | 0.974, 2047, 0, 7.5 cm | 0.973, 2044, 0, 7.4 cm |
+| `IMG_5892` | Far | 0.851, 1597, 0, 33.1 cm | **0.922, 1695, 0, 15.2 cm** |
+
+`743d7fb1`'s coverage leaves out 2649 camera-lost frames (cuts and
+replays). Its Far median rose 2 cm because the zoom placed him in about 460
+frames the baseline never did, which are the harder ones. `IMG_5892`'s Near gate from the
+camera-motion work still holds on the final file (`CloudLocalRunCorpusTest`).
+`TwoPlayerCorpusTest` asserts every §7 gate against these baselines; with
+`TWO_PLAYER_GATES=1` on the baseline file it fails the three Far gates, and on
+the final file it passes, with `ANALYSIS_REQUIRE_CORPUS=1`.
+
+Local CPU time per frame, baseline and final run back to back on this
+machine with nothing else heavy running (not a GPU figure; see §7):
+
+| video | baseline | final | ratio |
+|---|---|---|---|
+| aSASa | 0.107 s | 0.256 s | 2.40x |
+| `IMG_5892` | 0.104 s | 0.209 s | 2.00x |
+| `743d7fb1` | 0.103 s | 0.162 s | 1.56x |
+
+### 10.4 What was tried and not kept
+
+| change | result | ruling |
+|---|---|---|
+| Trigger 80 (as first designed) | aSASa Far 358 right; `IMG_5892` Far median 32 cm; `743d7fb1` Far (1500 frames) 654 right | replaced by 120: 378, 15 cm, 746 |
+| Find strictly inside the lines | aSASa Far coverage 0.673, most misses with him behind the baseline | acquisition margin 0.5 m: 0.769 |
+| Sitting from the joints | aSASa Far +5, `IMG_5892` Far +3, `IMG_5892` Near -5, `743d7fb1` unchanged | not adopted: a Near regression for a net +3 |
+| Movement and court margin in metres | not built: the worker-chain replay lost the far player to neither | - |
+| Per-side path alone | `IMG_5892` Far kept its 5 wrong frames: the near player was the only far candidate | the crossing rule added: 0 wrong |
+
+### 10.5 Not verified here
+
+- **The A10G.** CPU ratios only; the first deployed run's Phase 2 time per
+  frame against the previous deploy is the owner's to record.
+- **Doubles, and footage outside the three corpus videos.**
