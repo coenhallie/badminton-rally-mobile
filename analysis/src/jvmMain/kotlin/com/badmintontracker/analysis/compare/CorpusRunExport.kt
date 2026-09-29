@@ -1,6 +1,7 @@
 package com.badmintontracker.analysis.compare
 
 import com.badmintontracker.analysis.geometry.CourtKeypoints
+import com.badmintontracker.analysis.normalizeFps
 import com.badmintontracker.analysis.player.Coco
 import com.badmintontracker.analysis.player.selectPlayers
 import com.badmintontracker.analysis.raw.RawInference
@@ -73,6 +74,9 @@ fun exportRun(raw: RawInference, marks: CourtKeypoints): JsonObject {
         // The marking frame's time, so a tool rebuilding the camera for
         // another pose file of the same video (the device-style file) keeps it.
         put("cameraReferenceTimestamp", raw.camera?.referenceTimestamp?.let { JsonPrimitive(it) } ?: JsonNull)
+        // The rate a stored cloud track carries (CloudPoseOutcome.fps), so a
+        // track written from this file matches what the app would store.
+        put("fps", normalizeFps(raw.header.fps).fps)
         putJsonArray("frames") {
             for (frame in raw.frames) {
                 add(

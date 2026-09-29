@@ -88,6 +88,14 @@ class CorpusRunExportTest {
     }
 
     @Test
+    fun the_frame_rate_is_the_one_a_stored_track_carries() {
+        assertEquals(30.0, exportRun(raw(), marks).getValue("fps").jsonPrimitive.double)
+        val unreadable = raw().copy(header = raw().header.copy(fps = 0.0))
+        // normalizeFps's substitute, as CloudPoseOutcome stores it.
+        assertEquals(30.0, exportRun(unreadable, marks).getValue("fps").jsonPrimitive.double)
+    }
+
+    @Test
     fun each_side_carries_its_pose_frame_count() {
         val sides = exportRun(raw(), marks).getValue("sides").jsonObject
         assertEquals(1, sides.getValue("NEAR").jsonObject.getValue("framesWithPose").jsonPrimitive.int)
