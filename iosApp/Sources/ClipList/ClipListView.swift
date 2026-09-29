@@ -46,6 +46,8 @@ struct MatchesList: View {
     /// The chosen filter. What the list applies is `effectiveFilter` of it, so
     /// a filter whose chips are hidden never filters anything.
     @State private var filter: MatchListFilter = .all
+    /// The chosen order, applied through `effectiveSort` on the same rule.
+    @State private var sort: MatchListSort = .newest
     // A row the coach asked to delete or remove, waiting on a confirmation:
     // the two-way choice when a swipe finds both a file here and a match to
     // delete, the single dialog otherwise. Held by key and looked up in the
@@ -154,7 +156,9 @@ struct MatchesList: View {
         let shared = model.matchList.shared
         let showChips = MatchListFilterKt.showsFilters(mineCount: Int32(mine.count))
         let applied = MatchListFilterKt.effectiveFilter(chosen: filter, mineCount: Int32(mine.count))
-        let visible = mine.filter { $0.passes(filter: applied) }
+        let appliedSort = MatchListSortKt.effectiveSort(chosen: sort, mineCount: Int32(mine.count))
+        let visible = MatchListSortKt.sortMatches(items: mine.filter { $0.passes(filter: applied) }, sort: appliedSort)
+        let sharedVisible = MatchListSortKt.sortMatches(items: shared, sort: appliedSort)
         return List {
             // Rows, not `Section(header:)`: a plain list pins a header to the
             // top and scrolls the rows under it, which put a blurred card
@@ -164,6 +168,8 @@ struct MatchesList: View {
                 showChips: showChips,
                 selected: applied,
                 onSelect: { filter = $0 },
+                sort: appliedSort,
+                onSort: { sort = $0 },
                 onLegend: { legendOpen = true }
             )
             .listRowInsets(EdgeInsets(
@@ -194,8 +200,9 @@ struct MatchesList: View {
                     .drawerListRow(top: DrawerList.sectionGap)
                 // Never filtered: the chips are about the coach's own matches,
                 // and a shared one is neither on this phone nor waiting on this
-                // coach to analyze it.
-                ForEach(shared, id: \.key) { item in
+                // coach to analyze it. Sorted, though: the order is the whole
+                // list's.
+                ForEach(sharedVisible, id: \.key) { item in
                     row(item)
                 }
             }
@@ -216,8 +223,12 @@ struct MatchesList: View {
         // first value, so the empty list of the first frame cannot wipe a
         // chosen filter. `effectiveFilter` above already stops it applying
         // while the chips are hidden; this makes the choice itself forget.
+        // The sort sits in the same row and goes with it, on the same rule.
         .onChange(of: showChips) { wasShown, isShown in
-            if wasShown && !isShown { filter = .all }
+            if wasShown && !isShown {
+                filter = .all
+                sort = .newest
+            }
         }
         // Room at the foot so the last row clears the Add button, which floats
         // over the list rather than reserving space in its layout. 88, not

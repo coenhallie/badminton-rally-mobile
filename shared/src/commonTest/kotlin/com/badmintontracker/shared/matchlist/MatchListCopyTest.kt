@@ -46,8 +46,8 @@ class MatchListCopyTest {
             MatchListCopy.REMOVE_VIDEO_TITLE, MatchListCopy.CONFIRM_REMOVE, MatchListCopy.CONFIRM_DELETE,
             MatchListCopy.MATCH_MENU, MatchListCopy.FILTER_GROUP, MatchListCopy.PAUSED,
             MatchListCopy.ANALYSIS_FAILED, MatchListCopy.analysisFailed(null), MatchListCopy.analysisFailed("x"),
-            MatchListCopy.sharedBy("coach@club.es"),
-        )
+            MatchListCopy.sharedBy("coach@club.es"), MatchListCopy.SORT,
+        ) + MatchListSort.entries.flatMap { listOf(MatchListCopy.sortLabel(it), MatchListCopy.sortDescription(it)) }
         val produced = removableRows().flatMap { item ->
             listOf(MatchListCopy.removeFromPhoneDetail(item), MatchListCopy.choiceMessage(item))
         } + MatchAction.entries.mapNotNull { MatchListCopy.actionLabel(it) } +
@@ -157,6 +157,7 @@ class MatchListCopyTest {
             clips = clips, currentUserId = "me", sharerByVideoId = emptyMap(), metadataByVideoId = emptyMap(),
             scoreLogs = logs, localEntries = entries, cloudProgress = emptyMap(), deviceRuns = emptyMap(),
             storedTrackIds = tracks, storedSkeletonIds = skeletons, deviceClipCounts = deviceClips,
+            localNoteCounts = emptyMap(),
         ),
         TimeZone.UTC,
     ).mine.single().also { it.canRemoveFromPhone shouldBe true }
@@ -238,6 +239,7 @@ class MatchListCopyTest {
                 storedTrackIds = if (withStored) setOf("club") else emptySet(),
                 storedSkeletonIds = emptySet(),
                 deviceClipCounts = if (withStored) mapOf("club" to 3) else emptyMap(),
+                localNoteCounts = emptyMap(),
             ),
             TimeZone.UTC,
         )

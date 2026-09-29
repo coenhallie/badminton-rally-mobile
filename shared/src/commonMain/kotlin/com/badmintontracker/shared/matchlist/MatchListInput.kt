@@ -2,6 +2,7 @@ package com.badmintontracker.shared.matchlist
 
 import com.badmintontracker.shared.localvideo.AnalyzeProgress
 import com.badmintontracker.shared.localvideo.DevicePhase
+import com.badmintontracker.shared.localvideo.LocalAnnotation
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.model.MatchMetadata
 import com.badmintontracker.shared.model.RallyClip
@@ -42,4 +43,15 @@ data class MatchListInput(
     val storedSkeletonIds: Set<String>,
     /** Rallies an on-device run cut, per entry id. Absent means none. */
     val deviceClipCounts: Map<String, Int>,
+    /** Notes made on this phone's copy of a video, per entry id. Absent means none. See [localNoteCounts]. */
+    val localNoteCounts: Map<String, Int>,
 )
+
+/**
+ * [MatchListInput.localNoteCounts] from the phone's note store
+ * (`LocalAnnotationsRepository.byVideoId`, keyed by entry id), so both
+ * platforms count the same way. A video whose notes were all deleted keeps an
+ * empty list there; it is left out, as "absent means none" promises.
+ */
+fun localNoteCounts(byVideoId: Map<String, List<LocalAnnotation>>): Map<String, Int> =
+    byVideoId.mapValues { it.value.size }.filterValues { it > 0 }

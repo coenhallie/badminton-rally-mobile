@@ -127,8 +127,7 @@ internal fun buildMatchList(input: MatchListInput, timeZone: TimeZone): MatchLis
         else shared += videoItem(null, clips, input, timeZone, sharer = input.sharerByVideoId[videoId])
     }
 
-    val order = compareByDescending<MatchListItem> { it.sortAtEpochMs }.thenBy { it.key }
-    return MatchList(mine = mine.sortedWith(order), shared = shared.sortedWith(order))
+    return MatchList(mine = mine.sortedWith(NEWEST_FIRST), shared = shared.sortedWith(NEWEST_FIRST))
 }
 
 private fun RallyClip.isOwnedBy(userId: String?) = userId != null && ownerId == userId
@@ -153,6 +152,15 @@ private fun entryAsks(entry: LocalVideoEntry, input: MatchListInput, hasRunResul
         else -> Asks(MatchAction.ANALYZE, MatchListCopy.NOT_ANALYZED, false)
     }
 }
+
+/**
+ * The cloud clips' notes plus the notes made on this phone's copy. Two stores
+ * that never meet: a phone note lives only in the phone's settings and nothing
+ * uploads it, and `annotation_count` counts only rally_annotations rows, which
+ * only a clip's own page writes. So adding them counts no note twice.
+ */
+private fun noteCount(entry: LocalVideoEntry?, clips: List<RallyClip>, input: MatchListInput): Int =
+    clips.sumOf { it.annotationCount } + (entry?.let { input.localNoteCounts[it.id] } ?: 0)
 
 private fun deviceRunHoldsFile(entry: LocalVideoEntry, input: MatchListInput): Boolean =
     input.deviceRuns[entry.id]?.kind.let { it == DeviceRunKind.RUNNING || it == DeviceRunKind.PAUSED }
@@ -234,6 +242,8 @@ private fun videoItem(
             else -> MatchDelete.VIDEO_MATCH
         },
         deviceClipCount = deviceClips,
+        rallyCount = rallies,
+        noteCount = noteCount(entry, clips, input),
         heatmapId = heatmapId,
         accessibilityStatus = statusDescription(where, analyses, asks.text),
     )
@@ -313,6 +323,8 @@ private fun scoreItem(
             else -> MatchDelete.SCORE_MATCH
         },
         deviceClipCount = entry?.let { input.deviceClipCounts[it.id] } ?: 0,
+        rallyCount = rallies,
+        noteCount = noteCount(entry, clips, input),
         heatmapId = heatmapId,
         accessibilityStatus = statusDescription(where, analyses, asks.text),
     )

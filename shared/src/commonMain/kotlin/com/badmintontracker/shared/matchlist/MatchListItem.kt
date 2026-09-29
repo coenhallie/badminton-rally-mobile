@@ -64,6 +64,17 @@ data class MatchListItem(
     val delete: MatchDelete,
     /** Rallies an on-device run cut, for the Rallies section of a match with no cloud clips. */
     val deviceClipCount: Int,
+    /** The rallies [detail] prints: the cloud's clips, else what a device run cut. What "Most rallies" sorts by. */
+    val rallyCount: Int,
+    /**
+     * Every note on the match, labelled or not, and what "Most notes" sorts
+     * by: the notes on its cloud clips (the "N notes" each rally shows on the
+     * match page) plus the notes made on this phone's copy of the video. The
+     * two are separate stores and nothing copies one into the other, so no
+     * note is counted twice. On a shared row the cloud notes are the owner's,
+     * which the recipient reads there too.
+     */
+    val noteCount: Int,
     /** The id a stored heatmap is keyed by, when there is one. */
     val heatmapId: String?,
     /** The whole status line, read as one sentence by a screen reader. */

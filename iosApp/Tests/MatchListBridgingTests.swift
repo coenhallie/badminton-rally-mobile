@@ -21,12 +21,12 @@ final class MatchListBridgingTests: XCTestCase {
         )
     }
 
-    private func clip(_ index: Int32, videoId: String, owner: String) -> RallyClip {
+    private func clip(_ index: Int32, videoId: String, owner: String, notes: Int32 = 0) -> RallyClip {
         RallyClip(
             id: "\(videoId)-c\(index)", videoId: videoId, ownerId: owner,
             rallyIndex: index, startTimestamp: 0, endTimestamp: 5, durationSeconds: 5,
             clipStoragePath: "\(owner)/\(videoId)/rally_\(index).mp4",
-            thumbnailStoragePath: nil, title: nil, annotationCount: 0,
+            thumbnailStoragePath: nil, title: nil, annotationCount: notes,
             createdAt: KotlinInstant.companion.fromEpochMilliseconds(epochMilliseconds: 1_787_950_000_000)
         )
     }
@@ -37,14 +37,16 @@ final class MatchListBridgingTests: XCTestCase {
         deviceRuns: [String: DeviceRun] = [:],
         tracks: Set<String> = [],
         skeletons: Set<String> = [],
-        clipCounts: [String: KotlinInt] = [:]
+        clipCounts: [String: KotlinInt] = [:],
+        localNotes: [String: KotlinInt] = [:]
     ) -> MatchListInput {
         MatchListInput(
             clips: clips, currentUserId: "user-self",
             sharerByVideoId: [:], metadataByVideoId: [:], scoreLogs: [],
             localEntries: entries, cloudProgress: [:], deviceRuns: deviceRuns,
             storedTrackIds: tracks, storedSkeletonIds: skeletons,
-            deviceClipCounts: clipCounts
+            deviceClipCounts: clipCounts,
+            localNoteCounts: localNotes
         )
     }
 
@@ -81,6 +83,31 @@ final class MatchListBridgingTests: XCTestCase {
         XCTAssertFalse(MatchListFilterKt.showsFilters(mineCount: 5))
         XCTAssertEqual(MatchListFilterKt.effectiveFilter(chosen: .notAnalyzed, mineCount: 5), .all)
         XCTAssertEqual(MatchListFilterKt.effectiveFilter(chosen: .notAnalyzed, mineCount: 6), .notAnalyzed)
+    }
+
+    func testTheSortAndItsCountsCrossTheBridge() {
+        // The order rules are pinned in shared's MatchListSortTest; this is
+        // the shape Swift calls them in.
+        let list = MatchListBuilderKt.buildMatchList(input: input(
+            clips: [
+                clip(1, videoId: "v1", owner: "user-self", notes: 4),
+                clip(1, videoId: "v2", owner: "user-self"), clip(2, videoId: "v2", owner: "user-self"),
+            ],
+            entries: [entry(id: "e3", stage: .local)],
+            clipCounts: ["e3": KotlinInt(int: 5)]
+        ))
+        let byKey = Dictionary(uniqueKeysWithValues: list.mine.map { ($0.key, $0) })
+        XCTAssertEqual(byKey["video-v1"]?.noteCount, 4)
+        XCTAssertEqual(byKey["video-v2"]?.rallyCount, 2)
+        XCTAssertEqual(byKey["video-e3"]?.rallyCount, 5)
+
+        let keys = { (sort: MatchListSort) in MatchListSortKt.sortMatches(items: list.mine, sort: sort).map(\.key) }
+        XCTAssertEqual(keys(.mostRallies), ["video-e3", "video-v2", "video-v1"])
+        XCTAssertEqual(keys(.mostNotes).first, "video-v1")
+        XCTAssertEqual(MatchListSortKt.effectiveSort(chosen: .mostNotes, mineCount: 5), .newest)
+        XCTAssertEqual(MatchListSortKt.effectiveSort(chosen: .mostNotes, mineCount: 6), .mostNotes)
+        XCTAssertEqual(MatchListSort.allCases.map { MatchListCopy.shared.sortLabel(sort: $0) },
+                       ["Newest", "Oldest", "Most rallies", "Most notes"])
     }
 
     func testARunningDeviceRunRaisesTheRowAndHoldsItsFile() {

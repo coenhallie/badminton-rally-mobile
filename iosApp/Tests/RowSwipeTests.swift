@@ -49,7 +49,8 @@ final class RowSwipeTests: XCTestCase {
             sharerByVideoId: [:], metadataByVideoId: [:], scoreLogs: logs,
             localEntries: entries, cloudProgress: [:], deviceRuns: [:],
             storedTrackIds: [], storedSkeletonIds: [],
-            deviceClipCounts: [:]
+            deviceClipCounts: [:],
+            localNoteCounts: [:]
         )
         let list = MatchListBuilderKt.buildMatchList(input: input)
         return (list.mine + list.shared)[0]
@@ -98,7 +99,8 @@ final class RowSwipeTests: XCTestCase {
             sharerByVideoId: [:], metadataByVideoId: [:], scoreLogs: [],
             localEntries: [entry(id: "e1", stage: .local)], cloudProgress: [:],
             deviceRuns: ["e1": run], storedTrackIds: [], storedSkeletonIds: [],
-            deviceClipCounts: [:]
+            deviceClipCounts: [:],
+            localNoteCounts: [:]
         )
         let match = MatchListBuilderKt.buildMatchList(input: input).mine[0]
         XCTAssertEqual(match.delete, .none)

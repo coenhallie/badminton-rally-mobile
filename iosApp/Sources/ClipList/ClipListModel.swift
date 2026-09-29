@@ -50,6 +50,9 @@ final class ClipListModel {
     private let liveDeviceRuns: @MainActor () -> [String: DeviceRun]
     private var storedSkeletonIds: Set<String> = []
     private var deviceClipCounts: [String: KotlinInt] = [:]
+    /// Notes made on this phone's copy of each video, per entry id: what
+    /// "Most notes" adds to the cloud clips' own counts.
+    private(set) var localNoteCounts: [String: KotlinInt] = [:]
     /// Whether the refresh that opens the list has been kicked off. The ONLY
     /// thing start() does once per model rather than once per appearance - see
     /// `start()` for why the loops must not share this latch.
@@ -93,7 +96,7 @@ final class ClipListModel {
     /// match, or Settings, is a disappearance of the list. The match page runs
     /// it because it reads `matchList` for its sections, and the list's own
     /// loops stop under it.
-    /// Not idempotent: each call runs its own five loops, and only the initial
+    /// Not idempotent: each call runs its own six loops, and only the initial
     /// refresh is latched.
     ///
     /// This used to latch on a `started` flag, to stop each return to the list
@@ -116,9 +119,9 @@ final class ClipListModel {
         await observe()
     }
 
-    /// The five loops, as structured children of the caller's task - the same
+    /// The six loops, as structured children of the caller's task - the same
     /// shape as `BackgroundWorkModel.observe`. Cancelling the caller stops all
-    /// five, calling again starts all five, and there is never a second set:
+    /// six, calling again starts all six, and there is never a second set:
     /// the group does not return until every child has.
     ///
     /// Apart from `start()` so the tests can hold the loops to that contract
@@ -159,6 +162,17 @@ final class ClipListModel {
                 guard let self else { return }
                 for await map in self.videos.observeMatchMetadata() {
                     self.metadataByVideoId = map
+                    self.regroup()
+                }
+            }
+            // Counts, not the notes: editing a note's text leaves them equal
+            // and must not redraw every row.
+            group.addTask { @MainActor [weak self] in
+                guard let self else { return }
+                for await map in self.localAnnotations.byVideoId {
+                    let counts = MatchListInputKt.localNoteCounts(byVideoId: map)
+                    guard counts != self.localNoteCounts else { continue }
+                    self.localNoteCounts = counts
                     self.regroup()
                 }
             }
@@ -407,7 +421,8 @@ final class ClipListModel {
             deviceRuns: deviceRuns,
             storedTrackIds: storedTrackIds,
             storedSkeletonIds: storedSkeletonIds,
-            deviceClipCounts: deviceClipCounts
+            deviceClipCounts: deviceClipCounts,
+            localNoteCounts: localNoteCounts
         ))
     }
 }
