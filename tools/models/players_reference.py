@@ -24,13 +24,15 @@ metres, the path) and `candidates` (frame -> every gated person, for the
 audit to choose among), plus `camera_lost` and an `audit` list that
 --apply-audit replays onto the path.
 
-The path: a person contributes -REWARD + (-ln confidence) + OUTSIDE if their
-ankles are outside that half's court lines; joining two people up to
+The path: a person contributes -REWARD + (-ln confidence) + OUTSIDE_PER_M for
+every metre their ankles stand outside that half's court lines; joining two people up to
 MAX_SKIP_FRAMES apart costs SKIP per skipped frame plus MOVE per metre, and is
 impossible above MAX_SPEED_MPS; starting afresh anywhere costs RESTART. The
 OUTSIDE term is what keeps an umpire or a bystander who stands still, detected
 every frame, from being a cheaper path than a moving player who drops out now
-and then.
+and then. It grows with the distance, so a player half a metre behind the
+baseline (a lunge, which the phone accepts) still earns his place, while
+someone standing a metre or more off the court never does.
 
 Frames are decoded sequentially from 0 (see pose_dump.py on seeking).
 """
@@ -59,7 +61,7 @@ FULL_IMGSZ = 1920
 DEDUPE_IOU = 0.5
 
 REWARD = 2.0
-OUTSIDE = 3.0
+OUTSIDE_PER_M = 2.5
 SKIP = 0.5
 MOVE = 1.0
 RESTART = 5.0
@@ -157,7 +159,13 @@ def gated(p, h, back, below_net):
                   inside, [round(float(px[0]), 1), round(float(px[1]), 1)]]
 
 
-def path(cands, fps):
+def outside_m(x, y, side):
+    """How far a court position lies outside that half's lines, in metres; 0 inside."""
+    lo, hi = (0.0, L / 2) if side == "FAR" else (L / 2, L)
+    return max(0.0, -x, x - W, lo - y, y - hi)
+
+
+def path(cands, fps, side="FAR"):
     """One shortest path over the whole video for one side; frame -> [x, y].
 
     Nodes are processed in frame order. A node's best cost is its own cost
@@ -174,7 +182,7 @@ def path(cands, fps):
     for f in frames:
         here = []
         for j, (x, y, conf, inside, _) in enumerate(cands[f]):
-            own = -REWARD - math.log(max(conf, 1e-3)) + (0.0 if inside else OUTSIDE)
+            own = -REWARD - math.log(max(conf, 1e-3)) + OUTSIDE_PER_M * outside_m(x, y, side)
             choice, parent = best_before[0] + RESTART, best_before[1]
             for q in reversed(done):
                 gap = f - q[0]
@@ -229,7 +237,12 @@ def self_test():
     assert len(path(cands, fps)) == 60, "both stretches"
     # Nobody inside the lines at all: no path.
     assert path({f: [[7.6, 3.0, 0.95, False, [0, 0]]] for f in range(30)}, fps) == {}
-    print("self-test: 4 cases pass")
+    # A player who steps half a metre behind the far baseline for ten frames
+    # stays on the path: the phone accepts him there, so the reference must.
+    cands = {f: [[3.0, 1.0 if not 20 <= f < 30 else -0.5, 0.8, not 20 <= f < 30, [0, 0]]] for f in range(60)}
+    got = path(cands, fps)
+    assert all(f in got for f in range(20, 30)), f"lunge frames dropped: {sorted(set(range(20, 30)) - set(got))}"
+    print("self-test: 5 cases pass")
 
 
 def build(video_id: str):
@@ -285,7 +298,7 @@ def build(video_id: str):
     for side in ("NEAR", "FAR"):
         ref["sides"][side] = {
             "empty": False,
-            "positions": {str(f): xy for f, xy in sorted(path(cands[side], fps).items())},
+            "positions": {str(f): xy for f, xy in sorted(path(cands[side], fps, side).items())},
             "candidates": {str(f): cs for f, cs in sorted(cands[side].items())},
         }
     out = d / "players_reference.json"
@@ -297,6 +310,17 @@ def build(video_id: str):
         print(f"{side}: {len(ref['sides'][side]['positions'])} reference positions over {i} frames "
               f"({len(camera_lost)} camera-lost)")
     return out
+
+
+def repath(video_id: str):
+    """Recompute each side's path from the stored candidates, after a change to the path's rules."""
+    out = CORPUS / video_id / "players_reference.json"
+    ref = json.loads(out.read_text())
+    for side in ("NEAR", "FAR"):
+        cands = {int(f): cs for f, cs in ref["sides"][side]["candidates"].items()}
+        ref["sides"][side]["positions"] = {str(f): xy for f, xy in sorted(path(cands, ref["fps"], side).items())}
+        print(f"{side}: {len(ref['sides'][side]['positions'])} reference positions")
+    out.write_text(json.dumps(ref))
 
 
 def apply_audit(video_id: str):
@@ -321,9 +345,12 @@ def main():
     ap.add_argument("--video-id")
     ap.add_argument("--apply-audit", action="store_true")
     ap.add_argument("--self-test", action="store_true")
+    ap.add_argument("--repath", action="store_true", help="recompute the paths from stored candidates")
     a = ap.parse_args()
     if a.self_test:
         self_test()
+    elif a.repath:
+        repath(a.video_id)
     elif a.apply_audit:
         apply_audit(a.video_id)
     else:
