@@ -24,6 +24,13 @@ The mobile app is versioned independently from the web app.
   be analysed again to benefit.
 - **Sort the match list** by newest, oldest, most rallies or most notes, from a
   button next to the filters. Notes made on the phone count too.
+- **Set the score in one go.** "Edit score" on the scoring board, where Undo
+  was, opens both scores side by side: type a number, or use - and + for a
+  one-point fix, and choose who serves next. A line under the numbers says what
+  saving will do before it is done. Raising a score adds the rallies that went
+  unscored and lowering one takes back that side's latest rallies, so the
+  rallies still line up with the clips of the video. Undo last rally is in the
+  board's menu.
 - **iPhone can analyze a match on the phone.** Everything the Android app has
   done on device since the summer now runs on iOS too: the video is decoded
   once, three models run on each frame, the rallies are cut into their own

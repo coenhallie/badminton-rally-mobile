@@ -44,6 +44,7 @@ struct ScoringView: View {
     @State private var noteOpen = false
     @State private var editingDetails = false
     @State private var editingScore = false
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     // Fires on the transition to un-scoreable, from either exit: the last point
     // the rules allow, and "Finish match" in the menu. The rule is shared with
@@ -455,11 +456,21 @@ struct ScoringView: View {
                     // Not a `Label`: its icon gap is wider than this pill wants.
                     HStack(spacing: 6) {
                         Image(systemName: "pencil")
-                        Text("Edit score")
+                        // The pencil alone at the accessibility sizes, where the
+                        // words truncated to "✎ …", which says nothing at all.
+                        // By size rather than ViewThatFits: inside this row that
+                        // measured against an even share and dropped the words
+                        // at sizes where they fit.
+                        if !typeSize.isAccessibilitySize {
+                            Text("Edit score").lineLimit(1)
+                        }
                     }
                 }
                 .accessibilityLabel("Edit score")
                 .buttonStyle(OutlinedPillButtonStyle())
+                // Offered its width before the caption, or the row's even split
+                // leaves it the pencil alone at sizes where the words fit.
+                .layoutPriority(1)
                 .disabled(!model.canEditScore)
                 Text(Self.caption(match, model.pendingTagOrdinal))
                     .shuttlType(ShuttlType.bodySmall)

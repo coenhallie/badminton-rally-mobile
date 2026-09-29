@@ -88,13 +88,11 @@ struct ScoreEditSheet: View {
                 }
             }
         }
-        // The number pad has no return key of its own.
-        .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("Done") { focused = nil }
-            }
-        }
+        // The number pad has no return key, and a keyboard toolbar does not
+        // show in a sheet with no navigation stack: a tap anywhere off the
+        // field puts the pad away instead, as a stepper tap does.
+        .contentShape(Rectangle())
+        .onTapGesture { focused = nil }
         // Typing replaces the number rather than appending to it: a tap into a
         // field selects what is there, the way a score is corrected.
         .onReceive(NotificationCenter.default.publisher(for: UITextField.textDidBeginEditingNotification)) { note in
@@ -176,7 +174,9 @@ struct ScoreEditSheet: View {
     @ViewBuilder
     private func serveToggle(_ mark: ServeMark, onServe: @escaping () -> Void) -> some View {
         let serving = mark == .serving
-        Button(action: onServe) {
+        // A button only where there is something to choose: a disabled button
+        // is drawn faded, and the serving side's pill has to read at full white.
+        let pill =
             // The board's own word, so the pill reads the same in both places.
             // "Serves next" did not fit a tile on one line at the largest size.
             Text("SERVE")
@@ -192,18 +192,28 @@ struct ScoreEditSheet: View {
                             .strokeBorder(Color.white.opacity(0.6), lineWidth: 1)
                     }
                 }
+        if mark == .available {
+            Button {
+                focused = nil
+                onServe()
+            } label: { pill }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Serve")
+            .accessibilityHint("Serve next")
+        } else {
+            pill
+                .opacity(mark == .none ? 0 : 1)
+                .accessibilityHidden(mark == .none)
+                .accessibilityLabel("Serves next")
         }
-        .buttonStyle(.plain)
-        .disabled(mark != .available)
-        .opacity(mark == .none ? 0 : 1)
-        .accessibilityHidden(mark == .none)
-        .accessibilityLabel(mark == .serving ? "Serves next" : "Serve")
-        .accessibilityHint(mark == .available ? "Serve next" : "")
     }
 
     @ViewBuilder
     private func stepButton(_ symbol: String, _ label: String, enabled: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        Button {
+            focused = nil
+            action()
+        } label: {
             Image(systemName: symbol)
                 .shuttlType(ShuttlType.headlineMedium)
                 .foregroundStyle(.white)
