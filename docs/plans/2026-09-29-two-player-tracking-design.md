@@ -175,7 +175,8 @@ running mean of its height, and how many frames the slot has been empty.
 
 - **Follow.** When the slot's mean height, scaled to the pose model's input
   (`height * 960 / max(frame width, frame height)`), is under
-  `ZOOM_TRIGGER_MODEL_PX = 80`, and the slot was filled last frame: crop a
+  `ZOOM_TRIGGER_MODEL_PX = 120` (80 as first planned; 120 as built, see
+  section 10), and the slot was filled within the last `LOST_FRAMES`: crop a
   window centred on the last box, `2.6 h` wide and `1.8 h` tall (at least
   200 x 160 px), clipped to the frame, and run pose on it at
   `ZOOM_IMGSZ = 640`, about 2x for a 115 px player. Keep the one detection
@@ -188,11 +189,18 @@ running mean of its height, and how many frames the slot has been empty.
   frame and through the camera into this frame, extended upward by 2.5 m of
   player height at the far edge, run at 1.5x its width (the aSASa far half
   runs at `imgsz=1600`). Keep the most confident detection whose ankles lie
-  inside the court lines of that half, not the margin: this is what keeps the
-  umpire and bystanders from being adopted. After `SEARCH_BACKOFF_S = 1.0` of
+  inside the court lines of that half, or within `ACQUIRE_MARGIN_M = 0.5` of
+  them (added as built: strictly inside, a far player serving from behind the
+  baseline was not re-found for seconds; the umpire and bystanders on the
+  corpus stand a metre and more out), not in the wider search margin: this is
+  what keeps the umpire and bystanders from being adopted. After `SEARCH_BACKOFF_S = 1.0` of
   continuous failure, search every fifth frame only, so an empty half (the
   `IMG_5892` far side) does not pay a half-court pass on every frame.
-- **Merge.** A kept detection is mapped back to frame pixels. If it overlaps
+- **Merge.** A kept detection is mapped back to frame pixels. The full-frame
+  pass's double reports (`distinct_people`) are removed FIRST
+  (`merge_zoom_picks`, found as built): merging first replaced one copy's
+  keypoints, the copies stopped matching, and the stale one outranked the far
+  player in the top-two movement cut. If it overlaps
   a full-frame detection (IoU over 0.3), it replaces that detection's
   keypoints and box, keeping its BoT-SORT track id: the zoomed keypoints are
   the better measurement. Otherwise it is appended with a zoom-session track
@@ -215,8 +223,11 @@ running mean of its height, and how many frames the slot has been empty.
 
 ### 4.2 Filter changes, adopted only on evidence
 
-Each is implemented behind its own constant and kept only if the stage 0
-scorer shows a gain with no regression on any video (section 7):
+Each was to be kept only if the stage 0 scorer showed a gain with no
+regression on any video (section 7). As run (section 10): none is adopted.
+The first was built and measured and gave +3 right-person samples net with a
+Near regression; the other two were not built, because the worker-chain
+replay (section 1) lost the far player to neither. The three as designed:
 
 1. **Sitting from the joints.** When hips, knees and ankles are all confident,
    decide sitting from them alone (hips within a fraction of the torso length
