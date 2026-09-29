@@ -73,6 +73,33 @@ class MatchScorer(
     }
 
     /**
+     * Whether the board offers the score editor. Not on a match a side retired
+     * from: the retirement sits after the game the editor rebuilds, and dropping
+     * it would quietly un-retire them. Nothing on the board records one; a log
+     * from elsewhere can carry it.
+     */
+    fun canEditScore(): Boolean {
+        val log = repo.get(scoreLogId) ?: return false
+        return log.events.none { it is ScoreEvent.Retire }
+    }
+
+    /** What setting the game to [home]-[away] would do. Null when the match is not on this device. */
+    fun planScoreEdit(home: Int, away: Int, nextServer: Side?): ScoreEditPlan? =
+        repo.get(scoreLogId)?.planScoreEdit(home, away, nextServer)
+
+    /**
+     * Sets the game being played to [home]-[away], see [ScoreLog.planScoreEdit].
+     * False when it could not be saved, and then nothing was written.
+     */
+    fun editScore(home: Int, away: Int, nextServer: Side?): Boolean {
+        if (!canEditScore()) return false
+        val plan = planScoreEdit(home, away, nextServer) ?: return false
+        if (!plan.canSave) return false
+        edit { plan.events }
+        return true
+    }
+
+    /**
      * True while nothing has changed the match since [undone]. Once anything has -
      * a rally, a tag, a reset, a sync - putting the old log back would erase it.
      */
