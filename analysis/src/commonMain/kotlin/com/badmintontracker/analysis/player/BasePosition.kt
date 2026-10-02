@@ -8,6 +8,13 @@ import kotlin.math.max
 /** One rally's span in the analysed video, seconds. [index] is the 1-based rally number. */
 data class RallyWindow(val index: Int, val startSeconds: Double, val endSeconds: Double) {
     val isBounded: Boolean get() = endSeconds > startSeconds
+
+    /**
+     * The frames this window covers, widened to whole frames at both ends. The
+     * one conversion the base position and the heatmap share, so the two
+     * cannot mean different frames by the same rally.
+     */
+    fun frames(fps: Double): IntRange = floor(startSeconds * fps).toInt()..ceil(endSeconds * fps).toInt()
 }
 
 /**
@@ -63,9 +70,10 @@ fun basePositions(
     val rallies = ArrayList<RallyBase>()
     for (w in windows.sortedBy { it.startSeconds }) {
         if (!w.isBounded) continue
-        val first = floor(w.startSeconds * fps).toInt()
-        val last = ceil(w.endSeconds * fps).toInt()
-        val inside = sorted.filter { it.frame in first..last }
+        val frames = w.frames(fps)
+        val first = frames.first
+        val last = frames.last
+        val inside = sorted.filter { it.frame in frames }
         if (inside.size < minSamples) continue
         val rx = inside.map { it.courtPosition.x }
         val ry = inside.map { it.courtPosition.y }

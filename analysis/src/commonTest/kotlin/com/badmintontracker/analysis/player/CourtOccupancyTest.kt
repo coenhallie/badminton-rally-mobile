@@ -77,6 +77,42 @@ class CourtOccupancyTest {
     }
 
     @Test
+    fun between_rallies_nothing_is_credited() {
+        // Frames 0..10 are the rally; the player walking to the shuttle tube
+        // at frames 20..40 is not where they play from.
+        val rallies = RallyFrames.of(listOf(RallyWindow(1, 0.0, 1.0)), fps = 10.0)
+        val occupancy = CourtOccupancy()
+        occupancy.addAll(
+            (0..10).map { PlayerSample(it, Point(3.0, 10.0)) } +
+                (20..40).map { PlayerSample(it, Point(0.5, 13.0)) },
+            fps = 10.0,
+            within = rallies,
+        )
+        assertEquals(1.1, occupancy.totalSeconds, 1e-9)
+    }
+
+    @Test
+    fun a_rallys_last_sample_is_not_credited_past_the_rally() {
+        // The gap after frame 8 is bridged up to the cap everywhere else, but
+        // the rally ends at frame 10, so three frames are all it earns.
+        val rallies = RallyFrames.of(listOf(RallyWindow(1, 0.0, 1.0)), fps = 10.0)
+        val occupancy = CourtOccupancy()
+        occupancy.addAll(
+            listOf(PlayerSample(8, Point(3.0, 10.0)), PlayerSample(20, Point(3.0, 10.0))),
+            fps = 10.0,
+            within = rallies,
+        )
+        assertEquals(0.3, occupancy.totalSeconds, 1e-9)
+    }
+
+    @Test
+    fun without_rallies_the_whole_match_is_credited() {
+        val occupancy = CourtOccupancy()
+        occupancy.addAll((0..40).map { PlayerSample(it, Point(3.0, 10.0)) }, fps = 10.0, within = null)
+        assertEquals(4.1, occupancy.totalSeconds, 1e-9)
+    }
+
+    @Test
     fun positions_off_the_grid_are_dropped_rather_than_clamped() {
         // Clamping would pile every bad projection onto the court edge and read
         // as a player who loved the tramlines.

@@ -40,6 +40,10 @@ private fun statTileText(value: String, unit: String, unitStyle: TextStyle): Ann
  *
  * A selectable tile draws a one-pixel accent border when chosen and a
  * transparent one otherwise, so choosing a tile never moves its neighbours.
+ *
+ * [labelMaxLines] is iOS's `labelLineLimit`: a caption longer than half a
+ * phone, like the heatmap's "Frames with the player", needs two, or it is
+ * cut off at the last word that fits with nothing to say so.
  */
 @Composable
 fun ShuttlStatTile(
@@ -50,6 +54,7 @@ fun ShuttlStatTile(
     labelAbove: Boolean = false,
     selected: Boolean = false,
     onClick: (() -> Unit)? = null,
+    labelMaxLines: Int = 1,
 ) {
     val shape = RoundedCornerShape(ShuttlRadius.large)
     val border = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent
@@ -68,7 +73,7 @@ fun ShuttlStatTile(
             )
             .padding(horizontal = 20.dp, vertical = 16.dp),
     ) {
-        if (labelAbove) Caption(label)
+        if (labelAbove) Caption(label, maxLines = labelMaxLines)
         Text(
             statTileText(value, unit, MaterialTheme.typography.bodyMedium.copy(color = unitColor)),
             style = ShuttlTypeExtras.statNumber,
@@ -76,17 +81,17 @@ fun ShuttlStatTile(
             maxLines = 1,
             modifier = Modifier.padding(top = if (labelAbove) 4.dp else 0.dp),
         )
-        if (!labelAbove) Caption(label, modifier = Modifier.padding(top = 4.dp))
+        if (!labelAbove) Caption(label, maxLines = labelMaxLines, modifier = Modifier.padding(top = 4.dp))
     }
 }
 
 @Composable
-private fun Caption(label: String, modifier: Modifier = Modifier) {
+private fun Caption(label: String, maxLines: Int, modifier: Modifier = Modifier) {
     Text(
         label,
         style = MaterialTheme.typography.bodySmall,
         color = ShuttlTheme.extended.textTertiary,
-        maxLines = 1,
+        maxLines = maxLines,
         modifier = modifier,
     )
 }

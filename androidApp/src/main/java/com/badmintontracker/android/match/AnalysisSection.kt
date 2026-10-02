@@ -114,7 +114,8 @@ fun AnalysisSection(
             )
         }
         when (panel) {
-            AnalyticsPanel.Heatmap -> HeatmapPanel(entryId = analysisId, runner = localAnalysis)
+            AnalyticsPanel.Heatmap ->
+                HeatmapPanel(entryId = analysisId, runner = localAnalysis, windows = windows)
             AnalyticsPanel.Base ->
                 BasePositionPanel(entryId = analysisId, runner = localAnalysis, windows = windows)
             AnalyticsPanel.Skeleton -> SkeletonPanel(

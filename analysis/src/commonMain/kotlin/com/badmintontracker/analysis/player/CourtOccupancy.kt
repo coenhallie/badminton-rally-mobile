@@ -49,7 +49,15 @@ class CourtOccupancy(
         total += seconds
     }
 
-    fun addAll(samples: List<PlayerSample>, fps: Double) {
+    /**
+     * Credits every sample with the time to the next one, capped.
+     *
+     * With [within], only samples inside a rally are credited, and a rally's
+     * last sample no further than the rally's last frame: the gap after it is
+     * the walk to the next point, which is exactly what a rallies-only map
+     * leaves out. Null is the whole match.
+     */
+    fun addAll(samples: List<PlayerSample>, fps: Double, within: RallyFrames? = null) {
         if (fps <= 0.0) return
         // Each sample covers the gap to the next one, capped. Up to the cap,
         // this is what makes the map independent of sampling rate: a player
@@ -61,8 +69,10 @@ class CourtOccupancy(
         // frame, which is all that is known about it.
         val maxFrames = max(1.0, MAX_GAP_S * fps)
         samples.forEachIndexed { i, sample ->
+            val rallyEnd = if (within == null) null else within.endOf(sample.frame) ?: return@forEachIndexed
             val next = samples.getOrNull(i + 1)
-            val frames = if (next == null) 1.0 else min(maxFrames, max(1, next.frame - sample.frame).toDouble())
+            var frames = if (next == null) 1.0 else min(maxFrames, max(1, next.frame - sample.frame).toDouble())
+            if (rallyEnd != null) frames = min(frames, (rallyEnd - sample.frame + 1).toDouble())
             add(sample.courtPosition, frames / fps)
         }
     }
