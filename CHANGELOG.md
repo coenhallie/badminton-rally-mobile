@@ -10,6 +10,12 @@ The mobile app is versioned independently from the web app.
 ## [Unreleased]
 
 ### Added
+- **The heatmap shows play, not the breaks.** It is now drawn from the rallies
+  alone, so walking to fetch the shuttle, the towel and the wait before a serve
+  no longer count as where a player plays. "Whole match" under Near and Far
+  brings the old map back. The minutes and the share of frames under the court
+  follow the choice. A match whose rally times were not kept shows the whole
+  match, as before.
 - **Both players, not just the near one.** A cloud analysis now finds the
   player at the far end of the court too, and the heatmap, base position and
   skeleton each have a Near and a Far view. The cloud looks closer at a player
