@@ -36,6 +36,10 @@ struct AnalysisSection: View {
     /// Held by side rather than by index, so a reload that reordered or dropped
     /// a side cannot silently swap which player the court is showing.
     @State private var side: CourtSide = .near
+    /// The coach's pick, resolved against what is on offer in `heatmap`, so
+    /// clips landing a beat after the section opens bring the toggle in on its
+    /// default rather than on a stale choice.
+    @State private var scope: HeatmapScope = .rallies
     @State private var hasSkeleton = false
     /// The cut rallies as spans, for the Base panel and for the pill that offers
     /// it. Read here rather than in the panel for the same reason `source` is:
@@ -203,6 +207,8 @@ struct AnalysisSection: View {
     private var heatmap: some View {
         if let source {
             let shown = source.tracks.first { $0.side == side } ?? source.tracks[0]
+            let scopes = HeatmapScopeKt.heatmapScopes(windows: windows)
+            let shownScope = scopes.contains(scope) ? scope : scopes[0]
             VStack(spacing: 0) {
                 if source.tracks.count > 1 {
                     SideToggle(
@@ -216,7 +222,28 @@ struct AnalysisSection: View {
                     .padding(.horizontal, ShuttlGutter.page)
                     .padding(.vertical, 8)
                 }
-                CourtHeatmapView(track: shown.track, fps: source.fps)
+                if scopes.count > 1 {
+                    // Under Near | Far rather than beside it, so that row keeps
+                    // the full width it has on Base and does not change size on
+                    // a switch between the two.
+                    ShuttlPillTabs(
+                        labels: scopes.map(\.label),
+                        selectedIndex: scopes.firstIndex(of: shownScope) ?? 0,
+                        onSelect: { scope = scopes[$0] },
+                        accessibilityLabel: "Which part of the match",
+                        secondary: true
+                    )
+                    .padding(.horizontal, ShuttlGutter.page)
+                    .padding(.top, source.tracks.count > 1 ? 0 : 8)
+                    .padding(.bottom, 8)
+                }
+                CourtHeatmapView(
+                    track: shown.track,
+                    fps: source.fps,
+                    rallies: shownScope == .rallies
+                        ? RallyFrames.companion.of(windows: windows, fps: source.fps)
+                        : nil
+                )
             }
         } else {
             // A run's state lives in memory, so it is gone after a termination.

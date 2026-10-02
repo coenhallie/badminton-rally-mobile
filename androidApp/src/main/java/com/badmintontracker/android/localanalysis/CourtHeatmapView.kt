@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -35,6 +37,8 @@ import java.util.Locale
 import com.badmintontracker.analysis.geometry.Court
 import com.badmintontracker.analysis.player.CourtOccupancy
 import com.badmintontracker.analysis.player.PlayerTrack
+import com.badmintontracker.analysis.player.RallyFrames
+import com.badmintontracker.shared.analytics.HEATMAP_NO_RALLY_SAMPLES
 import com.badmintontracker.analysis.player.RejectionReason
 import kotlin.math.sqrt
 import androidx.compose.ui.unit.IntSize
@@ -54,17 +58,23 @@ import androidx.compose.ui.graphics.ImageBitmap
  *
  * Aspect ratio comes from the real court, so the drawing cannot silently stretch
  * and misrepresent how far the player actually ranged.
+ *
+ * [rallies], when given, draws play alone: the map, the time under it and the
+ * share of frames with the player are all over the rally frames. Null is the
+ * whole match.
  */
 @Composable
 fun CourtHeatmapView(
     track: PlayerTrack,
     fps: Double,
     modifier: Modifier = Modifier,
+    rallies: RallyFrames? = null,
     cellSizeM: Double = CourtOccupancy.DEFAULT_CELL_SIZE_M,
 ) {
-    val occupancy = remember(track, fps, cellSizeM) {
-        CourtOccupancy(cellSizeM).also { it.addAll(track.samples, fps) }
+    val occupancy = remember(track, fps, rallies, cellSizeM) {
+        CourtOccupancy(cellSizeM).also { it.addAll(track.samples, fps, within = rallies) }
     }
+    val coverage = remember(track, rallies) { rallies?.coverage(track) ?: track.coverage }
     val grid = remember(occupancy) { occupancy.smoothed() }
     val peak = remember(grid) { grid.flatten().maxOrNull() ?: 0.0 }
     // One pixel per cell, scaled up by the GPU rather than drawn as rectangles.
@@ -93,6 +103,10 @@ fun CourtHeatmapView(
     Column(modifier) {
         if (track.samples.isEmpty()) {
             PanelMessage(whyEmpty(track))
+            return@Column
+        }
+        if (rallies != null && occupancy.totalSeconds == 0.0) {
+            PanelMessage(HEATMAP_NO_RALLY_SAMPLES)
             return@Column
         }
 
@@ -131,21 +145,28 @@ fun CourtHeatmapView(
         // ankles, so a frame without confident ankles contributes nothing
         // rather than a guess, and the share of frames that produced a
         // position is what the picture rests on.
+        //
+        // Two lines for the captions, as on iOS: "Frames with the player" runs
+        // longer than half a phone and one line cut it to "Frames with the".
+        // The row takes its tallest tile's height so the pair stays level
+        // when only one caption wraps.
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = COURT_GUTTER),
+            modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min).padding(horizontal = COURT_GUTTER),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             ShuttlStatTile(
                 value = String.format(Locale.US, "%.1f", occupancy.totalSeconds / 60.0),
                 unit = " min",
                 label = "Tracked",
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+                labelMaxLines = 2,
             )
             ShuttlStatTile(
-                value = (track.coverage * 100).toInt().toString(),
+                value = (coverage * 100).toInt().toString(),
                 unit = "%",
                 label = "Frames with the player",
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+                labelMaxLines = 2,
             )
         }
         Spacer(Modifier.height(COURT_GUTTER))

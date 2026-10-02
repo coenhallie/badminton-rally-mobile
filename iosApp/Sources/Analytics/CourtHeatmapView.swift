@@ -13,9 +13,14 @@ import SwiftUI
 ///
 /// Aspect ratio comes from the real court, so the drawing cannot silently
 /// stretch and misrepresent how far the player actually ranged.
+///
+/// `rallies`, when given, draws play alone: the map, the time under it and the
+/// share of frames with the player are all over the rally frames. Nil is the
+/// whole match.
 struct CourtHeatmapView: View {
     let track: PlayerTrack
     let fps: Double
+    var rallies: RallyFrames? = nil
     var cellSizeM: Double = CourtOccupancy.companion.DEFAULT_CELL_SIZE_M
 
     var body: some View {
@@ -23,16 +28,20 @@ struct CourtHeatmapView: View {
             PanelMessage(text: whyEmpty(track))
         } else {
             let occupancy = CourtOccupancy(cellSizeM: cellSizeM, marginM: CourtLayout.marginM)
-            let _ = occupancy.addAll(samples: track.samples, fps: fps)
-            let grid = occupancy.smoothed(sigmaM: CourtOccupancy.companion.DEFAULT_SIGMA_M)
-                .map { $0.map { $0.doubleValue } }
-            let peak = grid.flatMap { $0 }.max() ?? 0
+            let _ = occupancy.addAll(samples: track.samples, fps: fps, within: rallies)
+            if rallies != nil && occupancy.totalSeconds == 0 {
+                PanelMessage(text: HeatmapScopeKt.HEATMAP_NO_RALLY_SAMPLES)
+            } else {
+                let grid = occupancy.smoothed(sigmaM: CourtOccupancy.companion.DEFAULT_SIGMA_M)
+                    .map { $0.map { $0.doubleValue } }
+                let peak = grid.flatMap { $0 }.max() ?? 0
 
-            VStack(spacing: 0) {
-                courtCard(grid: grid, peak: peak)
-                scale
-                summary(occupancy: occupancy)
-                Spacer(minLength: ShuttlGutter.page)
+                VStack(spacing: 0) {
+                    courtCard(grid: grid, peak: peak)
+                    scale
+                    summary(occupancy: occupancy, coverage: rallies?.coverage(track: track) ?? track.coverage)
+                    Spacer(minLength: ShuttlGutter.page)
+                }
             }
         }
     }
@@ -87,7 +96,7 @@ struct CourtHeatmapView: View {
     /// so a frame without confident ankles contributes nothing rather than a
     /// guess, and the share of frames that produced a position is what the
     /// picture rests on.
-    private func summary(occupancy: CourtOccupancy) -> some View {
+    private func summary(occupancy: CourtOccupancy, coverage: Double) -> some View {
         HStack(spacing: 8) {
             // Two lines for the caption: both of these run longer than half a
             // phone, and the shared tile's one-line default would ellipsize
@@ -97,7 +106,7 @@ struct CourtHeatmapView: View {
                 unit: " min", label: "Tracked", labelLineLimit: 2
             )
             ShuttlStatTile(
-                value: "\(Int(track.coverage * 100))",
+                value: "\(Int(coverage * 100))",
                 unit: "%", label: "Frames with the player", labelLineLimit: 2
             )
         }

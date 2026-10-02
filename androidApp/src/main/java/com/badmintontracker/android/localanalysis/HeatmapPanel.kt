@@ -9,11 +9,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.badmintontracker.analysis.player.CourtSide
+import com.badmintontracker.analysis.player.RallyFrames
+import com.badmintontracker.analysis.player.RallyWindow
+import com.badmintontracker.shared.analytics.HeatmapScope
+import com.badmintontracker.shared.analytics.heatmapScopes
 import com.badmintontracker.android.ui.components.ShuttlPillTabs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -85,11 +90,17 @@ internal fun heatmapSource(
  * two panels on the same court, since a second copy is how one of them rots
  * while the other still looks fine, and this is how a coach returns to a run
  * that cost half an hour.
+ *
+ * [windows] are the Base panel's, from the same run as the track, and say
+ * which frames were play. Where any has bounds the court is drawn from the
+ * rallies alone by default, with the whole match one tap away; see
+ * `heatmapScopes`.
  */
 @Composable
 fun HeatmapPanel(
     entryId: String,
     runner: LocalAnalysisRunner,
+    windows: List<RallyWindow>,
     modifier: Modifier = Modifier,
 ) {
     // In memory if the run is still loaded, from disk otherwise. A pose run costs
@@ -135,6 +146,13 @@ fun HeatmapPanel(
                 // player the court is showing.
                 var side by rememberSaveable { mutableStateOf(CourtSide.NEAR) }
                 val shown = source.tracks.firstOrNull { it.side == side } ?: source.tracks.first()
+                // Held as the coach's pick and resolved against what is on
+                // offer, so clips landing a beat after the section opens bring
+                // the toggle in on its default rather than on a stale choice.
+                var scope by rememberSaveable { mutableStateOf(HeatmapScope.Rallies) }
+                val scopes = heatmapScopes(windows)
+                val shownScope = if (scope in scopes) scope else scopes.first()
+                val rallies = remember(windows, source.fps) { RallyFrames.of(windows, source.fps) }
                 if (source.tracks.size > 1) {
                     SideToggle(
                         sides = source.tracks.map { it.side },
@@ -146,7 +164,29 @@ fun HeatmapPanel(
                         modifier = Modifier.padding(horizontal = COURT_GUTTER, vertical = 8.dp),
                     )
                 }
-                CourtHeatmapView(track = shown.track, fps = source.fps)
+                if (scopes.size > 1) {
+                    // Under Near | Far rather than beside it, so that row keeps
+                    // the full width it has on Base and does not change size
+                    // on a switch between the two.
+                    ShuttlPillTabs(
+                        labels = scopes.map { it.label },
+                        selectedIndex = scopes.indexOf(shownScope),
+                        onSelect = { scope = scopes[it] },
+                        modifier = Modifier.padding(
+                            start = COURT_GUTTER,
+                            end = COURT_GUTTER,
+                            top = if (source.tracks.size > 1) 0.dp else 8.dp,
+                            bottom = 8.dp,
+                        ),
+                        secondary = true,
+                        groupLabel = "Which part of the match",
+                    )
+                }
+                CourtHeatmapView(
+                    track = shown.track,
+                    fps = source.fps,
+                    rallies = rallies.takeIf { shownScope == HeatmapScope.Rallies },
+                )
             }
         }
     }
