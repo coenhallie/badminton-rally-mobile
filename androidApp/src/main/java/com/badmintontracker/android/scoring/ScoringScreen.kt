@@ -122,12 +122,12 @@ fun ScoringScreen(
         if (finishPrompt.shouldAsk(log.isPlayable())) addVideoOpen = true
     }
 
-    // Keyed on the undo rather than on its words, so a second undo of the same
+    // Keyed on the notice rather than on its words, so a second undo of the same
     // side's rally gets the full time to be put back too.
-    LaunchedEffect(state.undone) {
-        if (state.undone != null) {
+    LaunchedEffect(state.notice) {
+        if (state.notice != null) {
             delay(UNDO_NOTICE_MILLIS)
-            vm.dismissUndoNotice()
+            vm.dismissNotice()
         }
     }
 
@@ -135,10 +135,11 @@ fun ScoringScreen(
         StatusStrip(
             log = log,
             match = match,
-            undoneNotice = state.undoneNotice,
+            notice = state.noticeMessage,
+            noticeAction = state.noticeAction,
             canUndo = state.canUndo,
             onUndo = vm::undo,
-            onRedo = vm::redo,
+            onRedo = vm::reverseNotice,
             onBack = onBack,
             onEditDetails = { editingDetails = true },
             onResetGame = { confirming = Confirmation.ResetGame },
@@ -294,7 +295,8 @@ private enum class Confirmation(val title: String, val body: String, val confirm
 private fun StatusStrip(
     log: ScoreLog,
     match: MatchState,
-    undoneNotice: String?,
+    notice: String?,
+    noticeAction: String?,
     canUndo: Boolean,
     onUndo: () -> Unit,
     onRedo: () -> Unit,
@@ -304,7 +306,7 @@ private fun StatusStrip(
     onFinish: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
-    val announcement = undoneNotice ?: announcementFor(log, match)
+    val announcement = notice ?: announcementFor(log, match)
 
     Surface(color = MaterialTheme.colorScheme.surface) {
         Row(
@@ -330,8 +332,8 @@ private fun StatusStrip(
                     if (announcement != null) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            if (undoneNotice != null) {
-                TextButton(onClick = onRedo) { Text("Redo") }
+            if (notice != null) {
+                TextButton(onClick = onRedo) { Text(noticeAction.orEmpty()) }
             }
             Box {
                 IconButton(onClick = { menuOpen = true }) {
