@@ -1,5 +1,6 @@
 package com.badmintontracker.shared.scoring
 
+import kotlinx.datetime.Instant
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -72,6 +73,16 @@ data class ScoredPoint(
     val comment: String?,
 )
 
+/** One moment as the fold resolved it: its latest version, placed among the rallies. */
+data class LoggedMoment(
+    val id: String,
+    /** Rallies played before it. Never more than the match has. */
+    val afterPoints: Int,
+    val loggedAt: Instant,
+    val tags: List<PointTag>,
+    val comment: String?,
+)
+
 /**
  * The whole state of a match, derived and never stored. Produced only by
  * [foldMatchState].
@@ -87,6 +98,8 @@ data class MatchState(
     val completedGames: List<SideScore>,
     val gamesWon: SideScore,
     val points: List<ScoredPoint>,
+    /** Labels and notes logged without a rally, in order among the rallies. See [ScoreEvent.Moment]. */
+    val moments: List<LoggedMoment>,
     /** Null once the match is over. */
     val server: Side?,
     /** Null once the match is over. */
@@ -160,6 +173,10 @@ fun foldMatchState(
     val tagsByOrdinal = HashMap<Int, ScoreEvent.TagPoint>()
     for (event in events) if (event is ScoreEvent.TagPoint) tagsByOrdinal[event.pointOrdinal] = event
 
+    // The same rule as tags: the last version of each moment wins.
+    val latestMoments = LinkedHashMap<String, ScoreEvent.Moment>()
+    for (event in events) if (event is ScoreEvent.Moment) latestMoments[event.id] = event
+
     var currentGame = SideScore.ZERO
     var gameIndex = 0
     val completedGames = ArrayList<SideScore>()
@@ -177,6 +194,7 @@ fun foldMatchState(
         if (winner != null) break
         when (event) {
             is ScoreEvent.TagPoint -> Unit                      // already resolved above
+            is ScoreEvent.Moment -> Unit                        // resolved above and below
             is ScoreEvent.Retire -> winner = event.side.other
             is ScoreEvent.PointTo -> {
                 val scoreBefore = currentGame
@@ -241,6 +259,14 @@ fun foldMatchState(
         }
     }
 
+    // Read apart from the loop's break, so a moment logged after match point folds.
+    // Sorted with a stable sort, so moments at the same place and time keep the
+    // order they were first logged in.
+    val moments = latestMoments.values
+        .filter { it.tags.isNotEmpty() || !it.comment.isNullOrBlank() }
+        .map { LoggedMoment(it.id, it.afterPoints.coerceIn(0, points.size), it.loggedAt, it.tags, it.comment) }
+        .sortedWith(compareBy({ it.afterPoints }, { it.loggedAt }))
+
     val servingSide = if (winner != null) null else server
     val court = servingSide?.let {
         if (currentGame.of(it) % 2 == 0) ServiceCourt.RIGHT else ServiceCourt.LEFT
@@ -264,6 +290,7 @@ fun foldMatchState(
         completedGames = completedGames,
         gamesWon = gamesWon,
         points = points,
+        moments = moments,
         server = servingSide,
         serviceCourt = court,
         isIntervalPoint = winner == null && isIntervalPoint,
