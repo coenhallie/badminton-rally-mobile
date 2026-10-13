@@ -625,17 +625,20 @@ private fun ControlBar(
                 ) {
                     state.labels.forEach { label ->
                         val quick = target == BoardTarget.Moments && draft == null
+                        // Null for a quick moment: that tap is a one-shot action
+                        // with nothing to tick, not a toggle that is off.
+                        val selected = when {
+                            draft != null -> draft.tags.any { it.labelName == label.name }
+                            point != null -> point.tags.any { it.labelName == label.name }
+                            else -> null
+                        }
                         TagChip(
                             label = label,
-                            selected = when {
-                                draft != null -> draft.tags.any { it.labelName == label.name }
-                                point != null -> point.tags.any { it.labelName == label.name }
-                                else -> false
-                            },
+                            selected = selected,
                             flashOnTap = quick,
                             onClickLabel = when {
-                                point != null -> "Tag this rally"
-                                draft != null -> "Add to this moment"
+                                point != null -> if (selected == true) "Remove tag" else "Tag this rally"
+                                draft != null -> if (selected == true) "Remove from this moment" else "Add to this moment"
                                 else -> "Log a moment"
                             },
                             onClick = {
@@ -780,7 +783,8 @@ private fun MomentNoteField(onTextChange: (String) -> Unit, onClose: () -> Unit)
 @Composable
 private fun TagChip(
     label: AnnotationLabel,
-    selected: Boolean,
+    /** Null when the tap is not a toggle, so TalkBack does not call the chip "Not selected". */
+    selected: Boolean?,
     flashOnTap: Boolean,
     onClickLabel: String,
     onClick: () -> Unit,
@@ -809,12 +813,12 @@ private fun TagChip(
                     }
                 }
             }
-            .semantics { this.selected = selected },
+            .then(if (selected == null) Modifier else Modifier.semantics { this.selected = selected }),
     ) {
         Text(
-            text = if (selected) "✓ ${label.name}" else label.name,
+            text = if (selected == true) "✓ ${label.name}" else label.name,
             style = MaterialTheme.typography.labelLarge,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+            fontWeight = if (selected == true) FontWeight.Bold else FontWeight.Normal,
             color = onContainer,
             modifier = Modifier
                 .drawWithContent {
