@@ -118,13 +118,13 @@ struct ScoringView: View {
         // Keyed on the undo rather than on its words, so a second undo of the same
         // side's rally gets the full time to be put back too. Cancelled, and so
         // never dismissing anything, when a redo or the next rally replaces it.
-        .task(id: model.undone) {
-            guard model.undone != nil else { return }
-            if let notice = model.undoneNotice {
-                UIAccessibility.post(notification: .announcement, argument: notice)
+        .task(id: model.notice) {
+            guard model.notice != nil else { return }
+            if let message = model.noticeMessage {
+                UIAccessibility.post(notification: .announcement, argument: message)
             }
             try? await Task.sleep(for: Self.undoNoticeDuration)
-            if !Task.isCancelled { model.dismissUndoNotice() }
+            if !Task.isCancelled { model.dismissNotice() }
         }
         .sheet(isPresented: $editingScore) {
             ScoreEditSheet(log: log, match: match) { home, away, server in
@@ -234,8 +234,8 @@ struct ScoringView: View {
     /// whose rally went - and it is where Redo lives, clear of the halves that score.
     @ViewBuilder
     private func statusStrip(_ model: ScoringModel, _ log: ScoreLog, _ match: MatchState) -> some View {
-        let undoneNotice = model.undoneNotice
-        let announcement = undoneNotice ?? Self.announcement(log, match)
+        let noticeMessage = model.noticeMessage
+        let announcement = noticeMessage ?? Self.announcement(log, match)
         HStack {
             Button { dismiss() } label: {
                 Image(systemName: "chevron.left").shuttlType(ShuttlType.titleLarge)
@@ -256,8 +256,8 @@ struct ScoringView: View {
                 .lineLimit(1)
             Spacer()
 
-            if undoneNotice != nil {
-                Button("Redo") { model.redo() }
+            if let noticeAction = model.noticeAction {
+                Button(noticeAction) { model.reverseNotice() }
                     .shuttlType(ShuttlType.titleMedium)
                     .foregroundStyle(Shuttl.accent)
                     .padding(.trailing, 8)
