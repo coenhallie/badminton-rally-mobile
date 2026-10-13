@@ -176,4 +176,14 @@ class ScoreTagSummaryTest {
         scorer.score(Side.HOME)
         exportMatchText(repo.get(log.id)!!, TimeZone.UTC).lines().last() shouldBe "1. 1-0 Home"
     }
+
+    @Test
+    fun the_export_puts_a_moments_note_after_its_labels() {
+        val repo = ScoreLogsRepository(MapSettings(), now = { Instant.parse("2026-10-13T19:42:00Z") }, ownerId = { "o" })
+        val log = repo.create(title = "Club night", rules = ScoringRules.BWF_21, setup = MatchSetup(Side.HOME))
+        val scorer = MatchScorer(repo, log.id)
+        val draft = scorer.openMomentDraft()!!.toggle(PointTag("Good shot", "green")).withText("note")
+        scorer.commitMomentDraft(draft)
+        exportMatchText(repo.get(log.id)!!, TimeZone.UTC).lines().last() shouldBe "At 19:42: Good shot (note)"
+    }
 }

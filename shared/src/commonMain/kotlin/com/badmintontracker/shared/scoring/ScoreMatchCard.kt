@@ -38,7 +38,7 @@ fun scoreLine(state: MatchState): String {
     if (state.points.isEmpty() && state.completedGames.isEmpty()) return notStarted(state)
     val games = state.completedGames.map { "${it.home}-${it.away}" }
     val parts = if (state.isOver) games else games + "${state.currentGame.home}-${state.currentGame.away}"
-    return if (parts.isEmpty()) "Not started" else parts.joinToString(", ")
+    return if (parts.isEmpty()) notStarted(state) else parts.joinToString(", ")
 }
 
 /** A match with no rally: how many moments it has, or that it has not started. */
