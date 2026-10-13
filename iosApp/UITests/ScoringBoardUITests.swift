@@ -76,9 +76,10 @@ final class ScoringBoardUITests: XCTestCase {
         app.buttons["Note"].firstMatch.tap()
         let field = app.textFields["Note on this moment"].firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 5), "Note at 0-0 did not open the moment composer")
-        field.typeText("short serve")
-        app.buttons["Note"].firstMatch.tap()
-        XCTAssertTrue(app.staticTexts["Moment added"].waitForExistence(timeout: 5), "Note did not save the moment")
+        // Saved from the keyboard's Done, which a coach can always reach, rather
+        // than from Note, which the keyboard can cover.
+        field.typeText("short serve\n")
+        XCTAssertTrue(app.staticTexts["Moment added"].waitForExistence(timeout: 5), "the composer did not save the moment")
         XCTAssertTrue(app.staticTexts["1 moment logged"].exists, "the saved moment is not counted")
 
         try deleteMatch(app)
