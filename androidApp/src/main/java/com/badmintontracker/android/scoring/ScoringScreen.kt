@@ -1,5 +1,6 @@
 package com.badmintontracker.android.scoring
 
+import android.provider.Settings
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -56,9 +57,11 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
@@ -73,6 +76,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
+import kotlin.coroutines.EmptyCoroutineContext
 import kotlinx.coroutines.launch
 import com.badmintontracker.android.ui.icons.ShuttlIcons
 import com.badmintontracker.android.ui.theme.ShuttlRadius
@@ -778,7 +782,8 @@ private fun MomentNoteField(onTextChange: (String) -> Unit, onClose: () -> Unit)
  * The click comes after the clip, so its ripple stays inside the pill; the
  * Surface's own clip comes after anything passed in as its modifier. A quick
  * moment flashes, a press-in and a white wash, and neither changes the chip's
- * size, so the row never reflows under the coach's finger.
+ * size, so the row never reflows under the coach's finger. With animations
+ * removed system-wide the press-in goes; the wash and the haptic stay.
  */
 @Composable
 private fun TagChip(
@@ -795,6 +800,12 @@ private fun TagChip(
     val scale = remember { Animatable(1f) }
     val wash = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    // Android's Reduce Motion. Read once, as HeroTickerView reads it: a system
+    // setting rather than UI state.
+    val reduceMotion = remember {
+        Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
+    }
 
     val shape = RoundedCornerShape(50)
 
@@ -808,8 +819,15 @@ private fun TagChip(
                 onClick()
                 if (flashOnTap) {
                     scope.launch {
-                        launch { scale.animateTo(0.94f, tween(80)); scale.animateTo(1f, spring(dampingRatio = 0.5f, stiffness = 600f)) }
-                        launch { wash.snapTo(0.32f); wash.animateTo(0f, tween(260)) }
+                        if (!reduceMotion) {
+                            launch { scale.animateTo(0.94f, tween(80)); scale.animateTo(1f, spring(dampingRatio = 0.5f, stiffness = 600f)) }
+                        }
+                        // The wash is the confirmation that stays, so it keeps its
+                        // own time: at a system scale of 0 it would end on the
+                        // frame it started and never be seen.
+                        launch(if (reduceMotion) FullSpeed else EmptyCoroutineContext) {
+                            wash.snapTo(0.32f); wash.animateTo(0f, tween(260))
+                        }
                     }
                 }
             }
@@ -829,6 +847,11 @@ private fun TagChip(
             maxLines = 1,
         )
     }
+}
+
+/** Animations at their own speed, whatever the system's animator scale is. */
+private object FullSpeed : MotionDurationScale {
+    override val scaleFactor = 1f
 }
 
 /**

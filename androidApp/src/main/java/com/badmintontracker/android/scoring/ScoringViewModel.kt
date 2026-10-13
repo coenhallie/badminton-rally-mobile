@@ -21,7 +21,9 @@ import com.badmintontracker.shared.scoring.noticeMessage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 
 /**
  * What the courtside surface draws.
@@ -96,7 +98,7 @@ class ScoringViewModel(
      * would flash that at the coach for a frame on the way in.
      */
     val state = combine(
-        combine(scoreLogs.logs, labels.scoreboardLabels, labels.labels, ::Triple),
+        combine(scoreLogs.logs.onEach(::forgetVanishedRally), labels.scoreboardLabels, labels.labels, ::Triple),
         pending, draft, lastNotice,
     ) { (logs, board, all), p, d, n -> build(logs, board, all, p, d, n) }
         .stateIn(
@@ -104,6 +106,17 @@ class ScoringViewModel(
             SharingStarted.Eagerly,
             build(scoreLogs.logs.value, labels.scoreboardLabels.value, labels.labels.value, pending.value, draft.value, lastNotice.value),
         )
+
+    /**
+     * A row still pointing at a rally the log no longer has - taken back by a
+     * sync, or by an edit on another screen - is cleared as the log arrives, as
+     * the iOS model clears it. Masking it in [build] alone would let a later sync
+     * that brings rallies back point the row at one that is not the last.
+     */
+    private fun forgetVanishedRally(logs: List<ScoreLog>) {
+        val count = logs.firstOrNull { it.id == scoreLogId }?.state()?.pointCount ?: 0
+        pending.update { ordinal -> ordinal?.takeIf { it < count } }
+    }
 
     private fun build(
         logs: List<ScoreLog>,
@@ -226,11 +239,15 @@ class ScoringViewModel(
     fun reverseNotice() {
         val notice = lastNotice.value ?: return
         lastNotice.value = null
-        // Reversed before the composer is saved: saving changes the log, which
-        // would retire a Redo that was still waiting.
         scorer.reverse(notice)
-        commitMomentDraft()
-        if (notice is BoardNotice.RallyUndone) pending.value = lastOrdinal()
+        // Redo moves the row onto the rally it put back, so an open composer is
+        // saved as it would be by a score tap. Saved after the redo, not before:
+        // saving changes the log, which would retire the Redo. Undoing a moment
+        // leaves the row on moments, and the composer open.
+        if (notice is BoardNotice.RallyUndone) {
+            commitMomentDraft()
+            pending.value = lastOrdinal()
+        }
     }
 
     /** The notice timed out. What it reported stands. */

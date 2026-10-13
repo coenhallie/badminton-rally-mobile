@@ -125,8 +125,8 @@ fun LazyListScope.pointsFacet(
 
 /**
  * How the match was tagged courtside, in the rally page's visual language so the
- * two summaries read as the same thing. Absent rather than empty when nothing was
- * tagged: the point list below already says the match has barely started.
+ * two summaries read as the same thing. The caller leaves it out when no rally
+ * was tagged and no moment logged, rather than drawing a count of nothing.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -139,8 +139,12 @@ private fun TagTally(tally: ScoreTagSummary) {
             text = tally.headline,
             style = MaterialTheme.typography.titleSmall,
         )
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            tally.labels.forEach { LabelCountChip(it) }
+        // A match with only note moments has a headline and no labels: an empty
+        // row would add a gap under it.
+        if (tally.labels.isNotEmpty()) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                tally.labels.forEach { LabelCountChip(it) }
+            }
         }
     }
 }

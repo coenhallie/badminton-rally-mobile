@@ -5,6 +5,7 @@ import com.badmintontracker.shared.model.AnnotationLabel
 import com.badmintontracker.shared.model.LabelUsage
 import com.badmintontracker.shared.scoring.BoardTarget
 import com.badmintontracker.shared.scoring.MatchSetup
+import com.badmintontracker.shared.scoring.ScoreEvent
 import com.badmintontracker.shared.scoring.ScoreLogStatus
 import com.badmintontracker.shared.scoring.ScoreLogsRepository
 import com.badmintontracker.shared.scoring.ScoringRules
@@ -555,5 +556,94 @@ class ScoringViewModelTest {
         vm.openMomentDraft()
         advanceUntilIdle()
         vm.state.value.momentDraft.shouldBeNull()
+    }
+
+    @Test
+    fun the_serve_switch_takes_effect_after_a_moment() = runTest(dispatcher) {
+        // A label tapped before the first rally says nothing about who serves, so
+        // SERVE must still hand it across, not just still be offered.
+        val (repo, id, vm) = fixture()
+        vm.tapMomentLabel(goodShot)
+        vm.switchFirstServer()
+        advanceUntilIdle()
+        repo.get(id)!!.setup.firstServer shouldBe Side.AWAY
+        vm.state.value.match?.server shouldBe Side.AWAY
+    }
+
+    @Test
+    fun undoing_a_moment_in_the_strip_leaves_the_composer_open() = runTest(dispatcher) {
+        // Only Redo moves the row onto a rally. Taking a moment back leaves it on
+        // moments, so the note being written stays where it is.
+        val (_, _, vm) = fixture()
+        vm.tapMomentLabel(goodShot)
+        vm.openMomentDraft()
+        vm.setMomentDraftText("half written")
+        vm.reverseNotice()
+        advanceUntilIdle()
+        vm.state.value.match!!.moments.shouldBeEmpty()
+        vm.state.value.momentDraft?.text shouldBe "half written"
+    }
+
+    @Test
+    fun a_row_on_a_rally_a_sync_took_away_does_not_come_back_on_it() = runTest(dispatcher) {
+        // A sync takes both rallies away, then another brings four back. The row
+        // must not wake up on rally 2 of 4: it targets moments until a tap moves it.
+        val (repo, id, vm) = fixture()
+        vm.score(Side.HOME); vm.score(Side.AWAY)
+        advanceUntilIdle()
+        vm.state.value.target shouldBe BoardTarget.Rally(1)
+        repo.replaceEvents(id, emptyList())
+        advanceUntilIdle()
+        vm.state.value.target shouldBe BoardTarget.Moments
+        repo.replaceEvents(id, List(4) { ScoreEvent.PointTo(Side.HOME) })
+        advanceUntilIdle()
+        vm.state.value.target shouldBe BoardTarget.Moments
+        vm.state.value.pendingTagOrdinal.shouldBeNull()
+    }
+
+    @Test
+    fun undo_with_the_composer_open_saves_it_first() = runTest(dispatcher) {
+        val (_, _, vm) = fixture()
+        vm.openMomentDraft()
+        vm.setMomentDraftText("tight")
+        vm.undo()
+        advanceUntilIdle()
+        vm.state.value.momentDraft.shouldBeNull()
+        vm.state.value.match!!.moments.single().comment shouldBe "tight"
+    }
+
+    @Test
+    fun editing_the_score_with_the_composer_open_saves_it_first() = runTest(dispatcher) {
+        val (_, _, vm) = fixture()
+        vm.openMomentDraft()
+        vm.setMomentDraftText("tight")
+        vm.editScore(2, 0, null)
+        advanceUntilIdle()
+        vm.state.value.momentDraft.shouldBeNull()
+        vm.state.value.match!!.moments.single().afterPoints shouldBe 0
+        vm.state.value.match!!.pointCount shouldBe 2
+    }
+
+    @Test
+    fun resetting_the_game_with_the_composer_open_saves_it_first() = runTest(dispatcher) {
+        val (_, _, vm) = fixture()
+        vm.openMomentDraft()
+        vm.setMomentDraftText("tight")
+        vm.resetCurrentGame()
+        advanceUntilIdle()
+        vm.state.value.momentDraft.shouldBeNull()
+        vm.state.value.match!!.moments.single().comment shouldBe "tight"
+    }
+
+    @Test
+    fun finishing_with_the_composer_open_saves_it_first() = runTest(dispatcher) {
+        val (repo, id, vm) = fixture()
+        vm.openMomentDraft()
+        vm.setMomentDraftText("tight")
+        vm.finish()
+        advanceUntilIdle()
+        vm.state.value.momentDraft.shouldBeNull()
+        vm.state.value.match!!.moments.single().comment shouldBe "tight"
+        repo.get(id)!!.status shouldBe ScoreLogStatus.UNBOUND
     }
 }
