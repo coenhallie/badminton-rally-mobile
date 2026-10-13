@@ -1,8 +1,11 @@
 package com.badmintontracker.shared.scoring
 
 import com.badmintontracker.shared.model.LabelCount
+import com.russhwolf.settings.MapSettings
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
+import kotlinx.datetime.Instant
+import kotlinx.datetime.TimeZone
 import kotlin.test.Test
 
 class ScoreTagSummaryTest {
@@ -131,5 +134,46 @@ class ScoreTagSummaryTest {
             Thu League
             Not started
         """.trimIndent()
+    }
+
+    @Test
+    fun moments_count_in_the_tally_beside_tagged_rallies() {
+        val state = foldMatchState(ScoringRules.BWF_21, MatchSetup(Side.HOME), listOf(
+            ScoreEvent.PointTo(Side.HOME),
+            ScoreEvent.TagPoint(0, listOf(PointTag("Good shot", "green")), null),
+            ScoreEvent.Moment("m1", 1, Instant.parse("2026-10-13T18:00:00Z"), listOf(PointTag("Good shot", "green")), null),
+            ScoreEvent.Moment("m2", 1, Instant.parse("2026-10-13T18:01:00Z"), emptyList(), "short"),
+        ))
+        val summary = buildScoreTagSummary(state)
+        summary.taggedPointCount shouldBe 1
+        summary.momentCount shouldBe 2
+        summary.labels.single().count shouldBe 2
+        summary.headline shouldBe "1 rally tagged · 2 moments"
+        summary.isEmpty shouldBe false
+    }
+
+    @Test
+    fun the_headline_names_only_what_there_is() {
+        ScoreTagSummary(3, 0, emptyList()).headline shouldBe "3 rallies tagged"
+        ScoreTagSummary(0, 1, emptyList()).headline shouldBe "1 moment"
+        ScoreTagSummary(0, 6, emptyList()).headline shouldBe "6 moments"
+    }
+
+    @Test
+    fun the_export_lists_moments_among_the_rallies() {
+        val repo = ScoreLogsRepository(MapSettings(), now = { Instant.parse("2026-10-13T19:42:00Z") }, ownerId = { "o" })
+        val log = repo.create(title = "Club night", rules = ScoringRules.BWF_21, setup = MatchSetup(Side.HOME))
+        val scorer = MatchScorer(repo, log.id)
+        scorer.logMoment(listOf(PointTag("Unforced error", "red"), PointTag("Net", "slate")))
+        scorer.commitMomentDraft(scorer.openMomentDraft()!!.withText("backhand clear lands short"))
+        exportMatchText(repo.get(log.id)!!, TimeZone.UTC) shouldBe """
+            Club night
+            2 moments
+
+            At 19:42: Unforced error, Net
+            At 19:42: backhand clear lands short
+        """.trimIndent()
+        scorer.score(Side.HOME)
+        exportMatchText(repo.get(log.id)!!, TimeZone.UTC).lines().last() shouldBe "1. 1-0 Home"
     }
 }

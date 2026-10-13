@@ -93,4 +93,21 @@ class MomentsTest {
         clockTime(Instant.parse("2026-10-13T07:05:00Z"), TimeZone.UTC) shouldBe "07:05"
         clockTime(Instant.parse("2026-10-13T19:42:00Z"), TimeZone.of("Europe/Amsterdam")) shouldBe "21:42"
     }
+
+    @Test
+    fun the_timeline_puts_each_moment_before_the_rally_that_followed_it() {
+        val state = fold(
+            moment("before", 0),
+            ScoreEvent.PointTo(Side.HOME),
+            ScoreEvent.PointTo(Side.AWAY),
+            moment("between", 1),
+            moment("end", 2),
+        )
+        matchTimeline(state).map {
+            when (it) {
+                is TimelineEntry.Rally -> "r${it.point.ordinal}"
+                is TimelineEntry.Moment -> it.moment.id
+            }
+        } shouldBe listOf("before", "r0", "between", "r1", "end")
+    }
 }
