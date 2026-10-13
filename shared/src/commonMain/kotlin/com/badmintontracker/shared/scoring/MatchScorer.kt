@@ -37,7 +37,7 @@ class MatchScorer(
      */
     fun canSwitchFirstServer(): Boolean {
         val log = repo.get(scoreLogId) ?: return false
-        return log.isPlayable() && log.events.none { it is ScoreEvent.PointTo || it is ScoreEvent.Retire }
+        return log.isPlayable() && !log.events.hasRallyOrRetirement()
     }
 
     /** Hands the first serve to the other side. A no-op once a point has been scored. */
@@ -60,8 +60,12 @@ class MatchScorer(
     fun tagPoint(ordinal: Int, tags: List<PointTag>, comment: String?) =
         edit { it.tagPoint(ordinal, tags, comment) }
 
-    /** One tap on a label with no rally to put it on: a moment of its own, now. */
+    /**
+     * One tap on a label with no rally to put it on: a moment of its own, now.
+     * Null, and nothing written, with no labels: an empty moment is a removal.
+     */
     fun logMoment(tags: List<PointTag>): LoggedMoment? {
+        if (tags.isEmpty()) return null
         val state = state() ?: return null
         return append(ScoreEvent.Moment(randomUuid(), state.pointCount, repo.now(), tags, null))
     }

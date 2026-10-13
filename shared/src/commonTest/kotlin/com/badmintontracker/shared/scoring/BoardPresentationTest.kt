@@ -57,6 +57,41 @@ class BoardPresentationTest {
     }
 
     @Test
+    fun a_rally_target_the_log_no_longer_has_is_captioned_as_moments() {
+        // A target from before a sync or an undo elsewhere, handed in unchecked.
+        val (_, s) = board()
+        s.logMoment(listOf(good))
+        boardCaption(s.state()!!, BoardTarget.Rally(3), true, null) shouldBe "1 moment logged"
+    }
+
+    @Test
+    fun a_redo_the_match_has_moved_past_is_not_live_and_does_nothing() {
+        val (repo, s) = board()
+        val id = repo.logs.value.single().id
+        s.score(Side.HOME)
+        val undone = BoardNotice.RallyUndone(s.undo()!!)
+        s.score(Side.AWAY)
+        val before = repo.get(id)!!.events
+        s.isLive(undone) shouldBe false
+        s.reverse(undone)
+        repo.get(id)!!.events shouldBe before
+    }
+
+    @Test
+    fun an_undo_for_a_moment_already_back_is_not_live_and_does_nothing() {
+        // Without the check, a second Undo would append the moment a second time.
+        val (repo, s) = board()
+        val id = repo.logs.value.single().id
+        val m = s.logMoment(listOf(good))!!
+        val removed = BoardNotice.MomentRemoved(s.removeMoment(m.id)!!)
+        s.restoreMoment(m)
+        val before = repo.get(id)!!.events
+        s.isLive(removed) shouldBe false
+        s.reverse(removed)
+        repo.get(id)!!.events shouldBe before
+    }
+
+    @Test
     fun notices_say_what_happened_and_how_to_reverse_it() {
         val (repo, s) = board()
         val log = { repo.logs.value.single() }

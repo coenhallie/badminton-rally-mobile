@@ -24,18 +24,24 @@ fun boardCaption(match: MatchState, target: BoardTarget, hasBoardLabels: Boolean
     }
     val moments = match.moments.size
     val logged = if (moments == 1) "1 moment logged" else "$moments moments logged"
+    val momentsCaption = when {
+        match.isOver -> if (moments == 0) "Match over" else "Match over · $logged"
+        moments > 0 -> logged
+        // With no chips there is nothing to log a moment with, so the hint
+        // stays the one it was.
+        !hasBoardLabels -> if (match.points.isEmpty()) "Tap a side to score, or SERVE to switch server" else "Tap a side to score"
+        else -> "Tap a side to score, or a label to log a moment"
+    }
     return when (target) {
-        is BoardTarget.Rally -> if (match.isOver) "Match over" else match.points[target.ordinal].let {
-            "Point ${it.ordinal + 1}: ${it.scoreAfter.home}-${it.scoreAfter.away}"
+        is BoardTarget.Rally -> when {
+            match.isOver -> "Match over"
+            // A target built against an older log can name a rally this one no
+            // longer has. [boardTarget] reads that as moments, and so does this.
+            else -> match.points.getOrNull(target.ordinal)?.let {
+                "Point ${it.ordinal + 1}: ${it.scoreAfter.home}-${it.scoreAfter.away}"
+            } ?: momentsCaption
         }
-        BoardTarget.Moments -> when {
-            match.isOver -> if (moments == 0) "Match over" else "Match over · $logged"
-            moments > 0 -> logged
-            // With no chips there is nothing to log a moment with, so the hint
-            // stays the one it was.
-            !hasBoardLabels -> if (match.points.isEmpty()) "Tap a side to score, or SERVE to switch server" else "Tap a side to score"
-            else -> "Tap a side to score, or a label to log a moment"
-        }
+        BoardTarget.Moments -> momentsCaption
     }
 }
 

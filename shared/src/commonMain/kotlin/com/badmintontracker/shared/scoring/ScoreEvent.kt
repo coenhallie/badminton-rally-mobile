@@ -125,6 +125,16 @@ fun List<ScoreEvent>.undoLastPoint(): List<ScoreEvent> {
 }
 
 /**
+ * Whether anything that decides the score has been recorded: a rally or a
+ * retirement. Moments do not count, so a label tapped before the first rally
+ * leaves the opening serve open to switching. Asked by both
+ * [MatchScorer.canSwitchFirstServer] and [ScoreLogsRepository.setFirstServer], so
+ * the board cannot offer a switch the store then refuses.
+ */
+internal fun List<ScoreEvent>.hasRallyOrRetirement(): Boolean =
+    any { it is ScoreEvent.PointTo || it is ScoreEvent.Retire }
+
+/**
  * Appends the tags and comment for [pointOrdinal]. Named rather than left as a
  * bare list append so that callers never have to know that appending, rather than
  * rewriting, is what keeps the log replayable.
@@ -137,9 +147,11 @@ fun List<ScoreEvent>.tagPoint(
 
 /**
  * Drops the point at [fromOrdinal] and everything after it, tags and retirement
- * included. Moments are kept, wherever they sit: they are not part of the score,
- * and the fold clamps one whose rally was cut to the new last rally. This is what "reset game" is built from: fold to find the first
+ * included. This is what "reset game" is built from: fold to find the first
  * ordinal of the current game, then cut there.
+ *
+ * Moments are kept, wherever they sit: they are not part of the score, and the
+ * fold clamps one whose rally was cut to the new last rally.
  *
  * Entries below the cut are untouched, so every surviving tag still names the
  * point it named before - no renumbering, and therefore no way for a tag to slide

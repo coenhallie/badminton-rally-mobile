@@ -378,4 +378,24 @@ class MatchScorerTest {
         scorer.score(Side.HOME)
         scorer.canSwitchFirstServer() shouldBe false
     }
+
+    @Test
+    fun the_serve_switch_takes_effect_after_a_moment() {
+        // Offering the switch is not enough: the store has its own guard, and it
+        // has to agree that a moment is not a rally.
+        val (repo, scorer) = scorer()
+        val id = repo.logs.value.single().id
+        scorer.logMoment(listOf(good))
+        scorer.switchFirstServer()
+        repo.get(id)!!.setup.firstServer shouldBe Side.AWAY
+        scorer.state()!!.server shouldBe Side.AWAY
+    }
+
+    @Test
+    fun a_moment_with_no_labels_is_not_logged() {
+        val (repo, scorer) = scorer()
+        val id = repo.logs.value.single().id
+        scorer.logMoment(emptyList()).shouldBeNull()
+        repo.get(id)!!.events.shouldBeEmpty()
+    }
 }

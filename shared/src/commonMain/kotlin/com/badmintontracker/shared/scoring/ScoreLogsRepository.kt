@@ -188,17 +188,18 @@ class ScoreLogsRepository internal constructor(
     }
 
     /**
-     * Who serves the first point. Only until a point has been scored: after that the
-     * serve is a consequence of the log, and rewriting its seed would silently
-     * re-attribute every serve already played.
+     * Who serves the first point. Only until a rally or a retirement has been
+     * recorded: after that the serve is a consequence of the log, and rewriting its
+     * seed would silently re-attribute every serve already played. Moments do not
+     * close it, see [hasRallyOrRetirement].
      */
     fun setFirstServer(id: String, side: Side) {
         // Asked before editing, because edit() marks the row dirty and restamps it
         // whether or not anything changed.
         val log = get(id) ?: return
-        if (log.events.isNotEmpty() || log.setup.firstServer == side) return
+        if (log.events.hasRallyOrRetirement() || log.setup.firstServer == side) return
         edit(id) {
-            if (it.events.isEmpty()) it.copy(setup = it.setup.copy(firstServer = side)) else it
+            if (it.events.hasRallyOrRetirement()) it else it.copy(setup = it.setup.copy(firstServer = side))
         }
     }
 

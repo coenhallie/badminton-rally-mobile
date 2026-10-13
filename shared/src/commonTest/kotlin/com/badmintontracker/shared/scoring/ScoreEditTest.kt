@@ -278,6 +278,24 @@ class ScoreEditTest {
     }
 
     @Test
+    fun a_moment_in_a_later_game_is_re_anchored_from_that_game_s_start() {
+        // Game 1 is H H H. Game 2 is H A H, a moment, then A: 2-2. Taking Home's
+        // latest rally back leaves the moment after game 2's second rally, which
+        // is rally 5 of the match, not rally 2.
+        val b = board(ScoringRules(pointsToWin = 3, winBy = 1, cap = null, gamesToWin = 2, intervalAt = null, changeEndsAt = null))
+        b.play(H, H, H)
+        b.play(H, A, H)
+        b.scorer.logMoment(listOf(PointTag("Net", "slate")))
+        b.play(A)
+        b.state.gameIndex shouldBe 1
+        val plan = b.log.planScoreEdit(home = 1, away = 2, nextServer = null)
+        plan.canSave shouldBe true
+        val after = foldMatchState(b.log.rules, b.log.setup, plan.events)
+        after.points.map { it.wonBy } shouldBe listOf(H, H, H, H, A, A)
+        after.moments.single().afterPoints shouldBe 5
+    }
+
+    @Test
     fun added_rallies_go_after_a_moment_at_the_start_of_the_game() {
         val b = board()
         b.scorer.logMoment(listOf(PointTag("Net", "slate")))
