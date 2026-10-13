@@ -27,10 +27,17 @@ final class ScoringBoardUITests: XCTestCase {
         let serve = app.buttons["SERVE R"].firstMatch
         XCTAssertTrue(serve.waitForExistence(timeout: 5), "the serve pill cannot be switched before the first point")
         serve.tap()
+        // The moment hint rather than the SERVE one: the simulator account has
+        // board labels.
         XCTAssertTrue(
-            app.staticTexts["Tap a side to score, or SERVE to switch server"].exists,
+            app.staticTexts["Tap a side to score, or a label to log a moment"].exists,
             "switching the first server also scored a rally"
         )
+
+        // At 0-0 a chip logs a moment and must not score a rally either.
+        app.buttons["Good shot"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Moment added: Good shot"].waitForExistence(timeout: 5), "a chip at 0-0 did not log a moment")
+        XCTAssertTrue(app.staticTexts["1 moment logged"].exists, "a chip at 0-0 also scored a rally")
 
         // One rally to the side on the left, which puts the tag row in reach.
         let board = app.otherElements.firstMatch
@@ -202,8 +209,11 @@ final class ScoringBoardUITests: XCTestCase {
         title.typeText(matchName)
 
         app.buttons["Create"].firstMatch.tap()
+        // The 0-0 caption names labels when the account has board labels, as the
+        // simulator account does, and SERVE when it has none. Either is the board.
         XCTAssertTrue(
-            app.staticTexts["Tap a side to score, or SERVE to switch server"].waitForExistence(timeout: 10),
+            app.staticTexts["Tap a side to score, or a label to log a moment"].waitForExistence(timeout: 10)
+                || app.staticTexts["Tap a side to score, or SERVE to switch server"].exists,
             "creating a match did not land on the board"
         )
     }

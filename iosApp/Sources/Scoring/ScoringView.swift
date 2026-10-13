@@ -15,7 +15,8 @@ enum AttachIntent: Hashable {
 }
 
 /// The courtside board. One tap on a side scores the rally it just won; a second
-/// tap on a label tags it.
+/// tap on a label tags it. Before the first rally, or whenever else the row has no
+/// rally to tag, a label tap logs a moment instead.
 ///
 /// Mirrors `ScoringScreen` element for element. Everything drawn is folded from the
 /// log - the serve, the service court, which player of a pair is standing where,
@@ -44,7 +45,10 @@ struct ScoringView: View {
     @State private var noteOpen = false
     @State private var editingDetails = false
     @State private var editingScore = false
+    /// The chip a quick moment was just logged from, while its flash is up.
+    @State private var flashing: String?
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // Fires on the transition to un-scoreable, from either exit: the last point
     // the rules allow, and "Finish match" in the menu. The rule is shared with
@@ -115,16 +119,23 @@ struct ScoringView: View {
             finishPrompt = prompt
             if prompt.shouldAsk(isPlayable: log.isPlayable()) { addVideoOpen = true }
         }
-        // Keyed on the undo rather than on its words, so a second undo of the same
-        // side's rally gets the full time to be put back too. Cancelled, and so
-        // never dismissing anything, when a redo or the next rally replaces it.
+        // Keyed on the notice rather than on its words, so a second notice with the
+        // same words - a second undo of the same side's rally, a second moment
+        // with the same label - still gets its full time to be reversed. Cancelled,
+        // and so never dismissing anything, when its action, the next notice or
+        // the next rally replaces it.
         .task(id: model.notice) {
             guard model.notice != nil else { return }
             if let message = model.noticeMessage {
                 UIAccessibility.post(notification: .announcement, argument: message)
             }
-            try? await Task.sleep(for: Self.undoNoticeDuration)
+            try? await Task.sleep(for: Self.noticeDuration)
             if !Task.isCancelled { model.dismissNotice() }
+        }
+        // A rally note belongs to a rally. When the row stops pointing at one, the
+        // field closes rather than reopening on the next rally scored.
+        .onChange(of: model.target is BoardTarget.Moments) { _, moments in
+            if moments { noteOpen = false }
         }
         .sheet(isPresented: $editingScore) {
             ScoreEditSheet(log: log, match: match) { home, away, server in
@@ -220,22 +231,25 @@ struct ScoringView: View {
         }
     }
 
-    /// How long "Point to Home undone" and its Redo stay up. Long enough to notice
-    /// a mis-tapped undo from the court and reach back for it, short enough that
-    /// the strip is back to calling game point before the next rally is over.
-    static let undoNoticeDuration: Duration = .seconds(5)
+    /// How long a notice and its action stay up: "Point to Home undone" with Redo,
+    /// and "Moment added" or "Moment removed" with Undo. Long enough to notice a
+    /// mis-tap from the court and reach back for it, short enough that the strip
+    /// is back to calling game point before the next rally is over.
+    static let noticeDuration: Duration = .seconds(5)
 
     /// The one line the coach glances up at. An announcement outranks the running
     /// summary, because "match point" is the only thing here worth looking away
     /// from the court for.
     ///
-    /// An undo outranks both for a few seconds. It is the one thing the coach did
-    /// that the board cannot show on its own - the number going down does not say
-    /// whose rally went - and it is where Redo lives, clear of the halves that score.
+    /// A notice outranks both for a few seconds: an undo, or a moment added or
+    /// removed. Each is something the coach did that the board cannot show on its
+    /// own - the number going down does not say whose rally went, and a moment
+    /// changes nothing else on the board - and it is where the action that
+    /// reverses it lives, Redo or Undo, clear of the halves that score.
     @ViewBuilder
     private func statusStrip(_ model: ScoringModel, _ log: ScoreLog, _ match: MatchState) -> some View {
-        let noticeMessage = model.noticeMessage
-        let announcement = noticeMessage ?? Self.announcement(log, match)
+        let notice = model.noticeMessage
+        let announcement = notice ?? Self.announcement(log, match)
         HStack {
             Button { dismiss() } label: {
                 Image(systemName: "chevron.left").shuttlType(ShuttlType.titleLarge)
@@ -256,8 +270,8 @@ struct ScoringView: View {
                 .lineLimit(1)
             Spacer()
 
-            if let noticeAction = model.noticeAction {
-                Button(noticeAction) { model.reverseNotice() }
+            if let action = model.noticeAction {
+                Button(action) { model.reverseNotice() }
                     .shuttlType(ShuttlType.titleMedium)
                     .foregroundStyle(Shuttl.accent)
                     .padding(.trailing, 8)
@@ -270,6 +284,12 @@ struct ScoringView: View {
                 // the next one. Its notice and Redo still come up in the strip.
                 Button("Undo last rally") { model.undo() }
                     .disabled(!model.canUndo)
+                // Only when there is one. Beside Undo last rally rather than
+                // replacing it: after Reset game the row logs moments while
+                // earlier games still have rallies to take back.
+                if model.canRemoveMoment {
+                    Button("Remove last moment") { model.removeLastMoment() }
+                }
                 // Names and format are not asked for when the match is created, so
                 // courtside, between games, is one of the places they get filled
                 // in. Never disabled: it does not touch the score.
@@ -404,9 +424,18 @@ struct ScoringView: View {
 
     /// The tag row and Edit score. The row is on screen before the rally it will tag,
     /// which is the whole reason tagging costs one tap rather than a dialog.
+    ///
+    /// With no rally to tag, the same chips log moments: one tap logs one, and Note
+    /// opens a composer whose chips check labels onto a single moment instead.
     @ViewBuilder
     private func controlBar(_ model: ScoringModel, _ match: MatchState) -> some View {
+        let target = model.target
+        // Only while the row targets moments, as the caption reads it. Should a
+        // sync turn the row onto a rally under an open composer, its field leaves
+        // the view and saves the moment rather than hanging over the rally.
+        let draft = target is BoardTarget.Moments ? model.momentDraft : nil
         let point = model.pendingPoint
+        let quick = target is BoardTarget.Moments && draft == nil
 
         VStack(alignment: .leading, spacing: 4) {
             if model.labels.isEmpty {
@@ -425,13 +454,32 @@ struct ScoringView: View {
                 // is visible, not a chip hidden off the right edge.
                 ChipFlow(spacing: 6) {
                     ForEach(model.labels, id: \.id) { label in
+                        // Nil for a quick moment: that tap is a one-shot action
+                        // with nothing to tick, not a toggle that is off.
+                        let selected: Bool? = if let draft {
+                            draft.tags.contains { $0.labelName == label.name }
+                        } else if let point {
+                            point.tags.contains { $0.labelName == label.name }
+                        } else {
+                            nil
+                        }
                         tagChip(
                             label: label,
-                            selected: point?.tags.contains { $0.labelName == label.name } ?? false,
-                            enabled: point != nil
+                            selected: selected,
+                            hint: point != nil
+                                ? (selected == true ? "Removes the tag" : "Tags this rally")
+                                : draft != nil
+                                    ? (selected == true ? "Removes it from this moment" : "Adds it to this moment")
+                                    : "Logs a moment",
+                            flashes: quick
                         ) {
                             if let ordinal = model.pendingTagOrdinal {
                                 model.toggleTag(ordinal: ordinal, label: label)
+                            } else {
+                                // A quick moment changes nothing else on the board,
+                                // so it is felt as well as seen.
+                                if quick { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+                                model.tapMomentLabel(label)
                             }
                         }
                     }
@@ -439,7 +487,15 @@ struct ScoringView: View {
                 .padding(.horizontal, 8)
             }
 
-            if noteOpen, let point, let ordinal = model.pendingTagOrdinal {
+            if let draft {
+                MomentNoteField(
+                    onChange: { model.setMomentDraftText($0) },
+                    onClose: { model.commitMomentDraft() }
+                )
+                // A fresh field per moment, so the next composer opens empty.
+                .id(draft.openedAt.toEpochMilliseconds())
+                .padding(.horizontal, 8)
+            } else if noteOpen, let point, let ordinal = model.pendingTagOrdinal {
                 NoteField(
                     ordinal: ordinal,
                     original: point.comment ?? "",
@@ -472,7 +528,7 @@ struct ScoringView: View {
                 // leaves it the pencil alone at sizes where the words fit.
                 .layoutPriority(1)
                 .disabled(!model.canEditScore)
-                Text(Self.caption(match, model.pendingTagOrdinal))
+                Text(model.caption)
                     .shuttlType(ShuttlType.bodySmall)
                     .foregroundStyle(Shuttl.textSecondary)
                     // Two lines: the opening hint does not fit beside the Edit
@@ -482,11 +538,20 @@ struct ScoringView: View {
                 // Outside the wrapping area on purpose: it used to be the last
                 // chip in a horizontally scrolling row, which is exactly why it
                 // became unreachable once a few labels existed.
-                Button("Note") { noteOpen.toggle() }
+                // The rally's note while the row tags a rally, otherwise the moment
+                // composer: opened here, and saved here as well as by the field.
+                Button("Note") {
+                    if target is BoardTarget.Rally {
+                        noteOpen.toggle()
+                    } else if model.momentDraft == nil {
+                        model.openMomentDraft()
+                    } else {
+                        model.commitMomentDraft()
+                    }
+                }
                     // Accent like Edit score beside it, and like Android's Note, rather
                     // than the system blue it fell back to.
                     .tint(Shuttl.accent)
-                    .disabled(point == nil)
                 // Only once the match is actually over. While it is live, finishing
                 // lives in the menu behind a confirm: a call to action beside a
                 // board being tapped every rally is a match ended by accident.
@@ -513,47 +578,54 @@ struct ScoringView: View {
         .background(Shuttl.bg)
     }
 
+    /// One label on the board. Live whatever the row targets: it tags the rally,
+    /// checks the label onto the open moment, or logs a moment of its own.
+    ///
+    /// `selected` is nil when the tap is not a toggle, so VoiceOver does not call a
+    /// quick-moment chip unselected. A quick moment flashes, a press-in and a white
+    /// wash, and neither changes the chip's size, so the row never reflows under
+    /// the coach's finger. Under Reduce Motion the press-in goes; the wash and the
+    /// haptic stay.
     @ViewBuilder
     private func tagChip(
         label: AnnotationLabel,
-        selected: Bool,
-        enabled: Bool,
+        selected: Bool?,
+        hint: String,
+        flashes: Bool,
         action: @escaping () -> Void
     ) -> some View {
         let swatch = LabelColor.companion.from(key: label.colorKey)
         let container = swatch.map { Color(rgb: UInt32($0.background & 0xFFFFFF)) } ?? Shuttl.bgTertiary
         let onContainer = swatch.map { Color(rgb: UInt32($0.foreground & 0xFFFFFF)) } ?? Shuttl.text
+        let ticked = selected == true
+        let lit = flashing == label.id
 
-        Button(action: action) {
-            Text(selected ? "✓ \(label.name)" : label.name)
+        Button {
+            action()
+            guard flashes else { return }
+            withAnimation(.easeOut(duration: 0.08)) { flashing = label.id }
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(90))
+                withAnimation(.easeOut(duration: 0.26)) { if flashing == label.id { flashing = nil } }
+            }
+        } label: {
+            Text(ticked ? "✓ \(label.name)" : label.name)
                 // One role for both states, not a weight toggle: the chip's
                 // fixed horizontal padding would make it visibly change width
                 // on every tap if the role's size changed with it. The "✓"
-                // prefix and the container's colour/opacity already carry
-                // the selected state.
+                // prefix already carries the selected state.
                 .shuttlType(ShuttlType.titleMedium)
-                // Greyed and inert until a rally exists to put it on, rather than
-                // hidden: the row has to occupy its space before the point is
-                // scored, or it would shove the board around every time one is.
-                .foregroundStyle(enabled ? onContainer : onContainer.opacity(0.45))
+                .foregroundStyle(onContainer)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(enabled ? container : container.opacity(0.30))
+                .background(container)
+                .overlay(Color.white.opacity(lit ? 0.32 : 0))
                 .clipShape(Capsule())
+                .scaleEffect(lit && !reduceMotion ? 0.94 : 1)
         }
         .buttonStyle(.plain)
-        .disabled(!enabled)
-    }
-
-    /// What the tag row is pointing at, so a tap on a chip is never a guess.
-    static func caption(_ match: MatchState, _ pendingTagOrdinal: Int?) -> String {
-        if match.isOver { return "Match over" }
-        guard let ordinal = pendingTagOrdinal,
-              ordinal >= 0, ordinal < match.points.count else {
-            return match.points.isEmpty ? "Tap a side to score, or SERVE to switch server" : "Tap a side to score"
-        }
-        let point = match.points[ordinal]
-        return "Point \(point.ordinal + 1): \(point.scoreAfter.home)-\(point.scoreAfter.away)"
+        .accessibilityHint(hint)
+        .accessibilityAddTraits(ticked ? .isSelected : [])
     }
 
     /// The announcement the point just played earned, or nil. Order is by how much
@@ -631,6 +703,30 @@ private struct OutlinedPillButtonStyle: ButtonStyle {
             .opacity(configuration.isPressed ? 0.6 : (isEnabled ? 1 : 0.4))
             .frame(minHeight: 44)
             .contentShape(Rectangle())
+    }
+}
+
+/// The composer's note. Pushes its text to the model as it is typed, so a score
+/// tap can save the moment, but reads its own copy: reading the text back through
+/// the model is how a cursor ends up jumping. Saved once the field goes away, for
+/// whatever reason; saving is a no-op once the moment is in.
+private struct MomentNoteField: View {
+    let onChange: (String) -> Void
+    let onClose: () -> Void
+
+    @State private var text = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        TextField("Note on this moment", text: $text)
+            .textFieldStyle(.roundedBorder)
+            .focused($focused)
+            .submitLabel(.done)
+            .onSubmit { onClose() }
+            .onChange(of: text) { _, new in onChange(new) }
+            // Focused as it opens, like the rally's note: Note was tapped to write.
+            .onAppear { focused = true }
+            .onDisappear { onClose() }
     }
 }
 
