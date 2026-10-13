@@ -229,8 +229,8 @@ The pending ordinal becomes a target, with one rule:
 
 - **Rally(ordinal)** whenever there is a rally to tag. This is unchanged, plus one
   new case: the board **opens** on the last rally if the match has any (§3).
-- **Moments** otherwise: no rallies yet, just after Reset game, after Finish, or
-  after undo has taken the match back to no rallies.
+- **Moments** otherwise: no rallies yet, just after Reset game, after Finish (in
+  the model only, see §6.5), or after undo has taken the match back to no rallies.
 
 `ScoringUiState.pendingTagOrdinal` becomes `target: BoardTarget?`, mirrored in
 `ScoringModel`. Null still means "no match on this phone".
