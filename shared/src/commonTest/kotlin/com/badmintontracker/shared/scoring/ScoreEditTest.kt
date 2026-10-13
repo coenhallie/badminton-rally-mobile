@@ -261,4 +261,29 @@ class ScoreEditTest {
         b.state.scoreEditTitle() shouldBe "Set the score · Game 1"
         board(ScoringRules.of(GamePoints.TWENTY_ONE, MatchSets.ONE)).state.scoreEditTitle() shouldBe "Set the score"
     }
+
+    @Test
+    fun a_removed_rally_does_not_slide_a_moment_onto_another() {
+        // Home, Away, Home, then a moment, then Away: 2-2. Taking Home's latest
+        // rally back (the third) must leave the moment just before Away's second.
+        val b = board()
+        b.play(H, A, H)
+        b.scorer.logMoment(listOf(PointTag("Net", "slate")))
+        b.play(A)
+        val plan = b.log.planScoreEdit(home = 1, away = 2, nextServer = null)
+        plan.canSave shouldBe true
+        val after = foldMatchState(b.log.rules, b.log.setup, plan.events)
+        after.points.map { it.wonBy } shouldBe listOf(H, A, A)
+        after.moments.single().afterPoints shouldBe 2
+    }
+
+    @Test
+    fun added_rallies_go_after_a_moment_at_the_start_of_the_game() {
+        val b = board()
+        b.scorer.logMoment(listOf(PointTag("Net", "slate")))
+        val plan = b.log.planScoreEdit(home = 2, away = 0, nextServer = null)
+        val after = foldMatchState(b.log.rules, b.log.setup, plan.events)
+        after.pointCount shouldBe 2
+        after.moments.single().afterPoints shouldBe 0
+    }
 }

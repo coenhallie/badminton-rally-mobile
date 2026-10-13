@@ -85,7 +85,16 @@ fun ScoreLog.planScoreEdit(home: Int, away: Int, nextServer: Side?): ScoreEditPl
     // Everything before the game stays exactly as written, tags included. The
     // game's kept rallies are rewritten with their tags resolved and renumbered,
     // since a removal shifts every ordinal after it.
-    val base = events.dropPointsFrom(start)
+    // Moments survive the cut (dropPointsFrom keeps them), but a removal shifts
+    // every rally after it, so a moment inside this game is re-anchored after the
+    // same kept rallies it followed. The same promise this edit makes for tags.
+    val base = events.dropPointsFrom(start).map { event ->
+        if (event is ScoreEvent.Moment && event.afterPoints > start) {
+            event.copy(afterPoints = start + kept.count { it.ordinal < event.afterPoints })
+        } else {
+            event
+        }
+    }
     fun build(added: List<Side>): List<ScoreEvent> {
         val rallies = kept.map { ScoreEvent.PointTo(it.wonBy) } + added.map { ScoreEvent.PointTo(it) }
         val tags = kept.mapIndexedNotNull { i, point ->
