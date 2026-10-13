@@ -150,6 +150,23 @@ class MatchScorer(
         repo.replaceEvents(scoreLogId, undone.before)
     }
 
+    /** True while [notice]'s action would still do what it says. */
+    fun isLive(notice: BoardNotice): Boolean = when (notice) {
+        is BoardNotice.RallyUndone -> canRedo(notice.undone)
+        is BoardNotice.MomentAdded -> state()?.moments?.any { it == notice.moment } == true
+        is BoardNotice.MomentRemoved -> state()?.moments?.none { it.id == notice.moment.id } == true
+    }
+
+    /** The strip's action: Redo for an undo, Undo for a moment added or removed. */
+    fun reverse(notice: BoardNotice) {
+        if (!isLive(notice)) return
+        when (notice) {
+            is BoardNotice.RallyUndone -> redo(notice.undone)
+            is BoardNotice.MomentAdded -> removeMoment(notice.moment.id)
+            is BoardNotice.MomentRemoved -> restoreMoment(notice.moment)
+        }
+    }
+
     /**
      * Clears the game being played and leaves every finished game alone. The cut is
      * by ordinal rather than by position in the list precisely so the tags on
