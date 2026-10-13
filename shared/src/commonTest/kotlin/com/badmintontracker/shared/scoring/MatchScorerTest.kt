@@ -286,4 +286,96 @@ class MatchScorerTest {
         scorer.finish()
         repo.logs.value.first().status shouldBe ScoreLogStatus.UNBOUND
     }
+
+    private val good = PointTag("Good shot", "green")
+    private val net = PointTag("Net", "slate")
+
+    @Test
+    fun a_quick_moment_is_logged_after_the_rallies_played_so_far() {
+        val (_, scorer) = scorer()
+        scorer.score(Side.HOME)
+        val m = scorer.logMoment(listOf(good))!!
+        m.afterPoints shouldBe 1
+        m.tags shouldBe listOf(good)
+        m.comment shouldBe null
+        m.loggedAt shouldBe t0
+        scorer.state()!!.moments shouldBe listOf(m)
+    }
+
+    @Test
+    fun every_quick_moment_is_its_own() {
+        val (_, scorer) = scorer()
+        scorer.logMoment(listOf(good))
+        scorer.logMoment(listOf(good))
+        scorer.state()!!.moments.size shouldBe 2
+    }
+
+    @Test
+    fun a_moment_snapshots_the_label() {
+        val (_, scorer) = scorer()
+        scorer.logMoment(listOf(PointTag("Good shot", "green")))
+        // A later rename on the Labels screen is a different PointTag; the logged one is unchanged.
+        scorer.state()!!.moments.single().tags.single() shouldBe PointTag("Good shot", "green")
+    }
+
+    @Test
+    fun a_draft_toggles_labels_and_commits_as_one_moment() {
+        val (_, scorer) = scorer()
+        val draft = scorer.openMomentDraft()!!.toggle(good).toggle(net).toggle(good).withText("  short  ")
+        val m = scorer.commitMomentDraft(draft)!!
+        m.tags shouldBe listOf(net)
+        m.comment shouldBe "short"
+        scorer.state()!!.moments.single() shouldBe m
+    }
+
+    @Test
+    fun a_note_alone_is_a_moment() {
+        val (_, scorer) = scorer()
+        scorer.commitMomentDraft(scorer.openMomentDraft()!!.withText("backhand clear"))!!.comment shouldBe "backhand clear"
+    }
+
+    @Test
+    fun an_empty_draft_logs_nothing() {
+        val (repo, scorer) = scorer()
+        val id = repo.logs.value.single().id
+        scorer.commitMomentDraft(scorer.openMomentDraft()!!.withText("   ")) shouldBe null
+        repo.get(id)!!.events shouldBe emptyList()
+    }
+
+    @Test
+    fun a_draft_keeps_the_place_it_was_opened_at() {
+        val (_, scorer) = scorer()
+        val draft = scorer.openMomentDraft()!!.toggle(good)
+        scorer.score(Side.HOME)
+        scorer.commitMomentDraft(draft)!!.afterPoints shouldBe 0
+    }
+
+    @Test
+    fun removing_a_moment_hides_it_and_restoring_puts_it_back() {
+        val (_, scorer) = scorer()
+        val m = scorer.logMoment(listOf(good))!!
+        scorer.removeMoment(m.id) shouldBe m
+        scorer.state()!!.moments shouldBe emptyList()
+        scorer.restoreMoment(m)
+        scorer.state()!!.moments shouldBe listOf(m)
+    }
+
+    @Test
+    fun the_last_moment_is_the_last_one_logged() {
+        val (_, scorer) = scorer()
+        scorer.score(Side.HOME)
+        val later = scorer.logMoment(listOf(net))!!
+        scorer.lastMoment() shouldBe later
+        scorer.removeMoment(later.id)
+        scorer.lastMoment() shouldBe null
+    }
+
+    @Test
+    fun moments_leave_the_opening_serve_switchable() {
+        val (_, scorer) = scorer()
+        scorer.logMoment(listOf(good))
+        scorer.canSwitchFirstServer() shouldBe true
+        scorer.score(Side.HOME)
+        scorer.canSwitchFirstServer() shouldBe false
+    }
 }

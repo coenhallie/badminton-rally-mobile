@@ -38,7 +38,8 @@ class ScoreLogsRepository internal constructor(
      */
     private val client: SupabaseClient?,
     private val settings: Settings,
-    private val now: () -> Instant,
+    // Internal so MatchScorer stamps moments with the same clock the store stamps rows with.
+    internal val now: () -> Instant,
     /**
      * Whose matches these are. A seam for the same reason
      * [com.badmintontracker.shared.repo.AnnotationLabelsRepositoryImpl] has one:

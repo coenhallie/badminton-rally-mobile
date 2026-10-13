@@ -19,3 +19,26 @@ fun clockTime(at: Instant, zone: TimeZone): String {
 
 /** [clockTime] in the phone's own zone. An overload, not a default: Swift sees no defaults. */
 fun clockTime(at: Instant): String = clockTime(at, TimeZone.currentSystemDefault())
+
+/**
+ * The composer's moment while Note is open. Held by the board, not the log:
+ * nothing is written until it is committed, so typing appends nothing.
+ *
+ * [openedAt] and [afterPoints] are fixed when it opens, because that is when the
+ * thing being written about was seen.
+ */
+data class MomentDraft(
+    val tags: List<PointTag>,
+    val text: String,
+    val openedAt: Instant,
+    val afterPoints: Int,
+) {
+    val isEmpty: Boolean get() = tags.isEmpty() && text.isBlank()
+
+    /** Adds [tag], or takes it off if it is already on. By name, as a rally's tags are. */
+    fun toggle(tag: PointTag): MomentDraft =
+        if (tags.any { it.labelName == tag.labelName }) copy(tags = tags.filterNot { it.labelName == tag.labelName })
+        else copy(tags = tags + tag)
+
+    fun withText(text: String): MomentDraft = copy(text = text)
+}
