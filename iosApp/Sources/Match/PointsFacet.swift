@@ -2,8 +2,9 @@ import SwiftUI
 import Shared
 
 /// The match page's Points section: the score header, the tag tally and one row
-/// per point, newest first. Lifted from `ScoreMatchView`: same header, same tally
-/// gate, same newest-first point list. The Score/Resume button is omitted rather
+/// per rally or moment, newest first. Lifted from `ScoreMatchView`: same header,
+/// same tally gate, same newest-first list, which is the match's timeline so a
+/// moment sits among the rallies by when it was logged. The Score/Resume button is omitted rather
 /// than disabled once there is nothing left to score - undo lives on the board
 /// itself, not on this page.
 ///
@@ -16,7 +17,8 @@ struct PointsFacet: View {
     let log: ScoreLog
     let card: ScoreMatchCard?
     let tally: ScoreTagSummary
-    let points: [ScoredPoint]
+    let timeline: [TimelineEntry]
+    let match: MatchState?
     /// `MatchView` pushes the board itself now, rather than this being a bare
     /// `NavigationLink(value:)` resolved by an ambient destination - the match
     /// page it lands back on after a finish must be this exact instance, not a
@@ -42,7 +44,7 @@ struct PointsFacet: View {
                 // nothing left to score, and undo lives on the board itself.
                 if log.status == .live {
                     Button(action: onScore) {
-                        Text(points.isEmpty ? "Score" : "Resume scoring")
+                        Text(match.map { ScoreMatchCardKt.scoreButtonLabel(state: $0) } ?? "Score")
                             .shuttlType(ShuttlType.titleLarge)
                             .foregroundStyle(Shuttl.onAccent)
                             .padding(.horizontal, 20)
@@ -62,18 +64,20 @@ struct PointsFacet: View {
         if !tally.isEmpty {
             Section {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(tally.taggedPointCount == 1
-                         ? "1 rally tagged"
-                         : "\(tally.taggedPointCount) rallies tagged")
+                    Text(tally.headline)
                         .shuttlType(ShuttlType.titleMedium)
                         .foregroundStyle(Shuttl.text)
-                    HStack(spacing: 12) {
-                        ForEach(tally.labels, id: \.name) { label in
-                            HStack(spacing: 4) {
-                                LabelBadge(name: label.name, colorKey: label.colorKey)
-                                Text("\(label.count)")
-                                    .shuttlType(ShuttlType.bodySmall)
-                                    .foregroundStyle(Shuttl.textSecondary)
+                    // A match with only note moments has a headline and no labels:
+                    // an empty row would add a gap under it.
+                    if !tally.labels.isEmpty {
+                        ChipFlow(spacing: 12) {
+                            ForEach(tally.labels, id: \.name) { label in
+                                HStack(spacing: 4) {
+                                    LabelBadge(name: label.name, colorKey: label.colorKey)
+                                    Text("\(label.count)")
+                                        .shuttlType(ShuttlType.bodySmall)
+                                        .foregroundStyle(Shuttl.textSecondary)
+                                }
                             }
                         }
                     }
@@ -82,14 +86,14 @@ struct PointsFacet: View {
             }
         }
 
-        if points.isEmpty {
+        if timeline.isEmpty {
             // No action of its own: the Score button in the header above is
             // the one that fills this list.
             Section {
                 ShuttlEmptyState(
                     systemImage: "list.number",
-                    title: "No points yet",
-                    message: "Points are listed here as you score the match."
+                    title: "Nothing logged yet",
+                    message: "Points you score and moments you log are listed here."
                 ) { EmptyView() }
                 .listRowInsets(EdgeInsets())
                 .listRowSeparator(.hidden)
@@ -99,9 +103,11 @@ struct PointsFacet: View {
         } else {
             // Newest first: courtside, the rally you care about is the last one.
             Section {
-                ForEach(points.reversed(), id: \.ordinal) { point in
-                    pointRow(point)
-                        .pointsListRow(top: 10, bottom: 10)
+                ForEach(timeline.reversed().map(TimelineRow.init)) { row in
+                    switch onEnum(of: row.entry) {
+                    case .rally(let rally): pointRow(rally.point).pointsListRow(top: 10, bottom: 10)
+                    case .moment(let moment): momentRow(moment.moment).pointsListRow(top: 10, bottom: 10)
+                    }
                 }
             }
         }
@@ -119,7 +125,7 @@ struct PointsFacet: View {
                     .foregroundStyle(Shuttl.textSecondary)
             }
             if !point.tags.isEmpty {
-                HStack(spacing: 6) {
+                ChipFlow(spacing: 6) {
                     ForEach(point.tags, id: \.labelName) { tag in
                         LabelBadge(name: tag.labelName, colorKey: tag.labelColor)
                     }
@@ -132,10 +138,49 @@ struct PointsFacet: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    /// A moment, shaped like a rally's row so the two read as one list: the time
+    /// where a rally has its score, and "Moment" where it has who won it.
+    @ViewBuilder
+    private func momentRow(_ moment: LoggedMoment) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 12) {
+                Text(MomentsKt.clockTime(at: moment.loggedAt))
+                    .shuttlType(ShuttlType.titleMedium)
+                    .foregroundStyle(Shuttl.text)
+                Text("Moment")
+                    .shuttlType(ShuttlType.bodyLarge)
+                    .foregroundStyle(Shuttl.textSecondary)
+            }
+            if !moment.tags.isEmpty {
+                ChipFlow(spacing: 6) {
+                    ForEach(moment.tags, id: \.labelName) { tag in
+                        LabelBadge(name: tag.labelName, colorKey: tag.labelColor)
+                    }
+                }
+            }
+            if let comment = moment.comment, !comment.trimmingCharacters(in: .whitespaces).isEmpty {
+                Text(comment).shuttlType(ShuttlType.bodySmall).foregroundStyle(Shuttl.textSecondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
     /// "21 points, best of 3". Rules are shared; this sentence is iOS copy.
     private func rulesSummary(_ rules: ScoringRules) -> String {
         let games = rules.gamesToWin == 1 ? "single game" : "best of \(rules.gamesToWin * 2 - 1)"
         return "\(rules.pointsToWin) points, \(games)"
+    }
+}
+
+/// A timeline entry with an id that survives a new row arriving. Offsets would
+/// re-identify, and so re-animate, every row below a newly logged moment.
+private struct TimelineRow: Identifiable {
+    let entry: TimelineEntry
+    var id: String {
+        switch onEnum(of: entry) {
+        case .rally(let r): return "point-\(r.point.ordinal)"
+        case .moment(let m): return "moment-\(m.moment.id)"
+        }
     }
 }
 

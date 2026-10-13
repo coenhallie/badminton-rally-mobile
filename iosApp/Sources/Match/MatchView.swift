@@ -745,7 +745,8 @@ struct MatchView: View {
                 if let log = matchModel.log {
                     PointsFacet(
                         log: log, card: matchModel.card, tally: matchModel.tally,
-                        points: matchModel.match?.points ?? [],
+                        timeline: matchModel.match.map { MatchTimelineKt.matchTimeline(state: $0) } ?? [],
+                        match: matchModel.match,
                         onScore: { scoringTarget = ScoringRoute(scoreLogId: log.id) }
                     )
                 }
