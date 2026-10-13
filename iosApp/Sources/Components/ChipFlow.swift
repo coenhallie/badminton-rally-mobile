@@ -9,6 +9,9 @@ import SwiftUI
 /// the same target is worse than one shared one.
 struct ChipFlow: Layout {
     var spacing: CGFloat = 8
+    /// The gap between rows, when it differs from the gap between chips. Nil is
+    /// `spacing`, so every flow that never asked keeps one spacing both ways.
+    var rowSpacing: CGFloat? = nil
     /// Centres each row in the width rather than starting it at the leading edge.
     /// For the replay page's label row, which sits under a centred transport.
     var centered = false
@@ -16,7 +19,7 @@ struct ChipFlow: Layout {
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let available = proposal.width ?? .infinity
         let rows = rows(of: subviews, within: available)
-        let height = rows.reduce(0) { $0 + $1.height } + spacing * CGFloat(max(rows.count - 1, 0))
+        let height = rows.reduce(0) { $0 + $1.height } + lineSpacing * CGFloat(max(rows.count - 1, 0))
         // Claim the full proposed width so `placeSubviews` wraps against exactly
         // the width the rows were measured against.
         let width = available.isFinite ? available : (rows.map(\.width).max() ?? 0)
@@ -41,9 +44,11 @@ struct ChipFlow: Layout {
                 )
                 x += size.width + spacing
             }
-            y += row.height + spacing
+            y += row.height + lineSpacing
         }
     }
+
+    private var lineSpacing: CGFloat { rowSpacing ?? spacing }
 
     private struct Row {
         var indices: [Int] = []

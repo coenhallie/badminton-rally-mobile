@@ -500,4 +500,84 @@ final class ScoringModelTests: XCTestCase {
         model.openMomentDraft()
         XCTAssertNil(model.momentDraft)
     }
+
+    func testTheServeSwitchTakesEffectAfterAMoment() {
+        // A label tapped before the first rally says nothing about who serves, so
+        // SERVE must still hand it across, not just still be offered.
+        let (repo, id, model) = fixture()
+        model.tapMomentLabel(goodShot)
+        model.switchFirstServer()
+        XCTAssertEqual(repo.get(id: id)?.setup.firstServer, .away)
+        XCTAssertEqual(model.match?.server, .away)
+    }
+
+    func testUndoingAMomentInTheStripLeavesTheComposerOpen() {
+        // Only Redo moves the row onto a rally. Taking a moment back leaves it on
+        // moments, so the note being written stays where it is.
+        let (_, _, model) = fixture()
+        model.tapMomentLabel(goodShot)
+        model.openMomentDraft()
+        model.setMomentDraftText("half written")
+        model.reverseNotice()
+        XCTAssertEqual(model.match?.moments.count, 0)
+        XCTAssertEqual(model.momentDraft?.text, "half written")
+    }
+
+    func testARowOnARallyASyncTookAwayDoesNotComeBackOnIt() {
+        // A sync takes both rallies away, then another brings four back. The row
+        // must not wake up on rally 2 of 4: it targets moments until a tap moves it.
+        let (repo, id, model) = fixture()
+        model.score(.home)
+        model.score(.away)
+        XCTAssertEqual((model.target as? BoardTarget.Rally)?.ordinal, 1)
+        repo.replaceEvents(id: id, events: [])
+        model.reload()
+        XCTAssertTrue(model.target is BoardTarget.Moments)
+        repo.replaceEvents(id: id, events: Array(repeating: ScoreEventPointTo(side: .home), count: 4))
+        model.reload()
+        XCTAssertTrue(model.target is BoardTarget.Moments)
+        XCTAssertNil(model.pendingTagOrdinal)
+    }
+
+    func testUndoWithTheComposerOpenSavesItFirst() {
+        let (_, _, model) = fixture()
+        model.openMomentDraft()
+        model.setMomentDraftText("tight")
+        model.undo()
+        XCTAssertNil(model.momentDraft)
+        XCTAssertEqual(model.match?.moments.count, 1)
+        XCTAssertEqual(model.match?.moments.first?.comment, "tight")
+    }
+
+    func testEditingTheScoreWithTheComposerOpenSavesItFirst() {
+        let (_, _, model) = fixture()
+        model.openMomentDraft()
+        model.setMomentDraftText("tight")
+        model.editScore(home: 2, away: 0, nextServer: nil)
+        XCTAssertNil(model.momentDraft)
+        XCTAssertEqual(model.match?.moments.count, 1)
+        XCTAssertEqual(model.match?.moments.first?.afterPoints, 0)
+        XCTAssertEqual(model.match?.points.count, 2)
+    }
+
+    func testResettingTheGameWithTheComposerOpenSavesItFirst() {
+        let (_, _, model) = fixture()
+        model.openMomentDraft()
+        model.setMomentDraftText("tight")
+        model.resetCurrentGame()
+        XCTAssertNil(model.momentDraft)
+        XCTAssertEqual(model.match?.moments.count, 1)
+        XCTAssertEqual(model.match?.moments.first?.comment, "tight")
+    }
+
+    func testFinishingWithTheComposerOpenSavesItFirst() {
+        let (repo, id, model) = fixture()
+        model.openMomentDraft()
+        model.setMomentDraftText("tight")
+        model.finish()
+        XCTAssertNil(model.momentDraft)
+        XCTAssertEqual(model.match?.moments.count, 1)
+        XCTAssertEqual(model.match?.moments.first?.comment, "tight")
+        XCTAssertEqual(repo.get(id: id)?.status, .unbound)
+    }
 }

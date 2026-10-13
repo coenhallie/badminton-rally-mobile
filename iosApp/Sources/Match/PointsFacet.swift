@@ -4,9 +4,9 @@ import Shared
 /// The match page's Points section: the score header, the tag tally and one row
 /// per rally or moment, newest first. Lifted from `ScoreMatchView`: same header,
 /// same tally gate, same newest-first list, which is the match's timeline so a
-/// moment sits among the rallies by when it was logged. The Score/Resume button is omitted rather
-/// than disabled once there is nothing left to score - undo lives on the board
-/// itself, not on this page.
+/// moment sits among the rallies by when it was logged. The Score/Resume button
+/// is omitted rather than disabled once there is nothing left to score - undo
+/// lives on the board itself, not on this page.
 ///
 /// Every row sits in the page's 24pt gutter, as every other section does: at the
 /// list's own inset, switching from Points to Match moved the page's left edge.
@@ -70,7 +70,8 @@ struct PointsFacet: View {
                     // A match with only note moments has a headline and no labels:
                     // an empty row would add a gap under it.
                     if !tally.labels.isEmpty {
-                        ChipFlow(spacing: 12) {
+                        // 12 across and 8 down, as androidApp's tally FlowRow.
+                        ChipFlow(spacing: 12, rowSpacing: 8) {
                             ForEach(tally.labels, id: \.name) { label in
                                 HStack(spacing: 4) {
                                     LabelBadge(name: label.name, colorKey: label.colorKey)

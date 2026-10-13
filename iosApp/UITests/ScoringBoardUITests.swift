@@ -21,23 +21,26 @@ final class ScoringBoardUITests: XCTestCase {
 
         try createMatch(app)
 
-        // The serve pill sits inside the half that scores on a tap, so handing the
-        // opening serve across must not also be a rally. Held still here for the
-        // same reason the chip is below.
-        let serve = app.buttons["SERVE R"].firstMatch
-        XCTAssertTrue(serve.waitForExistence(timeout: 5), "the serve pill cannot be switched before the first point")
-        serve.tap()
-        // The moment hint rather than the SERVE one: the simulator account has
-        // board labels.
-        XCTAssertTrue(
-            app.staticTexts["Tap a side to score, or a label to log a moment"].exists,
-            "switching the first server also scored a rally"
-        )
-
-        // At 0-0 a chip logs a moment and must not score a rally either.
+        // At 0-0 a chip logs a moment and must not score a rally.
         app.buttons["Good shot"].firstMatch.tap()
         XCTAssertTrue(app.staticTexts["Moment added: Good shot"].waitForExistence(timeout: 5), "a chip at 0-0 did not log a moment")
         XCTAssertTrue(app.staticTexts["1 moment logged"].exists, "a chip at 0-0 also scored a rally")
+
+        // The serve pill sits inside the half that scores on a tap, so handing the
+        // opening serve across must not also be a rally. Held still here for the
+        // same reason the chip is below. After a moment on purpose: a moment is
+        // not a rally, so the switch must still take, not just still be offered.
+        // Only the serving side's pill is a button, so the one found is on the
+        // side that serves.
+        let serve = app.buttons["SERVE R"].firstMatch
+        XCTAssertTrue(serve.waitForExistence(timeout: 5), "the serve pill cannot be switched before the first point")
+        let middle = app.frame.midX
+        let servedFromLeft = serve.frame.midX < middle
+        serve.tap()
+        XCTAssertTrue(app.staticTexts["1 moment logged"].exists, "switching the first server also scored a rally")
+        let switched = app.buttons["SERVE R"].firstMatch
+        XCTAssertTrue(switched.waitForExistence(timeout: 5), "the serve pill went away after a switch")
+        XCTAssertNotEqual(switched.frame.midX < middle, servedFromLeft, "SERVE did not hand the serve across after a moment")
 
         // One rally to the side on the left, which puts the tag row in reach.
         let board = app.otherElements.firstMatch
@@ -59,6 +62,24 @@ final class ScoringBoardUITests: XCTestCase {
             app.staticTexts["Point 1: 1-0"].exists,
             "tapping a label chip also scored a rally"
         )
+
+        try deleteMatch(app)
+    }
+
+    func testAtNilAllNoteOpensTheMomentComposer() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        try createMatch(app)
+
+        // With no rally to put a note on, Note writes a moment instead.
+        app.buttons["Note"].firstMatch.tap()
+        let field = app.textFields["Note on this moment"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "Note at 0-0 did not open the moment composer")
+        field.typeText("short serve")
+        app.buttons["Note"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Moment added"].waitForExistence(timeout: 5), "Note did not save the moment")
+        XCTAssertTrue(app.staticTexts["1 moment logged"].exists, "the saved moment is not counted")
 
         try deleteMatch(app)
     }

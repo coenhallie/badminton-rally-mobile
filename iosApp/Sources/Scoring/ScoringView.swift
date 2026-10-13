@@ -45,10 +45,7 @@ struct ScoringView: View {
     @State private var noteOpen = false
     @State private var editingDetails = false
     @State private var editingScore = false
-    /// The chip a quick moment was just logged from, while its flash is up.
-    @State private var flashing: String?
     @Environment(\.dynamicTypeSize) private var typeSize
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // Fires on the transition to un-scoreable, from either exit: the last point
     // the rules allow, and "Finish match" in the menu. The rule is shared with
@@ -463,7 +460,7 @@ struct ScoringView: View {
                         } else {
                             nil
                         }
-                        tagChip(
+                        TagChip(
                             label: label,
                             selected: selected,
                             hint: point != nil
@@ -578,56 +575,6 @@ struct ScoringView: View {
         .background(Shuttl.bg)
     }
 
-    /// One label on the board. Live whatever the row targets: it tags the rally,
-    /// checks the label onto the open moment, or logs a moment of its own.
-    ///
-    /// `selected` is nil when the tap is not a toggle, so VoiceOver does not call a
-    /// quick-moment chip unselected. A quick moment flashes, a press-in and a white
-    /// wash, and neither changes the chip's size, so the row never reflows under
-    /// the coach's finger. Under Reduce Motion the press-in goes; the wash and the
-    /// haptic stay.
-    @ViewBuilder
-    private func tagChip(
-        label: AnnotationLabel,
-        selected: Bool?,
-        hint: String,
-        flashes: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        let swatch = LabelColor.companion.from(key: label.colorKey)
-        let container = swatch.map { Color(rgb: UInt32($0.background & 0xFFFFFF)) } ?? Shuttl.bgTertiary
-        let onContainer = swatch.map { Color(rgb: UInt32($0.foreground & 0xFFFFFF)) } ?? Shuttl.text
-        let ticked = selected == true
-        let lit = flashing == label.id
-
-        Button {
-            action()
-            guard flashes else { return }
-            withAnimation(.easeOut(duration: 0.08)) { flashing = label.id }
-            Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(90))
-                withAnimation(.easeOut(duration: 0.26)) { if flashing == label.id { flashing = nil } }
-            }
-        } label: {
-            Text(ticked ? "✓ \(label.name)" : label.name)
-                // One role for both states, not a weight toggle: the chip's
-                // fixed horizontal padding would make it visibly change width
-                // on every tap if the role's size changed with it. The "✓"
-                // prefix already carries the selected state.
-                .shuttlType(ShuttlType.titleMedium)
-                .foregroundStyle(onContainer)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(container)
-                .overlay(Color.white.opacity(lit ? 0.32 : 0))
-                .clipShape(Capsule())
-                .scaleEffect(lit && !reduceMotion ? 0.94 : 1)
-        }
-        .buttonStyle(.plain)
-        .accessibilityHint(hint)
-        .accessibilityAddTraits(ticked ? .isSelected : [])
-    }
-
     /// The announcement the point just played earned, or nil. Order is by how much
     /// it matters courtside, and match point outranks game point because it is one.
     static func announcement(_ log: ScoreLog, _ match: MatchState) -> String? {
@@ -703,6 +650,87 @@ private struct OutlinedPillButtonStyle: ButtonStyle {
             .opacity(configuration.isPressed ? 0.6 : (isEnabled ? 1 : 0.4))
             .frame(minHeight: 44)
             .contentShape(Rectangle())
+    }
+}
+
+/// One label on the board. Live whatever the row targets: it tags the rally,
+/// checks the label onto the open moment, or logs a moment of its own.
+///
+/// `selected` is nil when the tap is not a toggle, so VoiceOver does not call a
+/// quick-moment chip unselected. A quick moment flashes, a press-in and a white
+/// wash, and neither changes the chip's size, so the row never reflows under
+/// the coach's finger. Under Reduce Motion the press-in goes; the wash and the
+/// haptic stay.
+///
+/// A view of its own so the flash is its own: keyed on this chip's taps, a second
+/// tap restarts it, a tap on another chip leaves it alone, and nothing else on
+/// the board animates with it. The timing is androidApp's `TagChip`: the wash
+/// snaps to 0.32 and fades over 260ms, the press-in reaches 0.94 over 80ms and
+/// springs back.
+private struct TagChip: View {
+    let label: AnnotationLabel
+    let selected: Bool?
+    let hint: String
+    let flashes: Bool
+    let action: () -> Void
+
+    @State private var taps = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private struct Flash {
+        var wash: Double = 0
+        var scale: CGFloat = 1
+    }
+
+    /// Compose's `FastOutSlowInEasing`, the curve `tween` uses by default.
+    private static let fastOutSlowIn = UnitCurve.bezier(
+        startControlPoint: UnitPoint(x: 0.4, y: 0),
+        endControlPoint: UnitPoint(x: 0.2, y: 1)
+    )
+
+    /// Compose's `spring(dampingRatio = 0.5f, stiffness = 600f)`: damping is the
+    /// ratio times 2 * sqrt(stiffness * mass).
+    private static let springBack = Spring(mass: 1, stiffness: 600, damping: 0.5 * 2 * 600.0.squareRoot())
+
+    var body: some View {
+        let swatch = LabelColor.companion.from(key: label.colorKey)
+        let container = swatch.map { Color(rgb: UInt32($0.background & 0xFFFFFF)) } ?? Shuttl.bgTertiary
+        let onContainer = swatch.map { Color(rgb: UInt32($0.foreground & 0xFFFFFF)) } ?? Shuttl.text
+        let ticked = selected == true
+
+        Button {
+            action()
+            if flashes { taps += 1 }
+        } label: {
+            Text(ticked ? "✓ \(label.name)" : label.name)
+                // One role for both states, not a weight toggle: the chip's
+                // fixed horizontal padding would make it visibly change width
+                // on every tap if the role's size changed with it. The "✓"
+                // prefix already carries the selected state.
+                .shuttlType(ShuttlType.titleMedium)
+                .foregroundStyle(onContainer)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(container)
+                .keyframeAnimator(initialValue: Flash(), trigger: taps) { content, flash in
+                    content
+                        .overlay(Color.white.opacity(flash.wash))
+                        .clipShape(Capsule())
+                        .scaleEffect(reduceMotion ? 1 : flash.scale)
+                } keyframes: { _ in
+                    KeyframeTrack(\.wash) {
+                        MoveKeyframe(0.32)
+                        LinearKeyframe(0, duration: 0.26, timingCurve: Self.fastOutSlowIn)
+                    }
+                    KeyframeTrack(\.scale) {
+                        LinearKeyframe(0.94, duration: 0.08, timingCurve: Self.fastOutSlowIn)
+                        SpringKeyframe(1, spring: Self.springBack)
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint(hint)
+        .accessibilityAddTraits(ticked ? .isSelected : [])
     }
 }
 

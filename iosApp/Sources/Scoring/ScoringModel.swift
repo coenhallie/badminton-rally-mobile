@@ -238,12 +238,16 @@ final class ScoringModel {
     func reverseNotice() {
         guard let notice = lastNotice else { return }
         lastNotice = nil
-        // Reversed before the composer is saved: saving changes the log, which
-        // would retire a Redo that was still waiting.
         scorer.reverse(notice: notice)
-        commitMomentDraft()
         readStore()
-        if notice is BoardNotice.RallyUndone { pendingTagOrdinal = lastOrdinal }
+        // Redo moves the row onto the rally it put back, so an open composer is
+        // saved as it would be by a score tap. Saved after the redo, not before:
+        // saving changes the log, which would retire the Redo. Undoing a moment
+        // leaves the row on moments, and the composer open.
+        if notice is BoardNotice.RallyUndone {
+            commitMomentDraft()
+            pendingTagOrdinal = lastOrdinal
+        }
     }
 
     /// The notice timed out. What it reported stands.
