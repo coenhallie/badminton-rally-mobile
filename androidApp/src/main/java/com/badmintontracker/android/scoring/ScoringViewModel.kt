@@ -135,7 +135,7 @@ class ScoringViewModel(
             hasAnyLabels = allLabels.isNotEmpty(),
             canRemoveMoment = match?.moments?.isNotEmpty() == true,
             notice = liveNotice,
-            noticeMessage = liveNotice?.let { log!!.noticeMessage(it) },
+            noticeMessage = liveNotice?.let { log?.noticeMessage(it) },
             noticeAction = liveNotice?.actionLabel,
         )
     }
@@ -158,7 +158,10 @@ class ScoringViewModel(
         lastNotice.value = BoardNotice.MomentAdded(scorer.logMoment(listOf(tag)) ?: return)
     }
 
+    /** Only while the row targets moments, so a draft never waits behind a rally to resurface later. */
     fun openMomentDraft() {
+        val match = scorer.state() ?: return
+        if (boardTarget(match, pending.value) != BoardTarget.Moments) return
         if (draft.value == null) draft.value = scorer.openMomentDraft()
     }
 
@@ -174,7 +177,6 @@ class ScoringViewModel(
     }
 
     fun removeLastMoment() {
-        commitMomentDraft()
         val last = scorer.lastMoment() ?: return
         lastNotice.value = BoardNotice.MomentRemoved(scorer.removeMoment(last.id) ?: return)
     }
@@ -224,8 +226,10 @@ class ScoringViewModel(
     fun reverseNotice() {
         val notice = lastNotice.value ?: return
         lastNotice.value = null
-        commitMomentDraft()
+        // Reversed before the composer is saved: saving changes the log, which
+        // would retire a Redo that was still waiting.
         scorer.reverse(notice)
+        commitMomentDraft()
         if (notice is BoardNotice.RallyUndone) pending.value = lastOrdinal()
     }
 

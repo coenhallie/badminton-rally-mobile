@@ -13,6 +13,7 @@ import com.badmintontracker.shared.scoring.SideScore
 import com.russhwolf.settings.MapSettings
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.nulls.shouldBeNull
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -519,5 +520,40 @@ class ScoringViewModelTest {
         vm.tapMomentLabel(goodShot)
         advanceUntilIdle()
         vm.state.value.match!!.moments.single().afterPoints shouldBe 1
+    }
+
+    @Test
+    fun redo_still_works_with_the_composer_open() = runTest(dispatcher) {
+        val (_, _, vm) = fixture()
+        vm.score(Side.HOME)
+        vm.undo()
+        advanceUntilIdle()
+        vm.state.value.target shouldBe BoardTarget.Moments
+        vm.openMomentDraft()
+        vm.tapMomentLabel(goodShot)
+        vm.reverseNotice()
+        advanceUntilIdle()
+        vm.state.value.match!!.pointCount shouldBe 1
+        vm.state.value.match!!.moments.single().afterPoints shouldBe 0
+    }
+
+    @Test
+    fun removing_the_last_moment_leaves_the_composer_open() = runTest(dispatcher) {
+        val (_, _, vm) = fixture()
+        vm.tapMomentLabel(goodShot)
+        vm.openMomentDraft()
+        vm.removeLastMoment()
+        advanceUntilIdle()
+        vm.state.value.match!!.moments.shouldBeEmpty()
+        vm.state.value.momentDraft.shouldNotBeNull()
+    }
+
+    @Test
+    fun the_composer_does_not_open_on_a_rally() = runTest(dispatcher) {
+        val (_, _, vm) = fixture()
+        vm.score(Side.HOME)
+        vm.openMomentDraft()
+        advanceUntilIdle()
+        vm.state.value.momentDraft.shouldBeNull()
     }
 }
