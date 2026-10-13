@@ -2,6 +2,8 @@ package com.badmintontracker.android.match
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -21,30 +23,37 @@ import com.badmintontracker.android.clipdetail.LabelBadge
 import com.badmintontracker.android.cliplist.LabelCountChip
 import com.badmintontracker.android.ui.components.ShuttlEmptyState
 import com.badmintontracker.android.ui.icons.ShuttlIcons
+import com.badmintontracker.shared.scoring.LoggedMoment
+import com.badmintontracker.shared.scoring.MatchState
 import com.badmintontracker.shared.scoring.ScoreLog
 import com.badmintontracker.shared.scoring.ScoreLogStatus
 import com.badmintontracker.shared.scoring.ScoreMatchCard
 import com.badmintontracker.shared.scoring.ScoreTagSummary
 import com.badmintontracker.shared.scoring.ScoredPoint
 import com.badmintontracker.shared.scoring.Side
+import com.badmintontracker.shared.scoring.TimelineEntry
+import com.badmintontracker.shared.scoring.clockTime
+import com.badmintontracker.shared.scoring.scoreButtonLabel
 import com.badmintontracker.shared.scoring.sideName
 
 /**
  * The points half of a match: the score header, the tag tally and one row per
- * point, newest first. A `LazyListScope` extension rather than a screen, for the
+ * rally or moment, newest first. A `LazyListScope` extension rather than a screen, for the
  * same reason [com.badmintontracker.android.match.ralliesFacet] is - the match
  * page's Points section renders it inside a list the page owns.
  *
- * Lifted from `ScoreMatchScreen` unchanged: same header, same tally gate, same
- * newest-first point list. The Score/Resume button, not [onScore] itself, is
- * omitted once there is nothing left to score - absent rather than disabled,
- * because undo lives on the board itself.
+ * Lifted from `ScoreMatchScreen` with one change: the list is the match's
+ * timeline, so a moment sits among the rallies by when it was logged. The
+ * Score/Resume button, not [onScore] itself, is omitted once there is nothing
+ * left to score - absent rather than disabled, because undo lives on the board
+ * itself.
  */
 fun LazyListScope.pointsFacet(
     log: ScoreLog,
     card: ScoreMatchCard?,
     tally: ScoreTagSummary,
-    points: List<ScoredPoint>,
+    timeline: List<TimelineEntry>,
+    match: MatchState?,
     onScore: () -> Unit,
 ) {
     item(key = "points-header") {
@@ -72,7 +81,7 @@ fun LazyListScope.pointsFacet(
             // left to score, and undo lives on the board itself.
             if (log.status == ScoreLogStatus.LIVE) {
                 Button(onClick = onScore, modifier = Modifier.padding(top = 8.dp)) {
-                    Text(if (points.isEmpty()) "Score" else "Resume scoring")
+                    Text(match?.let(::scoreButtonLabel) ?: "Score")
                 }
             }
         }
@@ -86,21 +95,29 @@ fun LazyListScope.pointsFacet(
         }
     }
 
-    if (points.isEmpty()) {
+    if (timeline.isEmpty()) {
         item(key = "no-points") {
             // No action of its own: the Score button in the header above is
             // the one that fills this list.
             ShuttlEmptyState(
                 icon = ShuttlIcons.ListOrdered,
-                title = "No points yet",
-                body = "Points are listed here as you score the match.",
+                title = "Nothing logged yet",
+                body = "Points you score and moments you log are listed here.",
                 modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
             )
         }
     } else {
         // Newest first: courtside, the rally you care about is the last one.
-        items(points.reversed(), key = { "point-${it.ordinal}" }) { point ->
-            PointRow(point, winner = log.sideName(point.wonBy))
+        items(timeline.asReversed(), key = {
+            when (it) {
+                is TimelineEntry.Rally -> "point-${it.point.ordinal}"
+                is TimelineEntry.Moment -> "moment-${it.moment.id}"
+            }
+        }) { entry ->
+            when (entry) {
+                is TimelineEntry.Rally -> PointRow(entry.point, winner = log.sideName(entry.point.wonBy))
+                is TimelineEntry.Moment -> MomentRow(entry.moment)
+            }
             HorizontalDivider()
         }
     }
@@ -111,6 +128,7 @@ fun LazyListScope.pointsFacet(
  * two summaries read as the same thing. Absent rather than empty when nothing was
  * tagged: the point list below already says the match has barely started.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TagTally(tally: ScoreTagSummary) {
     Column(
@@ -118,16 +136,16 @@ private fun TagTally(tally: ScoreTagSummary) {
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
-            text = if (tally.taggedPointCount == 1) "1 rally tagged"
-                   else "${tally.taggedPointCount} rallies tagged",
+            text = tally.headline,
             style = MaterialTheme.typography.titleSmall,
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             tally.labels.forEach { LabelCountChip(it) }
         }
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PointRow(point: ScoredPoint, winner: String) {
     Column(
@@ -149,13 +167,37 @@ private fun PointRow(point: ScoredPoint, winner: String) {
             )
         }
         if (point.tags.isNotEmpty()) {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 point.tags.forEach { LabelBadge(name = it.labelName, colorKey = it.labelColor) }
             }
         }
         point.comment?.takeIf { it.isNotBlank() }?.let {
             Text(it, style = MaterialTheme.typography.bodySmall)
         }
+    }
+}
+
+/**
+ * A moment, shaped like a rally's row so the two read as one list: the time where
+ * a rally has its score, and "Moment" where it has who won it.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun MomentRow(moment: LoggedMoment) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = MatchPageGutter, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(text = clockTime(moment.loggedAt), fontWeight = FontWeight.Medium)
+            Text(text = "Moment", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (moment.tags.isNotEmpty()) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                moment.tags.forEach { LabelBadge(name = it.labelName, colorKey = it.labelColor) }
+            }
+        }
+        moment.comment?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
     }
 }
 
