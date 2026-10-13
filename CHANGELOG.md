@@ -10,6 +10,14 @@ The mobile app is versioned independently from the web app.
 ## [Unreleased]
 
 ### Added
+- **Labels and notes without a score.** At 0-0, or in a match nobody is
+  scoring, tapping a label on the board logs a moment: the label and the time.
+  Note writes a longer one, with as many labels as it needs. "Moment added"
+  in the bar at the top offers Undo, and "Remove last moment" in the menu takes
+  one back later. Moments are listed with the rallies on the match page, counted
+  in the tally and included when the match is shared. A board reopened on a
+  match already being scored now points at its last rally, so its labels work
+  straight away.
 - **The heatmap shows play, not the breaks.** It is now drawn from the rallies
   alone, so walking to fetch the shuttle, the towel and the wait before a serve
   no longer count as where a player plays. "Whole match" under Near and Far
