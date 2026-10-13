@@ -131,4 +131,16 @@ class ScoreMatchCardTest {
         card.videoId shouldBe "vid-1"
         card.hasVideo shouldBe true
     }
+
+    @Test
+    fun a_match_with_only_moments_says_how_many() {
+        val at = Instant.parse("2026-10-13T18:00:00Z")
+        val moment = { id: String -> ScoreEvent.Moment(id, 0, at, listOf(PointTag("Net", "slate")), null) }
+        scoreLine(foldMatchState(ScoringRules.BWF_21, MatchSetup(Side.HOME), listOf(moment("a")))) shouldBe "1 moment"
+        val two = foldMatchState(ScoringRules.BWF_21, MatchSetup(Side.HOME), listOf(moment("a"), moment("b")))
+        scoreLine(two) shouldBe "2 moments"
+        scoreButtonLabel(two) shouldBe "Resume"
+        scoreButtonLabel(foldMatchState(ScoringRules.BWF_21, MatchSetup(Side.HOME), emptyList())) shouldBe "Score"
+        scoreButtonLabel(foldMatchState(ScoringRules.BWF_21, MatchSetup(Side.HOME), listOf(ScoreEvent.PointTo(Side.HOME)))) shouldBe "Resume scoring"
+    }
 }

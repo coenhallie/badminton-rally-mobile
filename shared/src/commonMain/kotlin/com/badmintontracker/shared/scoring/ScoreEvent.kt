@@ -1,5 +1,6 @@
 package com.badmintontracker.shared.scoring
 
+import kotlinx.datetime.Instant
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -79,6 +80,28 @@ sealed interface ScoreEvent {
     @Serializable
     @SerialName("retire")
     data class Retire(val side: Side) : ScoreEvent
+
+    /**
+     * A label or a note, or both, logged when the row had no rally to put it on:
+     * a match nobody is scoring, the start of a game, after the match is finished.
+     * Not part of the score, so nothing that edits the score removes one.
+     *
+     * [afterPoints] is how many rallies had been played, which is its place among
+     * them. Explicit rather than read off its position in the list, for the same
+     * reason a tag names its rally by ordinal: the score editor rewrites the list.
+     *
+     * A later Moment with the same [id] replaces this one, and one with no tags and
+     * no comment removes it, so changing or removing a moment is an append.
+     */
+    @Serializable
+    @SerialName("moment")
+    data class Moment(
+        val id: String,
+        @SerialName("after_points") val afterPoints: Int,
+        @SerialName("logged_at") val loggedAt: Instant,
+        val tags: List<PointTag>,
+        val comment: String?,
+    ) : ScoreEvent
 }
 
 /**
@@ -90,6 +113,7 @@ sealed interface ScoreEvent {
  * two taps to remove, and the first one changed nothing on the board. A tag is
  * taken off by tapping its chip again, so undo has no need to handle one. Tags on
  * earlier rallies stay wherever they sit in the log, because the cut is by ordinal.
+ * Moments are not part of the score, so they all survive an undo.
  *
  * A log with no rally in it comes back unchanged rather than throwing. The control
  * that calls this is disabled then, and if that ever slips, a no-op is a much
@@ -99,6 +123,16 @@ fun List<ScoreEvent>.undoLastPoint(): List<ScoreEvent> {
     val points = count { it is ScoreEvent.PointTo }
     return if (points == 0) this else dropPointsFrom(points - 1)
 }
+
+/**
+ * Whether anything that decides the score has been recorded: a rally or a
+ * retirement. Moments do not count, so a label tapped before the first rally
+ * leaves the opening serve open to switching. Asked by both
+ * [MatchScorer.canSwitchFirstServer] and [ScoreLogsRepository.setFirstServer], so
+ * the board cannot offer a switch the store then refuses.
+ */
+internal fun List<ScoreEvent>.hasRallyOrRetirement(): Boolean =
+    any { it is ScoreEvent.PointTo || it is ScoreEvent.Retire }
 
 /**
  * Appends the tags and comment for [pointOrdinal]. Named rather than left as a
@@ -116,6 +150,9 @@ fun List<ScoreEvent>.tagPoint(
  * included. This is what "reset game" is built from: fold to find the first
  * ordinal of the current game, then cut there.
  *
+ * Moments are kept, wherever they sit: they are not part of the score, and the
+ * fold clamps one whose rally was cut to the new last rally.
+ *
  * Entries below the cut are untouched, so every surviving tag still names the
  * point it named before - no renumbering, and therefore no way for a tag to slide
  * onto a neighbouring rally.
@@ -131,6 +168,8 @@ fun List<ScoreEvent>.dropPointsFrom(fromOrdinal: Int): List<ScoreEvent> {
             }
             is ScoreEvent.TagPoint -> if (event.pointOrdinal < fromOrdinal) kept += event
             is ScoreEvent.Retire -> Unit
+            // Not part of the score, so no cut takes it. The fold clamps its anchor.
+            is ScoreEvent.Moment -> kept += event
         }
     }
     return kept

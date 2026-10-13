@@ -4,20 +4,26 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.badmintontracker.shared.model.AnnotationLabel
 import com.badmintontracker.shared.repo.AnnotationLabelsRepository
+import com.badmintontracker.shared.scoring.BoardNotice
+import com.badmintontracker.shared.scoring.BoardTarget
 import com.badmintontracker.shared.scoring.MatchFormat
 import com.badmintontracker.shared.scoring.MatchScorer
 import com.badmintontracker.shared.scoring.MatchState
+import com.badmintontracker.shared.scoring.MomentDraft
 import com.badmintontracker.shared.scoring.PointTag
 import com.badmintontracker.shared.scoring.ScoreLog
 import com.badmintontracker.shared.scoring.ScoreLogsRepository
 import com.badmintontracker.shared.scoring.Side
-import com.badmintontracker.shared.scoring.UndoneRally
-import com.badmintontracker.shared.scoring.isPlayable
-import com.badmintontracker.shared.scoring.undoneNotice
+import com.badmintontracker.shared.scoring.actionLabel
+import com.badmintontracker.shared.scoring.boardCaption
+import com.badmintontracker.shared.scoring.boardTarget
+import com.badmintontracker.shared.scoring.noticeMessage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 
 /**
  * What the courtside surface draws.
@@ -44,13 +50,22 @@ data class ScoringUiState(
      * on the board", which are different problems with different fixes.
      */
     val hasAnyLabels: Boolean = false,
+    /** What a chip tap does: tag [pendingTagOrdinal]'s rally, or log a moment. Null with no match. */
+    val target: BoardTarget? = null,
+    /** The open moment composer. Only ever open while [target] is [BoardTarget.Moments]. */
+    val momentDraft: MomentDraft? = null,
+    /** The line beside Edit score. See [boardCaption]. */
+    val caption: String = "",
+    /** Whether the menu offers "Remove last moment". */
+    val canRemoveMoment: Boolean = false,
     /**
-     * "Point to Home undone" while the last undo can still be put back, null
-     * otherwise. Undo asks no question, so a mis-tap on it is answered here.
+     * The strip's notice while its action can still do what it says, for example
+     * "Moment added: Good shot" with Undo. A new one restarts the timer even when
+     * the words match.
      */
-    val undoneNotice: String? = null,
-    /** The undo [undoneNotice] is about. A new one restarts the notice's timer even when the words match. */
-    val undone: UndoneRally? = null,
+    val notice: BoardNotice? = null,
+    val noticeMessage: String? = null,
+    val noticeAction: String? = null,
 )
 
 /**
@@ -66,10 +81,11 @@ class ScoringViewModel(
 
     private val scorer = MatchScorer(scoreLogs, scoreLogId)
 
-    private val pending = MutableStateFlow<Int?>(null)
-
-    /** The last undo, until it is redone or dismissed. Only offered while [MatchScorer.canRedo]. */
-    private val lastUndo = MutableStateFlow<UndoneRally?>(null)
+    // Opens on the last rally, so a board reopened mid-match tags it, as the
+    // board would have the moment it was scored.
+    private val pending = MutableStateFlow(lastOrdinal())
+    private val draft = MutableStateFlow<MomentDraft?>(null)
+    private val lastNotice = MutableStateFlow<BoardNotice?>(null)
 
     /**
      * Eager rather than [SharingStarted.WhileSubscribed], unlike the list screens.
@@ -82,48 +98,100 @@ class ScoringViewModel(
      * would flash that at the coach for a frame on the way in.
      */
     val state = combine(
-        scoreLogs.logs, labels.scoreboardLabels, labels.labels, pending, lastUndo, ::build,
-    ).stateIn(
-        viewModelScope,
-        SharingStarted.Eagerly,
-        build(scoreLogs.logs.value, labels.scoreboardLabels.value, labels.labels.value, pending.value, lastUndo.value),
-    )
+        combine(scoreLogs.logs.onEach(::forgetVanishedRally), labels.scoreboardLabels, labels.labels, ::Triple),
+        pending, draft, lastNotice,
+    ) { (logs, board, all), p, d, n -> build(logs, board, all, p, d, n) }
+        .stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            build(scoreLogs.logs.value, labels.scoreboardLabels.value, labels.labels.value, pending.value, draft.value, lastNotice.value),
+        )
+
+    /**
+     * A row still pointing at a rally the log no longer has - taken back by a
+     * sync, or by an edit on another screen - is cleared as the log arrives, as
+     * the iOS model clears it. Masking it in [build] alone would let a later sync
+     * that brings rallies back point the row at one that is not the last.
+     */
+    private fun forgetVanishedRally(logs: List<ScoreLog>) {
+        val count = logs.firstOrNull { it.id == scoreLogId }?.state()?.pointCount ?: 0
+        pending.update { ordinal -> ordinal?.takeIf { it < count } }
+    }
 
     private fun build(
         logs: List<ScoreLog>,
         boardLabels: List<AnnotationLabel>,
         allLabels: List<AnnotationLabel>,
         pendingOrdinal: Int?,
-        undone: UndoneRally?,
+        openDraft: MomentDraft?,
+        notice: BoardNotice?,
     ): ScoringUiState {
         val log = logs.firstOrNull { it.id == scoreLogId }
         val match = log?.state()
+        val target = match?.let { boardTarget(it, pendingOrdinal) }
+        val liveDraft = openDraft?.takeIf { target == BoardTarget.Moments }
         // Read against the log rather than cleared by each caller, so a change
-        // from anywhere - a rally, a tag, a sync - retires the redo with it.
-        val live = undone?.takeIf { log != null && log.events == it.after }
+        // from anywhere - a rally, a tag, a sync - retires the notice with it.
+        val liveNotice = notice?.takeIf { log != null && scorer.isLive(it) }
         return ScoringUiState(
             log = log,
             match = match,
             labels = boardLabels,
-            // A row still pointing at a rally that undo took back would put the next
-            // label on a point that no longer exists, so the clamp lives here rather
-            // than in every caller.
-            pendingTagOrdinal = pendingOrdinal?.takeIf { match != null && it < match.pointCount },
+            pendingTagOrdinal = (target as? BoardTarget.Rally)?.ordinal,
+            target = target,
+            momentDraft = liveDraft,
+            caption = if (match != null && target != null) boardCaption(match, target, boardLabels.isNotEmpty(), liveDraft) else "",
             canScore = match?.isOver == false,
             canUndo = (match?.pointCount ?: 0) > 0,
             canEditScore = log != null && scorer.canEditScore(),
-            canSwitchFirstServer = log != null && log.isPlayable() && log.events.isEmpty(),
+            canSwitchFirstServer = log != null && scorer.canSwitchFirstServer(),
             hasAnyLabels = allLabels.isNotEmpty(),
-            undoneNotice = live?.let { log?.undoneNotice(it) },
-            undone = live,
+            canRemoveMoment = match?.moments?.isNotEmpty() == true,
+            notice = liveNotice,
+            noticeMessage = liveNotice?.let { log?.noticeMessage(it) },
+            noticeAction = liveNotice?.actionLabel,
         )
     }
 
     /** One tap. The tag row follows to the rally just played. */
     fun score(side: Side) {
+        commitMomentDraft()
         scorer.score(side)
-        lastUndo.value = null
+        lastNotice.value = null
         pending.value = lastOrdinal()
+    }
+
+    /**
+     * A chip tap while the row targets moments: a check on the composer's moment
+     * while it is open, otherwise a moment of its own.
+     */
+    fun tapMomentLabel(label: AnnotationLabel) {
+        val tag = PointTag(labelName = label.name, labelColor = label.colorKey)
+        draft.value?.let { draft.value = it.toggle(tag); return }
+        lastNotice.value = BoardNotice.MomentAdded(scorer.logMoment(listOf(tag)) ?: return)
+    }
+
+    /** Only while the row targets moments, so a draft never waits behind a rally to resurface later. */
+    fun openMomentDraft() {
+        val match = scorer.state() ?: return
+        if (boardTarget(match, pending.value) != BoardTarget.Moments) return
+        if (draft.value == null) draft.value = scorer.openMomentDraft()
+    }
+
+    /** Kept here so the draft can be saved by a score tap; the field reads its own copy. */
+    fun setMomentDraftText(text: String) {
+        draft.value = draft.value?.withText(text)
+    }
+
+    fun commitMomentDraft() {
+        val open = draft.value ?: return
+        draft.value = null
+        scorer.commitMomentDraft(open)?.let { lastNotice.value = BoardNotice.MomentAdded(it) }
+    }
+
+    fun removeLastMoment() {
+        val last = scorer.lastMoment() ?: return
+        lastNotice.value = BoardNotice.MomentRemoved(scorer.removeMoment(last.id) ?: return)
     }
 
     /**
@@ -162,22 +230,29 @@ class ScoringViewModel(
      * the board looks exactly as it did the moment that rally was scored.
      */
     fun undo() {
-        lastUndo.value = scorer.undo() ?: return
+        commitMomentDraft()
+        lastNotice.value = BoardNotice.RallyUndone(scorer.undo() ?: return)
         pending.value = lastOrdinal()
     }
 
-    /** Puts back what the last undo took, as long as nothing has happened since. */
-    fun redo() {
-        val undone = lastUndo.value ?: return
-        lastUndo.value = null
-        if (!scorer.canRedo(undone)) return
-        scorer.redo(undone)
-        pending.value = lastOrdinal()
+    /** The strip's action: Redo after an undo, Undo after a moment was added or removed. */
+    fun reverseNotice() {
+        val notice = lastNotice.value ?: return
+        lastNotice.value = null
+        scorer.reverse(notice)
+        // Redo moves the row onto the rally it put back, so an open composer is
+        // saved as it would be by a score tap. Saved after the redo, not before:
+        // saving changes the log, which would retire the Redo. Undoing a moment
+        // leaves the row on moments, and the composer open.
+        if (notice is BoardNotice.RallyUndone) {
+            commitMomentDraft()
+            pending.value = lastOrdinal()
+        }
     }
 
-    /** The notice timed out. The undo stands. */
-    fun dismissUndoNotice() {
-        lastUndo.value = null
+    /** The notice timed out. What it reported stands. */
+    fun dismissNotice() {
+        lastNotice.value = null
     }
 
     /**
@@ -185,20 +260,23 @@ class ScoringViewModel(
      * after a tap, so a rally just added can be tagged straight away.
      */
     fun editScore(home: Int, away: Int, nextServer: Side?) {
+        commitMomentDraft()
         if (!scorer.editScore(home, away, nextServer)) return
-        lastUndo.value = null
+        lastNotice.value = null
         pending.value = lastOrdinal()
     }
 
     fun resetCurrentGame() {
+        commitMomentDraft()
         scorer.resetCurrentGame()
-        lastUndo.value = null
+        lastNotice.value = null
         pending.value = null
     }
 
     fun finish() {
+        commitMomentDraft()
         scorer.finish()
-        lastUndo.value = null
+        lastNotice.value = null
         pending.value = null
     }
 

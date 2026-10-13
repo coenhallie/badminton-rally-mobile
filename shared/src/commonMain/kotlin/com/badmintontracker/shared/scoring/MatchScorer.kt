@@ -1,5 +1,7 @@
 package com.badmintontracker.shared.scoring
 
+import com.badmintontracker.shared.util.randomUuid
+
 /**
  * Everything that can change a match, in one place.
  *
@@ -30,11 +32,12 @@ class MatchScorer(
     /**
      * True until the first point is scored. A new match starts with home serving
      * because the form no longer asks; this is the window in which the board can be
-     * told it was the other side that won the toss.
+     * told it was the other side that won the toss. Moments do not close it: a label
+     * tapped before the first rally says nothing about who serves.
      */
     fun canSwitchFirstServer(): Boolean {
         val log = repo.get(scoreLogId) ?: return false
-        return log.isPlayable() && log.events.isEmpty()
+        return log.isPlayable() && !log.events.hasRallyOrRetirement()
     }
 
     /** Hands the first serve to the other side. A no-op once a point has been scored. */
@@ -56,6 +59,46 @@ class MatchScorer(
      */
     fun tagPoint(ordinal: Int, tags: List<PointTag>, comment: String?) =
         edit { it.tagPoint(ordinal, tags, comment) }
+
+    /**
+     * One tap on a label with no rally to put it on: a moment of its own, now.
+     * Null, and nothing written, with no labels: an empty moment is a removal.
+     */
+    fun logMoment(tags: List<PointTag>): LoggedMoment? {
+        if (tags.isEmpty()) return null
+        val state = state() ?: return null
+        return append(ScoreEvent.Moment(randomUuid(), state.pointCount, repo.now(), tags, null))
+    }
+
+    /** The composer, opened here and now. Null when the match is not on this device. */
+    fun openMomentDraft(): MomentDraft? {
+        val state = state() ?: return null
+        return MomentDraft(tags = emptyList(), text = "", openedAt = repo.now(), afterPoints = state.pointCount)
+    }
+
+    /** Writes [draft] as one moment. Null, and nothing written, when it is empty. */
+    fun commitMomentDraft(draft: MomentDraft): LoggedMoment? {
+        if (draft.isEmpty || repo.get(scoreLogId) == null) return null
+        val comment = draft.text.trim().ifEmpty { null }
+        return append(ScoreEvent.Moment(randomUuid(), draft.afterPoints, draft.openedAt, draft.tags, comment))
+    }
+
+    /** Takes a moment off by appending an empty version. Returns what it was, for putting back. */
+    fun removeMoment(id: String): LoggedMoment? {
+        val moment = state()?.moments?.firstOrNull { it.id == id } ?: return null
+        edit { it + ScoreEvent.Moment(id, moment.afterPoints, moment.loggedAt, emptyList(), null) }
+        return moment
+    }
+
+    /** Puts [moment] back exactly as it was. */
+    fun restoreMoment(moment: LoggedMoment) = edit { it + moment.toEvent() }
+
+    /** The moment logged or changed most recently, by its place in the log. */
+    fun lastMoment(): LoggedMoment? {
+        val log = repo.get(scoreLogId) ?: return null
+        val live = log.state().moments.associateBy { it.id }
+        return log.events.asReversed().firstNotNullOfOrNull { (it as? ScoreEvent.Moment)?.let { m -> live[m.id] } }
+    }
 
     /**
      * Takes back the last rally with its tags and note, and says which rally that
@@ -111,6 +154,23 @@ class MatchScorer(
         repo.replaceEvents(scoreLogId, undone.before)
     }
 
+    /** True while [notice]'s action would still do what it says. */
+    fun isLive(notice: BoardNotice): Boolean = when (notice) {
+        is BoardNotice.RallyUndone -> canRedo(notice.undone)
+        is BoardNotice.MomentAdded -> state()?.moments?.any { it == notice.moment } == true
+        is BoardNotice.MomentRemoved -> state()?.moments?.none { it.id == notice.moment.id } == true
+    }
+
+    /** The strip's action: Redo for an undo, Undo for a moment added or removed. */
+    fun reverse(notice: BoardNotice) {
+        if (!isLive(notice)) return
+        when (notice) {
+            is BoardNotice.RallyUndone -> redo(notice.undone)
+            is BoardNotice.MomentAdded -> removeMoment(notice.moment.id)
+            is BoardNotice.MomentRemoved -> restoreMoment(notice.moment)
+        }
+    }
+
     /**
      * Clears the game being played and leaves every finished game alone. The cut is
      * by ordinal rather than by position in the list precisely so the tags on
@@ -144,6 +204,11 @@ class MatchScorer(
      */
     fun firstOrdinalOfCurrentGame(state: MatchState): Int =
         state.points.firstOrNull { it.gameIndex == state.gameIndex }?.ordinal ?: state.pointCount
+
+    private fun append(moment: ScoreEvent.Moment): LoggedMoment? {
+        edit { it + moment }
+        return state()?.moments?.firstOrNull { it.id == moment.id }
+    }
 
     private fun edit(transform: (List<ScoreEvent>) -> List<ScoreEvent>) {
         val log = repo.get(scoreLogId) ?: return

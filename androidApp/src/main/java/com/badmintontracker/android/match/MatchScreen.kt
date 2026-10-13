@@ -94,6 +94,7 @@ import com.badmintontracker.shared.scoring.MatchVideoAction
 import com.badmintontracker.shared.scoring.VIDEO_MATCH_TITLE_CAP
 import com.badmintontracker.shared.scoring.exportMatchText
 import com.badmintontracker.shared.scoring.matchDetailsLine
+import com.badmintontracker.shared.scoring.matchTimeline
 import com.badmintontracker.shared.scoring.matchVideoPrompt
 import com.badmintontracker.shared.scoring.playersLine
 
@@ -447,7 +448,8 @@ fun MatchScreen(
                             MatchPageSection.POINTS -> LazyColumn(Modifier.fillMaxSize()) {
                                 if (log != null) pointsFacet(
                                     log = log, card = matchState.card, tally = matchState.tally,
-                                    points = matchState.match?.points.orEmpty(), onScore = onScore,
+                                    timeline = matchState.match?.let(::matchTimeline).orEmpty(), match = matchState.match,
+                                    onScore = onScore,
                                 )
                             }
                             MatchPageSection.MATCH -> entry?.let {

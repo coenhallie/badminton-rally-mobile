@@ -27,9 +27,11 @@ final class ScoringModel {
     /// between the coach and the next rally.
     private(set) var pendingTagOrdinal: Int? = nil
 
-    /// The last undo, until it is redone or dismissed. Only offered while the
-    /// scorer can still redo it: see `undone`.
-    private var lastUndo: UndoneRally? = nil
+    /// The open moment composer. Only ever open while `target` is moments.
+    private(set) var momentDraft: MomentDraft? = nil
+
+    /// The strip's last notice, until its action is taken or it times out.
+    private var lastNotice: BoardNotice? = nil
 
     var canScore: Bool { match?.isOver == false }
     var canUndo: Bool { (match?.points.count ?? 0) > 0 }
@@ -37,21 +39,39 @@ final class ScoringModel {
     /// Reads `log` first so the view is re-asked when it changes.
     var canEditScore: Bool { log != nil && scorer.canEditScore() }
 
-    /// The last undo while it can still be put back, nil otherwise. Read against
-    /// the log rather than cleared by each caller, so a change from anywhere - a
-    /// rally, a tag, a sync - retires the redo with it. Reads `log` first so the
-    /// view is re-asked when it changes.
-    var undone: UndoneRally? {
-        guard log != nil, let lastUndo, scorer.canRedo(undone: lastUndo) else { return nil }
-        return lastUndo
+    /// What a chip tap does: tag `pendingTagOrdinal`'s rally, or log a moment.
+    /// Nil with no match. See `boardTarget`.
+    var target: BoardTarget? {
+        guard let match else { return nil }
+        return BoardPresentationKt.boardTarget(
+            match: match,
+            pendingOrdinal: pendingTagOrdinal.map { KotlinInt(int: Int32($0)) }
+        )
     }
 
-    /// "Point to Home undone" while the last undo can still be put back. Undo asks
-    /// no question, so a mis-tap on it is answered here.
-    var undoneNotice: String? {
-        guard let undone, let log else { return nil }
-        return log.undoneNotice(undone: undone)
+    /// The line beside Edit score. See `boardCaption`.
+    var caption: String {
+        guard let match, let target else { return "" }
+        return BoardPresentationKt.boardCaption(
+            match: match, target: target, hasBoardLabels: !labels.isEmpty,
+            draft: target is BoardTarget.Moments ? momentDraft : nil
+        )
     }
+
+    /// Whether the menu offers "Remove last moment".
+    var canRemoveMoment: Bool { !(match?.moments.isEmpty ?? true) }
+
+    /// The strip's notice while its action can still do what it says. Read against
+    /// the log rather than cleared by each caller, so a change from anywhere - a
+    /// rally, a tag, a sync - retires it with it. Reads `log` first so the view is
+    /// re-asked when it changes.
+    var notice: BoardNotice? {
+        guard log != nil, let lastNotice, scorer.isLive(notice: lastNotice) else { return nil }
+        return lastNotice
+    }
+    var noticeMessage: String? { notice.flatMap { n in log?.noticeMessage(notice: n) } }
+    var noticeAction: String? { notice?.actionLabel }
+
     /// True until the first point: the window in which the board can hand the
     /// opening serve across. Reads `log` first so the view is re-asked when it changes.
     var canSwitchFirstServer: Bool { log != nil && scorer.canSwitchFirstServer() }
@@ -77,6 +97,9 @@ final class ScoringModel {
         self.labels = labelsRepository?.scoreboardLabels.value ?? scoreboardLabels
         self.hasAnyLabels = !(labelsRepository?.labels.value.isEmpty ?? scoreboardLabels.isEmpty)
         readStore()
+        // Opens on the last rally, so a board reopened mid-match tags it, as the
+        // board would have the moment it was scored.
+        pendingTagOrdinal = lastOrdinal
     }
 
     convenience init(rally: RallyApp, scoreLogId: String) {
@@ -121,10 +144,50 @@ final class ScoringModel {
 
     /// One tap. The tag row follows to the rally just played.
     func score(_ side: Side) {
+        commitMomentDraft()
         scorer.score(side: side)
-        lastUndo = nil
+        lastNotice = nil
         readStore()
         pendingTagOrdinal = lastOrdinal
+    }
+
+    /// A chip tap while the row targets moments: a check on the composer's moment
+    /// while it is open, otherwise a moment of its own.
+    func tapMomentLabel(_ label: AnnotationLabel) {
+        let tag = PointTag(labelName: label.name, labelColor: label.colorKey)
+        if let draft = momentDraft {
+            momentDraft = draft.toggle(tag: tag)
+            return
+        }
+        guard let moment = scorer.logMoment(tags: [tag]) else { return }
+        lastNotice = BoardNotice.MomentAdded(moment: moment)
+        readStore()
+    }
+
+    /// Only while the row targets moments, so a draft never waits behind a rally to resurface later.
+    func openMomentDraft() {
+        guard target is BoardTarget.Moments, momentDraft == nil else { return }
+        momentDraft = scorer.openMomentDraft()
+    }
+
+    /// Kept here so a score tap can save the draft; the field reads its own copy.
+    func setMomentDraftText(_ text: String) {
+        momentDraft = momentDraft?.withText(text: text)
+    }
+
+    func commitMomentDraft() {
+        guard let draft = momentDraft else { return }
+        momentDraft = nil
+        if let moment = scorer.commitMomentDraft(draft: draft) {
+            lastNotice = BoardNotice.MomentAdded(moment: moment)
+        }
+        readStore()
+    }
+
+    func removeLastMoment() {
+        guard let last = scorer.lastMoment(), let removed = scorer.removeMoment(id: last.id) else { return }
+        lastNotice = BoardNotice.MomentRemoved(moment: removed)
+        readStore()
     }
 
     /// Adds `label` to the rally, or takes it off again if it is already there. The
@@ -164,45 +227,56 @@ final class ScoringModel {
     /// Takes back the last rally. The tag row goes back to the rally before it, so
     /// the board looks exactly as it did the moment that rally was scored.
     func undo() {
+        commitMomentDraft()
         guard let taken = scorer.undo() else { return }
-        lastUndo = taken
+        lastNotice = BoardNotice.RallyUndone(undone: taken)
         readStore()
         pendingTagOrdinal = lastOrdinal
     }
 
-    /// Puts back what the last undo took, as long as nothing has happened since.
-    func redo() {
-        guard let undone else { lastUndo = nil; return }
-        lastUndo = nil
-        scorer.redo(undone: undone)
+    /// The strip's action: Redo after an undo, Undo after a moment was added or removed.
+    func reverseNotice() {
+        guard let notice = lastNotice else { return }
+        lastNotice = nil
+        scorer.reverse(notice: notice)
         readStore()
-        pendingTagOrdinal = lastOrdinal
+        // Redo moves the row onto the rally it put back, so an open composer is
+        // saved as it would be by a score tap. Saved after the redo, not before:
+        // saving changes the log, which would retire the Redo. Undoing a moment
+        // leaves the row on moments, and the composer open.
+        if notice is BoardNotice.RallyUndone {
+            commitMomentDraft()
+            pendingTagOrdinal = lastOrdinal
+        }
     }
 
-    /// The notice timed out. The undo stands.
-    func dismissUndoNotice() {
-        lastUndo = nil
+    /// The notice timed out. What it reported stands.
+    func dismissNotice() {
+        lastNotice = nil
     }
 
     /// The score editor's save. The tag row follows to the last rally, as it
     /// does after a tap, so a rally just added can be tagged straight away.
     func editScore(home: Int, away: Int, nextServer: Side?) {
+        commitMomentDraft()
         guard scorer.editScore(home: Int32(home), away: Int32(away), nextServer: nextServer) else { return }
-        lastUndo = nil
+        lastNotice = nil
         readStore()
         pendingTagOrdinal = lastOrdinal
     }
 
     func resetCurrentGame() {
+        commitMomentDraft()
         scorer.resetCurrentGame()
-        lastUndo = nil
+        lastNotice = nil
         pendingTagOrdinal = nil
         readStore()
     }
 
     func finish() {
+        commitMomentDraft()
         scorer.finish()
-        lastUndo = nil
+        lastNotice = nil
         pendingTagOrdinal = nil
         readStore()
     }

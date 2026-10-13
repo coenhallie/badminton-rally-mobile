@@ -1,5 +1,9 @@
 package com.badmintontracker.android.scoring
 
+import android.provider.Settings
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -19,6 +23,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
@@ -39,33 +45,45 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
+import kotlin.coroutines.EmptyCoroutineContext
+import kotlinx.coroutines.launch
 import com.badmintontracker.android.ui.icons.ShuttlIcons
 import com.badmintontracker.android.ui.theme.ShuttlRadius
 import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.shared.model.AnnotationLabel
 import com.badmintontracker.shared.model.LabelColor
+import com.badmintontracker.shared.scoring.BoardTarget
 import com.badmintontracker.shared.scoring.FinishPrompt
 import com.badmintontracker.shared.scoring.MAX_MATCH_TITLE
 import com.badmintontracker.shared.scoring.MatchState
@@ -77,7 +95,8 @@ import com.badmintontracker.shared.scoring.sideName
 
 /**
  * The courtside board. One tap on a side scores the rally it just won; a second tap
- * on a label tags it.
+ * on a label tags it. Before the first rally, or whenever else the row has no rally
+ * to tag, a label tap logs a moment instead.
  *
  * Everything on it is read from [MatchState], which is folded from the log - the
  * serve, the service court, and which end each side is on. Nothing here computes a rule.
@@ -122,23 +141,31 @@ fun ScoringScreen(
         if (finishPrompt.shouldAsk(log.isPlayable())) addVideoOpen = true
     }
 
-    // Keyed on the undo rather than on its words, so a second undo of the same
-    // side's rally gets the full time to be put back too.
-    LaunchedEffect(state.undone) {
-        if (state.undone != null) {
-            delay(UNDO_NOTICE_MILLIS)
-            vm.dismissUndoNotice()
+    // Keyed on the notice rather than its words, so a second notice with the same
+    // words still gets its full time.
+    LaunchedEffect(state.notice) {
+        if (state.notice != null) {
+            delay(NOTICE_MILLIS)
+            vm.dismissNotice()
         }
+    }
+    // A rally note belongs to a rally. When the row stops pointing at one, the
+    // field closes rather than reopening on the next rally scored.
+    LaunchedEffect(state.target is BoardTarget.Moments) {
+        if (state.target is BoardTarget.Moments) noteOpen = false
     }
 
     Column(Modifier.fillMaxSize().safeDrawingPadding()) {
         StatusStrip(
             log = log,
             match = match,
-            undoneNotice = state.undoneNotice,
+            notice = state.noticeMessage,
+            noticeAction = state.noticeAction,
+            onNoticeAction = vm::reverseNotice,
             canUndo = state.canUndo,
             onUndo = vm::undo,
-            onRedo = vm::redo,
+            canRemoveMoment = state.canRemoveMoment,
+            onRemoveMoment = vm::removeLastMoment,
             onBack = onBack,
             onEditDetails = { editingDetails = true },
             onResetGame = { confirming = Confirmation.ResetGame },
@@ -173,15 +200,20 @@ fun ScoringScreen(
         }
 
         ControlBar(
-            match = match,
-            labels = state.labels,
-            hasAnyLabels = state.hasAnyLabels,
-            pendingTagOrdinal = state.pendingTagOrdinal,
-            canEditScore = state.canEditScore,
+            state = state,
             noteOpen = noteOpen,
-            onToggleTag = { ordinal, label -> vm.toggleTag(ordinal, label) },
-            onSetComment = { ordinal, text -> vm.setComment(ordinal, text) },
-            onToggleNote = { noteOpen = !noteOpen },
+            onToggleTag = vm::toggleTag,
+            onMomentLabel = vm::tapMomentLabel,
+            onSetComment = vm::setComment,
+            onNote = {
+                when {
+                    state.target is BoardTarget.Rally -> noteOpen = !noteOpen
+                    state.momentDraft == null -> vm.openMomentDraft()
+                    else -> vm.commitMomentDraft()
+                }
+            },
+            onDraftText = vm::setMomentDraftText,
+            onDraftClose = vm::commitMomentDraft,
             onEditScore = { editingScore = true },
             onDone = { onFinished(null) },
         )
@@ -258,11 +290,12 @@ fun ScoringScreen(
 }
 
 /**
- * How long "Point to Home undone" and its Redo stay up. Long enough to notice a
- * mis-tapped undo from the court and reach back for it, short enough that the
- * strip is back to calling game point before the next rally is over.
+ * How long a notice and its action stay up: "Point to Home undone" with Redo, and
+ * "Moment added" or "Moment removed" with Undo. Long enough to notice a mis-tap
+ * from the court and reach back for it, short enough that the strip is back to
+ * calling game point before the next rally is over.
  */
-private const val UNDO_NOTICE_MILLIS = 5_000L
+private const val NOTICE_MILLIS = 5_000L
 
 /** Where finishing a match can take the coach next, chosen on the "add the video?" prompt. */
 enum class AttachIntent { Import, Record }
@@ -286,25 +319,30 @@ private enum class Confirmation(val title: String, val body: String, val confirm
  * An announcement outranks the running summary, because "match point" is the only
  * thing on this strip worth looking away from the court for.
  *
- * An undo outranks both for a few seconds. It is the one thing the coach did that
- * the board cannot show on its own - the number going down does not say whose
- * rally went - and it is where Redo lives, clear of the halves that score.
+ * A notice outranks both for a few seconds: an undo, or a moment added or removed.
+ * Each is something the coach did that the board cannot show on its own - the
+ * number going down does not say whose rally went, and a moment changes nothing
+ * else on the board - and it is where the action that reverses it lives, Redo or
+ * Undo, clear of the halves that score.
  */
 @Composable
 private fun StatusStrip(
     log: ScoreLog,
     match: MatchState,
-    undoneNotice: String?,
+    notice: String?,
+    noticeAction: String?,
+    onNoticeAction: () -> Unit,
     canUndo: Boolean,
     onUndo: () -> Unit,
-    onRedo: () -> Unit,
+    canRemoveMoment: Boolean,
+    onRemoveMoment: () -> Unit,
     onBack: () -> Unit,
     onEditDetails: () -> Unit,
     onResetGame: () -> Unit,
     onFinish: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
-    val announcement = undoneNotice ?: announcementFor(log, match)
+    val announcement = notice ?: announcementFor(log, match)
 
     Surface(color = MaterialTheme.colorScheme.surface) {
         Row(
@@ -318,8 +356,8 @@ private fun StatusStrip(
                 text = announcement ?: runningSummary(log, match),
                 modifier = Modifier
                     .weight(1f)
-                    // Read out as it changes, so a screen reader hears the undo
-                    // notice (and the game point calls) without moving focus.
+                    // Read out as it changes, so a screen reader hears the
+                    // notices (and the game point calls) without moving focus.
                     .semantics { liveRegion = LiveRegionMode.Polite },
                 textAlign = TextAlign.Center,
                 maxLines = 1,
@@ -330,9 +368,7 @@ private fun StatusStrip(
                     if (announcement != null) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            if (undoneNotice != null) {
-                TextButton(onClick = onRedo) { Text("Redo") }
-            }
+            if (notice != null && noticeAction != null) TextButton(onClick = onNoticeAction) { Text(noticeAction) }
             Box {
                 IconButton(onClick = { menuOpen = true }) {
                     Icon(Icons.Default.MoreVert, contentDescription = "Match options")
@@ -347,6 +383,15 @@ private fun StatusStrip(
                         enabled = canUndo,
                         onClick = { menuOpen = false; onUndo() },
                     )
+                    // Only when there is one. Beside Undo last rally rather than
+                    // replacing it: after Reset game the row logs moments while
+                    // earlier games still have rallies to take back.
+                    if (canRemoveMoment) {
+                        DropdownMenuItem(
+                            text = { Text("Remove last moment") },
+                            onClick = { menuOpen = false; onRemoveMoment() },
+                        )
+                    }
                     // Names and format are not asked for when the match is created,
                     // so courtside, between games, is one of the places they get
                     // filled in. Never disabled: it does not touch the score.
@@ -528,6 +573,9 @@ private fun GamesWonBox(games: Int) {
  * screen before the rally it will tag, which is the whole reason tagging costs
  * the coach one tap rather than a dialog.
  *
+ * With no rally to tag, the same chips log moments: one tap logs one, and Note
+ * opens a composer whose chips check labels onto a single moment instead.
+ *
  * The chips wrap rather than scroll. Only labels scoped to the board reach here
  * (see LabelUsage), so the set is small by construction - and when the coach
  * scopes one more than fits, the cost is a line of board height he can see,
@@ -538,26 +586,29 @@ private fun GamesWonBox(games: Int) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ControlBar(
-    match: MatchState,
-    labels: List<AnnotationLabel>,
-    hasAnyLabels: Boolean,
-    pendingTagOrdinal: Int?,
-    canEditScore: Boolean,
+    state: ScoringUiState,
     noteOpen: Boolean,
     onToggleTag: (Int, AnnotationLabel) -> Unit,
+    onMomentLabel: (AnnotationLabel) -> Unit,
     onSetComment: (Int, String) -> Unit,
-    onToggleNote: () -> Unit,
+    onNote: () -> Unit,
+    onDraftText: (String) -> Unit,
+    onDraftClose: () -> Unit,
     onEditScore: () -> Unit,
     onDone: () -> Unit,
 ) {
-    val point = pendingTagOrdinal?.let { match.points.getOrNull(it) }
+    val match = state.match ?: return
+    val target = state.target ?: return
+    val draft = state.momentDraft
+    val point = (target as? BoardTarget.Rally)?.let { match.points.getOrNull(it.ordinal) }
+    val haptics = LocalHapticFeedback.current
 
     Surface(color = MaterialTheme.colorScheme.surface) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            if (labels.isEmpty()) {
+            if (state.labels.isEmpty()) {
                 Text(
                     // Two different problems, and one sentence used to cover
                     // both: an account with no labels at all, and an account
@@ -565,7 +616,7 @@ private fun ControlBar(
                     // otherwise claim there are no labels while the Labels
                     // screen plainly shows several.
                     text =
-                        if (hasAnyLabels) "No board labels - choose them on the labels screen."
+                        if (state.hasAnyLabels) "No board labels - choose them on the labels screen."
                         else "No labels yet - add them on the labels screen.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -576,27 +627,53 @@ private fun ControlBar(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    labels.forEach { label ->
+                    state.labels.forEach { label ->
+                        val quick = target == BoardTarget.Moments && draft == null
+                        // Null for a quick moment: that tap is a one-shot action
+                        // with nothing to tick, not a toggle that is off.
+                        val selected = when {
+                            draft != null -> draft.tags.any { it.labelName == label.name }
+                            point != null -> point.tags.any { it.labelName == label.name }
+                            else -> null
+                        }
                         TagChip(
                             label = label,
-                            selected = point?.tags?.any { it.labelName == label.name } == true,
-                            enabled = point != null,
-                            onClick = { pendingTagOrdinal?.let { onToggleTag(it, label) } },
+                            selected = selected,
+                            flashOnTap = quick,
+                            onClickLabel = when {
+                                point != null -> if (selected == true) "Remove tag" else "Tag this rally"
+                                draft != null -> if (selected == true) "Remove from this moment" else "Add to this moment"
+                                else -> "Log a moment"
+                            },
+                            onClick = {
+                                if (point != null) {
+                                    onToggleTag(point.ordinal, label)
+                                } else {
+                                    // A quick moment changes nothing else on the board,
+                                    // so it is felt as well as seen.
+                                    if (quick) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onMomentLabel(label)
+                                }
+                            },
                         )
                     }
                 }
             }
 
-            if (noteOpen && point != null) {
+            if (draft != null) {
+                key(draft.openedAt) {
+                    MomentNoteField(onTextChange = onDraftText, onClose = onDraftClose)
+                }
+            } else if (noteOpen && point != null) {
                 val ordinal = point.ordinal
                 val original = remember(ordinal) { point.comment.orEmpty() }
-                var draft by remember(ordinal) { mutableStateOf(original) }
+                var text by remember(ordinal) { mutableStateOf(original) }
                 // Committed once, when the field goes away - the note moves to
                 // another rally, the row closes, or the screen leaves. Committing
                 // per keystroke would append one log entry per character to a log
                 // that is stored and synced whole.
                 DisposableEffect(ordinal) {
-                    onDispose { if (draft != original) onSetComment(ordinal, draft) }
+                    onDispose { if (text != original) onSetComment(ordinal, text) }
                 }
                 // Focused as it opens. Opening the note is already a deliberate
                 // detour from scoring; making the coach tap twice to start typing
@@ -604,8 +681,8 @@ private fun ControlBar(
                 val focus = remember(ordinal) { FocusRequester() }
                 LaunchedEffect(ordinal) { focus.requestFocus() }
                 OutlinedTextField(
-                    value = draft,
-                    onValueChange = { draft = it },
+                    value = text,
+                    onValueChange = { text = it },
                     modifier = Modifier.fillMaxWidth().focusRequester(focus),
                     singleLine = true,
                     placeholder = { Text("Note on this rally") },
@@ -633,7 +710,7 @@ private fun ControlBar(
                 OutlinedButton(
                     onClick = onEditScore,
                     modifier = Modifier.align(Alignment.CenterVertically),
-                    enabled = canEditScore,
+                    enabled = state.canEditScore,
                     contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
                     // Filled like ShuttlButton's Secondary: the outline alone all
                     // but disappears against the dark theme's bar.
@@ -651,7 +728,7 @@ private fun ControlBar(
                     Text("Edit score")
                 }
                 Text(
-                    text = tagRowCaption(match, pendingTagOrdinal),
+                    text = state.caption,
                     modifier = Modifier.weight(1f).align(Alignment.CenterVertically),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -661,9 +738,8 @@ private fun ControlBar(
                     overflow = TextOverflow.Ellipsis,
                 )
                 TextButton(
-                    onClick = onToggleNote,
+                    onClick = onNote,
                     modifier = Modifier.align(Alignment.CenterVertically),
-                    enabled = point != null,
                 ) { Text("Note") }
                 // Only once the match is actually over. While it is live, finishing
                 // lives in the overflow behind a confirm: a call to action sitting
@@ -676,44 +752,106 @@ private fun ControlBar(
     }
 }
 
+/**
+ * The composer's note. Its text is pushed to the view model as it is typed, so a
+ * score tap can save the moment, but the field reads its own copy: reading text
+ * back through a flow is how a cursor ends up jumping.
+ */
+@Composable
+private fun MomentNoteField(onTextChange: (String) -> Unit, onClose: () -> Unit) {
+    var text by remember { mutableStateOf("") }
+    // Saved once, when the field goes away for any reason.
+    DisposableEffect(Unit) { onDispose { onClose() } }
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { focus.requestFocus() }
+    OutlinedTextField(
+        value = text,
+        onValueChange = { text = it; onTextChange(it) },
+        modifier = Modifier.fillMaxWidth().focusRequester(focus),
+        singleLine = true,
+        placeholder = { Text("Note on this moment") },
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { onClose() }),
+    )
+}
+
+/**
+ * One label on the board. Live whatever the row targets: it tags the rally, checks
+ * the label onto the open moment, or logs a moment of its own.
+ *
+ * The click comes after the clip, so its ripple stays inside the pill; the
+ * Surface's own clip comes after anything passed in as its modifier. A quick
+ * moment flashes, a press-in and a white wash, and neither changes the chip's
+ * size, so the row never reflows under the coach's finger. With animations
+ * removed system-wide the press-in goes; the wash and the haptic stay.
+ */
 @Composable
 private fun TagChip(
     label: AnnotationLabel,
-    selected: Boolean,
-    enabled: Boolean,
+    /** Null when the tap is not a toggle, so TalkBack does not call the chip "Not selected". */
+    selected: Boolean?,
+    flashOnTap: Boolean,
+    onClickLabel: String,
     onClick: () -> Unit,
 ) {
     val swatch = LabelColor.from(label.colorKey)
-    val container = swatch?.let { Color(it.background.toInt()) }
-        ?: MaterialTheme.colorScheme.surfaceVariant
-    val onContainer = swatch?.let { Color(it.foreground.toInt()) }
-        ?: MaterialTheme.colorScheme.onSurfaceVariant
+    val container = swatch?.let { Color(it.background.toInt()) } ?: MaterialTheme.colorScheme.surfaceVariant
+    val onContainer = swatch?.let { Color(it.foreground.toInt()) } ?: MaterialTheme.colorScheme.onSurfaceVariant
+    val scale = remember { Animatable(1f) }
+    val wash = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    // Android's Reduce Motion. Read once, as HeroTickerView reads it: a system
+    // setting rather than UI state.
+    val reduceMotion = remember {
+        Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
+    }
+
+    val shape = RoundedCornerShape(50)
 
     Surface(
-        shape = RoundedCornerShape(50),
-        // Greyed and inert until a rally exists to put it on, rather than hidden:
-        // the row has to occupy its space before the point is scored, or it would
-        // shove the board around every time one is.
-        color = if (enabled) container else container.copy(alpha = 0.30f),
-        modifier = Modifier.clickable(enabled = enabled, onClick = onClick),
+        shape = shape,
+        color = container,
+        modifier = Modifier
+            .graphicsLayer { scaleX = scale.value; scaleY = scale.value }
+            .clip(shape)
+            .clickable(onClickLabel = onClickLabel) {
+                onClick()
+                if (flashOnTap) {
+                    scope.launch {
+                        if (!reduceMotion) {
+                            launch { scale.animateTo(0.94f, tween(80)); scale.animateTo(1f, spring(dampingRatio = 0.5f, stiffness = 600f)) }
+                        }
+                        // The wash is the confirmation that stays, so it keeps its
+                        // own time: at a system scale of 0 it would end on the
+                        // frame it started and never be seen.
+                        launch(if (reduceMotion) FullSpeed else EmptyCoroutineContext) {
+                            wash.snapTo(0.32f); wash.animateTo(0f, tween(260))
+                        }
+                    }
+                }
+            }
+            .then(if (selected == null) Modifier else Modifier.semantics { this.selected = selected }),
     ) {
         Text(
-            text = if (selected) "✓ ${label.name}" else label.name,
+            text = if (selected == true) "✓ ${label.name}" else label.name,
             style = MaterialTheme.typography.labelLarge,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-            color = if (enabled) onContainer else onContainer.copy(alpha = 0.45f),
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            fontWeight = if (selected == true) FontWeight.Bold else FontWeight.Normal,
+            color = onContainer,
+            modifier = Modifier
+                .drawWithContent {
+                    drawContent()
+                    drawRect(Color.White.copy(alpha = wash.value))
+                }
+                .padding(horizontal = 12.dp, vertical = 8.dp),
             maxLines = 1,
         )
     }
 }
 
-/** What the tag row is pointing at, so a tap on a chip is never a guess. */
-private fun tagRowCaption(match: MatchState, pendingTagOrdinal: Int?): String {
-    if (match.isOver) return "Match over"
-    val point = pendingTagOrdinal?.let { match.points.getOrNull(it) }
-        ?: return if (match.points.isEmpty()) "Tap a side to score, or SERVE to switch server" else "Tap a side to score"
-    return "Point ${point.ordinal + 1}: ${point.scoreAfter.home}-${point.scoreAfter.away}"
+/** Animations at their own speed, whatever the system's animator scale is. */
+private object FullSpeed : MotionDurationScale {
+    override val scaleFactor = 1f
 }
 
 /**

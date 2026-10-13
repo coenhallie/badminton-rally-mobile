@@ -109,6 +109,19 @@ class ScoreLogsRepositoryTest {
     }
 
     @Test
+    fun a_moment_alone_leaves_the_first_server_open() {
+        // A label tapped before the first rally says nothing about who serves.
+        val repo = repo()
+        val created = repo.newMatch()
+        repo.replaceEvents(
+            created.id,
+            listOf(ScoreEvent.Moment("m1", 0, t0, listOf(PointTag("Good shot", "green")), null)),
+        )
+        repo.setFirstServer(created.id, Side.AWAY)
+        repo.get(created.id)?.setup?.firstServer shouldBe Side.AWAY
+    }
+
+    @Test
     fun setting_the_first_server_to_what_it_already_is_changes_nothing() {
         var clock = t0
         val repo = repo(now = { clock })
