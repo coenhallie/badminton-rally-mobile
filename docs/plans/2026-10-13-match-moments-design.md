@@ -69,8 +69,11 @@ unchanged since the undo (`MatchScorer.kt:106`).
 ### 1.5 "Has anything happened" is asked as "is the log empty"
 
 `canSwitchFirstServer` is `log.events.isEmpty()` in two places
-(`MatchScorer.kt:37`, `ScoringViewModel.kt:115`). A moment would therefore
-silently take the SERVE switch away. This has to change with this design (§5.6).
+(`MatchScorer.kt:37`, `ScoringViewModel.kt:115`), and the write it guards,
+`ScoreLogsRepository.setFirstServer`, refuses on the same test. A moment would
+therefore silently take the SERVE switch away, and changing only the first two
+would leave SERVE offered with a tap that does nothing. All three sites change
+with this design (§5.6).
 
 ### 1.6 Storage needs no change
 
@@ -160,11 +163,19 @@ are read independently of the fold's `if (winner != null) break`
 
 ### 5.1 Logging
 
-`MatchScorer.logMoment(tags, comment, loggedAt)` appends a new `Moment` with
-`randomUuid()` (as `ScoreLogsRepository.kt:152` does for a match) and
-`afterPoints = pointCount`. It returns the id, so the board can offer Undo.
-`MatchScorer.rewriteMoment(id, tags, comment)` appends a new version, and a
-tombstone when both are empty.
+The shipped API, all on `MatchScorer`:
+
+- `logMoment(tags)` appends a new `Moment` with `randomUuid()` (as
+  `ScoreLogsRepository.kt:152` does for a match), `afterPoints = pointCount` and
+  `loggedAt` now. It returns the `LoggedMoment`, so the board can offer Undo, and
+  null, writing nothing, when `tags` is empty.
+- `openMomentDraft()` starts the composer's `MomentDraft`, fixing `loggedAt` and
+  `afterPoints` when it opens; `commitMomentDraft(draft)` writes it as one moment,
+  or nothing and null when it is empty.
+- `removeMoment(id)` appends the empty version (the tombstone) and returns the
+  moment as it was; `restoreMoment(moment)` appends it back unchanged.
+- `lastMoment()` is the live moment logged or changed most recently, in log
+  order, which is the one "Remove last moment" takes.
 
 ### 5.2 Undo last rally, redo
 
@@ -203,7 +214,9 @@ rule.
 
 `canSwitchFirstServer` asks "has a rally or a retirement been recorded" instead
 of "is the log empty", in `MatchScorer` and in `ScoringViewModel`, which computes
-it separately today and should ask the scorer instead. Logging moments before the first point must leave
+it separately today and should ask the scorer instead. `setFirstServer` asks the
+same question through the same predicate (`hasRallyOrRetirement`), so the board
+never offers a switch the store then refuses. Logging moments before the first point must leave
 SERVE switchable.
 
 ---
@@ -273,7 +286,7 @@ copies (§1.2):
 | Rally target | Point 3: 2-1 (unchanged) |
 | Moments, none yet, playable | Tap a side to score, or a label to log a moment |
 | Moments, some logged | 6 moments logged |
-| Moments, match over | Match over · 6 moments (or "Match over" with none) |
+| Moments, match over | Match over · 6 moments logged (or "Match over" with none) |
 | Composer open | New moment: Unforced error, Net / New moment |
 | Board has no labels at all | today's text, unchanged |
 
@@ -284,8 +297,9 @@ a deliberate loss, recorded here so it is not rediscovered as a regression.
 
 ### 6.5 After Finish
 
-Today the chips are dead after Finish. They now log moments, so a post-match
-thought can still be captured without reopening the score.
+Moments after Finish are not reachable: every exit from Finish leaves the board,
+and an UNBOUND match has no Resume, so whether a finished match should take a
+post-match moment is an open product question.
 
 ### 6.6 What does not change
 
