@@ -9,7 +9,7 @@ import com.badmintontracker.shared.repo.AuthState
  * every time the session status moved.
  */
 fun authStartDestination(state: AuthState): Route =
-    if (state == AuthState.AUTHENTICATED) Route.Home else Route.SignIn
+    if (state == AuthState.AUTHENTICATED) Route.Players else Route.SignIn
 
 enum class AuthRedirect { TO_SIGN_IN, TO_HOME }
 

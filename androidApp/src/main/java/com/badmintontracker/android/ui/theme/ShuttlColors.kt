@@ -96,6 +96,8 @@ data class ShuttlExtendedColors(
     /** The home half of the scoreboard. Identifies the side, never the end. */
     val sideHome:     Color,
     val sideAway:     Color,
+    /** A player avatar's letters, on its [sideHome] disc. */
+    val playerInitials: Color,
     /** The match list's analysis chip fill and its glyph. See ShuttlPalette.analysisGlyph. */
     val analysisChip:  Color,
     val analysisGlyph: Color,
@@ -112,6 +114,7 @@ internal val ShuttlLightExtended = ShuttlExtendedColors(
     info         = ShuttlPalette.info.lightColor,
     sideHome     = ShuttlPalette.sideHome.lightColor,
     sideAway     = ShuttlPalette.sideAway.lightColor,
+    playerInitials = ShuttlPalette.playerInitials.lightColor,
     analysisChip  = ShuttlPalette.accent.lightColor.copy(alpha = ShuttlPalette.analysisChipOpacity.light),
     analysisGlyph = ShuttlPalette.analysisGlyph.lightColor,
 )
@@ -127,6 +130,7 @@ internal val ShuttlDarkExtended = ShuttlExtendedColors(
     info         = ShuttlPalette.info.darkColor,
     sideHome     = ShuttlPalette.sideHome.darkColor,
     sideAway     = ShuttlPalette.sideAway.darkColor,
+    playerInitials = ShuttlPalette.playerInitials.darkColor,
     analysisChip  = ShuttlPalette.accent.darkColor.copy(alpha = ShuttlPalette.analysisChipOpacity.dark),
     analysisGlyph = ShuttlPalette.analysisGlyph.darkColor,
 )

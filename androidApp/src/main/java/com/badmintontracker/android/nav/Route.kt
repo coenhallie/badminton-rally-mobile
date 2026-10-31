@@ -4,9 +4,14 @@ import kotlinx.serialization.Serializable
 
 sealed interface Route {
     @Serializable data object SignIn : Route
-    @Serializable data object Home   : Route
+    /** The start destination: the coach's players, and the way to All matches. */
+    @Serializable data object Players : Route
+    /** One player's page. */
+    @Serializable data class Player(val playerId: String) : Route
+    /** Every match, assigned to a player or not: the match list, pushed from Players. */
+    @Serializable data object AllMatches : Route
     @Serializable data object Labels : Route
-    /** Pushed from the gear on the list's title bar. */
+    /** Pushed from the gear on the Players title bar. */
     @Serializable data object Settings : Route
 
     /**
@@ -36,6 +41,11 @@ sealed interface Route {
 
     @Serializable data class  ClipDetail(val clipId: String)  : Route
     @Serializable data class  CourtMarking(val entryId: String) : Route
-    @Serializable data object NewMatch : Route
+    /**
+     * [playerId] is the player the match is started for (their page's add
+     * button), null from anywhere else. Pop it by type (popUpTo<NewMatch>), never
+     * by a reconstructed instance, which would carry a different player.
+     */
+    @Serializable data class  NewMatch(val playerId: String? = null) : Route
     @Serializable data class  Scoring(val scoreLogId: String)    : Route
 }

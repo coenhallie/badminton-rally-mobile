@@ -105,6 +105,16 @@ class ShuttlPaletteTest {
     }
 
     @Test
+    fun player_initials_read_on_their_disc() {
+        for ((theme, pick) in themes) {
+            withClue("$theme playerInitials on sideHome") {
+                contrast(pick(ShuttlPalette.playerInitials), pick(ShuttlPalette.sideHome))
+                    .shouldBeGreaterThanOrEqual(4.5)
+            }
+        }
+    }
+
+    @Test
     fun error_carries_on_error_text() {
         for ((theme, pick) in themes) {
             withClue("$theme onError on error") {

@@ -19,6 +19,13 @@ object PlayersCopy {
         "Each player gets a page with their matches. Matches you already have stay in All matches."
     const val LOAD_FAILED = "Couldn't load your players"
 
+    /**
+     * Under [LOAD_FAILED] when there are no cached players to show, so a failed
+     * load never reads as "no players yet" and invites duplicates.
+     */
+    const val LOAD_FAILED_BODY = "Check your connection and try again."
+    const val RETRY = "Retry"
+
     // Player rows
     const val NO_MATCHES_YET = "No matches yet"
 
@@ -65,6 +72,7 @@ object PlayersCopy {
     const val RENAME_DIALOG_TITLE = "Rename player"
     const val NAME_FIELD = "Name"
     const val SAVE = "Save"
+    const val CANCEL = "Cancel"
     const val NAME_REQUIRED = "Enter a name."
 
     // Delete

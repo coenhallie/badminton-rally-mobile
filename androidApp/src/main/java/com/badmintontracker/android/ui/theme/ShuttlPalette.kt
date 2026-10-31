@@ -84,6 +84,14 @@ internal object ShuttlPalette {
      */
     val sideHome        = Tone(0x15803D, 0x14532D)
     val sideAway        = Tone(0x1D4ED8, 0x1E3A8A)
+
+    /**
+     * A player avatar's initials, on its [sideHome] disc. The mock letters the
+     * dark disc in the accent; light's accent on light's [sideHome] is about
+     * 1.2:1, so light letters it in white, as the scoreboard does on that fill.
+     * See ShuttlPaletteTest.player_initials_read_on_their_disc.
+     */
+    val playerInitials  = Tone(0xFFFFFF, 0x3EE27C)
     val error           = Tone(0xEF4444, 0xEF4444)
 
     /**

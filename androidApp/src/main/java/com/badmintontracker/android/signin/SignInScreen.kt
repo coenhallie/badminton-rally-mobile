@@ -77,7 +77,7 @@ fun SignInScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             // Side insets (a landscape cutout, a side navigation bar) the
-            // way HomeScreen takes them; the bar takes the status bar itself.
+            // way PlayersScreen takes them; the bar takes the status bar itself.
             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)),
     ) {
         HomeTopBar(SignInCopy.WORDMARK, titleStyle = ShuttlTypeExtras.wordmark) {

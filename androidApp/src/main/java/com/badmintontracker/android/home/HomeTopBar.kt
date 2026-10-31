@@ -1,6 +1,10 @@
 package com.badmintontracker.android.home
 
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -15,18 +19,18 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 
 /**
- * The root screen's own title bar: the headline ("Matches") at the drawer
+ * The root screen's own title bar: the headline ("Players") at the drawer
  * header's size, and the actions (the background-work indicator, the Settings
  * gear) at the end. Not a TopAppBar: a root screen has no navigation icon, and
  * a 28sp headline does not fit TopAppBar's title slot.
  *
- * Draws under the status bar itself because HomeScreen's Scaffold hands its
+ * Draws under the status bar itself because PlayersScreen's Scaffold hands its
  * content the bottom inset only.
  *
  * The splash and the sign-in screen draw the same bar with the wordmark as
  * [title] in [titleStyle] (ShuttlTypeExtras.wordmark), so the title slot is
  * one place across the launch: the wordmark holds still from the splash to
- * sign-in, and "Matches" takes its place once signed in. The bar's fixed
+ * sign-in, and "Players" takes its place once signed in. The bar's fixed
  * height keeps a smaller title centred where the headline would be.
  */
 @Composable
@@ -52,3 +56,12 @@ fun HomeTopBar(
         actions()
     }
 }
+
+/**
+ * The side insets a Scaffold with bottom-only contentWindowInsets leaves out,
+ * for what a root screen draws outside its content Column (the Add button, the
+ * snackbar) and for the Column itself. Without them a landscape cutout or a
+ * side gesture inset clips their edges.
+ */
+internal val HorizontalSafeDrawing: WindowInsets
+    @Composable get() = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)

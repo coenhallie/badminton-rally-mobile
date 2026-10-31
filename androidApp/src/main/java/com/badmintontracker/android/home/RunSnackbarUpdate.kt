@@ -34,12 +34,12 @@ data class RunSnackbarUpdate(
 
 /**
  * AuthGate's announcement rule around the shared seen-set rule: which of the
- * [finished] runs reach the list's snackbar, merged with the runs still
+ * [finished] runs reach the Players screen's snackbar, merged with the runs still
  * [waiting] to be shown.
  *
  * Merged, not replaced: two runs can land on consecutive collections before
- * HomeScreen has read and cleared the first, and a plain assignment dropped
- * it. Once HomeScreen has taken them ([waiting] empty again), the next set
+ * PlayersScreen has read and cleared the first, and a plain assignment dropped
+ * it. Once PlayersScreen has taken them ([waiting] empty again), the next set
  * starts from the new runs alone, and its snackbar queues behind any still on
  * screen. That is where Android differs from iOS, whose toast takes a run
  * landing while it shows (design 7.5).

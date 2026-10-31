@@ -12,7 +12,7 @@ import com.badmintontracker.shared.prefs.ThemeMode
 
 /**
  * The sign-in screen's theme switch, in the title bar. Drawn the way the
- * list's Settings gear is (HomeScreen): a bare glyph in a 48dp IconButton,
+ * Players screen's Settings gear is (PlayersScreen): a bare glyph in a 48dp IconButton,
  * 20dp, onSurfaceVariant. It used to sit in a bordered square, a box nothing
  * else in the app draws.
  *

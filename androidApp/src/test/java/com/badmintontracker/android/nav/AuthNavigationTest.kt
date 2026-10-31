@@ -8,8 +8,8 @@ import org.junit.Test
 class AuthNavigationTest {
 
     @Test
-    fun a_restored_session_starts_on_home() {
-        assertEquals(Route.Home, authStartDestination(AuthState.AUTHENTICATED))
+    fun a_restored_session_starts_on_players() {
+        assertEquals(Route.Players, authStartDestination(AuthState.AUTHENTICATED))
     }
 
     @Test

@@ -9,18 +9,26 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import com.badmintontracker.android.ui.theme.ShuttlRadius
 import com.badmintontracker.shared.home.HomeCopy
 
 /**
  * Labelled while the list is at its top, "+" once it is scrolled, so the
  * button covers less of the rows (and their menus) while the coach is reading
- * them. Item 0 is always the filter row.
+ * them.
  */
 fun addButtonExpanded(firstVisibleItemIndex: Int): Boolean = firstVisibleItemIndex == 0
 
 /**
- * The list's bottom-right "Add match". Opens the same three-option
+ * The Add button's footprint above the gesture inset: the 56dp button, its
+ * 16dp margin, and 16dp of air above the last row. A list under the button
+ * pads its end by this so the last row scrolls clear of it.
+ */
+internal val ADD_BUTTON_CLEARANCE = 88.dp
+
+/**
+ * The root screen's bottom-right "Add match". Opens the same three-option
  * sheet the Home pill used to.
  *
  * Every colour and the shape are set here rather than left to Material: the

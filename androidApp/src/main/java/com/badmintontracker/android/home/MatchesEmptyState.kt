@@ -18,8 +18,8 @@ import com.badmintontracker.shared.home.HomeCopy
  * button does. It still tells a new coach what the app is for, and gets out of
  * the way once there is a match to list.
  *
- * No button of its own: the Add button is on screen, and two controls doing
- * one thing is noise.
+ * No button of its own: All matches is pushed from the Players screen, whose
+ * Add button is one step back.
  */
 @Composable
 fun MatchesEmptyState(isPaused: Boolean, modifier: Modifier = Modifier) {

@@ -91,27 +91,22 @@ fun ClipListScreen(
     onRemoveFromPhone: (entryId: String) -> Unit = {},
     onLocalResultSeen: (entryId: String) -> Unit = {},
     onLocalDetailsSaved: (id: String, title: String, description: String) -> Unit = { _, _, _ -> },
-    /** Entry just imported or recorded: its details sheet opens once, unprompted. */
-    autoDetailsEntryId: String? = null,
-    onAutoDetailsShown: () -> Unit = {},
-    /** Hoisted to HomeScreen: the Add button reads it, and it is not inside the list. */
+    /** Hoisted to the screen that hosts the list. */
     listState: LazyListState,
-    /** HomeScreen's one host, so a snackbar sits above the Add button, not under it. */
+    /** The hosting screen's one host, so a snackbar sits above anything at the bottom, not under it. */
     snackbarHostState: SnackbarHostState,
-    /**
-     * Whether any sheet or dialog this list owns is open. HomeScreen folds it
-     * into "nothing above the list", which gates a finished run's snackbar:
-     * without it a run could offer View over a half-typed details sheet.
-     */
+    /** Whether any sheet or dialog this list owns is open. */
     onOverlayChange: (Boolean) -> Unit = {},
-    /** The empty state's hero ticker stops while the add sheet covers it. */
+    /** The empty state's hero ticker stops while something covers it. */
     heroPaused: Boolean = false,
-    /** Room at the bottom so the last row and its menu scroll clear of the gesture bar and the Add button. */
+    /** Room at the bottom so the last row and its menu scroll clear of the gesture bar and whatever floats over it. */
     contentPadding: PaddingValues = PaddingValues(),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     var sheetVideoId by remember { mutableStateOf<String?>(null) }
-    var detailsTarget by remember { mutableStateOf<DetailsTarget?>(null) }
+    // The row menu's "Edit details". The sheet that opens on its own after a
+    // recording or an import is AutoMatchDetailsHost's, above the NavHost.
+    var detailsEntry by remember { mutableStateOf<LocalVideoEntry?>(null) }
     var legendOpen by remember { mutableStateOf(false) }
     // A row the coach asked to delete, waiting on a confirmation: the choice
     // sheet when it has two things to delete, the single dialog otherwise.
@@ -163,15 +158,6 @@ fun ClipListScreen(
     val visible = sortMatches(mine.filter { it.passes(applied) }, appliedSort)
     val sharedVisible = sortMatches(shared, appliedSort)
 
-    // The entry is persisted before this runs, so a dismissed sheet, a
-    // backgrounded app or a crash never costs the user the video they just took.
-    LaunchedEffect(autoDetailsEntryId, state.localEntries) {
-        val id = autoDetailsEntryId ?: return@LaunchedEffect
-        val entry = state.localEntries.firstOrNull { it.id == id } ?: return@LaunchedEffect
-        detailsTarget = DetailsTarget(entry, autoOpened = true)
-        onAutoDetailsShown()
-    }
-
     LaunchedEffect(state.error) {
         val err = state.error ?: return@LaunchedEffect
         snackbarHostState.showSnackbar(err)
@@ -191,7 +177,7 @@ fun ClipListScreen(
         }
     }
 
-    val overlayOpen = sheetVideoId != null || detailsTarget != null || legendOpen ||
+    val overlayOpen = sheetVideoId != null || detailsEntry != null || legendOpen ||
         choiceTarget != null || deleteTarget != null || removeTarget != null || resultEntry != null
     LaunchedEffect(overlayOpen) { onOverlayChange(overlayOpen) }
 
@@ -226,7 +212,7 @@ fun ClipListScreen(
         if (item.canShare && videoId != null) add(RowMenuItem(MatchListCopy.MENU_SHARE) { sheetVideoId = videoId })
         if (item.canEditDetails) {
             state.localEntries.firstOrNull { it.id == entryId }?.let { entry ->
-                add(RowMenuItem(MatchListCopy.MENU_EDIT_DETAILS) { detailsTarget = DetailsTarget(entry, autoOpened = false) })
+                add(RowMenuItem(MatchListCopy.MENU_EDIT_DETAILS) { detailsEntry = entry })
             }
         }
         if (item.canAnalyzeAgain && entryId != null) add(RowMenuItem(MatchListCopy.MENU_ANALYZE_AGAIN) { onAnalyze(entryId) })
@@ -263,8 +249,8 @@ fun ClipListScreen(
         }
     }
 
-    // No Scaffold: HomeScreen owns the Scaffold, the title bar, the Add button
-    // and the one snackbar host. This is its content, not a screen of its own,
+    // No Scaffold: the hosting screen owns the Scaffold, the title bar and the
+    // one snackbar host. This is its content, not a screen of its own,
     // so a plain Box is all it needs to lay its own two states (empty, list) on
     // top of pull to refresh.
     Box(Modifier.fillMaxSize()) {
@@ -351,21 +337,15 @@ fun ClipListScreen(
         )
     }
 
-    detailsTarget?.let { target ->
-        // No drawer to open on close: the coach is already looking at the new
-        // row, on the list, whether this sheet auto-opened or the coach
-        // opened it from a row's menu.
-        fun close() {
-            detailsTarget = null
-        }
+    detailsEntry?.let { entry ->
         MatchDetailsSheet(
-            initialTitle = target.entry.title,
-            initialDescription = target.entry.description,
-            autoOpened = target.autoOpened,
-            onDismiss = ::close,
+            initialTitle = entry.title,
+            initialDescription = entry.description,
+            autoOpened = false,
+            onDismiss = { detailsEntry = null },
             onSave = { title, description ->
-                onLocalDetailsSaved(target.entry.id, title, description)
-                close()
+                onLocalDetailsSaved(entry.id, title, description)
+                detailsEntry = null
             },
         )
     }
@@ -407,9 +387,6 @@ fun ClipListScreen(
         )
     }
 }
-
-/** [autoOpened] switches the sheet's dismiss label between "Skip" and "Cancel". */
-private data class DetailsTarget(val entry: LocalVideoEntry, val autoOpened: Boolean)
 
 /**
  * What a swipe on a row does, and what the revealed label says. Internal, not

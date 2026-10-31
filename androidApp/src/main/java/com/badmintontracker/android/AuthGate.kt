@@ -54,13 +54,14 @@ import com.badmintontracker.android.cliplist.ClipListViewModel
 import com.badmintontracker.android.cliplist.MatchSummaryViewModel
 import com.badmintontracker.android.cliplist.StoredResults
 import com.badmintontracker.android.cliplist.StoredResultsReader
-import com.badmintontracker.android.home.HomeScreen
+import com.badmintontracker.android.home.AllMatchesScreen
 import com.badmintontracker.android.home.finishedRuns
 import com.badmintontracker.android.home.runSnackbarUpdate
 import com.badmintontracker.android.settings.SettingsScreen
 import com.badmintontracker.android.match.MatchScreen
 import com.badmintontracker.android.match.MatchViewModel
 import com.badmintontracker.shared.prefs.ThemePreferenceRepository
+import com.badmintontracker.android.localvideo.AutoMatchDetailsHost
 import com.badmintontracker.android.localvideo.LocalPlayerViewModel
 import com.badmintontracker.android.localvideo.LocalVideoListViewModel
 import com.badmintontracker.android.localvideo.MatchTarget
@@ -71,6 +72,8 @@ import com.badmintontracker.android.localvideo.court.loadFirstFrame
 import com.badmintontracker.android.localvideo.rememberVideoIntake
 import com.badmintontracker.android.labels.LabelsScreen
 import com.badmintontracker.android.labels.LabelsViewModel
+import com.badmintontracker.android.players.PlayersScreen
+import com.badmintontracker.android.players.PlayersViewModel
 import com.badmintontracker.android.nav.AuthRedirect
 import com.badmintontracker.android.nav.Route
 import com.badmintontracker.android.nav.authRedirect
@@ -124,11 +127,11 @@ fun AuthGate(
             // navigations, below, never a new graph.
             val start: Route = remember { authStartDestination(auth) }
 
-            // Any sheet or dialog over the list, reported by HomeScreen. Part of
-            // "nothing above": see the finished-run watcher below.
+            // Any sheet or dialog over the Players screen, reported by it. Part
+            // of "nothing above": see the finished-run watcher below.
             var homeOverlayOpen by remember { mutableStateOf(false) }
-            // Runs the watcher below has just announced, for HomeScreen to say
-            // on its snackbar; HomeScreen clears it once it has read it.
+            // Runs the watcher below has just announced, for PlayersScreen to
+            // say on its snackbar; it clears them once it has read them.
             var announced by remember { mutableStateOf(emptySet<String>()) }
 
             LaunchedEffect(auth) {
@@ -141,7 +144,7 @@ fun AuthGate(
                     }
                     // Session arrived while on SignIn (e.g. a session restored via
                     // deep link, so SignInViewModel never sees the completed sign-in).
-                    AuthRedirect.TO_HOME -> nav.navigate(Route.Home) {
+                    AuthRedirect.TO_HOME -> nav.navigate(Route.Players) {
                         popUpTo(Route.SignIn) { inclusive = true }
                     }
                     null -> Unit
@@ -150,12 +153,13 @@ fun AuthGate(
 
             var intakeError by remember { mutableStateOf<String?>(null) }
             // Persist first, then hand the id on so the details sheet can open over
-            // an entry that already exists.
+            // an entry that already exists. Held until that sheet closes, not
+            // just until it opens: see the finished-run watcher's "nothing above".
             var autoDetailsEntryId by remember { mutableStateOf<String?>(null) }
-            // Hoisted above the NavHost: both the list destination (record/import
-            // with no match) and the match destination (record/import for this
-            // match) drive the same picker, so there can only be one implementation
-            // of "getting a video into the app".
+            // Hoisted above the NavHost: the Players screen (record/import with
+            // no match) and the match destination (record/import for this match)
+            // drive the same picker, so there can only be one implementation of
+            // "getting a video into the app".
             val intake = rememberVideoIntake(
                 onAdded = { entry ->
                     localVideos.add(entry)
@@ -163,10 +167,11 @@ fun AuthGate(
                     // and videos.title is insert-only, so there is nothing to ask
                     // and nowhere to change it later.
                     if (entry.scoreLogId == null) {
-                        // The naming sheet is drawn by the list, which is the
-                        // root, so there is nothing to select: the coach comes
-                        // back from the camera or picker to the list, and the
-                        // sheet opens over it.
+                        // The naming sheet is drawn above the NavHost
+                        // (AutoMatchDetailsHost), so there is nothing to
+                        // select: the coach comes back from the camera or
+                        // picker to whatever screen they left, and the sheet
+                        // opens over it.
                         autoDetailsEntryId = entry.id
                     } else {
                         // The coach already said he wants this video analysed;
@@ -178,15 +183,18 @@ fun AuthGate(
                 onError = { intakeError = it },
             )
 
-            // One reader for the one ClipListViewModel below, which the list
-            // and the match page both read: each shows what earlier runs left
-            // on disk, and must probe it the same way.
+            // One reader for the one ClipListViewModel below, which the
+            // Players screen, All matches and the match page all read: each
+            // shows what earlier runs left on disk, and must probe it the same
+            // way.
             val storedResults = remember(localAnalysis) { storedResultsReader(localAnalysis) }
 
-            // One factory for the one list view model. The match page reads the
-            // Route.Home entry's instance rather than building its own: it finds
-            // its match in that list (matchPageItem), and a second instance
-            // would be a second, later copy of the same list.
+            // One factory for the one list view model, scoped to the Route.Players
+            // entry: the root, under every other destination. All matches,
+            // Settings and the match page read that entry's instance rather
+            // than building their own: the match page finds its match in that
+            // list (matchPageItem), and a second instance would be a second,
+            // later copy of the same list.
             val clipListVmFactory = remember(storedResults) {
                 viewModelFactory {
                     initializer {
@@ -196,6 +204,16 @@ fun AuthGate(
                             deviceStates = localAnalysis.state,
                             storedResults = storedResults,
                         )
+                    }
+                }
+            }
+
+            // Scoped to the Route.Players entry, like the list's: a player's
+            // page reads the same instance through that entry.
+            val playersVmFactory = remember {
+                viewModelFactory {
+                    initializer {
+                        PlayersViewModel(rally.players, rally.scoreLogs, localVideos, rally.auth::currentUserId)
                     }
                 }
             }
@@ -247,17 +265,17 @@ fun AuthGate(
             // its seen-set.
             val activityLifecycle = LocalLifecycleOwner.current.lifecycle
 
-            // A run that lands while the list is in front is announced there:
-            // HomeScreen says so on its snackbar, with a View that opens the
-            // match. Nothing navigates on its own.
+            // A run that lands while the Players screen is in front is
+            // announced there: PlayersScreen says so on its snackbar, with a View
+            // that opens the match. Nothing navigates on its own.
             //
             // Above the NavHost on purpose. announceFinishedRuns updates its
             // seen-set on every tick whether or not it announces, and that is
             // what stops a run which finished while the coach was three screens
-            // away from ambushing them the next time they land back on Route.Home.
-            // Observed from inside Route.Home it could not tell those apart:
-            // Route.Home leaves composition on every trip out and comes back
-            // looking like a fresh arrival.
+            // away from ambushing them the next time they land back on
+            // Route.Players. Observed from inside Route.Players it could not tell
+            // those apart: Route.Players leaves composition on every trip out and
+            // comes back looking like a fresh arrival.
             //
             // The seen-set lives in the coroutine rather than in a
             // `remember`ed state: nothing draws it, and a snapshot write would
@@ -271,7 +289,7 @@ fun AuthGate(
             // One recreation does reset it, and is left alone deliberately: a
             // SYSTEM dark-mode flip, uiMode not being in that configChanges
             // list. A run that landed while the coach was away would then
-            // announce itself on the next visit to the list. It needs the
+            // announce itself on the next visit to Players. It needs the
             // system theme to change inside that window - the app's own
             // toggle does not go through uiMode - and the cost of being wrong
             // is one late snackbar about a run the coach asked for.
@@ -295,14 +313,14 @@ fun AuthGate(
                     .distinctUntilChanged()
                     .collect { finished ->
                         // "Nothing above" is more than the back stack and the
-                        // list's own overlays. The back-stack entry is still
-                        // Route.Home while the camera or picker is open, and this
+                        // screen's own overlays. The back-stack entry is still
+                        // Route.Players while the camera or picker is open, and this
                         // collector keeps running with our activity stopped, so
                         // without the RESUMED check a run landing then was
                         // announced out of sight, its snackbar timing out before
                         // the coach came back. And a video just added with no
-                        // match has its naming sheet pending (autoDetailsEntryId)
-                        // until the list opens it: the coach is about to type a
+                        // match has its naming sheet up (autoDetailsEntryId)
+                        // until the coach closes it: they are about to type a
                         // name, and a View offered then pulls the other way.
                         //
                         // The seen-set rule does not change: a run that lands
@@ -312,7 +330,7 @@ fun AuthGate(
                         val nothingAbove = activityLifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) &&
                             autoDetailsEntryId == null &&
                             !homeOverlayOpen &&
-                            nav.currentBackStackEntry?.destination?.hasRoute<Route.Home>() == true
+                            nav.currentBackStackEntry?.destination?.hasRoute<Route.Players>() == true
                         // Merged with the runs still waiting to be shown: see
                         // runSnackbarUpdate.
                         val update = runSnackbarUpdate(
@@ -334,13 +352,16 @@ fun AuthGate(
                 // recomposes on every progress tick because it reads `work`.
                 LocalBackgroundWorkClick provides remember(nav) {
                     {
-                        // popUpTo plus singleTop: the indicator is reachable from
-                        // any screen, and without both, tapping it repeatedly
-                        // would stack Home screens. The run it points at is a row
-                        // on the list, which is Route.Home itself.
-                        nav.navigate(Route.Home) {
-                            popUpTo(Route.Home)
-                            launchSingleTop = true
+                        // "Go to matches": the run it points at is a row on
+                        // All matches, over Players. Back to the All matches
+                        // already on the stack when there is one, so its filter,
+                        // sort and scroll survive; a fresh one over Players
+                        // otherwise. Never a second one: the indicator is
+                        // reachable from any screen.
+                        val onAllMatches =
+                            nav.currentBackStackEntry?.destination?.hasRoute<Route.AllMatches>() == true
+                        if (!onAllMatches && !nav.popBackStack<Route.AllMatches>(inclusive = false)) {
+                            nav.navigate(Route.AllMatches) { popUpTo<Route.Players>() }
                         }
                     }
                 },
@@ -356,50 +377,65 @@ fun AuthGate(
                         vm = signInVm,
                         themePrefs = themePrefs,
                         onSignedIn = {
-                            nav.navigate(Route.Home) {
+                            nav.navigate(Route.Players) {
                                 popUpTo(Route.SignIn) { inclusive = true }
                             }
                         },
                     )
                 }
-                composable<Route.Home> {
+                composable<Route.Players> {
+                    // Created here, the root: every other destination that
+                    // reads either one fetches this entry's instance.
                     val clipListVm: ClipListViewModel = viewModel(factory = clipListVmFactory)
-                    val localVm: LocalVideoListViewModel = viewModel(
-                        factory = viewModelFactory {
-                            initializer { LocalVideoListViewModel(localVideos, coordinator, localAnnotations) }
-                        }
-                    )
-                    HomeScreen(
+                    val playersVm: PlayersViewModel = viewModel(factory = playersVmFactory)
+                    PlayersScreen(
+                        vm = playersVm,
+                        clipListVm = clipListVm,
                         onOverlayChange = { homeOverlayOpen = it },
-                        vm = clipListVm,
-                        shares = rally.shares,
-                        media = rally.media,
-                        onOpenMatch = openMatch,
+                        // The player page is the next task's; its destination
+                        // and this navigation arrive together.
+                        onOpenPlayer = {},
+                        onAllMatches = { nav.navigate(Route.AllMatches) },
                         onSettings = { nav.navigate(Route.Settings) },
-                        onNewMatch = { nav.navigate(Route.NewMatch) },
+                        onNewMatch = { nav.navigate(Route.NewMatch()) },
                         onRecord = { intake.record(null) },
                         onImport = { intake.import(null) },
-                        onAnalyze = analyzeEntry,
-                        // By the row's own entry id: see ClipListScreen.act.
-                        onMarkCourt = { entryId -> nav.navigate(Route.CourtMarking(entryId)) },
-                        onRemoveFromPhone = localVm::remove,
-                        onLocalResultSeen = localVm::acknowledgeResult,
-                        onLocalDetailsSaved = localVm::setDetails,
-                        autoDetailsEntryId = autoDetailsEntryId,
-                        onAutoDetailsShown = { autoDetailsEntryId = null },
+                        onOpenMatch = openMatch,
                         intakeError = intakeError,
                         onIntakeErrorShown = { intakeError = null },
                         announced = announced,
                         onAnnounced = { announced = emptySet() },
                     )
                 }
+                composable<Route.AllMatches> { entry ->
+                    val playersEntry = remember(entry) { nav.getBackStackEntry<Route.Players>() }
+                    val clipListVm: ClipListViewModel = viewModel(playersEntry, factory = clipListVmFactory)
+                    val localVm: LocalVideoListViewModel = viewModel(
+                        factory = viewModelFactory {
+                            initializer { LocalVideoListViewModel(localVideos, coordinator, localAnnotations) }
+                        }
+                    )
+                    AllMatchesScreen(
+                        vm = clipListVm,
+                        shares = rally.shares,
+                        media = rally.media,
+                        onOpenMatch = { openMatch(it, null) },
+                        onBack = { nav.popBackStack() },
+                        onAnalyze = analyzeEntry,
+                        // By the row's own entry id: see ClipListScreen.act.
+                        onMarkCourt = { entryId -> nav.navigate(Route.CourtMarking(entryId)) },
+                        onRemoveFromPhone = localVm::remove,
+                        onLocalResultSeen = localVm::acknowledgeResult,
+                        onLocalDetailsSaved = localVm::setDetails,
+                    )
+                }
                 composable<Route.Settings> { entry ->
                     // Sign out goes through the list's view model (vm::signOut),
                     // as it always has, rather than a view model of this page's
-                    // own for one call: the Home entry's instance, fetched the
+                    // own for one call: the Players entry's instance, fetched the
                     // way the match page fetches it.
-                    val homeEntry = remember(entry) { nav.getBackStackEntry<Route.Home>() }
-                    val homeVm: ClipListViewModel = viewModel(homeEntry, factory = clipListVmFactory)
+                    val playersEntry = remember(entry) { nav.getBackStackEntry<Route.Players>() }
+                    val homeVm: ClipListViewModel = viewModel(playersEntry, factory = clipListVmFactory)
                     val themeMode by themePrefs.mode.collectAsStateWithLifecycle()
                     SettingsScreen(
                         themeMode = themeMode,
@@ -424,7 +460,8 @@ fun AuthGate(
                         // to score it.
                         onCreated = { id ->
                             nav.navigate(Route.Scoring(id)) {
-                                popUpTo(Route.NewMatch) { inclusive = true }
+                                // By type: see Route.NewMatch.
+                                popUpTo<Route.NewMatch> { inclusive = true }
                             }
                         },
                         onBack = { nav.popBackStack() },
@@ -445,14 +482,22 @@ fun AuthGate(
                         // Lands on the match page rather than popping back, because
                         // a match just created and scored in one sitting (NewMatch
                         // -> Scoring, no Match page underneath yet) has nothing to
-                        // pop back to. Collapsing to Home first keeps a single
-                        // Match entry on the stack either way. The chosen intent (if
-                        // any) rides along so the match page can act on it once.
+                        // pop back to. The chosen intent (if any) rides along so
+                        // the match page can act on it once.
+                        //
+                        // The board replaces itself, and the match page it was
+                        // opened from when there is one, so a single Match entry
+                        // stays on the stack either way and Back goes to the list
+                        // the coach started from (Players, All matches). By type,
+                        // the topmost Match: see Route.Match on reconstructing one.
                         onFinished = { intent ->
+                            val fromMatchPage =
+                                nav.previousBackStackEntry?.destination?.hasRoute<Route.Match>() == true
                             nav.navigate(
                                 Route.Match(scoreLogId = args.scoreLogId, attach = intent?.name)
                             ) {
-                                popUpTo(Route.Home) { inclusive = false }
+                                if (fromMatchPage) popUpTo<Route.Match> { inclusive = true }
+                                else popUpTo<Route.Scoring> { inclusive = true }
                             }
                         },
                     )
@@ -465,11 +510,11 @@ fun AuthGate(
                 }
                 composable<Route.Match> { entry ->
                     val args = entry.toRoute<Route.Match>()
-                    // Route.Home is always under a match page (the start
+                    // Route.Players is always under a match page (the start
                     // destination, and every push is over it), so its entry is
                     // there to scope the shared list view model to.
-                    val homeEntry = remember(entry) { nav.getBackStackEntry<Route.Home>() }
-                    val clipListVm: ClipListViewModel = viewModel(homeEntry, factory = clipListVmFactory)
+                    val playersEntry = remember(entry) { nav.getBackStackEntry<Route.Players>() }
+                    val clipListVm: ClipListViewModel = viewModel(playersEntry, factory = clipListVmFactory)
                     val listState by clipListVm.state.collectAsStateWithLifecycle()
                     val logs by rally.scoreLogs.logs.collectAsStateWithLifecycle()
                     val logVideoId = logs.firstOrNull { it.id == args.scoreLogId }?.videoId
@@ -619,10 +664,10 @@ fun AuthGate(
                             // popping matches on the serialized route, and the Match
                             // instance on the stack carries `attach` and `section`
                             // arguments this one would not. Naming a destination is also
-                            // wrong because CourtMarking has callers besides Route.Home:
+                            // wrong because CourtMarking has callers besides All matches:
                             // the Match page's Analyze under the player, its "Analyze
                             // again", onMarkCourt and onRetry all push it directly too,
-                            // and popping to a named Route.Home would skip past
+                            // and popping to a named Route.AllMatches would skip past
                             // whichever of those the coach actually came from.
                             // Returning to the caller is the same answer for every
                             // entry point, so there is one branch fewer.
@@ -641,6 +686,13 @@ fun AuthGate(
                     )
                 }
             }
+            // Above the NavHost: the sheet opens over whichever screen the coach
+            // took the video from and comes back to.
+            AutoMatchDetailsHost(
+                entryId = autoDetailsEntryId,
+                localVideos = localVideos,
+                onClose = { autoDetailsEntryId = null },
+            )
             }
         }
     }
@@ -661,9 +713,9 @@ private fun storedResultsReader(localAnalysis: LocalAnalysisRunner) = StoredResu
 
 /**
  * What shows while the stored session is read. The same title bar as the
- * sign-in screen and the list, with the wordmark in the title's slot, so the
- * handover moves nothing: to sign-in the wordmark holds still, to the list
- * "Matches" takes its place. A small indicator in the space below, drawn like
+ * sign-in screen and the Players screen, with the wordmark in the title's
+ * slot, so the handover moves nothing: to sign-in the wordmark holds still, to
+ * Players "Players" takes its place. A small indicator in the space below, drawn like
  * ShuttlButton's own (a 2dp stroke), not M3's 40dp default.
  */
 @Composable

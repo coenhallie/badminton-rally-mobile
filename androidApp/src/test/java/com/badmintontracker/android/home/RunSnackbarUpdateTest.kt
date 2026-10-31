@@ -45,14 +45,14 @@ class RunSnackbarUpdateTest {
         update(finished = setOf("a")).announced shouldBe setOf("a")
     }
 
-    // Two runs can land on consecutive collections before HomeScreen has read
+    // Two runs can land on consecutive collections before PlayersScreen has read
     // and cleared the first; a plain assignment dropped it.
     @Test
     fun a_run_landing_while_another_waits_to_be_shown_joins_it() {
         update(finished = setOf("a", "b"), seen = setOf("a"), waiting = setOf("a")).announced shouldBe setOf("a", "b")
     }
 
-    // Once HomeScreen has taken the waiting runs, the next snackbar names the
+    // Once PlayersScreen has taken the waiting runs, the next snackbar names the
     // new run alone and queues behind the one on screen (design 7.5).
     @Test
     fun once_the_waiting_runs_are_taken_the_next_starts_from_the_new_runs_alone() {
