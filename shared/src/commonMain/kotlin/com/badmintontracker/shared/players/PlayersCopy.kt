@@ -118,6 +118,9 @@ object PlayersCopy {
     const val HOME_WAS_AT_THE = "Home was at the"
     const val DOUBLES_NOTE = "Remove the players to switch to doubles."
 
+    /** A side holds a profile or typed names, never both. The editor should not let this happen; this is the net. */
+    const val PROFILE_AND_NAMES = "A side can have a player or typed names, not both."
+
     // Attach question
     const val ATTACH_SUBTITLE = "As the camera sees it."
     const val ATTACH_SKIP = "Skip"

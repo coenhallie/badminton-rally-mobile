@@ -2,6 +2,9 @@ package com.badmintontracker.shared.players
 
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.model.MatchMetadata
+import com.badmintontracker.shared.scoring.MAX_PLAYER_NAME
+import com.badmintontracker.shared.scoring.MatchFormat
+import com.badmintontracker.shared.scoring.PLAYER_NAME_TOO_LONG
 import com.badmintontracker.shared.scoring.ScoreLog
 import com.badmintontracker.shared.scoring.Side
 
@@ -61,4 +64,23 @@ fun MatchPlayers.names(side: Side, players: List<Player>): List<String> {
     if (id == null) return if (side == Side.HOME) homePlayers else awayPlayers
     val player = players.firstOrNull { it.id == id } ?: return emptyList()
     return listOf(player.name)
+}
+
+/**
+ * Why [players] cannot be saved under [format], as a ready to display sentence, or
+ * null when it can. The database refuses the same shapes with a CHECK; this is the
+ * sentence the editor shows first. In order: a profile in doubles or mixed (singles
+ * only, and "nobody said" counts as singles), a side holding a profile and typed
+ * names, then a typed name past [MAX_PLAYER_NAME].
+ */
+fun matchPlayersProblem(players: MatchPlayers, format: MatchFormat?): String? {
+    val hasProfile = players.homePlayerId != null || players.awayPlayerId != null
+    return when {
+        hasProfile && format != null && format != MatchFormat.SINGLES -> PlayersCopy.DOUBLES_NOTE
+        (players.homePlayerId != null && players.homePlayers.isNotEmpty()) ||
+            (players.awayPlayerId != null && players.awayPlayers.isNotEmpty()) -> PlayersCopy.PROFILE_AND_NAMES
+        (players.homePlayers + players.awayPlayers).any { it.trim().length > MAX_PLAYER_NAME } ->
+            PLAYER_NAME_TOO_LONG
+        else -> null
+    }
 }
