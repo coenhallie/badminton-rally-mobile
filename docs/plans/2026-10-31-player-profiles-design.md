@@ -1,7 +1,8 @@
 # Design: player profiles under the coach's account
 
 **Date:** 2026-10-31
-**Status:** Draft, for Coen's review.
+**Status:** Draft, for Coen's review. Doubles and the attach-time end question
+answered by Coen 2026-10-31 (section 9).
 **Asked for:** Coen, 2026-10-19: the coach creates separate player accounts,
 toggles between them to see each player's analytics, and later each player logs
 in to see their own data and the coach's recommendations. "Let's go step by step."
@@ -233,10 +234,15 @@ One column on `videos` only, because ends are a fact about the footage:
 
 A video-only match records "near is home": the "Who's playing" section
 (section 4.3) writes the near player as home. A score-born match that gets a video
-attached asks which end Home was on, in the same section (section 4.4).
+attached is asked which end Home was on during the attach (section 4.4a).
 
-Singles only: one person per end is what the tracking follows. Doubles is an open
-question for Coen (section 9).
+**Singles only** (Coen, 2026-10-31: "We don't support doubles for now"). A match
+whose format is doubles or mixed doubles cannot hold a profile on either side: a
+check constraint on both tables requires both player ids to be null unless
+`format` is null or `singles`. The details editor hides the player pickers for
+doubles, and offers Doubles / Mixed only while neither side is a profile, with a
+line saying to remove the players first. (My call: switching format silently
+unassigning a player would be a surprise.)
 
 ### 3.4 Reading it back
 
@@ -367,6 +373,19 @@ Which entry point shows the control in each case (the details editor gaining
 more matches, or Who's playing on its own in the overflow) is left to the
 builder; the rule is that no owned match lacks one.
 
+### 4.4a Attaching a video to a scored match
+
+When a video is attached to a score log that has a profile on either side, one
+question comes before court marking: **"Which end was Home on?"** with Near and
+Far, naming the Home side (the profile's name or the typed name). It is asked once,
+on both platforms, whichever way the video arrives (record or import from the match
+page's attach). The answer is stored as `nearSide` on the `LocalVideoEntry` and
+rides along on the `videos` INSERT as `near_side`. Skipping leaves it null, and the
+details editor (section 4.4) can set it later.
+
+A score log with no profile on either side is not asked: nothing would use the
+answer in step 1. (My call.)
+
 ### 4.5 Navigation changes
 
 - Android: new routes `Players` (start destination) and `Player(id)`;
@@ -433,7 +452,7 @@ Written down so step 1 does not contradict them.
   copy. The web app does not show players, and nothing in the mobile app
   duplicates.
 - `videos.player_labels` (the web app's names for tracker slots). Left alone.
-- Doubles assignment, pending Coen's answer (section 9).
+- Doubles assignment (Coen: not supported for now).
 
 ---
 
@@ -453,7 +472,13 @@ Written down so step 1 does not contradict them.
 
 ## 9. Open questions
 
-None yet; the builder check fills this in.
+Answered by Coen, 2026-10-31:
+
+- **Doubles:** not supported for now. Singles only (section 3.3).
+- **Ends for a scored match that later gets a video:** ask during the attach,
+  before court marking (section 4.4a).
+
+None open.
 
 ---
 
