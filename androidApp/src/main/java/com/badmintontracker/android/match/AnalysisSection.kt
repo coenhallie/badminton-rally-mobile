@@ -22,6 +22,7 @@ import com.badmintontracker.android.localanalysis.TrackSource
 import com.badmintontracker.android.ui.components.ShuttlPillTabs
 import com.badmintontracker.analysis.player.RallyWindow
 import com.badmintontracker.shared.analytics.AnalyticsPanel
+import com.badmintontracker.shared.analytics.CourtSideNames
 import com.badmintontracker.shared.analytics.availablePanels
 import com.badmintontracker.shared.analytics.cloudRallyWindows
 import com.badmintontracker.shared.analytics.rallyWindowsFor
@@ -52,6 +53,8 @@ import com.badmintontracker.shared.prefs.RacketArmPreferenceRepository
  * together).
  *
  * [analysisId] is `analysisId(item)`: the heatmap's own id, else the entry.
+ * [sideNames] names the player at each end on the three panels' Near | Far
+ * toggle, and supplies a profile's playing hand to the skeleton's metrics.
  */
 @Composable
 fun AnalysisSection(
@@ -61,6 +64,8 @@ fun AnalysisSection(
     playbackPrefs: PlaybackPreferenceRepository,
     racketArmPrefs: RacketArmPreferenceRepository,
     cloudClips: List<RallyClip>,
+    /** Who stands at each end (`courtSideNames`); null while the match does not say which end Home was at. */
+    sideNames: CourtSideNames?,
     modifier: Modifier = Modifier,
 ) {
     val hasSkeleton = remember(analysisId) { localAnalysis.hasStoredSkeleton(analysisId) }
@@ -115,15 +120,16 @@ fun AnalysisSection(
         }
         when (panel) {
             AnalyticsPanel.Heatmap ->
-                HeatmapPanel(entryId = analysisId, runner = localAnalysis, windows = windows)
+                HeatmapPanel(entryId = analysisId, runner = localAnalysis, windows = windows, sideNames = sideNames)
             AnalyticsPanel.Base ->
-                BasePositionPanel(entryId = analysisId, runner = localAnalysis, windows = windows)
+                BasePositionPanel(entryId = analysisId, runner = localAnalysis, windows = windows, sideNames = sideNames)
             AnalyticsPanel.Skeleton -> SkeletonPanel(
                 entryId = analysisId,
                 videoUri = videoUri,
                 runner = localAnalysis,
                 prefs = playbackPrefs,
                 racketArmPrefs = racketArmPrefs,
+                sideNames = sideNames,
             )
         }
     }

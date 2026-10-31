@@ -99,6 +99,7 @@ import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.localvideo.setKeypoints
 import com.badmintontracker.shared.localvideo.setMatchPlayers
+import com.badmintontracker.shared.analytics.courtSideNames
 import com.badmintontracker.shared.players.MatchPlayers
 import com.badmintontracker.shared.players.asksForHomeEnd
 import com.badmintontracker.shared.players.homeEndTitle
@@ -639,6 +640,11 @@ fun AuthGate(
                     // so an unremembered flow restarted its collector each time.
                     val cloudClipsFlow = remember(rally) { rally.clips.observeClips() }
                     val cloudClips by cloudClipsFlow.collectAsStateWithLifecycle(emptyList())
+                    // Who stands at each end, for the Analysis toggle and a
+                    // profile's hand. The roster is collected so a list still
+                    // loading names the players once it lands.
+                    val roster by rally.players.players.collectAsStateWithLifecycle()
+                    val sideNames = remember(item, roster) { item?.let { courtSideNames(it, roster) } }
                     MatchScreen(
                         vm = clipListVm,
                         matchVm = matchVm,
@@ -693,7 +699,7 @@ fun AuthGate(
                             AnalysisSection(
                                 analysisId = id, localAnalysis = localAnalysis, localVideos = localVideos,
                                 playbackPrefs = rally.playbackPrefs, racketArmPrefs = rally.racketArmPrefs,
-                                cloudClips = cloudClips,
+                                cloudClips = cloudClips, sideNames = sideNames,
                             )
                         },
                         deviceRalliesSection = { id -> DeviceRalliesSection(entryId = id, localAnalysis = localAnalysis) },

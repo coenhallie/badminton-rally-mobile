@@ -32,6 +32,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -83,6 +84,13 @@ import com.badmintontracker.android.ui.theme.ShuttlRadius
  * `accessibilityLabel`. Without it a screen reader user meets a bare run of
  * tabs with nothing saying what they switch.
  *
+ * [singleLine] is for labels that are not words of ours but somebody's text,
+ * a player's name of up to 40 characters: each pill keeps its label on one line
+ * at the row's size and ends it in an ellipsis, rather than wrapping (which
+ * makes the row taller than its neighbours) or shrinking every label for the
+ * sake of one long name. The pills still share the track equally. The full
+ * label stays in the pill's semantics, so a screen reader reads the whole name.
+ *
  * [enabled] false draws the whole row read-only (a value that cannot be
  * changed right now, still shown); [disabledIndices] are the pills that cannot
  * be chosen while the rest can (the details editor's Doubles and Mixed while a
@@ -100,6 +108,7 @@ fun ShuttlPillTabs(
     groupLabel: String? = null,
     enabled: Boolean = true,
     disabledIndices: Set<Int> = emptySet(),
+    singleLine: Boolean = false,
 ) {
     val shape = RoundedCornerShape(ShuttlRadius.pill)
     val baseStyle = if (secondary) {
@@ -126,13 +135,14 @@ fun ShuttlPillTabs(
         // Only a secondary row is held under a ceiling; reading it here is
         // what redraws the row when the primary above it changes size.
         val ceilingPx = if (secondary) LocalPillLabelCeiling.current?.px else null
-        val fit = remember(labels, baseStyle, pillWidthPx, density, ceilingPx) {
+        val fit = remember(labels, baseStyle, pillWidthPx, density, ceilingPx, singleLine) {
             fun scaled(scale: Float) = if (scale >= 1f) baseStyle else baseStyle.copy(
                 fontSize = baseStyle.fontSize * scale,
                 lineHeight = baseStyle.lineHeight * scale,
                 letterSpacing = baseStyle.letterSpacing * scale,
             )
-            val words = labels.flatMap { it.split(' ') }.filter { it.isNotEmpty() }
+            // A single-line label is never broken, so there is no word to fit.
+            val words = if (singleLine) emptyList() else labels.flatMap { it.split(' ') }.filter { it.isNotEmpty() }
             fun widestWord(scale: Float): Float = words.maxOfOrNull { word ->
                 measurer.measure(word, scaled(scale), softWrap = false, maxLines = 1).size.width.toFloat()
             } ?: 0f
@@ -197,6 +207,8 @@ fun ShuttlPillTabs(
                         style = style,
                         color = if (selected) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
+                        maxLines = if (singleLine) 1 else Int.MAX_VALUE,
+                        overflow = if (singleLine) TextOverflow.Ellipsis else TextOverflow.Clip,
                     )
                 }
             }

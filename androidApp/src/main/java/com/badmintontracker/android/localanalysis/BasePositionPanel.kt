@@ -28,6 +28,7 @@ import com.badmintontracker.analysis.geometry.Point
 import com.badmintontracker.analysis.player.BasePositions
 import com.badmintontracker.analysis.player.RallyWindow
 import com.badmintontracker.analysis.player.basePositions
+import com.badmintontracker.shared.analytics.CourtSideNames
 import com.badmintontracker.shared.local.describeBase
 import com.badmintontracker.shared.local.describeRally
 import com.badmintontracker.shared.local.RallyMark
@@ -66,6 +67,8 @@ fun BasePositionPanel(
      * one run. See `rallyWindowsFor`.
      */
     windows: List<RallyWindow>,
+    /** Who stands at each end, for the Near | Far toggle; null while the match does not say. */
+    sideNames: CourtSideNames?,
     modifier: Modifier = Modifier,
 ) {
     // Read and measured off the thread drawing the frame. Both halves need it:
@@ -104,6 +107,7 @@ fun BasePositionPanel(
                 sides = source.tracks.map { it.side },
                 selected = shown.side,
                 onSelect = { side = it },
+                names = sideNames,
                 modifier = Modifier.padding(horizontal = COURT_GUTTER, vertical = 8.dp),
             )
         }

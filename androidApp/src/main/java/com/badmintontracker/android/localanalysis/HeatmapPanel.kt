@@ -17,8 +17,10 @@ import androidx.compose.ui.unit.dp
 import com.badmintontracker.analysis.player.CourtSide
 import com.badmintontracker.analysis.player.RallyFrames
 import com.badmintontracker.analysis.player.RallyWindow
+import com.badmintontracker.shared.analytics.CourtSideNames
 import com.badmintontracker.shared.analytics.HeatmapScope
 import com.badmintontracker.shared.analytics.heatmapScopes
+import com.badmintontracker.shared.analytics.sideToggleLabel
 import com.badmintontracker.android.ui.components.ShuttlPillTabs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -101,6 +103,8 @@ fun HeatmapPanel(
     entryId: String,
     runner: LocalAnalysisRunner,
     windows: List<RallyWindow>,
+    /** Who stands at each end, for the Near | Far toggle; null while the match does not say. */
+    sideNames: CourtSideNames?,
     modifier: Modifier = Modifier,
 ) {
     // In memory if the run is still loaded, from disk otherwise. A pose run costs
@@ -158,6 +162,7 @@ fun HeatmapPanel(
                         sides = source.tracks.map { it.side },
                         selected = shown.side,
                         onSelect = { side = it },
+                        names = sideNames,
                         // The court's gutter, as on Base and Skeleton: at 16dp this
                         // row stood wider than the section and panel rows above it
                         // and jumped sideways on every switch to Base.
@@ -193,28 +198,32 @@ fun HeatmapPanel(
 }
 
 /**
- * Near or Far, shown only where both were found.
+ * The two ends of the court, shown only where both were found.
  *
- * Camera-relative labels. `videos.player_labels` carries the coach's own names
- * and Phase 2's thumbnails; using them is out of scope (spec 10), and a label
- * that said "Anna" on a track the gates assigned by net side would be claiming
- * an identification this pipeline does not make.
+ * Each pill is the name of whoever stands at that end, per [names]
+ * (`sideToggleLabel`), and "Near" / "Far" while the match does not say which end
+ * Home was at. The tracks are assigned by net side, and the coach's own record of
+ * which end each player took is what turns a side into a name; the pipeline
+ * identifies no one. Names are the coach's own text, so each pill keeps to one
+ * line and ellipsizes.
  */
 @Composable
 internal fun SideToggle(
     sides: List<CourtSide>,
     selected: CourtSide,
     onSelect: (CourtSide) -> Unit,
+    names: CourtSideNames?,
     modifier: Modifier = Modifier,
 ) {
     ShuttlPillTabs(
-        labels = sides.map { if (it == CourtSide.NEAR) "Near" else "Far" },
+        labels = sides.map { sideToggleLabel(it, names) },
         selectedIndex = sides.indexOf(selected).coerceAtLeast(0),
         onSelect = { onSelect(sides[it]) },
         modifier = modifier,
         // Inside a panel, under the section and panel rows: the lowest of the
         // three, never their peer.
         secondary = true,
+        singleLine = true,
     )
 }
 

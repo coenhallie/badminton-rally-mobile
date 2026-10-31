@@ -66,6 +66,12 @@ fun MetricsStrip(
     hasCourt: Boolean,
     racketArm: RacketArm?,
     onRacketArm: (RacketArm?) -> Unit,
+    /**
+     * [racketArm] is the shown player's profile hand, not a choice made here:
+     * the arm control is not drawn, as it would offer to change what the
+     * profile says.
+     */
+    racketArmFromProfile: Boolean,
     selected: MetricKind,
     onSelect: (MetricKind) -> Unit,
     expanded: Boolean,
@@ -164,12 +170,14 @@ fun MetricsStrip(
             color = ShuttlTheme.extended.textTertiary,
             modifier = Modifier.padding(top = 16.dp),
         )
-        ShuttlPillTabs(
-            labels = RACKET_ARMS.map { it.second },
-            selectedIndex = RACKET_ARMS.indexOfFirst { it.first == racketArm },
-            onSelect = { onRacketArm(RACKET_ARMS[it].first) },
-            modifier = Modifier.padding(top = 8.dp),
-        )
+        if (!racketArmFromProfile) {
+            ShuttlPillTabs(
+                labels = RACKET_ARMS.map { it.second },
+                selectedIndex = RACKET_ARMS.indexOfFirst { it.first == racketArm },
+                onSelect = { onRacketArm(RACKET_ARMS[it].first) },
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
         Text(
             detail,
             style = MaterialTheme.typography.bodySmall,

@@ -49,6 +49,8 @@ import com.badmintontracker.android.clipdetail.VideoCard
 import com.badmintontracker.android.clipdetail.rememberPlaybackPosition
 import com.badmintontracker.android.ui.components.frameExactPlayer
 import com.badmintontracker.android.ui.theme.ShuttlTheme
+import com.badmintontracker.shared.analytics.CourtSideNames
+import com.badmintontracker.shared.analytics.profileArm
 import com.badmintontracker.shared.local.CourtFit
 import com.badmintontracker.shared.local.MetricSample
 import com.badmintontracker.shared.local.courtWarning
@@ -110,6 +112,8 @@ fun SkeletonPanel(
     runner: LocalAnalysisRunner,
     prefs: PlaybackPreferenceRepository,
     racketArmPrefs: RacketArmPreferenceRepository,
+    /** Who stands at each end, for the Near | Far toggle and a profile's playing hand; null while the match does not say. */
+    sideNames: CourtSideNames?,
     modifier: Modifier = Modifier,
 ) {
     // SkeletonStore.load parses the whole file, and its own KDoc prices a
@@ -184,6 +188,7 @@ fun SkeletonPanel(
                         series = l.seriesBySide[shown.side].orEmpty(),
                         prefs = prefs,
                         racketArmPrefs = racketArmPrefs,
+                        sideNames = sideNames,
                         entryId = entryId,
                     )
                 }
@@ -225,6 +230,7 @@ private fun SkeletonPlayer(
     series: List<MetricSample>,
     prefs: PlaybackPreferenceRepository,
     racketArmPrefs: RacketArmPreferenceRepository,
+    sideNames: CourtSideNames?,
     entryId: String,
 ) {
     if (stored.videoWidth <= 0 || stored.videoHeight <= 0) {
@@ -266,7 +272,13 @@ private fun SkeletonPlayer(
     val pose = remember(positionMs, poses) { nearestPose(poses, positionMs / 1000.0, tolerance) }
 
     val hasCourt = homography != null
-    var racketArm by remember(entryId) { mutableStateOf(racketArmPrefs.racketArm(entryId)) }
+    // The shown player's profile hand wins over the per-video choice: it is the
+    // one answer for that person on every video, and the pills that would
+    // contradict it are not drawn. The per-video choice is kept untouched, so a
+    // side with no profile hand (or a match with no profile) still reads it.
+    val profileArm = profileArm(shownSide, sideNames)
+    var videoRacketArm by remember(entryId) { mutableStateOf(racketArmPrefs.racketArm(entryId)) }
+    val racketArm = profileArm ?: videoRacketArm
     var chosen by rememberSaveable(entryId) {
         mutableStateOf(if (hasCourt) MetricKind.STANCE else MetricKind.ELBOW_RIGHT)
     }
@@ -344,6 +356,7 @@ private fun SkeletonPlayer(
                 sides = sides,
                 selected = shownSide,
                 onSelect = onSide,
+                names = sideNames,
                 modifier = Modifier.padding(horizontal = GUTTER, vertical = 8.dp),
             )
         }
@@ -352,9 +365,10 @@ private fun SkeletonPlayer(
             hasCourt = hasCourt,
             racketArm = racketArm,
             onRacketArm = { arm ->
-                racketArm = arm
+                videoRacketArm = arm
                 racketArmPrefs.setRacketArm(entryId, arm)
             },
+            racketArmFromProfile = profileArm != null,
             selected = selected,
             onSelect = { chosen = it },
             expanded = expanded,
