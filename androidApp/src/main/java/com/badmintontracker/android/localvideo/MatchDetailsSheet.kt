@@ -33,9 +33,11 @@ import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.shared.localvideo.MAX_MATCH_DESCRIPTION_LENGTH
 import com.badmintontracker.shared.localvideo.MAX_MATCH_TITLE_LENGTH
 import com.badmintontracker.shared.players.EndsDraft
+import com.badmintontracker.shared.players.MatchPlayers
 import com.badmintontracker.shared.players.Player
 import com.badmintontracker.shared.players.matchPlayersProblem
 import com.badmintontracker.shared.players.toAssignment
+import com.badmintontracker.shared.scoring.Side
 import kotlinx.coroutines.launch
 
 /**
@@ -46,7 +48,8 @@ import kotlinx.coroutines.launch
  *
  * The Who's playing section ([playersDraft]) comes first, above the name, and
  * shows on any of them; [playersEditable] false shows it read-only, during the
- * upload. The name and description show only while [detailsEditable]: both
+ * upload. [onSave] hands back what to save, the draft's assignment and near side
+ * (EndsDraft.toAssignment), so no caller re-derives it. The name and description show only while [detailsEditable]: both
  * ride along on the videos INSERT and the database grants no UPDATE on either
  * column, so they can change only while the entry is still LOCAL (see
  * canEditLocalVideoDetails). Hidden, they are handed back as they came.
@@ -65,22 +68,24 @@ fun MatchDetailsSheet(
     initialTitle: String?,
     initialDescription: String?,
     detailsEditable: Boolean,
-    playersDraft: EndsDraft?,
+    playersDraft: EndsDraft,
     playersEditable: Boolean,
-    players: List<Player>,
+    roster: List<Player>,
     onAddPlayer: AddPlayer,
     autoOpened: Boolean,
     onDismiss: () -> Unit,
-    onSave: (title: String, description: String, players: EndsDraft?) -> Unit,
+    onSave: (title: String, description: String, players: MatchPlayers, nearSide: Side?) -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     var title by rememberSaveable { mutableStateOf(initialTitle.orEmpty()) }
     var description by rememberSaveable { mutableStateOf(initialDescription.orEmpty()) }
-    var draft by rememberSaveable(stateSaver = EndsDraftSaver) { mutableStateOf(playersDraft) }
+    var draft by rememberSaveable(stateSaver = EndsDraftSaver) { mutableStateOf<EndsDraft?>(playersDraft) }
+    val current = draft ?: playersDraft
+    val (players, nearSide) = current.toAssignment()
 
-    val problem = draft?.takeIf { playersEditable }?.let { matchPlayersProblem(it.toAssignment().first, null) }
-    val canSave = (detailsEditable || (draft != null && playersEditable)) && problem == null
+    val problem = if (playersEditable) matchPlayersProblem(players, null) else null
+    val canSave = (detailsEditable || playersEditable) && problem == null
 
     fun hideThen(action: () -> Unit) {
         scope.launch { sheetState.hide() }.invokeOnCompletion {
@@ -96,23 +101,23 @@ fun MatchDetailsSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                // Before the scroll, so the scrolled area ends at the keyboard
+                // and a focused Description scrolls clear of it.
+                .imePadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp)
-                .padding(bottom = 16.dp)
-                .imePadding(),
+                .padding(bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text("Match details", style = MaterialTheme.typography.titleLarge)
 
-            draft?.let { current ->
-                WhoIsPlayingSection(
-                    draft = current,
-                    players = players,
-                    onChange = { draft = it },
-                    onAddPlayer = onAddPlayer,
-                    uploading = !playersEditable,
-                )
-            }
+            WhoIsPlayingSection(
+                draft = current,
+                players = roster,
+                onChange = { draft = it },
+                onAddPlayer = onAddPlayer,
+                uploading = !playersEditable,
+            )
 
             if (detailsEditable) {
                 ShuttlOutlinedTextField(
@@ -146,7 +151,7 @@ fun MatchDetailsSheet(
                 }
                 Spacer(Modifier.width(8.dp))
                 Button(
-                    onClick = { hideThen { onSave(title, description, draft) } },
+                    onClick = { hideThen { onSave(title, description, players, nearSide) } },
                     enabled = canSave,
                 ) { Text("Save") }
             }

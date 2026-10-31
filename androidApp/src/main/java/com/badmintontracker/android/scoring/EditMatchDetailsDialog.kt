@@ -35,38 +35,41 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowCompat
 import com.badmintontracker.android.players.AddPlayer
-import com.badmintontracker.android.players.EndsDraftSaver
+import com.badmintontracker.android.players.DetailsPlayersDraftSaver
 import com.badmintontracker.android.players.PlayerPicker
+import com.badmintontracker.android.players.PlayersNote
 import com.badmintontracker.android.players.WhoIsPlayingSection
 import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlOutlinedTextField
 import com.badmintontracker.android.ui.components.ShuttlPillTabs
 import com.badmintontracker.shared.localvideo.MAX_MATCH_DESCRIPTION_LENGTH
+import com.badmintontracker.shared.players.DetailsPlayersDraft
 import com.badmintontracker.shared.players.MatchPlayers
 import com.badmintontracker.shared.players.Player
 import com.badmintontracker.shared.players.PlayersCopy
 import com.badmintontracker.shared.players.SidesDraft
-import com.badmintontracker.shared.players.endsDraft
-import com.badmintontracker.shared.players.matchPlayers
 import com.badmintontracker.shared.players.matchPlayersProblem
+import com.badmintontracker.shared.players.offersPairs
+import com.badmintontracker.shared.players.showsName
 import com.badmintontracker.shared.players.toAssignment
-import com.badmintontracker.shared.players.toMatchPlayers
+import com.badmintontracker.shared.players.withFormat
+import com.badmintontracker.shared.players.withName
+import com.badmintontracker.shared.players.withPlayer
+import com.badmintontracker.shared.players.withSomeoneElse
 import com.badmintontracker.shared.scoring.MAX_MATCH_TITLE
 import com.badmintontracker.shared.scoring.MAX_PLAYER_NAME
 import com.badmintontracker.shared.scoring.MatchFormat
-import com.badmintontracker.shared.scoring.ScoreLog
 import com.badmintontracker.shared.scoring.Side
 import com.badmintontracker.shared.scoring.VIDEO_MATCH_TITLE_CAP
 import com.badmintontracker.shared.scoring.matchDetailsProblem
 import com.badmintontracker.shared.scoring.playersPerSide
 
 /**
- * What the editor is opened with and what it hands back: the name a match was
- * given, what kind of match it was, who played, and which side was nearest the
- * camera. [description] is null for a record that has no such field (a score
- * log), and the field's text, empty included, for one that does (a video); the
- * editor shows the field only when it exists to write into. [players] is what
- * is saved: cut to the format and cleaned by the shared drafts it is built from.
+ * What the editor hands back: the name a match was given, what kind of match it
+ * was, who played and which side was nearest the camera. [description] is null for
+ * a record that has no such field (a score log). [players] is what is saved, from
+ * the shared draft (DetailsPlayersDraft.toAssignment): cut to the format, a profile
+ * side with no names.
  */
 data class MatchDetailsDraft(
     val title: String,
@@ -75,23 +78,6 @@ data class MatchDetailsDraft(
     val players: MatchPlayers,
     val nearSide: Side?,
 )
-
-/** A scored match's details, with the end its attached video says Home was at (null: not said, or no video). */
-fun ScoreLog.detailsDraft(nearSide: Side?) =
-    MatchDetailsDraft(title, description = null, format, matchPlayers, nearSide)
-
-/** How the editor draws who played, by the record it writes to. */
-enum class PlayersLayout {
-    /**
-     * A score log: Home and Away, each a player picker whose last two items are
-     * "Someone else" (the name fields) and "Add player"; the ends row when a
-     * video is attached.
-     */
-    SIDES,
-
-    /** A match born as a video: the Who's playing section, by court end. */
-    ENDS,
-}
 
 /**
  * Everything about a match that the new match form deliberately does not ask for:
@@ -102,18 +88,20 @@ enum class PlayersLayout {
  * and a filmed one on its videos row, which is the caller's business: the fields
  * and the rules are the same, except for the name cap, which is the record's own
  * ([MAX_MATCH_TITLE] against [VIDEO_MATCH_TITLE_CAP]), the description, which
- * only a video has, and who played ([layout]).
+ * only a video has ([initialDescription] null for a log), and who played
+ * ([initialPlayers]: scoreLogPlayersDraft or videoPlayersDraft).
  *
- * Who played is singles-only as a profile: while a side ([PlayersLayout.SIDES])
- * or an end ([PlayersLayout.ENDS]) holds one, Doubles and Mixed are not offered
- * and a line says to remove the players first. A doubles or mixed match keeps
- * today's typed names, two per side, and no pickers; a video-born one never
- * builds the singles-only ends draft while it is doubles.
+ * Who played:
+ * - A score log: Home and Away, each a picker of the players, "Someone else" (the
+ *   name field) and "Add player"; "Home was at the" Near | Far | Not set when
+ *   [showsEnds], a video being attached.
+ * - A match born as a video: the Who's playing section, by court end.
+ * - Doubles or mixed, either kind: today's typed names, two a side, no pickers.
+ *   Doubles and Mixed are not offered while anyone on the match is a profile, and a
+ *   line says to remove the players first.
  *
- * [showsEnds] (SIDES) adds "Home was at the" Near | Far | Not set, for a scored
- * match with a video. [uploading] is that video mid-upload: the ends row (SIDES)
- * or the whole Who's playing section (ENDS) shows read-only, with the sentence
- * saying it can change once the upload finishes.
+ * [uploading] is the video mid-upload: the ends row, or the whole section, shows
+ * read-only with the sentence saying it can change once the upload finishes.
  *
  * A full-screen dialog rather than a bottom sheet or a route. Not a sheet, because a
  * sheet is drawn on surfaceVariant, which is also the pill track's colour, so the
@@ -122,15 +110,18 @@ enum class PlayersLayout {
  * dialog needs no navigation from either.
  *
  * Every rule comes from shared: [matchDetailsProblem] for the name and the typed
- * names, matchPlayersProblem for who played, and the drafts (SidesDraft, EndsDraft)
- * for what a side or an end saves. This only renders them and hands taps back.
+ * names, matchPlayersProblem for who played, and DetailsPlayersDraft (with the
+ * SidesDraft and EndsDraft it holds) for what is saved, what is offered and what a
+ * format switch carries. This only renders the draft and hands taps back.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditMatchDetailsDialog(
-    initial: MatchDetailsDraft,
+    initialTitle: String,
+    initialDescription: String?,
+    initialFormat: MatchFormat?,
+    initialPlayers: DetailsPlayersDraft,
     titleCap: Int,
-    layout: PlayersLayout,
     players: List<Player>,
     onAddPlayer: AddPlayer,
     onDismiss: () -> Unit,
@@ -138,78 +129,19 @@ fun EditMatchDetailsDialog(
     showsEnds: Boolean = false,
     uploading: Boolean = false,
 ) {
-    var title by rememberSaveable { mutableStateOf(initial.title) }
-    var description by rememberSaveable { mutableStateOf(initial.description.orEmpty()) }
+    var title by rememberSaveable { mutableStateOf(initialTitle) }
+    var description by rememberSaveable { mutableStateOf(initialDescription.orEmpty()) }
     // An index rather than the enum so it saves without a Saver. 0 is "not set".
-    var formatIndex by rememberSaveable { mutableStateOf(initial.format?.let { it.ordinal + 1 } ?: 0) }
-    // The names typed for each side: the score log's side rows, and either
-    // layout's doubles rows. A side holding a profile keeps what was typed
-    // here (hidden, and not saved), so taking the profile off brings it back.
-    var home by rememberSaveable { mutableStateOf(initial.players.homePlayers.getOrElse(0) { "" }) }
-    var homePartner by rememberSaveable { mutableStateOf(initial.players.homePlayers.getOrElse(1) { "" }) }
-    var away by rememberSaveable { mutableStateOf(initial.players.awayPlayers.getOrElse(0) { "" }) }
-    var awayPartner by rememberSaveable { mutableStateOf(initial.players.awayPlayers.getOrElse(1) { "" }) }
-    // SIDES: each side's profile, and whether "Someone else" was chosen for it:
-    // a side that opens with a typed name and no profile already is, and typing
-    // chooses it, so clearing the field to retype never takes the field away.
-    var homeId by rememberSaveable { mutableStateOf(initial.players.homePlayerId) }
-    var awayId by rememberSaveable { mutableStateOf(initial.players.awayPlayerId) }
-    var homeSomeoneElse by rememberSaveable {
-        mutableStateOf(initial.players.homePlayerId == null && initial.players.homePlayers.any { it.isNotBlank() })
-    }
-    var awaySomeoneElse by rememberSaveable {
-        mutableStateOf(initial.players.awayPlayerId == null && initial.players.awayPlayers.any { it.isNotBlank() })
-    }
-    var nearSideIndex by rememberSaveable { mutableStateOf(END_OPTIONS.indexOf(initial.nearSide)) }
-    // ENDS: the singles section's draft; null while the match is doubles.
-    var ends by rememberSaveable(stateSaver = EndsDraftSaver) {
-        mutableStateOf(
-            if (layout == PlayersLayout.ENDS && playersPerSide(initial.format) == 1) {
-                endsDraft(initial.players, initial.nearSide, null)
-            } else {
-                null
-            },
-        )
-    }
+    var formatIndex by rememberSaveable { mutableStateOf(initialFormat?.let { it.ordinal + 1 } ?: 0) }
+    var who by rememberSaveable(stateSaver = DetailsPlayersDraftSaver) { mutableStateOf(initialPlayers) }
 
     val format = MatchFormat.entries.getOrNull(formatIndex - 1)
     val pairs = playersPerSide(format) == 2
-    val sides = SidesDraft(
-        homePlayerId = homeId,
-        awayPlayerId = awayId,
-        homeNames = listOf(home, homePartner),
-        awayNames = listOf(away, awayPartner),
-        nearSide = END_OPTIONS[nearSideIndex],
-    )
-    val currentEnds = ends
-    val (assignment, assignedNearSide) = when {
-        layout == PlayersLayout.SIDES -> sides.toMatchPlayers(format) to sides.nearSide
-        // A video-born match in doubles: typed names only, and the end it had.
-        pairs || currentEnds == null ->
-            sides.copy(homePlayerId = null, awayPlayerId = null).toMatchPlayers(format) to initial.nearSide
-        else -> currentEnds.toAssignment()
-    }
-    val holdsProfile = assignment.homePlayerId != null || assignment.awayPlayerId != null
+    val (assignment, nearSide) = who.toAssignment(format)
+    val offersPairs = who.offersPairs(format)
     val problem = matchDetailsProblem(title, assignment.homePlayers, assignment.awayPlayers, titleCap)
         ?: matchPlayersProblem(assignment, format)
-
-    /** Moves the typed names between the two shapes when the format crosses singles and doubles. */
-    fun selectFormat(index: Int) {
-        val nextPairs = playersPerSide(MatchFormat.entries.getOrNull(index - 1)) == 2
-        if (layout == PlayersLayout.ENDS && nextPairs != pairs) {
-            val current = ends
-            if (nextPairs && current != null) {
-                // Only reachable with no profile on either end: Doubles is off while one is.
-                val (typed, _) = current.toAssignment()
-                home = typed.homePlayers.firstOrNull().orEmpty()
-                away = typed.awayPlayers.firstOrNull().orEmpty()
-                ends = null
-            } else if (!nextPairs) {
-                ends = endsDraft(MatchPlayers(null, null, listOf(home), listOf(away)), current?.nearSide ?: initial.nearSide, null)
-            }
-        }
-        formatIndex = index
-    }
+    val sides = who.sides
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -233,8 +165,8 @@ fun EditMatchDetailsDialog(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
-                    .verticalScroll(rememberScrollState())
                     .imePadding()
+                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
@@ -250,7 +182,7 @@ fun EditMatchDetailsDialog(
 
                 // Only a video carries one: it was typed at upload, and a name that
                 // can be changed beside a note that cannot would be a stuck field.
-                if (initial.description != null) {
+                if (initialDescription != null) {
                     ShuttlOutlinedTextField(
                         value = description,
                         onValueChange = { description = it },
@@ -266,67 +198,43 @@ fun EditMatchDetailsDialog(
                 ShuttlPillTabs(
                     labels = listOf("Not set") + MatchFormat.entries.map { it.shortLabel },
                     selectedIndex = formatIndex,
-                    onSelect = ::selectFormat,
-                    disabledIndices = if (holdsProfile) PAIRS_FORMAT_INDICES else emptySet(),
+                    onSelect = { index ->
+                        formatIndex = index
+                        who = who.withFormat(MatchFormat.entries.getOrNull(index - 1))
+                    },
+                    disabledIndices = if (offersPairs) emptySet() else PAIRS_FORMAT_INDICES,
                 )
-                if (holdsProfile) Note(PlayersCopy.DOUBLES_NOTE)
+                if (!offersPairs) PlayersNote(PlayersCopy.DOUBLES_NOTE)
 
+                val ends = who.ends
                 when {
                     // Today's names, two a side: no pickers outside singles.
-                    pairs -> DoublesFields(
-                        home = home, homePartner = homePartner, away = away, awayPartner = awayPartner,
-                        onHome = { home = it }, onHomePartner = { homePartner = it },
-                        onAway = { away = it }, onAwayPartner = { awayPartner = it },
-                    )
-                    layout == PlayersLayout.ENDS -> ends?.let { current ->
+                    pairs -> DoublesFields(sides) { side, index, name -> who = who.copy(sides = sides.withName(side, index, name)) }
+                    who.byEnds -> if (ends != null) {
                         WhoIsPlayingSection(
-                            draft = current,
+                            draft = ends,
                             players = players,
-                            onChange = { ends = it },
+                            onChange = { who = who.copy(ends = it) },
                             onAddPlayer = onAddPlayer,
                             uploading = uploading,
                         )
                     }
                     else -> {
-                        SideRow(
-                            label = PlayersCopy.SIDE_HOME,
-                            fieldLabel = "Home player",
-                            playerId = homeId,
-                            otherId = awayId,
-                            someoneElse = homeSomeoneElse,
-                            name = home,
-                            players = players,
-                            onPick = { homeId = it },
-                            onSomeoneElse = { homeId = null; homeSomeoneElse = true },
-                            onName = { home = it; homeSomeoneElse = true },
-                            onAddPlayer = onAddPlayer,
-                        )
-                        SideRow(
-                            label = PlayersCopy.SIDE_AWAY,
-                            fieldLabel = "Away player",
-                            playerId = awayId,
-                            otherId = homeId,
-                            someoneElse = awaySomeoneElse,
-                            name = away,
-                            players = players,
-                            onPick = { awayId = it },
-                            onSomeoneElse = { awayId = null; awaySomeoneElse = true },
-                            onName = { away = it; awaySomeoneElse = true },
-                            onAddPlayer = onAddPlayer,
-                        )
+                        SideRow(Side.HOME, sides, players, onAddPlayer) { who = who.copy(sides = it) }
+                        SideRow(Side.AWAY, sides, players, onAddPlayer) { who = who.copy(sides = it) }
                     }
                 }
 
-                if (layout == PlayersLayout.SIDES && showsEnds) {
+                if (!who.byEnds && showsEnds) {
                     SectionLabel(PlayersCopy.HOME_WAS_AT_THE)
                     ShuttlPillTabs(
                         labels = END_OPTIONS.map(::endLabel),
-                        selectedIndex = nearSideIndex,
-                        onSelect = { nearSideIndex = it },
+                        selectedIndex = END_OPTIONS.indexOf(sides.nearSide),
+                        onSelect = { who = who.copy(sides = sides.copy(nearSide = END_OPTIONS[it])) },
                         groupLabel = PlayersCopy.HOME_WAS_AT_THE,
                         enabled = !uploading,
                     )
-                    if (uploading) Note(PlayersCopy.UPLOAD_IN_PROGRESS)
+                    if (uploading) PlayersNote(PlayersCopy.UPLOAD_IN_PROGRESS)
                 }
 
                 problem?.let {
@@ -343,10 +251,10 @@ fun EditMatchDetailsDialog(
                         onSave(
                             MatchDetailsDraft(
                                 title = title,
-                                description = initial.description?.let { description },
+                                description = initialDescription?.let { description },
                                 format = format,
                                 players = assignment,
-                                nearSide = assignedNearSide,
+                                nearSide = nearSide,
                             ),
                         )
                     },
@@ -374,62 +282,50 @@ private val PAIRS_FORMAT_INDICES: Set<Int> =
 
 /**
  * One side of a scored match in singles: its label, a picker of the players
- * (the other side's player left out), "Someone else" and "Add player", and,
- * for "Someone else" or a side that has a typed name and no player, today's
- * name field.
+ * (the other side's player left out), "Someone else" and "Add player", and
+ * today's name field while the side reads "Someone else" (SidesDraft.showsName).
  */
 @Composable
 private fun SideRow(
-    label: String,
-    fieldLabel: String,
-    playerId: String?,
-    otherId: String?,
-    someoneElse: Boolean,
-    name: String,
+    side: Side,
+    sides: SidesDraft,
     players: List<Player>,
-    onPick: (String) -> Unit,
-    onSomeoneElse: () -> Unit,
-    onName: (String) -> Unit,
     onAddPlayer: AddPlayer,
+    onChange: (SidesDraft) -> Unit,
 ) {
-    val typed = playerId == null && (someoneElse || name.isNotBlank())
+    val home = side == Side.HOME
+    val playerId = if (home) sides.homePlayerId else sides.awayPlayerId
+    val otherId = if (home) sides.awayPlayerId else sides.homePlayerId
+    val name = (if (home) sides.homeNames else sides.awayNames).getOrElse(0) { "" }
+    val typed = sides.showsName(side)
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SectionLabel(label)
+        SectionLabel(if (home) PlayersCopy.SIDE_HOME else PlayersCopy.SIDE_AWAY)
         PlayerPicker(
             selectedId = playerId,
             players = players.filter { it.id != otherId },
-            onPick = { onPick(it.id) },
+            onPick = { onChange(sides.withPlayer(side, it.id)) },
             onAddPlayer = onAddPlayer,
             someoneElse = typed,
-            onSomeoneElse = onSomeoneElse,
+            onSomeoneElse = { onChange(sides.withSomeoneElse(side)) },
             modifier = Modifier.fillMaxWidth(),
         )
         // Animated rather than instant, as the partner fields are: a field
         // appearing under the coach's thumb without motion reads as a jump.
         AnimatedVisibility(visible = typed) {
-            PlayerField(name, fieldLabel, onName)
+            PlayerField(name, if (home) "Home player" else "Away player") { onChange(sides.withName(side, 0, it)) }
         }
     }
 }
 
 /** A doubles or mixed match's names: today's four fields, no pickers. */
 @Composable
-private fun DoublesFields(
-    home: String,
-    homePartner: String,
-    away: String,
-    awayPartner: String,
-    onHome: (String) -> Unit,
-    onHomePartner: (String) -> Unit,
-    onAway: (String) -> Unit,
-    onAwayPartner: (String) -> Unit,
-) {
+private fun DoublesFields(sides: SidesDraft, onName: (Side, Int, String) -> Unit) {
     // No heading over the names: each field is already labelled with its
     // side, and a "HOME" directly above "HOME PLAYER" says it twice.
-    PlayerField(home, "Home player 1", onHome)
-    PlayerField(homePartner, "Home player 2", onHomePartner)
-    PlayerField(away, "Away player 1", onAway)
-    PlayerField(awayPartner, "Away player 2", onAwayPartner)
+    PlayerField(sides.homeNames.getOrElse(0) { "" }, "Home player 1") { onName(Side.HOME, 0, it) }
+    PlayerField(sides.homeNames.getOrElse(1) { "" }, "Home player 2") { onName(Side.HOME, 1, it) }
+    PlayerField(sides.awayNames.getOrElse(0) { "" }, "Away player 1") { onName(Side.AWAY, 0, it) }
+    PlayerField(sides.awayNames.getOrElse(1) { "" }, "Away player 2") { onName(Side.AWAY, 1, it) }
 }
 
 @Composable
@@ -440,15 +336,6 @@ private fun PlayerField(value: String, label: String, onChange: (String) -> Unit
         label = label,
         maxLength = MAX_PLAYER_NAME,
         modifier = Modifier.fillMaxWidth(),
-    )
-}
-
-@Composable
-private fun Note(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 }
 

@@ -63,7 +63,6 @@ import com.badmintontracker.shared.players.endsDraft
 import com.badmintontracker.shared.players.forPlayer
 import com.badmintontracker.shared.players.matchPlayers
 import com.badmintontracker.shared.players.playersTarget
-import com.badmintontracker.shared.players.toAssignment
 import com.badmintontracker.shared.matchlist.effectiveFilter
 import com.badmintontracker.shared.matchlist.effectiveSort
 import com.badmintontracker.shared.matchlist.passes
@@ -350,12 +349,11 @@ fun ClipListScreen(
                 detailsEditable = canEditLocalVideoDetails(entry.stage),
                 playersDraft = remember { endsDraft(entry.matchPlayers, entry.nearSide, null) },
                 playersEditable = playersTarget(null, entry, null) != PlayersTarget.UPLOADING,
-                players = state.players,
+                roster = state.players,
                 onAddPlayer = onAddPlayer,
                 autoOpened = false,
                 onDismiss = { detailsEntry = null },
-                onSave = { title, description, draft ->
-                    val (players, nearSide) = draft?.toAssignment() ?: (entry.matchPlayers to entry.nearSide)
+                onSave = { title, description, players, nearSide ->
                     vm.saveEntryDetails(entry.id, title, description, players, nearSide)
                     detailsEntry = null
                 },

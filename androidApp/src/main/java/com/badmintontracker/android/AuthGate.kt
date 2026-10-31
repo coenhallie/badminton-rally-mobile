@@ -809,8 +809,10 @@ fun AuthGate(
                     // answered: nothing to ask about.
                     LaunchedEffect(id) { answer(null) }
                 } else {
+                    // Collected, so a roster still loading names Home once it lands.
+                    val roster by rally.players.players.collectAsStateWithLifecycle()
                     HomeEndDialog(
-                        title = homeEndTitle(log, rally.players.players.value),
+                        title = homeEndTitle(log, roster),
                         onNear = { answer(Side.HOME) },
                         onFar = { answer(Side.AWAY) },
                         onSkip = { answer(null) },

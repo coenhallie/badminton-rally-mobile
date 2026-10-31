@@ -92,6 +92,9 @@ internal fun PlayerPicker(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                // On the whole control, box and stroke too, as a disabled
+                // ShuttlOutlinedTextField dims: the two sit side by side.
+                .alpha(if (enabled) 1f else DISABLED_ALPHA)
                 .clip(shape)
                 .background(ShuttlTheme.extended.bgInput, shape)
                 .border(1.dp, ShuttlTheme.extended.textTertiary, shape)
@@ -102,8 +105,7 @@ internal fun PlayerPicker(
                         if (open) collapse { open = false; true } else expand { open = true; true }
                     }
                 }
-                .padding(horizontal = 12.dp, vertical = 10.dp)
-                .alpha(if (enabled) 1f else 0.6f),
+                .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (selected != null) {
@@ -218,3 +220,6 @@ private fun AddPlayerDialog(
 
 /** The avatar in a picker and its menu: the switcher's size less 2dp, so the box keeps a text field's height. */
 private val PickerAvatarSize = 24.dp
+
+/** A disabled picker's alpha: ShuttlOutlinedTextField's own. */
+private const val DISABLED_ALPHA = 0.6f

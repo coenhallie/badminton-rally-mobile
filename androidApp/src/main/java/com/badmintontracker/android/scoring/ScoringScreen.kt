@@ -84,6 +84,7 @@ import com.badmintontracker.android.ui.theme.ShuttlRadius
 import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.shared.model.AnnotationLabel
 import com.badmintontracker.shared.model.LabelColor
+import com.badmintontracker.shared.players.scoreLogPlayersDraft
 import com.badmintontracker.shared.players.Player
 import com.badmintontracker.shared.scoring.BoardTarget
 import com.badmintontracker.shared.scoring.FinishPrompt
@@ -286,9 +287,11 @@ fun ScoringScreen(
         // No ends row on the board: which end Home was at is a fact about the
         // footage, set on the match page, where the video is.
         EditMatchDetailsDialog(
-            initial = log.detailsDraft(nearSide = null),
+            initialTitle = log.title,
+            initialDescription = null,
+            initialFormat = log.format,
+            initialPlayers = scoreLogPlayersDraft(log, nearSide = null),
             titleCap = MAX_MATCH_TITLE,
-            layout = PlayersLayout.SIDES,
             players = state.players,
             onAddPlayer = onAddPlayer,
             onDismiss = { editingDetails = false },

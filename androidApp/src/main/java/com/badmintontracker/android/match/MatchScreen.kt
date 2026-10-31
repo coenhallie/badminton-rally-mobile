@@ -65,9 +65,6 @@ import com.badmintontracker.android.localvideo.MatchDetailsSheet
 import com.badmintontracker.android.players.AddPlayer
 import com.badmintontracker.android.scoring.AttachIntent
 import com.badmintontracker.android.scoring.EditMatchDetailsDialog
-import com.badmintontracker.android.scoring.MatchDetailsDraft
-import com.badmintontracker.android.scoring.PlayersLayout
-import com.badmintontracker.android.scoring.detailsDraft
 import com.badmintontracker.android.share.ShareSheet
 import com.badmintontracker.android.ui.components.LocalPillLabelCeiling
 import com.badmintontracker.android.ui.components.PillLabelCeiling
@@ -94,8 +91,9 @@ import com.badmintontracker.shared.model.RallyClip
 import com.badmintontracker.shared.players.MatchPlayers
 import com.badmintontracker.shared.players.PlayersTarget
 import com.badmintontracker.shared.players.endsDraft
+import com.badmintontracker.shared.players.scoreLogPlayersDraft
+import com.badmintontracker.shared.players.videoPlayersDraft
 import com.badmintontracker.shared.players.playersTarget
-import com.badmintontracker.shared.players.toAssignment
 import com.badmintontracker.shared.repo.MediaRepository
 import com.badmintontracker.shared.repo.SharesRepository
 import com.badmintontracker.shared.scoring.MAX_MATCH_TITLE
@@ -526,9 +524,11 @@ fun MatchScreen(
                 val initialNearSide = matchItem?.nearSide
                 val hasVideo = endEntryId != null || endVideoId != null
                 EditMatchDetailsDialog(
-                    initial = log.detailsDraft(initialNearSide),
+                    initialTitle = log.title,
+                    initialDescription = null,
+                    initialFormat = log.format,
+                    initialPlayers = scoreLogPlayersDraft(log, initialNearSide),
                     titleCap = MAX_MATCH_TITLE,
-                    layout = PlayersLayout.SIDES,
                     players = matchState.players,
                     onAddPlayer = onAddPlayer,
                     onDismiss = { editingDetails = false },
@@ -552,15 +552,15 @@ fun MatchScreen(
                 // typed at upload and this is the only place it can change since.
                 // Who played as the list row reads it (the row's record, a
                 // profile's id), so the editor and the row cannot disagree.
-                initial = MatchDetailsDraft(
-                    title = match.title.orEmpty(),
-                    description = match.description.orEmpty(),
-                    format = match.format,
+                initialTitle = match.title.orEmpty(),
+                initialDescription = match.description.orEmpty(),
+                initialFormat = match.format,
+                initialPlayers = videoPlayersDraft(
                     players = matchItem?.matchPlayers ?: MatchPlayers(null, null, match.homePlayers, match.awayPlayers),
                     nearSide = matchItem?.nearSide,
+                    format = match.format,
                 ),
                 titleCap = VIDEO_MATCH_TITLE_CAP,
-                layout = PlayersLayout.ENDS,
                 players = matchState.players,
                 onAddPlayer = onAddPlayer,
                 onDismiss = { editingDetails = false },
@@ -587,12 +587,11 @@ fun MatchScreen(
                     detailsEditable = matchItem.canEditDetails,
                     playersDraft = remember { endsDraft(matchItem.matchPlayers, matchItem.nearSide, null) },
                     playersEditable = matchItem.playersTarget != PlayersTarget.UPLOADING,
-                    players = matchState.players,
+                    roster = matchState.players,
                     onAddPlayer = onAddPlayer,
                     autoOpened = false,
                     onDismiss = { editingDetails = false },
-                    onSave = { title, description, draft ->
-                        val (players, nearSide) = draft?.toAssignment() ?: (matchItem.matchPlayers to matchItem.nearSide)
+                    onSave = { title, description, players, nearSide ->
                         matchVm.saveEntryDetails(entry.id, title, description, players, nearSide)
                         editingDetails = false
                     },

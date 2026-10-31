@@ -175,6 +175,9 @@ fun ShuttlPillTabs(
                 Box(
                     modifier = Modifier
                         .weight(1f)
+                        // The whole pill, fill included, so a chosen pill in a
+                        // read-only row dims with it, as a disabled field does.
+                        .alpha(if (pillEnabled) 1f else DISABLED_PILL_ALPHA)
                         .clip(shape)
                         .background(
                             if (selected) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.surfaceVariant,
@@ -186,8 +189,7 @@ fun ShuttlPillTabs(
                             role = Role.Tab,
                             onClick = { onSelect(index) },
                         )
-                        .padding(horizontal = pad, vertical = padV)
-                        .alpha(if (pillEnabled) 1f else DISABLED_PILL_ALPHA),
+                        .padding(horizontal = pad, vertical = padV),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
@@ -205,9 +207,9 @@ fun ShuttlPillTabs(
 private val TRACK_PADDING = 4.dp
 
 /**
- * A disabled pill's label, the text field's own disabled alpha
- * (ShuttlOutlinedTextField): dimmed enough to read as not on offer, and
- * still legible, since its label says what is waiting to become available.
+ * A disabled pill's alpha, the text field's own (ShuttlOutlinedTextField):
+ * dimmed enough to read as not on offer, and still legible, since its label
+ * says what is waiting to become available.
  */
 private const val DISABLED_PILL_ALPHA = 0.6f
 private val GAP = 4.dp

@@ -23,7 +23,6 @@ import com.badmintontracker.shared.players.PlayersTarget
 import com.badmintontracker.shared.players.endsDraft
 import com.badmintontracker.shared.players.matchPlayers
 import com.badmintontracker.shared.players.playersTarget
-import com.badmintontracker.shared.players.toAssignment
 import com.badmintontracker.shared.scoring.Side
 
 /**
@@ -74,14 +73,13 @@ fun AutoMatchDetailsHost(
             detailsEditable = canEditLocalVideoDetails(entry.stage),
             playersDraft = remember { endsDraft(entry.matchPlayers, entry.nearSide, null) },
             playersEditable = playersTarget(null, entry, null) != PlayersTarget.UPLOADING,
-            players = roster,
+            roster = roster,
             onAddPlayer = { name, arm ->
                 playersVm?.create(name, arm) ?: PlayerCreation.Failed(PlayersCopy.SAVE_FAILED)
             },
             autoOpened = true,
             onDismiss = onClose,
-            onSave = { title, description, draft ->
-                val (players, nearSide) = draft?.toAssignment() ?: (entry.matchPlayers to entry.nearSide)
+            onSave = { title, description, players, nearSide ->
                 onSave(entry.id, title, description, players, nearSide)
                 onClose()
             },

@@ -17,12 +17,13 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.layout.FirstBaseline
+import androidx.compose.ui.layout.HorizontalAlignmentLine
 import androidx.compose.ui.layout.LastBaseline
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -33,17 +34,19 @@ import com.badmintontracker.android.ui.components.ShuttlOutlinedTextField
 import com.badmintontracker.android.ui.components.ShuttlPillTabs
 import com.badmintontracker.android.ui.icons.ShuttlIcons
 import com.badmintontracker.android.ui.theme.ShuttlRadius
+import com.badmintontracker.shared.players.EndField
 import com.badmintontracker.shared.players.EndsDraft
 import com.badmintontracker.shared.players.Player
 import com.badmintontracker.shared.players.PlayersCopy
 import com.badmintontracker.shared.players.Tracked
+import com.badmintontracker.shared.players.field
 import com.badmintontracker.shared.players.showsDeviceLine
 import com.badmintontracker.shared.players.swapped
 import com.badmintontracker.shared.players.withName
 import com.badmintontracker.shared.players.withPlayer
+import com.badmintontracker.shared.players.withSomeoneElse
 import com.badmintontracker.shared.players.withTracked
 import com.badmintontracker.shared.scoring.MAX_PLAYER_NAME
-import com.badmintontracker.shared.scoring.Side
 
 /**
  * "Who's playing", for a match born as a video: One player | Both players,
@@ -54,7 +57,8 @@ import com.badmintontracker.shared.scoring.Side
  * never a second picker: a profile chosen there would drop the name typed for
  * it, so the player is moved to the other end with Swap ends instead. In Both
  * mode both ends are pickers, each offering every player but the one at the
- * other end. When the player is at the far end, a line says the phone's own
+ * other end. Every picker also offers "Someone else", which shows the end's
+ * typed name under it, so no typed name is ever out of sight. When the player is at the far end, a line says the phone's own
  * analysis follows only the near one.
  *
  * Only renders [draft] and hands each tap back as the next draft, through the
@@ -84,6 +88,8 @@ fun WhoIsPlayingSection(
             enabled = editable,
         )
         Court(
+            farLine = textLine(draft.field(CourtSide.FAR)),
+            nearLine = textLine(draft.field(CourtSide.NEAR)),
             far = { mod -> End(CourtSide.FAR, draft, players, onChange, onAddPlayer, editable, mod) },
             near = { mod -> End(CourtSide.NEAR, draft, players, onChange, onAddPlayer, editable, mod) },
         )
@@ -98,15 +104,17 @@ fun WhoIsPlayingSection(
                 Text(PlayersCopy.SWAP_ENDS)
             }
         }
-        if (draft.showsDeviceLine()) Note(PlayersCopy.DEVICE_ANALYSIS_LINE)
-        if (uploading) Note(PlayersCopy.UPLOAD_IN_PROGRESS)
+        if (draft.showsDeviceLine()) PlayersNote(PlayersCopy.DEVICE_ANALYSIS_LINE)
+        if (uploading) PlayersNote(PlayersCopy.UPLOAD_IN_PROGRESS)
     }
 }
 
 /**
- * One end of the court: a picker for a player's end, else (One mode, the
- * other end) the opponent's name. Which end holds the player is the draft's
- * to say ([EndsDraft.playerAtNear]).
+ * One end of the court, as the draft says it draws ([EndsDraft.field]): One
+ * mode's other end is the typed opponent; every other end is a picker of the
+ * players, "Someone else" and "Add player", with the end's typed name under it
+ * once "Someone else" is its value, so a typed name at any end is on screen and
+ * editable (Ruling 17).
  */
 @Composable
 private fun End(
@@ -119,43 +127,57 @@ private fun End(
     modifier: Modifier,
 ) {
     val near = end == CourtSide.NEAR
-    val playerEnd = draft.tracked == Tracked.BOTH || draft.playerAtNear == near
-    if (playerEnd) {
-        val id = if (near) draft.nearPlayerId else draft.farPlayerId
-        val otherId = if (near) draft.farPlayerId else draft.nearPlayerId
-        PlayerPicker(
-            selectedId = id,
-            // One player cannot stand at both ends; in One mode the other end
-            // holds no profile, so this hides nobody there.
-            players = players.filter { it.id != otherId },
-            onPick = { onChange(draft.withPlayer(end, it.id)) },
-            onClear = { onChange(draft.withPlayer(end, null)) },
-            onAddPlayer = onAddPlayer,
-            enabled = editable,
-            modifier = modifier,
-        )
-    } else {
-        ShuttlOutlinedTextField(
-            value = if (near) draft.nearName else draft.farName,
+    val name = if (near) draft.nearName else draft.farName
+    when (val field = draft.field(end)) {
+        EndField.OPPONENT -> ShuttlOutlinedTextField(
+            value = name,
             onValueChange = { onChange(draft.withName(end, it)) },
             label = PlayersCopy.OPPONENT_FIELD,
             maxLength = MAX_PLAYER_NAME,
             enabled = editable,
             modifier = modifier,
         )
+        EndField.PLAYER, EndField.SOMEONE_ELSE -> Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            val otherId = if (near) draft.farPlayerId else draft.nearPlayerId
+            PlayerPicker(
+                selectedId = if (near) draft.nearPlayerId else draft.farPlayerId,
+                // One player cannot stand at both ends; in One mode the other end
+                // holds no profile, so this hides nobody there.
+                players = players.filter { it.id != otherId },
+                onPick = { onChange(draft.withPlayer(end, it.id)) },
+                onClear = { onChange(draft.withPlayer(end, null)) },
+                onAddPlayer = onAddPlayer,
+                enabled = editable,
+                someoneElse = field == EndField.SOMEONE_ELSE,
+                onSomeoneElse = { onChange(draft.withSomeoneElse(end)) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (field == EndField.SOMEONE_ELSE) {
+                ShuttlOutlinedTextField(
+                    value = name,
+                    onValueChange = { onChange(draft.withName(end, it)) },
+                    label = PlayersCopy.NAME_FIELD,
+                    maxLength = MAX_PLAYER_NAME,
+                    enabled = editable,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
     }
 }
 
 /**
  * The court card: Far over Near with a dashed net between, each end's label
- * at its left. The labels sit on the control's text baseline (the picker's
- * name, the typed opponent's text) rather than on the half's centre, since a
- * typed name carries its own label above the box and would pull a centred
- * label up off it. Both labels take the wider one's width, so the two
- * controls start at one x at any font scale.
+ * at its left. The labels sit on the control's own text line rather than on
+ * the half's centre: a picker's name (its first line, with any name field
+ * under it), or a typed opponent's text (its last, under the field's label),
+ * as [farLine] and [nearLine] say. Both labels take the wider one's width, so
+ * the two controls start at one x at any font scale.
  */
 @Composable
 private fun Court(
+    farLine: HorizontalAlignmentLine,
+    nearLine: HorizontalAlignmentLine,
     far: @Composable (Modifier) -> Unit,
     near: @Composable (Modifier) -> Unit,
 ) {
@@ -172,7 +194,7 @@ private fun Court(
     }
 
     @Composable
-    fun Half(tag: String, control: @Composable (Modifier) -> Unit) {
+    fun Half(tag: String, line: HorizontalAlignmentLine, control: @Composable (Modifier) -> Unit) {
         Row(Modifier.fillMaxWidth().padding(12.dp)) {
             Text(
                 text = tag,
@@ -180,10 +202,10 @@ private fun Court(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 softWrap = false,
-                modifier = Modifier.width(tagWidth).alignBy(LastBaseline),
+                modifier = Modifier.width(tagWidth).alignBy(line),
             )
             Spacer(Modifier.width(12.dp))
-            control(Modifier.weight(1f).alignBy(LastBaseline))
+            control(Modifier.weight(1f).alignBy(line))
         }
     }
 
@@ -192,7 +214,7 @@ private fun Court(
             .fillMaxWidth()
             .border(1.dp, MaterialTheme.colorScheme.outline, shape),
     ) {
-        Half(PlayersCopy.FAR, far)
+        Half(PlayersCopy.FAR, farLine, far)
         // The net: dashed, as the mock draws it, across the card's inner width.
         Spacer(
             Modifier
@@ -208,12 +230,17 @@ private fun Court(
                     )
                 },
         )
-        Half(PlayersCopy.NEAR, near)
+        Half(PlayersCopy.NEAR, nearLine, near)
     }
 }
 
+/** The line an end's label sits on: see [Court]. */
+private fun textLine(field: EndField): HorizontalAlignmentLine =
+    if (field == EndField.OPPONENT) LastBaseline else FirstBaseline
+
+/** A who's-playing editor's quiet line: the device line, the doubles note, the upload sentence. */
 @Composable
-private fun Note(text: String) {
+internal fun PlayersNote(text: String) {
     Text(
         text = text,
         style = MaterialTheme.typography.bodySmall,
@@ -222,29 +249,3 @@ private fun Note(text: String) {
 }
 
 private val NetStroke = 2.dp
-
-/**
- * Saves an [EndsDraft] across recreation, for the editors that hold one in
- * rememberSaveable; null (no section) saves as an empty list.
- */
-internal val EndsDraftSaver = listSaver<EndsDraft?, Any?>(
-    save = { d ->
-        if (d == null) emptyList()
-        else listOf(d.tracked.name, d.nearPlayerId, d.farPlayerId, d.nearName, d.farName, d.playerAtNear, d.nearSide?.name)
-    },
-    restore = {
-        if (it.isEmpty()) {
-            null
-        } else {
-            EndsDraft(
-                tracked = Tracked.valueOf(it[0] as String),
-                nearPlayerId = it[1] as String?,
-                farPlayerId = it[2] as String?,
-                nearName = it[3] as String,
-                farName = it[4] as String,
-                playerAtNear = it[5] as Boolean,
-                nearSide = (it[6] as String?)?.let(Side::valueOf),
-            )
-        }
-    },
-)
