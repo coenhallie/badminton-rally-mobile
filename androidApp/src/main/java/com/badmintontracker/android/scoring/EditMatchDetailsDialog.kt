@@ -149,11 +149,17 @@ fun EditMatchDetailsDialog(
     var homePartner by rememberSaveable { mutableStateOf(initial.players.homePlayers.getOrElse(1) { "" }) }
     var away by rememberSaveable { mutableStateOf(initial.players.awayPlayers.getOrElse(0) { "" }) }
     var awayPartner by rememberSaveable { mutableStateOf(initial.players.awayPlayers.getOrElse(1) { "" }) }
-    // SIDES: each side's profile, and whether "Someone else" was chosen for it.
+    // SIDES: each side's profile, and whether "Someone else" was chosen for it:
+    // a side that opens with a typed name and no profile already is, and typing
+    // chooses it, so clearing the field to retype never takes the field away.
     var homeId by rememberSaveable { mutableStateOf(initial.players.homePlayerId) }
     var awayId by rememberSaveable { mutableStateOf(initial.players.awayPlayerId) }
-    var homeSomeoneElse by rememberSaveable { mutableStateOf(false) }
-    var awaySomeoneElse by rememberSaveable { mutableStateOf(false) }
+    var homeSomeoneElse by rememberSaveable {
+        mutableStateOf(initial.players.homePlayerId == null && initial.players.homePlayers.any { it.isNotBlank() })
+    }
+    var awaySomeoneElse by rememberSaveable {
+        mutableStateOf(initial.players.awayPlayerId == null && initial.players.awayPlayers.any { it.isNotBlank() })
+    }
     var nearSideIndex by rememberSaveable { mutableStateOf(END_OPTIONS.indexOf(initial.nearSide)) }
     // ENDS: the singles section's draft; null while the match is doubles.
     var ends by rememberSaveable(stateSaver = EndsDraftSaver) {
@@ -292,7 +298,7 @@ fun EditMatchDetailsDialog(
                             players = players,
                             onPick = { homeId = it },
                             onSomeoneElse = { homeId = null; homeSomeoneElse = true },
-                            onName = { home = it },
+                            onName = { home = it; homeSomeoneElse = true },
                             onAddPlayer = onAddPlayer,
                         )
                         SideRow(
@@ -305,7 +311,7 @@ fun EditMatchDetailsDialog(
                             players = players,
                             onPick = { awayId = it },
                             onSomeoneElse = { awayId = null; awaySomeoneElse = true },
-                            onName = { away = it },
+                            onName = { away = it; awaySomeoneElse = true },
                             onAddPlayer = onAddPlayer,
                         )
                     }
