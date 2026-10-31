@@ -1,5 +1,6 @@
 package com.badmintontracker.shared.scoring
 
+import com.badmintontracker.shared.players.MatchPlayers
 import com.russhwolf.settings.MapSettings
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
@@ -223,7 +224,7 @@ class ScoreEditTest {
     @Test
     fun the_sides_are_called_by_their_players_once_named() {
         val b = board()
-        b.scorer.updateDetails("Thu League", null, listOf("Coen"), listOf("Marco"))
+        b.scorer.updateDetails("Thu League", null, MatchPlayers(null, null, listOf("Coen"), listOf("Marco")))
         b.log.planScoreEdit(home = 0, away = 1, nextServer = null).summary shouldBe "Adds 1 rally for Marco."
     }
 

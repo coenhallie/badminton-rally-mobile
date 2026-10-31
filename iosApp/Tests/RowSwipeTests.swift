@@ -15,7 +15,8 @@ final class RowSwipeTests: XCTestCase {
             durationMs: 48_000, sizeBytes: 2, addedAtEpochMs: 1_787_940_000_000,
             title: nil, description: nil, keypoints: nil,
             stage: stage, failedStep: nil, failureMessage: nil, resultSeen: false,
-            scoreLogId: scoreLogId
+            scoreLogId: scoreLogId,
+            homePlayerId: nil, awayPlayerId: nil, homePlayers: [], awayPlayers: [], nearSide: nil
         )
     }
 
@@ -23,7 +24,7 @@ final class RowSwipeTests: XCTestCase {
         let at = KotlinInstant.companion.fromEpochMilliseconds(epochMilliseconds: 1_787_940_000_000)
         return ScoreLog(
             id: id, videoId: videoId, title: "Thu League",
-            homePlayers: [], awayPlayers: [], format: nil,
+            homePlayers: [], awayPlayers: [], homePlayerId: nil, awayPlayerId: nil, format: nil,
             rules: ScoringRules.companion.BWF_21, setup: MatchSetup(firstServer: .home),
             events: [], status: videoId != nil ? .bound : .unbound,
             createdAt: at, updatedAt: at

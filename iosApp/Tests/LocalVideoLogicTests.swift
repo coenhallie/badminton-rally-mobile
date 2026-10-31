@@ -107,7 +107,8 @@ final class LocalVideoLogicTests: XCTestCase {
             durationMs: 60_000, sizeBytes: 1_000_000, addedAtEpochMs: 1_787_940_000_000,
             title: nil, description: nil, keypoints: keypoints,
             stage: stage, failedStep: nil, failureMessage: nil,
-            resultSeen: false, scoreLogId: nil
+            resultSeen: false, scoreLogId: nil,
+            homePlayerId: nil, awayPlayerId: nil, homePlayers: [], awayPlayers: [], nearSide: nil
         )
     }
 

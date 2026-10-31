@@ -49,7 +49,8 @@ final class ClipListModelTests: XCTestCase {
             durationMs: 1000, sizeBytes: 2, addedAtEpochMs: 1,
             title: nil, description: nil, keypoints: nil,
             stage: .local, failedStep: nil, failureMessage: nil, resultSeen: false,
-            scoreLogId: nil
+            scoreLogId: nil,
+            homePlayerId: nil, awayPlayerId: nil, homePlayers: [], awayPlayers: [], nearSide: nil
         )
     }
 
@@ -151,7 +152,8 @@ final class ClipListModelTests: XCTestCase {
             durationMs: 1000, sizeBytes: 2, addedAtEpochMs: 1,
             title: nil, description: nil, keypoints: nil,
             stage: .analyzed, failedStep: nil, failureMessage: nil, resultSeen: false,
-            scoreLogId: scoreLogId
+            scoreLogId: scoreLogId,
+            homePlayerId: nil, awayPlayerId: nil, homePlayers: [], awayPlayers: [], nearSide: nil
         )
     }
 

@@ -108,7 +108,8 @@ final class MatchGroupingTests: XCTestCase {
             metadataByVideoId: [
                 "v1": MatchMetadata(
                     videoId: "v1", title: "Thu League vs Marco", description: "Indoor court 2.",
-                    homePlayers: [], awayPlayers: [], format: nil
+                    homePlayers: [], awayPlayers: [], format: nil,
+                    homePlayerId: nil, awayPlayerId: nil, nearSide: nil, homeNames: [], awayNames: []
                 )
             ]
         )
@@ -127,7 +128,9 @@ final class MatchGroupingTests: XCTestCase {
             metadataByVideoId: [
                 "v1": MatchMetadata(
                     videoId: "v1", title: "Club final", description: nil,
-                    homePlayers: ["Coen", "Ana"], awayPlayers: ["Marco", "Li"], format: .mixedDoubles
+                    homePlayers: ["Coen", "Ana"], awayPlayers: ["Marco", "Li"], format: .mixedDoubles,
+                    homePlayerId: nil, awayPlayerId: nil, nearSide: nil,
+                    homeNames: ["Coen", "Ana"], awayNames: ["Marco", "Li"]
                 )
             ]
         )

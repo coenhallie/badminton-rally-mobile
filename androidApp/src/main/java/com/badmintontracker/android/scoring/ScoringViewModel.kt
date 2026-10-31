@@ -3,6 +3,7 @@ package com.badmintontracker.android.scoring
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.badmintontracker.shared.model.AnnotationLabel
+import com.badmintontracker.shared.players.MatchPlayers
 import com.badmintontracker.shared.repo.AnnotationLabelsRepository
 import com.badmintontracker.shared.scoring.BoardNotice
 import com.badmintontracker.shared.scoring.BoardTarget
@@ -218,7 +219,12 @@ class ScoringViewModel(
     }
 
     fun updateDetails(title: String, format: MatchFormat?, homePlayers: List<String>, awayPlayers: List<String>) {
-        scorer.updateDetails(title, format, homePlayers, awayPlayers)
+        val log = state.value.log ?: return
+        // The editor does not choose a profile yet, so the log keeps the ones it has.
+        scorer.updateDetails(
+            title, format,
+            MatchPlayers(log.homePlayerId, log.awayPlayerId, homePlayers, awayPlayers),
+        )
     }
 
     fun switchFirstServer() {

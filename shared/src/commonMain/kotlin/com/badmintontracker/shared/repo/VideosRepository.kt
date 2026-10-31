@@ -2,7 +2,9 @@ package com.badmintontracker.shared.repo
 
 import com.badmintontracker.shared.model.CourtKeypoints
 import com.badmintontracker.shared.model.MatchMetadata
+import com.badmintontracker.shared.players.MatchPlayers
 import com.badmintontracker.shared.scoring.MatchFormat
+import com.badmintontracker.shared.scoring.Side
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.exceptions.RestException
@@ -136,6 +138,8 @@ interface VideosRepository {
      * Insert the videos row. Call AFTER the upload succeeds (same order as web).
      * [title] and [description] ride along here because the database grants no
      * UPDATE on either column — this insert is the only chance to set them.
+     * [players] and [nearSide] ride along too, so a video that was assigned before
+     * it was uploaded does not need a second write.
      */
     suspend fun createVideo(
         videoId: String,
@@ -143,6 +147,8 @@ interface VideosRepository {
         sizeBytes: Long,
         title: String?,
         description: String?,
+        players: MatchPlayers,
+        nearSide: Side?,
     ): Result<Unit>
     suspend fun setCourtKeypoints(videoId: String, keypoints: CourtKeypoints): Result<Unit>
     /** Invoke the process-video Edge Function (requires row + keypoints in place). */
@@ -207,17 +213,35 @@ interface VideosRepository {
 
     /**
      * Rewrites a video-born match's details, which live on its videos row. The
-     * title, description, format and the two player lists are the columns the
-     * database grants the owner an UPDATE on (20260922000000); every other column
-     * stays out of the phone's reach. On success the cached row is replaced too.
+     * title, description, format, the two player lists, the two player ids and the
+     * near side are the columns the database grants the owner an UPDATE on
+     * (20260922000000, 20261031000000); every other column stays out of the
+     * phone's reach. On success the cached row is replaced too.
+     *
+     * One PATCH carrying every column, nulls and empty lists included: the names
+     * and the ids are checked together by the database (a side is a profile or
+     * typed names, never both; profiles only in singles), so they cannot travel
+     * in two requests that may each arrive alone.
      */
     suspend fun updateMatchDetails(
         videoId: String,
         title: String?,
         description: String?,
         format: MatchFormat?,
-        homePlayers: List<String>,
-        awayPlayers: List<String>,
+        players: MatchPlayers,
+        nearSide: Side?,
+    ): Result<Unit>
+
+    /**
+     * Rewrites only who is on each side and which end the home side was at, for a
+     * save that changes nothing else. Every one of the five columns is sent, null
+     * or empty when cleared: a patch that left a key out would keep the old value.
+     * On success the cached row keeps its other fields and takes the new ones.
+     */
+    suspend fun updateMatchPlayers(
+        videoId: String,
+        players: MatchPlayers,
+        nearSide: Side?,
     ): Result<Unit>
 
     /**
@@ -242,6 +266,13 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
         val status: String,
         val title: String? = null,
         val description: String? = null,
+        // Defaulted like the two above: an unassigned video leaves the columns to
+        // their database defaults on the insert.
+        @SerialName("home_player_id") val homePlayerId: String? = null,
+        @SerialName("away_player_id") val awayPlayerId: String? = null,
+        @SerialName("home_players")   val homePlayers: List<String> = emptyList(),
+        @SerialName("away_players")   val awayPlayers: List<String> = emptyList(),
+        @SerialName("near_side")      val nearSide: Side? = null,
     )
 
     @Serializable
@@ -283,6 +314,21 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
         val format: MatchFormat?,
         @SerialName("home_players") val homePlayers: List<String>,
         @SerialName("away_players") val awayPlayers: List<String>,
+        // No defaults on any of these: a default-valued property is left out of
+        // the body, and a cleared assignment is a null or an empty list sent.
+        @SerialName("home_player_id") val homePlayerId: String?,
+        @SerialName("away_player_id") val awayPlayerId: String?,
+        @SerialName("near_side") val nearSide: Side?,
+    )
+
+    /** [MatchDetailsPatch] without the title, description and format. Same rule: no defaults. */
+    @Serializable
+    private data class MatchPlayersPatch(
+        @SerialName("home_player_id") val homePlayerId: String?,
+        @SerialName("away_player_id") val awayPlayerId: String?,
+        @SerialName("home_players") val homePlayers: List<String>,
+        @SerialName("away_players") val awayPlayers: List<String>,
+        @SerialName("near_side") val nearSide: Side?,
     )
 
     private val metadata = MutableStateFlow<Map<String, MatchMetadata>>(emptyMap())
@@ -295,6 +341,8 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
         sizeBytes: Long,
         title: String?,
         description: String?,
+        players: MatchPlayers,
+        nearSide: Side?,
     ): Result<Unit> =
         runCatching {
             val uid = client.auth.currentUserOrNull()?.id ?: error("Not signed in")
@@ -308,6 +356,11 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
                     status = "uploaded",
                     title = title,
                     description = description,
+                    homePlayerId = players.homePlayerId,
+                    awayPlayerId = players.awayPlayerId,
+                    homePlayers = players.homePlayers,
+                    awayPlayers = players.awayPlayers,
+                    nearSide = nearSide,
                 )
             )
             Unit
@@ -323,18 +376,79 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
         title: String?,
         description: String?,
         format: MatchFormat?,
-        homePlayers: List<String>,
-        awayPlayers: List<String>,
+        players: MatchPlayers,
+        nearSide: Side?,
     ): Result<Unit> = runCatching {
         client.postgrest.from("videos")
-            .update(MatchDetailsPatch(title, description, format, homePlayers, awayPlayers)) {
+            .update(
+                MatchDetailsPatch(
+                    title, description, format,
+                    players.homePlayers, players.awayPlayers,
+                    players.homePlayerId, players.awayPlayerId, nearSide,
+                )
+            ) {
                 filter { eq("id", videoId) }
             }
         // Written into the cache rather than re-fetched: the write is the truth
         // now, and a round trip would only add a window in which the page shows
         // the old name after Save.
-        metadata.update { it + (videoId to MatchMetadata(videoId, title, description, homePlayers, awayPlayers, format)) }
+        metadata.update { cache ->
+            cache + (videoId to cachedRow(cache[videoId], videoId, players, nearSide).copy(
+                title = title, description = description, format = format,
+            ))
+        }
     }.annotateHttpStatus()
+
+    override suspend fun updateMatchPlayers(
+        videoId: String,
+        players: MatchPlayers,
+        nearSide: Side?,
+    ): Result<Unit> = runCatching {
+        client.postgrest.from("videos")
+            .update(
+                MatchPlayersPatch(
+                    players.homePlayerId, players.awayPlayerId,
+                    players.homePlayers, players.awayPlayers, nearSide,
+                )
+            ) {
+                filter { eq("id", videoId) }
+            }
+        metadata.update { cache -> cache + (videoId to cachedRow(cache[videoId], videoId, players, nearSide)) }
+    }.annotateHttpStatus()
+
+    /**
+     * The cached row after a write of [players] and [nearSide]: whatever the cache
+     * held for the other fields, with the assignment replaced. The display names
+     * are the typed ones for a side with no profile; for a side with one they are
+     * kept only while it is the same profile, because resolving a profile's name
+     * is the RPC's job and not something this repository can do. A fresh
+     * [listMatchMetadata] replaces the row either way.
+     */
+    private fun cachedRow(
+        existing: MatchMetadata?,
+        videoId: String,
+        players: MatchPlayers,
+        nearSide: Side?,
+    ): MatchMetadata {
+        val base = existing ?: MatchMetadata(videoId)
+        return base.copy(
+            homePlayers = players.homePlayers,
+            awayPlayers = players.awayPlayers,
+            homePlayerId = players.homePlayerId,
+            awayPlayerId = players.awayPlayerId,
+            nearSide = nearSide,
+            homeNames = when (players.homePlayerId) {
+                null -> players.homePlayers
+                base.homePlayerId -> base.homeNames
+                else -> emptyList()
+            },
+            awayNames = when (players.awayPlayerId) {
+                null -> players.awayPlayers
+                base.awayPlayerId -> base.awayNames
+                else -> emptyList()
+            },
+        )
+    }
 
     override suspend fun setCourtKeypoints(videoId: String, keypoints: CourtKeypoints): Result<Unit> =
         runCatching {

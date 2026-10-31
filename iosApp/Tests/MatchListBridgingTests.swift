@@ -17,7 +17,8 @@ final class MatchListBridgingTests: XCTestCase {
             durationMs: 48_000, sizeBytes: 2, addedAtEpochMs: 1_787_940_000_000,
             title: nil, description: nil, keypoints: nil,
             stage: stage, failedStep: nil, failureMessage: nil, resultSeen: false,
-            scoreLogId: nil
+            scoreLogId: nil,
+            homePlayerId: nil, awayPlayerId: nil, homePlayers: [], awayPlayers: [], nearSide: nil
         )
     }
 

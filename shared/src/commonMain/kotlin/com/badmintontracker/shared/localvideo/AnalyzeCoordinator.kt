@@ -1,5 +1,6 @@
 package com.badmintontracker.shared.localvideo
 
+import com.badmintontracker.shared.players.matchPlayers
 import com.badmintontracker.shared.model.CourtKeypoints
 import com.badmintontracker.shared.repo.ClipsRepository
 import com.badmintontracker.shared.repo.UploadState
@@ -215,6 +216,7 @@ class AnalyzeCoordinator(
         if (startFrom <= AnalyzeStep.CREATE_ROW) {
             val error = videos.createVideo(
                 entry.id, entry.displayName, entry.sizeBytes, entry.title, entry.description,
+                entry.matchPlayers, entry.nearSide,
             ).exceptionOrNull()
             if (error != null && !error.isDuplicateKey()) {
                 return fail(entryId, AnalyzeStep.CREATE_ROW, error.message ?: "Couldn't register video")

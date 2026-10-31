@@ -5,7 +5,9 @@ import com.badmintontracker.shared.repo.ProcessingUpdate
 import com.badmintontracker.shared.repo.UploadState
 import com.badmintontracker.shared.model.MatchMetadata
 import com.badmintontracker.shared.repo.VideosRepository
+import com.badmintontracker.shared.players.MatchPlayers
 import com.badmintontracker.shared.scoring.MatchFormat
+import com.badmintontracker.shared.scoring.Side
 import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
@@ -18,6 +20,8 @@ data class CreateVideoCall(
     val sizeBytes: Long,
     val title: String?,
     val description: String?,
+    val players: MatchPlayers = MatchPlayers.NONE,
+    val nearSide: Side? = null,
 )
 
 class FakeVideosRepository : VideosRepository {
@@ -45,8 +49,10 @@ class FakeVideosRepository : VideosRepository {
         sizeBytes: Long,
         title: String?,
         description: String?,
+        players: MatchPlayers,
+        nearSide: Side?,
     ): Result<Unit> {
-        createCalls += CreateVideoCall(videoId, filename, sizeBytes, title, description)
+        createCalls += CreateVideoCall(videoId, filename, sizeBytes, title, description, players, nearSide)
         return nextCreateResult
     }
 
@@ -123,12 +129,27 @@ class FakeVideosRepository : VideosRepository {
         title: String?,
         description: String?,
         format: MatchFormat?,
-        homePlayers: List<String>,
-        awayPlayers: List<String>,
+        players: MatchPlayers,
+        nearSide: Side?,
     ): Result<Unit> {
-        val row = MatchMetadata(videoId, title, description, homePlayers, awayPlayers, format)
+        val row = MatchMetadata(
+            videoId, title, description, players.homePlayers, players.awayPlayers, format,
+            players.homePlayerId, players.awayPlayerId, nearSide,
+            homeNames = players.homePlayers, awayNames = players.awayPlayers,
+        )
         updateDetailsCalls += row
         nextUpdateDetailsResult.onSuccess { metadata.value = metadata.value + (videoId to row) }
+        return nextUpdateDetailsResult
+    }
+
+    val updatePlayersCalls = mutableListOf<Pair<MatchPlayers, Side?>>()
+
+    override suspend fun updateMatchPlayers(
+        videoId: String,
+        players: MatchPlayers,
+        nearSide: Side?,
+    ): Result<Unit> {
+        updatePlayersCalls += players to nearSide
         return nextUpdateDetailsResult
     }
 

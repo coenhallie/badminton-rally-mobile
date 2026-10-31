@@ -1,6 +1,11 @@
 package com.badmintontracker.shared.localvideo
 
 import com.badmintontracker.shared.model.CourtKeypoints
+import com.badmintontracker.shared.players.MatchPlayers
+import com.badmintontracker.shared.players.forgetting
+import com.badmintontracker.shared.players.holds
+import com.badmintontracker.shared.players.matchPlayers
+import com.badmintontracker.shared.scoring.Side
 import com.badmintontracker.shared.util.SyncLock
 import com.badmintontracker.shared.util.withLock
 import com.russhwolf.settings.Settings
@@ -164,3 +169,38 @@ fun LocalVideoRepository.setDetails(id: String, title: String?, description: Str
  */
 fun LocalVideoRepository.mirrorVideoDetails(videoId: String, title: String?, description: String?) =
     update(videoId) { it.copy(title = title, description = description) }
+
+/**
+ * Stores who is on each side and which end the home side was at, on the entry that
+ * will upload them. No stage check, unlike [setDetails]: the caller routes, writing
+ * the videos row first once the entry has left LOCAL and calling this only to follow
+ * it (or, while LOCAL, instead of it), so the row on the server stays the record.
+ */
+fun LocalVideoRepository.setMatchPlayers(id: String, players: MatchPlayers, nearSide: Side?) =
+    update(id) {
+        it.copy(
+            homePlayerId = players.homePlayerId,
+            awayPlayerId = players.awayPlayerId,
+            homePlayers = players.homePlayers,
+            awayPlayers = players.awayPlayers,
+            nearSide = nearSide,
+        )
+    }
+
+/**
+ * A player was deleted: every entry that named them keeps [name] as a typed name
+ * and loses the id. Entries that do not hold the id are not written.
+ */
+fun LocalVideoRepository.forgetPlayer(playerId: String, name: String) {
+    for (id in entries.value.filter { it.matchPlayers.holds(playerId) }.map { it.id }) {
+        update(id) { entry ->
+            val after = entry.matchPlayers.forgetting(playerId, name)
+            entry.copy(
+                homePlayerId = after.homePlayerId,
+                awayPlayerId = after.awayPlayerId,
+                homePlayers = after.homePlayers,
+                awayPlayers = after.awayPlayers,
+            )
+        }
+    }
+}

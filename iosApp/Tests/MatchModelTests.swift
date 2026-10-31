@@ -53,7 +53,8 @@ final class MatchModelTests: XCTestCase {
             durationMs: 1000, sizeBytes: 10, addedAtEpochMs: 0,
             title: nil, description: nil, keypoints: nil,
             stage: stage, failedStep: nil, failureMessage: nil, resultSeen: false,
-            scoreLogId: scoreLogId
+            scoreLogId: scoreLogId,
+            homePlayerId: nil, awayPlayerId: nil, homePlayers: [], awayPlayers: [], nearSide: nil
         )
     }
 
@@ -109,7 +110,8 @@ final class MatchModelTests: XCTestCase {
             durationMs: 1000, sizeBytes: 10, addedAtEpochMs: 0,
             title: nil, description: nil, keypoints: nil,
             stage: .local, failedStep: nil, failureMessage: nil, resultSeen: false,
-            scoreLogId: log.id
+            scoreLogId: log.id,
+            homePlayerId: nil, awayPlayerId: nil, homePlayers: [], awayPlayers: [], nearSide: nil
         ))
         let m = model(scoreLogs: store, scoreLogId: log.id, localVideos: videos)
         XCTAssertFalse(m.canAddVideo)
@@ -261,7 +263,8 @@ final class MatchModelTests: XCTestCase {
             durationMs: 1000, sizeBytes: 10, addedAtEpochMs: 0,
             title: title, description: nil, keypoints: nil,
             stage: .analyzed, failedStep: nil, failureMessage: nil, resultSeen: false,
-            scoreLogId: nil
+            scoreLogId: nil,
+            homePlayerId: nil, awayPlayerId: nil, homePlayers: [], awayPlayers: [], nearSide: nil
         )
     }
 

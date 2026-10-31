@@ -1,5 +1,7 @@
 package com.badmintontracker.shared.scoring
 
+import com.badmintontracker.shared.players.MatchPlayers
+import com.badmintontracker.shared.players.matchPlayers
 import com.badmintontracker.shared.testing.TestSupabase
 import com.badmintontracker.shared.testing.jsonResponse
 import com.russhwolf.settings.MapSettings
@@ -8,6 +10,7 @@ import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
@@ -147,7 +150,7 @@ class ScoreLogsRepositoryTest {
         repo.replaceEvents(created.id, listOf(ScoreEvent.PointTo(Side.HOME)))
         repo.updateDetails(
             created.id, title = "  Club night  ", format = MatchFormat.SINGLES,
-            homePlayers = listOf("  Coen "), awayPlayers = listOf("Marco"),
+            players = MatchPlayers(null, null, listOf("  Coen "), listOf("Marco")),
         )
         val updated = repo.get(created.id)
         updated?.title shouldBe "Club night"
@@ -166,7 +169,7 @@ class ScoreLogsRepositoryTest {
         val created = repo.newMatch()
         repo.updateDetails(
             created.id, title = "Thu", format = MatchFormat.SINGLES,
-            homePlayers = listOf("Coen", "Ana"), awayPlayers = listOf("", "Li"),
+            players = MatchPlayers(null, null, listOf("Coen", "Ana"), listOf("", "Li")),
         )
         repo.get(created.id)?.homePlayers shouldBe listOf("Coen")
         repo.get(created.id)?.awayPlayers shouldBe emptyList()
@@ -178,7 +181,7 @@ class ScoreLogsRepositoryTest {
         val created = repo.newMatch()
         repo.updateDetails(
             created.id, title = "Thu", format = MatchFormat.MIXED_DOUBLES,
-            homePlayers = listOf("Coen", "Ana"), awayPlayers = listOf("Marco", " "),
+            players = MatchPlayers(null, null, listOf("Coen", "Ana"), listOf("Marco", " ")),
         )
         repo.get(created.id)?.homePlayers shouldBe listOf("Coen", "Ana")
         repo.get(created.id)?.awayPlayers shouldBe listOf("Marco")
@@ -188,8 +191,8 @@ class ScoreLogsRepositoryTest {
     fun details_can_be_cleared_again() {
         val repo = repo()
         val created = repo.newMatch()
-        repo.updateDetails(created.id, "Thu", MatchFormat.DOUBLES, listOf("A", "B"), listOf("C", "D"))
-        repo.updateDetails(created.id, "Thu", null, listOf("", ""), listOf("", ""))
+        repo.updateDetails(created.id, "Thu", MatchFormat.DOUBLES, MatchPlayers(null, null, listOf("A", "B"), listOf("C", "D")))
+        repo.updateDetails(created.id, "Thu", null, MatchPlayers(null, null, listOf("", ""), listOf("", "")))
         repo.get(created.id)?.format.shouldBeNull()
         repo.get(created.id)?.homePlayers.shouldBeEmpty()
     }
@@ -198,7 +201,7 @@ class ScoreLogsRepositoryTest {
     fun updated_details_survive_a_restart() {
         val settings = MapSettings()
         val created = repo(settings).newMatch()
-        repo(settings).updateDetails(created.id, "Thu", MatchFormat.DOUBLES, listOf("A", "B"), listOf("C", "D"))
+        repo(settings).updateDetails(created.id, "Thu", MatchFormat.DOUBLES, MatchPlayers(null, null, listOf("A", "B"), listOf("C", "D")))
         val reread = repo(settings).get(created.id)
         reread?.format shouldBe MatchFormat.DOUBLES
         reread?.homePlayers shouldBe listOf("A", "B")
@@ -207,7 +210,7 @@ class ScoreLogsRepositoryTest {
     @Test
     fun mutating_a_match_that_is_gone_is_a_no_op() {
         val repo = repo()
-        repo.updateDetails("nope", "x", null, emptyList(), emptyList())
+        repo.updateDetails("nope", "x", null, MatchPlayers.NONE)
         repo.replaceEvents("nope", listOf(ScoreEvent.PointTo(Side.HOME)))
         repo.finish("nope")
         repo.logs.value.shouldBeEmpty()
@@ -702,5 +705,101 @@ class ScoreLogsRepositoryTest {
 
         repo.logs.value shouldHaveSize total
         synced?.size shouldBe total
+    }
+
+    private val marco = MatchPlayers("player-marco", null, emptyList(), emptyList())
+
+    @Test
+    fun assigning_players_marks_the_match_dirty_and_keeps_everything_else() {
+        val repo = repo()
+        val created = repo.newMatch()
+        repo.replaceEvents(created.id, listOf(ScoreEvent.PointTo(Side.HOME)))
+
+        repo.assignPlayers(created.id, MatchPlayers("player-marco", null, emptyList(), listOf(" Jo ")))
+
+        val updated = repo.get(created.id)
+        updated?.homePlayerId shouldBe "player-marco"
+        updated?.awayPlayerId.shouldBeNull()
+        updated?.awayPlayers shouldBe listOf("Jo")
+        updated?.title shouldBe "Thu League"
+        updated?.events shouldBe listOf(ScoreEvent.PointTo(Side.HOME))
+        updated?.matchPlayers shouldBe MatchPlayers("player-marco", null, emptyList(), listOf("Jo"))
+    }
+
+    @Test
+    fun updating_details_writes_the_names_and_the_ids_in_one_edit() {
+        // One edit, one dirty row, one upsert: the database checks the ids and the
+        // names together, so they must never be written apart.
+        var clock = t0
+        val repo = repo(now = { clock })
+        val created = repo.newMatch()
+        clock = t0 + 1.hours
+
+        repo.updateDetails(created.id, "Club night", MatchFormat.SINGLES, marco)
+
+        val updated = repo.get(created.id)
+        updated?.homePlayerId shouldBe "player-marco"
+        updated?.title shouldBe "Club night"
+        updated?.format shouldBe MatchFormat.SINGLES
+        updated?.updatedAt shouldBe clock
+    }
+
+    @Test
+    fun an_assignment_survives_a_restart() {
+        val settings = MapSettings()
+        val created = repo(settings).newMatch()
+        repo(settings).assignPlayers(created.id, marco)
+        repo(settings).get(created.id)?.homePlayerId shouldBe "player-marco"
+    }
+
+    @Test
+    fun the_upsert_sends_cleared_assignment_columns_explicitly() = runTest {
+        // supabase-kt's own Json sets only ignoreUnknownKeys, so a property still at
+        // its default is left out of the request body, and an upsert that leaves a
+        // column out keeps the old value on the server: a profile the coach removed
+        // would come back at the next pull. This goes through a real client for that
+        // reason; a repository with no client never encodes through that Json.
+        val server = FakeScoreLogsServer()
+        val repo = syncingRepo(server)
+        val created = repo.newMatch()
+        repo.assignPlayers(created.id, marco)
+        repo.sync().isSuccess shouldBe true
+        server.posts().last().second.shouldContain(""""home_player_id":"player-marco"""")
+
+        repo.assignPlayers(created.id, MatchPlayers(null, null, listOf("Jo"), emptyList()))
+        repo.sync().isSuccess shouldBe true
+
+        val body = server.posts().last().second
+        body.shouldContain(""""home_player_id":null""")
+        body.shouldContain(""""away_player_id":null""")
+        body.shouldContain(""""home_players":["Jo"]""")
+        body.shouldContain(""""away_players":[]""")
+        body.shouldContain(""""format":null""")
+    }
+
+    @Test
+    fun forget_player_rewrites_and_dirties_every_cached_log() = runTest {
+        val server = FakeScoreLogsServer()
+        val repo = syncingRepo(server)
+        val home = repo.newMatch()
+        val away = repo.newMatch()
+        val unrelated = repo.newMatch()
+        repo.assignPlayers(home.id, marco)
+        repo.assignPlayers(away.id, MatchPlayers(null, "player-marco", listOf("Coen"), emptyList()))
+        repo.assignPlayers(unrelated.id, MatchPlayers("player-ana", null, emptyList(), emptyList()))
+        repo.sync().isSuccess shouldBe true
+        server.requests.clear()
+
+        repo.forgetPlayer("player-marco", "Marco")
+
+        repo.get(home.id)?.matchPlayers shouldBe MatchPlayers(null, null, listOf("Marco"), emptyList())
+        repo.get(away.id)?.matchPlayers shouldBe MatchPlayers(null, null, listOf("Coen"), listOf("Marco"))
+        repo.get(unrelated.id)?.homePlayerId shouldBe "player-ana"
+        repo.sync().isSuccess shouldBe true
+        // Only the two rewritten matches go out again; the third is not restamped.
+        val pushed = server.posts().single().second
+        pushed.shouldContain(home.id)
+        pushed.shouldContain(away.id)
+        pushed.shouldNotContain(unrelated.id)
     }
 }

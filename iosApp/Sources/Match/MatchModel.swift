@@ -77,9 +77,14 @@ final class MatchModel {
     /// The details editor's save. Local-first like every other edit to a match;
     /// sync carries it.
     func updateDetails(title: String, format: MatchFormat?, homePlayers: [String], awayPlayers: [String]) {
-        guard let scoreLogId else { return }
+        guard let scoreLogId, let log = scoreLogs.get(id: scoreLogId) else { return }
+        // The editor does not choose a profile yet, so the log keeps the ones it has.
         scoreLogs.updateDetails(
-            id: scoreLogId, title: title, format: format, homePlayers: homePlayers, awayPlayers: awayPlayers
+            id: scoreLogId, title: title, format: format,
+            players: MatchPlayers(
+                homePlayerId: log.homePlayerId, awayPlayerId: log.awayPlayerId,
+                homePlayers: homePlayers, awayPlayers: awayPlayers
+            )
         )
         readStore()
     }
@@ -99,7 +104,11 @@ final class MatchModel {
             let message = try await VideoMatchDetailsKt.updateVideoMatchDetailsOrMessage(
                 videos: videos, localVideos: localVideos, videoId: videoId,
                 title: title, description: description, format: format,
-                homePlayers: homePlayers, awayPlayers: awayPlayers
+                players: MatchPlayers(
+                    homePlayerId: nil, awayPlayerId: nil,
+                    homePlayers: homePlayers, awayPlayers: awayPlayers
+                ),
+                nearSide: nil
             )
             if let message { error = message }
         } catch {

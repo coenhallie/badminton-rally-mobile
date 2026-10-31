@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
+import com.badmintontracker.shared.players.MatchPlayers
 import com.badmintontracker.shared.repo.ClipsRepository
 import com.badmintontracker.shared.repo.VideosRepository
 import com.badmintontracker.shared.scoring.MatchFormat
@@ -113,7 +114,12 @@ class MatchViewModel(
     /** The details editor's save. Local-first like every other edit to a match; sync carries it. */
     fun updateDetails(title: String, format: MatchFormat?, homePlayers: List<String>, awayPlayers: List<String>) {
         val id = scoreLogId ?: return
-        scoreLogs.updateDetails(id, title, format, homePlayers, awayPlayers)
+        val log = scoreLogs.get(id) ?: return
+        // The editor does not choose a profile yet, so the log keeps the ones it has.
+        scoreLogs.updateDetails(
+            id, title, format,
+            MatchPlayers(log.homePlayerId, log.awayPlayerId, homePlayers, awayPlayers),
+        )
     }
 
     /**
@@ -140,8 +146,9 @@ class MatchViewModel(
                 title = title,
                 description = description,
                 format = format,
-                homePlayers = homePlayers,
-                awayPlayers = awayPlayers,
+                // The editor does not choose a profile or an end yet.
+                players = MatchPlayers(null, null, homePlayers, awayPlayers),
+                nearSide = null,
             )
             if (message != null) errors.value = message
         }

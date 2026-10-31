@@ -72,7 +72,8 @@ final class LocalVideoIntake {
             failedStep: nil,
             failureMessage: nil,
             resultSeen: false,
-            scoreLogId: forMatch?.scoreLogId
+            scoreLogId: forMatch?.scoreLogId,
+            homePlayerId: nil, awayPlayerId: nil, homePlayers: [], awayPlayers: [], nearSide: nil
         ))
         lastAddedId = id
     }

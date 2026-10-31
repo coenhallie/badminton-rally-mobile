@@ -7,6 +7,7 @@ import com.badmintontracker.shared.model.CourtKeypoints
 import com.badmintontracker.shared.model.MatchMetadata
 import com.badmintontracker.shared.model.MatchShare
 import com.badmintontracker.shared.model.RallyClip
+import com.badmintontracker.shared.players.MatchPlayers
 import com.badmintontracker.shared.prefs.RacketArmPreferenceRepository
 import com.badmintontracker.shared.repo.ClipsRepository
 import com.badmintontracker.shared.repo.ProcessingUpdate
@@ -15,6 +16,7 @@ import com.badmintontracker.shared.repo.SharesRepository
 import com.badmintontracker.shared.repo.UploadState
 import com.badmintontracker.shared.repo.VideosRepository
 import com.badmintontracker.shared.scoring.MatchFormat
+import com.badmintontracker.shared.scoring.Side
 import com.russhwolf.settings.NSUserDefaultsSettings
 import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.CancellationException
@@ -42,6 +44,7 @@ import platform.Foundation.NSUserDefaults
 private open class NoopVideosRepository : VideosRepository {
     override suspend fun createVideo(
         videoId: String, filename: String, sizeBytes: Long, title: String?, description: String?,
+        players: MatchPlayers, nearSide: Side?,
     ): Result<Unit> = Result.success(Unit)
     override suspend fun setCourtKeypoints(videoId: String, keypoints: CourtKeypoints): Result<Unit> =
         Result.success(Unit)
@@ -57,7 +60,10 @@ private open class NoopVideosRepository : VideosRepository {
     override fun observeMatchMetadata(): Flow<Map<String, MatchMetadata>> = MutableStateFlow(emptyMap())
     override suspend fun updateMatchDetails(
         videoId: String, title: String?, description: String?, format: MatchFormat?,
-        homePlayers: List<String>, awayPlayers: List<String>,
+        players: MatchPlayers, nearSide: Side?,
+    ): Result<Unit> = Result.success(Unit)
+    override suspend fun updateMatchPlayers(
+        videoId: String, players: MatchPlayers, nearSide: Side?,
     ): Result<Unit> = Result.success(Unit)
     override suspend fun deleteMatch(videoId: String): Result<Unit> = Result.success(Unit)
 }
@@ -100,9 +106,13 @@ class RecordingVideosRepository internal constructor() : VideosRepository by Noo
 
     override suspend fun updateMatchDetails(
         videoId: String, title: String?, description: String?, format: MatchFormat?,
-        homePlayers: List<String>, awayPlayers: List<String>,
+        players: MatchPlayers, nearSide: Side?,
     ): Result<Unit> {
-        val row = MatchMetadata(videoId, title, description, homePlayers, awayPlayers, format)
+        val row = MatchMetadata(
+            videoId, title, description, players.homePlayers, players.awayPlayers, format,
+            players.homePlayerId, players.awayPlayerId, nearSide,
+            homeNames = players.homePlayers, awayNames = players.awayPlayers,
+        )
         updates += row
         if (failUpdateDetails) return Result.failure(IllegalStateException("refused"))
         metadata.value = metadata.value + (videoId to row)

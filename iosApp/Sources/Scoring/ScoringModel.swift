@@ -215,7 +215,15 @@ final class ScoringModel {
     }
 
     func updateDetails(title: String, format: MatchFormat?, homePlayers: [String], awayPlayers: [String]) {
-        scorer.updateDetails(title: title, format: format, homePlayers: homePlayers, awayPlayers: awayPlayers)
+        guard let log else { return }
+        // The editor does not choose a profile yet, so the log keeps the ones it has.
+        scorer.updateDetails(
+            title: title, format: format,
+            players: MatchPlayers(
+                homePlayerId: log.homePlayerId, awayPlayerId: log.awayPlayerId,
+                homePlayers: homePlayers, awayPlayers: awayPlayers
+            )
+        )
         readStore()
     }
 

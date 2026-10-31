@@ -2,7 +2,9 @@ package com.badmintontracker.shared.repo
 
 import app.cash.turbine.test
 import com.badmintontracker.shared.model.CourtKeypoints
+import com.badmintontracker.shared.players.MatchPlayers
 import com.badmintontracker.shared.scoring.MatchFormat
+import com.badmintontracker.shared.scoring.Side
 import com.badmintontracker.shared.testing.TestSupabase
 import com.badmintontracker.shared.testing.jsonResponse
 import io.github.jan.supabase.SupabaseClient
@@ -68,7 +70,7 @@ class VideosRepositoryTest {
         client.signIn()
         val repo = VideosRepositoryImpl(client)
 
-        repo.createVideo("vid-1", "match.mp4", 123L, "Thu League vs Marco", "Indoor court 2.")
+        repo.createVideo("vid-1", "match.mp4", 123L, "Thu League vs Marco", "Indoor court 2.", MatchPlayers.NONE, null)
             .isSuccess.shouldBeTrue()
 
         body shouldContain "\"title\":\"Thu League vs Marco\""
@@ -92,10 +94,91 @@ class VideosRepositoryTest {
         client.signIn()
         val repo = VideosRepositoryImpl(client)
 
-        repo.createVideo("vid-1", "match.mp4", 123L, null, null).isSuccess.shouldBeTrue()
+        repo.createVideo("vid-1", "match.mp4", 123L, null, null, MatchPlayers.NONE, null).isSuccess.shouldBeTrue()
 
         body shouldNotContain "\"title\""
         body shouldNotContain "\"description\""
+    }
+
+    @Test
+    fun createVideo_writes_the_assignment_on_the_insert() = runTest {
+        var body = ""
+        val client = TestSupabase.client { request ->
+            if (request.url.encodedPath.contains("/auth/v1/token")) jsonResponse(tokenResponse)
+            else {
+                body = (request.body as TextContent).text
+                jsonResponse("[]", HttpStatusCode.Created)
+            }
+        }
+        client.signIn()
+        val repo = VideosRepositoryImpl(client)
+
+        repo.createVideo(
+            "vid-1", "match.mp4", 123L, null, null,
+            MatchPlayers("player-marco", null, emptyList(), listOf("Jo")), Side.HOME,
+        ).isSuccess.shouldBeTrue()
+
+        body shouldContain "\"home_player_id\":\"player-marco\""
+        body shouldContain "\"away_players\":[\"Jo\"]"
+        body shouldContain "\"near_side\":\"home\""
+    }
+
+    @Test
+    fun updateMatchPlayers_sends_every_column_even_when_cleared() = runTest {
+        var body = ""
+        var method = HttpMethod.Get
+        var query = ""
+        val client = TestSupabase.client { request ->
+            method = request.method
+            query = request.url.encodedQuery
+            body = (request.body as TextContent).text
+            jsonResponse("[]")
+        }
+        val repo = VideosRepositoryImpl(client)
+
+        repo.updateMatchPlayers("vid-1", MatchPlayers.NONE, nearSide = null).isSuccess.shouldBeTrue()
+
+        method shouldBe HttpMethod.Patch
+        query shouldContain "id=eq.vid-1"
+        // A key left out would keep the old value on the row.
+        body shouldContain "\"home_player_id\":null"
+        body shouldContain "\"away_player_id\":null"
+        body shouldContain "\"home_players\":[]"
+        body shouldContain "\"away_players\":[]"
+        body shouldContain "\"near_side\":null"
+        body shouldNotContain "\"title\""
+    }
+
+    @Test
+    fun updateMatchPlayers_keeps_the_rest_of_the_cached_row() = runTest {
+        val client = TestSupabase.client {
+            jsonResponse("""[{"video_id":"vid-1","title":"Thu League","description":"Court 2",
+                              "home_players":["Coen"],"away_players":[],"format":"singles"}]""")
+        }
+        val repo = VideosRepositoryImpl(client)
+        repo.listMatchMetadata().getOrThrow()
+
+        repo.updateMatchPlayers(
+            "vid-1", MatchPlayers(null, "player-marco", listOf("Coen"), emptyList()), Side.AWAY,
+        ).isSuccess.shouldBeTrue()
+
+        val cached = repo.observeMatchMetadata().first().getValue("vid-1")
+        cached.title shouldBe "Thu League"
+        cached.description shouldBe "Court 2"
+        cached.format shouldBe MatchFormat.SINGLES
+        cached.awayPlayerId shouldBe "player-marco"
+        cached.nearSide shouldBe Side.AWAY
+        cached.homeNames shouldBe listOf("Coen")
+    }
+
+    @Test
+    fun a_refused_updateMatchPlayers_leaves_the_cache_alone() = runTest {
+        val client = TestSupabase.client { respondError(HttpStatusCode.Forbidden, "no grant") }
+        val repo = VideosRepositoryImpl(client)
+
+        repo.updateMatchPlayers("vid-1", MatchPlayers.NONE, null).isFailure.shouldBeTrue()
+
+        repo.observeMatchMetadata().first() shouldBe emptyMap()
     }
 
     @Test
@@ -146,7 +229,8 @@ class VideosRepositoryTest {
 
         repo.updateMatchDetails(
             "vid-1", title = "Club final", description = null, format = MatchFormat.MIXED_DOUBLES,
-            homePlayers = listOf("Coen", "Ana"), awayPlayers = listOf("Marco", "Li"),
+            players = MatchPlayers(null, null, listOf("Coen", "Ana"), listOf("Marco", "Li")),
+            nearSide = null,
         ).isSuccess.shouldBeTrue()
 
         method shouldBe HttpMethod.Patch
@@ -157,6 +241,10 @@ class VideosRepositoryTest {
         body shouldContain "\"format\":\"mixed_doubles\""
         body shouldContain "\"home_players\":[\"Coen\",\"Ana\"]"
         body shouldContain "\"away_players\":[\"Marco\",\"Li\"]"
+        // The assignment columns ride in the same PATCH, null when unset.
+        body shouldContain "\"home_player_id\":null"
+        body shouldContain "\"away_player_id\":null"
+        body shouldContain "\"near_side\":null"
         val cached = repo.observeMatchMetadata().first().getValue("vid-1")
         cached.title shouldBe "Club final"
         cached.format shouldBe MatchFormat.MIXED_DOUBLES
@@ -167,7 +255,7 @@ class VideosRepositoryTest {
         val client = TestSupabase.client { respondError(HttpStatusCode.Forbidden, "no grant") }
         val repo = VideosRepositoryImpl(client)
 
-        repo.updateMatchDetails("vid-1", "Club final", null, null, emptyList(), emptyList())
+        repo.updateMatchDetails("vid-1", "Club final", null, null, MatchPlayers.NONE, null)
             .isFailure.shouldBeTrue()
 
         repo.observeMatchMetadata().first() shouldBe emptyMap()
@@ -188,7 +276,7 @@ class VideosRepositoryTest {
         // No session in the test client: owner_id comes from auth.currentUserOrNull().
         val client = TestSupabase.client { jsonResponse("[]", HttpStatusCode.Created) }
         val repo = VideosRepositoryImpl(client)
-        repo.createVideo("vid-1", "match.mp4", 123L, null, null).isFailure.shouldBeTrue()
+        repo.createVideo("vid-1", "match.mp4", 123L, null, null, MatchPlayers.NONE, null).isFailure.shouldBeTrue()
     }
 
     @Test

@@ -3,6 +3,7 @@ package com.badmintontracker.shared.scoring
 import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
+import com.badmintontracker.shared.players.MatchPlayers
 import com.badmintontracker.shared.testing.FakeVideosRepository
 import com.russhwolf.settings.MapSettings
 import io.kotest.matchers.collections.shouldBeEmpty
@@ -31,7 +32,8 @@ class VideoMatchDetailsTest {
         val message = updateVideoMatchDetailsOrMessage(
             videos, local, videoId = "v1",
             title = "  Club final ", description = "   ", format = MatchFormat.DOUBLES,
-            homePlayers = listOf(" Coen ", "Ana"), awayPlayers = listOf("Marco", ""),
+            players = MatchPlayers(null, null, listOf(" Coen ", "Ana"), listOf("Marco", "")),
+            nearSide = null,
         )
 
         message.shouldBeNull()
@@ -54,7 +56,8 @@ class VideoMatchDetailsTest {
 
         updateVideoMatchDetailsOrMessage(
             videos, local, "v1", "Club final", "", MatchFormat.SINGLES,
-            homePlayers = listOf("Coen", "Ana"), awayPlayers = listOf("Marco", "Li"),
+            players = MatchPlayers(null, null, listOf("Coen", "Ana"), listOf("Marco", "Li")),
+            nearSide = null,
         )
 
         videos.updateDetailsCalls.single().homePlayers shouldBe listOf("Coen")
@@ -71,7 +74,7 @@ class VideoMatchDetailsTest {
         val local = LocalVideoRepository(MapSettings()).apply { add(uploadedEntry("v1")) }
 
         val message = updateVideoMatchDetailsOrMessage(
-            videos, local, "v1", "Club final", "", null, emptyList(), emptyList(),
+            videos, local, "v1", "Club final", "", null, MatchPlayers.NONE, null,
         )
 
         message shouldBe VIDEO_DETAILS_SAVE_FAILED_MESSAGE
@@ -86,7 +89,7 @@ class VideoMatchDetailsTest {
         val local = LocalVideoRepository(MapSettings())
 
         val message = updateVideoMatchDetailsOrMessage(
-            videos, local, "web-1", "Club final", "", null, emptyList(), emptyList(),
+            videos, local, "web-1", "Club final", "", null, MatchPlayers.NONE, null,
         )
 
         message.shouldBeNull()

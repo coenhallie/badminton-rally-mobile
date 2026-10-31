@@ -22,7 +22,8 @@ final class LocalVideoCleanupWiringTests: XCTestCase {
             failedStep: nil,
             failureMessage: nil,
             resultSeen: false,
-            scoreLogId: nil
+            scoreLogId: nil,
+            homePlayerId: nil, awayPlayerId: nil, homePlayers: [], awayPlayers: [], nearSide: nil
         )
     }
 
@@ -65,7 +66,8 @@ final class LocalVideoCleanupWiringTests: XCTestCase {
             id: id, uri: relativePath, displayName: "m.mp4", durationMs: 1000,
             sizeBytes: 2, addedAtEpochMs: 1, title: nil, description: nil,
             keypoints: nil, stage: .local,
-            failedStep: nil, failureMessage: nil, resultSeen: false, scoreLogId: nil
+            failedStep: nil, failureMessage: nil, resultSeen: false, scoreLogId: nil,
+            homePlayerId: nil, awayPlayerId: nil, homePlayers: [], awayPlayers: [], nearSide: nil
         ))
         XCTAssertTrue(FileManager.default.fileExists(atPath: stored.path))
 

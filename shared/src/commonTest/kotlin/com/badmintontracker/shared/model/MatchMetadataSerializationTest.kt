@@ -1,6 +1,9 @@
 package com.badmintontracker.shared.model
 
+import com.badmintontracker.shared.players.MatchPlayers
+import com.badmintontracker.shared.players.matchPlayers
 import com.badmintontracker.shared.scoring.MatchFormat
+import com.badmintontracker.shared.scoring.Side
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import kotlinx.serialization.builtins.ListSerializer
@@ -69,5 +72,37 @@ class MatchMetadataSerializationTest {
 
         row.title.shouldBeNull()
         row.description.shouldBeNull()
+    }
+
+    @Test
+    fun decodes_the_assignment_and_the_resolved_names() {
+        val payload = """
+            [{"video_id":"v1","title":"Club final","description":null,
+              "home_players":[],"away_players":["Jo"],"format":"singles",
+              "home_player_id":"player-marco","away_player_id":null,"near_side":"away",
+              "home_names":["Marco"],"away_names":["Jo"]}]
+        """.trimIndent()
+
+        val row = Json.decodeFromString(ListSerializer(MatchMetadata.serializer()), payload).single()
+
+        row.homePlayerId shouldBe "player-marco"
+        row.awayPlayerId.shouldBeNull()
+        row.nearSide shouldBe Side.AWAY
+        row.homeNames shouldBe listOf("Marco")
+        row.awayNames shouldBe listOf("Jo")
+        // The record is the typed names and the ids; the names are for display.
+        row.matchPlayers shouldBe MatchPlayers("player-marco", null, emptyList(), listOf("Jo"))
+    }
+
+    @Test
+    fun a_row_without_the_assignment_decodes_with_none() {
+        val payload = """[{"video_id":"v1","title":"Thu League","description":null}]"""
+
+        val row = Json.decodeFromString(ListSerializer(MatchMetadata.serializer()), payload).single()
+
+        row.matchPlayers shouldBe MatchPlayers.NONE
+        row.nearSide.shouldBeNull()
+        row.homeNames shouldBe emptyList()
+        row.awayNames shouldBe emptyList()
     }
 }

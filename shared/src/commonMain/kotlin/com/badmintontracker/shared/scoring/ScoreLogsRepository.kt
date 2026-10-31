@@ -1,5 +1,9 @@
 package com.badmintontracker.shared.scoring
 
+import com.badmintontracker.shared.players.MatchPlayers
+import com.badmintontracker.shared.players.forgetting
+import com.badmintontracker.shared.players.holds
+import com.badmintontracker.shared.players.matchPlayers
 import com.badmintontracker.shared.repo.selectAllPages
 import com.badmintontracker.shared.util.SyncLock
 import com.badmintontracker.shared.util.randomUuid
@@ -168,23 +172,65 @@ class ScoreLogsRepository internal constructor(
         edit(id) { it.copy(events = events) }
 
     /**
-     * Everything the details editor can change, in one write. The names are
+     * Everything the details editor can change, in one write: the title, the
+     * format and who is on each side. One write, not a details write and then a
+     * players write, because each can reach the server alone and the database
+     * refuses a side that is both a profile and typed names, and a profile outside
+     * singles - a refused row fails the whole [sync] batch. The typed names are
      * normalised here rather than trusted from the caller, so a partner typed into
      * a match that was then switched to singles is not stored: see [submittedPlayers].
+     * The ids are stored as given.
      */
     fun updateDetails(
         id: String,
         title: String,
         format: MatchFormat?,
-        homePlayers: List<String>,
-        awayPlayers: List<String>,
+        players: MatchPlayers,
     ) = edit(id) {
         it.copy(
             title = title.trim(),
             format = format,
-            homePlayers = submittedPlayers(homePlayers, format),
-            awayPlayers = submittedPlayers(awayPlayers, format),
+            homePlayerId = players.homePlayerId,
+            awayPlayerId = players.awayPlayerId,
+            homePlayers = submittedPlayers(players.homePlayers, format),
+            awayPlayers = submittedPlayers(players.awayPlayers, format),
         )
+    }
+
+    /** Who is on each side, for a save that changes nothing else. Same normalisation as [updateDetails]. */
+    fun assignPlayers(id: String, players: MatchPlayers) = edit(id) {
+        it.copy(
+            homePlayerId = players.homePlayerId,
+            awayPlayerId = players.awayPlayerId,
+            homePlayers = submittedPlayers(players.homePlayers, it.format),
+            awayPlayers = submittedPlayers(players.awayPlayers, it.format),
+        )
+    }
+
+    /**
+     * A player was deleted: every cached match that named them keeps [name] as a
+     * typed name and loses the id (the server does the same with a trigger, so a
+     * dirty row pushed after it agrees). Only the matches that hold the id are
+     * rewritten and marked dirty; the rest are left alone.
+     */
+    fun forgetPlayer(playerId: String, name: String) = mutate { list ->
+        list.map { stored ->
+            val log = stored.log
+            if (!log.matchPlayers.holds(playerId)) stored
+            else {
+                val after = log.matchPlayers.forgetting(playerId, name)
+                StoredLog(
+                    log.copy(
+                        homePlayerId = after.homePlayerId,
+                        awayPlayerId = after.awayPlayerId,
+                        homePlayers = after.homePlayers,
+                        awayPlayers = after.awayPlayers,
+                        updatedAt = now(),
+                    ),
+                    dirty = true,
+                )
+            }
+        }
     }
 
     /**

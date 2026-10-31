@@ -5,6 +5,7 @@ import com.badmintontracker.shared.localvideo.MAX_MATCH_TITLE_LENGTH
 import com.badmintontracker.shared.localvideo.mirrorVideoDetails
 import com.badmintontracker.shared.localvideo.normalizeDescription
 import com.badmintontracker.shared.localvideo.normalizeTitle
+import com.badmintontracker.shared.players.MatchPlayers
 import com.badmintontracker.shared.repo.VideosRepository
 
 /**
@@ -39,8 +40,8 @@ suspend fun updateVideoMatchDetailsOrMessage(
     title: String,
     description: String,
     format: MatchFormat?,
-    homePlayers: List<String>,
-    awayPlayers: List<String>,
+    players: MatchPlayers,
+    nearSide: Side?,
 ): String? {
     val cleanTitle = normalizeTitle(title)
     val cleanDescription = normalizeDescription(description)
@@ -49,8 +50,11 @@ suspend fun updateVideoMatchDetailsOrMessage(
         title = cleanTitle,
         description = cleanDescription,
         format = format,
-        homePlayers = submittedPlayers(homePlayers, format),
-        awayPlayers = submittedPlayers(awayPlayers, format),
+        players = players.copy(
+            homePlayers = submittedPlayers(players.homePlayers, format),
+            awayPlayers = submittedPlayers(players.awayPlayers, format),
+        ),
+        nearSide = nearSide,
     )
     if (saved.isFailure) return VIDEO_DETAILS_SAVE_FAILED_MESSAGE
     localVideos.mirrorVideoDetails(videoId, cleanTitle, cleanDescription)

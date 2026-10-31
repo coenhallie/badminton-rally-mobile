@@ -1,6 +1,7 @@
 package com.badmintontracker.shared.localvideo
 
 import com.badmintontracker.shared.model.CourtKeypoints
+import com.badmintontracker.shared.scoring.Side
 import kotlinx.serialization.Serializable
 
 // MEASURING sits after PROCESSING and before FAILED so the enum reads in
@@ -176,4 +177,15 @@ data class LocalVideoEntry(
      * argument spelled out, so appending is a one-line change there.
      */
     val scoreLogId: String? = null,
+    /**
+     * Who is on each side, written on the videos INSERT like [title]. The profile
+     * ids and the typed names are exclusive per side, and [nearSide] is which end
+     * the home side was at, as the camera sees it. Appended after [scoreLogId] for
+     * the same Swift reason.
+     */
+    val homePlayerId: String? = null,
+    val awayPlayerId: String? = null,
+    val homePlayers: List<String> = emptyList(),
+    val awayPlayers: List<String> = emptyList(),
+    val nearSide: Side? = null,
 )

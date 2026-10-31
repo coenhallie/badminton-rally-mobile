@@ -1,5 +1,6 @@
 package com.badmintontracker.shared.scoring
 
+import com.badmintontracker.shared.players.MatchPlayers
 import com.badmintontracker.shared.util.randomUuid
 
 /**
@@ -186,9 +187,9 @@ class MatchScorer(
      * to the store for the same reason everything else is: the board has one way to
      * change a match. Never touches the events, so it is safe at any score.
      */
-    fun updateDetails(title: String, format: MatchFormat?, homePlayers: List<String>, awayPlayers: List<String>) {
+    fun updateDetails(title: String, format: MatchFormat?, players: MatchPlayers) {
         if (repo.get(scoreLogId) == null) return
-        repo.updateDetails(scoreLogId, title, format, homePlayers, awayPlayers)
+        repo.updateDetails(scoreLogId, title, format, players)
     }
 
     /** Ends the match as [ScoreLogStatus.UNBOUND] - a terminal state, not a half-done one. */
