@@ -59,6 +59,10 @@ object PlayersCopy {
     /** The title's name, which opens the menu of every player. */
     const val SWITCH_PLAYER = "Switch player"
 
+    /** What a screen reader hears of the switcher: whether its menu is open. */
+    const val MENU_EXPANDED = "Expanded"
+    const val MENU_COLLAPSED = "Collapsed"
+
     /** The page's overflow: Rename, Playing hand, Delete player. */
     const val PLAYER_OPTIONS = "Player options"
 

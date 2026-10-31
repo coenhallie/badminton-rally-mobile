@@ -36,6 +36,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
@@ -59,6 +60,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.collapse
+import androidx.compose.ui.semantics.expand
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -408,6 +413,10 @@ fun PlayerScreen(
  * The title: the player's avatar and name on a pill with a chevron, which
  * opens a menu of every player (sorted by name, as the repository publishes
  * them), the current one ticked. A 40-character name is cut, never the chevron.
+ *
+ * The pill draws 38dp tall, and its touch target is the 48dp minimum
+ * (minimumInteractiveComponentSize, outside the clip, as IconButton does). A
+ * screen reader hears whether the menu is open, and can open or close it.
  */
 @Composable
 private fun PlayerSwitcher(
@@ -421,9 +430,14 @@ private fun PlayerSwitcher(
     Box {
         Row(
             modifier = Modifier
+                .minimumInteractiveComponentSize()
                 .clip(shape)
                 .background(MaterialTheme.colorScheme.surfaceVariant, shape)
                 .clickable(role = Role.Button, onClickLabel = PlayersCopy.SWITCH_PLAYER) { onOpen(true) }
+                .semantics {
+                    stateDescription = if (open) PlayersCopy.MENU_EXPANDED else PlayersCopy.MENU_COLLAPSED
+                    if (open) collapse { onOpen(false); true } else expand { onOpen(true); true }
+                }
                 // The mock's 6dp round the avatar, 12dp after the chevron.
                 .padding(start = 6.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -480,10 +494,14 @@ private fun ProfileTab(player: Player, summary: PlayerSummary, bottom: Dp) {
             PlayerAvatar(player.name, PlayerAvatarProfileSize)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
+                // Two lines at most: a 40-character name at 22sp beside the
+                // avatar would otherwise run to three, breaking inside a word.
                 Text(
                     player.name,
                     style = MaterialTheme.typography.headlineMedium,
                     color = MaterialTheme.colorScheme.onBackground,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 PlayersCopy.handLine(player.racketArm)?.let { hand ->
                     Text(
@@ -495,8 +513,10 @@ private fun ProfileTab(player: Player, summary: PlayerSummary, bottom: Dp) {
             }
         }
         Spacer(Modifier.height(20.dp))
-        // One height for the three, so their captions stay level when the
-        // date takes two lines: see ShuttlStatTile's compact.
+        // One height for the three. Every value is one line at the default
+        // font scale ("Oct 28", "Oct '25", "None yet"); at a large one a value
+        // can wrap, and the captions still stay level: see ShuttlStatTile's
+        // compact.
         Row(
             modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
             horizontalArrangement = Arrangement.spacedBy(8.dp),

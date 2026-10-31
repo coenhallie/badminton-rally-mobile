@@ -413,7 +413,8 @@ private fun scoreItem(
 private fun ralliesText(count: Int): String? =
     count.takeIf { it > 0 }?.let { "$it ${if (it == 1) "rally" else "rallies"}" }
 
-private val MONTHS = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+/** The months as every date in the list prints them; the player dates use them too. */
+internal val MONTHS = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
 /** "Sep 8, 2026": the date every match list in the app prints. */
 internal fun formatMatchDate(epochMs: Long, timeZone: TimeZone): String {

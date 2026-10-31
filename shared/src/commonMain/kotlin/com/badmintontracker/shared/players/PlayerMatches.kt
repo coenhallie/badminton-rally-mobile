@@ -2,8 +2,13 @@ package com.badmintontracker.shared.players
 
 import com.badmintontracker.shared.matchlist.MatchList
 import com.badmintontracker.shared.matchlist.MatchListItem
+import com.badmintontracker.shared.matchlist.MONTHS
 import com.badmintontracker.shared.matchlist.formatMatchDate
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.number
+import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Clock
+import kotlin.time.Instant
 
 /**
  * The matches that belong to [playerId]: the coach's own matches whose record
@@ -33,14 +38,46 @@ fun playerSummary(list: MatchList, playerId: String): PlayerSummary {
     )
 }
 
-/** The player row's detail: "12 matches · last Oct 28, 2026", or "No matches yet". */
-fun playerRowDetail(summary: PlayerSummary): String = playerRowDetail(summary, TimeZone.currentSystemDefault())
+/**
+ * The player row's detail: "12 matches · last Oct 28" for a date in the current
+ * year, "12 matches · last Oct 28, 2025" for an earlier one, or "No matches yet".
+ * "Now" is read here; the overload below takes it, for tests.
+ */
+fun playerRowDetail(summary: PlayerSummary): String =
+    playerRowDetail(summary, Clock.System.now().toEpochMilliseconds(), TimeZone.currentSystemDefault())
 
-internal fun playerRowDetail(summary: PlayerSummary, timeZone: TimeZone): String =
-    PlayersCopy.rowDetail(summary.matchCount, summary.lastMatchAtEpochMs?.let { formatMatchDate(it, timeZone) })
+fun playerRowDetail(summary: PlayerSummary, nowEpochMs: Long, timeZone: TimeZone): String =
+    PlayersCopy.rowDetail(
+        summary.matchCount,
+        summary.lastMatchAtEpochMs?.let { at ->
+            if (sameYear(at, nowEpochMs, timeZone)) dayAndMonth(at, timeZone) else formatMatchDate(at, timeZone)
+        },
+    )
 
-/** The "Last match" tile's value: the date, or "None yet". */
-fun lastMatchTile(summary: PlayerSummary): String = lastMatchTile(summary, TimeZone.currentSystemDefault())
+/**
+ * The "Last match" tile's value: "Oct 28" for a date in the current year,
+ * "Oct '25" for an earlier one, or "None yet". Short in both cases, so it
+ * keeps to one line in a tile a third of a phone wide. "Now" is read here;
+ * the overload below takes it, for tests.
+ */
+fun lastMatchTile(summary: PlayerSummary): String =
+    lastMatchTile(summary, Clock.System.now().toEpochMilliseconds(), TimeZone.currentSystemDefault())
 
-internal fun lastMatchTile(summary: PlayerSummary, timeZone: TimeZone): String =
-    summary.lastMatchAtEpochMs?.let { formatMatchDate(it, timeZone) } ?: PlayersCopy.LAST_MATCH_NONE
+fun lastMatchTile(summary: PlayerSummary, nowEpochMs: Long, timeZone: TimeZone): String {
+    val at = summary.lastMatchAtEpochMs ?: return PlayersCopy.LAST_MATCH_NONE
+    if (sameYear(at, nowEpochMs, timeZone)) return dayAndMonth(at, timeZone)
+    val d = localDate(at, timeZone)
+    return "${MONTHS[d.month.number - 1]} '${(d.year % 100).toString().padStart(2, '0')}"
+}
+
+private fun localDate(epochMs: Long, timeZone: TimeZone) =
+    Instant.fromEpochMilliseconds(epochMs).toLocalDateTime(timeZone).date
+
+private fun sameYear(epochMs: Long, nowEpochMs: Long, timeZone: TimeZone): Boolean =
+    localDate(epochMs, timeZone).year == localDate(nowEpochMs, timeZone).year
+
+/** "Oct 28": the list's own date without its year. */
+private fun dayAndMonth(epochMs: Long, timeZone: TimeZone): String {
+    val d = localDate(epochMs, timeZone)
+    return "${MONTHS[d.month.number - 1]} ${d.day}"
+}

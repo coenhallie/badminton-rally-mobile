@@ -47,13 +47,14 @@ private fun statTileText(value: String, unit: String, unitStyle: TextStyle): Ann
  * cut off at the last word that fits with nothing to say so.
  *
  * [compact] is a tile three to a row (a player's profile). On a 360dp phone
- * with the page gutters such a tile is about 99dp wide, which leaves 59dp for
- * the value at the usual padding, and a date such as "Oct 28, 2026" is about
- * 150dp at the stat size. So the value is set at titleLarge (the date is then
- * about 93dp) in 12dp of padding, it wraps between words rather than being
- * cut ("Oct 28," over "2026"), and the caption sits at the tile's foot. A row
- * of compact tiles gives them one height (IntrinsicSize.Min and
- * fillMaxHeight), so their captions stay level when one value takes two lines.
+ * with the page gutters such a tile is about 99dp wide, which leaves about
+ * 75dp for the value in compact's 12dp of padding. At the stat size (26sp)
+ * "May 28" is about 80dp and "None yet" about 100dp, so the value is set at
+ * titleLarge (16sp), where the profile's values all keep to one line: "Oct 28"
+ * and "Oct '25" are about 47-55dp and "None yet" about 64dp. At a large font
+ * scale a value wraps between words rather than being cut, and the caption
+ * sits at the tile's foot; a row of compact tiles gives them one height
+ * (IntrinsicSize.Min and fillMaxHeight), so their captions stay level then.
  */
 @Composable
 fun ShuttlStatTile(

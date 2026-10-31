@@ -26,6 +26,10 @@ private const val OCT_28 = "2026-10-28T10:00:00Z"
 
 private val MARCO = "p-marco"
 
+/** "Now" in the year of [OCT_28], and early the next year. */
+private val NOW_2026 = Instant.parse("2026-10-31T12:00:00Z").toEpochMilliseconds()
+private val NOW_2027 = Instant.parse("2027-01-05T12:00:00Z").toEpochMilliseconds()
+
 private fun log(id: String, players: MatchPlayers, at: String = SEP_8, videoId: String? = null) = ScoreLog(
     id = id, videoId = videoId, title = "Thu League",
     rules = ScoringRules.BWF_21, setup = MatchSetup(firstServer = Side.HOME), events = emptyList(),
@@ -112,8 +116,38 @@ class PlayerMatchesTest {
         summary shouldBe PlayerSummary(
             matchCount = 2, rallyCount = 5, lastMatchAtEpochMs = Instant.parse(OCT_28).toEpochMilliseconds(),
         )
-        playerRowDetail(summary, TimeZone.UTC) shouldBe "2 matches · last Oct 28, 2026"
-        lastMatchTile(summary, TimeZone.UTC) shouldBe "Oct 28, 2026"
+        playerRowDetail(summary, NOW_2026, TimeZone.UTC) shouldBe "2 matches · last Oct 28"
+        lastMatchTile(summary, NOW_2026, TimeZone.UTC) shouldBe "Oct 28"
+    }
+
+    @Test
+    fun a_date_from_an_earlier_year_says_the_year() {
+        val summary = playerSummary(list(entries = listOf(entry("filmed", home, at = OCT_28))), MARCO)
+
+        // The row has room for the whole date; the tile, a third of a phone
+        // wide, keeps to one line with the year shortened.
+        playerRowDetail(summary, NOW_2027, TimeZone.UTC) shouldBe "1 match · last Oct 28, 2026"
+        lastMatchTile(summary, NOW_2027, TimeZone.UTC) shouldBe "Oct '26"
+    }
+
+    @Test
+    fun the_year_is_the_coachs_own_not_utcs() {
+        // 23:30 UTC on New Year's Eve is already the new year in Amsterdam,
+        // and so is "now": the same year there, a year apart in UTC.
+        val summary = playerSummary(list(entries = listOf(entry("filmed", home, at = "2026-12-31T23:30:00Z"))), MARCO)
+        val now = Instant.parse("2027-01-01T10:00:00Z").toEpochMilliseconds()
+
+        lastMatchTile(summary, now, TimeZone.of("Europe/Amsterdam")) shouldBe "Jan 1"
+        lastMatchTile(summary, now, TimeZone.UTC) shouldBe "Dec '26"
+        playerRowDetail(summary, now, TimeZone.UTC) shouldBe "1 match · last Dec 31, 2026"
+    }
+
+    @Test
+    fun a_year_in_the_first_decade_keeps_two_digits() {
+        val summary = playerSummary(list(entries = listOf(entry("filmed", home, at = "2005-03-02T10:00:00Z"))), MARCO)
+
+        lastMatchTile(summary, NOW_2026, TimeZone.UTC) shouldBe "Mar '05"
+        playerRowDetail(summary, NOW_2026, TimeZone.UTC) shouldBe "1 match · last Mar 2, 2005"
     }
 
     @Test
@@ -121,14 +155,14 @@ class PlayerMatchesTest {
         val summary = playerSummary(list(logs = listOf(log("other", someoneElse))), MARCO)
 
         summary shouldBe PlayerSummary(matchCount = 0, rallyCount = 0, lastMatchAtEpochMs = null)
-        playerRowDetail(summary, TimeZone.UTC) shouldBe "No matches yet"
-        lastMatchTile(summary, TimeZone.UTC) shouldBe "None yet"
+        playerRowDetail(summary, NOW_2026, TimeZone.UTC) shouldBe "No matches yet"
+        lastMatchTile(summary, NOW_2026, TimeZone.UTC) shouldBe "None yet"
     }
 
     @Test
     fun one_match_is_singular() {
         val summary = playerSummary(list(entries = listOf(entry("filmed", home, at = OCT_28))), MARCO)
 
-        playerRowDetail(summary, TimeZone.UTC) shouldBe "1 match · last Oct 28, 2026"
+        playerRowDetail(summary, NOW_2026, TimeZone.UTC) shouldBe "1 match · last Oct 28"
     }
 }
