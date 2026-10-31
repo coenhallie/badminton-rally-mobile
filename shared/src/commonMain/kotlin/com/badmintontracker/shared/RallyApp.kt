@@ -8,6 +8,8 @@ import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.LocalVideoRemoval
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.localvideo.orphanedLocalVideoIds
+import com.badmintontracker.shared.players.PlayersRepository
+import com.badmintontracker.shared.players.PlayersRepositoryImpl
 import com.badmintontracker.shared.prefs.PlaybackPreferenceRepository
 import com.badmintontracker.shared.prefs.RacketArmPreferenceRepository
 import com.badmintontracker.shared.prefs.ThemePreferenceRepository
@@ -68,6 +70,7 @@ class RallyApp(
     val clips:       ClipsRepository       = ClipsRepositoryImpl(client)
     val annotations: AnnotationsRepository = AnnotationsRepositoryImpl(client)
     val labels:      AnnotationLabelsRepository = AnnotationLabelsRepositoryImpl(client, settings)
+    val players:     PlayersRepository     = PlayersRepositoryImpl(client, settings)
     val media:       MediaRepository       = MediaRepositoryImpl(client)
     val shares:      SharesRepository      = SharesRepositoryImpl(client)
     val videos:      VideosRepository      = VideosRepositoryImpl(client)

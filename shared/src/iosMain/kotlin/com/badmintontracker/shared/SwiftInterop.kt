@@ -11,6 +11,10 @@ import com.badmintontracker.shared.model.LabelUsage
 import com.badmintontracker.shared.model.MatchMetadata
 import com.badmintontracker.shared.model.MatchShare
 import com.badmintontracker.shared.model.RallyAnnotation
+import com.badmintontracker.shared.players.Player
+import com.badmintontracker.shared.players.PlayersCopy
+import com.badmintontracker.shared.players.PlayersRepository
+import com.badmintontracker.shared.prefs.RacketArm
 import com.badmintontracker.shared.repo.AnnotationLabelsRepository
 import com.badmintontracker.shared.repo.AnnotationsRepository
 import com.badmintontracker.shared.repo.AuthRepository
@@ -111,6 +115,31 @@ suspend fun AnnotationLabelsRepository.deleteLabelOrMessage(id: String): String?
 
 suspend fun AnnotationLabelsRepository.refreshLabelsOrMessage(): String? =
     refresh().exceptionOrNull()?.let { it.userFacingMessage("Couldn't load labels") }
+
+class CreatePlayerOutcome(val player: Player?, val errorMessage: String?)
+
+/**
+ * [racketArm] null leaves the hand unsaid. Explicit rather than defaulted, as
+ * [createLabelForSwift]'s parameters are: Swift sees no Kotlin defaults.
+ */
+suspend fun PlayersRepository.createPlayerForSwift(name: String, racketArm: RacketArm?): CreatePlayerOutcome =
+    create(name, racketArm).fold(
+        onSuccess = { CreatePlayerOutcome(it, null) },
+        onFailure = { CreatePlayerOutcome(null, it.userFacingMessage(PlayersCopy.SAVE_FAILED)) },
+    )
+
+suspend fun PlayersRepository.renamePlayerOrMessage(id: String, name: String): String? =
+    rename(id, name).exceptionOrNull()?.let { it.userFacingMessage(PlayersCopy.SAVE_FAILED) }
+
+/** [racketArm] null clears the hand. */
+suspend fun PlayersRepository.setPlayerRacketArmOrMessage(id: String, racketArm: RacketArm?): String? =
+    setRacketArm(id, racketArm).exceptionOrNull()?.let { it.userFacingMessage(PlayersCopy.SAVE_FAILED) }
+
+suspend fun PlayersRepository.deletePlayerOrMessage(id: String): String? =
+    delete(id).exceptionOrNull()?.let { it.userFacingMessage(PlayersCopy.DELETE_FAILED) }
+
+suspend fun PlayersRepository.refreshPlayersOrMessage(): String? =
+    refresh().exceptionOrNull()?.let { it.userFacingMessage(PlayersCopy.LOAD_FAILED) }
 
 /**
  * Soft-failing: nil means the sync landed, a string is ready to display. The

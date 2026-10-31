@@ -1,9 +1,20 @@
 package com.badmintontracker.shared.prefs
 
 import com.russhwolf.settings.Settings
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 
-/** Which arm holds the racket, as the coach said; unset means show both. */
-enum class RacketArm { LEFT, RIGHT }
+/**
+ * Which arm holds the racket, as the coach said; unset means show both.
+ *
+ * The wire names are the `players.racket_arm` column's values. The per-video
+ * preference below stores `name`, not the wire name, and is unaffected.
+ */
+@Serializable
+enum class RacketArm {
+    @SerialName("left") LEFT,
+    @SerialName("right") RIGHT,
+}
 
 /**
  * The racket arm per analysed video, remembered on this phone.

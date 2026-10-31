@@ -23,6 +23,9 @@ enum class MatchFormat(
 
 const val MAX_PLAYER_NAME = 40
 
+/** The one spelling of the cap, for the details editor and the player name dialog. */
+const val PLAYER_NAME_TOO_LONG = "A player name can be up to $MAX_PLAYER_NAME characters."
+
 /** How many names a side can carry under [format]. One when nobody has said what the format is. */
 fun playersPerSide(format: MatchFormat?): Int = format?.playersPerSide ?: 1
 
@@ -48,7 +51,7 @@ fun matchDetailsProblem(
 ): String? =
     createMatchProblem(title, titleCap) ?: when {
         (homePlayers + awayPlayers).any { it.trim().length > MAX_PLAYER_NAME } ->
-            "A player name can be up to $MAX_PLAYER_NAME characters."
+            PLAYER_NAME_TOO_LONG
         else -> null
     }
 
