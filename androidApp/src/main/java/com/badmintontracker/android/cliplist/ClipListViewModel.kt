@@ -19,7 +19,10 @@ import com.badmintontracker.shared.matchlist.localNoteCounts
 import com.badmintontracker.shared.matchlist.matchTitle
 import com.badmintontracker.shared.model.MatchMetadata
 import com.badmintontracker.shared.model.RallyClip
+import com.badmintontracker.shared.players.MatchPlayers
+import com.badmintontracker.shared.players.Player
 import com.badmintontracker.shared.players.PlayersRepository
+import com.badmintontracker.shared.players.saveEntryMatchDetailsOrMessage
 import com.badmintontracker.shared.players.refreshPlayersAndForgetVanishedOrMessage
 import com.badmintontracker.shared.repo.AuthRepository
 import com.badmintontracker.shared.repo.ClipsRepository
@@ -28,6 +31,7 @@ import com.badmintontracker.shared.repo.VideosRepository
 import com.badmintontracker.shared.scoring.MatchFormat
 import com.badmintontracker.shared.scoring.ScoreLog
 import com.badmintontracker.shared.scoring.ScoreLogsRepository
+import com.badmintontracker.shared.scoring.Side
 import com.badmintontracker.shared.scoring.entryNamingLog
 import com.badmintontracker.shared.scoring.playersLine
 import kotlinx.coroutines.CoroutineDispatcher
@@ -93,6 +97,8 @@ data class ClipListState(
      * and a failed run's result dialog its message.
      */
     val localEntries: List<LocalVideoEntry> = emptyList(),
+    /** The coach's players, for the details sheet's pickers. */
+    val players: List<Player> = emptyList(),
     /**
      * Counts completed refreshes, failed ones included. A row keys its "the
      * cover failed to load" memory on this as well as on the thumbnail's path:
@@ -289,6 +295,7 @@ class ClipListViewModel(
             ),
             storedResults = p.stored,
             localEntries = p.entries,
+            players = people,
             refreshGeneration = generation,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ClipListState())
@@ -352,6 +359,19 @@ class ClipListViewModel(
     }
 
     fun signOut() = viewModelScope.launch { auth.signOut() }
+
+    /**
+     * The row menu's "Match details" sheet: who's playing, and the name and
+     * description while the entry is LOCAL, through the one shared sheet save. A
+     * sentence it returns goes on the list's error, which the root host shows.
+     */
+    fun saveEntryDetails(entryId: String, title: String, description: String, players: MatchPlayers, nearSide: Side?) {
+        viewModelScope.launch {
+            saveEntryMatchDetailsOrMessage(
+                scoreLogs, videos, localVideos, entryId, title, description, players, nearSide,
+            )?.let { errors.value = it }
+        }
+    }
     fun dismissError() { errors.value = null }
 
     private suspend fun deleteMatchVideo(videoId: String, entryId: String? = null) {

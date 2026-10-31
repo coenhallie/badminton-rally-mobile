@@ -3,6 +3,7 @@ package com.badmintontracker.shared.scoring
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.localvideo.MAX_MATCH_TITLE_LENGTH
 import com.badmintontracker.shared.localvideo.mirrorVideoDetails
+import com.badmintontracker.shared.localvideo.setMatchPlayers
 import com.badmintontracker.shared.localvideo.normalizeDescription
 import com.badmintontracker.shared.localvideo.normalizeTitle
 import com.badmintontracker.shared.players.MatchPlayers
@@ -36,7 +37,9 @@ const val VIDEO_DETAILS_SAVE_FAILED_MESSAGE =
  *
  * Who is on each side is validated against [format] first ([matchPlayersProblem]):
  * the details and the players are one write, so a combination the database would
- * refuse returns its sentence here and nothing is written.
+ * refuse returns its sentence here and nothing is written. The entry follows the
+ * players and the near side too, not only the name: the match list and the
+ * Analysis toggle read the near side from the entry when the phone holds one.
  */
 suspend fun updateVideoMatchDetailsOrMessage(
     videos: VideosRepository,
@@ -51,18 +54,20 @@ suspend fun updateVideoMatchDetailsOrMessage(
     matchPlayersProblem(players, format)?.let { return it }
     val cleanTitle = normalizeTitle(title)
     val cleanDescription = normalizeDescription(description)
+    val cleanPlayers = players.copy(
+        homePlayers = submittedPlayers(players.homePlayers, format),
+        awayPlayers = submittedPlayers(players.awayPlayers, format),
+    )
     val saved = videos.updateMatchDetails(
         videoId = videoId,
         title = cleanTitle,
         description = cleanDescription,
         format = format,
-        players = players.copy(
-            homePlayers = submittedPlayers(players.homePlayers, format),
-            awayPlayers = submittedPlayers(players.awayPlayers, format),
-        ),
+        players = cleanPlayers,
         nearSide = nearSide,
     )
     if (saved.isFailure) return VIDEO_DETAILS_SAVE_FAILED_MESSAGE
     localVideos.mirrorVideoDetails(videoId, cleanTitle, cleanDescription)
+    localVideos.setMatchPlayers(videoId, cleanPlayers, nearSide)
     return null
 }

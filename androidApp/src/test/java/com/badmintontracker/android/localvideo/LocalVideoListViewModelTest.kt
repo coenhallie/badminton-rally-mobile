@@ -1,64 +1,19 @@
 package com.badmintontracker.android.localvideo
 
-import com.badmintontracker.android.testing.FakeClipsRepository
-import com.badmintontracker.android.testing.FakeVideosRepository
-import com.badmintontracker.shared.localvideo.AnalyzeCoordinator
-import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
-import com.badmintontracker.shared.localvideo.LocalVideoEntry
-import com.badmintontracker.shared.localvideo.LocalVideoRepository
-import com.russhwolf.settings.MapSettings
 import io.kotest.matchers.shouldBe
-import io.ktor.utils.io.ByteReadChannel
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
-import kotlinx.coroutines.test.resetMain
-import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.test.setMain
-import kotlin.test.AfterTest
-import kotlin.test.BeforeTest
 import kotlin.test.Test
 
 /**
- * The actions left on this view model, and the two labels that live beside it.
+ * The label that lives beside the list's local video actions.
  *
- * The row model it used to build (LocalVideoRow, and the tests that pinned
- * its status text, busy state and remove gate) went when the local video rows
- * moved onto the shared match list; those rules are MatchListBuilderTest's now.
+ * The row model this view model used to build (LocalVideoRow, and the tests
+ * that pinned its status text, busy state and remove gate) went when the local
+ * video rows moved onto the shared match list; those rules are
+ * MatchListBuilderTest's now. The details sheet's save, and the normalising
+ * of the name and description it does, is SaveMatchPlayersTest's
+ * (saveEntryMatchDetailsOrMessage).
  */
-@OptIn(ExperimentalCoroutinesApi::class)
 class LocalVideoListViewModelTest {
-
-    @BeforeTest fun setup() { Dispatchers.setMain(UnconfinedTestDispatcher()) }
-    @AfterTest fun teardown() { Dispatchers.resetMain() }
-
-    private fun coordinator(localVideos: LocalVideoRepository, localAnnotations: LocalAnnotationsRepository) =
-        AnalyzeCoordinator(
-            localVideos, FakeVideosRepository(), FakeClipsRepository(),
-            CoroutineScope(UnconfinedTestDispatcher()),
-            openChannel = { _, _ -> ByteReadChannel(ByteArray(0)) },
-            localAnnotations = localAnnotations,
-        )
-
-    @Test
-    fun setDetails_normalizes_before_storing() = runTest {
-        val localVideos = LocalVideoRepository(MapSettings())
-        val localAnnotations = LocalAnnotationsRepository(MapSettings())
-        localVideos.add(
-            LocalVideoEntry(
-                id = "a", uri = "content://a", displayName = "m.mp4",
-                durationMs = 1000, sizeBytes = 1, addedAtEpochMs = 0,
-            ),
-        )
-        val vm = LocalVideoListViewModel(localVideos, coordinator(localVideos, localAnnotations), localAnnotations)
-
-        vm.setDetails("a", "  Thu League vs Marco  ", "   ")
-
-        localVideos.get("a")?.title shouldBe "Thu League vs Marco"
-        // Blank stays null: "" would be rejected by videos_title_length_check on insert.
-        localVideos.get("a")?.description shouldBe null
-    }
 
     @Test
     fun a_duration_reads_as_minutes_and_padded_seconds() {

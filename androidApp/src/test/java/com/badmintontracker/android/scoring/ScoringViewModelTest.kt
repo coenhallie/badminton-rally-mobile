@@ -6,7 +6,9 @@ import com.badmintontracker.shared.model.AnnotationLabel
 import com.badmintontracker.shared.model.LabelUsage
 import com.badmintontracker.shared.players.MatchPlayers
 import com.badmintontracker.shared.players.Player
+import com.badmintontracker.shared.players.PlayersCopy
 import com.badmintontracker.shared.scoring.BoardTarget
+import com.badmintontracker.shared.scoring.MatchFormat
 import com.badmintontracker.shared.scoring.MatchSetup
 import com.badmintontracker.shared.scoring.ScoreEvent
 import com.badmintontracker.shared.scoring.ScoreLogStatus
@@ -251,6 +253,31 @@ class ScoringViewModelTest {
         players.rename("p-marco", "Marco Rossi")
         advanceUntilIdle()
         vm.state.value.noticeMessage shouldBe "Point to Marco Rossi undone"
+    }
+
+    @Test
+    fun the_details_editor_saves_who_played_onto_the_log() = runTest(dispatcher) {
+        val (repo, id, vm) = fixture()
+        advanceUntilIdle()
+
+        vm.updateDetails("Club final", MatchFormat.SINGLES, MatchPlayers("p-marco", null, emptyList(), listOf("Li"))) shouldBe null
+
+        repo.get(id)!!.title shouldBe "Club final"
+        repo.get(id)!!.homePlayerId shouldBe "p-marco"
+        repo.get(id)!!.awayPlayers shouldBe listOf("Li")
+    }
+
+    @Test
+    fun a_profile_on_a_doubles_match_is_refused_and_nothing_is_written() = runTest(dispatcher) {
+        val (repo, id, vm) = fixture()
+        advanceUntilIdle()
+
+        vm.updateDetails("Club final", MatchFormat.DOUBLES, MatchPlayers("p-marco", null, emptyList(), emptyList())) shouldBe
+            PlayersCopy.DOUBLES_NOTE
+
+        repo.get(id)!!.title shouldBe "Thu League"
+        repo.get(id)!!.format.shouldBeNull()
+        repo.get(id)!!.homePlayerId.shouldBeNull()
     }
 
     @Test

@@ -25,6 +25,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -39,12 +40,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.badmintontracker.android.home.MatchesEmptyState
 import com.badmintontracker.android.localvideo.MatchDetailsSheet
+import com.badmintontracker.android.players.AddPlayer
 import com.badmintontracker.android.match.MatchPageGutter
 import com.badmintontracker.android.share.ShareSheet
 import com.badmintontracker.android.ui.components.ConfirmDialog
 import com.badmintontracker.android.ui.components.ShuttlEmptyState
 import com.badmintontracker.android.ui.icons.ShuttlIcons
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
+import com.badmintontracker.shared.localvideo.canEditLocalVideoDetails
 import com.badmintontracker.shared.matchlist.rallyLengthText
 import com.badmintontracker.shared.matchlist.MatchAction
 import com.badmintontracker.shared.matchlist.MatchConfirmation
@@ -55,7 +58,12 @@ import com.badmintontracker.shared.matchlist.MatchListSort
 import com.badmintontracker.shared.matchlist.MatchList
 import com.badmintontracker.shared.matchlist.MatchListItem
 import com.badmintontracker.shared.players.PlayersCopy
+import com.badmintontracker.shared.players.PlayersTarget
+import com.badmintontracker.shared.players.endsDraft
 import com.badmintontracker.shared.players.forPlayer
+import com.badmintontracker.shared.players.matchPlayers
+import com.badmintontracker.shared.players.playersTarget
+import com.badmintontracker.shared.players.toAssignment
 import com.badmintontracker.shared.matchlist.effectiveFilter
 import com.badmintontracker.shared.matchlist.effectiveSort
 import com.badmintontracker.shared.matchlist.passes
@@ -93,7 +101,8 @@ fun ClipListScreen(
     onMarkCourt: (entryId: String) -> Unit = {},
     /** Frees the file and keeps the tracks: see LocalVideoListViewModel.remove. */
     onRemoveFromPhone: (entryId: String) -> Unit = {},
-    onLocalDetailsSaved: (id: String, title: String, description: String) -> Unit = { _, _, _ -> },
+    /** "Add player" in the details sheet's pickers: PlayersViewModel.create. */
+    onAddPlayer: AddPlayer,
     /** Hoisted to the screen that hosts the list. */
     listState: LazyListState,
     /** Whether any sheet or dialog this list owns is open. */
@@ -333,16 +342,25 @@ fun ClipListScreen(
     if (legendOpen) MatchLegendSheet(onDismiss = { legendOpen = false })
 
     detailsEntry?.let { entry ->
-        MatchDetailsSheet(
-            initialTitle = entry.title,
-            initialDescription = entry.description,
-            autoOpened = false,
-            onDismiss = { detailsEntry = null },
-            onSave = { title, description ->
-                onLocalDetailsSaved(entry.id, title, description)
-                detailsEntry = null
-            },
-        )
+        // Keyed on the entry, so the fields always start from this entry's own.
+        key(entry.id) {
+            MatchDetailsSheet(
+                initialTitle = entry.title,
+                initialDescription = entry.description,
+                detailsEditable = canEditLocalVideoDetails(entry.stage),
+                playersDraft = remember { endsDraft(entry.matchPlayers, entry.nearSide, null) },
+                playersEditable = playersTarget(null, entry, null) != PlayersTarget.UPLOADING,
+                players = state.players,
+                onAddPlayer = onAddPlayer,
+                autoOpened = false,
+                onDismiss = { detailsEntry = null },
+                onSave = { title, description, draft ->
+                    val (players, nearSide) = draft?.toAssignment() ?: (entry.matchPlayers to entry.nearSide)
+                    vm.saveEntryDetails(entry.id, title, description, players, nearSide)
+                    detailsEntry = null
+                },
+            )
+        }
     }
 
     choiceTarget?.let { item ->

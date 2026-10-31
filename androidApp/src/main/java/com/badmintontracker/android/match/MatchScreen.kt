@@ -40,6 +40,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -60,9 +61,12 @@ import com.badmintontracker.android.cliplist.MatchSummarySheet
 import com.badmintontracker.android.cliplist.formatDate
 import com.badmintontracker.android.cliplist.topRallyName
 import com.badmintontracker.android.localanalysis.BackgroundWorkAction
+import com.badmintontracker.android.localvideo.MatchDetailsSheet
+import com.badmintontracker.android.players.AddPlayer
 import com.badmintontracker.android.scoring.AttachIntent
 import com.badmintontracker.android.scoring.EditMatchDetailsDialog
 import com.badmintontracker.android.scoring.MatchDetailsDraft
+import com.badmintontracker.android.scoring.PlayersLayout
 import com.badmintontracker.android.scoring.detailsDraft
 import com.badmintontracker.android.share.ShareSheet
 import com.badmintontracker.android.ui.components.LocalPillLabelCeiling
@@ -87,6 +91,11 @@ import com.badmintontracker.shared.matchpage.showsStatusBanner
 import com.badmintontracker.shared.matchpage.shownSection
 import com.badmintontracker.shared.model.MatchLabelSummary
 import com.badmintontracker.shared.model.RallyClip
+import com.badmintontracker.shared.players.MatchPlayers
+import com.badmintontracker.shared.players.PlayersTarget
+import com.badmintontracker.shared.players.endsDraft
+import com.badmintontracker.shared.players.playersTarget
+import com.badmintontracker.shared.players.toAssignment
 import com.badmintontracker.shared.repo.MediaRepository
 import com.badmintontracker.shared.repo.SharesRepository
 import com.badmintontracker.shared.scoring.MAX_MATCH_TITLE
@@ -131,6 +140,8 @@ fun MatchScreen(
     onAddVideo: (AttachIntent) -> Unit,
     onMarkCourt: (entryId: String) -> Unit = {},
     onAnalyzeEntry: (entryId: String) -> Unit,
+    /** "Add player" in the details editor's pickers: PlayersViewModel.create. */
+    onAddPlayer: AddPlayer,
     /**
      * The three section bodies, built by AuthGate, which holds the runner and
      * the repositories they read. Slots rather than parameters so this screen
@@ -301,10 +312,14 @@ fun MatchScreen(
                         }
                     }
                     // A scored match, or a filmed one that is the coach's own: both
-                    // have details to edit. A video only on this phone that can be
-                    // analyzed again has that to offer. A shared match has none of
-                    // these, so it gets no menu at all.
-                    if (log != null || match?.isOwned == true || matchItem?.canAnalyzeAgain == true) {
+                    // have details to edit, and so does every other match the
+                    // coach owns, whose players can be said wherever its record
+                    // lives (canEditPlayers: a video with no clips yet, on the
+                    // phone or uploaded). A video only on this phone that can be
+                    // analyzed again has that to offer. A shared match has none
+                    // of these, so it gets no menu at all.
+                    val editsDetails = log != null || match?.isOwned == true || matchItem?.canEditPlayers == true
+                    if (editsDetails || matchItem?.canAnalyzeAgain == true) {
                         IconButton(onClick = { overflowOpen = true }) {
                             Icon(Icons.Default.MoreVert, contentDescription = "Match options")
                         }
@@ -312,7 +327,7 @@ fun MatchScreen(
                             // First, because it is the one a coach comes here for:
                             // the new match form asks for none of this, and a video
                             // is uploaded with a name at most.
-                            if (log != null || match?.isOwned == true) {
+                            if (editsDetails) {
                                 DropdownMenuItem(
                                     text = { Text("Edit details") },
                                     onClick = { overflowOpen = false; editingDetails = true },
@@ -475,7 +490,12 @@ fun MatchScreen(
                                             // video's own otherwise: a scored match that was later
                                             // filmed keeps the log as its record.
                                             details = matchDetailsLine(
-                                                playersLine = log?.playersLine(matchState.players) ?: match?.playersLine,
+                                                // A video's own: the list row's, whose
+                                                // sides read a profile's name, for the
+                                                // coach's matches; a shared match keeps
+                                                // the names its metadata carries.
+                                                playersLine = log?.playersLine(matchState.players)
+                                                    ?: if (matchItem.isOwned) matchItem.playersLine else match?.playersLine,
                                                 format = log?.format ?: match?.format,
                                             ),
                                             description = match?.description,
@@ -497,27 +517,52 @@ fun MatchScreen(
     }
 
     if (editingDetails) {
+        // The video, for a scored match's "Home was at the" row: the row's
+        // entry and the effective video id, the ids the end is routed by.
+        val endVideoId = videoId ?: log?.videoId
+        val endEntryId = matchItem?.entryId
         when {
-            log != null -> EditMatchDetailsDialog(
-                initial = log.detailsDraft(),
-                titleCap = MAX_MATCH_TITLE,
-                onDismiss = { editingDetails = false },
-                onSave = { draft ->
-                    matchVm.updateDetails(draft.title, draft.format, draft.homePlayers, draft.awayPlayers)
-                    editingDetails = false
-                },
-            )
+            log != null -> {
+                val initialNearSide = matchItem?.nearSide
+                val hasVideo = endEntryId != null || endVideoId != null
+                EditMatchDetailsDialog(
+                    initial = log.detailsDraft(initialNearSide),
+                    titleCap = MAX_MATCH_TITLE,
+                    layout = PlayersLayout.SIDES,
+                    players = matchState.players,
+                    onAddPlayer = onAddPlayer,
+                    onDismiss = { editingDetails = false },
+                    onSave = { draft ->
+                        // The end only when it changed: the log speaks for the
+                        // players, the video learns the end alone.
+                        val end = if (hasVideo && draft.nearSide != initialNearSide) {
+                            VideoEndChange(draft.nearSide, endVideoId, endEntryId)
+                        } else {
+                            null
+                        }
+                        matchVm.updateDetails(draft.title, draft.format, draft.players, end)
+                        editingDetails = false
+                    },
+                    showsEnds = hasVideo,
+                    uploading = playersTarget(null, entry, endVideoId) == PlayersTarget.UPLOADING,
+                )
+            }
             match != null -> EditMatchDetailsDialog(
                 // Every field the video carries, the description included: it was
                 // typed at upload and this is the only place it can change since.
+                // Who played as the list row reads it (the row's record, a
+                // profile's id), so the editor and the row cannot disagree.
                 initial = MatchDetailsDraft(
                     title = match.title.orEmpty(),
                     description = match.description.orEmpty(),
                     format = match.format,
-                    homePlayers = match.homePlayers,
-                    awayPlayers = match.awayPlayers,
+                    players = matchItem?.matchPlayers ?: MatchPlayers(null, null, match.homePlayers, match.awayPlayers),
+                    nearSide = matchItem?.nearSide,
                 ),
                 titleCap = VIDEO_MATCH_TITLE_CAP,
+                layout = PlayersLayout.ENDS,
+                players = matchState.players,
+                onAddPlayer = onAddPlayer,
                 onDismiss = { editingDetails = false },
                 onSave = { draft ->
                     matchVm.updateVideoDetails(
@@ -525,12 +570,34 @@ fun MatchScreen(
                         title = draft.title,
                         description = draft.description.orEmpty(),
                         format = draft.format,
-                        homePlayers = draft.homePlayers,
-                        awayPlayers = draft.awayPlayers,
+                        players = draft.players,
+                        nearSide = draft.nearSide,
                     )
                     editingDetails = false
                 },
+                uploading = matchItem?.playersTarget == PlayersTarget.UPLOADING,
             )
+            // A video with no score log and no clips yet: only its entry speaks
+            // for it, so it gets the entry's own sheet, with who's playing at
+            // any stage and the name and description only while LOCAL.
+            matchItem?.canEditPlayers == true && entry != null -> key(entry.id) {
+                MatchDetailsSheet(
+                    initialTitle = entry.title,
+                    initialDescription = entry.description,
+                    detailsEditable = matchItem.canEditDetails,
+                    playersDraft = remember { endsDraft(matchItem.matchPlayers, matchItem.nearSide, null) },
+                    playersEditable = matchItem.playersTarget != PlayersTarget.UPLOADING,
+                    players = matchState.players,
+                    onAddPlayer = onAddPlayer,
+                    autoOpened = false,
+                    onDismiss = { editingDetails = false },
+                    onSave = { title, description, draft ->
+                        val (players, nearSide) = draft?.toAssignment() ?: (matchItem.matchPlayers to matchItem.nearSide)
+                        matchVm.saveEntryDetails(entry.id, title, description, players, nearSide)
+                        editingDetails = false
+                    },
+                )
+            }
         }
     }
 

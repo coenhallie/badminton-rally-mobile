@@ -612,6 +612,21 @@ class MatchListBuilderTest {
     }
 
     @Test
+    fun an_item_reads_back_its_assignment_for_an_editor() {
+        // A profile side carries no typed names, whatever name was resolved for it;
+        // a typed side carries its names.
+        val meta = MatchMetadata(
+            videoId = "v1", homePlayerId = "p-gone", awayPlayers = listOf("Li"),
+            homeNames = listOf("Marco (as the server last saw it)"), awayNames = listOf("Li"),
+        )
+        val item = build(
+            input(clips = listOf(clip("v1", 1)), metadata = mapOf("v1" to meta), players = listOf(marco)),
+        ).mine.single()
+
+        item.matchPlayers shouldBe MatchPlayers("p-gone", null, emptyList(), listOf("Li"))
+    }
+
+    @Test
     fun a_shared_match_takes_resolved_names() {
         val meta = MatchMetadata(
             videoId = "v1", homePlayerId = "p-marco", awayPlayers = listOf("Li"), nearSide = Side.HOME,

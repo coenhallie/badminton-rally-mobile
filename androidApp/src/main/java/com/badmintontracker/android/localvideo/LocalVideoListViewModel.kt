@@ -4,9 +4,6 @@ import androidx.lifecycle.ViewModel
 import com.badmintontracker.shared.localvideo.AnalyzeCoordinator
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
-import com.badmintontracker.shared.localvideo.normalizeDescription
-import com.badmintontracker.shared.localvideo.normalizeTitle
-import com.badmintontracker.shared.localvideo.setDetails
 
 /**
  * What the match list does to a video on this phone. The
@@ -32,10 +29,6 @@ class LocalVideoListViewModel(
     }
 
     fun retry(id: String) = coordinator.retry(id)
-
-    /** Stores the match name and description typed into the details sheet. */
-    fun setDetails(id: String, title: String, description: String) =
-        localVideos.setDetails(id, normalizeTitle(title), normalizeDescription(description))
 }
 
 internal fun formatDuration(ms: Long): String {

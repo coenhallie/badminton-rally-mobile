@@ -9,6 +9,8 @@ import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.players.MatchPlayers
 import com.badmintontracker.shared.players.Player
+import com.badmintontracker.shared.players.PlayersCopy
+import com.badmintontracker.shared.players.matchPlayers
 import com.badmintontracker.shared.scoring.MATCH_VIDEO_REMOVE_FAILED_MESSAGE
 import com.badmintontracker.shared.scoring.MatchFormat
 import com.badmintontracker.shared.scoring.MatchSetup
@@ -277,7 +279,7 @@ class MatchViewModelTest {
 
         vm.updateVideoDetails(
             "vid-1", title = "Club final", description = "", format = MatchFormat.DOUBLES,
-            homePlayers = listOf("Coen", "Ana"), awayPlayers = listOf("Marco", "Li"),
+            players = MatchPlayers(null, null, listOf("Coen", "Ana"), listOf("Marco", "Li")), nearSide = null,
         )
         dispatcher.scheduler.advanceUntilIdle()
 
@@ -302,11 +304,134 @@ class MatchViewModelTest {
         }
         val vm = matchViewModel(store(), scoreLogId = null, localVideos = localVideos, videos = videos)
 
-        vm.updateVideoDetails("vid-1", "Club final", "", null, emptyList(), emptyList())
+        vm.updateVideoDetails("vid-1", "Club final", "", null, MatchPlayers.NONE, null)
         dispatcher.scheduler.advanceUntilIdle()
 
         vm.state.value.error shouldBe VIDEO_DETAILS_SAVE_FAILED_MESSAGE
         localVideos.get("vid-1")?.title shouldBe "cloudia"
+    }
+
+    // --- who is playing ---
+
+    private val marcoVsLi = MatchPlayers("p-marco", null, emptyList(), listOf("Li"))
+
+    @Test
+    fun saving_players_on_a_scored_match_assigns_the_log() = runTest {
+        // Title, format and players in the one write (Ruling 1).
+        val store = store()
+        val log = store.newMatch()
+        val vm = matchViewModel(store, scoreLogId = log.id)
+
+        vm.updateDetails("Club final", MatchFormat.SINGLES, marcoVsLi)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        val saved = store.get(log.id)!!
+        saved.title shouldBe "Club final"
+        saved.format shouldBe MatchFormat.SINGLES
+        saved.matchPlayers shouldBe marcoVsLi
+        vm.state.value.error shouldBe null
+    }
+
+    @Test
+    fun a_profile_on_a_doubles_score_log_is_refused_with_the_sentence() = runTest {
+        val store = store()
+        val log = store.newMatch()
+        val vm = matchViewModel(store, scoreLogId = log.id)
+
+        vm.updateDetails("Club final", MatchFormat.DOUBLES, marcoVsLi)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        vm.state.value.error shouldBe PlayersCopy.DOUBLES_NOTE
+        store.get(log.id)!!.title shouldBe "Thu League"
+        store.get(log.id)!!.homePlayerId shouldBe null
+    }
+
+    @Test
+    fun a_changed_end_of_a_scored_match_is_written_to_its_video_with_nobody_on_it() = runTest {
+        // The log speaks for the players; the video only learns which end Home was at.
+        val store = store()
+        val log = store.newMatch()
+        store.finish(log.id)
+        val entries = localVideos().apply { add(entry(log.id, id = "e1")) }
+        val vm = matchViewModel(store, scoreLogId = log.id, localVideos = entries)
+
+        vm.updateDetails("Thu League", null, marcoVsLi, VideoEndChange(Side.AWAY, videoId = null, entryId = "e1"))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        store.get(log.id)!!.matchPlayers shouldBe marcoVsLi
+        entries.get("e1")?.nearSide shouldBe Side.AWAY
+        entries.get("e1")?.matchPlayers shouldBe MatchPlayers.NONE
+        vm.state.value.error shouldBe null
+    }
+
+    @Test
+    fun a_changed_end_of_an_uploaded_video_is_written_to_its_row() = runTest {
+        val store = store()
+        val log = store.newMatch()
+        store.finish(log.id)
+        store.attachVideo(log.id, "vid-1")
+        val videos = FakeVideosRepository()
+        val vm = matchViewModel(store, scoreLogId = log.id, videos = videos)
+
+        vm.updateDetails("Thu League", null, marcoVsLi, VideoEndChange(Side.HOME, videoId = "vid-1", entryId = null))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        videos.updatePlayersCalls shouldBe listOf(MatchPlayers.NONE to Side.HOME)
+    }
+
+    @Test
+    fun saving_players_on_a_phone_only_match_writes_the_entry() = runTest {
+        val entries = localVideos().apply {
+            add(LocalVideoEntry(
+                id = "e1", uri = "content://x/e1", displayName = "m.mp4",
+                durationMs = 1000, sizeBytes = 10, addedAtEpochMs = 0,
+            ))
+        }
+        val vm = matchViewModel(store(), scoreLogId = null, localVideos = entries)
+
+        vm.saveEntryDetails("e1", "Club final", "", marcoVsLi, Side.HOME)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        entries.get("e1")?.matchPlayers shouldBe marcoVsLi
+        entries.get("e1")?.nearSide shouldBe Side.HOME
+        entries.get("e1")?.title shouldBe "Club final"
+        vm.state.value.error shouldBe null
+    }
+
+    @Test
+    fun a_refused_save_surfaces_the_sentence() = runTest {
+        // Uploaded, no clips yet: the videos row is the record, and it said no.
+        val entries = localVideos().apply {
+            add(LocalVideoEntry(
+                id = "e1", uri = "content://x/e1", displayName = "m.mp4",
+                durationMs = 1000, sizeBytes = 10, addedAtEpochMs = 0, stage = AnalyzeStage.PROCESSING,
+            ))
+        }
+        val videos = FakeVideosRepository().apply {
+            nextUpdatePlayersResult = Result.failure(IllegalStateException("HTTP 403"))
+        }
+        val vm = matchViewModel(store(), scoreLogId = null, localVideos = entries, videos = videos)
+
+        vm.saveEntryDetails("e1", "", "", marcoVsLi, Side.HOME)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        vm.state.value.error shouldBe PlayersCopy.WHOS_PLAYING_SAVE_FAILED
+        entries.get("e1")?.matchPlayers shouldBe MatchPlayers.NONE
+        entries.get("e1")?.nearSide shouldBe null
+    }
+
+    @Test
+    fun a_video_born_match_saves_its_players_and_end_in_the_one_details_write() = runTest {
+        val videos = FakeVideosRepository()
+        val vm = matchViewModel(store(), scoreLogId = null, videos = videos)
+
+        vm.updateVideoDetails("vid-1", "Club final", "", MatchFormat.SINGLES, marcoVsLi, Side.AWAY)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        val written = videos.updateDetailsCalls.single()
+        written.homePlayerId shouldBe "p-marco"
+        written.nearSide shouldBe Side.AWAY
+        videos.updatePlayersCalls shouldBe emptyList()
     }
 
     @Test

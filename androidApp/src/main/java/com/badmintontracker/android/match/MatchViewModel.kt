@@ -8,6 +8,10 @@ import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.players.MatchPlayers
 import com.badmintontracker.shared.players.Player
 import com.badmintontracker.shared.players.PlayersRepository
+import com.badmintontracker.shared.players.matchPlayersProblem
+import com.badmintontracker.shared.players.playersTarget
+import com.badmintontracker.shared.players.saveEntryMatchDetailsOrMessage
+import com.badmintontracker.shared.players.saveMatchPlayersOrMessage
 import com.badmintontracker.shared.repo.ClipsRepository
 import com.badmintontracker.shared.repo.VideosRepository
 import com.badmintontracker.shared.scoring.MatchFormat
@@ -16,6 +20,7 @@ import com.badmintontracker.shared.scoring.ScoreLog
 import com.badmintontracker.shared.scoring.ScoreLogsRepository
 import com.badmintontracker.shared.scoring.ScoreMatchCard
 import com.badmintontracker.shared.scoring.ScoreTagSummary
+import com.badmintontracker.shared.scoring.Side
 import com.badmintontracker.shared.scoring.buildScoreMatchCard
 import com.badmintontracker.shared.scoring.buildScoreTagSummary
 import com.badmintontracker.shared.scoring.isPlayable
@@ -56,6 +61,12 @@ data class MatchPageState(
      *  fail: everything else it shows is derived from stores it only reads. */
     val error: String? = null,
 )
+
+/**
+ * A new "Home was at the" answer for the video of a scored match: the side nearest
+ * the camera (null: not set) and the video's ids, as the page knows them.
+ */
+data class VideoEndChange(val nearSide: Side?, val videoId: String?, val entryId: String?)
 
 class MatchViewModel(
     private val scoreLogs: ScoreLogsRepository,
@@ -117,32 +128,50 @@ class MatchViewModel(
         }
     }
 
-    /** The details editor's save. Local-first like every other edit to a match; sync carries it. */
-    fun updateDetails(title: String, format: MatchFormat?, homePlayers: List<String>, awayPlayers: List<String>) {
+    /**
+     * The details editor's save for a scored match: the name, the format and who
+     * played, in the one write to the log (local-first like every other edit to a
+     * match; sync carries it). A combination the database would refuse, a profile
+     * on a doubles log, is said instead and nothing is written.
+     *
+     * [end] is passed only when the editor's "Home was at the" row changed. The log
+     * speaks for the players, so the attached video learns the end alone, with
+     * nobody on it, wherever its own target sends it (the entry before upload, the
+     * row after). See [saveMatchPlayersOrMessage].
+     */
+    fun updateDetails(title: String, format: MatchFormat?, players: MatchPlayers, end: VideoEndChange? = null) {
         val id = scoreLogId ?: return
-        val log = scoreLogs.get(id) ?: return
-        // The editor does not choose a profile yet, so the log keeps the ones it has.
-        scoreLogs.updateDetails(
-            id, title, format,
-            MatchPlayers(log.homePlayerId, log.awayPlayerId, homePlayers, awayPlayers),
-        )
+        if (scoreLogs.get(id) == null) return
+        matchPlayersProblem(players, format)?.let { errors.value = it; return }
+        scoreLogs.updateDetails(id, title, format, players)
+        end ?: return
+        val entry = end.entryId?.let(localVideos::get)
+        val target = playersTarget(null, entry, end.videoId) ?: return
+        viewModelScope.launch {
+            saveMatchPlayersOrMessage(
+                target, scoreLogs, videos, localVideos,
+                scoreLogId = null, videoId = end.videoId, entryId = end.entryId,
+                players = MatchPlayers.NONE, nearSide = end.nearSide, format = null,
+            )?.let { errors.value = it }
+        }
     }
 
     /**
      * The details editor's save for a match that was only ever filmed, whose
-     * details live on its videos row rather than on a score log. Server first,
-     * then the local entry that uploaded it: the ordering, and the message on
-     * failure, are [updateVideoMatchDetailsOrMessage]'s. The page reads the
-     * result back through the repository's metadata cache, so nothing here has
-     * to hand it over.
+     * details live on its videos row rather than on a score log: name,
+     * description, format, who played and which end Home was at, in one write.
+     * Server first, then the local entry that uploaded it: the ordering, and the
+     * message on failure, are [updateVideoMatchDetailsOrMessage]'s. The page reads
+     * the result back through the repository's metadata cache, so nothing here
+     * has to hand it over.
      */
     fun updateVideoDetails(
         videoId: String,
         title: String,
         description: String,
         format: MatchFormat?,
-        homePlayers: List<String>,
-        awayPlayers: List<String>,
+        players: MatchPlayers,
+        nearSide: Side?,
     ) {
         viewModelScope.launch {
             val message = updateVideoMatchDetailsOrMessage(
@@ -152,11 +181,24 @@ class MatchViewModel(
                 title = title,
                 description = description,
                 format = format,
-                // The editor does not choose a profile or an end yet.
-                players = MatchPlayers(null, null, homePlayers, awayPlayers),
-                nearSide = null,
+                players = players,
+                nearSide = nearSide,
             )
             if (message != null) errors.value = message
+        }
+    }
+
+    /**
+     * The "Match details" sheet's save, for a match only its local entry speaks
+     * for (no score log, no clips yet): who's playing wherever the entry's stage
+     * sends it, then the name and description while the entry is still LOCAL. See
+     * [saveEntryMatchDetailsOrMessage]; its sentence goes on the page's snackbar.
+     */
+    fun saveEntryDetails(entryId: String, title: String, description: String, players: MatchPlayers, nearSide: Side?) {
+        viewModelScope.launch {
+            saveEntryMatchDetailsOrMessage(
+                scoreLogs, videos, localVideos, entryId, title, description, players, nearSide,
+            )?.let { errors.value = it }
         }
     }
 

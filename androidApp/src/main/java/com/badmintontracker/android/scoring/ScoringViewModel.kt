@@ -6,6 +6,7 @@ import com.badmintontracker.shared.model.AnnotationLabel
 import com.badmintontracker.shared.players.MatchPlayers
 import com.badmintontracker.shared.players.Player
 import com.badmintontracker.shared.players.PlayersRepository
+import com.badmintontracker.shared.players.matchPlayersProblem
 import com.badmintontracker.shared.repo.AnnotationLabelsRepository
 import com.badmintontracker.shared.scoring.BoardNotice
 import com.badmintontracker.shared.scoring.BoardTarget
@@ -228,13 +229,17 @@ class ScoringViewModel(
         scorer.tagPoint(ordinal, point.tags, text.trim().ifEmpty { null })
     }
 
-    fun updateDetails(title: String, format: MatchFormat?, homePlayers: List<String>, awayPlayers: List<String>) {
-        val log = state.value.log ?: return
-        // The editor does not choose a profile yet, so the log keeps the ones it has.
-        scorer.updateDetails(
-            title, format,
-            MatchPlayers(log.homePlayerId, log.awayPlayerId, homePlayers, awayPlayers),
-        )
+    /**
+     * The details editor's save: the name, the format and who played, in the one
+     * write to the log. Null once saved, or the sentence for a combination the
+     * database would refuse (a profile on a doubles log), with nothing written; the
+     * editor says the same sentence live and keeps Save off, so this is the net.
+     */
+    fun updateDetails(title: String, format: MatchFormat?, players: MatchPlayers): String? {
+        state.value.log ?: return null
+        matchPlayersProblem(players, format)?.let { return it }
+        scorer.updateDetails(title, format, players)
+        return null
     }
 
     fun switchFirstServer() {

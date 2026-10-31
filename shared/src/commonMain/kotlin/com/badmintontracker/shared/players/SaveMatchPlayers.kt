@@ -4,6 +4,9 @@ import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.AnalyzeStep
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
+import com.badmintontracker.shared.localvideo.normalizeDescription
+import com.badmintontracker.shared.localvideo.normalizeTitle
+import com.badmintontracker.shared.localvideo.setDetails
 import com.badmintontracker.shared.localvideo.setMatchPlayers
 import com.badmintontracker.shared.repo.VideosRepository
 import com.badmintontracker.shared.scoring.MatchFormat
@@ -98,6 +101,37 @@ suspend fun saveMatchPlayersOrMessage(
             saveEndOfAttachedVideo(videos, localVideos, videoId, entryId, nearSide)
         }
     }
+}
+
+/**
+ * The "Match details" sheet's save, for a match only a local entry speaks for: a
+ * video with no score log, before or after its upload. Who is playing goes where
+ * [playersTarget] sends it for the entry ([saveMatchPlayersOrMessage]: the entry
+ * while no row exists, the row once it does, nothing during the upload), judged as
+ * singles, since an entry carries no format. The name and description follow only
+ * once that has succeeded, and only while the entry is LOCAL ([setDetails] keeps
+ * that window), so a refused save writes nothing at all. Returns null, or the
+ * sentence to show; an entry no longer on the phone is a failed save.
+ */
+suspend fun saveEntryMatchDetailsOrMessage(
+    scoreLogs: ScoreLogsRepository,
+    videos: VideosRepository,
+    localVideos: LocalVideoRepository,
+    entryId: String,
+    title: String,
+    description: String,
+    players: MatchPlayers,
+    nearSide: Side?,
+): String? {
+    val entry = localVideos.get(entryId) ?: return PlayersCopy.WHOS_PLAYING_SAVE_FAILED
+    val target = playersTarget(null, entry, null) ?: return PlayersCopy.WHOS_PLAYING_SAVE_FAILED
+    saveMatchPlayersOrMessage(
+        target, scoreLogs, videos, localVideos,
+        scoreLogId = null, videoId = null, entryId = entryId,
+        players = players, nearSide = nearSide, format = null,
+    )?.let { return it }
+    localVideos.setDetails(entryId, normalizeTitle(title), normalizeDescription(description))
+    return null
 }
 
 /**

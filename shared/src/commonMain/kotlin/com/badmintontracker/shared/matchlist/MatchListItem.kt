@@ -1,6 +1,7 @@
 package com.badmintontracker.shared.matchlist
 
 import com.badmintontracker.shared.model.RallyClip
+import com.badmintontracker.shared.players.MatchPlayers
 import com.badmintontracker.shared.players.PlayersTarget
 import com.badmintontracker.shared.scoring.Side
 
@@ -104,6 +105,21 @@ data class MatchListItem(
     val canEditPlayers: Boolean,
 ) {
     val isRaised: Boolean get() = action != MatchAction.NONE
+
+    /**
+     * Who is on the match as the record that speaks for it says, read back for an
+     * editor: a side's profile, or its typed names when it holds none. A side
+     * holding a profile has no typed names (the database refuses both), so the
+     * names [homeNames] resolved for it are not carried. Always [MatchPlayers.NONE]'s
+     * ids on a shared match, whose names are the sharer's.
+     */
+    val matchPlayers: MatchPlayers
+        get() = MatchPlayers(
+            homePlayerId = homePlayerId,
+            awayPlayerId = awayPlayerId,
+            homePlayers = if (homePlayerId == null) homeNames else emptyList(),
+            awayPlayers = if (awayPlayerId == null) awayNames else emptyList(),
+        )
 }
 
 data class MatchList(

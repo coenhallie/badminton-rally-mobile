@@ -32,7 +32,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.ui.Alignment
@@ -75,6 +78,7 @@ import com.badmintontracker.android.localvideo.rememberVideoIntake
 import com.badmintontracker.android.labels.LabelsScreen
 import com.badmintontracker.android.labels.LabelsViewModel
 import com.badmintontracker.android.players.PlayerScreen
+import com.badmintontracker.android.players.HomeEndDialog
 import com.badmintontracker.android.players.PlayersScreen
 import com.badmintontracker.android.players.PlayersViewModel
 import com.badmintontracker.android.nav.AuthRedirect
@@ -94,9 +98,15 @@ import com.badmintontracker.shared.localvideo.canResumeFailedAnalysis
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.localvideo.setKeypoints
+import com.badmintontracker.shared.localvideo.setMatchPlayers
+import com.badmintontracker.shared.players.MatchPlayers
+import com.badmintontracker.shared.players.asksForHomeEnd
+import com.badmintontracker.shared.players.homeEndTitle
+import com.badmintontracker.shared.players.saveEntryMatchDetailsOrMessage
 import com.badmintontracker.shared.RallyApp
 import com.badmintontracker.shared.repo.AuthState
 import com.badmintontracker.shared.scoring.ScoreLogStatus
+import com.badmintontracker.shared.scoring.Side
 import com.badmintontracker.android.match.AnalysisSection
 import com.badmintontracker.android.match.DeviceRalliesSection
 import com.badmintontracker.android.match.MatchVideoSection
@@ -169,6 +179,13 @@ fun AuthGate(
             // an entry that already exists. Held until that sheet closes, not
             // just until it opens: see the finished-run watcher's "nothing above".
             var autoDetailsEntryId by remember { mutableStateOf<String?>(null) }
+            // A video just added to a scored match with a profile on it, waiting
+            // on "Which end was Home on?" before court marking. Saveable, so a
+            // recreation under the dialog still asks, and still goes on to mark.
+            var homeEndEntryId by rememberSaveable { mutableStateOf<String?>(null) }
+            // For the sheet's save, which outlives the sheet: it may still be
+            // waiting on the server when the sheet has gone.
+            val rootScope = rememberCoroutineScope()
             // Hoisted above the NavHost: the Players screen (record/import with
             // no match), a player's page (for that player) and the match
             // destination (record/import for this match) drive the same picker,
@@ -190,8 +207,12 @@ fun AuthGate(
                     } else {
                         // The coach already said he wants this video analysed;
                         // making him find an Analyze button afterwards is a second
-                        // decision for a question he answered.
-                        nav.navigate(Route.CourtMarking(entry.id))
+                        // decision for a question he answered. A match with a
+                        // profile on it first asks which end Home was at
+                        // (HomeEndDialog, below), then marks the court.
+                        val log = entry.scoreLogId?.let(rally.scoreLogs::get)
+                        if (log != null && asksForHomeEnd(log)) homeEndEntryId = entry.id
+                        else nav.navigate(Route.CourtMarking(entry.id))
                     }
                 },
                 onError = { intakeError = it },
@@ -351,6 +372,7 @@ fun AuthGate(
                         }
                         val nothingAbove = activityLifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) &&
                             autoDetailsEntryId == null &&
+                            homeEndEntryId == null &&
                             !resultDialogOpen &&
                             onAList
                         // Merged with the runs still waiting to be shown: see
@@ -426,6 +448,7 @@ fun AuthGate(
                 composable<Route.AllMatches> { entry ->
                     val playersEntry = remember(entry) { nav.getBackStackEntry<Route.Players>() }
                     val clipListVm: ClipListViewModel = viewModel(playersEntry, factory = clipListVmFactory)
+                    val playersVm: PlayersViewModel = viewModel(playersEntry, factory = playersVmFactory)
                     val localVm: LocalVideoListViewModel = viewModel(
                         factory = viewModelFactory {
                             initializer { LocalVideoListViewModel(localVideos, coordinator, localAnnotations) }
@@ -441,7 +464,7 @@ fun AuthGate(
                         // By the row's own entry id: see ClipListScreen.act.
                         onMarkCourt = { entryId -> nav.navigate(Route.CourtMarking(entryId)) },
                         onRemoveFromPhone = localVm::remove,
-                        onLocalDetailsSaved = localVm::setDetails,
+                        onAddPlayer = playersVm::create,
                         snackbarHostState = rootSnackbar,
                         onOverlayChange = { allMatchesOverlayOpen = it },
                     )
@@ -478,7 +501,6 @@ fun AuthGate(
                         // By the row's own entry id: see ClipListScreen.act.
                         onMarkCourt = { entryId -> nav.navigate(Route.CourtMarking(entryId)) },
                         onRemoveFromPhone = localVm::remove,
-                        onLocalDetailsSaved = localVm::setDetails,
                         onNewMatch = { nav.navigate(Route.NewMatch(args.playerId)) },
                         onRecord = { intake.record(null, args.playerId) },
                         onImport = { intake.import(null, args.playerId) },
@@ -530,6 +552,9 @@ fun AuthGate(
                 }
                 composable<Route.Scoring> { entry ->
                     val args = entry.toRoute<Route.Scoring>()
+                    // The Players entry's, as every picker's "Add player" is.
+                    val playersEntry = remember(entry) { nav.getBackStackEntry<Route.Players>() }
+                    val playersVm: PlayersViewModel = viewModel(playersEntry, factory = playersVmFactory)
                     val vm: ScoringViewModel = viewModel(
                         factory = viewModelFactory {
                             initializer {
@@ -540,6 +565,7 @@ fun AuthGate(
                     ScoringScreen(
                         vm = vm,
                         onBack = { nav.popBackStack() },
+                        onAddPlayer = playersVm::create,
                         // Lands on the match page rather than popping back, because
                         // a match just created and scored in one sitting (NewMatch
                         // -> Scoring, no Match page underneath yet) has nothing to
@@ -576,6 +602,7 @@ fun AuthGate(
                     // there to scope the shared list view model to.
                     val playersEntry = remember(entry) { nav.getBackStackEntry<Route.Players>() }
                     val clipListVm: ClipListViewModel = viewModel(playersEntry, factory = clipListVmFactory)
+                    val matchPlayersVm: PlayersViewModel = viewModel(playersEntry, factory = playersVmFactory)
                     val listState by clipListVm.state.collectAsStateWithLifecycle()
                     val logs by rally.scoreLogs.logs.collectAsStateWithLifecycle()
                     val logVideoId = logs.firstOrNull { it.id == args.scoreLogId }?.videoId
@@ -647,6 +674,7 @@ fun AuthGate(
                         // Analyze go through analyzeEntry below.
                         onMarkCourt = { entryId -> nav.navigate(Route.CourtMarking(entryId)) },
                         onAnalyzeEntry = analyzeEntry,
+                        onAddPlayer = matchPlayersVm::create,
                         matchSection = { e, fullscreen, onFullscreenChange, snackbar, analyzeLabel ->
                             val playerVm: LocalPlayerViewModel = viewModel(
                                 key = "player-${e.id}",
@@ -753,8 +781,42 @@ fun AuthGate(
             AutoMatchDetailsHost(
                 entryId = autoDetailsEntryId,
                 localVideos = localVideos,
+                nav = nav,
+                playersVmFactory = playersVmFactory,
+                // Its sentence, if any, on the root snackbar with the intake's own.
+                onSave = { id, title, description, players, nearSide ->
+                    rootScope.launch {
+                        saveEntryMatchDetailsOrMessage(
+                            rally.scoreLogs, rally.videos, localVideos, id, title, description, players, nearSide,
+                        )?.let { intakeError = it }
+                    }
+                },
                 onClose = { autoDetailsEntryId = null },
             )
+            homeEndEntryId?.let { id ->
+                val entry = localVideos.get(id)
+                val log = entry?.scoreLogId?.let(rally.scoreLogs::get)
+                // Near is Home at the near end; Far is Home at the far end, so
+                // Away is nearest the camera. Any answer, Skip included, goes
+                // on to court marking.
+                fun answer(nearSide: Side?) {
+                    homeEndEntryId = null
+                    if (nearSide != null) localVideos.setMatchPlayers(id, MatchPlayers.NONE, nearSide)
+                    if (entry != null) nav.navigate(Route.CourtMarking(id))
+                }
+                if (log == null) {
+                    // The video or its match went before the question was
+                    // answered: nothing to ask about.
+                    LaunchedEffect(id) { answer(null) }
+                } else {
+                    HomeEndDialog(
+                        title = homeEndTitle(log, rally.players.players.value),
+                        onNear = { answer(Side.HOME) },
+                        onFar = { answer(Side.AWAY) },
+                        onSkip = { answer(null) },
+                    )
+                }
+            }
             RootAnnouncementsHost(
                 nav = nav,
                 snackbar = rootSnackbar,

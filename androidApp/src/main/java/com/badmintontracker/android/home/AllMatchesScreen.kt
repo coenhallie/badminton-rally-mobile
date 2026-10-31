@@ -27,6 +27,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Modifier
+import com.badmintontracker.android.players.AddPlayer
 import com.badmintontracker.android.cliplist.ClipListScreen
 import com.badmintontracker.android.cliplist.ClipListViewModel
 import com.badmintontracker.android.localanalysis.BackgroundWorkAction
@@ -57,7 +58,8 @@ fun AllMatchesScreen(
     onAnalyze: (entryId: String) -> Unit,
     onMarkCourt: (entryId: String) -> Unit,
     onRemoveFromPhone: (entryId: String) -> Unit,
-    onLocalDetailsSaved: (id: String, title: String, description: String) -> Unit,
+    /** "Add player" in the row's details sheet: PlayersViewModel.create. */
+    onAddPlayer: AddPlayer,
     /** AuthGate's one root host: see RootAnnouncementsHost. */
     snackbarHostState: SnackbarHostState,
     /** Any sheet or dialog the list has open: see AuthGate's finished-run watcher. */
@@ -113,7 +115,7 @@ fun AllMatchesScreen(
                 onAnalyze = onAnalyze,
                 onMarkCourt = onMarkCourt,
                 onRemoveFromPhone = onRemoveFromPhone,
-                onLocalDetailsSaved = onLocalDetailsSaved,
+                onAddPlayer = onAddPlayer,
                 listState = listState,
                 onOverlayChange = onOverlayChange,
                 contentPadding = PaddingValues(bottom = padding.calculateBottomPadding()),

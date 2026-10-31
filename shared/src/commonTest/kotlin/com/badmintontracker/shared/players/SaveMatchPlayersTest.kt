@@ -402,4 +402,74 @@ class SaveMatchPlayersTest {
         message shouldBe PlayersCopy.WHOS_PLAYING_SAVE_FAILED
         videos.updatePlayersCalls.size shouldBe 0
     }
+
+    // saveEntryMatchDetailsOrMessage: the "Match details" sheet
+
+    private suspend fun saveSheet(
+        entryId: String,
+        players: MatchPlayers,
+        nearSide: Side? = null,
+        title: String = "",
+        description: String = "",
+    ) = saveEntryMatchDetailsOrMessage(
+        scoreLogs, videos, localVideos, entryId, title, description, players, nearSide,
+    )
+
+    @Test
+    fun the_sheet_on_an_entry_before_upload_stores_the_name_and_the_players() = runTest {
+        localVideos.add(entry("e1"))
+
+        val message = saveSheet(
+            "e1", marco.copy(awayPlayers = listOf(" Li ")), Side.HOME, title = " Club final ", description = "   ",
+        )
+
+        message.shouldBeNull()
+        localVideos.get("e1")?.title shouldBe "Club final"
+        // Blank stays null: "" would be refused by videos_title_length_check on the INSERT.
+        localVideos.get("e1")?.description.shouldBeNull()
+        localVideos.get("e1")?.matchPlayers shouldBe marco.copy(awayPlayers = listOf("Li"))
+        localVideos.get("e1")?.nearSide shouldBe Side.HOME
+        videos.updatePlayersCalls.size shouldBe 0
+    }
+
+    @Test
+    fun the_sheet_on_an_uploaded_entry_writes_the_row_and_leaves_the_name() = runTest {
+        localVideos.add(entry("e1", AnalyzeStage.PROCESSING).copy(title = "cloudia"))
+
+        val message = saveSheet("e1", marco, Side.HOME, title = "Renamed")
+
+        message.shouldBeNull()
+        videos.updatePlayersCalls.single() shouldBe (marco to Side.HOME)
+        localVideos.get("e1")?.matchPlayers shouldBe marco
+        // The name rode on the INSERT and has no UPDATE grant: past LOCAL it stays.
+        localVideos.get("e1")?.title shouldBe "cloudia"
+    }
+
+    @Test
+    fun a_refused_sheet_save_writes_neither_the_players_nor_the_name() = runTest {
+        localVideos.add(entry("e1"))
+
+        val message = saveSheet(
+            "e1", MatchPlayers("player-marco", "player-marco", emptyList(), emptyList()), Side.HOME, title = "Club final",
+        )
+
+        message shouldBe PlayersCopy.SAME_PLAYER_BOTH_SIDES
+        localVideos.get("e1")?.matchPlayers shouldBe MatchPlayers.NONE
+        localVideos.get("e1")?.title.shouldBeNull()
+    }
+
+    @Test
+    fun the_sheet_during_the_upload_asks_to_wait_and_writes_nothing() = runTest {
+        localVideos.add(entry("e1", AnalyzeStage.UPLOADING))
+
+        saveSheet("e1", marco, Side.HOME) shouldBe PlayersCopy.UPLOAD_IN_PROGRESS
+
+        localVideos.get("e1")?.matchPlayers shouldBe MatchPlayers.NONE
+        videos.updatePlayersCalls.size shouldBe 0
+    }
+
+    @Test
+    fun the_sheet_for_an_entry_no_longer_on_the_phone_fails() = runTest {
+        saveSheet("gone", marco, Side.HOME) shouldBe PlayersCopy.WHOS_PLAYING_SAVE_FAILED
+    }
 }

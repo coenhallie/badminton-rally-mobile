@@ -5,6 +5,7 @@ import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.players.MatchPlayers
 import com.badmintontracker.shared.players.PlayersCopy
+import com.badmintontracker.shared.players.matchPlayers
 import com.badmintontracker.shared.testing.FakeVideosRepository
 import com.russhwolf.settings.MapSettings
 import io.kotest.matchers.collections.shouldBeEmpty
@@ -115,6 +116,40 @@ class VideoMatchDetailsTest {
         written.awayPlayerId.shouldBeNull()
         written.awayPlayers shouldBe listOf("Jo")
         written.nearSide shouldBe Side.HOME
+    }
+
+    @Test
+    fun a_saved_edit_moves_the_local_entry_to_the_new_players_and_end() = runTest {
+        // The list and the Analysis toggle read the end from the entry when the
+        // phone holds one, so an entry left on the old end would contradict the row.
+        val videos = FakeVideosRepository()
+        val local = LocalVideoRepository(MapSettings()).apply { add(uploadedEntry("v1")) }
+
+        updateVideoMatchDetailsOrMessage(
+            videos, local, "v1", "Club final", "", MatchFormat.SINGLES,
+            players = MatchPlayers(null, "p1", listOf(" Jo "), emptyList()),
+            nearSide = Side.AWAY,
+        ).shouldBeNull()
+
+        local.get("v1")?.matchPlayers shouldBe MatchPlayers(null, "p1", listOf("Jo"), emptyList())
+        local.get("v1")?.nearSide shouldBe Side.AWAY
+    }
+
+    @Test
+    fun a_refused_save_leaves_the_local_entry_on_its_old_end() = runTest {
+        val videos = FakeVideosRepository().apply {
+            nextUpdateDetailsResult = Result.failure(IllegalStateException("HTTP 403"))
+        }
+        val local = LocalVideoRepository(MapSettings()).apply { add(uploadedEntry("v1")) }
+
+        updateVideoMatchDetailsOrMessage(
+            videos, local, "v1", "Club final", "", MatchFormat.SINGLES,
+            players = MatchPlayers("p1", null, emptyList(), emptyList()),
+            nearSide = Side.HOME,
+        ) shouldBe VIDEO_DETAILS_SAVE_FAILED_MESSAGE
+
+        local.get("v1")?.matchPlayers shouldBe MatchPlayers.NONE
+        local.get("v1")?.nearSide.shouldBeNull()
     }
 
     @Test

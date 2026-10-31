@@ -78,6 +78,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlinx.coroutines.launch
+import com.badmintontracker.android.players.AddPlayer
 import com.badmintontracker.android.ui.icons.ShuttlIcons
 import com.badmintontracker.android.ui.theme.ShuttlRadius
 import com.badmintontracker.android.ui.theme.ShuttlTheme
@@ -106,6 +107,8 @@ import com.badmintontracker.shared.scoring.sideName
 fun ScoringScreen(
     vm: ScoringViewModel,
     onBack: () -> Unit,
+    /** "Add player" in the details editor's pickers: PlayersViewModel.create. */
+    onAddPlayer: AddPlayer,
     onFinished: (AttachIntent?) -> Unit = { },
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -280,13 +283,18 @@ fun ScoringScreen(
     }
 
     if (editingDetails) {
+        // No ends row on the board: which end Home was at is a fact about the
+        // footage, set on the match page, where the video is.
         EditMatchDetailsDialog(
-            initial = log.detailsDraft(),
+            initial = log.detailsDraft(nearSide = null),
             titleCap = MAX_MATCH_TITLE,
+            layout = PlayersLayout.SIDES,
+            players = state.players,
+            onAddPlayer = onAddPlayer,
             onDismiss = { editingDetails = false },
             onSave = { draft ->
-                vm.updateDetails(draft.title, draft.format, draft.homePlayers, draft.awayPlayers)
-                editingDetails = false
+                // Open on a refusal: the editor already says the same sentence.
+                if (vm.updateDetails(draft.title, draft.format, draft.players) == null) editingDetails = false
             },
         )
     }

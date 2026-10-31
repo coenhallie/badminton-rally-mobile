@@ -26,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -81,6 +82,12 @@ import com.badmintontracker.android.ui.theme.ShuttlRadius
  * as the row's content description, the way iOS gives VoiceOver its
  * `accessibilityLabel`. Without it a screen reader user meets a bare run of
  * tabs with nothing saying what they switch.
+ *
+ * [enabled] false draws the whole row read-only (a value that cannot be
+ * changed right now, still shown); [disabledIndices] are the pills that cannot
+ * be chosen while the rest can (the details editor's Doubles and Mixed while a
+ * side holds a profile). A disabled pill keeps its place and its label, dimmed,
+ * and does not take a tap; a screen reader hears it as disabled.
  */
 @Composable
 fun ShuttlPillTabs(
@@ -91,6 +98,8 @@ fun ShuttlPillTabs(
     secondary: Boolean = false,
     ceilingFor: PillLabelCeiling? = null,
     groupLabel: String? = null,
+    enabled: Boolean = true,
+    disabledIndices: Set<Int> = emptySet(),
 ) {
     val shape = RoundedCornerShape(ShuttlRadius.pill)
     val baseStyle = if (secondary) {
@@ -162,6 +171,7 @@ fun ShuttlPillTabs(
         ) {
             labels.forEachIndexed { index, label ->
                 val selected = index == selectedIndex
+                val pillEnabled = enabled && index !in disabledIndices
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -170,8 +180,14 @@ fun ShuttlPillTabs(
                             if (selected) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.surfaceVariant,
                             shape,
                         )
-                        .selectable(selected = selected, role = Role.Tab, onClick = { onSelect(index) })
-                        .padding(horizontal = pad, vertical = padV),
+                        .selectable(
+                            selected = selected,
+                            enabled = pillEnabled,
+                            role = Role.Tab,
+                            onClick = { onSelect(index) },
+                        )
+                        .padding(horizontal = pad, vertical = padV)
+                        .alpha(if (pillEnabled) 1f else DISABLED_PILL_ALPHA),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
@@ -187,6 +203,13 @@ fun ShuttlPillTabs(
 }
 
 private val TRACK_PADDING = 4.dp
+
+/**
+ * A disabled pill's label, the text field's own disabled alpha
+ * (ShuttlOutlinedTextField): dimmed enough to read as not on offer, and
+ * still legible, since its label says what is waiting to become available.
+ */
+private const val DISABLED_PILL_ALPHA = 0.6f
 private val GAP = 4.dp
 private val PILL_PADDING_H = 8.dp
 private val PILL_PADDING_V = 11.dp
