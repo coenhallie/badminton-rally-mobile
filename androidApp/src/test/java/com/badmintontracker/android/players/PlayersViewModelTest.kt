@@ -154,18 +154,30 @@ class PlayersViewModelTest {
     }
 
     @Test
-    fun a_failed_rename_shows_the_save_sentence() = runTest {
+    fun a_rename_reaches_the_list() = runTest {
+        val players = FakePlayersRepository(listOf(marco))
+        val vm = newViewModel(players)
+        advanceUntilIdle()
+
+        vm.rename(marco.id, " Marco Vidal ").shouldBeNull()
+        advanceUntilIdle()
+
+        vm.state.value.players.map { it.name } shouldContainExactly listOf("Marco Vidal")
+    }
+
+    @Test
+    fun a_failed_rename_says_why_to_the_dialog_not_the_snackbar() = runTest {
         val players = FakePlayersRepository(listOf(marco))
         val vm = newViewModel(players)
         advanceUntilIdle()
         players.nextError = IllegalStateException("HTTP 500")
 
-        vm.rename(marco.id, "Marco Vidal")
-        advanceUntilIdle()
+        // The rename dialog stays open with the name typed and says it there,
+        // as the add dialog does.
+        vm.rename(marco.id, "Marco Vidal") shouldBe PlayersCopy.SAVE_FAILED
 
-        vm.state.value.errorMessage shouldBe PlayersCopy.SAVE_FAILED
-        vm.errorShown()
         vm.state.value.errorMessage.shouldBeNull()
+        vm.state.value.players.map { it.name } shouldContainExactly listOf("Marco")
     }
 
     @Test
@@ -174,10 +186,7 @@ class PlayersViewModelTest {
         val vm = newViewModel(players)
         advanceUntilIdle()
 
-        vm.rename(marco.id, "   ")
-        advanceUntilIdle()
-
-        vm.state.value.errorMessage shouldBe PlayersCopy.NAME_REQUIRED
+        vm.rename(marco.id, "   ") shouldBe PlayersCopy.NAME_REQUIRED
     }
 
     @Test

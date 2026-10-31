@@ -45,10 +45,11 @@ import kotlinx.coroutines.launch
  * - the result dialog of a standalone video whose analysis failed.
  *
  * Every message goes to [snackbar], the app's one root host, which the Players
- * screen and All matches draw in their own Scaffolds (so it sits above the Add
- * button there). One host, so two messages queue rather than stack. A message
- * posted while neither is in front waits for one: the watcher only announces
- * runs while one of them is, and the list's failures come from them.
+ * screen, All matches and a player's page draw in their own Scaffolds (so it
+ * sits above the Add button there). One host, so two messages queue rather
+ * than stack. A message posted while none of them is in front waits for one:
+ * the watcher only announces runs while one of them is, and the list's
+ * failures come from them.
  *
  * The match page draws the list's failure itself (its own Delete and Remove
  * fail through the same view model), so while it is in front that message is

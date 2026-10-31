@@ -15,12 +15,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.LocalVideoLimits
+import com.badmintontracker.shared.scoring.Side
 import java.util.UUID
 
-/** Entry points for getting a video into the app. */
+/**
+ * Entry points for getting a video into the app. [forMatch] is the scored match
+ * the video is for (its page's attach), [forPlayer] the player it is for (their
+ * page's Add match); null for neither. See [newLocalVideoEntry].
+ */
 class VideoIntake(
-    val record: (forMatch: MatchTarget?) -> Unit,
-    val import: (forMatch: MatchTarget?) -> Unit,
+    val record: (forMatch: MatchTarget?, forPlayer: String?) -> Unit,
+    val import: (forMatch: MatchTarget?, forPlayer: String?) -> Unit,
 )
 
 /**
@@ -41,15 +46,18 @@ fun rememberVideoIntake(
 ): VideoIntake {
     val context = LocalContext.current
 
-    // Holds the match a pick was launched for between launch and result, the same
-    // way pendingRecordUri holds the camera destination.
+    // Holds the match and the player a pick was launched for between launch and
+    // result, the same way pendingRecordUri holds the camera destination.
     val pendingImportTarget = remember { arrayOfNulls<MatchTarget>(1) }
+    val pendingImportPlayer = remember { arrayOfNulls<String>(1) }
 
     val pickLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia(),
     ) { uri ->
         val target = pendingImportTarget[0]
+        val player = pendingImportPlayer[0]
         pendingImportTarget[0] = null
+        pendingImportPlayer[0] = null
         if (uri != null) {
             // Photo-picker grants may not be persistable on all OEMs; best effort.
             runCatching {
@@ -57,23 +65,26 @@ fun rememberVideoIntake(
                     uri, Intent.FLAG_GRANT_READ_URI_PERMISSION,
                 )
             }
-            addEntryFromUri(context, uri, target, onAdded, onError)
+            addEntryFromUri(context, uri, target, player, onAdded, onError)
         }
     }
 
     // Holds the MediaStore URI we hand to the camera between launch and result.
     val pendingRecordUri = remember { arrayOfNulls<Uri>(1) }
     val pendingRecordTarget = remember { arrayOfNulls<MatchTarget>(1) }
+    val pendingRecordPlayer = remember { arrayOfNulls<String>(1) }
 
     val recordLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CaptureVideo(),
     ) { ok ->
         val uri = pendingRecordUri[0]
         val target = pendingRecordTarget[0]
+        val player = pendingRecordPlayer[0]
         pendingRecordUri[0] = null
         pendingRecordTarget[0] = null
+        pendingRecordPlayer[0] = null
         if (ok && uri != null) {
-            addEntryFromUri(context, uri, target, onAdded, onError)
+            addEntryFromUri(context, uri, target, player, onAdded, onError)
         } else {
             uri?.let { runCatching { context.contentResolver.delete(it, null, null) } }
         }
@@ -81,7 +92,7 @@ fun rememberVideoIntake(
 
     return remember {
         VideoIntake(
-            record = { forMatch ->
+            record = { forMatch, forPlayer ->
                 val values = ContentValues().apply {
                     put(MediaStore.Video.Media.DISPLAY_NAME, "shuttl_${System.currentTimeMillis()}.mp4")
                     put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
@@ -94,11 +105,13 @@ fun rememberVideoIntake(
                 } else {
                     pendingRecordUri[0] = uri
                     pendingRecordTarget[0] = forMatch
+                    pendingRecordPlayer[0] = forPlayer
                     recordLauncher.launch(uri)
                 }
             },
-            import = { forMatch ->
+            import = { forMatch, forPlayer ->
                 pendingImportTarget[0] = forMatch
+                pendingImportPlayer[0] = forPlayer
                 pickLauncher.launch(
                     PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly),
                 )
@@ -111,6 +124,7 @@ private fun addEntryFromUri(
     context: Context,
     uri: Uri,
     target: MatchTarget?,
+    player: String?,
     onAdded: (LocalVideoEntry) -> Unit,
     onError: (String) -> Unit,
 ) {
@@ -146,15 +160,43 @@ private fun addEntryFromUri(
     }.getOrDefault(0L)
 
     onAdded(
-        LocalVideoEntry(
+        newLocalVideoEntry(
             id = UUID.randomUUID().toString(),
             uri = uri.toString(),
             displayName = displayName,
             durationMs = durationMs,
             sizeBytes = sizeBytes,
             addedAtEpochMs = System.currentTimeMillis(),
-            title = target?.title,
-            scoreLogId = target?.scoreLogId,
+            forMatch = target,
+            forPlayer = player,
         ),
     )
 }
+
+/**
+ * The entry a picked or recorded file becomes. A video for a match carries the
+ * match's log and name (see [MatchTarget]). A video for a player has them at
+ * home and at the near end: the coach filmed from their side, which is the
+ * side an on-device run follows.
+ */
+internal fun newLocalVideoEntry(
+    id: String,
+    uri: String,
+    displayName: String,
+    durationMs: Long,
+    sizeBytes: Long,
+    addedAtEpochMs: Long,
+    forMatch: MatchTarget?,
+    forPlayer: String?,
+): LocalVideoEntry = LocalVideoEntry(
+    id = id,
+    uri = uri,
+    displayName = displayName,
+    durationMs = durationMs,
+    sizeBytes = sizeBytes,
+    addedAtEpochMs = addedAtEpochMs,
+    title = forMatch?.title,
+    scoreLogId = forMatch?.scoreLogId,
+    homePlayerId = forPlayer,
+    nearSide = forPlayer?.let { Side.HOME },
+)

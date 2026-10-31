@@ -3,6 +3,7 @@ package com.badmintontracker.android.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -44,6 +45,15 @@ private fun statTileText(value: String, unit: String, unitStyle: TextStyle): Ann
  * [labelMaxLines] is iOS's `labelLineLimit`: a caption longer than half a
  * phone, like the heatmap's "Frames with the player", needs two, or it is
  * cut off at the last word that fits with nothing to say so.
+ *
+ * [compact] is a tile three to a row (a player's profile). On a 360dp phone
+ * with the page gutters such a tile is about 99dp wide, which leaves 59dp for
+ * the value at the usual padding, and a date such as "Oct 28, 2026" is about
+ * 150dp at the stat size. So the value is set at titleLarge (the date is then
+ * about 93dp) in 12dp of padding, it wraps between words rather than being
+ * cut ("Oct 28," over "2026"), and the caption sits at the tile's foot. A row
+ * of compact tiles gives them one height (IntrinsicSize.Min and
+ * fillMaxHeight), so their captions stay level when one value takes two lines.
  */
 @Composable
 fun ShuttlStatTile(
@@ -55,6 +65,7 @@ fun ShuttlStatTile(
     selected: Boolean = false,
     onClick: (() -> Unit)? = null,
     labelMaxLines: Int = 1,
+    compact: Boolean = false,
 ) {
     val shape = RoundedCornerShape(ShuttlRadius.large)
     val border = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent
@@ -71,14 +82,15 @@ fun ShuttlStatTile(
                     Modifier
                 }
             )
-            .padding(horizontal = 20.dp, vertical = 16.dp),
+            .padding(horizontal = if (compact) 12.dp else 20.dp, vertical = if (compact) 12.dp else 16.dp),
+        verticalArrangement = if (compact) Arrangement.SpaceBetween else Arrangement.Top,
     ) {
         if (labelAbove) Caption(label, maxLines = labelMaxLines)
         Text(
             statTileText(value, unit, MaterialTheme.typography.bodyMedium.copy(color = unitColor)),
-            style = ShuttlTypeExtras.statNumber,
+            style = if (compact) MaterialTheme.typography.titleLarge else ShuttlTypeExtras.statNumber,
             color = MaterialTheme.colorScheme.onBackground,
-            maxLines = 1,
+            maxLines = if (compact) Int.MAX_VALUE else 1,
             modifier = Modifier.padding(top = if (labelAbove) 4.dp else 0.dp),
         )
         if (!labelAbove) Caption(label, maxLines = labelMaxLines, modifier = Modifier.padding(top = 4.dp))

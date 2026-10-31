@@ -2,6 +2,7 @@ package com.badmintontracker.android.scoring
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.badmintontracker.shared.players.MatchPlayers
 import com.badmintontracker.shared.scoring.GamePoints
 import com.badmintontracker.shared.scoring.MatchSets
 import com.badmintontracker.shared.scoring.MatchSetup
@@ -29,9 +30,14 @@ data class NewMatchState(
     val canCreate: Boolean = true,
 )
 
+/**
+ * [playerId] is the player the match is started for (their page's Add match),
+ * null from anywhere else: a match started for a player has them at home.
+ */
 class NewMatchViewModel(
     private val scoreLogs: ScoreLogsRepository,
     private val places: PlaceNames,
+    private val playerId: String?,
     now: () -> Instant = Clock.System::now,
     private val zone: TimeZone = TimeZone.currentSystemDefault(),
 ) : ViewModel() {
@@ -74,12 +80,15 @@ class NewMatchViewModel(
     fun create(): String? {
         val s = internal.value
         if (!s.canCreate) return null
-        return scoreLogs.create(
+        val id = scoreLogs.create(
             title = s.title,
             rules = ScoringRules.of(s.points, s.sets),
             // Home, because the form no longer asks: the board lets it be switched
             // until the first point is scored.
             setup = MatchSetup(firstServer = Side.HOME),
         ).id
+        // A new log has no format, so a profile is allowed on it (singles only).
+        playerId?.let { scoreLogs.assignPlayers(id, MatchPlayers(it, null, emptyList(), emptyList())) }
+        return id
     }
 }

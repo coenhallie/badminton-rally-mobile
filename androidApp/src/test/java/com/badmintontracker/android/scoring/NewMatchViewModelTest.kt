@@ -1,5 +1,7 @@
 package com.badmintontracker.android.scoring
 
+import com.badmintontracker.shared.players.MatchPlayers
+import com.badmintontracker.shared.players.matchPlayers
 import com.badmintontracker.shared.scoring.GamePoints
 import com.badmintontracker.shared.scoring.MatchSets
 import com.badmintontracker.shared.scoring.ScoreLogStatus
@@ -30,9 +32,10 @@ class NewMatchViewModelTest {
     private val repo =
         ScoreLogsRepository(MapSettings(), now = { Instant.parse("2026-08-27T18:00:00Z") }, ownerId = { "owner-1" })
 
-    private fun vm(places: PlaceNames = PlaceNames { null }) = NewMatchViewModel(
+    private fun vm(places: PlaceNames = PlaceNames { null }, playerId: String? = null) = NewMatchViewModel(
         scoreLogs = repo,
         places = places,
+        playerId = playerId,
         now = { Instant.parse("2026-09-20T12:30:00Z") },
         zone = TimeZone.of("Europe/Amsterdam"),
     )
@@ -125,5 +128,18 @@ class NewMatchViewModelTest {
         val log = repo.get(vm().create().shouldNotBeNull()).shouldNotBeNull()
         log.title shouldBe "Sep 20, 14:30"
         log.rules shouldBe ScoringRules.BWF_21
+    }
+
+    @Test
+    fun a_match_started_for_a_player_makes_them_home() {
+        // From the player's page: the match is theirs from the first point.
+        val log = repo.get(vm(playerId = "p-marco").create().shouldNotBeNull()).shouldNotBeNull()
+        log.matchPlayers shouldBe MatchPlayers("p-marco", null, emptyList(), emptyList())
+    }
+
+    @Test
+    fun a_match_started_for_no_player_names_nobody() {
+        val log = repo.get(vm(playerId = null).create().shouldNotBeNull()).shouldNotBeNull()
+        log.matchPlayers shouldBe MatchPlayers.NONE
     }
 }

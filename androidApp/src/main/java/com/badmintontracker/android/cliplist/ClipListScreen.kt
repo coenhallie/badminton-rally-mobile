@@ -42,6 +42,8 @@ import com.badmintontracker.android.localvideo.MatchDetailsSheet
 import com.badmintontracker.android.match.MatchPageGutter
 import com.badmintontracker.android.share.ShareSheet
 import com.badmintontracker.android.ui.components.ConfirmDialog
+import com.badmintontracker.android.ui.components.ShuttlEmptyState
+import com.badmintontracker.android.ui.icons.ShuttlIcons
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.matchlist.rallyLengthText
 import com.badmintontracker.shared.matchlist.MatchAction
@@ -50,7 +52,10 @@ import com.badmintontracker.shared.matchlist.MatchDelete
 import com.badmintontracker.shared.matchlist.MatchListCopy
 import com.badmintontracker.shared.matchlist.MatchListFilter
 import com.badmintontracker.shared.matchlist.MatchListSort
+import com.badmintontracker.shared.matchlist.MatchList
 import com.badmintontracker.shared.matchlist.MatchListItem
+import com.badmintontracker.shared.players.PlayersCopy
+import com.badmintontracker.shared.players.forPlayer
 import com.badmintontracker.shared.matchlist.effectiveFilter
 import com.badmintontracker.shared.matchlist.effectiveSort
 import com.badmintontracker.shared.matchlist.passes
@@ -66,7 +71,8 @@ import kotlinx.datetime.toLocalDateTime
 
 /**
  * The match list: one row per match, wherever its video is, with
- * "Shared with me" below it.
+ * "Shared with me" below it. Given a [playerId], the list is that player's
+ * matches alone (a player's Matches tab): see [listedMatches].
  *
  * Every row comes from the shared builder ([ClipListState.matchList]); this
  * screen only draws them and turns their taps, menus and swipes into the
@@ -96,6 +102,8 @@ fun ClipListScreen(
     heroPaused: Boolean = false,
     /** Room at the bottom so the last row and its menu scroll clear of the gesture bar and whatever floats over it. */
     contentPadding: PaddingValues = PaddingValues(),
+    /** The player whose matches these are, or null for All matches. */
+    playerId: String? = null,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     var sheetVideoId by remember { mutableStateOf<String?>(null) }
@@ -127,8 +135,11 @@ fun ClipListScreen(
 
     var filter by rememberSaveable { mutableStateOf(MatchListFilter.ALL) }
     var sort by rememberSaveable { mutableStateOf(MatchListSort.NEWEST) }
-    val mine = state.matchList.mine
-    val shared = state.matchList.shared
+    // Remembered: the list is rebuilt on each analysis progress tick, and a
+    // player's filter walks every row.
+    val listed = remember(state.matchList, playerId) { listedMatches(state.matchList, playerId) }
+    val mine = listed.mine
+    val shared = listed.shared
     // Review focus 5: a filter whose chips have gone would go on hiding
     // matches with nothing on screen to undo it. Reset on the chips going
     // away, not on their being absent: the first frame draws the view model's
@@ -247,7 +258,20 @@ fun ClipListScreen(
                 Box(
                     Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
                 ) {
-                    MatchesEmptyState(isPaused = heroPaused)
+                    if (playerId == null) {
+                        MatchesEmptyState(isPaused = heroPaused)
+                    } else {
+                        // Not the hero: it welcomes a coach with no matches at
+                        // all, and this is one player with none yet.
+                        ShuttlEmptyState(
+                            icon = ShuttlIcons.Trophy,
+                            title = PlayersCopy.NO_MATCHES_YET,
+                            body = PlayersCopy.MATCHES_EMPTY_BODY,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 48.dp, bottom = contentPadding.calculateBottomPadding()),
+                        )
+                    }
                 }
             } else {
                 LazyColumn(
@@ -358,6 +382,16 @@ fun ClipListScreen(
         )
     }
 }
+
+/**
+ * The rows the list draws: every match, or, for [playerId], the coach's own
+ * matches that name the player (MatchList.forPlayer) in the list's order and
+ * nothing shared. A shared match never belongs to one of this coach's players.
+ * The confirmations still look rows up in the whole list by key, which finds
+ * the same row either way.
+ */
+internal fun listedMatches(list: MatchList, playerId: String?): MatchList =
+    if (playerId == null) list else MatchList(mine = list.forPlayer(playerId), shared = emptyList())
 
 /**
  * What a swipe on a row does, and what the revealed label says. Internal, not

@@ -53,6 +53,21 @@ object PlayersCopy {
     const val HAND_LEFT = "Left"
     const val HAND_NOT_SET = "Not set"
 
+    /** What a screen reader hears for the page's Profile | Matches row. */
+    const val PAGE_SECTIONS = "Player sections"
+
+    /** The title's name, which opens the menu of every player. */
+    const val SWITCH_PLAYER = "Switch player"
+
+    /** The page's overflow: Rename, Playing hand, Delete player. */
+    const val PLAYER_OPTIONS = "Player options"
+
+    /**
+     * Under [NO_MATCHES_YET] on a player's Matches tab: how the list gets
+     * filled. "Add match" is the page's add button (HomeCopy.ADD_MATCH).
+     */
+    const val MATCHES_EMPTY_BODY = "Use Add match to add one for this player."
+
     /** The profile's hand line; null when the hand is not set, so the line is absent. */
     fun handLine(racketArm: RacketArm?): String? = when (racketArm) {
         RacketArm.RIGHT -> "Right-handed"

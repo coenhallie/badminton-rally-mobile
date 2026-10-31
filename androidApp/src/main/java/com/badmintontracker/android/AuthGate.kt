@@ -74,6 +74,7 @@ import com.badmintontracker.android.localvideo.court.loadFirstFrame
 import com.badmintontracker.android.localvideo.rememberVideoIntake
 import com.badmintontracker.android.labels.LabelsScreen
 import com.badmintontracker.android.labels.LabelsViewModel
+import com.badmintontracker.android.players.PlayerScreen
 import com.badmintontracker.android.players.PlayersScreen
 import com.badmintontracker.android.players.PlayersViewModel
 import com.badmintontracker.android.nav.AuthRedirect
@@ -129,18 +130,21 @@ fun AuthGate(
             // navigations, below, never a new graph.
             val start: Route = remember { authStartDestination(auth) }
 
-            // Any sheet or dialog over the Players screen or All matches, each
-            // reported by its screen, and the root host's result dialog. Part
-            // of "nothing above": see the finished-run watcher below. One per
-            // screen, so one leaving cannot clear what the other just said.
+            // Any sheet or dialog over the Players screen, All matches or a
+            // player's page, each reported by its screen, and the root host's
+            // result dialog. Part of "nothing above": see the finished-run
+            // watcher below. One per screen, so one leaving cannot clear what
+            // another just said.
             var playersOverlayOpen by remember { mutableStateOf(false) }
             var allMatchesOverlayOpen by remember { mutableStateOf(false) }
+            var playerOverlayOpen by remember { mutableStateOf(false) }
             var resultDialogOpen by remember { mutableStateOf(false) }
             // Runs the watcher below has just announced, for RootAnnouncementsHost
             // to say on the snackbar; it clears them once it has read them.
             var announced by remember { mutableStateOf(emptySet<String>()) }
-            // The app's one root snackbar host: Players and All matches draw
-            // it, RootAnnouncementsHost and the Players screen post to it.
+            // The app's one root snackbar host: Players, All matches and a
+            // player's page draw it; RootAnnouncementsHost and the two player
+            // screens post to it.
             val rootSnackbar = remember { SnackbarHostState() }
 
             LaunchedEffect(auth) {
@@ -166,9 +170,10 @@ fun AuthGate(
             // just until it opens: see the finished-run watcher's "nothing above".
             var autoDetailsEntryId by remember { mutableStateOf<String?>(null) }
             // Hoisted above the NavHost: the Players screen (record/import with
-            // no match) and the match destination (record/import for this match)
-            // drive the same picker, so there can only be one implementation of
-            // "getting a video into the app".
+            // no match), a player's page (for that player) and the match
+            // destination (record/import for this match) drive the same picker,
+            // so there can only be one implementation of "getting a video into
+            // the app".
             val intake = rememberVideoIntake(
                 onAdded = { entry ->
                     localVideos.add(entry)
@@ -199,11 +204,11 @@ fun AuthGate(
             val storedResults = remember(localAnalysis) { storedResultsReader(localAnalysis) }
 
             // One factory for the one list view model, scoped to the Route.Players
-            // entry: the root, under every other destination. All matches,
-            // Settings and the match page read that entry's instance rather
-            // than building their own: the match page finds its match in that
-            // list (matchPageItem), and a second instance would be a second,
-            // later copy of the same list.
+            // entry: the root, under every other destination. All matches, a
+            // player's page, Settings and the match page read that entry's
+            // instance rather than building their own: the match page finds its
+            // match in that list (matchPageItem), and a second instance would be
+            // a second, later copy of the same list.
             val clipListVmFactory = remember(storedResults) {
                 viewModelFactory {
                     initializer {
@@ -274,9 +279,10 @@ fun AuthGate(
             // its seen-set.
             val activityLifecycle = LocalLifecycleOwner.current.lifecycle
 
-            // A run that lands while Players or All matches is in front is
-            // announced there: RootAnnouncementsHost says so on the root snackbar,
-            // with a View that opens the match. Nothing navigates on its own.
+            // A run that lands while Players, All matches or a player's page is
+            // in front is announced there: RootAnnouncementsHost says so on the
+            // root snackbar, with a View that opens the match. Nothing navigates
+            // on its own.
             //
             // Above the NavHost on purpose. announceFinishedRuns updates its
             // seen-set on every tick whether or not it announces, and that is
@@ -340,6 +346,7 @@ fun AuthGate(
                         val onAList = when {
                             front?.hasRoute<Route.Players>() == true -> !playersOverlayOpen
                             front?.hasRoute<Route.AllMatches>() == true -> !allMatchesOverlayOpen
+                            front?.hasRoute<Route.Player>() == true -> !playerOverlayOpen
                             else -> false
                         }
                         val nothingAbove = activityLifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) &&
@@ -407,14 +414,12 @@ fun AuthGate(
                         vm = playersVm,
                         clipListVm = clipListVm,
                         onOverlayChange = { playersOverlayOpen = it },
-                        // The player page is the next task's; its destination
-                        // and this navigation arrive together.
-                        onOpenPlayer = {},
+                        onOpenPlayer = { id -> nav.navigate(Route.Player(id)) },
                         onAllMatches = { nav.navigate(Route.AllMatches) },
                         onSettings = { nav.navigate(Route.Settings) },
                         onNewMatch = { nav.navigate(Route.NewMatch()) },
-                        onRecord = { intake.record(null) },
-                        onImport = { intake.import(null) },
+                        onRecord = { intake.record(null, null) },
+                        onImport = { intake.import(null, null) },
                         snackbarHostState = rootSnackbar,
                     )
                 }
@@ -441,6 +446,46 @@ fun AuthGate(
                         onOverlayChange = { allMatchesOverlayOpen = it },
                     )
                 }
+                composable<Route.Player> { entry ->
+                    val args = entry.toRoute<Route.Player>()
+                    // Both of the Players entry's view models, never a second
+                    // instance: the tiles, the Matches tab and the Players row
+                    // read one list and one set of players.
+                    val playersEntry = remember(entry) { nav.getBackStackEntry<Route.Players>() }
+                    val clipListVm: ClipListViewModel = viewModel(playersEntry, factory = clipListVmFactory)
+                    val playersVm: PlayersViewModel = viewModel(playersEntry, factory = playersVmFactory)
+                    val localVm: LocalVideoListViewModel = viewModel(
+                        factory = viewModelFactory {
+                            initializer { LocalVideoListViewModel(localVideos, coordinator, localAnnotations) }
+                        }
+                    )
+                    PlayerScreen(
+                        playerId = args.playerId,
+                        vm = playersVm,
+                        clipListVm = clipListVm,
+                        shares = rally.shares,
+                        media = rally.media,
+                        onBack = { nav.popBackStack() },
+                        // Replaces this page rather than stacking on it, so
+                        // Back from any player goes to Players. By type: the
+                        // one Player entry, whichever player it holds.
+                        onSwitchPlayer = { id ->
+                            nav.navigate(Route.Player(id)) { popUpTo<Route.Player> { inclusive = true } }
+                        },
+                        onGone = { nav.popBackStack<Route.Players>(inclusive = false) },
+                        onOpenMatch = { openMatch(it, null) },
+                        onAnalyze = analyzeEntry,
+                        // By the row's own entry id: see ClipListScreen.act.
+                        onMarkCourt = { entryId -> nav.navigate(Route.CourtMarking(entryId)) },
+                        onRemoveFromPhone = localVm::remove,
+                        onLocalDetailsSaved = localVm::setDetails,
+                        onNewMatch = { nav.navigate(Route.NewMatch(args.playerId)) },
+                        onRecord = { intake.record(null, args.playerId) },
+                        onImport = { intake.import(null, args.playerId) },
+                        snackbarHostState = rootSnackbar,
+                        onOverlayChange = { playerOverlayOpen = it },
+                    )
+                }
                 composable<Route.Settings> { entry ->
                     // Sign out goes through the list's view model (vm::signOut),
                     // as it always has, rather than a view model of this page's
@@ -458,11 +503,15 @@ fun AuthGate(
                         onBack = { nav.popBackStack() },
                     )
                 }
-                composable<Route.NewMatch> {
+                composable<Route.NewMatch> { entry ->
+                    val args = entry.toRoute<Route.NewMatch>()
                     val appContext = LocalContext.current.applicationContext
                     val vm: NewMatchViewModel = viewModel(
                         factory = viewModelFactory {
-                            initializer { NewMatchViewModel(rally.scoreLogs, AndroidPlaceNames(appContext)) }
+                            initializer {
+                                // A player's page started it: the match is theirs, at home.
+                                NewMatchViewModel(rally.scoreLogs, AndroidPlaceNames(appContext), args.playerId)
+                            }
                         }
                     )
                     NewMatchScreen(
@@ -588,8 +637,9 @@ fun AuthGate(
                             if (log.status == ScoreLogStatus.LIVE) rally.scoreLogs.finish(log.id)
                             val target = MatchTarget(log.id, log.title)
                             when (intent) {
-                                AttachIntent.Import -> intake.import(target)
-                                AttachIntent.Record -> intake.record(target)
+                                // For the match, not a player: its log says who played.
+                                AttachIntent.Import -> intake.import(target, null)
+                                AttachIntent.Record -> intake.record(target, null)
                             }
                         },
                         // By the row's own entry, the page's status banner being

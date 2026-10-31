@@ -118,3 +118,36 @@ fun PlayerNameDialog(
         dismissButton = { TextButton(onClick = onDismiss) { Text(PlayersCopy.CANCEL) } },
     )
 }
+
+/**
+ * A player's playing hand on its own: the three pills (Right, Left, Not set)
+ * under the "Playing hand" title, saved with Save. The add dialog's pills, for
+ * a player who already exists. [onSave] hands over the hand, null for Not set;
+ * the caller closes the dialog.
+ */
+@Composable
+fun PlayingHandDialog(
+    initialArm: RacketArm?,
+    onDismiss: () -> Unit,
+    onSave: (RacketArm?) -> Unit,
+) {
+    var armIndex by rememberSaveable { mutableIntStateOf(HAND_OPTIONS.indexOf(initialArm)) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        // Not the dialog default: in light that is the pill track's own value.
+        containerColor = ShuttlTheme.extended.bgDialog,
+        title = { Text(PlayersCopy.MENU_PLAYING_HAND) },
+        text = {
+            ShuttlPillTabs(
+                labels = HAND_OPTIONS.map(PlayersCopy::handOption),
+                selectedIndex = armIndex,
+                onSelect = { armIndex = it },
+                groupLabel = PlayersCopy.MENU_PLAYING_HAND,
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(HAND_OPTIONS[armIndex]) }) { Text(PlayersCopy.SAVE) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(PlayersCopy.CANCEL) } },
+    )
+}

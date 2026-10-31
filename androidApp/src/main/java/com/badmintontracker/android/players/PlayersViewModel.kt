@@ -106,7 +106,15 @@ class PlayersViewModel(
             )
         }.await()
 
-    fun rename(id: String, name: String) = save { players.rename(id, name) }
+    /**
+     * Null once the new name is saved, or the sentence saying why not. Like
+     * [create], for the dialog that asked: it stays open with the name typed
+     * and says it there, rather than on a snackbar after it has closed.
+     */
+    suspend fun rename(id: String, name: String): String? =
+        viewModelScope.async {
+            players.rename(id, name).exceptionOrNull()?.let { PlayersCopy.failureMessage(it, PlayersCopy.SAVE_FAILED) }
+        }.await()
 
     /** [racketArm] null clears the hand. */
     fun setRacketArm(id: String, racketArm: RacketArm?) = save { players.setRacketArm(id, racketArm) }
