@@ -4,6 +4,8 @@ import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.AnalyzeStep
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
+import com.badmintontracker.shared.localvideo.setMatchPlayers
+import com.badmintontracker.shared.model.MatchMetadata
 import com.badmintontracker.shared.scoring.MatchFormat
 import com.badmintontracker.shared.scoring.MatchSetup
 import com.badmintontracker.shared.scoring.ScoreLog
@@ -95,7 +97,14 @@ class SaveMatchPlayersTest {
         playersTarget(null, entry("e1", AnalyzeStage.PROCESSING), "e1") shouldBe PlayersTarget.VIDEO_ROW
         playersTarget(null, null, "web-1") shouldBe PlayersTarget.VIDEO_ROW
         playersTarget(null, null, null).shouldBeNull()
-        playersTarget(null, entry("e1", AnalyzeStage.PROCESSING), null).shouldBeNull()
+    }
+
+    @Test
+    fun players_target_is_the_row_of_an_uploaded_entry_whose_clips_have_not_arrived() {
+        // Past the INSERT the row exists under the entry's id, known or not.
+        playersTarget(null, entry("e1", AnalyzeStage.PROCESSING), null) shouldBe PlayersTarget.VIDEO_ROW
+        playersTarget(null, entry("e1", AnalyzeStage.FAILED, AnalyzeStep.KEYPOINTS), null) shouldBe
+            PlayersTarget.VIDEO_ROW
     }
 
     // saveMatchPlayersOrMessage
@@ -103,6 +112,7 @@ class SaveMatchPlayersTest {
     @Test
     fun a_problem_saves_nothing() = runTest {
         val log = newLog()
+        scoreLogs.updateDetails(log.id, log.title, MatchFormat.DOUBLES, MatchPlayers.NONE)
         localVideos.add(entry("e1"))
         val doubles = MatchPlayers("player-marco", null, emptyList(), emptyList())
 
@@ -271,5 +281,125 @@ class SaveMatchPlayersTest {
         message shouldBe PlayersCopy.WHOS_PLAYING_SAVE_FAILED
         scoreLogs.get(log.id)?.homePlayerId shouldBe "player-marco"
         localVideos.get("e1")?.nearSide.shouldBeNull()
+    }
+
+    // Carried from the Task 5 review (Ruling 9)
+
+    @Test
+    fun a_score_log_is_judged_by_its_own_format() = runTest {
+        val log = newLog()
+        scoreLogs.updateDetails(log.id, log.title, MatchFormat.DOUBLES, MatchPlayers.NONE)
+
+        // The caller's copy says singles; the log it writes is doubles.
+        val message = save(PlayersTarget.SCORE_LOG, marco, format = MatchFormat.SINGLES, scoreLogId = log.id)
+
+        message shouldBe PlayersCopy.DOUBLES_NOTE
+        scoreLogs.get(log.id)?.matchPlayers shouldBe MatchPlayers.NONE
+    }
+
+    @Test
+    fun a_singles_score_log_takes_a_player_whatever_the_caller_thought() = runTest {
+        val log = newLog()
+
+        save(PlayersTarget.SCORE_LOG, marco, format = MatchFormat.DOUBLES, scoreLogId = log.id).shouldBeNull()
+
+        scoreLogs.get(log.id)?.homePlayerId shouldBe "player-marco"
+    }
+
+    @Test
+    fun a_score_log_this_phone_does_not_hold_fails_without_writing() = runTest {
+        localVideos.add(entry("e1", AnalyzeStage.ANALYZED))
+
+        val message = save(PlayersTarget.SCORE_LOG, marco, Side.HOME, scoreLogId = "gone", videoId = "e1", entryId = "e1")
+
+        message shouldBe PlayersCopy.WHOS_PLAYING_SAVE_FAILED
+        videos.updatePlayersCalls.size shouldBe 0
+        localVideos.get("e1")?.nearSide.shouldBeNull()
+    }
+
+    @Test
+    fun an_unchanged_end_on_the_entry_skips_the_video_write() = runTest {
+        val log = newLog()
+        localVideos.add(entry("e1", AnalyzeStage.ANALYZED, scoreLogId = log.id))
+        localVideos.setMatchPlayers("e1", MatchPlayers.NONE, Side.HOME)
+        // A write would fail: the players must still save without a failure sentence.
+        videos.nextUpdatePlayersResult = Result.failure(IllegalStateException("offline"))
+
+        val message = save(
+            PlayersTarget.SCORE_LOG, marco, Side.HOME, scoreLogId = log.id, videoId = "e1", entryId = "e1",
+        )
+
+        message.shouldBeNull()
+        scoreLogs.get(log.id)?.homePlayerId shouldBe "player-marco"
+        videos.updatePlayersCalls.size shouldBe 0
+    }
+
+    @Test
+    fun an_unchanged_end_on_the_cached_row_skips_the_video_write() = runTest {
+        val log = newLog()
+        videos.metadata.value = mapOf("web-1" to MatchMetadata("web-1", nearSide = Side.AWAY))
+        videos.nextUpdatePlayersResult = Result.failure(IllegalStateException("offline"))
+
+        val message = save(PlayersTarget.SCORE_LOG, marco, Side.AWAY, scoreLogId = log.id, videoId = "web-1")
+
+        message.shouldBeNull()
+        videos.updatePlayersCalls.size shouldBe 0
+    }
+
+    @Test
+    fun an_end_with_no_cached_row_is_written() = runTest {
+        val log = newLog()
+
+        save(PlayersTarget.SCORE_LOG, marco, null, scoreLogId = log.id, videoId = "web-1").shouldBeNull()
+
+        // Nothing says the row's end is already null, so it is written.
+        videos.updatePlayersCalls.single() shouldBe (MatchPlayers.NONE to null)
+    }
+
+    @Test
+    fun an_unchanged_end_while_the_video_uploads_does_not_ask_to_wait() = runTest {
+        val log = newLog()
+        localVideos.add(entry("e1", AnalyzeStage.UPLOADING, scoreLogId = log.id))
+
+        save(PlayersTarget.SCORE_LOG, marco, null, scoreLogId = log.id, entryId = "e1").shouldBeNull()
+
+        scoreLogs.get(log.id)?.homePlayerId shouldBe "player-marco"
+    }
+
+    @Test
+    fun the_end_of_an_uploaded_video_with_no_known_id_is_written_to_the_entry_id() = runTest {
+        val log = newLog()
+        localVideos.add(entry("e1", AnalyzeStage.PROCESSING, scoreLogId = log.id))
+
+        val message = save(
+            PlayersTarget.SCORE_LOG, marco, Side.AWAY, scoreLogId = log.id, videoId = null, entryId = "e1",
+        )
+
+        message.shouldBeNull()
+        videos.updatePlayersCalls.single() shouldBe (MatchPlayers.NONE to Side.AWAY)
+        videos.metadata.value.keys shouldBe setOf("e1")
+        localVideos.get("e1")?.nearSide shouldBe Side.AWAY
+    }
+
+    @Test
+    fun a_row_save_with_no_known_id_writes_the_uploaded_entry_row() = runTest {
+        localVideos.add(entry("e1", AnalyzeStage.ANALYZED))
+
+        val message = save(PlayersTarget.VIDEO_ROW, marco, Side.HOME, videoId = null, entryId = "e1")
+
+        message.shouldBeNull()
+        videos.updatePlayersCalls.single() shouldBe (marco to Side.HOME)
+        videos.metadata.value.keys shouldBe setOf("e1")
+        localVideos.get("e1")?.matchPlayers shouldBe marco
+    }
+
+    @Test
+    fun a_row_save_for_an_entry_before_the_insert_does_not_guess_a_row() = runTest {
+        localVideos.add(entry("e1"))
+
+        val message = save(PlayersTarget.VIDEO_ROW, marco, Side.HOME, videoId = null, entryId = "e1")
+
+        message shouldBe PlayersCopy.WHOS_PLAYING_SAVE_FAILED
+        videos.updatePlayersCalls.size shouldBe 0
     }
 }
