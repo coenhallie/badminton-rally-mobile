@@ -48,4 +48,18 @@ class PlayerTest {
         )
         sorted.map { it.id } shouldBe listOf("1", "0", "2", "3")
     }
+
+    @Test
+    fun a_failure_shows_the_fixed_sentence_unless_it_is_a_name_problem() {
+        PlayersCopy.failureMessage(RuntimeException("HTTP request to https://x failed"), PlayersCopy.SAVE_FAILED) shouldBe
+            PlayersCopy.SAVE_FAILED
+        PlayersCopy.failureMessage(IllegalArgumentException("Unexpected JSON token"), PlayersCopy.SAVE_FAILED) shouldBe
+            PlayersCopy.SAVE_FAILED
+        PlayersCopy.failureMessage(IllegalArgumentException("Enter a name."), PlayersCopy.SAVE_FAILED) shouldBe
+            "Enter a name."
+        PlayersCopy.failureMessage(
+            IllegalArgumentException("A player name can be up to 40 characters."),
+            PlayersCopy.SAVE_FAILED,
+        ) shouldBe "A player name can be up to 40 characters."
+    }
 }

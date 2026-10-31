@@ -12,6 +12,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.TextContent
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 
@@ -193,5 +194,66 @@ class PlayersRepositoryTest {
         repo.delete("p2").isSuccess shouldBe true
 
         repo.players.value.map { it.id } shouldBe listOf("p3", "p1")
+    }
+
+    @Test
+    fun cache_is_republished_once_the_owner_becomes_known_after_construction() = runTest {
+        val settings = MapSettings()
+        val warm = TestSupabase.client(settings) { request ->
+            if (request.url.encodedPath.contains("/token")) jsonResponse(tokenResponseFor("u1"))
+            else jsonResponse(seeded)
+        }
+        warm.signInAs("u1")
+        PlayersRepositoryImpl(warm, settings).refresh() // persists the cache under "u1"
+
+        // A cold client over settings holding ONLY the cache envelope, not a
+        // persisted session, so nothing races supabase-kt's real asynchronous
+        // session restore (see AnnotationLabelsRepositoryTest for the long form).
+        val coldSettings = MapSettings().apply { putString(cacheKey, settings.getString(cacheKey, "")) }
+        val cold = TestSupabase.client(coldSettings) { request ->
+            if (request.url.encodedPath.contains("/token")) jsonResponse(tokenResponseFor("u1"))
+            else error("the cold-start reconciliation must read the local cache, not the network")
+        }
+        cold.auth.currentUserOrNull() shouldBe null
+
+        // The gate stands in for awaitInitialization(), so "sign-in observed"
+        // strictly happens before "reconciliation re-reads the cache".
+        val gate = CompletableDeferred<Unit>()
+        val repo = PlayersRepositoryImpl(cold, coldSettings) { gate.await() }
+        repo.players.value.shouldBeEmpty() // fails safe: owner not known yet
+
+        cold.signInAs("u1")
+        gate.complete(Unit)
+        repo.cacheReconciliation.join()
+
+        repo.players.value.map { it.name } shouldBe listOf("alex", "Bea", "zoe")
+    }
+
+    @Test
+    fun the_cold_start_reconciliation_never_serves_one_owners_cache_to_another() = runTest {
+        val settings = MapSettings()
+        val client = TestSupabase.client(settings) { request ->
+            when {
+                request.url.encodedPath.contains("/token") &&
+                    (request.body as? TextContent)?.text?.contains("user-a") == true ->
+                    jsonResponse(tokenResponseFor("user-a"))
+                request.url.encodedPath.contains("/token") -> jsonResponse(tokenResponseFor("user-b"))
+                else -> jsonResponse(seeded)
+            }
+        }
+        client.signInAs("user-a")
+        PlayersRepositoryImpl(client, settings).refresh() // cache stamped "user-a"
+
+        // A cold client over user-a's cache whose owner turns out to be user-b.
+        val cold = TestSupabase.client(settings) { request ->
+            if (request.url.encodedPath.contains("/token")) jsonResponse(tokenResponseFor("user-b"))
+            else error("must not need the network")
+        }
+        cold.signInAs("user-b")
+
+        val repo = PlayersRepositoryImpl(cold, settings)
+        repo.cacheReconciliation.join()
+
+        repo.players.value.shouldBeEmpty()
     }
 }

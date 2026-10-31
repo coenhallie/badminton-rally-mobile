@@ -1,6 +1,7 @@
 package com.badmintontracker.shared.players
 
 import com.badmintontracker.shared.prefs.RacketArm
+import com.badmintontracker.shared.scoring.PLAYER_NAME_TOO_LONG
 
 /**
  * Every sentence the player profiles feature shows, so the Android and iOS
@@ -78,6 +79,17 @@ object PlayersCopy {
     }
 
     // Failures
+
+    /**
+     * What to show for a failed save, delete or load: the repository's own name
+     * validation sentence when that is what failed, and [fallback] for everything
+     * else (a server error, no connection, a decode failure), so neither platform
+     * can show raw "HTTP ..." text. Matched on the sentences rather than on
+     * IllegalArgumentException, because a serialization failure is one too.
+     */
+    fun failureMessage(error: Throwable, fallback: String): String =
+        error.message?.takeIf { it == NAME_REQUIRED || it == PLAYER_NAME_TOO_LONG } ?: fallback
+
     const val SAVE_FAILED = "Couldn't save the player. Check your connection and try again."
     const val DELETE_FAILED = "Couldn't delete the player. Check your connection and try again."
     const val WHOS_PLAYING_SAVE_FAILED = "Couldn't save who's playing. Check your connection and try again."
@@ -85,7 +97,7 @@ object PlayersCopy {
     // Which end of the court: the analysis toggle, the ends row, the attach question, the swap
     const val NEAR = "Near"
     const val FAR = "Far"
-    const val NEAR_FAR_NOT_SET = "Not set"
+    const val NEAR_FAR_NOT_SET = HAND_NOT_SET
 
     // Who's playing (the match page)
     const val WHOS_PLAYING_TITLE = "Who's playing"

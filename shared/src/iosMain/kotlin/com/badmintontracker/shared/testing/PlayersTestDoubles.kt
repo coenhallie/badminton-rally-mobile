@@ -2,6 +2,7 @@ package com.badmintontracker.shared.testing
 
 import com.badmintontracker.shared.players.Player
 import com.badmintontracker.shared.players.PlayersRepository
+import com.badmintontracker.shared.players.playerNameProblem
 import com.badmintontracker.shared.players.sortedPlayers
 import com.badmintontracker.shared.prefs.RacketArm
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,6 +27,7 @@ private class InMemoryPlayersRepository(initial: List<Player>) : PlayersReposito
     override suspend fun refresh(): Result<Unit> = Result.success(Unit)
 
     override suspend fun create(name: String, racketArm: RacketArm?): Result<Player> = runCatching {
+        playerNameProblem(name)?.let { throw IllegalArgumentException(it) }
         val row = Player(
             id = "player-${++nextId}",
             ownerId = "test-owner",
@@ -39,6 +41,7 @@ private class InMemoryPlayersRepository(initial: List<Player>) : PlayersReposito
     }
 
     override suspend fun rename(id: String, name: String): Result<Unit> = runCatching {
+        playerNameProblem(name)?.let { throw IllegalArgumentException(it) }
         state.value = sortedPlayers(state.value.map { if (it.id == id) it.copy(name = name.trim()) else it })
     }
 

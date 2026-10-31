@@ -116,6 +116,11 @@ suspend fun AnnotationLabelsRepository.deleteLabelOrMessage(id: String): String?
 suspend fun AnnotationLabelsRepository.refreshLabelsOrMessage(): String? =
     refresh().exceptionOrNull()?.let { it.userFacingMessage("Couldn't load labels") }
 
+/**
+ * The players entry points below answer with [PlayersCopy.failureMessage], not
+ * [userFacingMessage]: the latter passes a raw "HTTP ..." message through, and the
+ * player screens show fixed sentences.
+ */
 class CreatePlayerOutcome(val player: Player?, val errorMessage: String?)
 
 /**
@@ -125,21 +130,21 @@ class CreatePlayerOutcome(val player: Player?, val errorMessage: String?)
 suspend fun PlayersRepository.createPlayerForSwift(name: String, racketArm: RacketArm?): CreatePlayerOutcome =
     create(name, racketArm).fold(
         onSuccess = { CreatePlayerOutcome(it, null) },
-        onFailure = { CreatePlayerOutcome(null, it.userFacingMessage(PlayersCopy.SAVE_FAILED)) },
+        onFailure = { CreatePlayerOutcome(null, PlayersCopy.failureMessage(it, PlayersCopy.SAVE_FAILED)) },
     )
 
 suspend fun PlayersRepository.renamePlayerOrMessage(id: String, name: String): String? =
-    rename(id, name).exceptionOrNull()?.let { it.userFacingMessage(PlayersCopy.SAVE_FAILED) }
+    rename(id, name).exceptionOrNull()?.let { PlayersCopy.failureMessage(it, PlayersCopy.SAVE_FAILED) }
 
 /** [racketArm] null clears the hand. */
 suspend fun PlayersRepository.setPlayerRacketArmOrMessage(id: String, racketArm: RacketArm?): String? =
-    setRacketArm(id, racketArm).exceptionOrNull()?.let { it.userFacingMessage(PlayersCopy.SAVE_FAILED) }
+    setRacketArm(id, racketArm).exceptionOrNull()?.let { PlayersCopy.failureMessage(it, PlayersCopy.SAVE_FAILED) }
 
 suspend fun PlayersRepository.deletePlayerOrMessage(id: String): String? =
-    delete(id).exceptionOrNull()?.let { it.userFacingMessage(PlayersCopy.DELETE_FAILED) }
+    delete(id).exceptionOrNull()?.let { PlayersCopy.failureMessage(it, PlayersCopy.DELETE_FAILED) }
 
 suspend fun PlayersRepository.refreshPlayersOrMessage(): String? =
-    refresh().exceptionOrNull()?.let { it.userFacingMessage(PlayersCopy.LOAD_FAILED) }
+    refresh().exceptionOrNull()?.let { PlayersCopy.failureMessage(it, PlayersCopy.LOAD_FAILED) }
 
 /**
  * Soft-failing: nil means the sync landed, a string is ready to display. The
