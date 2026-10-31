@@ -118,7 +118,10 @@ object PlayersCopy {
     const val HOME_WAS_AT_THE = "Home was at the"
     const val DOUBLES_NOTE = "Remove the players to switch to doubles."
 
-    /** A side holds a profile or typed names, never both. The editor should not let this happen; this is the net. */
+    /** Nets for states the editors should not let happen. */
+    const val SAME_PLAYER_BOTH_SIDES = "A player can't be on both sides."
+
+    /** A side holds a profile or typed names, never both. */
     const val PROFILE_AND_NAMES = "A side can have a player or typed names, not both."
 
     // Attach question

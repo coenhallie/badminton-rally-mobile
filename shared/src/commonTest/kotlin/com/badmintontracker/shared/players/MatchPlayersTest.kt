@@ -100,4 +100,17 @@ class MatchPlayersTest {
             null
         matchPlayersProblem(MatchPlayers.NONE, null) shouldBe null
     }
+
+    @Test
+    fun the_same_player_on_both_sides_is_a_problem() {
+        val same = MatchPlayers("player-marco", "player-marco", emptyList(), emptyList())
+
+        matchPlayersProblem(same, MatchFormat.SINGLES) shouldBe PlayersCopy.SAME_PLAYER_BOTH_SIDES
+        matchPlayersProblem(same, null) shouldBe PlayersCopy.SAME_PLAYER_BOTH_SIDES
+        // Two different players are fine, and so is no player on either side.
+        matchPlayersProblem(same.copy(awayPlayerId = "player-ana"), null) shouldBe null
+        matchPlayersProblem(MatchPlayers.NONE, null) shouldBe null
+        // The doubles sentence still comes first.
+        matchPlayersProblem(same, MatchFormat.DOUBLES) shouldBe PlayersCopy.DOUBLES_NOTE
+    }
 }

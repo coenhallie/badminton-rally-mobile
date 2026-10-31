@@ -70,13 +70,15 @@ fun MatchPlayers.names(side: Side, players: List<Player>): List<String> {
  * Why [players] cannot be saved under [format], as a ready to display sentence, or
  * null when it can. The database refuses the same shapes with a CHECK; this is the
  * sentence the editor shows first. In order: a profile in doubles or mixed (singles
- * only, and "nobody said" counts as singles), a side holding a profile and typed
- * names, then a typed name past [MAX_PLAYER_NAME].
+ * only, and "nobody said" counts as singles), the same profile on both sides, a side
+ * holding a profile and typed names, then a typed name past [MAX_PLAYER_NAME].
  */
 fun matchPlayersProblem(players: MatchPlayers, format: MatchFormat?): String? {
     val hasProfile = players.homePlayerId != null || players.awayPlayerId != null
     return when {
         hasProfile && format != null && format != MatchFormat.SINGLES -> PlayersCopy.DOUBLES_NOTE
+        players.homePlayerId != null && players.homePlayerId == players.awayPlayerId ->
+            PlayersCopy.SAME_PLAYER_BOTH_SIDES
         (players.homePlayerId != null && players.homePlayers.isNotEmpty()) ||
             (players.awayPlayerId != null && players.awayPlayers.isNotEmpty()) -> PlayersCopy.PROFILE_AND_NAMES
         (players.homePlayers + players.awayPlayers).any { it.trim().length > MAX_PLAYER_NAME } ->
