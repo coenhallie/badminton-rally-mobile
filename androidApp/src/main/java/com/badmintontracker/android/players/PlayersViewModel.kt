@@ -28,7 +28,24 @@ data class PlayersUiState(
     val loadFailed: Boolean = false,
     /** A sentence for the snackbar, from PlayersCopy; cleared by errorShown. */
     val errorMessage: String? = null,
-)
+    /**
+     * False until the first refresh has settled, either way. With no cached
+     * players, an empty list before then says nothing yet: "Add your first
+     * player" on a fresh install whose players are still on their way would
+     * invite a duplicate.
+     */
+    val loaded: Boolean = false,
+) {
+    /** An empty list that means it: loaded, or failed, and nothing cached. */
+    val showsNoPlayers: Boolean get() = players.isEmpty() && loaded
+}
+
+/** What [PlayersViewModel.create] came to. */
+sealed interface PlayerCreation {
+    data class Created(val player: Player) : PlayerCreation
+    /** [message] is the sentence to show, inline in the dialog that asked. */
+    data class Failed(val message: String) : PlayerCreation
+}
 
 /**
  * The coach's players for the Players screen and a player's page. Modelled on
@@ -66,23 +83,27 @@ class PlayersViewModel(
         viewModelScope.launch {
             val message = refreshPlayersAndForgetVanishedOrMessage(players, scoreLogs, localVideos, currentOwnerId)
             _state.update {
-                if (message == null) it.copy(loadFailed = false)
-                else it.copy(loadFailed = true, errorMessage = message)
+                if (message == null) it.copy(loadFailed = false, loaded = true)
+                else it.copy(loadFailed = true, errorMessage = message, loaded = true)
             }
         }
     }
 
     /**
-     * The new player, or null when the save failed (the snackbar says why).
+     * The new player, or the sentence saying why not. Not put on the snackbar:
+     * the dialog that asked stays open and says it there, so a failed add
+     * never costs the coach the name they typed.
+     *
      * Runs on [viewModelScope] and is only awaited here, as LabelsViewModel.create
      * does: a caller whose composition goes away mid-request abandons the wait,
      * not an insert that may already have reached the server.
      */
-    suspend fun create(name: String, racketArm: RacketArm?): Player? =
+    suspend fun create(name: String, racketArm: RacketArm?): PlayerCreation =
         viewModelScope.async {
-            players.create(name, racketArm)
-                .onFailure { e -> fail(PlayersCopy.failureMessage(e, PlayersCopy.SAVE_FAILED)) }
-                .getOrNull()
+            players.create(name, racketArm).fold(
+                onSuccess = { PlayerCreation.Created(it) },
+                onFailure = { PlayerCreation.Failed(PlayersCopy.failureMessage(it, PlayersCopy.SAVE_FAILED)) },
+            )
         }.await()
 
     fun rename(id: String, name: String) = save { players.rename(id, name) }

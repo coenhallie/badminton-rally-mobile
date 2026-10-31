@@ -185,6 +185,27 @@ class ShuttlPaletteTest {
     }
 
     /**
+     * PlayerNameDialog's hand pills sit on a bgSecondary track: the dialog's
+     * fill must not be that value, and the dialog's text must read on it.
+     */
+    @Test
+    fun a_dialog_with_pills_stands_off_their_track() {
+        for ((theme, pick) in themes) {
+            withClue("$theme bgDialog against bgSecondary") {
+                (pick(ShuttlPalette.bgDialog) != pick(ShuttlPalette.bgSecondary)) shouldBe true
+            }
+            for ((name, fg) in listOf(
+                "text" to pick(ShuttlPalette.text),
+                "textSecondary" to pick(ShuttlPalette.textSecondary),
+            )) {
+                withClue("$theme $name on bgDialog") {
+                    contrast(fg, pick(ShuttlPalette.bgDialog)).shouldBeGreaterThanOrEqual(4.5)
+                }
+            }
+        }
+    }
+
+    /**
      * A menu opened from a raised card must not merge into it, and in dark no
      * shadow does that job. At least one step lighter than the card.
      */

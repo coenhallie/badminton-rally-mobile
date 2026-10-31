@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.ui.unit.dp
 import com.badmintontracker.android.home.HomeTopBar
 import com.badmintontracker.android.ui.theme.ShuttlTypeExtras
@@ -55,6 +56,7 @@ import com.badmintontracker.android.cliplist.MatchSummaryViewModel
 import com.badmintontracker.android.cliplist.StoredResults
 import com.badmintontracker.android.cliplist.StoredResultsReader
 import com.badmintontracker.android.home.AllMatchesScreen
+import com.badmintontracker.android.home.RootAnnouncementsHost
 import com.badmintontracker.android.home.finishedRuns
 import com.badmintontracker.android.home.runSnackbarUpdate
 import com.badmintontracker.android.settings.SettingsScreen
@@ -127,12 +129,19 @@ fun AuthGate(
             // navigations, below, never a new graph.
             val start: Route = remember { authStartDestination(auth) }
 
-            // Any sheet or dialog over the Players screen, reported by it. Part
-            // of "nothing above": see the finished-run watcher below.
-            var homeOverlayOpen by remember { mutableStateOf(false) }
-            // Runs the watcher below has just announced, for PlayersScreen to
-            // say on its snackbar; it clears them once it has read them.
+            // Any sheet or dialog over the Players screen or All matches, each
+            // reported by its screen, and the root host's result dialog. Part
+            // of "nothing above": see the finished-run watcher below. One per
+            // screen, so one leaving cannot clear what the other just said.
+            var playersOverlayOpen by remember { mutableStateOf(false) }
+            var allMatchesOverlayOpen by remember { mutableStateOf(false) }
+            var resultDialogOpen by remember { mutableStateOf(false) }
+            // Runs the watcher below has just announced, for RootAnnouncementsHost
+            // to say on the snackbar; it clears them once it has read them.
             var announced by remember { mutableStateOf(emptySet<String>()) }
+            // The app's one root snackbar host: Players and All matches draw
+            // it, RootAnnouncementsHost and the Players screen post to it.
+            val rootSnackbar = remember { SnackbarHostState() }
 
             LaunchedEffect(auth) {
                 val onSignIn = nav.currentDestination?.hasRoute<Route.SignIn>() == true
@@ -265,9 +274,9 @@ fun AuthGate(
             // its seen-set.
             val activityLifecycle = LocalLifecycleOwner.current.lifecycle
 
-            // A run that lands while the Players screen is in front is
-            // announced there: PlayersScreen says so on its snackbar, with a View
-            // that opens the match. Nothing navigates on its own.
+            // A run that lands while Players or All matches is in front is
+            // announced there: RootAnnouncementsHost says so on the root snackbar,
+            // with a View that opens the match. Nothing navigates on its own.
             //
             // Above the NavHost on purpose. announceFinishedRuns updates its
             // seen-set on every tick whether or not it announces, and that is
@@ -314,7 +323,7 @@ fun AuthGate(
                     .collect { finished ->
                         // "Nothing above" is more than the back stack and the
                         // screen's own overlays. The back-stack entry is still
-                        // Route.Players while the camera or picker is open, and this
+                        // the list's while the camera or picker is open, and this
                         // collector keeps running with our activity stopped, so
                         // without the RESUMED check a run landing then was
                         // announced out of sight, its snackbar timing out before
@@ -327,10 +336,16 @@ fun AuthGate(
                         // while the app is in the background is marked seen and
                         // does not announce itself later, as for any run that
                         // lands while the coach is elsewhere.
+                        val front = nav.currentBackStackEntry?.destination
+                        val onAList = when {
+                            front?.hasRoute<Route.Players>() == true -> !playersOverlayOpen
+                            front?.hasRoute<Route.AllMatches>() == true -> !allMatchesOverlayOpen
+                            else -> false
+                        }
                         val nothingAbove = activityLifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) &&
                             autoDetailsEntryId == null &&
-                            !homeOverlayOpen &&
-                            nav.currentBackStackEntry?.destination?.hasRoute<Route.Players>() == true
+                            !resultDialogOpen &&
+                            onAList
                         // Merged with the runs still waiting to be shown: see
                         // runSnackbarUpdate.
                         val update = runSnackbarUpdate(
@@ -391,7 +406,7 @@ fun AuthGate(
                     PlayersScreen(
                         vm = playersVm,
                         clipListVm = clipListVm,
-                        onOverlayChange = { homeOverlayOpen = it },
+                        onOverlayChange = { playersOverlayOpen = it },
                         // The player page is the next task's; its destination
                         // and this navigation arrive together.
                         onOpenPlayer = {},
@@ -400,11 +415,7 @@ fun AuthGate(
                         onNewMatch = { nav.navigate(Route.NewMatch()) },
                         onRecord = { intake.record(null) },
                         onImport = { intake.import(null) },
-                        onOpenMatch = openMatch,
-                        intakeError = intakeError,
-                        onIntakeErrorShown = { intakeError = null },
-                        announced = announced,
-                        onAnnounced = { announced = emptySet() },
+                        snackbarHostState = rootSnackbar,
                     )
                 }
                 composable<Route.AllMatches> { entry ->
@@ -425,8 +436,9 @@ fun AuthGate(
                         // By the row's own entry id: see ClipListScreen.act.
                         onMarkCourt = { entryId -> nav.navigate(Route.CourtMarking(entryId)) },
                         onRemoveFromPhone = localVm::remove,
-                        onLocalResultSeen = localVm::acknowledgeResult,
                         onLocalDetailsSaved = localVm::setDetails,
+                        snackbarHostState = rootSnackbar,
+                        onOverlayChange = { allMatchesOverlayOpen = it },
                     )
                 }
                 composable<Route.Settings> { entry ->
@@ -692,6 +704,19 @@ fun AuthGate(
                 entryId = autoDetailsEntryId,
                 localVideos = localVideos,
                 onClose = { autoDetailsEntryId = null },
+            )
+            RootAnnouncementsHost(
+                nav = nav,
+                snackbar = rootSnackbar,
+                clipListVmFactory = clipListVmFactory,
+                localVideos = localVideos,
+                intakeError = intakeError,
+                onIntakeErrorShown = { intakeError = null },
+                announced = announced,
+                onAnnounced = { announced = emptySet() },
+                onOpenMatch = openMatch,
+                onAnalyze = analyzeEntry,
+                onOverlayChange = { resultDialogOpen = it },
             )
             }
         }

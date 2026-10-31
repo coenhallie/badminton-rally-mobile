@@ -32,12 +32,11 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Snackbar
-import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -76,22 +75,20 @@ import com.badmintontracker.android.ui.components.ShuttlEmptyState
 import com.badmintontracker.android.ui.icons.ShuttlIcons
 import com.badmintontracker.android.ui.theme.ShuttlRadius
 import com.badmintontracker.android.ui.theme.ShuttlTheme
-import com.badmintontracker.shared.matchlist.MatchListItem
 import com.badmintontracker.shared.matchpage.MatchPageCopy
-import com.badmintontracker.shared.matchpage.MatchPageSection
-import com.badmintontracker.shared.matchpage.finishedRunMessage
-import com.badmintontracker.shared.matchpage.matchPageItem
-import com.badmintontracker.shared.matchpage.sectionAfterRun
 import com.badmintontracker.shared.players.Player
 import com.badmintontracker.shared.players.PlayersCopy
 import com.badmintontracker.shared.players.playerRowDetail
 import com.badmintontracker.shared.players.playerSummary
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 /**
  * The root screen: one row per player, an "Add player" row, the way to All
- * matches, the Add button, and the one snackbar host the root has. Every other
- * route pushes over the whole of it.
+ * matches, and the Add button. Every other route pushes over the whole of it.
+ * It draws the app's one root snackbar host ([snackbarHostState]), which
+ * RootAnnouncementsHost also posts to: finished runs, record and import
+ * failures, a failed match refresh.
  *
  * Each row's detail is read off the match list ([clipListVm], the app's one
  * instance), the same list a player's Matches tab filters, so the count on the
@@ -111,20 +108,24 @@ fun PlayersScreen(
     onNewMatch: () -> Unit,
     onRecord: () -> Unit,
     onImport: () -> Unit,
-    /** A finished run's View: the match, on what the run made. */
-    onOpenMatch: (MatchListItem, MatchPageSection?) -> Unit,
-    intakeError: String?,
-    onIntakeErrorShown: () -> Unit,
-    /** Runs just announced by AuthGate's watcher, to say on the snackbar; empty when none. */
-    announced: Set<String>,
-    onAnnounced: () -> Unit,
+    /** AuthGate's one root host: see RootAnnouncementsHost. */
+    snackbarHostState: SnackbarHostState,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val listState by clipListVm.state.collectAsStateWithLifecycle()
     val matchList = listState.matchList
-    var addSheetOpen by remember { mutableStateOf(false) }
+    // Both saved, so a recreation brings back whichever was open.
+    var addSheetOpen by rememberSaveable { mutableStateOf(false) }
     var addPlayerOpen by rememberSaveable { mutableStateOf(false) }
-    val snackbarHostState = remember { SnackbarHostState() }
+    // The add dialog's save: in flight, or failed with this sentence. Not
+    // saved: a recreation mid-save drops the wait, not the insert (see
+    // PlayersViewModel.create), and the dialog comes back ready to save.
+    var addSaving by remember { mutableStateOf(false) }
+    var addError by remember { mutableStateOf<String?>(null) }
+    // The wait on that save, cancelled when the dialog closes so a late answer
+    // cannot land on a dialog opened afterwards. Only the wait: the insert
+    // itself runs on the view model's scope.
+    var addWait by remember { mutableStateOf<Job?>(null) }
     val scope = rememberCoroutineScope()
     // Hoisted: the Add button reads firstVisibleItemIndex to decide whether
     // to show its label, and it is not a descendant of the list.
@@ -137,52 +138,13 @@ fun PlayersScreen(
     }
 
     LaunchedEffect(addSheetOpen, addPlayerOpen) { onOverlayChange(addSheetOpen || addPlayerOpen) }
+    // Leaving the screen takes its overlays with it, whatever was last said.
+    DisposableEffect(Unit) { onDispose { onOverlayChange(false) } }
 
     LaunchedEffect(state.errorMessage) {
         val err = state.errorMessage ?: return@LaunchedEffect
         snackbarHostState.showSnackbar(err)
         vm.errorShown()
-    }
-
-    // Record and import failures.
-    LaunchedEffect(intakeError) {
-        val err = intakeError ?: return@LaunchedEffect
-        snackbarHostState.showSnackbar(err)
-        onIntakeErrorShown()
-    }
-
-    // A run that landed while this screen was in front. The app does not move
-    // on its own (opening the match's page would take the screen from under
-    // the coach): it says so, and View opens that match on what the run made.
-    //
-    // The message is built from the list as it is now, and the ids are
-    // cleared straight away, so returning here later cannot say it again. The
-    // snackbar itself is shown in the screen's own scope, not in this effect:
-    // clearing the ids changes this effect's key, which would cancel it
-    // mid-snackbar, and the message would flash and vanish before View could
-    // be tapped. The host queues it behind an intake error, if one is showing.
-    LaunchedEffect(announced) {
-        if (announced.isEmpty()) return@LaunchedEffect
-        val message = finishedRunMessage(announced, matchList)
-        onAnnounced()
-        message ?: return@LaunchedEffect
-        val item = message.item
-        scope.launch {
-            val result = snackbarHostState.showSnackbar(
-                message = message.text,
-                actionLabel = item?.let { MatchPageCopy.VIEW },
-                duration = if (item != null) SnackbarDuration.Long else SnackbarDuration.Short,
-            )
-            if (result != SnackbarResult.ActionPerformed || item == null) return@launch
-            // The row as it is at the tap, not as it was when the run landed:
-            // the watcher can fire before the list has refreshed (a cloud
-            // run's stored track lands after its finish), and the frozen row
-            // would then have no Analysis to open on. Falls back to the frozen
-            // row if the match has left the list; the page says it is gone.
-            val current = clipListVm.state.value.matchList
-            val now = current.matchPageItem(item.scoreLogId, item.videoId, item.entryId) ?: item
-            onOpenMatch(now, sectionAfterRun(now))
-        }
     }
 
     Scaffold(
@@ -231,7 +193,9 @@ fun PlayersScreen(
             // fillMaxSize would claim the bar's height too.
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 if (state.players.isEmpty()) {
-                    NoPlayers(
+                    // Nothing at all until the first refresh settles: see
+                    // PlayersUiState.loaded.
+                    if (state.showsNoPlayers) NoPlayers(
                         loadFailed = state.loadFailed,
                         onRetry = vm::refresh,
                         onAddPlayer = { addPlayerOpen = true },
@@ -282,18 +246,36 @@ fun PlayersScreen(
     }
 
     if (addPlayerOpen) {
+        fun close() {
+            addWait?.cancel()
+            addWait = null
+            addPlayerOpen = false
+            addSaving = false
+            addError = null
+        }
         PlayerNameDialog(
             title = PlayersCopy.ADD_DIALOG_TITLE,
             initialName = "",
             initialArm = null,
             showArm = true,
-            onDismiss = { addPlayerOpen = false },
+            onDismiss = ::close,
             onSave = { name, arm ->
-                addPlayerOpen = false
-                // A failure is said on the snackbar; the new row appears on its
-                // own through the repository's list.
-                scope.launch { vm.create(name, arm) }
+                addSaving = true
+                addError = null
+                addWait = scope.launch {
+                    // The new row appears on its own through the repository's
+                    // list; a failure stays in the dialog with the name typed.
+                    when (val result = vm.create(name, arm)) {
+                        is PlayerCreation.Created -> close()
+                        is PlayerCreation.Failed -> {
+                            addSaving = false
+                            addError = result.message
+                        }
+                    }
+                }
             },
+            error = addError,
+            saving = addSaving,
         )
     }
 }

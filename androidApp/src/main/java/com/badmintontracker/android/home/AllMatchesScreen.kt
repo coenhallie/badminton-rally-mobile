@@ -25,7 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Modifier
 import com.badmintontracker.android.cliplist.ClipListScreen
 import com.badmintontracker.android.cliplist.ClipListViewModel
@@ -39,8 +39,9 @@ import com.badmintontracker.shared.repo.SharesRepository
 /**
  * All matches: the match list, every match whether a player holds it or not,
  * with its filters, sort and "Shared with me". Pushed from the Players screen,
- * which holds the Add button, the gear and the finished-run snackbar; this is
- * the list under a back bar and its own snackbar host.
+ * which holds the Add button and the gear; this is the list under a back bar.
+ * It draws the app's one root snackbar host ([snackbarHostState]), as Players
+ * does, so a finished run or a failed refresh is said here too.
  *
  * Mirrors iosApp's MatchesScreen.swift.
  */
@@ -56,11 +57,15 @@ fun AllMatchesScreen(
     onAnalyze: (entryId: String) -> Unit,
     onMarkCourt: (entryId: String) -> Unit,
     onRemoveFromPhone: (entryId: String) -> Unit,
-    onLocalResultSeen: (entryId: String) -> Unit,
     onLocalDetailsSaved: (id: String, title: String, description: String) -> Unit,
+    /** AuthGate's one root host: see RootAnnouncementsHost. */
+    snackbarHostState: SnackbarHostState,
+    /** Any sheet or dialog the list has open: see AuthGate's finished-run watcher. */
+    onOverlayChange: (Boolean) -> Unit,
 ) {
-    val snackbarHostState = remember { SnackbarHostState() }
     val listState = rememberLazyListState()
+    // Leaving the screen takes its overlays with it, whatever was last said.
+    DisposableEffect(Unit) { onDispose { onOverlayChange(false) } }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -108,10 +113,9 @@ fun AllMatchesScreen(
                 onAnalyze = onAnalyze,
                 onMarkCourt = onMarkCourt,
                 onRemoveFromPhone = onRemoveFromPhone,
-                onLocalResultSeen = onLocalResultSeen,
                 onLocalDetailsSaved = onLocalDetailsSaved,
                 listState = listState,
-                snackbarHostState = snackbarHostState,
+                onOverlayChange = onOverlayChange,
                 contentPadding = PaddingValues(bottom = padding.calculateBottomPadding()),
             )
         }

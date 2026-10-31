@@ -16,6 +16,8 @@ import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.types.shouldBeInstanceOf
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -93,25 +95,62 @@ class PlayersViewModelTest {
         val vm = newViewModel(players)
         advanceUntilIdle()
 
-        val created = vm.create("  Marco Vidal ", RacketArm.LEFT)
+        val created = vm.create("  Marco Vidal ", RacketArm.LEFT).shouldBeInstanceOf<PlayerCreation.Created>()
         advanceUntilIdle()
 
-        created.shouldNotBeNull()
-        created.name shouldBe "Marco Vidal"
-        created.racketArm shouldBe RacketArm.LEFT
+        created.player.name shouldBe "Marco Vidal"
+        created.player.racketArm shouldBe RacketArm.LEFT
         vm.state.value.players.map { it.name } shouldContainExactly listOf("Marco Vidal")
     }
 
     @Test
-    fun a_failed_create_returns_null_and_says_why() = runTest {
+    fun a_failed_create_says_why_to_the_dialog_not_the_snackbar() = runTest {
         val players = FakePlayersRepository()
         val vm = newViewModel(players)
         advanceUntilIdle()
         players.nextError = IllegalStateException("HTTP 500: duplicate key")
 
-        vm.create("Marco", null).shouldBeNull()
+        vm.create("Marco", null) shouldBe PlayerCreation.Failed(PlayersCopy.SAVE_FAILED)
 
-        vm.state.value.errorMessage shouldBe PlayersCopy.SAVE_FAILED
+        vm.state.value.errorMessage.shouldBeNull()
+    }
+
+    @Test
+    fun nothing_is_empty_until_the_first_refresh_settles() = runTest {
+        val players = FakePlayersRepository()
+        val vm = newViewModel(players)
+
+        vm.state.value.loaded shouldBe false
+        vm.state.value.showsNoPlayers shouldBe false
+
+        advanceUntilIdle()
+
+        vm.state.value.loaded shouldBe true
+        vm.state.value.showsNoPlayers shouldBe true
+    }
+
+    @Test
+    fun a_failed_first_refresh_settles_too() = runTest {
+        val players = FakePlayersRepository()
+        players.nextError = IllegalStateException("HTTP 503")
+        val vm = newViewModel(players)
+        advanceUntilIdle()
+
+        vm.state.value.loaded shouldBe true
+        vm.state.value.showsNoPlayers shouldBe true
+    }
+
+    @Test
+    fun cached_players_show_before_the_first_refresh() = runTest {
+        val players = FakePlayersRepository(listOf(marco))
+        // A refresh that never comes back: the cache alone is on screen.
+        players.duringRefresh = { throw CancellationException("never lands") }
+        val vm = newViewModel(players)
+        advanceUntilIdle()
+
+        vm.state.value.loaded shouldBe false
+        vm.state.value.players shouldContainExactly listOf(marco)
+        vm.state.value.showsNoPlayers shouldBe false
     }
 
     @Test

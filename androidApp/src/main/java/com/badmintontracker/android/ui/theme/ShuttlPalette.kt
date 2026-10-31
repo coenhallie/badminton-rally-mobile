@@ -29,6 +29,15 @@ internal object ShuttlPalette {
      * which is 4.34:1 on the dark value.
      */
     val bgRaised        = Tone(0xF5F7F6, 0x1E2123)
+
+    /**
+     * A dialog that holds a pill track (ShuttlPillTabs, drawn on [bgSecondary]).
+     * Light's [bgRaised] is [bgSecondary]'s own value, which would leave the
+     * unselected pills floating on nothing, so light takes the page white and
+     * the dialog's shadow lifts it; dark keeps [bgRaised], a step off the track.
+     * See ShuttlPaletteTest.a_dialog_with_pills_stands_off_their_track.
+     */
+    val bgDialog        = Tone(0xFFFFFF, 0x1E2123)
     val border          = Tone(0xE3E6E4, 0x1A1D1E)
     val borderSecondary = Tone(0xCED3D0, 0x22262A)
     val textHeading     = Tone(0x0B0C0D, 0xF2F4F3)

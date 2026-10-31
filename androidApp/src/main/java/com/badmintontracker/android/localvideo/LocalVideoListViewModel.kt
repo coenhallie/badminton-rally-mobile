@@ -33,9 +33,6 @@ class LocalVideoListViewModel(
 
     fun retry(id: String) = coordinator.retry(id)
 
-    /** Marks a failure's result dialog as shown so it isn't re-displayed. */
-    fun acknowledgeResult(id: String) = localVideos.update(id) { it.copy(resultSeen = true) }
-
     /** Stores the match name and description typed into the details sheet. */
     fun setDetails(id: String, title: String, description: String) =
         localVideos.setDetails(id, normalizeTitle(title), normalizeDescription(description))

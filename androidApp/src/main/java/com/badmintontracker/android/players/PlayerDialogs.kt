@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import com.badmintontracker.android.ui.components.FieldLabel
 import com.badmintontracker.android.ui.components.ShuttlOutlinedTextField
 import com.badmintontracker.android.ui.components.ShuttlPillTabs
+import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.shared.players.PlayersCopy
 import com.badmintontracker.shared.players.playerNameProblem
 import com.badmintontracker.shared.prefs.RacketArm
@@ -39,7 +40,9 @@ internal val HAND_OPTIONS: List<RacketArm?> = listOf(RacketArm.RIGHT, RacketArm.
  *
  * [onSave] hands over the name as typed (the repository trims it) and the hand,
  * which is [initialArm] when the pills are not shown. The caller closes the
- * dialog: a failed save is said on its screen's snackbar.
+ * dialog once the save has landed; while it is in flight it passes [saving],
+ * and if it fails it passes the sentence as [error] and leaves the dialog up,
+ * so the coach keeps what they typed. Typing again clears a shown error.
  */
 @Composable
 fun PlayerNameDialog(
@@ -49,26 +52,29 @@ fun PlayerNameDialog(
     showArm: Boolean,
     onDismiss: () -> Unit,
     onSave: (String, RacketArm?) -> Unit,
+    error: String? = null,
+    saving: Boolean = false,
 ) {
     var name by rememberSaveable { mutableStateOf(initialName) }
     var edited by rememberSaveable { mutableStateOf(false) }
     var armIndex by rememberSaveable { mutableIntStateOf(HAND_OPTIONS.indexOf(initialArm)) }
+    // The name the caller's error is about: typing past it hides the error,
+    // which no longer describes what is in the field.
+    var erroredName by remember(error) { mutableStateOf(name) }
     val problem = playerNameProblem(name)
     val focus = remember { FocusRequester() }
 
+    val canSave = problem == null && !saving
+    val shownError = error?.takeIf { name == erroredName } ?: problem?.takeIf { edited }
+
     fun save() {
-        if (problem == null) onSave(name, HAND_OPTIONS[armIndex])
+        if (canSave) onSave(name, HAND_OPTIONS[armIndex])
     }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        // The pill track is surfaceVariant, and in light the dialog's own
-        // surfaceContainerHigh is the same value, which would leave the
-        // unselected hands floating on nothing. The page colour there; dark's
-        // raised surface is already a step off the track.
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-            .takeIf { it != MaterialTheme.colorScheme.surfaceVariant }
-            ?: MaterialTheme.colorScheme.background,
+        // Not the dialog default: in light that is the pill track's own value.
+        containerColor = ShuttlTheme.extended.bgDialog,
         title = { Text(title) },
         text = {
             // Here, in the dialog window's own composition, not beside the
@@ -85,10 +91,10 @@ fun PlayerNameDialog(
                     onDone = ::save,
                     modifier = Modifier.fillMaxWidth().focusRequester(focus),
                 )
-                if (edited && problem != null) {
+                if (shownError != null) {
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        text = problem,
+                        text = shownError,
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -107,7 +113,7 @@ fun PlayerNameDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = ::save, enabled = problem == null) { Text(PlayersCopy.SAVE) }
+            TextButton(onClick = ::save, enabled = canSave) { Text(PlayersCopy.SAVE) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(PlayersCopy.CANCEL) } },
     )

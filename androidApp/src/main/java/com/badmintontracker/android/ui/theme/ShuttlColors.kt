@@ -88,6 +88,8 @@ data class ShuttlExtendedColors(
     val onAccent:     Color,
     val bgInput:      Color,
     val bgTertiary:   Color,
+    /** A dialog holding a pill track. See ShuttlPalette.bgDialog. */
+    val bgDialog:     Color,
     val textTertiary: Color,
     /** Display sizes only. See ShuttlPalette.textMuted. */
     val textMuted:    Color,
@@ -108,6 +110,7 @@ internal val ShuttlLightExtended = ShuttlExtendedColors(
     onAccent     = ShuttlPalette.onAccent.lightColor,
     bgInput      = ShuttlPalette.bgInput.lightColor,
     bgTertiary   = ShuttlPalette.bgTertiary.lightColor,
+    bgDialog     = ShuttlPalette.bgDialog.lightColor,
     textTertiary = ShuttlPalette.textTertiary.lightColor,
     textMuted    = ShuttlPalette.textMuted.lightColor,
     warning      = ShuttlPalette.warning.lightColor,
@@ -124,6 +127,7 @@ internal val ShuttlDarkExtended = ShuttlExtendedColors(
     onAccent     = ShuttlPalette.onAccent.darkColor,
     bgInput      = ShuttlPalette.bgInput.darkColor,
     bgTertiary   = ShuttlPalette.bgTertiary.darkColor,
+    bgDialog     = ShuttlPalette.bgDialog.darkColor,
     textTertiary = ShuttlPalette.textTertiary.darkColor,
     textMuted    = ShuttlPalette.textMuted.darkColor,
     warning      = ShuttlPalette.warning.darkColor,

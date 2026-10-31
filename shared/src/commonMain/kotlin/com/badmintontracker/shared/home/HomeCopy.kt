@@ -7,7 +7,7 @@ package com.badmintontracker.shared.home
  * `MatchPageCopy.SETTINGS`.
  */
 object HomeCopy {
-    /** The match list's title: the app's root screen. */
+    /** The match list's title. */
     const val MATCHES_TITLE = "Matches"
 
     /**
@@ -17,7 +17,7 @@ object HomeCopy {
      */
     const val ADD_MATCH = "Add match"
 
-    /** Under the hero on an empty match list. Names what the Add button does. */
+    /** Under the hero on an empty match list: how matches get onto it (the Players screen's Add button). */
     const val EMPTY_BODY =
         "Score a match courtside, or record or import a video to cut it into rallies. Your matches will show up here."
 

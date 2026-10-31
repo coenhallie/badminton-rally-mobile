@@ -20,7 +20,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -43,7 +42,6 @@ import com.badmintontracker.android.localvideo.MatchDetailsSheet
 import com.badmintontracker.android.match.MatchPageGutter
 import com.badmintontracker.android.share.ShareSheet
 import com.badmintontracker.android.ui.components.ConfirmDialog
-import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.matchlist.rallyLengthText
 import com.badmintontracker.shared.matchlist.MatchAction
@@ -89,12 +87,9 @@ fun ClipListScreen(
     onMarkCourt: (entryId: String) -> Unit = {},
     /** Frees the file and keeps the tracks: see LocalVideoListViewModel.remove. */
     onRemoveFromPhone: (entryId: String) -> Unit = {},
-    onLocalResultSeen: (entryId: String) -> Unit = {},
     onLocalDetailsSaved: (id: String, title: String, description: String) -> Unit = { _, _, _ -> },
     /** Hoisted to the screen that hosts the list. */
     listState: LazyListState,
-    /** The hosting screen's one host, so a snackbar sits above anything at the bottom, not under it. */
-    snackbarHostState: SnackbarHostState,
     /** Whether any sheet or dialog this list owns is open. */
     onOverlayChange: (Boolean) -> Unit = {},
     /** The empty state's hero ticker stops while something covers it. */
@@ -158,27 +153,11 @@ fun ClipListScreen(
     val visible = sortMatches(mine.filter { it.passes(applied) }, appliedSort)
     val sharedVisible = sortMatches(shared, appliedSort)
 
-    LaunchedEffect(state.error) {
-        val err = state.error ?: return@LaunchedEffect
-        snackbarHostState.showSnackbar(err)
-        vm.dismissError()
-    }
-
-    // Auto-show the result modal once per failure. `resultSeen` is persisted on the
-    // entry, so dismissing it survives navigation and relaunch; a later retry that
-    // fails again resets the flag (in AnalyzeCoordinator.fail) and shows it anew.
-    // Standalone videos only: a match's own video fails on its match's row.
-    var resultEntry by remember { mutableStateOf<LocalVideoEntry?>(null) }
-    LaunchedEffect(state.localEntries) {
-        if (resultEntry == null) {
-            resultEntry = state.localEntries.firstOrNull {
-                it.scoreLogId == null && it.stage == AnalyzeStage.FAILED && !it.resultSeen
-            }
-        }
-    }
+    // The list's error message and a failed run's result dialog are not drawn
+    // here: RootAnnouncementsHost shows them over whichever screen is in front.
 
     val overlayOpen = sheetVideoId != null || detailsEntry != null || legendOpen ||
-        choiceTarget != null || deleteTarget != null || removeTarget != null || resultEntry != null
+        choiceTarget != null || deleteTarget != null || removeTarget != null
     LaunchedEffect(overlayOpen) { onOverlayChange(overlayOpen) }
 
     fun act(item: MatchListItem) {
@@ -249,8 +228,8 @@ fun ClipListScreen(
         }
     }
 
-    // No Scaffold: the hosting screen owns the Scaffold, the title bar and the
-    // one snackbar host. This is its content, not a screen of its own,
+    // No Scaffold: the hosting screen owns the Scaffold and the title bar. This
+    // is its content, not a screen of its own,
     // so a plain Box is all it needs to lay its own two states (empty, list) on
     // top of pull to refresh.
     Box(Modifier.fillMaxSize()) {
@@ -328,14 +307,6 @@ fun ClipListScreen(
     }
 
     if (legendOpen) MatchLegendSheet(onDismiss = { legendOpen = false })
-
-    resultEntry?.let { entry ->
-        AnalyzeResultDialog(
-            entry = entry,
-            onRetry = { resultEntry = null; onLocalResultSeen(entry.id); onAnalyze(entry.id) },
-            onDismiss = { resultEntry = null; onLocalResultSeen(entry.id) },
-        )
-    }
 
     detailsEntry?.let { entry ->
         MatchDetailsSheet(

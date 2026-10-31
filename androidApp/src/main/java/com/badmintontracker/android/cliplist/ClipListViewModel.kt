@@ -38,6 +38,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -161,6 +162,13 @@ class ClipListViewModel(
 ) : ViewModel() {
     private val refreshing      = MutableStateFlow(true)
     private val errors          = MutableStateFlow<String?>(null)
+    /**
+     * The same message as [ClipListState.error], on its own, for the root
+     * announcements host: it reads this from above the NavHost on every
+     * screen, and collecting the whole list state there would keep the list
+     * being rebuilt under the scoring board.
+     */
+    val error: StateFlow<String?> = errors.asStateFlow()
     private val refreshGeneration = MutableStateFlow(0)
     private val sharerByVideoId = MutableStateFlow<Map<String, String>>(emptyMap())
     // The repository's own cache rather than a map of this view model's: this
