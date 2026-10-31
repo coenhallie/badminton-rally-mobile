@@ -6,6 +6,7 @@ import com.badmintontracker.shared.localvideo.mirrorVideoDetails
 import com.badmintontracker.shared.localvideo.normalizeDescription
 import com.badmintontracker.shared.localvideo.normalizeTitle
 import com.badmintontracker.shared.players.MatchPlayers
+import com.badmintontracker.shared.players.matchPlayersProblem
 import com.badmintontracker.shared.repo.VideosRepository
 
 /**
@@ -32,6 +33,10 @@ const val VIDEO_DETAILS_SAVE_FAILED_MESSAGE =
  *
  * What is typed is normalised here the way the upload normalised it, so a name
  * typed on the phone and a name typed on the web app obey one rule.
+ *
+ * Who is on each side is validated against [format] first ([matchPlayersProblem]):
+ * the details and the players are one write, so a combination the database would
+ * refuse returns its sentence here and nothing is written.
  */
 suspend fun updateVideoMatchDetailsOrMessage(
     videos: VideosRepository,
@@ -43,6 +48,7 @@ suspend fun updateVideoMatchDetailsOrMessage(
     players: MatchPlayers,
     nearSide: Side?,
 ): String? {
+    matchPlayersProblem(players, format)?.let { return it }
     val cleanTitle = normalizeTitle(title)
     val cleanDescription = normalizeDescription(description)
     val saved = videos.updateMatchDetails(

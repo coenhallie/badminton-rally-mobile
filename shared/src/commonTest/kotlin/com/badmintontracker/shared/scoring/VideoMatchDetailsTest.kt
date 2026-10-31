@@ -4,6 +4,7 @@ import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.players.MatchPlayers
+import com.badmintontracker.shared.players.PlayersCopy
 import com.badmintontracker.shared.testing.FakeVideosRepository
 import com.russhwolf.settings.MapSettings
 import io.kotest.matchers.collections.shouldBeEmpty
@@ -95,5 +96,40 @@ class VideoMatchDetailsTest {
         message.shouldBeNull()
         local.entries.value.shouldBeEmpty()
         videos.metadata.value.getValue("web-1").title shouldBe "Club final"
+    }
+
+    @Test
+    fun a_profile_and_an_end_are_forwarded_untouched_while_names_are_normalised() = runTest {
+        val videos = FakeVideosRepository()
+        val local = LocalVideoRepository(MapSettings())
+
+        val message = updateVideoMatchDetailsOrMessage(
+            videos, local, "v1", "Club final", "", MatchFormat.SINGLES,
+            players = MatchPlayers("p1", null, emptyList(), listOf(" Jo ")),
+            nearSide = Side.HOME,
+        )
+
+        message.shouldBeNull()
+        val written = videos.updateDetailsCalls.single()
+        written.homePlayerId shouldBe "p1"
+        written.awayPlayerId.shouldBeNull()
+        written.awayPlayers shouldBe listOf("Jo")
+        written.nearSide shouldBe Side.HOME
+    }
+
+    @Test
+    fun a_combination_the_database_would_refuse_returns_its_sentence_and_writes_nothing() = runTest {
+        val videos = FakeVideosRepository()
+        val local = LocalVideoRepository(MapSettings()).apply { add(uploadedEntry("v1")) }
+
+        val message = updateVideoMatchDetailsOrMessage(
+            videos, local, "v1", "Club final", "", MatchFormat.DOUBLES,
+            players = MatchPlayers("p1", null, emptyList(), emptyList()),
+            nearSide = Side.HOME,
+        )
+
+        message shouldBe PlayersCopy.DOUBLES_NOTE
+        videos.updateDetailsCalls.shouldBeEmpty()
+        local.get("v1")?.title shouldBe "cloudia"
     }
 }

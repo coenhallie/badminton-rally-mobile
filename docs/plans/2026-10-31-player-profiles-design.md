@@ -216,12 +216,17 @@ Rules:
    player's name **and** its id to null on every row that points at them, so
    rule 1's check holds at every step. The FK's `on delete set null` is the
    backstop. The matches stay, unassigned, with the name still shown. (My call.)
-   The phone does the same to its own copies before the delete is sent: every
-   cached score log and every `LocalVideoEntry` that names the player gets the
-   name and loses the id, through one shared function. Without that, an unsynced
-   score log would fail its upsert on the dead FK and block every other match's
-   sync (the hazard `ScoreLogsRepository.kt:210-215` already describes for
-   `video_id`), and an un-uploaded video would fail its INSERT.
+   The phone does the same to its own copies once the delete has landed on the
+   server: every cached score log and every `LocalVideoEntry` that names the
+   player gets the name and loses the id, through one shared function. Server
+   first, because rewriting first would unassign matches on a delete that then
+   fails. A sync that runs in the instant between the two steps hits the dead FK
+   once and succeeds on the next sync, and the list's refresh also rewrites the
+   copies of any player that has vanished from the server's list (deleted on
+   another device of the same coach). Without the rewrite, an unsynced score log
+   would fail its upsert on the dead FK and block every other match's sync (the
+   hazard `ScoreLogsRepository.kt:210-215` already describes for `video_id`), and
+   an un-uploaded video would fail its INSERT.
 5. `videos` UPDATE grant gains the new columns (section 3.3 too). The SQL test
    proves the owner's write lands, a stranger's matches zero rows, and a column
    left out of the grant is refused.

@@ -142,6 +142,7 @@ class FakeVideosRepository : VideosRepository {
         return nextUpdateDetailsResult
     }
 
+    var nextUpdatePlayersResult: Result<Unit> = Result.success(Unit)
     val updatePlayersCalls = mutableListOf<Pair<MatchPlayers, Side?>>()
 
     override suspend fun updateMatchPlayers(
@@ -150,7 +151,16 @@ class FakeVideosRepository : VideosRepository {
         nearSide: Side?,
     ): Result<Unit> {
         updatePlayersCalls += players to nearSide
-        return nextUpdateDetailsResult
+        nextUpdatePlayersResult.onSuccess {
+            val existing = metadata.value[videoId] ?: MatchMetadata(videoId)
+            metadata.value = metadata.value + (videoId to existing.copy(
+                homePlayers = players.homePlayers, awayPlayers = players.awayPlayers,
+                homePlayerId = players.homePlayerId, awayPlayerId = players.awayPlayerId,
+                nearSide = nearSide,
+                homeNames = players.homePlayers, awayNames = players.awayPlayers,
+            ))
+        }
+        return nextUpdatePlayersResult
     }
 
     override suspend fun deleteMatch(videoId: String): Result<Unit> {

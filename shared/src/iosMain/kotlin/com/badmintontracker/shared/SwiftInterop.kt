@@ -140,9 +140,6 @@ suspend fun PlayersRepository.renamePlayerOrMessage(id: String, name: String): S
 suspend fun PlayersRepository.setPlayerRacketArmOrMessage(id: String, racketArm: RacketArm?): String? =
     setRacketArm(id, racketArm).exceptionOrNull()?.let { PlayersCopy.failureMessage(it, PlayersCopy.SAVE_FAILED) }
 
-suspend fun PlayersRepository.deletePlayerOrMessage(id: String): String? =
-    delete(id).exceptionOrNull()?.let { PlayersCopy.failureMessage(it, PlayersCopy.DELETE_FAILED) }
-
 suspend fun PlayersRepository.refreshPlayersOrMessage(): String? =
     refresh().exceptionOrNull()?.let { PlayersCopy.failureMessage(it, PlayersCopy.LOAD_FAILED) }
 
