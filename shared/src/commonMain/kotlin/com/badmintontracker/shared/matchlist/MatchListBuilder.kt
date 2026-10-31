@@ -8,11 +8,18 @@ import com.badmintontracker.shared.localvideo.cloudAnalysisStatus
 import com.badmintontracker.shared.localvideo.deviceWorkLabel
 import com.badmintontracker.shared.localvideo.isAnalysisRunning
 import com.badmintontracker.shared.model.RallyClip
-import com.badmintontracker.shared.model.playersLine
+import com.badmintontracker.shared.model.MatchMetadata
+import com.badmintontracker.shared.players.MatchPlayers
+import com.badmintontracker.shared.players.Player
+import com.badmintontracker.shared.players.matchPlayers
+import com.badmintontracker.shared.players.names
+import com.badmintontracker.shared.players.playersTarget
 import com.badmintontracker.shared.scoring.AttachKind
 import com.badmintontracker.shared.scoring.ScoreLog
+import com.badmintontracker.shared.scoring.Side
 import com.badmintontracker.shared.scoring.attachStatusFor
 import com.badmintontracker.shared.scoring.buildScoreMatchCard
+import com.badmintontracker.shared.scoring.playersLine
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -185,6 +192,56 @@ private fun whereOf(entry: LocalVideoEntry?, cloudClips: Int): MatchWhere? = whe
     else -> null
 }
 
+/**
+ * Who is on each side of a row, resolved once so [MatchListItem.playersLine] and
+ * the fields beside it cannot disagree.
+ */
+private data class Sides(
+    val homePlayerId: String?,
+    val awayPlayerId: String?,
+    val homeNames: List<String>,
+    val awayNames: List<String>,
+) {
+    val line: String? get() = playersLine(homeNames, awayNames)
+
+    companion object {
+        val NONE = Sides(null, null, emptyList(), emptyList())
+
+        /** A score log's or a local entry's assignment: a profile reads its current name. */
+        fun of(assignment: MatchPlayers, players: List<Player>) = Sides(
+            assignment.homePlayerId,
+            assignment.awayPlayerId,
+            assignment.names(Side.HOME, players),
+            assignment.names(Side.AWAY, players),
+        )
+
+        /**
+         * An own video's row. A profile this phone knows reads its current name, so
+         * a rename shows at once; one it does not (deleted, or not loaded yet) reads
+         * the name the server resolved, rather than nothing.
+         */
+        fun of(meta: MatchMetadata, players: List<Player>): Sides {
+            val assignment = meta.matchPlayers
+            fun side(side: Side, id: String?, resolved: List<String>): List<String> =
+                if (id != null && players.none { it.id == id }) resolved else assignment.names(side, players)
+            return Sides(
+                assignment.homePlayerId,
+                assignment.awayPlayerId,
+                side(Side.HOME, assignment.homePlayerId, meta.homeNames),
+                side(Side.AWAY, assignment.awayPlayerId, meta.awayNames),
+            )
+        }
+
+        /** A shared match: the names the server resolved, and no ids, since the sharer's players are not this coach's. */
+        fun shared(meta: MatchMetadata?) =
+            meta?.let { Sides(null, null, it.homeNames, it.awayNames) } ?: NONE
+    }
+}
+
+/** The end the home side was at: the entry's when the phone holds one, else the video row's. */
+private fun nearSideOf(entry: LocalVideoEntry?, videoId: String?, input: MatchListInput): Side? =
+    if (entry != null) entry.nearSide else videoId?.let { input.metadataByVideoId[it] }?.nearSide
+
 private fun videoItem(
     entry: LocalVideoEntry?,
     clips: List<RallyClip>,
@@ -208,13 +265,20 @@ private fun videoItem(
     val where = whereOf(entry, clips.size)
     val owned = sharer == null && (entry != null || clips.first().isOwnedBy(input.currentUserId))
     val removable = entry != null && canRemoveLocalVideo(entry.stage) && !deviceRunHoldsFile(entry, input)
+    val sides = when {
+        !owned -> Sides.shared(meta)
+        meta != null -> Sides.of(meta, input.players)
+        entry != null -> Sides.of(entry.matchPlayers, input.players)
+        else -> Sides.NONE
+    }
+    val target = playersTarget(null, entry, videoId)
     return MatchListItem(
         key = "video-$id",
         sortAtEpochMs = sortAt,
         title = meta?.title ?: entry?.title ?: clips.matchTitle() ?: entry?.displayName
             ?: "Match · ${formatMatchDate(sortAt, timeZone)}",
         detail = detail,
-        playersLine = meta?.playersLine(),
+        playersLine = sides.line,
         sharedBy = sharer?.let(MatchListCopy::sharedBy),
         where = where,
         analyses = analyses,
@@ -246,6 +310,13 @@ private fun videoItem(
         noteCount = noteCount(entry, clips, input),
         heatmapId = heatmapId,
         accessibilityStatus = statusDescription(where, analyses, asks.text),
+        homePlayerId = sides.homePlayerId,
+        awayPlayerId = sides.awayPlayerId,
+        homeNames = sides.homeNames,
+        awayNames = sides.awayNames,
+        nearSide = nearSideOf(entry, videoId, input),
+        playersTarget = target,
+        canEditPlayers = owned && target != null,
     )
 }
 
@@ -292,13 +363,15 @@ private fun scoreItem(
     val rallies = clips.size.takeIf { it > 0 } ?: (entry?.let { input.deviceClipCounts[it.id] } ?: 0)
     val where = whereOf(entry, clips.size)
     val removable = entry != null && canRemoveLocalVideo(entry.stage) && !deviceRunHoldsFile(entry, input)
+    val sides = Sides.of(log.matchPlayers, input.players)
+    val target = playersTarget(log.id, entry, videoId)
     return MatchListItem(
         key = "score-${log.id}",
         sortAtEpochMs = card.createdAtEpochMs,
         title = card.title,
         detail = listOfNotNull(card.scoreLine, ralliesText(rallies), formatMatchDate(card.createdAtEpochMs, timeZone))
             .joinToString(" · "),
-        playersLine = card.playersLine,
+        playersLine = sides.line,
         sharedBy = null,
         where = where,
         analyses = analyses,
@@ -327,6 +400,13 @@ private fun scoreItem(
         noteCount = noteCount(entry, clips, input),
         heatmapId = heatmapId,
         accessibilityStatus = statusDescription(where, analyses, asks.text),
+        homePlayerId = sides.homePlayerId,
+        awayPlayerId = sides.awayPlayerId,
+        homeNames = sides.homeNames,
+        awayNames = sides.awayNames,
+        nearSide = nearSideOf(entry, videoId, input),
+        playersTarget = target,
+        canEditPlayers = target != null,
     )
 }
 

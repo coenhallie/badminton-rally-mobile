@@ -55,7 +55,7 @@ private fun build(
         clips = clips, currentUserId = ME, sharerByVideoId = sharers, metadataByVideoId = emptyMap(),
         scoreLogs = logs, localEntries = entries, cloudProgress = emptyMap(), deviceRuns = emptyMap(),
         storedTrackIds = emptySet(), storedSkeletonIds = emptySet(), deviceClipCounts = deviceClips,
-        localNoteCounts = localNotes,
+        localNoteCounts = localNotes, players = emptyList(),
     ),
     TimeZone.UTC,
 )

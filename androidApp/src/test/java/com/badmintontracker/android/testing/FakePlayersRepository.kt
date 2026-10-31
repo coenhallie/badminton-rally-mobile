@@ -13,7 +13,8 @@ import kotlinx.datetime.Instant
 /**
  * In-memory double for [PlayersRepository]. Applies the same name rule as the
  * real one and records what was asked of it. Set [nextError] to make the next
- * call fail with it (it is cleared by that call), for the failure paths.
+ * call fail with it (it is cleared by that call), for the failure paths, and
+ * [serverPlayers] for what a refresh brings back.
  */
 class FakePlayersRepository(initial: List<Player> = emptyList()) : PlayersRepository {
 
@@ -28,12 +29,24 @@ class FakePlayersRepository(initial: List<Player> = emptyList()) : PlayersReposi
 
     var nextError: Throwable? = null
 
+    /** What the server holds: a successful refresh publishes it. Null leaves the list as it is. */
+    var serverPlayers: List<Player>? = null
+
+    /** Runs as a refresh goes out, for a test that changes the world under it (a sign-out, say). */
+    var duringRefresh: () -> Unit = {}
+    var refreshCalls = 0
+
     private var nextId = 0
 
     private fun takeError(): Throwable? = nextError.also { nextError = null }
 
-    override suspend fun refresh(): Result<Unit> =
-        takeError()?.let { Result.failure(it) } ?: Result.success(Unit)
+    override suspend fun refresh(): Result<Unit> {
+        refreshCalls++
+        duringRefresh()
+        takeError()?.let { return Result.failure(it) }
+        serverPlayers?.let { state.value = sortedPlayers(it) }
+        return Result.success(Unit)
+    }
 
     override suspend fun create(name: String, racketArm: RacketArm?): Result<Player> {
         playerNameProblem(name)?.let { return Result.failure(IllegalArgumentException(it)) }

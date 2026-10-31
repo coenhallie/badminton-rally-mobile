@@ -48,3 +48,32 @@ fun forgetVanishedPlayers(
         localVideos.forgetPlayer(gone.id, gone.name)
     }
 }
+
+/**
+ * Refreshes [players] and runs [forgetVanishedPlayers] over what it shows gone,
+ * returning null or the sentence for a failed load. What the match list's owner
+ * calls on each pull, on both platforms.
+ *
+ * The forget runs only when [currentOwnerId] names someone before the refresh,
+ * names the same someone after it, and the refresh succeeded: a failed refresh
+ * says nothing about who was deleted, and a refresh with no session or across a
+ * sign-out and sign-in compares two coaches' lists. "Before" is also cut down to
+ * that owner's players, because the repository keeps its list in memory across a
+ * sign-out and could still hold the previous coach's. An empty list after a
+ * successful refresh is taken at its word: every player was deleted.
+ */
+suspend fun refreshPlayersAndForgetVanishedOrMessage(
+    players: PlayersRepository,
+    scoreLogs: ScoreLogsRepository,
+    localVideos: LocalVideoRepository,
+    currentOwnerId: () -> String?,
+): String? {
+    val owner = currentOwnerId()
+    val before = players.players.value.filter { it.ownerId == owner }
+    val refreshed = players.refresh()
+    refreshed.exceptionOrNull()?.let { return PlayersCopy.failureMessage(it, PlayersCopy.LOAD_FAILED) }
+    if (owner != null && currentOwnerId() == owner) {
+        forgetVanishedPlayers(before, players.players.value, scoreLogs, localVideos)
+    }
+    return null
+}

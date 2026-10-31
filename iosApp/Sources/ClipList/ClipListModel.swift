@@ -53,6 +53,9 @@ final class ClipListModel {
     /// Notes made on this phone's copy of each video, per entry id: what
     /// "Most notes" adds to the cloud clips' own counts.
     private(set) var localNoteCounts: [String: KotlinInt] = [:]
+    /// The coach's players: a side holding a profile is named from these, so a
+    /// rename reaches every row the moment it lands.
+    private var players: [Player] = []
     /// Whether the refresh that opens the list has been kicked off. The ONLY
     /// thing start() does once per model rather than once per appearance - see
     /// `start()` for why the loops must not share this latch.
@@ -67,6 +70,12 @@ final class ClipListModel {
     private let localVideos: LocalVideoRepository
     private let localAnnotations: LocalAnnotationsRepository
     private let shares: SharesRepository
+    private let playersRepo: PlayersRepository
+    /// Who is signed in. `rally.auth`'s unless a test says, since a test's
+    /// `RallyApp` has no session. Not isolated to the main actor: the players
+    /// refresh asks it again from shared code after the request, on whatever
+    /// thread that resumed on.
+    private let currentUserId: @Sendable () -> String?
 
     init(
         rally: RallyApp,
@@ -77,6 +86,8 @@ final class ClipListModel {
         localVideos: LocalVideoRepository? = nil,
         localAnnotations: LocalAnnotationsRepository? = nil,
         shares: SharesRepository? = nil,
+        players: PlayersRepository? = nil,
+        currentUserId: (@Sendable () -> String?)? = nil,
         liveDeviceRuns: @escaping @MainActor () -> [String: DeviceRun] = { [:] }
     ) {
         self.rally = rally
@@ -87,6 +98,9 @@ final class ClipListModel {
         self.localVideos = localVideos ?? rally.localVideos
         self.localAnnotations = localAnnotations ?? rally.localAnnotations
         self.shares = shares ?? rally.shares
+        self.playersRepo = players ?? rally.players
+        let auth = rally.auth
+        self.currentUserId = currentUserId ?? { auth.currentUserId() }
         self.liveDeviceRuns = liveDeviceRuns
     }
 
@@ -96,7 +110,7 @@ final class ClipListModel {
     /// match, or Settings, is a disappearance of the list. The match page runs
     /// it because it reads `matchList` for its sections, and the list's own
     /// loops stop under it.
-    /// Not idempotent: each call runs its own six loops, and only the initial
+    /// Not idempotent: each call runs its own seven loops, and only the initial
     /// refresh is latched.
     ///
     /// This used to latch on a `started` flag, to stop each return to the list
@@ -119,9 +133,9 @@ final class ClipListModel {
         await observe()
     }
 
-    /// The six loops, as structured children of the caller's task - the same
+    /// The seven loops, as structured children of the caller's task - the same
     /// shape as `BackgroundWorkModel.observe`. Cancelling the caller stops all
-    /// six, calling again starts all six, and there is never a second set:
+    /// seven, calling again starts all seven, and there is never a second set:
     /// the group does not return until every child has.
     ///
     /// Apart from `start()` so the tests can hold the loops to that contract
@@ -176,6 +190,15 @@ final class ClipListModel {
                     self.regroup()
                 }
             }
+            // The repository's list rather than a copy refreshed here: a player
+            // added or renamed on the Players screen names its matches at once.
+            group.addTask { @MainActor [weak self] in
+                guard let self else { return }
+                for await list in self.playersRepo.players {
+                    self.players = list
+                    self.regroup()
+                }
+            }
         }
     }
 
@@ -199,17 +222,28 @@ final class ClipListModel {
         // Same soft-failure contract as the shares lookup: a failure leaves the
         // previous map alone rather than blanking every name the user can see.
         _ = try? await SwiftInteropKt.listMatchMetadataOrNull(videos)
-        // Soft failure, same contract as the shares and metadata reads: the matches
-        // are all still on this phone, so there is nothing to say and nothing for
-        // the user to do about it.
+        // The players before the score log sync, so a player deleted on another
+        // device is forgotten in the cached logs (see `forgetVanishedPlayers`)
+        // before the sync pushes them: a log still naming the deleted id would be
+        // refused and fail the whole batch. The forget is guarded inside, on a
+        // successful refresh for an unchanged signed-in owner. Mirrors Android's
+        // `ClipListViewModel.refresh`.
+        //
+        // Both soft failures, same contract as the shares and metadata reads: the
+        // players stay cached and the matches are all still on this phone, so
+        // there is nothing to say and nothing for the user to do about it.
+        _ = try? await DeletePlayerKt.refreshPlayersAndForgetVanishedOrMessage(
+            players: playersRepo, scoreLogs: scoreLogsRepo, localVideos: localVideos,
+            currentOwnerId: currentUserId
+        )
         _ = try? await scoreLogsRepo.syncScoreLogsOrMessage()
         regroup()
         // Unconditionally, even when `clipsRepo.refresh()` above threw: every
-        // one of this method's four requests fails softly on its own (the
-        // clips failure is the only one that sets `error`, and the other
-        // three just leave their caches alone), so "the pull failed" is not
-        // one clean outcome to gate this on - a cover clip's own fetch is a
-        // fifth, independent request that this generation exists to let retry,
+        // one of this method's requests fails softly on its own (the clips
+        // failure is the only one that sets `error`, and the others just leave
+        // their caches alone), so "the pull failed" is not one clean outcome
+        // to gate this on - a cover clip's own fetch is another, independent
+        // request that this generation exists to let retry,
         // and it can succeed even when the clips list itself did not change at
         // all. A retry that finds nothing new costs one redundant signed-URL
         // fetch; refusing one that would have worked leaves a coach staring at
@@ -412,7 +446,7 @@ final class ClipListModel {
     private func regroup() {
         matchList = MatchListBuilderKt.buildMatchList(input: MatchListInput(
             clips: clips,
-            currentUserId: rally.auth.currentUserId(),
+            currentUserId: currentUserId(),
             sharerByVideoId: sharerByVideoId,
             metadataByVideoId: metadataByVideoId,
             scoreLogs: scoreLogs,
@@ -422,7 +456,8 @@ final class ClipListModel {
             storedTrackIds: storedTrackIds,
             storedSkeletonIds: storedSkeletonIds,
             deviceClipCounts: deviceClipCounts,
-            localNoteCounts: localNoteCounts
+            localNoteCounts: localNoteCounts,
+            players: players
         ))
     }
 }

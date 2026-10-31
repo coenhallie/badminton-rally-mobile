@@ -192,7 +192,7 @@ fun AuthGate(
                     initializer {
                         ClipListViewModel(
                             rally.clips, rally.auth, rally.shares, rally.videos, rally.scoreLogs,
-                            localVideos, coordinator, localAnnotations,
+                            localVideos, coordinator, localAnnotations, rally.players,
                             deviceStates = localAnalysis.state,
                             storedResults = storedResults,
                         )

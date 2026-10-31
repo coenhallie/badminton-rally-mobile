@@ -17,14 +17,21 @@ import kotlinx.datetime.Instant
  * interface that has `suspend fun` members, so the iOS test bundle builds this
  * through [testPlayersRepository] instead of faking it in Swift.
  */
-private class InMemoryPlayersRepository(initial: List<Player>) : PlayersRepository {
+private class InMemoryPlayersRepository(
+    initial: List<Player>,
+    /** What a refresh brings back from "the server"; null leaves the list as it is. */
+    private val afterRefresh: List<Player>?,
+) : PlayersRepository {
 
     private val state = MutableStateFlow(sortedPlayers(initial))
     private var nextId = 0
 
     override val players: StateFlow<List<Player>> = state.asStateFlow()
 
-    override suspend fun refresh(): Result<Unit> = Result.success(Unit)
+    override suspend fun refresh(): Result<Unit> {
+        afterRefresh?.let { state.value = sortedPlayers(it) }
+        return Result.success(Unit)
+    }
 
     override suspend fun create(name: String, racketArm: RacketArm?): Result<Player> = runCatching {
         playerNameProblem(name)?.let { throw IllegalArgumentException(it) }
@@ -59,4 +66,12 @@ private class InMemoryPlayersRepository(initial: List<Player>) : PlayersReposito
 }
 
 /** A [PlayersRepository] the iOS test bundle can build, seeded with [players] up front. */
-fun testPlayersRepository(players: List<Player>): PlayersRepository = InMemoryPlayersRepository(players)
+fun testPlayersRepository(players: List<Player>): PlayersRepository = InMemoryPlayersRepository(players, null)
+
+/**
+ * A [PlayersRepository] seeded with [players] whose every refresh succeeds and
+ * publishes [afterRefresh], as a refresh does after a player was deleted on
+ * another device.
+ */
+fun testPlayersRepository(players: List<Player>, afterRefresh: List<Player>): PlayersRepository =
+    InMemoryPlayersRepository(players, afterRefresh)

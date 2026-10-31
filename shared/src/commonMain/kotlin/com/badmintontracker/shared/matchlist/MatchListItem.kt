@@ -1,6 +1,8 @@
 package com.badmintontracker.shared.matchlist
 
 import com.badmintontracker.shared.model.RallyClip
+import com.badmintontracker.shared.players.PlayersTarget
+import com.badmintontracker.shared.scoring.Side
 
 /** Where a match's video is. Null on an item means it has none: a match scored with no video. */
 enum class MatchWhere { PHONE, CLOUD, BOTH }
@@ -37,6 +39,7 @@ data class MatchListItem(
     val title: String,
     /** "3-1 · 12 rallies · Sep 8, 2026". */
     val detail: String,
+    /** "Marco vs Li", from [homeNames] and [awayNames]; null while neither side is named. */
     val playersLine: String?,
     /** "Shared by coach@club.es", shared rows only. */
     val sharedBy: String?,
@@ -79,6 +82,26 @@ data class MatchListItem(
     val heatmapId: String?,
     /** The whole status line, read as one sentence by a screen reader. */
     val accessibilityStatus: String,
+    /**
+     * The coach's player on each side, from the record that speaks for the match
+     * (the score log, else the video's row, else the entry). Null on a side with
+     * no profile, and always null on a shared match: the sharer's players are not
+     * this coach's.
+     */
+    val homePlayerId: String?,
+    val awayPlayerId: String?,
+    /**
+     * What each side is called, as [playersLine] names it: a profile's current
+     * name, else the typed names. Empty when a side has neither.
+     */
+    val homeNames: List<String>,
+    val awayNames: List<String>,
+    /** Which end the home side was at, as the camera sees it. Null until said. */
+    val nearSide: Side?,
+    /** Where a who's-playing save for this match goes, or null when there is nowhere. See [com.badmintontracker.shared.players.playersTarget]. */
+    val playersTarget: PlayersTarget?,
+    /** Whether this coach may change who is playing: an own match with somewhere to save it. */
+    val canEditPlayers: Boolean,
 ) {
     val isRaised: Boolean get() = action != MatchAction.NONE
 }

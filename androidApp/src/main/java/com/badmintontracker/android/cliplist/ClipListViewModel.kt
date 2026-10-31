@@ -19,6 +19,8 @@ import com.badmintontracker.shared.matchlist.localNoteCounts
 import com.badmintontracker.shared.matchlist.matchTitle
 import com.badmintontracker.shared.model.MatchMetadata
 import com.badmintontracker.shared.model.RallyClip
+import com.badmintontracker.shared.players.PlayersRepository
+import com.badmintontracker.shared.players.refreshPlayersAndForgetVanishedOrMessage
 import com.badmintontracker.shared.repo.AuthRepository
 import com.badmintontracker.shared.repo.ClipsRepository
 import com.badmintontracker.shared.repo.SharesRepository
@@ -145,6 +147,8 @@ class ClipListViewModel(
     private val localVideos: LocalVideoRepository,
     private val coordinator: AnalyzeCoordinator,
     private val localAnnotations: LocalAnnotationsRepository,
+    /** The coach's players: a side holding a profile is named from these, and every refresh reloads them. */
+    private val players: PlayersRepository,
     /**
      * The device runner's state, as a flow rather than the runner itself:
      * nothing else of it is needed, and depending on the object would drag a
@@ -248,7 +252,7 @@ class ClipListViewModel(
         .map { localNoteCounts(it) }
         .distinctUntilChanged()
 
-    val state = combine(cloud, phone, refreshGeneration, localNoteCounts) { c, p, generation, notes ->
+    val state = combine(cloud, phone, refreshGeneration, localNoteCounts, players.players) { c, p, generation, notes, people ->
         val userId = auth.currentUserId()
         val matches = c.clips.toMatches(userId, c.sharerByVideoId, c.metadataByVideoId)
         val (owned, shared) = matches.partition { it.isOwned }
@@ -272,6 +276,7 @@ class ClipListViewModel(
                     storedSkeletonIds = p.stored.skeletonIds,
                     deviceClipCounts = p.stored.clipCounts,
                     localNoteCounts = notes,
+                    players = people,
                 ),
             ),
             storedResults = p.stored,
@@ -307,9 +312,18 @@ class ClipListViewModel(
                     videos.listMatchMetadata()
                 }
                 val scoreLogsJob = async {
-                    // Soft failure, same contract as the shares and metadata reads:
-                    // the matches are all still on this phone, so there is nothing
-                    // for the user to do about a failed sync and nothing to say.
+                    // The players first, so a player deleted on another device is
+                    // forgotten in the cached logs (see forgetVanishedPlayers)
+                    // before the sync pushes them: a log still naming the deleted
+                    // id would be refused and fail the whole batch. The forget is
+                    // guarded inside on a successful refresh for an unchanged
+                    // signed-in owner.
+                    //
+                    // Both soft failures, same contract as the shares and metadata
+                    // reads: the players stay cached and the matches are all still
+                    // on this phone, so there is nothing for the user to do about
+                    // a failure and nothing to say.
+                    refreshPlayersAndForgetVanishedOrMessage(players, scoreLogs, localVideos, auth::currentUserId)
                     scoreLogs.sync()
                 }
                 clipsJob.await()
@@ -317,9 +331,9 @@ class ClipListViewModel(
                 metadataJob.await()
                 scoreLogsJob.await()
             }
-            // After all four, and unconditionally, as iOS does: each of them
+            // After all of them, and unconditionally, as iOS does: each of them
             // fails softly on its own, so "the refresh failed" is no single
-            // outcome to gate this on, and a cover's own fetch is a fifth,
+            // outcome to gate this on, and a cover's own fetch is another,
             // independent request that can work when the clip list's did not.
             // A retry that finds nothing new costs one signed-URL fetch; one
             // refused would leave the coach looking at a placeholder tile the

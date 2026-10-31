@@ -7,6 +7,9 @@ import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.model.CourtKeypoints
 import com.badmintontracker.shared.model.MatchMetadata
 import com.badmintontracker.shared.model.RallyClip
+import com.badmintontracker.shared.players.MatchPlayers
+import com.badmintontracker.shared.players.Player
+import com.badmintontracker.shared.players.PlayersTarget
 import com.badmintontracker.shared.scoring.MatchSetup
 import com.badmintontracker.shared.scoring.ScoreEvent
 import com.badmintontracker.shared.scoring.ScoreLog
@@ -15,6 +18,7 @@ import com.badmintontracker.shared.scoring.ScoringRules
 import com.badmintontracker.shared.scoring.Side
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContainExactly
+import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import kotlinx.datetime.Instant
@@ -33,12 +37,16 @@ private fun entry(
     addedAt: String = SEP_8,
     failureMessage: String? = null,
     keypoints: CourtKeypoints? = null,
+    players: MatchPlayers = MatchPlayers.NONE,
+    nearSide: Side? = null,
 ) = LocalVideoEntry(
     id = id, uri = "content://x/$id", displayName = "$id.mp4",
     durationMs = 48_000, sizeBytes = 10, addedAtEpochMs = Instant.parse(addedAt).toEpochMilliseconds(),
     title = title, stage = stage,
     failedStep = if (stage == AnalyzeStage.FAILED) AnalyzeStep.PROCESSING else null,
     failureMessage = failureMessage, scoreLogId = scoreLogId, keypoints = keypoints,
+    homePlayerId = players.homePlayerId, awayPlayerId = players.awayPlayerId,
+    homePlayers = players.homePlayers, awayPlayers = players.awayPlayers, nearSide = nearSide,
 )
 
 private val COURT = List(12) { listOf(0f, 0f) }.let {
@@ -52,12 +60,20 @@ private fun clip(videoId: String, index: Int, owner: String = ME, at: String = S
     title = title, annotationCount = 0, createdAt = Instant.parse(at),
 )
 
-private fun log(id: String, videoId: String? = null, points: Int = 0, at: String = SEP_8) = ScoreLog(
+private fun log(
+    id: String,
+    videoId: String? = null,
+    points: Int = 0,
+    at: String = SEP_8,
+    players: MatchPlayers = MatchPlayers.NONE,
+) = ScoreLog(
     id = id, videoId = videoId, title = "Thu League",
     rules = ScoringRules.BWF_21, setup = MatchSetup(firstServer = Side.HOME),
     events = List(points) { ScoreEvent.PointTo(Side.HOME) },
     status = if (videoId != null) ScoreLogStatus.BOUND else ScoreLogStatus.UNBOUND,
     createdAt = Instant.parse(at), updatedAt = Instant.parse(at),
+    homePlayerId = players.homePlayerId, awayPlayerId = players.awayPlayerId,
+    homePlayers = players.homePlayers, awayPlayers = players.awayPlayers,
 )
 
 private fun input(
@@ -70,11 +86,12 @@ private fun input(
     deviceClips: Map<String, Int> = emptyMap(),
     metadata: Map<String, MatchMetadata> = emptyMap(),
     sharers: Map<String, String> = emptyMap(),
+    players: List<Player> = emptyList(),
 ) = MatchListInput(
     clips = clips, currentUserId = ME, sharerByVideoId = sharers, metadataByVideoId = metadata,
     scoreLogs = logs, localEntries = entries, cloudProgress = emptyMap(), deviceRuns = deviceRuns,
     storedTrackIds = tracks, storedSkeletonIds = skeletons, deviceClipCounts = deviceClips,
-    localNoteCounts = emptyMap(),
+    localNoteCounts = emptyMap(), players = players,
 )
 
 private fun build(i: MatchListInput) = buildMatchList(i, TimeZone.UTC)
@@ -538,5 +555,131 @@ class MatchListBuilderTest {
         item.action shouldBe MatchAction.RETRY
         item.statusText shouldBe "x"
         item.statusIsError shouldBe true
+    }
+
+    // --- who is playing ---
+
+    private val marco = Player("p-marco", ME, "Marco", null, Instant.parse(SEP_8), Instant.parse(SEP_8))
+    private val ana = Player("p-ana", ME, "Ana", null, Instant.parse(SEP_8), Instant.parse(SEP_8))
+    private val marcoVsLi = MatchPlayers("p-marco", null, emptyList(), listOf("Li"))
+
+    @Test
+    fun a_score_match_names_its_profile() {
+        val item = build(input(logs = listOf(log("l1", players = marcoVsLi)), players = listOf(ana, marco))).mine.single()
+
+        item.playersLine shouldBe "Marco vs Li"
+        item.homePlayerId shouldBe "p-marco"
+        item.awayPlayerId.shouldBeNull()
+        item.homeNames shouldContainExactly listOf("Marco")
+        item.awayNames shouldContainExactly listOf("Li")
+    }
+
+    @Test
+    fun a_phone_only_match_shows_its_players() {
+        val item = build(
+            input(entries = listOf(entry("e1", players = marcoVsLi, nearSide = Side.AWAY)), players = listOf(marco)),
+        ).mine.single()
+
+        item.playersLine shouldBe "Marco vs Li"
+        item.homePlayerId shouldBe "p-marco"
+        item.nearSide shouldBe Side.AWAY
+    }
+
+    @Test
+    fun a_video_match_names_its_profile_from_metadata() {
+        val meta = MatchMetadata(
+            videoId = "v1", homePlayerId = "p-marco", awayPlayerId = "p-gone", nearSide = Side.HOME,
+            homeNames = listOf("Marco (as the server last saw it)"), awayNames = listOf("Jip"),
+        )
+        // The entry still holds what it uploaded; the row is the record now.
+        val stale = entry("v1", AnalyzeStage.ANALYZED, players = MatchPlayers(null, null, listOf("Coen"), emptyList()))
+        val item = build(
+            input(entries = listOf(stale), clips = listOf(clip("v1", 1)), metadata = mapOf("v1" to meta), players = listOf(marco)),
+        ).mine.single()
+
+        // A profile this phone knows reads its current name; one it does not, the server's.
+        item.playersLine shouldBe "Marco vs Jip"
+        item.homePlayerId shouldBe "p-marco"
+        item.awayPlayerId shouldBe "p-gone"
+        item.homeNames shouldContainExactly listOf("Marco")
+        item.awayNames shouldContainExactly listOf("Jip")
+
+        val cloudOnly = build(
+            input(clips = listOf(clip("v2", 1)), metadata = mapOf("v2" to meta.copy(videoId = "v2")), players = listOf(marco)),
+        ).mine.single()
+        cloudOnly.playersLine shouldBe "Marco vs Jip"
+        cloudOnly.nearSide shouldBe Side.HOME
+    }
+
+    @Test
+    fun a_shared_match_takes_resolved_names() {
+        val meta = MatchMetadata(
+            videoId = "v1", homePlayerId = "p-marco", awayPlayers = listOf("Li"), nearSide = Side.HOME,
+            homeNames = listOf("Marc"), awayNames = listOf("Li"),
+        )
+        // Even a profile id this phone happens to know: the sharer's names are the ones to show.
+        val item = build(
+            input(
+                clips = listOf(clip("v1", 1, owner = OTHER)), metadata = mapOf("v1" to meta),
+                sharers = mapOf("v1" to "coach@club.es"), players = listOf(marco),
+            ),
+        ).shared.single()
+
+        item.playersLine shouldBe "Marc vs Li"
+        item.homeNames shouldContainExactly listOf("Marc")
+        // The sharer's players are not this coach's.
+        item.homePlayerId.shouldBeNull()
+        item.nearSide shouldBe Side.HOME
+    }
+
+    @Test
+    fun a_renamed_player_renames_every_match() {
+        fun lines(players: List<Player>) = build(
+            input(
+                logs = listOf(log("l1", players = marcoVsLi)),
+                entries = listOf(entry("e1", players = MatchPlayers(null, "p-marco", listOf("Coen"), emptyList()))),
+                clips = listOf(clip("v1", 1)),
+                metadata = mapOf("v1" to MatchMetadata("v1", homePlayerId = "p-marco", homeNames = listOf("Marco"))),
+                players = players,
+            ),
+        ).mine.map { it.playersLine }
+
+        lines(listOf(marco)) shouldContainExactlyInAnyOrder listOf("Marco vs Li", "Coen vs Marco", "Marco vs Away")
+        lines(listOf(marco.copy(name = "Marco Rossi"))) shouldContainExactlyInAnyOrder
+            listOf("Marco Rossi vs Li", "Coen vs Marco Rossi", "Marco Rossi vs Away")
+    }
+
+    @Test
+    fun players_target_is_set_per_kind() {
+        val list = build(
+            input(
+                logs = listOf(log("l1", at = "2026-09-01T10:00:00Z")),
+                entries = listOf(
+                    entry("local", addedAt = "2026-09-02T10:00:00Z"),
+                    entry("uploading", AnalyzeStage.UPLOADING, addedAt = "2026-09-03T10:00:00Z"),
+                    entry("processing", AnalyzeStage.PROCESSING, addedAt = "2026-09-04T10:00:00Z"),
+                ),
+                clips = listOf(clip("cloud", 1, at = "2026-09-05T10:00:00Z")),
+            ),
+        )
+        val byKey = list.mine.associateBy { it.key }
+
+        byKey.getValue("score-l1").playersTarget shouldBe PlayersTarget.SCORE_LOG
+        byKey.getValue("video-local").playersTarget shouldBe PlayersTarget.LOCAL_ENTRY
+        byKey.getValue("video-uploading").playersTarget shouldBe PlayersTarget.UPLOADING
+        // Its clips have not arrived, but the row exists under the entry's id.
+        byKey.getValue("video-processing").playersTarget shouldBe PlayersTarget.VIDEO_ROW
+        byKey.getValue("video-cloud").playersTarget shouldBe PlayersTarget.VIDEO_ROW
+        list.mine.forEach { it.canEditPlayers shouldBe true }
+    }
+
+    @Test
+    fun a_shared_match_cannot_edit_players() {
+        val item = build(
+            input(clips = listOf(clip("v1", 1, owner = OTHER)), sharers = mapOf("v1" to "coach@club.es")),
+        ).shared.single()
+
+        item.playersTarget shouldBe PlayersTarget.VIDEO_ROW
+        item.canEditPlayers shouldBe false
     }
 }

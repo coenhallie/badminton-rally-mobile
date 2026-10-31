@@ -3,6 +3,7 @@ package com.badmintontracker.android.cliplist
 import app.cash.turbine.test
 import com.badmintontracker.android.testing.FakeAuthRepository
 import com.badmintontracker.android.testing.FakeClipsRepository
+import com.badmintontracker.android.testing.FakePlayersRepository
 import com.badmintontracker.android.testing.FakeSharesRepository
 import com.badmintontracker.android.testing.FakeVideosRepository
 import com.badmintontracker.shared.localvideo.AnalyzeCoordinator
@@ -68,6 +69,7 @@ class ClipListViewModelDeleteTest {
             FakeClipsRepository(), FakeAuthRepository(), FakeSharesRepository(),
             videos, scoreLogs, localVideos, coordinator(localVideos),
             LocalAnnotationsRepository(MapSettings()),
+            players = FakePlayersRepository(),
             deviceStates = MutableStateFlow(emptyMap()),
             storedResults = { StoredResults() },
             ioDispatcher = dispatcher,

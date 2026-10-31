@@ -23,6 +23,8 @@ class FinishedRunMessageTest {
             scoreText = null, isOwned = true, canShare = false, canEditDetails = false, canAnalyzeAgain = false,
             canRemoveFromPhone = false, delete = com.badmintontracker.shared.matchlist.MatchDelete.NONE,
             deviceClipCount = 0, rallyCount = 0, noteCount = 0, heatmapId = null, accessibilityStatus = "",
+            homePlayerId = null, awayPlayerId = null, homeNames = emptyList(), awayNames = emptyList(),
+            nearSide = null, playersTarget = null, canEditPlayers = false,
         )
 
     private val thu = item("video-e1", "Thu League", entryId = "e1")

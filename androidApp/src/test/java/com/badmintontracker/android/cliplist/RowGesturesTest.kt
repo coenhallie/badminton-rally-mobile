@@ -59,7 +59,7 @@ class RowGesturesTest {
                 metadataByVideoId = emptyMap(), scoreLogs = logs, localEntries = entries,
                 cloudProgress = emptyMap(), deviceRuns = deviceRuns, storedTrackIds = emptySet(),
                 storedSkeletonIds = emptySet(), deviceClipCounts = emptyMap(),
-                localNoteCounts = emptyMap(),
+                localNoteCounts = emptyMap(), players = emptyList(),
             ),
         )
         return (list.mine + list.shared).single()

@@ -37,7 +37,7 @@ class MatchListConfirmationTest {
             clips = clips, currentUserId = "me", sharerByVideoId = emptyMap(), metadataByVideoId = emptyMap(),
             scoreLogs = emptyList(), localEntries = entries, cloudProgress = emptyMap(), deviceRuns = runs,
             storedTrackIds = emptySet(), storedSkeletonIds = emptySet(), deviceClipCounts = emptyMap(),
-            localNoteCounts = emptyMap(),
+            localNoteCounts = emptyMap(), players = emptyList(),
         ),
         TimeZone.UTC,
     )

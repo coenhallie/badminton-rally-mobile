@@ -39,7 +39,8 @@ final class MatchListBridgingTests: XCTestCase {
         tracks: Set<String> = [],
         skeletons: Set<String> = [],
         clipCounts: [String: KotlinInt] = [:],
-        localNotes: [String: KotlinInt] = [:]
+        localNotes: [String: KotlinInt] = [:],
+        players: [Player] = []
     ) -> MatchListInput {
         MatchListInput(
             clips: clips, currentUserId: "user-self",
@@ -47,7 +48,8 @@ final class MatchListBridgingTests: XCTestCase {
             localEntries: entries, cloudProgress: [:], deviceRuns: deviceRuns,
             storedTrackIds: tracks, storedSkeletonIds: skeletons,
             deviceClipCounts: clipCounts,
-            localNoteCounts: localNotes
+            localNoteCounts: localNotes,
+            players: players
         )
     }
 
@@ -161,5 +163,30 @@ final class MatchListBridgingTests: XCTestCase {
         ))
         XCTAssertEqual(list.mine[0].statusText, "Analysis failed: decoder gave up")
         XCTAssertEqual(list.mine[0].action, .retry)
+    }
+
+    func testWhoIsPlayingReachesSwift() {
+        // The player fields as the match page and the player pages read them:
+        // the target is a plain enum, the end an optional one.
+        let at = KotlinInstant.companion.fromEpochMilliseconds(epochMilliseconds: 1_787_940_000_000)
+        let marco = Player(id: "p-marco", ownerId: "user-self", name: "Marco", racketArm: nil, createdAt: at, updatedAt: at)
+        let phoneOnly = LocalVideoEntry(
+            id: "e1", uri: "LocalVideos/e1.mp4", displayName: "m.mp4",
+            durationMs: 48_000, sizeBytes: 2, addedAtEpochMs: 1_787_940_000_000,
+            title: nil, description: nil, keypoints: nil,
+            stage: .local, failedStep: nil, failureMessage: nil, resultSeen: false,
+            scoreLogId: nil,
+            homePlayerId: "p-marco", awayPlayerId: nil, homePlayers: [], awayPlayers: ["Li"], nearSide: .away
+        )
+        let list = MatchListBuilderKt.buildMatchList(input: input(entries: [phoneOnly], players: [marco]))
+        let item = list.mine[0]
+        XCTAssertEqual(item.playersLine, "Marco vs Li")
+        XCTAssertEqual(item.homePlayerId, "p-marco")
+        XCTAssertEqual(item.homeNames, ["Marco"])
+        XCTAssertEqual(item.awayNames, ["Li"])
+        XCTAssertEqual(item.nearSide, .away)
+        XCTAssertEqual(item.playersTarget, .localEntry)
+        XCTAssertTrue(item.canEditPlayers)
+        XCTAssertEqual(list.forPlayer(playerId: "p-marco").map(\.key), ["video-e1"])
     }
 }

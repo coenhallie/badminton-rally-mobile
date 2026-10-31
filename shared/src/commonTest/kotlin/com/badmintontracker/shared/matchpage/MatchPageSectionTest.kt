@@ -72,7 +72,7 @@ private fun list(
         clips = clips, currentUserId = ME, sharerByVideoId = sharers, metadataByVideoId = emptyMap(),
         scoreLogs = logs, localEntries = entries, cloudProgress = emptyMap(), deviceRuns = deviceRuns,
         storedTrackIds = tracks, storedSkeletonIds = skeletons, deviceClipCounts = deviceClips,
-        localNoteCounts = emptyMap(),
+        localNoteCounts = emptyMap(), players = emptyList(),
     ),
     TimeZone.UTC,
 )

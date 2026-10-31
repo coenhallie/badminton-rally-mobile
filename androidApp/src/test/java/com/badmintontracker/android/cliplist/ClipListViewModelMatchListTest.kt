@@ -4,6 +4,7 @@ import com.badmintontracker.analysis.player.PlayerTrack
 import com.badmintontracker.android.localanalysis.LocalAnalysisState
 import com.badmintontracker.android.testing.FakeAuthRepository
 import com.badmintontracker.android.testing.FakeClipsRepository
+import com.badmintontracker.android.testing.FakePlayersRepository
 import com.badmintontracker.android.testing.FakeSharesRepository
 import com.badmintontracker.android.testing.FakeVideosRepository
 import io.github.jan.supabase.SupabaseClient
@@ -29,6 +30,9 @@ import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.matchlist.MatchWhere
 import com.badmintontracker.shared.model.RallyClip
+import com.badmintontracker.shared.players.MatchPlayers
+import com.badmintontracker.shared.players.Player
+import com.badmintontracker.shared.players.matchPlayers
 import com.badmintontracker.shared.scoring.MatchSetup
 import com.badmintontracker.shared.scoring.ScoreLogsRepository
 import com.badmintontracker.shared.scoring.ScoringRules
@@ -75,6 +79,9 @@ class ClipListViewModelMatchListTest {
 
     private val annotations = LocalAnnotationsRepository(MapSettings())
 
+    private val auth = FakeAuthRepository()
+    private val players = FakePlayersRepository()
+
     private fun newViewModel(scoreLogs: ScoreLogsRepository = this.scoreLogs): ClipListViewModel {
         val coordinator = AnalyzeCoordinator(
             localVideos, FakeVideosRepository(), FakeClipsRepository(),
@@ -83,9 +90,10 @@ class ClipListViewModelMatchListTest {
             localAnnotations = annotations,
         )
         return ClipListViewModel(
-            clips, FakeAuthRepository(), FakeSharesRepository(), videos,
+            clips, auth, FakeSharesRepository(), videos,
             scoreLogs,
             localVideos, coordinator, annotations,
+            players = players,
             deviceStates = deviceStates,
             storedResults = reader,
             ioDispatcher = dispatcher,
@@ -393,5 +401,92 @@ class ClipListViewModelMatchListTest {
         advanceUntilIdle()
         reads.size shouldBe before + 1
         reads.last() shouldBe setOf("e1")
+    }
+
+    // --- players ---
+
+    private val t0 = Instant.parse("2026-10-31T12:00:00Z")
+    private val marco = Player("p-marco", "user-self", "Marco", null, t0, t0)
+
+    /** A scored match with Marco at home, as this phone has it cached. */
+    private fun marcosMatch(): String {
+        val log = scoreLogs.create("Thu League", ScoringRules.BWF_21, MatchSetup(firstServer = Side.HOME))
+        scoreLogs.assignPlayers(log.id, MatchPlayers("p-marco", null, emptyList(), listOf("Li")))
+        return log.id
+    }
+
+    @Test
+    fun a_profile_names_its_match_and_a_rename_follows() = runTest {
+        players.serverPlayers = listOf(marco)
+        marcosMatch()
+        val vm = newViewModel()
+        subscribe(vm)
+        vm.state.value.matchList.mine.single().playersLine shouldBe "Marco vs Li"
+
+        players.rename("p-marco", "Marco Rossi")
+        advanceUntilIdle()
+
+        vm.state.value.matchList.mine.single().playersLine shouldBe "Marco Rossi vs Li"
+    }
+
+    @Test
+    fun a_refresh_forgets_a_player_deleted_on_another_device() = runTest {
+        players.serverPlayers = listOf(marco)
+        val id = marcosMatch()
+        val vm = newViewModel()
+        subscribe(vm)
+        players.serverPlayers = emptyList()
+
+        vm.refresh()
+        advanceUntilIdle()
+
+        // The match keeps the name it had, as a typed name.
+        scoreLogs.get(id)?.matchPlayers shouldBe MatchPlayers(null, null, listOf("Marco"), listOf("Li"))
+        vm.state.value.matchList.mine.single().playersLine shouldBe "Marco vs Li"
+    }
+
+    @Test
+    fun a_failed_players_refresh_forgets_nobody() = runTest {
+        players.serverPlayers = listOf(marco)
+        val id = marcosMatch()
+        val vm = newViewModel()
+        subscribe(vm)
+        players.serverPlayers = emptyList()
+        players.nextError = IllegalStateException("HTTP 503")
+
+        vm.refresh()
+        advanceUntilIdle()
+
+        scoreLogs.get(id)?.homePlayerId shouldBe "p-marco"
+    }
+
+    @Test
+    fun a_players_refresh_with_no_session_forgets_nobody() = runTest {
+        players.serverPlayers = listOf(marco)
+        val id = marcosMatch()
+        val vm = newViewModel()
+        subscribe(vm)
+        auth.currentUserIdValue = null
+        players.serverPlayers = emptyList()
+
+        vm.refresh()
+        advanceUntilIdle()
+
+        scoreLogs.get(id)?.homePlayerId shouldBe "p-marco"
+    }
+
+    @Test
+    fun a_players_refresh_across_a_change_of_owner_forgets_nobody() = runTest {
+        players.serverPlayers = listOf(marco)
+        val id = marcosMatch()
+        val vm = newViewModel()
+        subscribe(vm)
+        players.serverPlayers = emptyList()
+        players.duringRefresh = { auth.currentUserIdValue = "user-next" }
+
+        vm.refresh()
+        advanceUntilIdle()
+
+        scoreLogs.get(id)?.homePlayerId shouldBe "p-marco"
     }
 }

@@ -6,6 +6,7 @@ import com.badmintontracker.shared.localvideo.LocalAnnotation
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.model.MatchMetadata
 import com.badmintontracker.shared.model.RallyClip
+import com.badmintontracker.shared.players.Player
 import com.badmintontracker.shared.scoring.ScoreLog
 
 enum class DeviceRunKind { RUNNING, PAUSED, FAILED }
@@ -45,6 +46,8 @@ data class MatchListInput(
     val deviceClipCounts: Map<String, Int>,
     /** Notes made on this phone's copy of a video, per entry id. Absent means none. See [localNoteCounts]. */
     val localNoteCounts: Map<String, Int>,
+    /** The coach's players, which a side holding a profile is named from. */
+    val players: List<Player>,
 )
 
 /**

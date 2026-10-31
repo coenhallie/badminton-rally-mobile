@@ -29,13 +29,25 @@ class DeletePlayerTest {
     )
     private val localVideos = LocalVideoRepository(MapSettings())
 
-    /** Only [delete] matters here; it fails with [deleteError] when that is set. */
+    /**
+     * [delete] and [refresh] are what matter here. A delete fails with
+     * [deleteError] when that is set; a refresh runs [duringRefresh], then fails
+     * with [refreshError] or publishes [refreshed] (the list unchanged when null).
+     */
     private class StubPlayers(initial: List<Player>, var deleteError: Throwable? = null) : PlayersRepository {
         private val state = MutableStateFlow(initial)
         override val players: StateFlow<List<Player>> = state
         val deleted = mutableListOf<String>()
+        var refreshed: List<Player>? = null
+        var refreshError: Throwable? = null
+        var duringRefresh: () -> Unit = {}
 
-        override suspend fun refresh(): Result<Unit> = Result.success(Unit)
+        override suspend fun refresh(): Result<Unit> {
+            duringRefresh()
+            refreshError?.let { return Result.failure(it) }
+            refreshed?.let { state.value = it }
+            return Result.success(Unit)
+        }
         override suspend fun create(name: String, racketArm: RacketArm?): Result<Player> = error("unused")
         override suspend fun rename(id: String, name: String): Result<Unit> = error("unused")
         override suspend fun setRacketArm(id: String, racketArm: RacketArm?): Result<Unit> = error("unused")
@@ -119,6 +131,86 @@ class DeletePlayerTest {
 
         // A player added elsewhere (in after, not before) is not a vanished one.
         forgetVanishedPlayers(listOf(marco), listOf(marco, ana), scoreLogs, localVideos)
+
+        scoreLogs.get(log.id)?.matchPlayers shouldBe onMarcoHome
+    }
+
+    // refreshPlayersAndForgetVanishedOrMessage
+
+    private var owner: String? = "owner-1"
+
+    private suspend fun refresh(players: StubPlayers) =
+        refreshPlayersAndForgetVanishedOrMessage(players, scoreLogs, localVideos) { owner }
+
+    @Test
+    fun a_refresh_forgets_a_player_deleted_elsewhere() = runTest {
+        val players = StubPlayers(listOf(ana, marco)).apply { refreshed = listOf(ana) }
+        val log = newLog(onMarcoHome)
+        localVideos.add(entry("e1", onMarcoAway))
+
+        refresh(players).shouldBeNull()
+
+        scoreLogs.get(log.id)?.matchPlayers shouldBe MatchPlayers(null, null, listOf("Marco"), listOf("Li"))
+        localVideos.get("e1")?.matchPlayers shouldBe MatchPlayers(null, null, listOf("Coen"), listOf("Marco"))
+    }
+
+    @Test
+    fun an_empty_list_after_a_refresh_forgets_everyone() = runTest {
+        val players = StubPlayers(listOf(ana, marco)).apply { refreshed = emptyList() }
+        val home = newLog(onMarcoHome)
+        val other = newLog(onAna)
+
+        refresh(players).shouldBeNull()
+
+        scoreLogs.get(home.id)?.matchPlayers shouldBe MatchPlayers(null, null, listOf("Marco"), listOf("Li"))
+        scoreLogs.get(other.id)?.matchPlayers shouldBe MatchPlayers(null, null, listOf("Ana"), emptyList())
+    }
+
+    @Test
+    fun a_failed_refresh_forgets_nobody() = runTest {
+        val players = StubPlayers(listOf(marco)).apply {
+            refreshed = emptyList()
+            refreshError = IllegalStateException("HTTP 503")
+        }
+        val log = newLog(onMarcoHome)
+
+        refresh(players) shouldBe PlayersCopy.LOAD_FAILED
+
+        scoreLogs.get(log.id)?.matchPlayers shouldBe onMarcoHome
+    }
+
+    @Test
+    fun a_refresh_with_no_session_forgets_nobody() = runTest {
+        owner = null
+        val players = StubPlayers(listOf(marco)).apply { refreshed = emptyList() }
+        val log = newLog(onMarcoHome)
+
+        refresh(players).shouldBeNull()
+
+        scoreLogs.get(log.id)?.matchPlayers shouldBe onMarcoHome
+    }
+
+    @Test
+    fun a_refresh_across_a_change_of_owner_forgets_nobody() = runTest {
+        val players = StubPlayers(listOf(marco)).apply {
+            refreshed = emptyList()
+            duringRefresh = { owner = "owner-2" }
+        }
+        val log = newLog(onMarcoHome)
+
+        refresh(players).shouldBeNull()
+
+        scoreLogs.get(log.id)?.matchPlayers shouldBe onMarcoHome
+    }
+
+    @Test
+    fun a_previous_coachs_players_left_in_memory_are_not_forgotten() = runTest {
+        // Signed out and in as someone else: the list still holds the last coach's.
+        val theirs = marco.copy(ownerId = "owner-0")
+        val players = StubPlayers(listOf(theirs, ana)).apply { refreshed = listOf(ana) }
+        val log = newLog(onMarcoHome)
+
+        refresh(players).shouldBeNull()
 
         scoreLogs.get(log.id)?.matchPlayers shouldBe onMarcoHome
     }

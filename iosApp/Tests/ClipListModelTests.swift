@@ -125,7 +125,11 @@ final class ClipListModelTests: XCTestCase {
 
     /// `liveDeviceRuns` defaults to "nothing running", matching a build with no
     /// on-device runner. Tests that need a run in flight pass their own.
-    private func rig(liveDeviceRuns: @escaping @MainActor () -> [String: DeviceRun] = { [:] }) -> Rig {
+    private func rig(
+        players: PlayersRepository? = nil,
+        currentUserId: (@Sendable () -> String?)? = nil,
+        liveDeviceRuns: @escaping @MainActor () -> [String: DeviceRun] = { [:] }
+    ) -> Rig {
         let localVideos = IosTestDoublesKt.testLocalVideoRepository()
         let annotations = IosTestDoublesKt.testLocalAnnotationsRepository()
         let videos = IosTestDoublesKt.testVideosRepository()
@@ -138,6 +142,8 @@ final class ClipListModelTests: XCTestCase {
             clips: clips, videos: videos, scoreLogs: scoreLogs,
             localVideos: localVideos, localAnnotations: annotations,
             shares: shares,
+            players: players,
+            currentUserId: currentUserId,
             liveDeviceRuns: liveDeviceRuns
         )
         return Rig(
@@ -323,5 +329,60 @@ final class ClipListModelTests: XCTestCase {
 
         XCTAssertNil(r.localVideos.get(id: "v1"))
         XCTAssertFalse(r.annotations.hasAnnotations(videoId: "v1"))
+    }
+
+    // MARK: - Players
+
+    private var marco: Player {
+        Player(id: "p-marco", ownerId: "owner-1", name: "Marco", racketArm: nil, createdAt: t0, updatedAt: t0)
+    }
+
+    /// A scored match with Marco at home, as this phone has it cached.
+    private func marcosMatch(_ r: Rig) -> String {
+        let log = r.scoreLogs.create(title: "Thu", rules: ScoringRules.companion.BWF_21, setup: MatchSetup(firstServer: .home))
+        r.scoreLogs.assignPlayers(
+            id: log.id,
+            players: MatchPlayers(homePlayerId: "p-marco", awayPlayerId: nil, homePlayers: [], awayPlayers: ["Li"])
+        )
+        return log.id
+    }
+
+    func testAProfileNamesItsMatch() async {
+        // The seventh loop: a side holding a profile is named from the players.
+        let r = rig(players: PlayersTestDoublesKt.testPlayersRepository(players: [marco]))
+        let loops = Task { @MainActor in await r.model.observe() }
+        defer { loops.cancel() }
+        let id = marcosMatch(r)
+        let named = await ObservationLifecycle.wait {
+            r.model.matchList.mine.first { $0.scoreLogId == id }?.playersLine == "Marco vs Li"
+        }
+        XCTAssertTrue(named, "the list did not name the match from its profile")
+    }
+
+    func testARefreshForgetsAPlayerDeletedOnAnotherDevice() async {
+        let r = rig(
+            players: PlayersTestDoublesKt.testPlayersRepository(players: [marco], afterRefresh: []),
+            currentUserId: { "owner-1" }
+        )
+        let id = marcosMatch(r)
+
+        await r.model.refresh()
+
+        // The match keeps the name it had, as a typed name.
+        let log = r.scoreLogs.get(id: id)
+        XCTAssertNil(log?.homePlayerId)
+        XCTAssertEqual(log?.homePlayers, ["Marco"])
+    }
+
+    func testARefreshWithNoSessionForgetsNobody() async {
+        let r = rig(
+            players: PlayersTestDoublesKt.testPlayersRepository(players: [marco], afterRefresh: []),
+            currentUserId: { nil }
+        )
+        let id = marcosMatch(r)
+
+        await r.model.refresh()
+
+        XCTAssertEqual(r.scoreLogs.get(id: id)?.homePlayerId, "p-marco")
     }
 }
