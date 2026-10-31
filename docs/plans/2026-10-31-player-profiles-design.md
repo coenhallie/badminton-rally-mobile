@@ -105,7 +105,9 @@ Verified on `feat/match-moments` (3c9bda8c) unless marked otherwise.
   columns with the same checks (`20260922000000_video_match_details.sql:16-30`).
 - `videos` UPDATE is granted per column: `title, description, format,
   home_players, away_players` (`20260922000000_video_match_details.sql:63`). A
-  column missing from that grant is silently not written.
+  write to a column missing from that grant fails with `insufficient_privilege`
+  (`supabase/tests/video_match_details_test.sql:23-32`); a stranger's update
+  matches zero rows under RLS.
 - `list_match_metadata()` returns those columns for owned or shared videos
   (`20260922000000_video_match_details.sql:79-91`).
 - Names are typed only in the match details editor (`EditMatchDetailsDialog.kt`,
@@ -122,7 +124,9 @@ Verified on `feat/match-moments` (3c9bda8c) unless marked otherwise.
 - The Analysis panels carry a Near | Far toggle defaulting to Near
   (`HeatmapPanel.kt:147`, `AnalysisSection.swift:214`).
 - Racket arm is a per-video phone preference, `racket_arm:{entryId}`, LEFT, RIGHT
-  or unset meaning both (`RacketArmPreferenceRepository.kt:5-30`).
+  or unset meaning both (`RacketArmPreferenceRepository.kt:5-30`). It is one
+  choice per video, shared by both sides (`SkeletonPanel.kt:269`, beside the
+  per-side toggle at `:172`).
 - Nothing links NEAR/FAR to HOME/AWAY, a name, or a person.
 
 ### 2.4 Which record speaks for a match
@@ -137,6 +141,9 @@ player assignment rather than adding a second one.
 ### 2.5 Local entries
 
 `LocalVideoEntry` (`LocalVideoEntry.kt:149-178`) is the phone's record of a video;
+it holds a title and description but no player names, so a match that exists only
+on the phone shows no players line (`videoItem` reads players from cloud metadata
+only, `MatchListBuilder.kt:197, 217`).
 its `id` becomes `videos.id` on upload and its `title` / `description` ride along on
 the INSERT. A device-analysed match may never be uploaded.
 
@@ -177,7 +184,7 @@ A new table, owned by the coach. New migration in this repo's
 | `owner_id` | `uuid not null default auth.uid()` references `auth.users` on delete cascade | The coach |
 | `name` | `text not null`, 1 to 40 characters after trim | 40 is `MAX_PLAYER_NAME` (`MatchDetails.kt:24`) |
 | `racket_arm` | `text null`, `check in ('left','right')` | Null: not said |
-| `created_at`, `updated_at` | `timestamptz` | `updated_at` by the same `touch_updated_at` trigger `score_logs` uses |
+| `created_at`, `updated_at` | `timestamptz` | `updated_at` by a trigger like `touch_score_logs_updated_at()` (`20260827000000_score_logs.sql:105-118`) |
 
 - RLS: four per-verb policies, `owner_id = auth.uid()`, as `annotation_labels`.
 - Index `(owner_id, lower(name))`, not unique: a coach may have two players
@@ -187,8 +194,8 @@ A new table, owned by the coach. New migration in this repo's
 
 Two columns on **both** `score_logs` and `videos`:
 
-- `home_player_id uuid null references players(id)`
-- `away_player_id uuid null references players(id)`
+- `home_player_id uuid null references players(id) on delete set null`
+- `away_player_id uuid null references players(id) on delete set null`
 
 Rules:
 
@@ -204,11 +211,19 @@ Rules:
    to a score log, the score log's assignment stands and the video's columns
    stay null. No copying between the two.
 4. **Deleting a player keeps the history readable.** A `before delete` trigger
-   on `players` writes the player's name into the side's `text[]` on every row
-   that points at them, then the FK's `on delete set null` clears the id. The
-   matches stay, unassigned, with the name still shown. (My call.)
-5. `videos` UPDATE grant gains the new columns (section 3.3 too), with a SQL test
-   that proves the write lands.
+   on `players` sets, in one UPDATE per table, the side's `text[]` to the
+   player's name **and** its id to null on every row that points at them, so
+   rule 1's check holds at every step. The FK's `on delete set null` is the
+   backstop. The matches stay, unassigned, with the name still shown. (My call.)
+   The phone does the same to its own copies before the delete is sent: every
+   cached score log and every `LocalVideoEntry` that names the player gets the
+   name and loses the id, through one shared function. Without that, an unsynced
+   score log would fail its upsert on the dead FK and block every other match's
+   sync (the hazard `ScoreLogsRepository.kt:210-215` already describes for
+   `video_id`), and an un-uploaded video would fail its INSERT.
+5. `videos` UPDATE grant gains the new columns (section 3.3 too). The SQL test
+   proves the owner's write lands, a stranger's matches zero rows, and a column
+   left out of the grant is refused.
 
 ### 3.3 Which end each side stood on
 
@@ -230,9 +245,14 @@ question for Coen (section 9).
   when a side is a profile, otherwise the typed names). A share recipient cannot
   read `players`, and must still see names.
 - `score_logs` rows already come back whole through the owner's select.
-- `LocalVideoEntry` gains `homePlayerId`, `awayPlayerId`, `nearSide`, which ride
-  along on the `videos` INSERT like `title` today. A device-only match keeps them
-  on the phone.
+- `LocalVideoEntry` gains `homePlayerId`, `awayPlayerId`, `homePlayers`,
+  `awayPlayers` (typed names, for the opponent) and `nearSide`, which ride along
+  on the `videos` INSERT like `title` today. A device-only match keeps them on
+  the phone, and `videoItem` reads them from the entry when there is no cloud
+  metadata, so a phone-only match shows its players too.
+- For a score-born match with a video, `list_match_metadata` resolves the names
+  through the bound score log (`score_logs.video_id`) inside the security-definer
+  function, so a share recipient sees names there too.
 
 ### 3.5 A player's matches
 
@@ -253,10 +273,10 @@ player or typed name. The Analysis panels use it:
 - The Near | Far toggle shows names ("Marco | Jip") instead of Near | Far when
   both are known; one known name shows as that name and "Opponent".
 - Racket arm for a side whose player has `racket_arm` is the player's hand, and the
-  per-video choice is not offered for that side. A side without a profile, or a
-  profile with no hand, keeps today's per-video choice. (My call: handedness is a
-  fact about the person, so a per-video override for a profile only creates
-  disagreement.)
+  arm choice is not offered while that side is shown. Every other side keeps
+  today's single per-video choice, unchanged (no per-side key). (My call:
+  handedness is a fact about the person, so a per-video override for a profile
+  only creates disagreement.)
 
 ### 3.7 The player list on the phone
 
@@ -330,6 +350,22 @@ also shows the court ends with the swap. This is how an existing, unassigned
 match is assigned, and how a score-born match that later got a video says which
 end Home was on. It writes to the record that speaks for the match
 (section 3.2 rule 3).
+
+Today that editor is reachable only for a score log or an owned cloud video that
+has clips (`MatchScreen.kt:500-510`, `MatchView.swift:206-215, 406-417`), and a
+phone-only video gets the "Match details" sheet only while LOCAL
+(`canEditLocalVideoDetails`). Who's playing must be editable on **every** match
+the coach owns, so:
+
+- a phone-only match (any stage before upload, including after a device run)
+  edits the `LocalVideoEntry`;
+- an uploaded video with no clips yet (processing, failed, zero rallies) edits
+  its `videos` row, which the grant allows at any status, and mirrors to the
+  entry the way `mirrorVideoDetails` does today.
+
+Which entry point shows the control in each case (the details editor gaining
+more matches, or Who's playing on its own in the overflow) is left to the
+builder; the rule is that no owned match lacks one.
 
 ### 4.5 Navigation changes
 
