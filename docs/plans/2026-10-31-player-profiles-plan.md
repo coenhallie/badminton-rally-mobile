@@ -512,3 +512,27 @@ The UI bar is pixel level, on both platforms, light and dark, and large text (An
 
 - [ ] **Step 5: Commit** `docs: players on both platforms, with screenshots, the changelog and 0.13.0 (30)`.
 - [ ] **Step 6: Hand over to Coen**, explicitly, on a real phone: create two players, record a video for one from their page, analyse it in the cloud with both tracked, and confirm both players' pages list it and the Analysis toggle names them; score a match for one player, attach a video, answer the end question, and confirm the same.
+
+---
+
+### Task 16: Profile names wherever a side is named (added during execution, runs after Task 7)
+
+Added by controller Ruling 10: the spec says a profile side's name is read from `players.name`, and no task above owned the places that name a side from a score log. Without this, a side held by a profile reads "Home" / "Away" on the board, the match page, the score card and the shared text.
+
+**Files:**
+- Modify: `shared/.../scoring/MatchDetails.kt`, `shared/.../scoring/ScoreMatchCard.kt`, `shared/.../scoring/ScoreTagSummary.kt`, `shared/.../matchlist/MatchListBuilder.kt` (its `buildScoreMatchCard` call)
+- Modify call sites: Android `match/PointsFacet.kt`, `match/MatchScreen.kt`, `scoring/ScoringScreen.kt`, `scoring/ScoreEditSheet.kt`, and the view models that feed them (`scoring/ScoringViewModel.kt`, `match/MatchViewModel.kt`); iOS `Match/PointsFacet.swift`, `Match/MatchView.swift`, `Scoring/ScoringView.swift`, `Scoring/ScoreEditSheet.swift`, and their models (`Scoring/ScoringModel.swift`, `Match/MatchModel.swift`)
+- Test: extend `scoring/MatchDetailsTest.kt`, `scoring/ScoreMatchCardTest.kt`, `scoring/ScoreTagSummaryTest.kt`; Android `ScoringViewModelTest` / `MatchViewModelTest` where a state field changes; iOS `ScoringModelTests` / `MatchModelTests` likewise
+
+**Interfaces:**
+- Consumes: `MatchPlayers.names(side, players)` and `ScoreLog.matchPlayers` (Task 3), `RallyApp.players` (Task 2).
+- Produces:
+  - `fun ScoreLog.sideName(side: Side, players: List<Player>): String` and `fun ScoreLog.playersLine(players: List<Player>): String?`, resolving a profile side through `names`; the forms without `players` are **removed**, so every caller is forced through the resolution.
+  - `buildScoreMatchCard(log: ScoreLog, players: List<Player>)`; `ScoreTagSummary`'s export text takes `players` too.
+  - The board, the score editor, the Points facet and the match page header read names through these, with the players list observed from `RallyApp.players` by their view model / model.
+
+- [ ] **Step 1: Write the failing tests**: `a_profile_side_is_named_by_the_profile`, `a_renamed_profile_renames_the_side`, `an_unknown_profile_side_reads_its_label`, `the_card_says_the_profile_won`, `the_export_names_profile_sides`.
+- [ ] **Step 2: Run, expect failures.** `./gradlew --offline :shared:jvmTest --tests "*MatchDetails*" --tests "*ScoreMatchCard*" --tests "*ScoreTagSummary*"`.
+- [ ] **Step 3: Implement**, then update every call site on both platforms.
+- [ ] **Step 4: Run** `./gradlew --offline :shared:jvmTest :androidApp:testDebugUnitTest :androidApp:assembleDebug :androidApp:assembleRelease`, the iOS build, and `ScoringModelTests` / `MatchModelTests` with the xctest recipe: all pass.
+- [ ] **Step 5: Commit** `feat: a side held by a player is named by the player on the board, the match page and the export`.
