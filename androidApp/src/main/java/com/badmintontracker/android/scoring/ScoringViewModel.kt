@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.badmintontracker.shared.model.AnnotationLabel
 import com.badmintontracker.shared.players.MatchPlayers
+import com.badmintontracker.shared.players.Player
+import com.badmintontracker.shared.players.PlayersRepository
 import com.badmintontracker.shared.repo.AnnotationLabelsRepository
 import com.badmintontracker.shared.scoring.BoardNotice
 import com.badmintontracker.shared.scoring.BoardTarget
@@ -37,6 +39,8 @@ data class ScoringUiState(
     /** Null when the match is not on this device - deleted elsewhere, or a cold start. */
     val log: ScoreLog? = null,
     val match: MatchState? = null,
+    /** The coach's players: a side a profile holds is named from these. See [ScoreLog.sideName]. */
+    val players: List<Player> = emptyList(),
     val labels: List<AnnotationLabel> = emptyList(),
     val pendingTagOrdinal: Int? = null,
     val canScore: Boolean = false,
@@ -77,6 +81,7 @@ data class ScoringUiState(
 class ScoringViewModel(
     scoreLogs: ScoreLogsRepository,
     labels: AnnotationLabelsRepository,
+    players: PlayersRepository,
     private val scoreLogId: String,
 ) : ViewModel() {
 
@@ -100,12 +105,15 @@ class ScoringViewModel(
      */
     val state = combine(
         combine(scoreLogs.logs.onEach(::forgetVanishedRally), labels.scoreboardLabels, labels.labels, ::Triple),
-        pending, draft, lastNotice,
-    ) { (logs, board, all), p, d, n -> build(logs, board, all, p, d, n) }
+        players.players, pending, draft, lastNotice,
+    ) { (logs, board, all), roster, p, d, n -> build(logs, roster, board, all, p, d, n) }
         .stateIn(
             viewModelScope,
             SharingStarted.Eagerly,
-            build(scoreLogs.logs.value, labels.scoreboardLabels.value, labels.labels.value, pending.value, draft.value, lastNotice.value),
+            build(
+                scoreLogs.logs.value, players.players.value, labels.scoreboardLabels.value, labels.labels.value,
+                pending.value, draft.value, lastNotice.value,
+            ),
         )
 
     /**
@@ -121,6 +129,7 @@ class ScoringViewModel(
 
     private fun build(
         logs: List<ScoreLog>,
+        roster: List<Player>,
         boardLabels: List<AnnotationLabel>,
         allLabels: List<AnnotationLabel>,
         pendingOrdinal: Int?,
@@ -137,6 +146,7 @@ class ScoringViewModel(
         return ScoringUiState(
             log = log,
             match = match,
+            players = roster,
             labels = boardLabels,
             pendingTagOrdinal = (target as? BoardTarget.Rally)?.ordinal,
             target = target,
@@ -149,7 +159,7 @@ class ScoringViewModel(
             hasAnyLabels = allLabels.isNotEmpty(),
             canRemoveMoment = match?.moments?.isNotEmpty() == true,
             notice = liveNotice,
-            noticeMessage = liveNotice?.let { log?.noticeMessage(it) },
+            noticeMessage = liveNotice?.let { log?.noticeMessage(it, roster) },
             noticeAction = liveNotice?.actionLabel,
         )
     }

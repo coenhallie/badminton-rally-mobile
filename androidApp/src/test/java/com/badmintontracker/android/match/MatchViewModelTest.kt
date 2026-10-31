@@ -1,11 +1,14 @@
 package com.badmintontracker.android.match
 
 import com.badmintontracker.android.testing.FakeClipsRepository
+import com.badmintontracker.android.testing.FakePlayersRepository
 import com.badmintontracker.android.testing.FakeVideosRepository
 import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
+import com.badmintontracker.shared.players.MatchPlayers
+import com.badmintontracker.shared.players.Player
 import com.badmintontracker.shared.scoring.MATCH_VIDEO_REMOVE_FAILED_MESSAGE
 import com.badmintontracker.shared.scoring.MatchFormat
 import com.badmintontracker.shared.scoring.MatchSetup
@@ -17,6 +20,7 @@ import com.russhwolf.settings.MapSettings
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -65,8 +69,9 @@ class MatchViewModelTest {
         localVideos: LocalVideoRepository = localVideos(),
         videos: FakeVideosRepository = FakeVideosRepository(),
         localAnnotations: LocalAnnotationsRepository = LocalAnnotationsRepository(MapSettings()),
+        players: FakePlayersRepository = FakePlayersRepository(),
     ) = MatchViewModel(
-        store, localVideos, clips(), videos, localAnnotations, scoreLogId,
+        store, localVideos, clips(), videos, localAnnotations, players, scoreLogId,
     )
 
     private fun entry(scoreLogId: String, id: String = "e1", stage: AnalyzeStage = AnalyzeStage.LOCAL) =
@@ -94,6 +99,26 @@ class MatchViewModelTest {
         store.replaceEvents(log.id, List(42) { com.badmintontracker.shared.scoring.ScoreEvent.PointTo(Side.HOME) })
         val vm = matchViewModel(store, scoreLogId = log.id)
         vm.state.value.canAddVideo shouldBe true
+    }
+
+    @Test
+    fun a_profile_winner_is_named_by_the_player_and_follows_a_rename() = runTest(dispatcher) {
+        // The card's status line and the page's players line read the side a
+        // profile holds from the players, so a rename reaches this page live.
+        val marco = Player("p-marco", "owner-1", "Marco", null, t0, t0)
+        val players = FakePlayersRepository(listOf(marco))
+        val store = store()
+        val log = store.newMatch()
+        store.updateDetails(log.id, "Thu League", null, MatchPlayers("p-marco", null, emptyList(), listOf("Li")))
+        store.replaceEvents(log.id, List(42) { com.badmintontracker.shared.scoring.ScoreEvent.PointTo(Side.HOME) })
+        val vm = matchViewModel(store, scoreLogId = log.id, players = players)
+        vm.state.value.card?.statusLine shouldBe "Marco won"
+        vm.state.value.card?.playersLine shouldBe "Marco vs Li"
+
+        players.rename("p-marco", "Marco Rossi")
+        advanceUntilIdle()
+        vm.state.value.players shouldBe listOf(marco.copy(name = "Marco Rossi"))
+        vm.state.value.card?.statusLine shouldBe "Marco Rossi won"
     }
 
     @Test

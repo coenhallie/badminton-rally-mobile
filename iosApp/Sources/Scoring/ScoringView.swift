@@ -135,7 +135,7 @@ struct ScoringView: View {
             if moments { noteOpen = false }
         }
         .sheet(isPresented: $editingScore) {
-            ScoreEditSheet(log: log, match: match) { home, away, server in
+            ScoreEditSheet(log: log, match: match, players: model.players) { home, away, server in
                 model.editScore(home: home, away: away, nextServer: server)
             }
         }
@@ -246,7 +246,7 @@ struct ScoringView: View {
     @ViewBuilder
     private func statusStrip(_ model: ScoringModel, _ log: ScoreLog, _ match: MatchState) -> some View {
         let notice = model.noticeMessage
-        let announcement = notice ?? Self.announcement(log, match)
+        let announcement = notice ?? Self.announcement(log, match, model.players)
         HStack {
             Button { dismiss() } label: {
                 Image(systemName: "chevron.left").shuttlType(ShuttlType.titleLarge)
@@ -326,7 +326,7 @@ struct ScoringView: View {
 
             VStack(spacing: 6) {
                 // The side's players, or "Home" / "Away" while nobody has been named.
-                Text(log.sideName(side: side))
+                Text(log.sideName(side: side, players: model.players))
                     .shuttlType(ShuttlType.titleLarge)
                     .foregroundStyle(.white)
                     .multilineTextAlignment(.center)
@@ -577,8 +577,8 @@ struct ScoringView: View {
 
     /// The announcement the point just played earned, or nil. Order is by how much
     /// it matters courtside, and match point outranks game point because it is one.
-    static func announcement(_ log: ScoreLog, _ match: MatchState) -> String? {
-        func name(_ side: Side) -> String { log.sideName(side: side) }
+    static func announcement(_ log: ScoreLog, _ match: MatchState, _ players: [Player]) -> String? {
+        func name(_ side: Side) -> String { log.sideName(side: side, players: players) }
         func both(_ flags: SideFlags, _ what: String) -> String {
             if flags.home && flags.away { return "\(what) - both" }
             return flags.home ? "\(what) - \(name(.home))" : "\(what) - \(name(.away))"

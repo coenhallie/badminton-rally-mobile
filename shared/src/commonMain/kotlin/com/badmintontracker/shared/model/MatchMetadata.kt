@@ -2,7 +2,6 @@ package com.badmintontracker.shared.model
 
 import com.badmintontracker.shared.scoring.MatchFormat
 import com.badmintontracker.shared.scoring.Side
-import com.badmintontracker.shared.scoring.playersLine
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -33,6 +32,3 @@ data class MatchMetadata(
     @SerialName("home_names") val homeNames: List<String> = emptyList(),
     @SerialName("away_names") val awayNames: List<String> = emptyList(),
 )
-
-/** "Coen vs Marco", or null while neither side has been named. Same rule as a score log's. */
-fun MatchMetadata.playersLine(): String? = playersLine(homePlayers, awayPlayers)

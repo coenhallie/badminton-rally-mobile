@@ -1,6 +1,7 @@
 package com.badmintontracker.shared.scoring
 
 import com.badmintontracker.shared.players.MatchPlayers
+import com.badmintontracker.shared.players.Player
 import com.badmintontracker.shared.util.randomUuid
 
 /**
@@ -127,17 +128,15 @@ class MatchScorer(
         return log.events.none { it is ScoreEvent.Retire }
     }
 
-    /** What setting the game to [home]-[away] would do. Null when the match is not on this device. */
-    fun planScoreEdit(home: Int, away: Int, nextServer: Side?): ScoreEditPlan? =
-        repo.get(scoreLogId)?.planScoreEdit(home, away, nextServer)
-
     /**
      * Sets the game being played to [home]-[away], see [ScoreLog.planScoreEdit].
      * False when it could not be saved, and then nothing was written.
      */
     fun editScore(home: Int, away: Int, nextServer: Side?): Boolean {
         if (!canEditScore()) return false
-        val plan = planScoreEdit(home, away, nextServer) ?: return false
+        // Planned with no players: only the plan's events are written, and the
+        // summary, the one part that names a side, is the editor's to show.
+        val plan = repo.get(scoreLogId)?.planScoreEdit(home, away, nextServer, emptyList()) ?: return false
         if (!plan.canSave) return false
         edit { plan.events }
         return true
@@ -230,5 +229,9 @@ data class UndoneRally(
     val after: List<ScoreEvent>,
 )
 
-/** The board's one-line confirmation of an undo. Shared so both boards say the same thing. */
-fun ScoreLog.undoneNotice(undone: UndoneRally): String = "Point to ${sideName(undone.side)} undone"
+/**
+ * The board's one-line confirmation of an undo. Shared so both boards say the same
+ * thing. [players] names a side a profile holds; see [sideName].
+ */
+fun ScoreLog.undoneNotice(undone: UndoneRally, players: List<Player>): String =
+    "Point to ${sideName(undone.side, players)} undone"

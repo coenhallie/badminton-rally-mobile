@@ -327,7 +327,7 @@ private fun scoreItem(
     input: MatchListInput,
     timeZone: TimeZone,
 ): MatchListItem {
-    val card = buildScoreMatchCard(log)
+    val card = buildScoreMatchCard(log, input.players)
     val state = log.state()
     val started = state.points.isNotEmpty() || state.completedGames.isNotEmpty()
     val videoId = clips.firstOrNull()?.videoId

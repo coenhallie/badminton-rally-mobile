@@ -45,7 +45,6 @@ class MatchMetadataSerializationTest {
         row.homePlayers shouldBe listOf("Coen", "Ana")
         row.awayPlayers shouldBe listOf("Marco", "Li")
         row.format shouldBe MatchFormat.MIXED_DOUBLES
-        row.playersLine() shouldBe "Coen / Ana vs Marco / Li"
     }
 
     @Test
@@ -59,7 +58,6 @@ class MatchMetadataSerializationTest {
         row.homePlayers shouldBe emptyList()
         row.awayPlayers shouldBe emptyList()
         row.format.shouldBeNull()
-        row.playersLine().shouldBeNull()
     }
 
     @Test

@@ -1,8 +1,11 @@
 package com.badmintontracker.android.scoring
 
 import com.badmintontracker.android.testing.FakeAnnotationLabelsRepository
+import com.badmintontracker.android.testing.FakePlayersRepository
 import com.badmintontracker.shared.model.AnnotationLabel
 import com.badmintontracker.shared.model.LabelUsage
+import com.badmintontracker.shared.players.MatchPlayers
+import com.badmintontracker.shared.players.Player
 import com.badmintontracker.shared.scoring.BoardTarget
 import com.badmintontracker.shared.scoring.MatchSetup
 import com.badmintontracker.shared.scoring.ScoreEvent
@@ -62,13 +65,14 @@ class ScoringViewModelTest {
     private fun fixture(
         repo: ScoreLogsRepository = repo(),
         labels: List<AnnotationLabel> = listOf(goodShot, forcedError),
+        players: FakePlayersRepository = FakePlayersRepository(),
     ): Triple<ScoreLogsRepository, String, ScoringViewModel> {
         val log = repo.create(
             title = "Thu League",
             rules = ScoringRules.BWF_21,
             setup = MatchSetup(firstServer = Side.HOME),
         )
-        return Triple(repo, log.id, ScoringViewModel(repo, FakeAnnotationLabelsRepository(labels), log.id))
+        return Triple(repo, log.id, ScoringViewModel(repo, FakeAnnotationLabelsRepository(labels), players, log.id))
     }
 
     @Test
@@ -184,7 +188,7 @@ class ScoringViewModelTest {
             "Thu League",
             ScoringRules.BWF_21, MatchSetup(firstServer = Side.HOME),
         )
-        val vm = ScoringViewModel(repo, labels, log.id)
+        val vm = ScoringViewModel(repo, labels, FakePlayersRepository(), log.id)
         advanceUntilIdle()
         vm.state.value.labels.map { it.name } shouldBe listOf("Good shot", "Forced error")
         labels.refreshCount shouldBe 0
@@ -228,6 +232,25 @@ class ScoringViewModelTest {
         advanceUntilIdle()
         vm.state.value.pendingTagOrdinal shouldBe 0
         vm.state.value.match!!.points[0].tags.map { it.labelName } shouldBe listOf("Good shot")
+    }
+
+    @Test
+    fun a_profile_side_is_named_by_the_player_and_follows_a_rename() = runTest(dispatcher) {
+        // The board, its strip and the score editor name a side through the
+        // state's players, so the side a profile holds never reads "Home".
+        val marco = Player("p-marco", "owner-1", "Marco", null, t0, t0)
+        val players = FakePlayersRepository(listOf(marco))
+        val (repo, id, vm) = fixture(players = players)
+        repo.updateDetails(id, "Thu League", null, MatchPlayers("p-marco", null, emptyList(), listOf("Li")))
+        vm.score(Side.HOME)
+        vm.undo()
+        advanceUntilIdle()
+        vm.state.value.players shouldBe listOf(marco)
+        vm.state.value.noticeMessage shouldBe "Point to Marco undone"
+
+        players.rename("p-marco", "Marco Rossi")
+        advanceUntilIdle()
+        vm.state.value.noticeMessage shouldBe "Point to Marco Rossi undone"
     }
 
     @Test
@@ -355,7 +378,7 @@ class ScoringViewModelTest {
                 intervalAt = null, changeEndsAt = null),
             MatchSetup(firstServer = Side.HOME),
         )
-        val vm = ScoringViewModel(repo, FakeAnnotationLabelsRepository(listOf(goodShot)), log.id)
+        val vm = ScoringViewModel(repo, FakeAnnotationLabelsRepository(listOf(goodShot)), FakePlayersRepository(), log.id)
         vm.score(Side.HOME)
         vm.score(Side.HOME)          // home takes game 1
         vm.score(Side.AWAY)          // one point into game 2
@@ -395,7 +418,7 @@ class ScoringViewModelTest {
                 intervalAt = null, changeEndsAt = null),
             MatchSetup(firstServer = Side.HOME),
         )
-        val vm = ScoringViewModel(repo, FakeAnnotationLabelsRepository(listOf(goodShot)), log.id)
+        val vm = ScoringViewModel(repo, FakeAnnotationLabelsRepository(listOf(goodShot)), FakePlayersRepository(), log.id)
         vm.score(Side.HOME)
         advanceUntilIdle()
         vm.state.value.canScore shouldBe false
@@ -414,7 +437,7 @@ class ScoringViewModelTest {
         val (repo, id, first) = fixture()
         first.score(Side.HOME); first.score(Side.AWAY)
         advanceUntilIdle()
-        val reopened = ScoringViewModel(repo, FakeAnnotationLabelsRepository(listOf(goodShot)), id)
+        val reopened = ScoringViewModel(repo, FakeAnnotationLabelsRepository(listOf(goodShot)), FakePlayersRepository(), id)
         advanceUntilIdle()
         reopened.state.value.pendingTagOrdinal shouldBe 1
         reopened.state.value.target shouldBe BoardTarget.Rally(1)

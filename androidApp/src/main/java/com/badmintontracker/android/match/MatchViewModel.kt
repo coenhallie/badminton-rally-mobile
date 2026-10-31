@@ -6,6 +6,8 @@ import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.players.MatchPlayers
+import com.badmintontracker.shared.players.Player
+import com.badmintontracker.shared.players.PlayersRepository
 import com.badmintontracker.shared.repo.ClipsRepository
 import com.badmintontracker.shared.repo.VideosRepository
 import com.badmintontracker.shared.scoring.MatchFormat
@@ -35,6 +37,8 @@ data class MatchPageState(
     /** Null for a video-first or shared match, and for one deleted while open. */
     val log: ScoreLog? = null,
     val match: MatchState? = null,
+    /** The coach's players: a side a profile holds is named from these. See [ScoreLog.sideName]. */
+    val players: List<Player> = emptyList(),
     val card: ScoreMatchCard? = null,
     val tally: ScoreTagSummary = ScoreTagSummary.EMPTY,
     /** A finished match with no video, and no video already picked for it. The
@@ -59,6 +63,7 @@ class MatchViewModel(
     private val clips: ClipsRepository,
     private val videos: VideosRepository,
     private val localAnnotations: LocalAnnotationsRepository,
+    players: PlayersRepository,
     private val scoreLogId: String?,
 ) : ViewModel() {
 
@@ -70,9 +75,10 @@ class MatchViewModel(
     val state = combine(
         scoreLogs.logs,
         localVideos.entries,
+        players.players,
         errors,
-    ) { logs, entries, error ->
-        build(logs, entries, error)
+    ) { logs, entries, roster, error ->
+        build(logs, entries, roster, error)
     }
         // Eagerly, not WhileSubscribed: state.value is read directly in tests and
         // by the navigation callbacks, both without a collector attached. The
@@ -84,7 +90,7 @@ class MatchViewModel(
         .stateIn(
             viewModelScope,
             SharingStarted.Eagerly,
-            build(scoreLogs.logs.value, localVideos.entries.value, errors.value),
+            build(scoreLogs.logs.value, localVideos.entries.value, players.players.value, errors.value),
         )
 
     /**
@@ -159,9 +165,10 @@ class MatchViewModel(
     private fun build(
         logs: List<ScoreLog>,
         entries: List<LocalVideoEntry>,
+        roster: List<Player>,
         error: String?,
     ): MatchPageState {
-        val log = logs.firstOrNull { it.id == scoreLogId } ?: return MatchPageState(error = error)
+        val log = logs.firstOrNull { it.id == scoreLogId } ?: return MatchPageState(players = roster, error = error)
         val match = log.state()
         // An entry can exist for a while before the pipeline gives the match a
         // videoId (LOCAL, UPLOADING, PROCESSING); gating on videoId alone would
@@ -170,7 +177,8 @@ class MatchViewModel(
         return MatchPageState(
             log = log,
             match = match,
-            card = buildScoreMatchCard(log),
+            players = roster,
+            card = buildScoreMatchCard(log, roster),
             tally = buildScoreTagSummary(match),
             // isPlayable, not `status != LIVE`: the board's Done button leaves a
             // won match at LIVE on purpose, so undo stays reachable.

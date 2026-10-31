@@ -1,6 +1,7 @@
 package com.badmintontracker.shared.scoring
 
 import com.badmintontracker.shared.players.MatchPlayers
+import com.badmintontracker.shared.players.Player
 import com.russhwolf.settings.MapSettings
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
@@ -37,7 +38,7 @@ class ScoreEditTest {
         // lines up with the clips the video is cut into.
         val b = board()
         b.play(H, A, H, A, A)
-        val plan = b.log.planScoreEdit(home = 4, away = 3, nextServer = null)
+        val plan = b.log.planScoreEdit(home = 4, away = 3, nextServer = null, players = emptyList())
         plan.problem.shouldBeNull()
         plan.canSave shouldBe true
         plan.summary shouldBe "Adds 2 rallies for Home."
@@ -53,7 +54,7 @@ class ScoreEditTest {
         b.tag(1, "Net")
         b.tag(2, "Lift", comment = "too short")
         b.tag(3, "Drop")
-        val plan = b.log.planScoreEdit(home = 1, away = 2, nextServer = null)
+        val plan = b.log.planScoreEdit(home = 1, away = 2, nextServer = null, players = emptyList())
         plan.summary shouldBe "Removes 1 rally from Home, with its tags or note."
         val after = foldMatchState(b.log.rules, b.log.setup, plan.events)
         after.currentGame shouldBe SideScore(home = 1, away = 2)
@@ -71,7 +72,7 @@ class ScoreEditTest {
         b.play(H, A, A)
         b.tag(2, "Clear")
         b.tag(2, "Drive", comment = "late")
-        val plan = b.log.planScoreEdit(home = 0, away = 2, nextServer = null)
+        val plan = b.log.planScoreEdit(home = 0, away = 2, nextServer = null, players = emptyList())
         val after = foldMatchState(b.log.rules, b.log.setup, plan.events)
         after.points.map { it.wonBy } shouldBe listOf(A, A)
         after.points[1].tags.single().labelName shouldBe "Drive"
@@ -85,7 +86,7 @@ class ScoreEditTest {
         b.play(H, 21)
         b.tag(20, "Winner")
         b.play(A, H, A)
-        val plan = b.log.planScoreEdit(home = 0, away = 0, nextServer = null)
+        val plan = b.log.planScoreEdit(home = 0, away = 0, nextServer = null, players = emptyList())
         plan.summary shouldBe "Removes 1 rally from Home and 2 from Away."
         plan.events shouldBe b.log.events.dropPointsFrom(21)
         val after = foldMatchState(b.log.rules, b.log.setup, plan.events)
@@ -96,7 +97,7 @@ class ScoreEditTest {
     @Test
     fun a_score_the_game_would_have_ended_before_is_refused_and_changes_nothing() {
         val b = board()
-        val plan = b.log.planScoreEdit(home = 25, away = 10, nextServer = null)
+        val plan = b.log.planScoreEdit(home = 25, away = 10, nextServer = null, players = emptyList())
         plan.problem shouldBe "The game would be over before 25-10."
         plan.canSave shouldBe false
         plan.events shouldBe b.log.events
@@ -108,21 +109,21 @@ class ScoreEditTest {
         b.play(A, 19)
         b.play(H, 21)
         b.state.isOver shouldBe true
-        b.log.planScoreEdit(home = 21, away = 20, nextServer = null).problem shouldBe
+        b.log.planScoreEdit(home = 21, away = 20, nextServer = null, players = emptyList()).problem shouldBe
             "The game would be over before 21-20."
     }
 
     @Test
     fun negative_scores_are_refused() {
         val b = board()
-        b.log.planScoreEdit(home = -1, away = 0, nextServer = null).problem shouldBe "A score can't be below 0."
+        b.log.planScoreEdit(home = -1, away = 0, nextServer = null, players = emptyList()).problem shouldBe "A score can't be below 0."
     }
 
     @Test
     fun a_score_that_ends_the_game_is_accepted_and_says_so() {
         val b = board()
         repeat(19) { b.play(H, A) }
-        val plan = b.log.planScoreEdit(home = 21, away = 19, nextServer = null)
+        val plan = b.log.planScoreEdit(home = 21, away = 19, nextServer = null, players = emptyList())
         plan.problem.shouldBeNull()
         plan.summary shouldBe "Adds 2 rallies for Home. Home takes game 1."
         val after = foldMatchState(b.log.rules, b.log.setup, plan.events)
@@ -137,7 +138,7 @@ class ScoreEditTest {
     fun a_score_that_ends_the_match_says_so_and_nobody_serves_next() {
         val b = board(ScoringRules.of(GamePoints.ELEVEN, MatchSets.ONE))
         b.play(A, 3)
-        val plan = b.log.planScoreEdit(home = 11, away = 3, nextServer = null)
+        val plan = b.log.planScoreEdit(home = 11, away = 3, nextServer = null, players = emptyList())
         plan.summary shouldBe "Adds 11 rallies for Home. Home wins the match."
         plan.server.shouldBeNull()
         plan.servers shouldBe SideFlags.NONE
@@ -147,7 +148,7 @@ class ScoreEditTest {
     fun lowering_the_winner_of_a_finished_match_puts_it_back_in_play() {
         val b = board(ScoringRules.of(GamePoints.ELEVEN, MatchSets.ONE))
         b.play(H, 11)
-        val plan = b.log.planScoreEdit(home = 10, away = 0, nextServer = null)
+        val plan = b.log.planScoreEdit(home = 10, away = 0, nextServer = null, players = emptyList())
         plan.summary shouldBe "Removes 1 rally from Home. The match is back in play."
         foldMatchState(b.log.rules, b.log.setup, plan.events).isOver shouldBe false
     }
@@ -157,7 +158,7 @@ class ScoreEditTest {
         // Adding 22 and 21 naively, one side's run first, would end the game at
         // 21-0. The rallies are interleaved so every score on the way is live.
         val b = board()
-        val plan = b.log.planScoreEdit(home = 22, away = 21, nextServer = null)
+        val plan = b.log.planScoreEdit(home = 22, away = 21, nextServer = null, players = emptyList())
         plan.problem.shouldBeNull()
         val after = foldMatchState(b.log.rules, b.log.setup, plan.events)
         after.gameIndex shouldBe 0
@@ -170,7 +171,7 @@ class ScoreEditTest {
         // 15-point games cap at 21: 21-20 is a finished game, reachable only by
         // staying level almost all the way.
         val b = board(ScoringRules.of(GamePoints.FIFTEEN, MatchSets.THREE))
-        val plan = b.log.planScoreEdit(home = 21, away = 20, nextServer = null)
+        val plan = b.log.planScoreEdit(home = 21, away = 20, nextServer = null, players = emptyList())
         plan.problem.shouldBeNull()
         foldMatchState(b.log.rules, b.log.setup, plan.events).completedGames shouldBe
             listOf(SideScore(home = 21, away = 20))
@@ -181,13 +182,13 @@ class ScoreEditTest {
         val b = board()
         b.play(A, H)
         b.state.server shouldBe H
-        val kept = b.log.planScoreEdit(home = 3, away = 3, nextServer = null)
+        val kept = b.log.planScoreEdit(home = 3, away = 3, nextServer = null, players = emptyList())
         kept.servers shouldBe SideFlags(home = true, away = true)
         // Left alone, the side serving now keeps the serve.
         kept.server shouldBe H
         kept.events.last() shouldBe ScoreEvent.PointTo(H)
 
-        val handed = b.log.planScoreEdit(home = 3, away = 3, nextServer = A)
+        val handed = b.log.planScoreEdit(home = 3, away = 3, nextServer = A, players = emptyList())
         handed.server shouldBe A
         handed.events.last() shouldBe ScoreEvent.PointTo(A)
         foldMatchState(b.log.rules, b.log.setup, handed.events).server shouldBe A
@@ -197,7 +198,7 @@ class ScoreEditTest {
     fun only_the_raised_side_can_serve_next() {
         val b = board()
         b.play(A, H)
-        val plan = b.log.planScoreEdit(home = 1, away = 3, nextServer = H)
+        val plan = b.log.planScoreEdit(home = 1, away = 3, nextServer = H, players = emptyList())
         plan.servers shouldBe SideFlags(home = false, away = true)
         plan.server shouldBe A
     }
@@ -206,7 +207,7 @@ class ScoreEditTest {
     fun a_removal_alone_leaves_the_serve_with_whoever_won_the_last_rally_kept() {
         val b = board()
         b.play(H, A, A)
-        val plan = b.log.planScoreEdit(home = 1, away = 1, nextServer = H)
+        val plan = b.log.planScoreEdit(home = 1, away = 1, nextServer = H, players = emptyList())
         plan.servers shouldBe SideFlags(home = false, away = true)
         plan.server shouldBe A
     }
@@ -215,7 +216,7 @@ class ScoreEditTest {
     fun the_score_as_it_stands_is_no_change() {
         val b = board()
         b.play(H, A)
-        val plan = b.log.planScoreEdit(home = 1, away = 1, nextServer = null)
+        val plan = b.log.planScoreEdit(home = 1, away = 1, nextServer = null, players = emptyList())
         plan.problem.shouldBeNull()
         plan.summary shouldBe "No change."
         plan.canSave shouldBe false
@@ -225,7 +226,16 @@ class ScoreEditTest {
     fun the_sides_are_called_by_their_players_once_named() {
         val b = board()
         b.scorer.updateDetails("Thu League", null, MatchPlayers(null, null, listOf("Coen"), listOf("Marco")))
-        b.log.planScoreEdit(home = 0, away = 1, nextServer = null).summary shouldBe "Adds 1 rally for Marco."
+        b.log.planScoreEdit(home = 0, away = 1, nextServer = null, players = emptyList()).summary shouldBe "Adds 1 rally for Marco."
+    }
+
+    @Test
+    fun the_summary_names_a_profile_side_by_the_profile() {
+        val b = board()
+        b.scorer.updateDetails("Thu League", null, MatchPlayers("player-marco", null, emptyList(), listOf("Li")))
+        val marco = Player("player-marco", "owner-1", "Marco", null, t0, t0)
+        b.log.planScoreEdit(home = 1, away = 0, nextServer = null, players = listOf(marco)).summary shouldBe
+            "Adds 1 rally for Marco."
     }
 
     @Test
@@ -271,7 +281,7 @@ class ScoreEditTest {
         b.play(H, A, H)
         b.scorer.logMoment(listOf(PointTag("Net", "slate")))
         b.play(A)
-        val plan = b.log.planScoreEdit(home = 1, away = 2, nextServer = null)
+        val plan = b.log.planScoreEdit(home = 1, away = 2, nextServer = null, players = emptyList())
         plan.canSave shouldBe true
         val after = foldMatchState(b.log.rules, b.log.setup, plan.events)
         after.points.map { it.wonBy } shouldBe listOf(H, A, A)
@@ -289,7 +299,7 @@ class ScoreEditTest {
         b.scorer.logMoment(listOf(PointTag("Net", "slate")))
         b.play(A)
         b.state.gameIndex shouldBe 1
-        val plan = b.log.planScoreEdit(home = 1, away = 2, nextServer = null)
+        val plan = b.log.planScoreEdit(home = 1, away = 2, nextServer = null, players = emptyList())
         plan.canSave shouldBe true
         val after = foldMatchState(b.log.rules, b.log.setup, plan.events)
         after.points.map { it.wonBy } shouldBe listOf(H, H, H, H, A, A)
@@ -300,7 +310,7 @@ class ScoreEditTest {
     fun added_rallies_go_after_a_moment_at_the_start_of_the_game() {
         val b = board()
         b.scorer.logMoment(listOf(PointTag("Net", "slate")))
-        val plan = b.log.planScoreEdit(home = 2, away = 0, nextServer = null)
+        val plan = b.log.planScoreEdit(home = 2, away = 0, nextServer = null, players = emptyList())
         val after = foldMatchState(b.log.rules, b.log.setup, plan.events)
         after.pointCount shouldBe 2
         after.moments.single().afterPoints shouldBe 0

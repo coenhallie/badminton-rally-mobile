@@ -61,6 +61,7 @@ import com.badmintontracker.android.ui.icons.ShuttlIcons
 import com.badmintontracker.android.ui.theme.ShuttlRadius
 import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.android.ui.theme.ShuttlTypeExtras
+import com.badmintontracker.shared.players.Player
 import com.badmintontracker.shared.scoring.MAX_EDIT_SCORE
 import com.badmintontracker.shared.scoring.MatchState
 import com.badmintontracker.shared.scoring.SCORE_EDIT_BLANK
@@ -88,6 +89,7 @@ import com.badmintontracker.shared.scoring.sideName
 internal fun ScoreEditSheet(
     log: ScoreLog,
     match: MatchState,
+    players: List<Player>,
     onSave: (home: Int, away: Int, nextServer: Side?) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -98,8 +100,8 @@ internal fun ScoreEditSheet(
 
     val home = homeText.toIntOrNull()
     val away = awayText.toIntOrNull()
-    val plan = remember(log, home, away, requestedServer) {
-        if (home == null || away == null) null else log.planScoreEdit(home, away, requestedServer)
+    val plan = remember(log, players, home, away, requestedServer) {
+        if (home == null || away == null) null else log.planScoreEdit(home, away, requestedServer, players)
     }
     val left = if (match.endsSwapCount % 2 == 0) Side.HOME else Side.AWAY
 
@@ -136,7 +138,7 @@ internal fun ScoreEditSheet(
                     val value = text.toIntOrNull()
                     ScoreTile(
                         side = side,
-                        name = log.sideName(side),
+                        name = log.sideName(side, players),
                         text = text,
                         onText = setText,
                         serve = when {

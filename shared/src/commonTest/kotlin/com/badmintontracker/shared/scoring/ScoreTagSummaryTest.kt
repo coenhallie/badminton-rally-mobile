@@ -1,6 +1,8 @@
 package com.badmintontracker.shared.scoring
 
 import com.badmintontracker.shared.model.LabelCount
+import com.badmintontracker.shared.players.MatchPlayers
+import com.badmintontracker.shared.players.Player
 import com.russhwolf.settings.MapSettings
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
@@ -111,12 +113,32 @@ class ScoreTagSummaryTest {
             createdAt = kotlinx.datetime.Instant.parse("2026-08-27T18:00:00Z"),
             updatedAt = kotlinx.datetime.Instant.parse("2026-08-27T18:00:00Z"),
         )
-        exportMatchText(log) shouldBe """
+        exportMatchText(log, emptyList()) shouldBe """
             Thu League
             1-1
 
             1. 1-0 Home - Good shot (cross court)
             2. 1-1 Away
+        """.trimIndent()
+    }
+
+    @Test
+    fun the_export_names_profile_sides() {
+        val at = Instant.parse("2026-10-13T19:42:00Z")
+        val marco = Player("player-marco", "owner-1", "Marco", null, at, at)
+        val repo = ScoreLogsRepository(MapSettings(), now = { at }, ownerId = { "o" })
+        val log = repo.create(title = "Club night", rules = ScoringRules.BWF_21, setup = MatchSetup(Side.HOME))
+        repo.updateDetails(log.id, "Club night", null, MatchPlayers("player-marco", null, emptyList(), listOf("Li")))
+        val scorer = MatchScorer(repo, log.id)
+        scorer.score(Side.HOME)
+        scorer.score(Side.AWAY)
+        exportMatchText(repo.get(log.id)!!, listOf(marco), TimeZone.UTC) shouldBe """
+            Club night
+            Marco vs Li
+            1-1
+
+            1. 1-0 Marco
+            2. 1-1 Li
         """.trimIndent()
     }
 
@@ -130,7 +152,7 @@ class ScoreTagSummaryTest {
             createdAt = kotlinx.datetime.Instant.parse("2026-08-27T18:00:00Z"),
             updatedAt = kotlinx.datetime.Instant.parse("2026-08-27T18:00:00Z"),
         )
-        exportMatchText(log) shouldBe """
+        exportMatchText(log, emptyList()) shouldBe """
             Thu League
             Not started
         """.trimIndent()
@@ -166,7 +188,7 @@ class ScoreTagSummaryTest {
         val scorer = MatchScorer(repo, log.id)
         scorer.logMoment(listOf(PointTag("Unforced error", "red"), PointTag("Net", "slate")))
         scorer.commitMomentDraft(scorer.openMomentDraft()!!.withText("backhand clear lands short"))
-        exportMatchText(repo.get(log.id)!!, TimeZone.UTC) shouldBe """
+        exportMatchText(repo.get(log.id)!!, emptyList(), TimeZone.UTC) shouldBe """
             Club night
             2 moments
 
@@ -174,7 +196,7 @@ class ScoreTagSummaryTest {
             At 19:42: backhand clear lands short
         """.trimIndent()
         scorer.score(Side.HOME)
-        exportMatchText(repo.get(log.id)!!, TimeZone.UTC).lines().last() shouldBe "1. 1-0 Home"
+        exportMatchText(repo.get(log.id)!!, emptyList(), TimeZone.UTC).lines().last() shouldBe "1. 1-0 Home"
     }
 
     @Test
@@ -184,6 +206,6 @@ class ScoreTagSummaryTest {
         val scorer = MatchScorer(repo, log.id)
         val draft = scorer.openMomentDraft()!!.toggle(PointTag("Good shot", "green")).withText("note")
         scorer.commitMomentDraft(draft)
-        exportMatchText(repo.get(log.id)!!, TimeZone.UTC).lines().last() shouldBe "At 19:42: Good shot (note)"
+        exportMatchText(repo.get(log.id)!!, emptyList(), TimeZone.UTC).lines().last() shouldBe "At 19:42: Good shot (note)"
     }
 }

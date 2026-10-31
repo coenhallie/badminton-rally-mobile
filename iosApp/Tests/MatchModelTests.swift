@@ -36,12 +36,13 @@ final class MatchModelTests: XCTestCase {
         scoreLogs: ScoreLogsRepository,
         scoreLogId: String?,
         localVideos: LocalVideoRepository = IosTestDoublesKt.testLocalVideoRepository(),
-        videos: RecordingVideosRepository = IosTestDoublesKt.testVideosRepository()
+        videos: RecordingVideosRepository = IosTestDoublesKt.testVideosRepository(),
+        players: PlayersRepository? = nil
     ) -> MatchModel {
         MatchModel(
             scoreLogs: scoreLogs, localVideos: localVideos, clips: IosTestDoublesKt.testClipsRepository(),
             videos: videos, localAnnotations: IosTestDoublesKt.testLocalAnnotationsRepository(),
-            scoreLogId: scoreLogId
+            players: players, scoreLogId: scoreLogId
         )
     }
 
@@ -74,6 +75,30 @@ final class MatchModelTests: XCTestCase {
         store.replaceEvents(id: log.id, events: Array(repeating: ScoreEventPointTo(side: .home), count: 42))
         let m = model(scoreLogs: store, scoreLogId: log.id)
         XCTAssertTrue(m.canAddVideo)
+    }
+
+    func testAProfileWinnerIsNamedByThePlayerAndFollowsARename() async throws {
+        // The card's status line and the page's players line read the side a
+        // profile holds from the players, so a rename reaches this page live.
+        let marco = Player(id: "p-marco", ownerId: "owner-1", name: "Marco", racketArm: nil, createdAt: t0, updatedAt: t0)
+        let players = PlayersTestDoublesKt.testPlayersRepository(players: [marco])
+        let store = store()
+        let log = newMatch(store)
+        store.updateDetails(
+            id: log.id, title: "Thu League", format: nil,
+            players: MatchPlayers(homePlayerId: "p-marco", awayPlayerId: nil, homePlayers: [], awayPlayers: ["Li"])
+        )
+        store.replaceEvents(id: log.id, events: Array(repeating: ScoreEventPointTo(side: .home), count: 42))
+        let m = model(scoreLogs: store, scoreLogId: log.id, players: players)
+        XCTAssertEqual(m.card?.statusLine, "Marco won")
+        XCTAssertEqual(m.card?.playersLine, "Marco vs Li")
+
+        let loops = Task { await m.start() }
+        defer { loops.cancel() }
+        _ = try await players.rename(id: "p-marco", name: "Marco Rossi")
+        let renamed = await ObservationLifecycle.wait { m.card?.statusLine == "Marco Rossi won" }
+        XCTAssertTrue(renamed, "the page did not follow the rename")
+        XCTAssertEqual(m.players.map(\.name), ["Marco Rossi"])
     }
 
     func testAMatchEndedByHandCanTakeAVideo() {
@@ -246,7 +271,10 @@ final class MatchModelTests: XCTestCase {
         // this sees them: the model must be released once the page has gone.
         let store = store()
         let log = newMatch(store)
-        var m: MatchModel? = model(scoreLogs: store, scoreLogId: log.id)
+        var m: MatchModel? = model(
+            scoreLogs: store, scoreLogId: log.id,
+            players: PlayersTestDoublesKt.testPlayersRepository(players: [])
+        )
         weak var released = m
 
         let returned = await ObservationLifecycle.runAndCancel { [m] in await m?.start() }

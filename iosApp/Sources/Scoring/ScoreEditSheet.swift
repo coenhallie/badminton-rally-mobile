@@ -16,6 +16,8 @@ import SwiftUI
 struct ScoreEditSheet: View {
     let log: ScoreLog
     let match: MatchState
+    /// The coach's players: a side a profile holds is named from these.
+    let players: [Player]
     let onSave: (_ home: Int, _ away: Int, _ nextServer: Side?) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -26,9 +28,13 @@ struct ScoreEditSheet: View {
     @FocusState private var focused: Side?
     @State private var contentHeight: CGFloat = 0
 
-    init(log: ScoreLog, match: MatchState, onSave: @escaping (_ home: Int, _ away: Int, _ nextServer: Side?) -> Void) {
+    init(
+        log: ScoreLog, match: MatchState, players: [Player],
+        onSave: @escaping (_ home: Int, _ away: Int, _ nextServer: Side?) -> Void
+    ) {
         self.log = log
         self.match = match
+        self.players = players
         self.onSave = onSave
         _homeText = State(initialValue: "\(match.currentGame.home)")
         _awayText = State(initialValue: "\(match.currentGame.away)")
@@ -36,7 +42,7 @@ struct ScoreEditSheet: View {
 
     private var plan: ScoreEditPlan? {
         guard let home = Int32(homeText), let away = Int32(awayText) else { return nil }
-        return log.planScoreEdit(home: home, away: away, nextServer: requestedServer)
+        return log.planScoreEdit(home: home, away: away, nextServer: requestedServer, players: players)
     }
 
     var body: some View {
@@ -108,7 +114,7 @@ struct ScoreEditSheet: View {
 
     @ViewBuilder
     private func tile(_ side: Side, _ plan: ScoreEditPlan?) -> some View {
-        let name = log.sideName(side: side)
+        let name = log.sideName(side: side, players: players)
         let text = side == .home ? $homeText : $awayText
         let value = Int(text.wrappedValue)
         // While a field is blank there is no plan: the serve shows where it is

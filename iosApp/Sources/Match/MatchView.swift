@@ -220,7 +220,7 @@ struct MatchView: View {
     // scored match that was later filmed keeps the log as its record.
     private var detailsLine: String? {
         MatchDetailsKt.matchDetailsLine(
-            playersLine: matchModel.log?.playersLine() ?? ownedVideo?.playersLine,
+            playersLine: matchModel.log?.playersLine(players: matchModel.players) ?? ownedVideo?.playersLine,
             format: matchModel.log?.format ?? ownedVideo?.format
         )
     }
@@ -744,7 +744,7 @@ struct MatchView: View {
             if section == .points {
                 if let log = matchModel.log {
                     PointsFacet(
-                        log: log, card: matchModel.card, tally: matchModel.tally,
+                        log: log, players: matchModel.players, card: matchModel.card, tally: matchModel.tally,
                         timeline: matchModel.match.map { MatchTimelineKt.matchTimeline(state: $0) } ?? [],
                         match: matchModel.match,
                         onScore: { scoringTarget = ScoringRoute(scoreLogId: log.id) }
@@ -825,7 +825,7 @@ struct MatchView: View {
                         }
                     }
                     if let log = matchModel.log {
-                        ShareLink(item: ScoreTagSummaryKt.exportMatchText(log: log)) {
+                        ShareLink(item: ScoreTagSummaryKt.exportMatchText(log: log, players: matchModel.players)) {
                             Label("Export as text", systemImage: "doc.text")
                         }
                     }

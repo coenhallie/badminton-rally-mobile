@@ -16,6 +16,9 @@ final class ScoringModel {
     private(set) var log: ScoreLog? = nil
     private(set) var match: MatchState? = nil
     private(set) var labels: [AnnotationLabel] = []
+    /// The coach's players: a side a profile holds is named from these, so the
+    /// board, its strip and the score editor follow a rename.
+    private(set) var players: [Player] = []
 
     /// Whether the account has any labels at all, board-scoped or not. Lets the
     /// board tell "you have not made any labels" apart from "none of yours are
@@ -69,7 +72,7 @@ final class ScoringModel {
         guard log != nil, let lastNotice, scorer.isLive(notice: lastNotice) else { return nil }
         return lastNotice
     }
-    var noticeMessage: String? { notice.flatMap { n in log?.noticeMessage(notice: n) } }
+    var noticeMessage: String? { notice.flatMap { n in log?.noticeMessage(notice: n, players: players) } }
     var noticeAction: String? { notice?.actionLabel }
 
     /// True until the first point: the window in which the board can hand the
@@ -83,15 +86,20 @@ final class ScoringModel {
     /// is also what the surface actually needs, since it reads the board-scoped
     /// subset of the cache and never refreshes on entry.
     private let labelsRepository: AnnotationLabelsRepository?
+    /// Nil in tests that name no player: every side then reads its typed names.
+    private let playersRepository: PlayersRepository?
 
     init(
         scoreLogs: ScoreLogsRepository,
         labelsRepository: AnnotationLabelsRepository? = nil,
         scoreboardLabels: [AnnotationLabel] = [],
+        playersRepository: PlayersRepository? = nil,
         scoreLogId: String
     ) {
         self.scoreLogs = scoreLogs
         self.labelsRepository = labelsRepository
+        self.playersRepository = playersRepository
+        self.players = playersRepository?.players.value ?? []
         self.scoreLogId = scoreLogId
         self.scorer = MatchScorer(repo: scoreLogs, scoreLogId: scoreLogId)
         self.labels = labelsRepository?.scoreboardLabels.value ?? scoreboardLabels
@@ -103,7 +111,10 @@ final class ScoringModel {
     }
 
     convenience init(rally: RallyApp, scoreLogId: String) {
-        self.init(scoreLogs: rally.scoreLogs, labelsRepository: rally.labels, scoreLogId: scoreLogId)
+        self.init(
+            scoreLogs: rally.scoreLogs, labelsRepository: rally.labels,
+            playersRepository: rally.players, scoreLogId: scoreLogId
+        )
     }
 
     /// Runs for as long as the board is on screen, as structured children of
@@ -126,6 +137,14 @@ final class ScoringModel {
                     guard let self else { return }
                     for await all in labelsRepository.labels {
                         self.hasAnyLabels = !all.isEmpty
+                    }
+                }
+            }
+            if let playersRepository {
+                group.addTask { @MainActor [weak self] in
+                    guard let self else { return }
+                    for await list in playersRepository.players {
+                        self.players = list
                     }
                 }
             }

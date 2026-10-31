@@ -15,6 +15,8 @@ import Shared
 /// section row counts on.
 struct PointsFacet: View {
     let log: ScoreLog
+    /// The coach's players: a side a profile holds is named from these.
+    let players: [Player]
     let card: ScoreMatchCard?
     let tally: ScoreTagSummary
     let timeline: [TimelineEntry]
@@ -34,7 +36,7 @@ struct PointsFacet: View {
                 // The legend for the score above it: which number is whose. Always
                 // drawn, unlike the list row's players line, so it falls back to
                 // Home vs Away.
-                Text("\(log.sideName(side: .home)) vs \(log.sideName(side: .away))")
+                Text("\(log.sideName(side: .home, players: players)) vs \(log.sideName(side: .away, players: players))")
                     .shuttlType(ShuttlType.bodyLarge)
                     .foregroundStyle(Shuttl.text)
                 Text([card?.statusLine, log.format?.label, rulesSummary(log.rules)].compactMap { $0 }.joined(separator: " · "))
@@ -121,7 +123,7 @@ struct PointsFacet: View {
                 Text("\(point.scoreAfter.home)-\(point.scoreAfter.away)")
                     .shuttlType(ShuttlType.titleMedium)
                     .foregroundStyle(Shuttl.text)
-                Text(log.sideName(side: point.wonBy))
+                Text(log.sideName(side: point.wonBy, players: players))
                     .shuttlType(ShuttlType.bodyLarge)
                     .foregroundStyle(Shuttl.textSecondary)
             }

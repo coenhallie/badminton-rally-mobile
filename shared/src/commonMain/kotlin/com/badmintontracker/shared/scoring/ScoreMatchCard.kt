@@ -1,5 +1,7 @@
 package com.badmintontracker.shared.scoring
 
+import com.badmintontracker.shared.players.Player
+
 /**
  * One score-only match as a list row. Every string on it is built here rather than
  * per platform, for the same reason [com.badmintontracker.shared.model.buildMatchLabelSummary]
@@ -67,7 +69,8 @@ fun scoreButtonLabel(state: MatchState): String = when {
 fun ScoreLog.isPlayable(): Boolean =
     status == ScoreLogStatus.LIVE && !state().isOver
 
-fun buildScoreMatchCard(log: ScoreLog): ScoreMatchCard {
+/** [players] names a side a profile holds; see [sideName]. */
+fun buildScoreMatchCard(log: ScoreLog, players: List<Player>): ScoreMatchCard {
     val state = log.state()
     val winner = state.winner
     return ScoreMatchCard(
@@ -75,10 +78,10 @@ fun buildScoreMatchCard(log: ScoreLog): ScoreMatchCard {
         videoId = log.videoId,
         title = log.title,
         createdAtEpochMs = log.createdAt.toEpochMilliseconds(),
-        playersLine = log.playersLine(),
+        playersLine = log.playersLine(players),
         scoreLine = scoreLine(state),
         statusLine = when {
-            winner != null -> "${log.sideName(winner)} won"
+            winner != null -> "${log.sideName(winner, players)} won"
             log.isPlayable() -> "Scoring"
             // Closed by hand before anyone won. The score line above already says
             // where it stopped, so this only has to say that it did.

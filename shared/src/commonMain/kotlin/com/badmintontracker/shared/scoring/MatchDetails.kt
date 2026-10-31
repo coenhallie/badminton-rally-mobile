@@ -1,5 +1,8 @@
 package com.badmintontracker.shared.scoring
 
+import com.badmintontracker.shared.players.Player
+import com.badmintontracker.shared.players.matchPlayers
+import com.badmintontracker.shared.players.names
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -73,7 +76,16 @@ fun sideName(homePlayers: List<String>, awayPlayers: List<String>, side: Side): 
     return if (players.isEmpty()) side.label else players.joinToString(" / ")
 }
 
-fun ScoreLog.sideName(side: Side): String = sideName(homePlayers, awayPlayers, side)
+/**
+ * What [side] of this match is called: a side held by one of the coach's players
+ * reads the player's current name from [players], so a rename reaches every
+ * surface; a side with typed names reads those. A profile [players] does not hold
+ * (deleted elsewhere, or not loaded yet) reads as where it stands. There is no
+ * form without [players]: a caller that skipped them would name a profile's side
+ * "Home".
+ */
+fun ScoreLog.sideName(side: Side, players: List<Player>): String =
+    sideName(matchPlayers.names(Side.HOME, players), matchPlayers.names(Side.AWAY, players), side)
 
 /**
  * "Coen vs Marco", or null while neither side has been named: "Home vs Away" says
@@ -84,7 +96,9 @@ fun playersLine(homePlayers: List<String>, awayPlayers: List<String>): String? =
     if (homePlayers.isEmpty() && awayPlayers.isEmpty()) null
     else "${sideName(homePlayers, awayPlayers, Side.HOME)} vs ${sideName(homePlayers, awayPlayers, Side.AWAY)}"
 
-fun ScoreLog.playersLine(): String? = playersLine(homePlayers, awayPlayers)
+/** [playersLine] for this match, each side named as [sideName] names it. */
+fun ScoreLog.playersLine(players: List<Player>): String? =
+    playersLine(matchPlayers.names(Side.HOME, players), matchPlayers.names(Side.AWAY, players))
 
 /**
  * The one line a match page prints about who played and how: "Coen vs Marco ·

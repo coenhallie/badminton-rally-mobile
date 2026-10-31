@@ -49,7 +49,7 @@ final class ScoringModelTests: XCTestCase {
         XCTAssertEqual(stored?.homePlayers, ["Coen", "Ana"])
         XCTAssertEqual(stored?.awayPlayers, ["Marco"])
         XCTAssertEqual(model.match?.currentGame.home, 1)
-        XCTAssertEqual(model.log.map { $0.sideName(side: .home) }, "Coen / Ana")
+        XCTAssertEqual(model.log.map { $0.sideName(side: .home, players: []) }, "Coen / Ana")
     }
 
     func testTheOpeningServeCanBeSwitchedUntilTheFirstPoint() {
@@ -200,6 +200,32 @@ final class ScoringModelTests: XCTestCase {
         model.undo()
         XCTAssertEqual(model.pendingTagOrdinal, 0)
         XCTAssertEqual(model.match?.points[0].tags.map(\.labelName), ["Good shot"])
+    }
+
+    func testAProfileSideIsNamedByThePlayerAndFollowsARename() async throws {
+        // The board, its strip and the score editor name a side through the
+        // model's players, so the side a profile holds never reads "Home".
+        let marco = Player(id: "p-marco", ownerId: "owner-1", name: "Marco", racketArm: nil, createdAt: t0, updatedAt: t0)
+        let players = PlayersTestDoublesKt.testPlayersRepository(players: [marco])
+        let repo = SwiftInteropKt.testScoreLogsRepository(now: t0, ownerId: "owner-1")
+        let log = repo.create(title: "Thu League", rules: ScoringRules.companion.BWF_21, setup: MatchSetup(firstServer: .home))
+        repo.updateDetails(
+            id: log.id, title: "Thu League", format: nil,
+            players: MatchPlayers(homePlayerId: "p-marco", awayPlayerId: nil, homePlayers: [], awayPlayers: ["Li"])
+        )
+        let model = ScoringModel(
+            scoreLogs: repo, scoreboardLabels: [goodShot], playersRepository: players, scoreLogId: log.id
+        )
+        model.score(.home)
+        model.undo()
+        XCTAssertEqual(model.players, [marco])
+        XCTAssertEqual(model.noticeMessage, "Point to Marco undone")
+
+        let loops = Task { await model.start() }
+        defer { loops.cancel() }
+        _ = try await players.rename(id: "p-marco", name: "Marco Rossi")
+        let renamed = await ObservationLifecycle.wait { model.noticeMessage == "Point to Marco Rossi undone" }
+        XCTAssertTrue(renamed, "the board did not follow the rename")
     }
 
     func testUndoAnnouncesWhatItTookBackAndOffersRedo() {
@@ -356,7 +382,9 @@ final class ScoringModelTests: XCTestCase {
             deleteLocalAnalysis: { _, _ in }
         )
         let (repo, id, _) = fixture()
-        var m: ScoringModel? = ScoringModel(scoreLogs: repo, labelsRepository: rally.labels, scoreLogId: id)
+        var m: ScoringModel? = ScoringModel(
+            scoreLogs: repo, labelsRepository: rally.labels, playersRepository: rally.players, scoreLogId: id
+        )
         weak var released = m
 
         let returned = await ObservationLifecycle.runAndCancel { [m] in await m?.start() }

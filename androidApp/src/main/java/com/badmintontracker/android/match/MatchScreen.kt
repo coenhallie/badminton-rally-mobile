@@ -323,7 +323,7 @@ fun MatchScreen(
                                     text = { Text("Export as text") },
                                     onClick = {
                                         overflowOpen = false
-                                        shareText(context, log.title, exportMatchText(log))
+                                        shareText(context, log.title, exportMatchText(log, matchState.players))
                                     },
                                 )
                             }
@@ -447,7 +447,7 @@ fun MatchScreen(
                         when (section) {
                             MatchPageSection.POINTS -> LazyColumn(Modifier.fillMaxSize()) {
                                 if (log != null) pointsFacet(
-                                    log = log, card = matchState.card, tally = matchState.tally,
+                                    log = log, players = matchState.players, card = matchState.card, tally = matchState.tally,
                                     timeline = matchState.match?.let(::matchTimeline).orEmpty(), match = matchState.match,
                                     onScore = onScore,
                                 )
@@ -475,7 +475,7 @@ fun MatchScreen(
                                             // video's own otherwise: a scored match that was later
                                             // filmed keeps the log as its record.
                                             details = matchDetailsLine(
-                                                playersLine = log?.playersLine() ?: match?.playersLine,
+                                                playersLine = log?.playersLine(matchState.players) ?: match?.playersLine,
                                                 format = log?.format ?: match?.format,
                                             ),
                                             description = match?.description,

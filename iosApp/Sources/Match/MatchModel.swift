@@ -15,6 +15,9 @@ final class MatchModel {
     /// Nil for a video-first or shared match, and for one deleted while open.
     private(set) var log: ScoreLog? = nil
     private(set) var match: MatchState? = nil
+    /// The coach's players: a side a profile holds is named from these, on the
+    /// card, the Points facet, the header and the exported text.
+    private(set) var players: [Player] = []
     private(set) var card: ScoreMatchCard? = nil
     private(set) var tally: ScoreTagSummary = ScoreTagSummary.companion.EMPTY
     /// A finished match with no video, and no video already picked for it. The
@@ -38,6 +41,8 @@ final class MatchModel {
     private let clips: ClipsRepository
     private let videos: VideosRepository
     private let localAnnotations: LocalAnnotationsRepository
+    /// Nil in tests that name no player: every side then reads its typed names.
+    private let playersRepository: PlayersRepository?
 
     private var localEntries: [LocalVideoEntry]
 
@@ -47,6 +52,7 @@ final class MatchModel {
         clips: ClipsRepository,
         videos: VideosRepository,
         localAnnotations: LocalAnnotationsRepository,
+        players: PlayersRepository? = nil,
         scoreLogId: String?
     ) {
         self.scoreLogs = scoreLogs
@@ -54,6 +60,8 @@ final class MatchModel {
         self.clips = clips
         self.videos = videos
         self.localAnnotations = localAnnotations
+        self.playersRepository = players
+        self.players = players?.players.value ?? []
         self.scoreLogId = scoreLogId
         self.localEntries = localVideos.entries.value
         readStore()
@@ -63,7 +71,7 @@ final class MatchModel {
         self.init(
             scoreLogs: rally.scoreLogs, localVideos: rally.localVideos,
             clips: rally.clips, videos: rally.videos, localAnnotations: rally.localAnnotations,
-            scoreLogId: scoreLogId
+            players: rally.players, scoreLogId: scoreLogId
         )
     }
 
@@ -175,6 +183,16 @@ final class MatchModel {
                     self.readStore()
                 }
             }
+            if let playersRepository {
+                group.addTask { @MainActor [weak self] in
+                    guard let self else { return }
+                    // The card is stored, not computed, so a rename re-reads it.
+                    for await list in playersRepository.players {
+                        self.players = list
+                        self.readStore()
+                    }
+                }
+            }
         }
     }
 
@@ -197,7 +215,7 @@ final class MatchModel {
         log = found
         let state = found.state()
         match = state
-        card = ScoreMatchCardKt.buildScoreMatchCard(log: found)
+        card = ScoreMatchCardKt.buildScoreMatchCard(log: found, players: players)
         tally = ScoreTagSummaryKt.buildScoreTagSummary(state: state)
         // An entry can exist for a while before the pipeline gives the match a
         // videoId (LOCAL, UPLOADING, PROCESSING); gating on videoId alone would

@@ -1,5 +1,7 @@
 package com.badmintontracker.shared.scoring
 
+import com.badmintontracker.shared.players.MatchPlayers
+import com.badmintontracker.shared.players.Player
 import com.russhwolf.settings.MapSettings
 import io.kotest.matchers.shouldBe
 import kotlinx.datetime.Instant
@@ -97,7 +99,7 @@ class BoardPresentationTest {
         val log = { repo.logs.value.single() }
         val m = s.logMoment(listOf(good, net))!!
         val added = BoardNotice.MomentAdded(m)
-        log().noticeMessage(added) shouldBe "Moment added: Good shot, Net"
+        log().noticeMessage(added, emptyList()) shouldBe "Moment added: Good shot, Net"
         added.actionLabel shouldBe "Undo"
         s.isLive(added) shouldBe true
 
@@ -106,19 +108,30 @@ class BoardPresentationTest {
         s.isLive(added) shouldBe false
 
         val noteOnly = s.commitMomentDraft(s.openMomentDraft()!!.withText("short"))!!
-        log().noticeMessage(BoardNotice.MomentAdded(noteOnly)) shouldBe "Moment added"
+        log().noticeMessage(BoardNotice.MomentAdded(noteOnly), emptyList()) shouldBe "Moment added"
 
         val removed = BoardNotice.MomentRemoved(s.removeMoment(noteOnly.id)!!)
-        log().noticeMessage(removed) shouldBe "Moment removed"
+        log().noticeMessage(removed, emptyList()) shouldBe "Moment removed"
         s.isLive(removed) shouldBe true
         s.reverse(removed)
         s.state()!!.moments shouldBe listOf(noteOnly)
 
         s.score(Side.HOME)
         val undone = BoardNotice.RallyUndone(s.undo()!!)
-        log().noticeMessage(undone) shouldBe "Point to Home undone"
+        log().noticeMessage(undone, emptyList()) shouldBe "Point to Home undone"
         undone.actionLabel shouldBe "Redo"
         s.reverse(undone)
         s.state()!!.pointCount shouldBe 1
+    }
+
+    @Test
+    fun an_undo_names_a_profile_side_by_the_profile() {
+        val (repo, s) = board()
+        val id = repo.logs.value.single().id
+        s.updateDetails("Club night", null, MatchPlayers(null, "player-marco", listOf("Coen"), emptyList()))
+        s.score(Side.AWAY)
+        val undone = BoardNotice.RallyUndone(s.undo()!!)
+        val marco = Player("player-marco", "owner-1", "Marco", null, t0, t0)
+        repo.get(id)!!.noticeMessage(undone, listOf(marco)) shouldBe "Point to Marco undone"
     }
 }

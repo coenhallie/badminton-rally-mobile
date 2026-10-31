@@ -172,7 +172,7 @@ class MatchScorerTest {
         val (repo, scorer) = scorer()
         scorer.score(Side.AWAY)
         val undone = scorer.undo()!!
-        repo.logs.value.first().undoneNotice(undone) shouldBe "Point to Away undone"
+        repo.logs.value.first().undoneNotice(undone, emptyList()) shouldBe "Point to Away undone"
     }
 
     @Test

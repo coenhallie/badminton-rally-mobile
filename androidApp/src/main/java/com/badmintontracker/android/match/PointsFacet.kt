@@ -23,6 +23,7 @@ import com.badmintontracker.android.clipdetail.LabelBadge
 import com.badmintontracker.android.cliplist.LabelCountChip
 import com.badmintontracker.android.ui.components.ShuttlEmptyState
 import com.badmintontracker.android.ui.icons.ShuttlIcons
+import com.badmintontracker.shared.players.Player
 import com.badmintontracker.shared.scoring.LoggedMoment
 import com.badmintontracker.shared.scoring.MatchState
 import com.badmintontracker.shared.scoring.ScoreLog
@@ -50,6 +51,7 @@ import com.badmintontracker.shared.scoring.sideName
  */
 fun LazyListScope.pointsFacet(
     log: ScoreLog,
+    players: List<Player>,
     card: ScoreMatchCard?,
     tally: ScoreTagSummary,
     timeline: List<TimelineEntry>,
@@ -69,7 +71,7 @@ fun LazyListScope.pointsFacet(
             // The legend for the score above it: which number is whose. Always drawn,
             // unlike the list row's players line, so it falls back to Home vs Away.
             Text(
-                "${log.sideName(Side.HOME)} vs ${log.sideName(Side.AWAY)}",
+                "${log.sideName(Side.HOME, players)} vs ${log.sideName(Side.AWAY, players)}",
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(
@@ -115,7 +117,7 @@ fun LazyListScope.pointsFacet(
             }
         }) { entry ->
             when (entry) {
-                is TimelineEntry.Rally -> PointRow(entry.point, winner = log.sideName(entry.point.wonBy))
+                is TimelineEntry.Rally -> PointRow(entry.point, winner = log.sideName(entry.point.wonBy, players))
                 is TimelineEntry.Moment -> MomentRow(entry.moment)
             }
             HorizontalDivider()

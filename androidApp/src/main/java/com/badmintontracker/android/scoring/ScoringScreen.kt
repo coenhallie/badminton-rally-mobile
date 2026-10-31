@@ -83,6 +83,7 @@ import com.badmintontracker.android.ui.theme.ShuttlRadius
 import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.shared.model.AnnotationLabel
 import com.badmintontracker.shared.model.LabelColor
+import com.badmintontracker.shared.players.Player
 import com.badmintontracker.shared.scoring.BoardTarget
 import com.badmintontracker.shared.scoring.FinishPrompt
 import com.badmintontracker.shared.scoring.MAX_MATCH_TITLE
@@ -159,6 +160,7 @@ fun ScoringScreen(
         StatusStrip(
             log = log,
             match = match,
+            players = state.players,
             notice = state.noticeMessage,
             noticeAction = state.noticeAction,
             onNoticeAction = vm::reverseNotice,
@@ -181,7 +183,7 @@ fun ScoringScreen(
         Row(Modifier.fillMaxWidth().weight(1f)) {
             SideZone(
                 side = left,
-                name = log.sideName(left),
+                name = log.sideName(left, state.players),
                 match = match,
                 enabled = state.canScore,
                 onScore = { vm.score(left) },
@@ -190,7 +192,7 @@ fun ScoringScreen(
             )
             SideZone(
                 side = left.other,
-                name = log.sideName(left.other),
+                name = log.sideName(left.other, state.players),
                 match = match,
                 enabled = state.canScore,
                 onScore = { vm.score(left.other) },
@@ -268,6 +270,7 @@ fun ScoringScreen(
         ScoreEditSheet(
             log = log,
             match = match,
+            players = state.players,
             onSave = { home, away, server ->
                 vm.editScore(home, away, server)
                 editingScore = false
@@ -329,6 +332,7 @@ private enum class Confirmation(val title: String, val body: String, val confirm
 private fun StatusStrip(
     log: ScoreLog,
     match: MatchState,
+    players: List<Player>,
     notice: String?,
     noticeAction: String?,
     onNoticeAction: () -> Unit,
@@ -342,7 +346,7 @@ private fun StatusStrip(
     onFinish: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
-    val announcement = notice ?: announcementFor(log, match)
+    val announcement = notice ?: announcementFor(log, match, players)
 
     Surface(color = MaterialTheme.colorScheme.surface) {
         Row(
@@ -858,8 +862,8 @@ private object FullSpeed : MotionDurationScale {
  * The announcement the point just played earned, or null. Order is by how much it
  * matters courtside, and match point outranks game point because it is one.
  */
-private fun announcementFor(log: ScoreLog, match: MatchState): String? {
-    val name = { side: Side -> log.sideName(side) }
+private fun announcementFor(log: ScoreLog, match: MatchState, players: List<Player>): String? {
+    val name = { side: Side -> log.sideName(side, players) }
     val both = { flags: com.badmintontracker.shared.scoring.SideFlags, what: String ->
         when {
             flags.home && flags.away -> "$what - both"

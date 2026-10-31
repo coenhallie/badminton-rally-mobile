@@ -1,5 +1,6 @@
 package com.badmintontracker.shared.scoring
 
+import com.badmintontracker.shared.players.Player
 import io.kotest.matchers.shouldBe
 import kotlinx.datetime.Instant
 import kotlin.test.Test
@@ -10,10 +11,14 @@ class ScoreMatchCardTest {
         events: List<ScoreEvent> = emptyList(),
         status: ScoreLogStatus = ScoreLogStatus.LIVE,
         videoId: String? = null,
+        homePlayerId: String? = null,
+        awayPlayers: List<String> = emptyList(),
     ) = ScoreLog(
         id = "log-1",
         videoId = videoId,
         title = "Thu League",
+        homePlayerId = homePlayerId,
+        awayPlayers = awayPlayers,
         rules = ScoringRules.BWF_21,
         setup = MatchSetup(firstServer = Side.HOME),
         events = events,
@@ -21,6 +26,9 @@ class ScoreMatchCardTest {
         createdAt = Instant.parse("2026-08-27T18:00:00Z"),
         updatedAt = Instant.parse("2026-08-27T18:00:00Z"),
     )
+
+    /** A card for a log no profile holds, which every test but the profile ones builds. */
+    private fun cardOf(log: ScoreLog) = buildScoreMatchCard(log, emptyList())
 
     private fun toScore(home: Int, away: Int): List<ScoreEvent> {
         val events = ArrayList<ScoreEvent>(home + away)
@@ -68,7 +76,7 @@ class ScoreMatchCardTest {
 
     @Test
     fun a_card_carries_the_row_a_list_draws() {
-        val card = buildScoreMatchCard(log(toScore(11, 9)))
+        val card = cardOf(log(toScore(11, 9)))
         card.scoreLogId shouldBe "log-1"
         card.title shouldBe "Thu League"
         card.createdAtEpochMs shouldBe Instant.parse("2026-08-27T18:00:00Z").toEpochMilliseconds()
@@ -80,8 +88,21 @@ class ScoreMatchCardTest {
     }
 
     @Test
+    fun the_card_says_the_profile_won() {
+        val at = Instant.parse("2026-08-27T18:00:00Z")
+        val marco = Player("player-marco", "owner-1", "Marco", null, at, at)
+        val won = log(
+            toScore(21, 18) + toScore(21, 15), status = ScoreLogStatus.UNBOUND,
+            homePlayerId = "player-marco", awayPlayers = listOf("Li"),
+        )
+        val card = buildScoreMatchCard(won, listOf(marco))
+        card.statusLine shouldBe "Marco won"
+        card.playersLine shouldBe "Marco vs Li"
+    }
+
+    @Test
     fun a_finished_match_says_who_won() {
-        val card = buildScoreMatchCard(log(toScore(21, 18) + toScore(21, 15), status = ScoreLogStatus.UNBOUND))
+        val card = cardOf(log(toScore(21, 18) + toScore(21, 15), status = ScoreLogStatus.UNBOUND))
         card.statusLine shouldBe "Home won"
         card.isLive shouldBe false
     }
@@ -90,14 +111,14 @@ class ScoreMatchCardTest {
     fun a_match_that_ended_with_no_video_is_not_apologised_for() {
         // §7.1: unbound is a terminal state, not a failure. Nothing in the row may
         // read as "missing a video".
-        val card = buildScoreMatchCard(log(toScore(21, 0) + toScore(21, 0), status = ScoreLogStatus.UNBOUND))
+        val card = cardOf(log(toScore(21, 0) + toScore(21, 0), status = ScoreLogStatus.UNBOUND))
         card.statusLine shouldBe "Home won"
         card.hasVideo shouldBe false
     }
 
     @Test
     fun a_bound_match_knows_it_has_a_video() {
-        val card = buildScoreMatchCard(log(status = ScoreLogStatus.BOUND, videoId = "vid-1"))
+        val card = cardOf(log(status = ScoreLogStatus.BOUND, videoId = "vid-1"))
         card.hasVideo shouldBe true
     }
 
@@ -106,7 +127,7 @@ class ScoreMatchCardTest {
         // Reachable through "Finish match" in the board's overflow: status goes
         // UNBOUND with nobody having won. isLive read the fold, not the status, so
         // this match said "Scoring" on its record page and on its list row.
-        val card = buildScoreMatchCard(log(toScore(5, 3), status = ScoreLogStatus.UNBOUND))
+        val card = cardOf(log(toScore(5, 3), status = ScoreLogStatus.UNBOUND))
         card.isLive shouldBe false
         card.statusLine shouldBe "Ended early"
     }
@@ -116,18 +137,18 @@ class ScoreMatchCardTest {
         // The board's Done button navigates without finishing, on purpose: undo has
         // to stay reachable for a match that ended on a mis-tap. So a won match can
         // still be LIVE, and "can another point be scored" is the real question.
-        val card = buildScoreMatchCard(log(toScore(21, 18) + toScore(21, 15), status = ScoreLogStatus.LIVE))
+        val card = cardOf(log(toScore(21, 18) + toScore(21, 15), status = ScoreLogStatus.LIVE))
         card.isLive shouldBe false
     }
 
     @Test
     fun a_match_being_scored_right_now_is_live() {
-        buildScoreMatchCard(log(toScore(5, 3), status = ScoreLogStatus.LIVE)).isLive shouldBe true
+        cardOf(log(toScore(5, 3), status = ScoreLogStatus.LIVE)).isLive shouldBe true
     }
 
     @Test
     fun the_card_carries_the_video_id_so_a_list_can_fold_the_two_rows_together() {
-        val card = buildScoreMatchCard(log(status = ScoreLogStatus.BOUND, videoId = "vid-1"))
+        val card = cardOf(log(status = ScoreLogStatus.BOUND, videoId = "vid-1"))
         card.videoId shouldBe "vid-1"
         card.hasVideo shouldBe true
     }

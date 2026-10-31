@@ -1,5 +1,7 @@
 package com.badmintontracker.shared.scoring
 
+import com.badmintontracker.shared.players.Player
+
 /**
  * The score editor's answer for one pair of numbers: whether it can be saved, what
  * saving would do in words, and the log it would write.
@@ -52,9 +54,10 @@ fun MatchState.scoreEditTitle(): String =
  * [ScoreEditPlan.servers]); otherwise the side serving now keeps it if it can.
  *
  * Total: every input comes back as a plan, the impossible ones with a
- * [ScoreEditPlan.problem] and the log unchanged.
+ * [ScoreEditPlan.problem] and the log unchanged. [players] names a side a profile
+ * holds in the [ScoreEditPlan.summary]; see [sideName].
  */
-fun ScoreLog.planScoreEdit(home: Int, away: Int, nextServer: Side?): ScoreEditPlan {
+fun ScoreLog.planScoreEdit(home: Int, away: Int, nextServer: Side?, players: List<Player>): ScoreEditPlan {
     val state = state()
     fun refused(problem: String) = ScoreEditPlan(
         home = home, away = away, problem = problem, summary = "", events = events,
@@ -135,7 +138,7 @@ fun ScoreLog.planScoreEdit(home: Int, away: Int, nextServer: Side?): ScoreEditPl
         home = home,
         away = away,
         problem = null,
-        summary = describe(gamePoints.filter { it.ordinal in removed }, add, state, afterState, game),
+        summary = describe(gamePoints.filter { it.ordinal in removed }, add, state, afterState, game, players),
         events = after,
         servers = SideFlags(
             home = options.any { it.second.server == Side.HOME },
@@ -184,7 +187,9 @@ private fun ScoreLog.describe(
     before: MatchState,
     after: MatchState,
     game: Int,
+    players: List<Player>,
 ): String {
+    fun name(side: Side) = sideName(side, players)
     fun rallies(n: Int) = if (n == 1) "1 rally" else "$n rallies"
     val adds = Side.entries.filter { add.of(it) > 0 }.map { add.of(it) to it }
     val removes = Side.entries.map { side -> removed.count { it.wonBy == side } to side }.filter { it.first > 0 }
@@ -192,7 +197,7 @@ private fun ScoreLog.describe(
     // "Adds 2 rallies for Home and 1 for Away": the unit is said once per verb.
     fun clause(verb: String, preposition: String, parts: List<Pair<Int, Side>>): String? =
         parts.takeIf { it.isNotEmpty() }?.mapIndexed { i, (n, side) ->
-            (if (i == 0) rallies(n) else "$n") + " $preposition ${sideName(side)}"
+            (if (i == 0) rallies(n) else "$n") + " $preposition ${name(side)}"
         }?.joinToString(" and ", prefix = "$verb ")
 
     val noted = removed.count { it.tags.isNotEmpty() || it.comment != null }
@@ -212,9 +217,9 @@ private fun ScoreLog.describe(
     val winner = after.winner
     val gameWonBy = after.completedGames.getOrNull(game)?.let { gameWinner(it, rules) }
     val outcome = when {
-        winner != null -> if (winner != before.winner) "${sideName(winner)} wins the match." else null
+        winner != null -> if (winner != before.winner) "${name(winner)} wins the match." else null
         before.winner != null -> "The match is back in play."
-        gameWonBy != null -> "${sideName(gameWonBy)} takes game ${game + 1}."
+        gameWonBy != null -> "${name(gameWonBy)} takes game ${game + 1}."
         else -> null
     }
     return listOfNotNull("$change.", outcome).joinToString(" ")

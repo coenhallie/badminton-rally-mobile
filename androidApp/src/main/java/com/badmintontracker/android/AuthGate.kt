@@ -435,7 +435,7 @@ fun AuthGate(
                     val vm: ScoringViewModel = viewModel(
                         factory = viewModelFactory {
                             initializer {
-                                ScoringViewModel(rally.scoreLogs, rally.labels, args.scoreLogId)
+                                ScoringViewModel(rally.scoreLogs, rally.labels, rally.players, args.scoreLogId)
                             }
                         }
                     )
@@ -493,7 +493,7 @@ fun AuthGate(
                             initializer {
                                 MatchViewModel(
                                     rally.scoreLogs, localVideos, rally.clips,
-                                    rally.videos, localAnnotations, args.scoreLogId,
+                                    rally.videos, localAnnotations, rally.players, args.scoreLogId,
                                 )
                             }
                         }

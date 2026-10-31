@@ -1,5 +1,7 @@
 package com.badmintontracker.shared.scoring
 
+import com.badmintontracker.shared.players.Player
+
 /**
  * What a chip tap on the board does. One rule for both platforms: the row tags the
  * last rally whenever there is one to tag, and logs moments when there is not.
@@ -55,8 +57,9 @@ sealed class BoardNotice {
     data class MomentRemoved(val moment: LoggedMoment) : BoardNotice()
 }
 
-fun ScoreLog.noticeMessage(notice: BoardNotice): String = when (notice) {
-    is BoardNotice.RallyUndone -> undoneNotice(notice.undone)
+/** The strip's words for [notice]. [players] names a side a profile holds; see [sideName]. */
+fun ScoreLog.noticeMessage(notice: BoardNotice, players: List<Player>): String = when (notice) {
+    is BoardNotice.RallyUndone -> undoneNotice(notice.undone, players)
     is BoardNotice.MomentAdded -> "Moment added" + notice.moment.labelSuffix()
     is BoardNotice.MomentRemoved -> "Moment removed" + notice.moment.labelSuffix()
 }

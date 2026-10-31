@@ -1,5 +1,6 @@
 package com.badmintontracker.shared.scoring
 
+import com.badmintontracker.shared.players.Player
 import io.kotest.matchers.shouldBe
 import kotlinx.datetime.Instant
 import kotlinx.serialization.json.Json
@@ -9,14 +10,20 @@ class MatchDetailsTest {
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
+    private val at = Instant.parse("2026-08-27T18:00:00Z")
+    private val marco = Player("player-marco", "owner-1", "Marco", null, at, at)
+
     private fun log(
         home: List<String> = emptyList(),
         away: List<String> = emptyList(),
         format: MatchFormat? = null,
         events: List<ScoreEvent> = emptyList(),
+        homePlayerId: String? = null,
+        awayPlayerId: String? = null,
     ) = ScoreLog(
         id = "log-1", videoId = null, title = "Thu League",
         homePlayers = home, awayPlayers = away, format = format,
+        homePlayerId = homePlayerId, awayPlayerId = awayPlayerId,
         rules = ScoringRules.BWF_21, setup = MatchSetup(firstServer = Side.HOME),
         events = events, status = ScoreLogStatus.LIVE,
         createdAt = Instant.parse("2026-08-27T18:00:00Z"),
@@ -70,22 +77,49 @@ class MatchDetailsTest {
 
     @Test
     fun an_unnamed_side_is_called_for_where_it_stands() {
-        log().sideName(Side.HOME) shouldBe "Home"
-        log().sideName(Side.AWAY) shouldBe "Away"
+        log().sideName(Side.HOME, emptyList()) shouldBe "Home"
+        log().sideName(Side.AWAY, emptyList()) shouldBe "Away"
     }
 
     @Test
     fun a_named_side_is_called_by_its_players() {
-        log(home = listOf("Coen")).sideName(Side.HOME) shouldBe "Coen"
-        log(away = listOf("Marco", "Li")).sideName(Side.AWAY) shouldBe "Marco / Li"
+        log(home = listOf("Coen")).sideName(Side.HOME, emptyList()) shouldBe "Coen"
+        log(away = listOf("Marco", "Li")).sideName(Side.AWAY, emptyList()) shouldBe "Marco / Li"
     }
 
     @Test
     fun the_players_line_is_absent_until_somebody_is_named() {
         // "Home vs Away" is the same on every row, so it says nothing on a list.
-        log().playersLine() shouldBe null
-        log(home = listOf("Coen"), away = listOf("Marco")).playersLine() shouldBe "Coen vs Marco"
-        log(home = listOf("Coen")).playersLine() shouldBe "Coen vs Away"
+        log().playersLine(emptyList()) shouldBe null
+        log(home = listOf("Coen"), away = listOf("Marco")).playersLine(emptyList()) shouldBe "Coen vs Marco"
+        log(home = listOf("Coen")).playersLine(emptyList()) shouldBe "Coen vs Away"
+    }
+
+    @Test
+    fun a_profile_side_is_named_by_the_profile() {
+        val held = log(away = listOf("Li"), homePlayerId = "player-marco")
+        held.sideName(Side.HOME, listOf(marco)) shouldBe "Marco"
+        held.sideName(Side.AWAY, listOf(marco)) shouldBe "Li"
+        held.playersLine(listOf(marco)) shouldBe "Marco vs Li"
+    }
+
+    @Test
+    fun a_renamed_profile_renames_the_side() {
+        // The log stores the id, never the name, so the side follows the player.
+        val held = log(awayPlayerId = "player-marco")
+        val renamed = listOf(marco.copy(name = "Marco Rossi"))
+        held.sideName(Side.AWAY, renamed) shouldBe "Marco Rossi"
+        held.playersLine(renamed) shouldBe "Home vs Marco Rossi"
+    }
+
+    @Test
+    fun an_unknown_profile_side_reads_its_label() {
+        // A player deleted on another phone, or not loaded on this one, has no
+        // name to show: the side is called for where it stands, not "".
+        val held = log(away = listOf("Li"), homePlayerId = "player-gone")
+        held.sideName(Side.HOME, listOf(marco)) shouldBe "Home"
+        held.playersLine(listOf(marco)) shouldBe "Home vs Li"
+        log(homePlayerId = "player-gone").playersLine(emptyList()) shouldBe null
     }
 
     @Test
@@ -166,14 +200,14 @@ class MatchDetailsTest {
     @Test
     fun a_won_match_is_credited_to_the_named_winner() {
         val won = log(home = listOf("Coen"), away = listOf("Marco"), events = List(42) { ScoreEvent.PointTo(Side.AWAY) })
-        buildScoreMatchCard(won).statusLine shouldBe "Marco won"
-        buildScoreMatchCard(won).playersLine shouldBe "Coen vs Marco"
+        buildScoreMatchCard(won, emptyList()).statusLine shouldBe "Marco won"
+        buildScoreMatchCard(won, emptyList()).playersLine shouldBe "Coen vs Marco"
     }
 
     @Test
     fun the_shared_text_names_the_players_when_there_are_any() {
         val named = log(home = listOf("Coen"), away = listOf("Marco"), events = listOf(ScoreEvent.PointTo(Side.AWAY)))
-        exportMatchText(named) shouldBe """
+        exportMatchText(named, emptyList()) shouldBe """
             Thu League
             Coen vs Marco
             0-1

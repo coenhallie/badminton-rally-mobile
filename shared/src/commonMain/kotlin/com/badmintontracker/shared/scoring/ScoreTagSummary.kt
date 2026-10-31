@@ -3,6 +3,7 @@ package com.badmintontracker.shared.scoring
 import com.badmintontracker.shared.model.LabelCount
 import com.badmintontracker.shared.model.LabelRef
 import com.badmintontracker.shared.model.rollUpLabels
+import com.badmintontracker.shared.players.Player
 import kotlinx.datetime.TimeZone
 
 /**
@@ -57,13 +58,15 @@ fun buildScoreTagSummary(state: MatchState): ScoreTagSummary {
  * The match as plain text, for pasting into a message the same evening. Point
  * numbers are one-based here and only here: this is the one output a person reads
  * as a list rather than an index, and "point 0" is not a thing anyone says.
+ * [players] names a side a profile holds; see [sideName].
  */
-fun exportMatchText(log: ScoreLog): String = exportMatchText(log, TimeZone.currentSystemDefault())
+fun exportMatchText(log: ScoreLog, players: List<Player>): String =
+    exportMatchText(log, players, TimeZone.currentSystemDefault())
 
 /** [exportMatchText] with an explicit zone for a moment's clock time. */
-fun exportMatchText(log: ScoreLog, zone: TimeZone): String {
+fun exportMatchText(log: ScoreLog, players: List<Player>, zone: TimeZone): String {
     val state = log.state()
-    val header = listOfNotNull(log.title, log.playersLine(), scoreLine(state))
+    val header = listOfNotNull(log.title, log.playersLine(players), scoreLine(state))
     val timeline = matchTimeline(state)
     if (timeline.isEmpty()) return header.joinToString("\n")
 
@@ -75,7 +78,7 @@ fun exportMatchText(log: ScoreLog, zone: TimeZone): String {
                 val tags = point.tags.joinToString(", ") { it.labelName }.takeIf { it.isNotEmpty() }
                 val comment = point.comment?.trim()?.takeIf { it.isNotEmpty() }
                 buildString {
-                    append("${point.ordinal + 1}. $score ${log.sideName(point.wonBy)}")
+                    append("${point.ordinal + 1}. $score ${log.sideName(point.wonBy, players)}")
                     if (tags != null) append(" - $tags")
                     if (comment != null) append(" ($comment)")
                 }
