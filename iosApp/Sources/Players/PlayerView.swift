@@ -1,13 +1,15 @@
 import SwiftUI
 import Shared
 
-/// One player's page: Profile (avatar, name, playing hand, and three tiles)
-/// and Matches (the match list filtered to this player, with its filters and
-/// sort).
+/// One player's page: the title row (avatar and name, the switcher), then
+/// Profile (playing hand and three tiles) and Matches (the match list filtered
+/// to this player, with its filters and sort).
 ///
-/// The title is the player's name as a switcher: a menu of every player,
-/// where picking one replaces this page (`onSwitchPlayer`, see
-/// `HomePath.toPlayer`). The overflow renames the player, sets the playing
+/// The page's title is a row under the bar: the player's avatar and name as a
+/// switcher, a menu of every player, where picking one replaces this page
+/// (`onSwitchPlayer`, see `HomePath.toPlayer`). The bar holds only Back, the
+/// background-work indicator and the overflow; see `TitleRow` for why the
+/// name is not in it. The overflow renames the player, sets the playing
 /// hand, or deletes the player; once they leave the list, by that delete or
 /// any other way, the page asks to be closed (`onGone`, see `gone`).
 ///
@@ -20,7 +22,8 @@ import Shared
 /// every sheet and dialog it has up (`onOverlayChange`), so the failed-run
 /// dialog never takes one of them down.
 ///
-/// Mirrors androidApp's PlayerScreen.kt.
+/// Mirrors androidApp's PlayerScreen.kt, except that androidApp puts the
+/// switcher in its top bar (Ruling 23).
 struct PlayerView: View {
     let rally: RallyApp
     let analyze: AnalyzeCoordinator
@@ -55,14 +58,9 @@ struct PlayerView: View {
     /// to Profile, which takes the list down. See `MatchesList.filter`.
     @State private var matchesFilter: MatchListFilter = .all
     @State private var matchesSort: MatchListSort = .newest
-    /// The page's width, which the switcher's is cut to. See
-    /// `PlayerSwitcher.maxWidth`.
-    @State private var pageWidth: CGFloat = 0
 
     private static let profileTab = 0
     private static let matchesTab = 1
-    /// The switcher's avatar: the mock's small disc beside the name.
-    private static let switcherAvatarSize: CGFloat = 26
 
     /// Whether the player this page is for has gone: deleted here (the shared
     /// delete drops them from the list once the server has), or on another
@@ -90,11 +88,10 @@ struct PlayerView: View {
         // delete dialog's count read it.
         let summary = PlayerMatchesKt.playerSummary(list: listModel.matchList, playerId: playerId)
         return page(shown: shown, summary: summary)
-            .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { pageWidth = $0 }
             .background(Shuttl.bg)
             .navigationBarTitleDisplayMode(.inline)
             .shuttlNavigationBarBackground()
-            .toolbar { toolbarContent(shown: shown) }
+            .toolbar { toolbarContent }
             .overlay(alignment: .bottomTrailing) {
                 if player != nil {
                     AddMatchButton(action: onAdd)
@@ -142,6 +139,14 @@ struct PlayerView: View {
     private func page(shown: Player?, summary: PlayerSummary) -> some View {
         if let shown {
             VStack(spacing: 0) {
+                TitleRow(
+                    current: shown,
+                    players: model.players,
+                    onPick: { picked in
+                        if picked != shown.id { onSwitchPlayer(picked) }
+                    }
+                )
+                .padding(.horizontal, ShuttlGutter.page)
                 ShuttlPillTabs(
                     labels: [PlayersCopy.shared.TAB_PROFILE, PlayersCopy.shared.TAB_MATCHES],
                     selectedIndex: tab,
@@ -188,24 +193,7 @@ struct PlayerView: View {
     }
 
     @ToolbarContentBuilder
-    private func toolbarContent(shown: Player?) -> some ToolbarContent {
-        // Beside Back, as the mock and androidApp's bar have it, rather than
-        // centred: the name gets the bar's whole middle, not what is left
-        // between two equal margins.
-        ToolbarItem(placement: .topBarLeading) {
-            if let shown, pageWidth > 0 {
-                PlayerSwitcher(
-                    current: shown,
-                    players: model.players,
-                    avatarSize: Self.switcherAvatarSize,
-                    barWidth: pageWidth,
-                    onPick: { picked in
-                        if picked != shown.id { onSwitchPlayer(picked) }
-                    }
-                )
-            }
-        }
-        .sharedBackgroundHiddenWhereSupported()
+    private var toolbarContent: some ToolbarContent {
         // First in the bar's trailing group, so it keeps its place as each
         // screen's own actions come and go. See `BackgroundWorkAction`.
         ToolbarItem(placement: .topBarTrailing) { BackgroundWorkAction() }
@@ -285,41 +273,25 @@ private struct Dialogs: ViewModifier {
     }
 }
 
-/// The title: the player's avatar and name on a pill with a chevron, which
-/// opens a menu of every player (sorted by name, as the repository publishes
-/// them), the current one ticked. A 40-character name is cut, never the
-/// chevron. The pill draws 38pt tall, in a 44pt target.
-private struct PlayerSwitcher: View {
+/// The page's title, as a large title sits under a bar: the player's avatar
+/// and name with a chevron, which opens a menu of every player (sorted by
+/// name, as the repository publishes them), the current one ticked.
+///
+/// In the page rather than in the bar. A bar sizes its items from their ideal
+/// width and decides from that whether to fold the others into "•••", and it
+/// never offers an item more than that ideal back, so a name in the bar either
+/// ran over Back, pushed the background-work indicator into "•••", or needed a
+/// width worked out from the bar's metrics on one iOS version (probed on iOS
+/// 26.5: task-13-report.md, fix round 1). Here the row is offered the page's
+/// width like any other view: the avatar and chevron keep their size and the
+/// name takes the rest, cut with an ellipsis, on every width and iOS version.
+///
+/// The whole row is the menu's button, at least 44pt tall. VoiceOver hears
+/// the name as the page's heading and as a pop-up button (Ruling 21).
+private struct TitleRow: View {
     let current: Player
     let players: [Player]
-    let avatarSize: CGFloat
-    /// The bar's width (the page's), which `maxWidth` is worked out from.
-    let barWidth: CGFloat
     let onPick: (String) -> Void
-
-    /// Read here, in this small view, rather than by the page: it changes on
-    /// every progress tick of a run. See `BackgroundWorkScope`.
-    @Environment(\.backgroundWork) private var work
-
-    /// What the bar's other controls take beside the switcher, measured on
-    /// iOS 26's bar with a 40-character name: Back and the space after it
-    /// (about 88pt from the edge to the switcher), the trailing group with its
-    /// margin, and the gap the bar keeps between the two groups. Short of
-    /// that gap, the bar folds the trailing items into a "more" button (a
-    /// 2pt-wider switcher already did). The group is the overflow alone
-    /// (`idleControlsWidth`), or the background-work indicator and the
-    /// overflow while a run is going (`busyControlsWidth`), and the name gives
-    /// way to the indicator as androidApp's title does to its actions.
-    private static let idleControlsWidth: CGFloat = 178
-    private static let busyControlsWidth: CGFloat = 236
-
-    /// The most the switcher may take. A bar measures its items at their
-    /// ideal width and does not cut them: an uncut 40-character name ran over
-    /// Back and the overflow, or had the bar drop the switcher altogether.
-    private var maxWidth: CGFloat {
-        let controls = work == nil ? Self.idleControlsWidth : Self.busyControlsWidth
-        return max(barWidth - controls, avatarSize * 3)
-    }
 
     var body: some View {
         Menu {
@@ -334,57 +306,36 @@ private struct PlayerSwitcher: View {
                 }
             }
         } label: {
-            CappedWidth(max: maxWidth) { label }
+            HStack(spacing: 12) {
+                PlayerAvatar(name: current.name, size: PlayerAvatar.rowSize)
+                HStack(spacing: 6) {
+                    Text(current.name)
+                        .shuttlType(ShuttlType.headlineMedium)
+                        .foregroundStyle(Shuttl.textHeading)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Image(systemName: "chevron.down")
+                        .shuttlType(ShuttlType.labelMedium)
+                        .foregroundStyle(Shuttl.textSecondary)
+                        // Never the one cut: the name gives way first.
+                        .layoutPriority(1)
+                }
+            }
+            .frame(minHeight: ShuttlTarget.minimum)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(current.name)
         .accessibilityHint(PlayersCopy.shared.SWITCH_PLAYER)
-    }
-
-    private var label: some View {
-        HStack(spacing: 0) {
-            PlayerAvatar(name: current.name, size: avatarSize)
-            Text(current.name)
-                .shuttlType(ShuttlType.titleMedium)
-                .foregroundStyle(Shuttl.text)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .padding(.leading, 8)
-            Image(systemName: "chevron.down")
-                .shuttlType(ShuttlType.labelMedium)
-                .foregroundStyle(Shuttl.textSecondary)
-                .padding(.leading, 6)
-                .layoutPriority(1)
-        }
-        // The mock's 6 round the avatar, 12 after the chevron.
-        .padding(.leading, 6)
-        .padding(.trailing, 12)
-        .padding(.vertical, 6)
-        .background(Shuttl.bgSecondary, in: Capsule())
-        .frame(minHeight: ShuttlTarget.minimum)
-        .contentShape(Rectangle())
+        .accessibilityAddTraits(.isHeader)
     }
 }
 
-/// Its one subview at the width it is offered, but never wider than `max`,
-/// including when it is offered no width at all, which is how a bar measures
-/// its items. The name inside is then cut rather than drawn whole over Back.
-private struct CappedWidth: Layout {
-    let max: CGFloat
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        guard let only = subviews.first else { return .zero }
-        return only.sizeThatFits(ProposedViewSize(width: min(proposal.width ?? max, max), height: proposal.height))
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(bounds.size))
-    }
-}
-
-/// Profile: the avatar beside the name and the playing hand (no line when it
-/// is not set), then Matches, Rallies and Last match. Scrolls, so a long name
-/// at a large text size never pushes the tiles out of reach.
+/// Profile: the playing hand (no line when it is not set), then Matches,
+/// Rallies and Last match. The avatar and name are the page's title row,
+/// above the pills, so they are not repeated here. Scrolls, so the tiles at a
+/// large text size never fall out of reach.
 private struct ProfileTab: View {
     let player: Player
     let summary: PlayerSummary
@@ -392,26 +343,12 @@ private struct ProfileTab: View {
     var body: some View {
         let copy = PlayersCopy.shared
         ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 14) {
-                    PlayerAvatar(name: player.name, size: PlayerAvatar.profileSize)
-                    VStack(alignment: .leading, spacing: 2) {
-                        // Two lines at most: a 40-character name beside the
-                        // avatar would otherwise run to three.
-                        Text(player.name)
-                            .shuttlType(ShuttlType.headlineMedium)
-                            .foregroundStyle(Shuttl.textHeading)
-                            .lineLimit(2)
-                            .truncationMode(.tail)
-                        if let hand = copy.handLine(racketArm: player.racketArm) {
-                            Text(hand)
-                                .shuttlType(ShuttlType.bodyMedium)
-                                .foregroundStyle(Shuttl.textSecondary)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 12) {
+                if let hand = copy.handLine(racketArm: player.racketArm) {
+                    Text(hand)
+                        .shuttlType(ShuttlType.bodyMedium)
+                        .foregroundStyle(Shuttl.textSecondary)
                 }
-                .accessibilityElement(children: .combine)
                 // One height for the three. Every value is one line at the
                 // default text size ("Oct 28", "Oct '25", "None yet"); at a
                 // large one a value can wrap, and the captions still stay
@@ -422,7 +359,6 @@ private struct ProfileTab: View {
                     tile(PlayerMatchesKt.lastMatchTile(summary: summary), copy.TILE_LAST_MATCH)
                 }
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 20)
             }
             .padding(.horizontal, ShuttlGutter.page)
             .padding(.top, MatchPageLayout.sectionGap)
@@ -435,18 +371,5 @@ private struct ProfileTab: View {
     private func tile(_ value: String, _ label: String) -> some View {
         ShuttlStatTile(value: value, unit: "", label: label, compact: true)
             .accessibilityElement(children: .combine)
-    }
-}
-
-private extension ToolbarContent {
-    /// The switcher is its own pill: iOS 26's shared glass behind a bar item
-    /// would draw a second capsule round it.
-    @ToolbarContentBuilder
-    func sharedBackgroundHiddenWhereSupported() -> some ToolbarContent {
-        if #available(iOS 26.0, *) {
-            sharedBackgroundVisibility(.hidden)
-        } else {
-            self
-        }
     }
 }
