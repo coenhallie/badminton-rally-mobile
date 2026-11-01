@@ -2,7 +2,9 @@ import SwiftUI
 import Shared
 
 /// The list of matches, on All matches: one row per match, wherever its
-/// video is, with "Shared with me" below.
+/// video is, with "Shared with me" below. Given a `playerId`, on that
+/// player's page: their matches only, with no "Shared with me" (a shared
+/// match is never one of this coach's players'), and their own empty state.
 ///
 /// Every row comes from the shared builder (`ClipListModel.matchList`); this
 /// view only draws them and turns their taps, menus and swipes into model
@@ -34,16 +36,26 @@ struct MatchesList: View {
     /// Whether any sheet or dialog this list owns is open. HomeView folds it
     /// into "nothing above the list", which gates announcing a finished run.
     let onOverlayChange: (Bool) -> Void
+    /// The player whose matches these are, or nil for All matches.
+    let playerId: String?
+    /// Room under the last row: the panel's gutter on All matches, which has
+    /// nothing floating over its foot, and the Add button's clearance on a
+    /// player's page, which has one.
+    let bottomInset: CGFloat
+    /// The chosen filter. What the list applies is `effectiveFilter` of it, so
+    /// a filter whose chips are hidden never filters anything. Held by the
+    /// screen rather than here: a player's page builds this list only while
+    /// its Matches tab is shown, and the coach's choice outlives a trip to
+    /// Profile.
+    @Binding var filter: MatchListFilter
+    /// The chosen order, applied through `effectiveSort` on the same rule, and
+    /// held by the screen for the same reason.
+    @Binding var sort: MatchListSort
 
     @State private var shareTarget: ShareTarget? = nil
     @State private var thumbnails = LocalThumbnails()
     @State private var detailsTarget: MatchDetailsTarget? = nil
     @State private var legendOpen = false
-    /// The chosen filter. What the list applies is `effectiveFilter` of it, so
-    /// a filter whose chips are hidden never filters anything.
-    @State private var filter: MatchListFilter = .all
-    /// The chosen order, applied through `effectiveSort` on the same rule.
-    @State private var sort: MatchListSort = .newest
     // A row the coach asked to delete or remove, waiting on a confirmation:
     // the two-way choice when a swipe finds both a file here and a match to
     // delete, the single dialog otherwise. Held by key and looked up in the
@@ -112,9 +124,18 @@ struct MatchesList: View {
         .onDisappear { onOverlayChange(false) }
     }
 
+    /// The rows the list draws: every match, or, for `playerId`, the coach's
+    /// own matches that name the player (`forPlayer`) in the list's order and
+    /// none shared. Mirrors androidApp's `listedMatches`.
+    static func listed(_ list: MatchList, playerId: String?) -> MatchList {
+        guard let playerId else { return list }
+        return MatchList(mine: list.forPlayer(playerId: playerId), shared: [])
+    }
+
     private var content: some View {
-        let mine = model.matchList.mine
-        let shared = model.matchList.shared
+        let listed = Self.listed(model.matchList, playerId: playerId)
+        let mine = listed.mine
+        let shared = listed.shared
         let showChips = MatchListFilterKt.showsFilters(mineCount: Int32(mine.count))
         let applied = MatchListFilterKt.effectiveFilter(chosen: filter, mineCount: Int32(mine.count))
         let appliedSort = MatchListSortKt.effectiveSort(chosen: sort, mineCount: Int32(mine.count))
@@ -125,20 +146,27 @@ struct MatchesList: View {
             // top and scrolls the rows under it, which put a blurred card
             // behind the label. Ordinary rows scroll with the content, and the
             // list opens at the top.
-            MatchFilterRow(
-                showChips: showChips,
-                selected: applied,
-                onSelect: { filter = $0 },
-                sort: appliedSort,
-                onSort: { sort = $0 },
-                onLegend: { legendOpen = true }
-            )
-            .listRowInsets(EdgeInsets(
-                top: DrawerList.listTopInset, leading: DrawerList.sideMargin,
-                bottom: DrawerList.rowGap, trailing: MatchFilterRow.trailingInset
-            ))
-            .listRowBackground(Color.clear)
-            .listRowSeparator(.hidden)
+            //
+            // Not over the empty state: with no row at all there is nothing to
+            // sort or explain, and the legend's lone button floated above
+            // "No matches yet" on a player's page. androidApp draws the empty
+            // state alone too.
+            if !(mine.isEmpty && shared.isEmpty) {
+                MatchFilterRow(
+                    showChips: showChips,
+                    selected: applied,
+                    onSelect: { filter = $0 },
+                    sort: appliedSort,
+                    onSort: { sort = $0 },
+                    onLegend: { legendOpen = true }
+                )
+                .listRowInsets(EdgeInsets(
+                    top: DrawerList.listTopInset, leading: DrawerList.sideMargin,
+                    bottom: DrawerList.rowGap, trailing: MatchFilterRow.trailingInset
+                ))
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+            }
             ForEach(visible, id: \.key) { item in
                 row(item)
             }
@@ -187,28 +215,41 @@ struct MatchesList: View {
                 sort = .newest
             }
         }
-        // The panel's gutter at the foot, as Android's list ends: All matches
-        // has no Add button floating over it, so the last row needs no more
-        // than the air every other edge of the list has.
-        .safeAreaPadding(.bottom, DrawerList.sideMargin)
+        // See `bottomInset`.
+        .safeAreaPadding(.bottom, bottomInset)
         // Over the list rather than in it: the hero needs the full available
         // height to top-align itself, which a row cannot do, and the list
         // underneath keeps `.refreshable` working.
         .overlay {
             if mine.isEmpty && shared.isEmpty && !model.isRefreshing {
-                // The old Home hero, then how matches get here (the Players
-                // screen's Add button, which `EMPTY_BODY` describes). Top
-                // aligned so the cycling line never moves it.
-                VStack(alignment: .leading, spacing: 22) {
-                    HeroTickerView(isPaused: heroPaused)
-                    Text(HomeCopy.shared.EMPTY_BODY)
-                        .shuttlType(ShuttlType.bodyLarge)
-                        .foregroundStyle(Shuttl.textSecondary)
-                        .frame(maxWidth: 320, alignment: .leading)
+                if playerId == nil {
+                    // The old Home hero, then how matches get here (the
+                    // Players screen's Add button, which `EMPTY_BODY`
+                    // describes). Top aligned so the cycling line never moves
+                    // it.
+                    VStack(alignment: .leading, spacing: 22) {
+                        HeroTickerView(isPaused: heroPaused)
+                        Text(HomeCopy.shared.EMPTY_BODY)
+                            .shuttlType(ShuttlType.bodyLarge)
+                            .foregroundStyle(Shuttl.textSecondary)
+                            .frame(maxWidth: 320, alignment: .leading)
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.top, 72)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                } else {
+                    // Not the hero: it welcomes a coach with no matches at
+                    // all, and this is one player with none yet. Top aligned
+                    // at the Players screen's own empty-state offset.
+                    ShuttlEmptyState(
+                        systemImage: "trophy",
+                        title: PlayersCopy.shared.NO_MATCHES_YET,
+                        message: PlayersCopy.shared.MATCHES_EMPTY_BODY
+                    ) { EmptyView() }
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 48)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 }
-                .padding(.horizontal, 24)
-                .padding(.top, 72)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         }
     }

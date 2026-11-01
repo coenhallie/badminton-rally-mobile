@@ -6,8 +6,13 @@ import Shared
 /// filled in with the time and, where the phone will say, the place, so the form can
 /// be submitted the moment it opens. Every rule it enforces comes from
 /// `createMatchProblem`, which Android's form calls too.
+///
+/// `playerId` is the player the match is started for (their page's Add
+/// match), nil from anywhere else: a match started for a player has them at
+/// home. Mirrors androidApp's NewMatchViewModel.
 struct NewMatchView: View {
     let rally: RallyApp
+    let playerId: String?
     let onCreated: (String) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -21,8 +26,9 @@ struct NewMatchView: View {
     @State private var sets: MatchSets = .companion.DEFAULT
     @State private var places = PlaceNames()
 
-    init(rally: RallyApp, onCreated: @escaping (String) -> Void) {
+    init(rally: RallyApp, playerId: String?, onCreated: @escaping (String) -> Void) {
         self.rally = rally
+        self.playerId = playerId
         self.onCreated = onCreated
         // Filled in here rather than in `.task`, so the form never draws a frame
         // with an empty name and a disabled Create.
@@ -85,13 +91,33 @@ struct NewMatchView: View {
 
     private func create() {
         guard problem == nil else { return }
-        let log = rally.scoreLogs.create(
+        onCreated(Self.createMatch(
+            in: rally.scoreLogs,
             title: title,
             rules: ScoringRules.companion.of(points: points, sets: sets),
+            playerId: playerId
+        ))
+    }
+
+    /// Creates the match and answers its id. With `playerId`, that player is
+    /// put at home: a new match is singles until the coach says otherwise, so
+    /// a profile may sit there.
+    static func createMatch(
+        in scoreLogs: ScoreLogsRepository, title: String, rules: ScoringRules, playerId: String?
+    ) -> String {
+        let log = scoreLogs.create(
+            title: title,
+            rules: rules,
             // Home, because the form no longer asks: the board lets it be switched
             // until the first point is scored.
             setup: MatchSetup(firstServer: .home)
         )
-        onCreated(log.id)
+        if let playerId {
+            scoreLogs.assignPlayers(
+                id: log.id,
+                players: MatchPlayers(homePlayerId: playerId, awayPlayerId: nil, homePlayers: [], awayPlayers: [])
+            )
+        }
+        return log.id
     }
 }

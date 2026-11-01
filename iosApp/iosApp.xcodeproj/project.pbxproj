@@ -42,6 +42,7 @@
 		27D47564638D6299811A5A5B /* MatchGrouping.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94F21AB0AEE5F66047B679 /* MatchGrouping.swift */; };
 		2AB0842817D586F21A4AFC8E /* AddMatchSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EC80F89EBB792162FD96152 /* AddMatchSheet.swift */; };
 		2AB5089784DDFA9FAA82B3C3 /* OnnxSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2B6C5DE171A479978CF2184 /* OnnxSessionTests.swift */; };
+		2C3673395857B7EBD17F990A /* PlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60E5043B63EF71238083074B /* PlayerView.swift */; };
 		2D3E8D3FABA880413592F5BE /* CourtFinderBridgeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C89EF8CB443FE927F9732439 /* CourtFinderBridgeTests.swift */; };
 		2E71C6E8CEB45C9A1AF67518 /* FrameStepMath.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDDECE8F42B9ED83E1030453 /* FrameStepMath.swift */; };
 		2F6E3F9479FC9B91BFAB3F39 /* ShuttlPaletteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09DC5A242EBE164C182143AD /* ShuttlPaletteTests.swift */; };
@@ -147,6 +148,7 @@
 		CCACC800E2B9DFB80BDD7351 /* CourtFrameLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13C657999F25FF0FA886E1CD /* CourtFrameLoader.swift */; };
 		CCE9F2FCE1DFFB9EBE16D5B7 /* PlayerDialogs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22D35B4070B8811DFAB24A7E /* PlayerDialogs.swift */; };
 		CD5E1D2F1D535400CFC04B7C /* SchematicCourtGuide.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7D356BF06A24361EB632F18 /* SchematicCourtGuide.swift */; };
+		CD8661203579BB95DD5EF906 /* PlayerViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98078BCAC1922E22E10F34A7 /* PlayerViewTests.swift */; };
 		CE33FF75485E32DA5BE2F4F9 /* OrientationLock.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6782F122F9F86ADCC034D76 /* OrientationLock.swift */; };
 		CFC74B86E0256055E87B5EAC /* RallyIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = E169E538F23D04ED878E1EFF /* RallyIOSApp.swift */; };
 		D3A0C6A3CA64CF44286066FC /* ClipListModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36DA4D40D7C6052946C3CC35 /* ClipListModel.swift */; };
@@ -274,6 +276,7 @@
 		5E55608E1F3F9D32168CF372 /* Archivo-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Archivo-Medium.ttf"; sourceTree = "<group>"; };
 		5EFC41BB1279BF8DAD45DC0C /* RalliesFacet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RalliesFacet.swift; sourceTree = "<group>"; };
 		5F14BB1D771EB662B983D4D6 /* MatchModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchModel.swift; sourceTree = "<group>"; };
+		60E5043B63EF71238083074B /* PlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerView.swift; sourceTree = "<group>"; };
 		6293EAE7905DB2258CC08058 /* SkeletonOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkeletonOverlay.swift; sourceTree = "<group>"; };
 		62C3B5945D6755C849EF171A /* ShuttlPalette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShuttlPalette.swift; sourceTree = "<group>"; };
 		64F5E7C8A1F077DB55444464 /* PlayerAvatar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerAvatar.swift; sourceTree = "<group>"; };
@@ -327,6 +330,7 @@
 		9636B8DE06074EE38B4BCA36 /* MetricSelector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricSelector.swift; sourceTree = "<group>"; };
 		96D4FAE20AE12A626D8E3B37 /* RowSwipeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RowSwipeTests.swift; sourceTree = "<group>"; };
 		96F1ED679E86866495708ECC /* MatchStatusLine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchStatusLine.swift; sourceTree = "<group>"; };
+		98078BCAC1922E22E10F34A7 /* PlayerViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerViewTests.swift; sourceTree = "<group>"; };
 		99C07A121F12C581870E83CC /* Archivo-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Archivo-Bold.ttf"; sourceTree = "<group>"; };
 		9B13CBB38AE526A3C355DE8B /* LabelsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabelsModel.swift; sourceTree = "<group>"; };
 		9D624F5633DF1C622984C898 /* CourtHeatmapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CourtHeatmapView.swift; sourceTree = "<group>"; };
@@ -481,6 +485,7 @@
 				22D35B4070B8811DFAB24A7E /* PlayerDialogs.swift */,
 				BFDD55DC32E30F98F90539B0 /* PlayersModel.swift */,
 				0CC187AFFED68849F456660E /* PlayersScreen.swift */,
+				60E5043B63EF71238083074B /* PlayerView.swift */,
 			);
 			path = Players;
 			sourceTree = "<group>";
@@ -549,6 +554,7 @@
 				A5828909CBE2B20598B0AAB8 /* PlaybackBridgingTests.swift */,
 				79A7421877A151C7C161E81E /* PlaybackPositionTests.swift */,
 				7A180E1F852A7A8E56645F9A /* PlayersModelTests.swift */,
+				98078BCAC1922E22E10F34A7 /* PlayerViewTests.swift */,
 				53968D5B3649AB4EC7D5239A /* RootAnnouncementsTests.swift */,
 				96D4FAE20AE12A626D8E3B37 /* RowSwipeTests.swift */,
 				D250166604400690A47635F2 /* RunToastUpdateTests.swift */,
@@ -1021,6 +1027,7 @@
 				042DA588EB675EB7277C0EA2 /* PlayerNotesLayout.swift in Sources */,
 				5DBF6F864ECBB35639A57D0A /* PlayerSurface.swift in Sources */,
 				D56726C5083161D3215DF8F2 /* PlayerTrackStore.swift in Sources */,
+				2C3673395857B7EBD17F990A /* PlayerView.swift in Sources */,
 				45C757CCD31FE122240B8CF6 /* PlayersModel.swift in Sources */,
 				9D9C6F1C18466573E765F32B /* PlayersScreen.swift in Sources */,
 				4175AE2A684D5C4E22D3025F /* PointsFacet.swift in Sources */,
@@ -1105,6 +1112,7 @@
 				2AB5089784DDFA9FAA82B3C3 /* OnnxSessionTests.swift in Sources */,
 				6F6311C57F7EC3E460777DA8 /* PlaybackBridgingTests.swift in Sources */,
 				6619900918B060348F0F21FE /* PlaybackPositionTests.swift in Sources */,
+				CD8661203579BB95DD5EF906 /* PlayerViewTests.swift in Sources */,
 				7627A813AA80D2F190350D8F /* PlayersModelTests.swift in Sources */,
 				0067A70A11FA33C3B12836E7 /* RootAnnouncementsTests.swift in Sources */,
 				1B94EF3E7D55457425E270E1 /* RowSwipeTests.swift in Sources */,

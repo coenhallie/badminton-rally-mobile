@@ -506,7 +506,13 @@ struct MatchView: View {
             VideoPicker(
                 onPicked: { tempURL, suggestedName in
                     let target = pendingAttachTarget
-                    Task { await intake.add(tempURL: tempURL, suggestedName: suggestedName, isRecording: false, forMatch: target) }
+                    // No player: the match it is for already says who played.
+                    Task {
+                        await intake.add(
+                            tempURL: tempURL, suggestedName: suggestedName, isRecording: false,
+                            forMatch: target, forPlayer: nil
+                        )
+                    }
                 },
                 onFailed: { intake.error = "Couldn't import the video. Please try again." }
             )
@@ -514,7 +520,12 @@ struct MatchView: View {
         .fullScreenCover(isPresented: $showRecorder) {
             CameraRecorder { tempURL in
                 let target = pendingAttachTarget
-                Task { await intake.add(tempURL: tempURL, suggestedName: nil, isRecording: true, forMatch: target) }
+                Task {
+                    await intake.add(
+                        tempURL: tempURL, suggestedName: nil, isRecording: true,
+                        forMatch: target, forPlayer: nil
+                    )
+                }
             }
             .ignoresSafeArea()
         }

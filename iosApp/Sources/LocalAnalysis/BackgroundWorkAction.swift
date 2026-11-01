@@ -49,9 +49,14 @@ struct BackgroundWorkAction: View {
         // Said upward, so HomeView holds its root announcements while the
         // sheet is up on a list screen: a dialog presented over it would take
         // it down. Cleared on the way out as well, in case the screen goes
-        // with the sheet still up.
+        // with the sheet still up, and unconditionally: the sheet's "Go to
+        // matches" sets `showDetail` false and pops the very screen holding
+        // it in one action, and a reset that waited on `showDetail` would
+        // miss it if the screen went before its `onChange` ran, leaving the
+        // flag set and every root announcement held for good. A sheet does
+        // not make its presenter disappear, so this never clears a live one.
         .onChange(of: showDetail) { _, open in reportSheet(open) }
-        .onDisappear { if showDetail { reportSheet(false) } }
+        .onDisappear { reportSheet(false) }
     }
 
     @ViewBuilder

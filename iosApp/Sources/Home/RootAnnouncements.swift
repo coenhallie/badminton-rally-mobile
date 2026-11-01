@@ -11,11 +11,14 @@ import Shared
 /// stands, showing or waiting, so a second run joins it ("2 matches are
 /// analyzed") rather than queuing a second toast or evicting a failure.
 ///
+/// The list screens are Players, All matches and a player's page
+/// (`HomePath.listInFront`); each draws the toast.
+///
 /// The message ends by its own time or action, or when the coach leaves the
 /// list screens (`listsLeft`), which HomeView reads off its path rather than
 /// off a screen disappearing: see `View.shuttlToast(_:bottomInset:endsWhenScreenGoes:)`.
 struct RootToasts {
-    /// The message on screen, drawn by Players and All matches.
+    /// The message on screen, drawn by whichever list screen is in front.
     private(set) var showing: ToastMessage? = nil
     /// Waiting their turn, oldest first.
     private(set) var waiting: [ToastMessage] = []
@@ -66,11 +69,18 @@ struct RootToasts {
 
     /// The coach left the list screens for another (a match, Settings, the
     /// camera): the message on screen goes with them rather than waiting
-    /// there for their return. Moving between Players and All matches is not
-    /// leaving: both draw the message, so it goes on showing on the other.
+    /// there for their return. Moving between the list screens (Players, All
+    /// matches, a player's page, one player's page for another's) is not
+    /// leaving: each draws the message, so it goes on showing on the next.
     /// What waits its turn stays waiting.
     mutating func listsLeft() {
         showing = nil
+    }
+
+    /// HomeView's path moved to `path`: `listsLeft` when it is no longer a
+    /// list screen in front.
+    mutating func pathChanged(_ path: [HomeRoute]) {
+        if !HomePath.listInFront(path) { listsLeft() }
     }
 }
 
@@ -91,13 +101,14 @@ enum FailedRunDialog {
     /// Whether it may show: there is one, and a list screen is in front with
     /// no sheet of its own or of HomeView's over it.
     ///
-    /// Only on a list screen, not over every screen as androidApp does: iOS
-    /// shows one presentation at a time, and an alert presented from the
-    /// stack while a pushed screen had a sheet of its own up took that sheet
-    /// down to show itself (measured on the simulator: task-12-report.md, fix
-    /// round 1). A pushed screen's sheets are not known here; a list screen's
-    /// are. On a list the scoring board is never in front, so Ruling 15's wait
-    /// for the board holds too.
+    /// Only on a list screen (Players, All matches, a player's page), not
+    /// over every screen as androidApp does: iOS shows one presentation at a
+    /// time, and an alert presented from the stack while a pushed screen had
+    /// a sheet of its own up took that sheet down to show itself (measured on
+    /// the simulator: task-12-report.md, fix round 1). Any other pushed
+    /// screen's sheets are not known here; every list screen reports its own.
+    /// On a list the scoring board is never in front, so Ruling 15's wait for
+    /// the board holds too.
     static func shows(hasEntry: Bool, listInFront: Bool, sheetOpen: Bool) -> Bool {
         hasEntry && listInFront && !sheetOpen
     }

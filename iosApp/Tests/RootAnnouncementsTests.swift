@@ -3,7 +3,7 @@ import XCTest
 @testable import iosApp
 
 /// The root announcements' rules: the toast queue HomeView drives, the
-/// finished-run toast's merge, the hand-over between the two list screens, and
+/// finished-run toast's merge, the hand-over between the list screens, and
 /// which failed run the dialog is about and when it may show.
 final class RootAnnouncementsTests: XCTestCase {
 
@@ -111,6 +111,33 @@ final class RootAnnouncementsTests: XCTestCase {
         // Back on a list, the next one shows.
         toasts.deliver(listInFront: true)
         XCTAssertEqual(toasts.showing, next)
+    }
+
+    func testTheMessageCarriesOverBetweenPlayersAndAPlayersPage() {
+        // A player's page draws the root toast too, as on Android: opening one
+        // from Players, switching player and going back are not leaving.
+        var toasts = RootToasts()
+        let showing = message("Couldn't save the player.")
+        toasts.post(showing)
+        toasts.deliver(listInFront: HomePath.listInFront([]))
+
+        toasts.pathChanged([.player(id: "p-marco")])
+        XCTAssertEqual(toasts.showing, showing)
+        toasts.pathChanged([.player(id: "p-li")])
+        XCTAssertEqual(toasts.showing, showing)
+        toasts.pathChanged([])
+        XCTAssertEqual(toasts.showing, showing)
+    }
+
+    func testOpeningAMatchFromAPlayersPageLeavesTheLists() {
+        var toasts = RootToasts()
+        toasts.post(message("1 match is analyzed"))
+        toasts.deliver(listInFront: HomePath.listInFront([.player(id: "p-marco")]))
+        XCTAssertNotNil(toasts.showing, "a player's page is a list screen: the message showed nowhere")
+
+        toasts.pathChanged([.player(id: "p-marco"), .match(MatchRoute(scoreLogId: "log-1", videoId: nil))])
+
+        XCTAssertNil(toasts.showing)
     }
 
     func testARunToastLeftBehindStartsAfreshNextTime() {

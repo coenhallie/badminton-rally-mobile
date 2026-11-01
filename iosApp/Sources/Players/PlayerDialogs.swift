@@ -151,3 +151,64 @@ struct PlayerNameSheet: View {
         }
     }
 }
+
+/// The playing hand of a player already made: Right, Left or Not set, with
+/// Cancel and Save. Nothing typed to lose, so Save closes the sheet at once
+/// and hands the hand over (`onSave`); a failure is said on the root toast.
+///
+/// A sheet sized to its content, like `PlayerNameSheet`, on the same fill.
+/// Mirrors androidApp's PlayingHandDialog.
+struct PlayingHandSheet: View {
+    let onSave: (RacketArm?) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var armIndex: Int
+    @State private var contentHeight: CGFloat = 0
+
+    init(initialArm: RacketArm?, onSave: @escaping (RacketArm?) -> Void) {
+        self.onSave = onSave
+        _armIndex = State(initialValue: playerHandOptions.firstIndex(of: initialArm) ?? 2)
+    }
+
+    var body: some View {
+        let copy = PlayersCopy.shared
+        VStack(alignment: .leading, spacing: 16) {
+            Text(copy.MENU_PLAYING_HAND)
+                .shuttlType(ShuttlType.headlineMedium)
+                .foregroundStyle(Shuttl.textHeading)
+                .accessibilityAddTraits(.isHeader)
+
+            ShuttlPillTabs(
+                labels: playerHandOptions.map { copy.handOption(racketArm: $0) },
+                selectedIndex: armIndex,
+                onSelect: { armIndex = $0 },
+                accessibilityLabel: copy.MENU_PLAYING_HAND
+            )
+
+            HStack(spacing: 12) {
+                Button(copy.CANCEL) { dismiss() }
+                    .buttonStyle(SecondaryPillButtonStyle())
+                Button(copy.SAVE) {
+                    onSave(playerHandOptions[armIndex])
+                    dismiss()
+                }
+                .buttonStyle(PrimaryButtonStyle())
+            }
+            .padding(.top, 8)
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 24)
+        .padding(.bottom, 16)
+        .background {
+            GeometryReader { proxy in
+                Color.clear.onChange(of: proxy.size.height, initial: true) { _, height in
+                    contentHeight = height
+                }
+            }
+        }
+        .presentationDetents([.height(contentHeight)])
+        .presentationDragIndicator(.visible)
+        // See `PlayerNameSheet`: the sheets' usual fill is the pill track's.
+        .presentationBackground(Shuttl.bgDialog)
+    }
+}

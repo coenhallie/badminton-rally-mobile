@@ -12,9 +12,10 @@ import Shared
 /// record or import that failed, the match list's own failure, a player save
 /// that failed, and the auto-shown dialog of a standalone video whose
 /// analysis failed reach the coach wherever they are. The messages go on the
-/// root toast, which Players and All matches draw, queued until one of them
-/// is in front. The dialog shows on those two screens too; see
-/// `FailedRunDialog.shows` for why not over every screen as on Android.
+/// root toast, which the list screens (Players, All matches, a player's page)
+/// draw, queued until one of them is in front. The dialog shows on those
+/// screens too; see `FailedRunDialog.shows` for why not over every screen as
+/// on Android.
 /// Mirrors androidApp's AuthGate and RootAnnouncementsHost.
 struct HomeView: View {
     let rally: RallyApp
@@ -30,7 +31,15 @@ struct HomeView: View {
     @State private var listOverlayOpen = false
     /// The add-player sheet on Players.
     @State private var playersOverlayOpen = false
+    /// Any sheet or dialog a player's page has open, its Matches tab's
+    /// included.
+    @State private var playerOverlayOpen = false
     @State private var showAddSheet = false
+    /// The player the Add sheet's match is for: the page it was opened on, or
+    /// nil from Players. Set each time the sheet opens, and read by what the
+    /// sheet starts (New match, the camera, the picker), none of which can be
+    /// started again until it has handed over its video or form.
+    @State private var addingFor: String? = nil
     @State private var showRecorder = false
     @State private var showImporter = false
     @State private var intake: LocalVideoIntake
@@ -40,8 +49,9 @@ struct HomeView: View {
     /// false; and `start()` spawns `for await` loops that never return and hold
     /// the model alive, so a model created inside a pushed view would leak one
     /// full set of them on every push. `start()` runs from the `.task` of each
-    /// screen that reads the list: Players (its rows' details), All matches and
-    /// the match page (which finds its row here). That is not idempotent: each
+    /// screen that reads the list: Players (its rows' details), All matches, a
+    /// player's page (from whichever of its tabs is shown) and the match page
+    /// (which finds its row here). That is not idempotent: each
     /// call runs its own set of loops, and only the initial network refresh is
     /// latched to once per model. What keeps it to one set at a time is that a
     /// covered view's `.task` is cancelled: a push cancels the screen's under it.
@@ -60,8 +70,8 @@ struct HomeView: View {
     /// announced at most once. See `announceFinishedRuns`, which owns the rule
     /// both platforms follow.
     @State private var announcedRuns: Set<String> = []
-    /// The root toast: what shows, drawn by Players and All matches, and what
-    /// waits its turn. See `RootToasts`.
+    /// The root toast: what shows, drawn by the list screens, and what waits
+    /// its turn. See `RootToasts`.
     @State private var toasts = RootToasts()
     /// A standalone video whose analysis failed and whose result the coach has
     /// not seen: the dialog shown for it. See `resultDialogShown`.
@@ -99,11 +109,9 @@ struct HomeView: View {
             PlayersScreen(
                 model: playersModel,
                 listModel: listModel,
-                // The Player page is not built yet; a row opens nothing until
-                // it is.
-                onOpenPlayer: { _ in },
+                onOpenPlayer: { path = HomePath.toPlayer($0, in: path) },
                 onAllMatches: { path.append(.allMatches) },
-                onAdd: { showAddSheet = true },
+                onAdd: { openAddSheet(for: nil) },
                 onSettings: { path.append(.settings) },
                 onOverlayChange: { playersOverlayOpen = $0 },
                 toast: toastBinding
@@ -121,17 +129,15 @@ struct HomeView: View {
         .environment(\.backgroundWorkClick, goToAllMatches)
         .environment(\.backgroundWorkSheetChange) { workSheetOpen = $0 }
         // The root toast goes when the coach leaves the list screens, and
-        // stays while they move between Players and All matches, which both
-        // draw it. See `RootToasts.listsLeft`.
-        .onChange(of: path) { _, new in
-            if !HomePath.listInFront(new) { toasts.listsLeft() }
-        }
+        // stays while they move between them (Players, All matches, a
+        // player's page), which all draw it. See `RootToasts.listsLeft`.
+        .onChange(of: path) { _, new in toasts.pathChanged(new) }
         .onChange(of: showRecorder) { _, open in
             if open { toasts.listsLeft() }
         }
     }
 
-    /// What Players and All matches draw. Their toast reports its own end
+    /// What the list screens draw. Their toast reports its own end
     /// (time, or its action) by clearing this.
     private var toastBinding: Binding<ToastMessage?> {
         Binding(
@@ -155,6 +161,21 @@ struct HomeView: View {
                 onOverlayChange: { listOverlayOpen = $0 },
                 toast: toastBinding
             )
+        case .player(let id):
+            PlayerView(
+                rally: rally, analyze: analyze, intake: intake, playerId: id,
+                model: playersModel, listModel: listModel,
+                onSwitchPlayer: { path = HomePath.toPlayer($0, in: path) },
+                onGone: { path = HomePath.closingPlayer(id, in: path) },
+                onMatchTap: { path.append(.match($0)) },
+                onCourtMarking: { path.append(.courtMarking($0)) },
+                onAdd: { openAddSheet(for: id) },
+                onOverlayChange: { playerOverlayOpen = $0 },
+                toast: toastBinding
+            )
+            // A fresh page per player: one switched to opens on Profile, at
+            // the top, with nothing of the last player's left in its state.
+            .id(id)
         case .match(let matchRoute):
             MatchView(
                 rally: rally, analyze: analyze,
@@ -167,12 +188,14 @@ struct HomeView: View {
             )
         case .settings:
             SettingsView(rally: rally)
-        case .newMatch:
-            NewMatchView(rally: rally) { id in
+        case .newMatch(let playerId):
+            NewMatchView(rally: rally, playerId: playerId) { id in
                 // Straight to the board, in the form's place, not back to
-                // Players and not to the record: creating a match courtside
-                // means being about to score it.
-                path = HomePath.replacing(.newMatch, with: .scoring(scoreLogId: id), in: path)
+                // the list it was started from and not to the record:
+                // creating a match courtside means being about to score it.
+                path = HomePath.replacing(
+                    .newMatch(playerId: playerId), with: .scoring(scoreLogId: id), in: path
+                )
             }
         case .scoring(let scoreLogId):
             ScoringView(
@@ -196,7 +219,7 @@ struct HomeView: View {
             AddMatchSheet(
                 onNewMatch: {
                     showAddSheet = false
-                    path.append(.newMatch)
+                    path.append(.newMatch(playerId: addingFor))
                 },
                 onRecord: {
                     showAddSheet = false
@@ -215,14 +238,26 @@ struct HomeView: View {
         .sheet(isPresented: $showImporter) {
             VideoPicker(
                 onPicked: { tempURL, suggestedName in
-                    Task { await intake.add(tempURL: tempURL, suggestedName: suggestedName, isRecording: false) }
+                    let player = addingFor
+                    Task {
+                        await intake.add(
+                            tempURL: tempURL, suggestedName: suggestedName, isRecording: false,
+                            forMatch: nil, forPlayer: player
+                        )
+                    }
                 },
                 onFailed: { intake.error = "Couldn't import the video. Please try again." }
             )
         }
         .fullScreenCover(isPresented: $showRecorder) {
             CameraRecorder { tempURL in
-                Task { await intake.add(tempURL: tempURL, suggestedName: nil, isRecording: true) }
+                let player = addingFor
+                Task {
+                    await intake.add(
+                        tempURL: tempURL, suggestedName: nil, isRecording: true,
+                        forMatch: nil, forPlayer: player
+                    )
+                }
             }
             .ignoresSafeArea()
         }
@@ -376,12 +411,12 @@ struct HomeView: View {
     }
 
     /// Whether a list screen is in front with nothing over it and the app is
-    /// in front: Players or All matches on top of the path, no sheet, no list
-    /// dialog, and the scene active. Every sheet and dialog this view knows of
-    /// is listed; a new one must be added, or a finished run is announced on a
-    /// toast nobody can see (and marked seen, so never again). `detailsTarget`
-    /// counts: a video just added is waiting to be named, and a View offered
-    /// then pulls the other way.
+    /// in front: Players, All matches or a player's page on top of the path,
+    /// no sheet, no list dialog, and the scene active. Every sheet and dialog
+    /// this view knows of is listed; a new one must be added, or a finished
+    /// run is announced on a toast nobody can see (and marked seen, so never
+    /// again). `detailsTarget` counts: a video just added is waiting to be
+    /// named, and a View offered then pulls the other way.
     ///
     /// The scene phase is androidApp's RESUMED check. A cloud run can land in
     /// the seconds after the coach leaves the app, and its toast would time
@@ -401,7 +436,7 @@ struct HomeView: View {
     /// their bars.
     private var sheetOverList: Bool {
         showAddSheet || showRecorder || showImporter || detailsTarget != nil
-            || listOverlayOpen || playersOverlayOpen || workSheetOpen
+            || listOverlayOpen || playersOverlayOpen || playerOverlayOpen || workSheetOpen
     }
 
     /// Whether the failed-run dialog is up. See `FailedRunDialog.shows`: on a
@@ -413,6 +448,13 @@ struct HomeView: View {
             listInFront: HomePath.listInFront(path),
             sheetOpen: sheetOverList
         )
+    }
+
+    /// The Add sheet, for the match to be started for `playerId` (a player's
+    /// page) or for nobody (Players).
+    private func openAddSheet(for playerId: String?) {
+        addingFor = playerId
+        showAddSheet = true
     }
 
     /// Queues `text` for the root toast.

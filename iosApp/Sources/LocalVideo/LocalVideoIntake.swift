@@ -28,7 +28,12 @@ final class LocalVideoIntake {
     /// suggestedName: picker-provided name; recordings pass nil and get the
     /// shuttl_<epochMillis>.mp4 pattern. isRecording additionally saves to Photos.
     /// forMatch: the score log this pick is for, or nil for a video-first import.
-    func add(tempURL: URL, suggestedName: String?, isRecording: Bool, forMatch: MatchTarget? = nil) async {
+    /// forPlayer: the player it is for (their page's Add match), or nil from
+    /// anywhere else; see `newEntry`.
+    func add(
+        tempURL: URL, suggestedName: String?, isRecording: Bool,
+        forMatch: MatchTarget?, forPlayer: String?
+    ) async {
         error = nil
         let sizeBytes = (try? FileManager.default
             .attributesOfItem(atPath: tempURL.path)[.size] as? Int64).flatMap { $0 } ?? 0
@@ -58,13 +63,36 @@ final class LocalVideoIntake {
         // Persist first, then surface the id: a dismissed details sheet, a
         // backgrounded app or a crash must never cost the video just taken.
         let id = UUID().uuidString
-        rally.localVideos.add(entry: LocalVideoEntry(
+        rally.localVideos.add(entry: Self.newEntry(
+            id: id, uri: relativePath, displayName: displayName,
+            durationMs: durationMs, sizeBytes: sizeBytes, addedAtEpochMs: epochMs,
+            forMatch: forMatch, forPlayer: forPlayer
+        ))
+        lastAddedId = id
+    }
+
+    /// The entry a new recording or import is stored as, at the LOCAL stage.
+    /// A pick for a match carries the match's name and link (`forMatch`). A
+    /// pick for a player (`forPlayer`) has them at home and at the near end,
+    /// the side an on-device run follows: the coach filmed their own player.
+    /// Mirrors androidApp's `newLocalVideoEntry`.
+    nonisolated static func newEntry(
+        id: String,
+        uri: String,
+        displayName: String,
+        durationMs: Int64,
+        sizeBytes: Int64,
+        addedAtEpochMs: Int64,
+        forMatch: MatchTarget?,
+        forPlayer: String?
+    ) -> LocalVideoEntry {
+        LocalVideoEntry(
             id: id,
-            uri: relativePath,
+            uri: uri,
             displayName: displayName,
             durationMs: durationMs,
             sizeBytes: sizeBytes,
-            addedAtEpochMs: epochMs,
+            addedAtEpochMs: addedAtEpochMs,
             title: forMatch?.title,
             description: nil,
             keypoints: nil,
@@ -73,9 +101,9 @@ final class LocalVideoIntake {
             failureMessage: nil,
             resultSeen: false,
             scoreLogId: forMatch?.scoreLogId,
-            homePlayerId: nil, awayPlayerId: nil, homePlayers: [], awayPlayers: [], nearSide: nil
-        ))
-        lastAddedId = id
+            homePlayerId: forPlayer, awayPlayerId: nil, homePlayers: [], awayPlayers: [],
+            nearSide: forPlayer == nil ? nil : .home
+        )
     }
 
     /// Best-effort, mirrors Android's runCatching retriever (0 on failure).

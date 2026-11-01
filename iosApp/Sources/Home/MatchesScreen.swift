@@ -19,11 +19,22 @@ struct MatchesScreen: View {
     /// What the root says. Owned by HomeView, which hears the runs land.
     @Binding var toast: ToastMessage?
 
+    /// The list's filter and order. See `MatchesList.filter`.
+    @State private var filter: MatchListFilter = .all
+    @State private var sort: MatchListSort = .newest
+
     var body: some View {
         MatchesList(
             rally: rally, analyze: analyze, intake: intake, model: model,
             onMatchTap: onMatchTap, onCourtMarking: onCourtMarking,
-            heroPaused: heroPaused, onOverlayChange: onOverlayChange
+            heroPaused: heroPaused, onOverlayChange: onOverlayChange,
+            playerId: nil,
+            // The panel's gutter, as Android's list ends: no Add button floats
+            // over this list's foot, so the last row needs no more than the air
+            // every other edge of the list has.
+            bottomInset: DrawerList.sideMargin,
+            filter: $filter,
+            sort: $sort
         )
         .background(Shuttl.bg)
         .navigationTitle(PlayersCopy.shared.ALL_MATCHES)

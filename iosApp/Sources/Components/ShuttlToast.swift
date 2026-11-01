@@ -101,9 +101,9 @@ extension View {
     /// clock.
     ///
     /// `endsWhenScreenGoes` false leaves the last of those to the owner of
-    /// `toast`: for a message two screens draw, which must survive the coach
-    /// moving between them (HomeView's root toast on Players and All
-    /// matches). A disappearance is not a reliable signal there either: a
+    /// `toast`: for a message several screens draw, which must survive the
+    /// coach moving between them (HomeView's root toast on the list screens:
+    /// Players, All matches, a player's page). A disappearance is not a reliable signal there either: a
     /// message set as the coach returns to a screen is told the screen went
     /// the moment it is inserted, mid-transition (measured on the simulator,
     /// task-12-report.md, fix round 1).
