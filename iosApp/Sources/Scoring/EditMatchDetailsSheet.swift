@@ -58,12 +58,14 @@ struct EditMatchDetailsSheet: View {
     let onSave: (MatchDetailsDraft) -> String?
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var title: String
     @State private var description: String
     @State private var format: MatchFormat?
     @State private var who: DetailsPlayersDraft
     /// What the last save said, shown until the draft changes.
     @State private var refusal: String? = nil
+    @FocusState private var descriptionFocused: Bool
 
     private let hasDescription: Bool
     private let nameCap = Int(MatchDetailsKt.MAX_PLAYER_NAME)
@@ -125,30 +127,34 @@ struct EditMatchDetailsSheet: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    ShuttlTextField("Match name", text: $title, maxLength: titleCap)
-                    // Only a video carries one: a name that can be changed
-                    // beside a note that cannot would be a stuck field.
-                    if hasDescription {
-                        ShuttlTextField("Description", text: $description, maxLength: descriptionCap, minLines: 3)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        ShuttlTextField("Match name", text: $title, maxLength: titleCap)
+                        // Only a video carries one: a name that can be changed
+                        // beside a note that cannot would be a stuck field.
+                        if hasDescription {
+                            ShuttlTextField("Description", text: $description, maxLength: descriptionCap, minLines: 3)
+                                .focused($descriptionFocused)
+                                .revealedAboveKeyboard(focused: descriptionFocused, in: proxy)
+                        }
+                        formatRow
+                        players
+                        if !who.byEnds && showsEnds { endsRow }
+                        if let shown = refusal ?? problem {
+                            Text(shown)
+                                .shuttlType(ShuttlType.bodySmall)
+                                .foregroundStyle(Shuttl.error)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
-                    formatRow
-                    players
-                    if !who.byEnds && showsEnds { endsRow }
-                    if let shown = refusal ?? problem {
-                        Text(shown)
-                            .shuttlType(ShuttlType.bodySmall)
-                            .foregroundStyle(Shuttl.error)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                    .padding(.horizontal, ShuttlGutter.page)
+                    .padding(.top, 8)
+                    .padding(.bottom, 24)
+                    .animation(.default, value: pairs)
+                    .animation(.default, value: who.sides.showsName(side: .home))
+                    .animation(.default, value: who.sides.showsName(side: .away))
                 }
-                .padding(.horizontal, ShuttlGutter.page)
-                .padding(.top, 8)
-                .padding(.bottom, 24)
-                .animation(.default, value: pairs)
-                .animation(.default, value: who.sides.showsName(side: .home))
-                .animation(.default, value: who.sides.showsName(side: .away))
             }
             .scrollDismissesKeyboard(.interactively)
             .background(Shuttl.bgDialog)
@@ -170,25 +176,53 @@ struct EditMatchDetailsSheet: View {
         .onChange(of: format) { _, _ in refusal = nil }
     }
 
+    /// Not set | Singles | Doubles | Mixed as pills, or at an accessibility
+    /// text size as a menu in a field's box: four pills to a row left each
+    /// less room than its word, which broke inside it ("Singl / es").
     private var formatRow: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let selectedIndex = Self.formats.firstIndex(of: format) ?? 0
+        let disabled = offersPairs ? [] : Self.pairsIndices
+        return VStack(alignment: .leading, spacing: 6) {
             Shuttl.sectionLabel("Format")
                 .accessibilityHidden(true)
-            ShuttlPillTabs(
-                labels: Self.formats.map { $0?.shortLabel ?? "Not set" },
-                selectedIndex: Self.formats.firstIndex(of: format) ?? 0,
-                onSelect: { index in
-                    format = Self.formats[index]
-                    who = who.withFormat(format: format)
-                },
-                accessibilityLabel: "Format",
-                disabledIndices: offersPairs ? [] : Self.pairsIndices
-            )
+            if dynamicTypeSize.isAccessibilitySize {
+                Menu {
+                    ForEach(Self.formats.indices, id: \.self) { index in
+                        // A toggle, so the chosen one carries the menu's own tick.
+                        Toggle(Self.formatLabel(Self.formats[index]), isOn: Binding(
+                            get: { index == selectedIndex },
+                            set: { _ in selectFormat(index) }
+                        ))
+                        .disabled(disabled.contains(index))
+                    }
+                } label: {
+                    ShuttlMenuField(text: Self.formatLabel(format))
+                }
+                .accessibilityLabel("Format")
+                .accessibilityValue(Self.formatLabel(format))
+            } else {
+                ShuttlPillTabs(
+                    labels: Self.formats.map(Self.formatLabel),
+                    selectedIndex: selectedIndex,
+                    onSelect: selectFormat,
+                    accessibilityLabel: "Format",
+                    disabledIndices: disabled
+                )
+            }
             if !offersPairs {
                 PlayersNote(text: PlayersCopy.shared.DOUBLES_NOTE)
                     .padding(.top, 6)
             }
         }
+    }
+
+    private static func formatLabel(_ format: MatchFormat?) -> String {
+        format?.shortLabel ?? "Not set"
+    }
+
+    private func selectFormat(_ index: Int) {
+        format = Self.formats[index]
+        who = who.withFormat(format: format)
     }
 
     @ViewBuilder

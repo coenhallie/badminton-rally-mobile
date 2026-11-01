@@ -31,6 +31,8 @@ struct WhoIsPlayingSection: View {
 
     private let nameCap = Int(MatchDetailsKt.MAX_PLAYER_NAME)
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     var body: some View {
         let copy = PlayersCopy.shared
         VStack(alignment: .leading, spacing: 12) {
@@ -73,17 +75,25 @@ struct WhoIsPlayingSection: View {
     /// controls start at one x at any text size. A label sits on its control's
     /// own text line: a picker's name (its first line, with any name field
     /// under it) or a typed opponent's text (its last, under the field's label).
+    ///
+    /// At an accessibility text size each end's label sits above its control
+    /// instead: beside it, the column left was narrower than "Opponent
+    /// (optional)"'s longest word, and a picker's name was cut to a few letters.
     private var court: some View {
-        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 0) {
-            half(.far)
-            // The net: dashed, as the mock draws it, across the card's width.
-            Net()
-                .stroke(Shuttl.textTertiary, style: StrokeStyle(lineWidth: Self.netStroke, dash: [6, 4]))
-                .opacity(readOnlyOpacity)
-                .frame(height: Self.netStroke)
-                .padding(.horizontal, -Self.inset)
-                .accessibilityHidden(true)
-            half(.near)
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 0) {
+                    stackedHalf(.far)
+                    net
+                    stackedHalf(.near)
+                }
+            } else {
+                Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 0) {
+                    half(.far)
+                    net
+                    half(.near)
+                }
+            }
         }
         .padding(.horizontal, Self.inset)
         // textTertiary, the input boxes' own stroke, rather than Android's
@@ -101,22 +111,46 @@ struct WhoIsPlayingSection: View {
     /// `.disabled`, so the whole card dims as one.
     private var readOnlyOpacity: Double { uploading ? 0.6 : 1 }
 
+    /// The net: dashed, as the mock draws it, across the card's width.
+    private var net: some View {
+        Net()
+            .stroke(Shuttl.textTertiary, style: StrokeStyle(lineWidth: Self.netStroke, dash: [6, 4]))
+            .opacity(readOnlyOpacity)
+            .frame(height: Self.netStroke)
+            .padding(.horizontal, -Self.inset)
+            .accessibilityHidden(true)
+    }
+
     private func half(_ end: CourtSide) -> some View {
         let field = draft.field(end: end)
         return GridRow(alignment: field == .opponent ? .lastTextBaseline : .firstTextBaseline) {
-            Text(end == .near ? PlayersCopy.shared.NEAR : PlayersCopy.shared.FAR)
-                .shuttlType(ShuttlType.labelMedium)
-                .foregroundStyle(Shuttl.textSecondary)
-                .lineLimit(1)
-                .fixedSize()
-                .opacity(readOnlyOpacity)
-                // The control is named after the end, so the tag is not read
-                // a second time.
-                .accessibilityHidden(true)
+            endTag(end)
             control(end, field)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.vertical, Self.inset)
+    }
+
+    /// One end at an accessibility size: its label above its control.
+    private func stackedHalf(_ end: CourtSide) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            endTag(end)
+            control(end, draft.field(end: end))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, Self.inset)
+    }
+
+    private func endTag(_ end: CourtSide) -> some View {
+        Text(end == .near ? PlayersCopy.shared.NEAR : PlayersCopy.shared.FAR)
+            .shuttlType(ShuttlType.labelMedium)
+            .foregroundStyle(Shuttl.textSecondary)
+            .lineLimit(1)
+            .fixedSize()
+            .opacity(readOnlyOpacity)
+            // The control is named after the end, so the tag is not read
+            // a second time.
+            .accessibilityHidden(true)
     }
 
     /// One end, as the draft says it draws (`EndsDraft.field`): One mode's

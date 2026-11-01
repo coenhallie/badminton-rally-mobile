@@ -17,12 +17,16 @@ typealias AddPlayer = (String, RacketArm?) async -> PlayerCreation
 /// players list carries the new player, the one just made is what the box
 /// shows, so it never flashes "Choose a player".
 ///
-/// Drawn like `ShuttlTextField`'s box (the same fill, stroke, radius, inset and
-/// line height, the text in bodyLarge), so a picker and a typed name beside it
-/// read as one form. A native `Menu`, whose pop-up-button semantics VoiceOver
-/// announces (Ruling 21); `accessibilityName` says which end or side it is for,
-/// and its value is what is chosen. The menu's rows carry no avatar: a menu row
-/// draws only text and a symbol. A disabled picker dims to the field's 0.6.
+/// Drawn as `ShuttlMenuField`, `ShuttlTextField`'s box, so a picker and a typed
+/// name beside it read as one form. A native `Menu`, whose pop-up-button
+/// semantics VoiceOver announces (Ruling 21); `accessibilityName` says which
+/// end or side it is for, and its value is what is chosen. A disabled picker
+/// dims to the field's 0.6.
+///
+/// The menu's rows carry no avatar (a menu row draws only text and a symbol)
+/// and no symbol either, "Add player" included, where androidApp leads it with
+/// a "+": a menu sets the text of a section with a symbol in it further right,
+/// so "Someone else" and "Add player" read as a second column of text.
 /// Mirrors androidApp's PlayerPicker.kt.
 struct PlayerPicker: View {
     let selectedId: String?
@@ -35,10 +39,6 @@ struct PlayerPicker: View {
     var onSomeoneElse: (() -> Void)? = nil
 
     @Environment(\.isEnabled) private var isEnabled
-    @Environment(\.displayScale) private var displayScale
-    /// `ShuttlTextField`'s line, so the two boxes are one height.
-    @ScaledMetric(relativeTo: .body) private var lineHeight: CGFloat =
-        ShuttlType.bodyLarge.size * ShuttlType.bodyLarge.lineHeightMultiple
     @State private var adding = false
     /// The player "Add player" just made, until `players` carries them.
     @State private var created: Player? = nil
@@ -56,7 +56,6 @@ struct PlayerPicker: View {
 
     var body: some View {
         let copy = PlayersCopy.shared
-        let line = (lineHeight * displayScale).rounded(.up) / displayScale
         Menu {
             if let onClear, selected != nil {
                 Button(copy.CHOOSE_PLAYER, action: onClear)
@@ -76,39 +75,14 @@ struct PlayerPicker: View {
                     set: { _ in onSomeoneElse() }
                 ))
             }
-            Button {
-                adding = true
-            } label: {
-                Label(copy.PICKER_ADD_PLAYER, systemImage: "plus")
-            }
+            Button(copy.PICKER_ADD_PLAYER) { adding = true }
         } label: {
-            HStack(spacing: 8) {
+            ShuttlMenuField(text: shown, dimmed: selected == nil && !someoneElse) { line in
                 if let selected {
                     // The field's line at most, so the box keeps its height.
                     PlayerAvatar(name: selected.name, size: min(Self.avatarSize, line))
                 }
-                Text(shown)
-                    .shuttlType(ShuttlType.bodyLarge)
-                    .foregroundStyle(selected != nil || someoneElse ? Shuttl.text : Shuttl.textSecondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Image(systemName: "chevron.down")
-                    .imageScale(.small)
-                    .foregroundStyle(Shuttl.textSecondary)
-                    .accessibilityHidden(true)
             }
-            .frame(height: line)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(RoundedRectangle(cornerRadius: ShuttlRadius.small).fill(Shuttl.bgInput))
-            .overlay(
-                RoundedRectangle(cornerRadius: ShuttlRadius.small)
-                    .strokeBorder(Shuttl.textTertiary, lineWidth: 1)
-            )
-            // Taps land at least 44pt tall, reaching just past the box
-            // rather than making it taller than the text field beside it.
-            .contentShape(MinimumTargetShape(axes: .vertical))
         }
         // The whole control, box and stroke too, as a disabled ShuttlTextField
         // dims: the two sit side by side.

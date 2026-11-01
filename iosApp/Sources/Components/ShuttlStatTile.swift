@@ -94,7 +94,9 @@ struct ShuttlStatTile: View {
 /// one inset for the whole row, never one tile tighter than its neighbours.
 /// The choice is made from the tiles' own widths, not from the screen's. At a
 /// large text size neither fits; the row takes the tighter inset and a value
-/// wraps between words.
+/// wraps between words. At an accessibility size a third of the row held only
+/// a caption's first letters ("Mat…"), so the tiles stack instead, each the
+/// row's full width.
 struct ShuttlStatTileRow: View {
     struct Tile {
         let value: String
@@ -103,6 +105,8 @@ struct ShuttlStatTileRow: View {
 
     let tiles: [Tile]
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     /// The compact tile's inset where the row has room for it.
     static let inset: CGFloat = 12
     /// Where it does not.
@@ -110,20 +114,32 @@ struct ShuttlStatTileRow: View {
     static let spacing: CGFloat = 8
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            row(inset: Self.inset)
-            row(inset: Self.tightInset)
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(spacing: Self.spacing) {
+                ForEach(tiles.indices, id: \.self) { index in
+                    tile(tiles[index], inset: Self.inset)
+                }
+            }
+        } else {
+            ViewThatFits(in: .horizontal) {
+                row(inset: Self.inset)
+                row(inset: Self.tightInset)
+            }
         }
+    }
+
+    private func tile(_ tile: Tile, inset: CGFloat) -> some View {
+        ShuttlStatTile(
+            value: tile.value, unit: "", label: tile.label,
+            compact: true, compactInset: inset
+        )
+        .accessibilityElement(children: .combine)
     }
 
     private func row(inset: CGFloat) -> some View {
         EqualColumns(spacing: Self.spacing) {
             ForEach(tiles.indices, id: \.self) { index in
-                ShuttlStatTile(
-                    value: tiles[index].value, unit: "", label: tiles[index].label,
-                    compact: true, compactInset: inset
-                )
-                .accessibilityElement(children: .combine)
+                tile(tiles[index], inset: inset)
             }
         }
     }

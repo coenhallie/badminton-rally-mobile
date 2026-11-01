@@ -34,6 +34,9 @@ struct HomeEndPrompt: View {
             Text(copy.ATTACH_SUBTITLE)
                 .shuttlType(ShuttlType.bodyMedium)
                 .foregroundStyle(Shuttl.textSecondary)
+                // Wraps, as the title does: the sheet is sized to its
+                // content, which otherwise held the line to one.
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 16)
             HStack(spacing: 12) {
                 Button(copy.NEAR) { answer(.home) }

@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		0067A70A11FA33C3B12836E7 /* RootAnnouncementsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53968D5B3649AB4EC7D5239A /* RootAnnouncementsTests.swift */; };
+		00FC30C7797AD711BFB472D0 /* ShuttlMenuField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 497F06387468DBC96CA8419C /* ShuttlMenuField.swift */; };
 		02D41C7297C5D2DCCA6DF102 /* ShuttlToast.swift in Sources */ = {isa = PBXBuildFile; fileRef = 913AE8A9DEC3871D49BC44C8 /* ShuttlToast.swift */; };
 		041DA79680A869A64BB02737 /* LabelsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B13CBB38AE526A3C355DE8B /* LabelsModel.swift */; };
 		042DA588EB675EB7277C0EA2 /* PlayerNotesLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86C0C08564A8FDFD31123955 /* PlayerNotesLayout.swift */; };
@@ -264,6 +265,7 @@
 		451E1BE87D67E7ADFCCAE734 /* MatchListRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchListRowView.swift; sourceTree = "<group>"; };
 		482622C0504DD57A384A6C0D /* TypographyAdoptionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TypographyAdoptionTests.swift; sourceTree = "<group>"; };
 		494E223F94F8690D469C7F44 /* DeviceRunOutputTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceRunOutputTests.swift; sourceTree = "<group>"; };
+		497F06387468DBC96CA8419C /* ShuttlMenuField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShuttlMenuField.swift; sourceTree = "<group>"; };
 		4A94F21AB0AEE5F66047B679 /* MatchGrouping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchGrouping.swift; sourceTree = "<group>"; };
 		4AFBCE65971EDF3A28170ED3 /* CourtCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CourtCard.swift; sourceTree = "<group>"; };
 		4B46560A5190E75D7D9644D0 /* AddAnnotationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddAnnotationSheet.swift; sourceTree = "<group>"; };
@@ -473,6 +475,7 @@
 				82FC0470AAADE04383A85BE1 /* PrimaryButtonStyle.swift */,
 				689E040BE4096BDC0E420AC2 /* ReplayLabels.swift */,
 				A9999B38366B71CBE818454F /* ShuttlEmptyState.swift */,
+				497F06387468DBC96CA8419C /* ShuttlMenuField.swift */,
 				2CD4049AA05CFA8358E6F191 /* ShuttlNavigationBar.swift */,
 				6B17571954B660B726FF837C /* ShuttlPillTabs.swift */,
 				BA7AE2547676C60BDC65D02A /* ShuttlPlayer.swift */,
@@ -1062,6 +1065,7 @@
 				D90B20576A674D829140588B /* ShareSheetView.swift in Sources */,
 				AA8CAB15A365A7F79CE1EE03 /* ShuttlEmptyState.swift in Sources */,
 				BDFDF48A8D5F923F5890A7D7 /* ShuttlGutter.swift in Sources */,
+				00FC30C7797AD711BFB472D0 /* ShuttlMenuField.swift in Sources */,
 				05CC7387773D8C8BA1F41C3D /* ShuttlNavigationBar.swift in Sources */,
 				EFC7C2B1753F37A837868571 /* ShuttlPalette.swift in Sources */,
 				9A3B4FB6E73D55ADA74E476A /* ShuttlPillTabs.swift in Sources */,

@@ -36,6 +36,7 @@ struct MatchDetailsSheet: View {
     @State private var title: String
     @State private var description: String
     @State private var draft: EndsDraft
+    @FocusState private var descriptionFocused: Bool
 
     private let titleCap = Int(LocalVideoDetailsKt.MAX_MATCH_TITLE_LENGTH)
     private let descriptionCap = Int(LocalVideoDetailsKt.MAX_MATCH_DESCRIPTION_LENGTH)
@@ -102,25 +103,29 @@ struct MatchDetailsSheet: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    WhoIsPlayingSection(
-                        draft: $draft, players: roster, onAddPlayer: onAddPlayer, uploading: !playersEditable
-                    )
-                    if detailsEditable {
-                        ShuttlTextField("Match name", text: $title, maxLength: titleCap)
-                        ShuttlTextField("Description", text: $description, maxLength: descriptionCap, minLines: 3)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        WhoIsPlayingSection(
+                            draft: $draft, players: roster, onAddPlayer: onAddPlayer, uploading: !playersEditable
+                        )
+                        if detailsEditable {
+                            ShuttlTextField("Match name", text: $title, maxLength: titleCap)
+                            ShuttlTextField("Description", text: $description, maxLength: descriptionCap, minLines: 3)
+                                .focused($descriptionFocused)
+                                .revealedAboveKeyboard(focused: descriptionFocused, in: proxy)
+                        }
+                        if let problem {
+                            Text(problem)
+                                .shuttlType(ShuttlType.bodySmall)
+                                .foregroundStyle(Shuttl.error)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
-                    if let problem {
-                        Text(problem)
-                            .shuttlType(ShuttlType.bodySmall)
-                            .foregroundStyle(Shuttl.error)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                    .padding(.horizontal, ShuttlGutter.page)
+                    .padding(.top, 8)
+                    .padding(.bottom, 24)
                 }
-                .padding(.horizontal, ShuttlGutter.page)
-                .padding(.top, 8)
-                .padding(.bottom, 24)
             }
             .scrollDismissesKeyboard(.interactively)
             .background(Shuttl.bgDialog)

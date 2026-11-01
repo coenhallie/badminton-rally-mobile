@@ -26,7 +26,11 @@ import SwiftUI
 /// `maxLength`, as Android's, caps typing at that many characters and shows an
 /// n/max counter at the label's right, which VoiceOver hears as the field's
 /// hint. Characters are counted as shared counts them (`sharedLength`, UTF-16
-/// units), so the counter and the cap agree with the rule that judges the save. `minLines` above 1 makes the field grow
+/// units), so the counter and the cap agree with the rule that judges the save.
+/// At an accessibility text size the counter takes a line of its own under
+/// the label: beside it, a label in a narrow column ("Opponent (optional)" in
+/// the court card) had less room than its longest word and broke inside it.
+/// `minLines` above 1 makes the field grow
 /// from that many lines as it is typed into (a description), rather than one
 /// fixed line.
 struct ShuttlTextField: View {
@@ -38,6 +42,7 @@ struct ShuttlTextField: View {
 
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.displayScale) private var displayScale
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @FocusState private var isFocused: Bool
     /// bodyLarge's line (16 at 1.45), which Android's field is laid out on,
     /// scaled with Dynamic Type the way the role's font is (relative to body).
@@ -110,16 +115,30 @@ struct ShuttlTextField: View {
 
     private var multiline: Bool { minLines > 1 && !secure }
 
-    /// The label, and the counter at its right when the field is capped. Hidden
-    /// here: VoiceOver hears the count as the field's hint (see `body`).
+    /// The label, and the counter at its right when the field is capped, or
+    /// under it at an accessibility size (see the type's notes). Hidden here:
+    /// VoiceOver hears the count as the field's hint (see `body`).
     @ViewBuilder private var header: some View {
         if let maxLength {
-            HStack(alignment: .firstTextBaseline) {
-                Shuttl.sectionLabel(label)
-                Spacer(minLength: 8)
-                Text("\(text.sharedLength)/\(maxLength)")
-                    .shuttlType(ShuttlType.labelSmall)
-                    .foregroundStyle(Shuttl.textSecondary)
+            let counter = Text("\(text.sharedLength)/\(maxLength)")
+                .shuttlType(ShuttlType.labelSmall)
+                .foregroundStyle(Shuttl.textSecondary)
+                .fixedSize()
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Shuttl.sectionLabel(label)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        counter
+                    }
+                } else {
+                    HStack(alignment: .firstTextBaseline) {
+                        Shuttl.sectionLabel(label)
+                        Spacer(minLength: 8)
+                        counter
+                    }
+                }
             }
             .accessibilityHidden(true)
         } else {
@@ -159,5 +178,58 @@ extension String {
             end = index(after: end)
         }
         return String(self[..<end])
+    }
+}
+
+extension View {
+    /// Scrolls this view (a field inside `proxy`'s scroll view) up until its
+    /// bottom edge clears the keyboard, while `focused`: when the keyboard
+    /// comes up over it, or when it takes focus with the keyboard already up.
+    ///
+    /// For a field taller than a line. iOS scrolls a focused field only as far
+    /// as its caret, so a three-line description near the foot of a sheet was
+    /// left with its first line above the keyboard and the rest under it. Only
+    /// when the keyboard covers part of it (or comes within `gap` of it), so a
+    /// field already in view stays where it is; and then to `gap` above the
+    /// keyboard, not flush with its suggestion bar.
+    func revealedAboveKeyboard(focused: Bool, in proxy: ScrollViewProxy) -> some View {
+        modifier(RevealedAboveKeyboard(focused: focused, proxy: proxy))
+    }
+}
+
+private struct RevealedAboveKeyboard: ViewModifier {
+    let focused: Bool
+    let proxy: ScrollViewProxy
+
+    /// The space left between the view and the keyboard.
+    private let gap: CGFloat = 12
+
+    @State private var id = UUID()
+    /// This view's bottom edge, in the window's coordinates.
+    @State private var bottom: CGFloat = 0
+    /// The keyboard's top edge, in the screen's, while it is up.
+    @State private var keyboardTop: CGFloat? = nil
+
+    func body(content: Content) -> some View {
+        content
+            // The scroll target: the view and `gap` under it, drawn as
+            // nothing and changing no layout.
+            .background(Color.clear.id(id).padding(.bottom, -gap))
+            .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .global).maxY }) { bottom = $0 }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { note in
+                keyboardTop = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect)?.minY
+                reveal()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+                keyboardTop = nil
+            }
+            .onChange(of: focused) { _, _ in reveal() }
+    }
+
+    private func reveal() {
+        // A sheet's window fills the screen on a phone, so the two
+        // coordinate spaces agree.
+        guard focused, let keyboardTop, bottom + gap > keyboardTop else { return }
+        withAnimation { proxy.scrollTo(id, anchor: .bottom) }
     }
 }

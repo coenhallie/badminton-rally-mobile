@@ -91,7 +91,7 @@ struct PlayerView: View {
             .background(Shuttl.bg)
             .navigationBarTitleDisplayMode(.inline)
             .shuttlNavigationBarBackground()
-            .toolbar { toolbarContent }
+            .toolbar { toolbarContent(matchCount: Int(summary.matchCount)) }
             .overlay(alignment: .bottomTrailing) {
                 if player != nil {
                     AddMatchButton(action: onAdd)
@@ -126,9 +126,7 @@ struct PlayerView: View {
                 }
             }
             .modifier(Dialogs(
-                player: player, matchCount: Int(summary.matchCount), model: model,
-                renaming: $renaming, choosingHand: $choosingHand, confirmingDelete: $confirmingDelete,
-                onDeleted: onGone
+                player: player, model: model, renaming: $renaming, choosingHand: $choosingHand
             ))
             .onChange(of: overlayOpen, initial: true) { _, open in onOverlayChange(open) }
             // Leaving the page takes its sheets with it, whatever was last said.
@@ -194,11 +192,11 @@ struct PlayerView: View {
     }
 
     @ToolbarContentBuilder
-    private var toolbarContent: some ToolbarContent {
+    private func toolbarContent(matchCount: Int) -> some ToolbarContent {
         // First in the bar's trailing group, so it keeps its place as each
         // screen's own actions come and go. See `BackgroundWorkAction`.
         ToolbarItem(placement: .topBarTrailing) { BackgroundWorkAction() }
-        if player != nil {
+        if let player {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button(PlayersCopy.shared.MENU_RENAME) { renaming = true }
@@ -208,23 +206,25 @@ struct PlayerView: View {
                     Image(systemName: "ellipsis.circle")
                 }
                 .accessibilityLabel(PlayersCopy.shared.PLAYER_OPTIONS)
+                // On the button the coach tapped: iOS 26 draws the dialog as
+                // a popover from the view it hangs on, and from the page it
+                // pointed into the tiles.
+                .modifier(DeleteConfirmation(
+                    player: player, matchCount: matchCount, model: model,
+                    isPresented: $confirmingDelete, onDeleted: onGone
+                ))
             }
         }
     }
 }
 
-/// The rename and playing-hand sheets and the delete confirmation, apart from
-/// the page's body so its modifier chain stays within what the type checker
-/// settles in time.
+/// The rename and playing-hand sheets, apart from the page's body so its
+/// modifier chain stays within what the type checker settles in time.
 private struct Dialogs: ViewModifier {
     let player: Player?
-    let matchCount: Int
     let model: PlayersModel
     @Binding var renaming: Bool
     @Binding var choosingHand: Bool
-    @Binding var confirmingDelete: Bool
-    /// The server deleted the player: the page closes.
-    let onDeleted: () -> Void
 
     func body(content: Content) -> some View {
         let copy = PlayersCopy.shared
@@ -251,12 +251,28 @@ private struct Dialogs: ViewModifier {
                     }
                 }
             }
+    }
+}
+
+/// "Delete {name}?", on the overflow button that asks it, so the popover iOS
+/// 26 draws for a confirmation dialog points at that button. The button goes
+/// with the player, and the dialog with it.
+private struct DeleteConfirmation: ViewModifier {
+    let player: Player
+    let matchCount: Int
+    let model: PlayersModel
+    @Binding var isPresented: Bool
+    /// The server deleted the player: the page closes.
+    let onDeleted: () -> Void
+
+    func body(content: Content) -> some View {
+        let copy = PlayersCopy.shared
+        content
             .confirmationDialog(
-                player.map { copy.deleteTitle(name: $0.name) } ?? "",
-                isPresented: $confirmingDelete,
-                titleVisibility: .visible,
-                presenting: player
-            ) { player in
+                copy.deleteTitle(name: player.name),
+                isPresented: $isPresented,
+                titleVisibility: .visible
+            ) {
                 Button(copy.DELETE_CONFIRM, role: .destructive) {
                     // The shared delete: the matches keep the name and lose the
                     // id. The page closes once the server has agreed; a refusal
@@ -266,7 +282,7 @@ private struct Dialogs: ViewModifier {
                     }
                 }
                 Button(copy.CANCEL, role: .cancel) {}
-            } message: { _ in
+            } message: {
                 // Counted from the list the Matches tab shows, so the dialog
                 // says exactly what the coach has just been looking at.
                 Text(copy.deleteBody(matchCount: Int32(matchCount)))
@@ -287,12 +303,18 @@ private struct Dialogs: ViewModifier {
 /// width like any other view: the avatar and chevron keep their size and the
 /// name takes the rest, cut with an ellipsis, on every width and iOS version.
 ///
+/// One line, except at an accessibility text size: there one line held only
+/// the first word of most names, and the page shows the name nowhere else, so
+/// it wraps to up to three. The avatar and the chevron stay centred on it.
+///
 /// The whole row is the menu's button, at least 44pt tall. VoiceOver hears
 /// the name as the page's heading and as a pop-up button (Ruling 21).
 private struct TitleRow: View {
     let current: Player
     let players: [Player]
     let onPick: (String) -> Void
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         Menu {
@@ -313,7 +335,7 @@ private struct TitleRow: View {
                     Text(current.name)
                         .shuttlType(ShuttlType.headlineMedium)
                         .foregroundStyle(Shuttl.textHeading)
-                        .lineLimit(1)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
                         .truncationMode(.tail)
                     Image(systemName: "chevron.down")
                         .shuttlType(ShuttlType.labelMedium)
@@ -353,7 +375,8 @@ private struct ProfileTab: View {
                 // One width and one height for the three. Every value is one
                 // line at the default text size ("Oct 28", "Oct '25",
                 // "None yet") down to 320pt; at a large one a value can wrap,
-                // and the captions still stay level: see ShuttlStatTileRow.
+                // and the captions still stay level; at an accessibility size
+                // the three stack: see ShuttlStatTileRow.
                 ShuttlStatTileRow(tiles: [
                     .init(value: String(summary.matchCount), label: copy.TILE_MATCHES),
                     .init(value: String(summary.rallyCount), label: copy.TILE_RALLIES),
