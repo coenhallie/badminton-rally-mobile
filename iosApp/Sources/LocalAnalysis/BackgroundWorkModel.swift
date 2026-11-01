@@ -133,6 +133,10 @@ private struct BackgroundWorkClickKey: EnvironmentKey {
     static let defaultValue: () -> Void = {}
 }
 
+private struct BackgroundWorkSheetChangeKey: EnvironmentKey {
+    static let defaultValue: (Bool) -> Void = { _ in }
+}
+
 extension EnvironmentValues {
     /// Ambient background-work state, provided once around the navigation stack.
     /// Port of Android's `LocalBackgroundWork`.
@@ -151,6 +155,13 @@ extension EnvironmentValues {
     var backgroundWorkClick: () -> Void {
         get { self[BackgroundWorkClickKey.self] }
         set { self[BackgroundWorkClickKey.self] = newValue }
+    }
+
+    /// Whether the indicator's detail sheet is open, said to whoever hosts the
+    /// app's root announcements so nothing is presented over it.
+    var backgroundWorkSheetChange: (Bool) -> Void {
+        get { self[BackgroundWorkSheetChangeKey.self] }
+        set { self[BackgroundWorkSheetChangeKey.self] = newValue }
     }
 }
 

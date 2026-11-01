@@ -9,12 +9,28 @@ import SwiftUI
 /// size, in `SecondaryPillButtonStyle`'s colours: the page's surface behind a
 /// hairline border rather than the accent, for an action that is not the one
 /// the screen exists for (a Retry beside a failed load).
+///
+/// `fullTarget` keeps the pill as drawn but makes the button
+/// `ShuttlTarget.minimum` tall, so a tap just above or below the 29pt pill
+/// still lands. For a pill that is a screen's main control; callers in a
+/// tight row leave it off and carry their own target.
 struct CompactPillButtonStyle: ButtonStyle {
     var secondary: Bool = false
+    var fullTarget: Bool = false
 
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
+        if fullTarget {
+            pill(configuration)
+                .frame(minHeight: ShuttlTarget.minimum)
+                .contentShape(Rectangle())
+        } else {
+            pill(configuration)
+        }
+    }
+
+    private func pill(_ configuration: Configuration) -> some View {
         configuration.label
             .shuttlType(ShuttlType.labelMedium)
             .foregroundStyle(secondary ? Shuttl.textHeading : Shuttl.onAccent)

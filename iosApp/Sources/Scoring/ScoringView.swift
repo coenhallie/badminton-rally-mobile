@@ -209,16 +209,15 @@ struct ScoringView: View {
     ///   response.
     /// - `false` (this board was pushed straight from creating a match,
     ///   nothing underneath it yet): no `dismiss()`, and no defer. This board
-    ///   and the match page it hands off to are two cases of the SAME
-    ///   `item:`-bound destination on `ClipListView` (`CreateFlowDestination`)
-    ///   - `onFinished` reassigns that one binding to the "finished" case,
-    ///   which is the transition SwiftUI reliably replaces a destination with
-    ///   in a single step. Popping this view first and pushing a *different*
-    ///   binding a tick later - the same shape as the `true` branch - was
-    ///   tried here too and produced the identical permanently-blank freeze,
-    ///   which is what led to folding both stages into one binding instead of
-    ///   chasing a longer deferral. See `CreateFlowDestination`'s own doc
-    ///   comment and task-13-report.md's create-and-finish investigation.
+    ///   and the match page it hands off to are two entries of HomeView's one
+    ///   path (`HomeRoute.scoring` and `.finished`) - `onFinished` replaces
+    ///   the board's entry with the match page's in a single reassignment,
+    ///   the transition SwiftUI reliably settles. Popping this view first and
+    ///   pushing a *different* destination a tick later - the same shape as
+    ///   the `true` branch - was tried here too and produced the identical
+    ///   permanently-blank freeze, which is why the two stages are one
+    ///   in-place swap. See `HomeRoute` and task-13-report.md's
+    ///   create-and-finish investigation.
     private func deliverFinish(_ intent: AttachIntent?) {
         if matchPageAlreadyOpen {
             dismiss()

@@ -1,6 +1,6 @@
 import Shared
 
-/// What a change in the finished runs does to the list's toast: the seen set
+/// What a change in the finished runs does to the root toast: the seen set
 /// to keep, and the runs the toast should now name.
 struct RunToastUpdate: Equatable {
     /// Pass back in as `seen` next time. See `announceFinishedRuns`.

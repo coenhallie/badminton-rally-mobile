@@ -52,7 +52,9 @@ struct PlayersScreen: View {
         }
         // Above the Add button rather than over it: the 56pt button, its 16pt
         // margin, and 16pt of air.
-        .shuttlToast($toast, bottomInset: 88)
+        // HomeView ends it when the coach leaves the list screens; see
+        // `RootToasts.listsLeft`.
+        .shuttlToast($toast, bottomInset: 88, endsWhenScreenGoes: false)
         // Both while this screen is in front, and stopped under a push: the
         // rows' details read the match list, and nothing else runs its loops
         // while Players is the screen on top. See `ClipListModel.start()`.
@@ -136,7 +138,7 @@ struct PlayersScreen: View {
                         message: copy.LOAD_FAILED_BODY
                     ) {
                         Button(copy.RETRY) { Task { await model.refresh() } }
-                            .buttonStyle(CompactPillButtonStyle(secondary: true))
+                            .buttonStyle(CompactPillButtonStyle(secondary: true, fullTarget: true))
                     }
                 } else {
                     ShuttlEmptyState(
@@ -147,7 +149,7 @@ struct PlayersScreen: View {
                         Button { addingPlayer = true } label: {
                             Label(copy.ADD_PLAYER, systemImage: "plus")
                         }
-                        .buttonStyle(CompactPillButtonStyle())
+                        .buttonStyle(CompactPillButtonStyle(fullTarget: true))
                     }
                 }
                 allMatchesButton

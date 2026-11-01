@@ -13,7 +13,8 @@ import SwiftUI
 /// "what is it doing" is the question the indicator provokes.
 struct BackgroundWorkAction: View {
     @Environment(\.backgroundWork) private var work
-    @Environment(\.backgroundWorkClick) private var goToMatches
+    @Environment(\.backgroundWorkClick) private var goToAllMatches
+    @Environment(\.backgroundWorkSheetChange) private var reportSheet
     @State private var showDetail = false
 
     var body: some View {
@@ -37,7 +38,7 @@ struct BackgroundWorkAction: View {
                     .sheet(isPresented: $showDetail) {
                         BackgroundWorkSheet(work: work) {
                             showDetail = false
-                            goToMatches()
+                            goToAllMatches()
                         }
                     }
             }
@@ -45,6 +46,12 @@ struct BackgroundWorkAction: View {
         .onChange(of: work == nil) { _, nothingRunning in
             if nothingRunning { showDetail = false }
         }
+        // Said upward, so HomeView holds its root announcements while the
+        // sheet is up on a list screen: a dialog presented over it would take
+        // it down. Cleared on the way out as well, in case the screen goes
+        // with the sheet still up.
+        .onChange(of: showDetail) { _, open in reportSheet(open) }
+        .onDisappear { if showDetail { reportSheet(false) } }
     }
 
     @ViewBuilder

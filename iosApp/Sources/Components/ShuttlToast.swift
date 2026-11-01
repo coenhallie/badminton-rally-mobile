@@ -30,6 +30,7 @@ struct ToastMessage: Equatable {
 /// `inversePrimary` in ShuttlColors.kt).
 private struct ShuttlToast: View {
     let message: ToastMessage
+    let endsWhenScreenGoes: Bool
     let onDone: () -> Void
 
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
@@ -86,8 +87,10 @@ private struct ShuttlToast: View {
             onDone()
         }
         // Leaving the screen ends it, timer or not: a push over the list
-        // must not leave it waiting there when the coach comes back.
-        .onDisappear(perform: onDone)
+        // must not leave it waiting there when the coach comes back. Unless
+        // the owner ends it itself (see `shuttlToast`): the timer above is a
+        // `.task`, so it stops with the screen and starts again with it.
+        .onDisappear { if endsWhenScreenGoes { onDone() } }
     }
 }
 
@@ -96,11 +99,23 @@ extension View {
     /// times out (not under VoiceOver), its action runs, or the screen goes.
     /// Setting a new message while one shows replaces it and restarts the
     /// clock.
-    func shuttlToast(_ toast: Binding<ToastMessage?>, bottomInset: CGFloat) -> some View {
+    ///
+    /// `endsWhenScreenGoes` false leaves the last of those to the owner of
+    /// `toast`: for a message two screens draw, which must survive the coach
+    /// moving between them (HomeView's root toast on Players and All
+    /// matches). A disappearance is not a reliable signal there either: a
+    /// message set as the coach returns to a screen is told the screen went
+    /// the moment it is inserted, mid-transition (measured on the simulator,
+    /// task-12-report.md, fix round 1).
+    func shuttlToast(
+        _ toast: Binding<ToastMessage?>,
+        bottomInset: CGFloat,
+        endsWhenScreenGoes: Bool = true
+    ) -> some View {
         overlay(alignment: .bottom) {
             ZStack {
                 if let message = toast.wrappedValue {
-                    ShuttlToast(message: message) {
+                    ShuttlToast(message: message, endsWhenScreenGoes: endsWhenScreenGoes) {
                         // Only this message's own dismissal clears the
                         // binding, so a late call for a message already
                         // replaced cannot take the new one down with it.

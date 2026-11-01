@@ -13,7 +13,8 @@ import Shared
 /// that failed, and the auto-shown dialog of a standalone video whose
 /// analysis failed reach the coach wherever they are. The messages go on the
 /// root toast, which Players and All matches draw, queued until one of them
-/// is in front; the dialog shows over any screen but the scoring board.
+/// is in front. The dialog shows on those two screens too; see
+/// `FailedRunDialog.shows` for why not over every screen as on Android.
 /// Mirrors androidApp's AuthGate and RootAnnouncementsHost.
 struct HomeView: View {
     let rally: RallyApp
@@ -59,26 +60,18 @@ struct HomeView: View {
     /// announced at most once. See `announceFinishedRuns`, which owns the rule
     /// both platforms follow.
     @State private var announcedRuns: Set<String> = []
-    /// What the root toast says, when anything. Drawn by Players and All
-    /// matches.
-    @State private var toast: ToastMessage? = nil
-    /// Messages waiting for `toast`, oldest first: one shows at a time, and
-    /// only while a list screen is in front with nothing above it. See
-    /// `deliverToast`.
-    @State private var toastQueue: [ToastMessage] = []
-    /// The runs the run toast names, and that toast's id while it is showing or
-    /// waiting, so a second run landing joins it ("2 matches are analyzed")
-    /// rather than queuing a second toast. See `announce`.
-    @State private var toastRuns: Set<String> = []
-    @State private var runToastId: UUID? = nil
+    /// The root toast: what shows, drawn by Players and All matches, and what
+    /// waits its turn. See `RootToasts`.
+    @State private var toasts = RootToasts()
     /// A standalone video whose analysis failed and whose result the coach has
     /// not seen: the dialog shown for it. See `resultDialogShown`.
     @State private var resultEntry: LocalVideoEntry? = nil
+    /// The background-work detail sheet, which the indicator on a list
+    /// screen's own bar presents. Reported through the environment, since
+    /// the indicator is chrome no screen owns.
+    @State private var workSheetOpen = false
     /// Whether the app is in front. See `nothingAbove`.
     @Environment(\.scenePhase) private var scenePhase
-    /// Where the scoring board says it is on screen, from either place that
-    /// pushes it. Optional so a Home built outside `RootView` still draws.
-    @Environment(KeepAwake.self) private var keepAwake: KeepAwake?
 
     init(rally: RallyApp, analyze: AnalyzeCoordinator, localAnalysis: LocalAnalysisRunner?) {
         self.rally = rally
@@ -113,7 +106,7 @@ struct HomeView: View {
                 onAdd: { showAddSheet = true },
                 onSettings: { path.append(.settings) },
                 onOverlayChange: { playersOverlayOpen = $0 },
-                toast: $toast
+                toast: toastBinding
             )
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: HomeRoute.self, destination: destination)
@@ -126,6 +119,28 @@ struct HomeView: View {
         // Inside the stack, because every destination that carries the indicator
         // is inside it and the path this rewrites is Home's.
         .environment(\.backgroundWorkClick, goToAllMatches)
+        .environment(\.backgroundWorkSheetChange) { workSheetOpen = $0 }
+        // The root toast goes when the coach leaves the list screens, and
+        // stays while they move between Players and All matches, which both
+        // draw it. See `RootToasts.listsLeft`.
+        .onChange(of: path) { _, new in
+            if !HomePath.listInFront(new) { toasts.listsLeft() }
+        }
+        .onChange(of: showRecorder) { _, open in
+            if open { toasts.listsLeft() }
+        }
+    }
+
+    /// What Players and All matches draw. Their toast reports its own end
+    /// (time, or its action) by clearing this.
+    private var toastBinding: Binding<ToastMessage?> {
+        Binding(
+            get: { toasts.showing },
+            set: { new in
+                guard new == nil, let showing = toasts.showing else { return }
+                toasts.ended(showing)
+            }
+        )
     }
 
     @ViewBuilder
@@ -138,7 +153,7 @@ struct HomeView: View {
                 onMatchTap: { path.append(.match($0)) },
                 onCourtMarking: { path.append(.courtMarking($0)) },
                 onOverlayChange: { listOverlayOpen = $0 },
-                toast: $toast
+                toast: toastBinding
             )
         case .match(let matchRoute):
             MatchView(
@@ -302,10 +317,11 @@ struct HomeView: View {
             playersModel.errorShown()
             post(error)
         }
-        .onChange(of: toast) { _, _ in deliverToast() }
+        .onChange(of: toasts.showing) { _, _ in deliverToast() }
         .onChange(of: nothingAbove) { _, _ in deliverToast() }
         // A standalone video whose analysis failed, once per failure: its
-        // dialog comes up wherever the coach is. `resultSeen` is persisted on
+        // dialog comes up on the next list screen in front (see
+        // `FailedRunDialog.shows`). `resultSeen` is persisted on
         // the entry, so a dismissal survives navigation and relaunch; a later
         // retry that fails again resets the flag and shows it anew. A video
         // claimed by a match fails on its match's row and page instead, which
@@ -313,9 +329,7 @@ struct HomeView: View {
         // heard whichever screen is in front.
         .task {
             for await entries in rally.localVideos.entries {
-                if resultEntry == nil {
-                    resultEntry = entries.first { $0.scoreLogId == nil && $0.stage == .failed && !$0.resultSeen }
-                }
+                resultEntry = FailedRunDialog.entry(held: resultEntry, in: entries)
             }
         }
         .alert(
@@ -323,7 +337,10 @@ struct HomeView: View {
                 ? "No rallies found" : "Analysis failed",
             isPresented: Binding(
                 get: { resultDialogShown },
-                set: { if !$0 { resultEntry = nil } }
+                // Only Retry and Close settle it, both by acknowledging the
+                // entry. A dismissal they did not cause leaves the entry
+                // waiting, and the dialog comes back once it can.
+                set: { _ in }
             ),
             presenting: resultEntry
         ) { entry in
@@ -375,43 +392,39 @@ struct HomeView: View {
     private var nothingAbove: Bool {
         scenePhase == .active
             && HomePath.listInFront(path)
-            && !showAddSheet && !showRecorder && !showImporter
-            && detailsTarget == nil && !listOverlayOpen && !playersOverlayOpen
+            && !sheetOverList
             && !resultDialogShown
     }
 
-    /// Whether the failed-run dialog is up: there is one to show, and nothing
-    /// it must wait for. It waits while the scoring board is in front (Ruling
-    /// 15): a dialog arriving under a coach's thumb mid-rally would take the
-    /// point's tap. It also waits under a sheet this view or a list screen has
-    /// open, since iOS shows one presentation at a time; a sheet the match
-    /// page opens itself is not known here.
+    /// Any sheet or dialog over a list screen that this view hears of: its own
+    /// presentations, the list screens' own, and the background-work sheet on
+    /// their bars.
+    private var sheetOverList: Bool {
+        showAddSheet || showRecorder || showImporter || detailsTarget != nil
+            || listOverlayOpen || playersOverlayOpen || workSheetOpen
+    }
+
+    /// Whether the failed-run dialog is up. See `FailedRunDialog.shows`: on a
+    /// list screen with nothing over it, so it is only asked for when it can
+    /// actually be presented, and can never be "up" without being seen.
     private var resultDialogShown: Bool {
-        resultEntry != nil
-            && keepAwake?.boardsOnScreen.isEmpty != false
-            && !showAddSheet && !showRecorder && !showImporter
-            && detailsTarget == nil && !listOverlayOpen && !playersOverlayOpen
+        FailedRunDialog.shows(
+            hasEntry: resultEntry != nil,
+            listInFront: HomePath.listInFront(path),
+            sheetOpen: sheetOverList
+        )
     }
 
     /// Queues `text` for the root toast.
     private func post(_ text: String) {
-        toastQueue.append(ToastMessage(text: text, actionLabel: nil, action: nil))
+        toasts.post(ToastMessage(text: text, actionLabel: nil, action: nil))
         deliverToast()
     }
 
-    /// Shows the oldest waiting message, once nothing is showing and a list
-    /// screen is in front with nothing above it. Not sooner: a toast set while
-    /// another screen is on top would sit in a list screen that cannot be
-    /// seen, and time out there.
+    /// Shows the oldest waiting message once a list screen is in front with
+    /// nothing above it. See `RootToasts`.
     private func deliverToast() {
-        guard toast == nil, nothingAbove, !toastQueue.isEmpty else { return }
-        toast = toastQueue.removeFirst()
-    }
-
-    /// Whether the run toast is showing or waiting its turn.
-    private var runToastPending: Bool {
-        guard let id = runToastId else { return false }
-        return toast?.id == id || toastQueue.contains { $0.id == id }
+        toasts.deliver(listInFront: nothingAbove)
     }
 
     /// One announcement for both pipelines: a run that lands, on-device or in
@@ -436,7 +449,7 @@ struct HomeView: View {
             cloudFinished: cloudFinished,
             seen: announcedRuns,
             onHome: nothingAbove,
-            showing: runToastPending ? toastRuns : nil
+            showing: toasts.pendingRuns
         )
         announcedRuns = update.seen
         // Built from the list as it is now. Nil when none of the runs is a
@@ -450,15 +463,7 @@ struct HomeView: View {
             actionLabel: item == nil ? nil : MatchPageCopy.shared.VIEW,
             action: item.map { item in { openAfterRun(item) } }
         )
-        if let old = runToastId, toast?.id == old {
-            toast = runToast
-        } else if let old = runToastId, let at = toastQueue.firstIndex(where: { $0.id == old }) {
-            toastQueue[at] = runToast
-        } else {
-            toastQueue.append(runToast)
-        }
-        toastRuns = ids
-        runToastId = runToast.id
+        toasts.announce(runs: ids, runToast)
         deliverToast()
     }
 

@@ -102,8 +102,11 @@ struct PlayerNameSheet: View {
             }
 
             HStack(spacing: 12) {
+                // Held with Save while the save is in flight: a Cancel then
+                // would close the sheet over a player that is still created.
                 Button(copy.CANCEL) { dismiss() }
                     .buttonStyle(SecondaryPillButtonStyle())
+                    .disabled(saving)
                 Button(copy.SAVE, action: save)
                     .buttonStyle(PrimaryButtonStyle())
                     .disabled(problem != nil || saving)

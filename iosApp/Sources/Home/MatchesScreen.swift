@@ -36,6 +36,8 @@ struct MatchesScreen: View {
         }
         // No Add button here to stand clear of: the toast sits the button's
         // own 16pt margin off the bottom, where Players' Add button would be.
-        .shuttlToast($toast, bottomInset: 16)
+        // HomeView ends it when the coach leaves the list screens; see
+        // `RootToasts.listsLeft`.
+        .shuttlToast($toast, bottomInset: 16, endsWhenScreenGoes: false)
     }
 }

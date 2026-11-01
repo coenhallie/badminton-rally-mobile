@@ -8,11 +8,10 @@ import Shared
 /// view only draws them and turns their taps, menus and swipes into model
 /// calls and the closures below. Mirrors androidApp's ClipListScreen.kt.
 ///
-/// HomeView owns every navigation destination this list used to register
-/// (including `CreateFlowDestination` - see `HomeView.swift`'s own copy of its
-/// doc comment) and hands this view closures instead: `onMatchTap` and
-/// `onCourtMarking` report a tap upward so it can drive its own `item:`
-/// bindings, the same shape `CreateFlowDestination` depends on.
+/// HomeView owns every navigation destination this list used to register and
+/// hands this view closures instead: `onMatchTap` and `onCourtMarking` report
+/// a tap upward, and HomeView pushes the route onto its one path (see
+/// `HomeRoute`).
 struct MatchesList: View {
     let rally: RallyApp
     let analyze: AnalyzeCoordinator
