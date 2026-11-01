@@ -18,6 +18,9 @@ struct MetricsStrip: View {
     let hasCourt: Bool
     let racketArm: RacketArm?
     let onRacketArm: (RacketArm?) -> Void
+    /// The shown player's profile says the hand (`racketArm` is it), so the
+    /// arm pills, which could only contradict it, are not drawn.
+    let racketArmFromProfile: Bool
     let selected: MetricKind
     let onSelect: (MetricKind) -> Void
     let expanded: Bool
@@ -144,12 +147,14 @@ struct MetricsStrip: View {
                 .shuttlType(ShuttlType.bodySmall)
                 .foregroundStyle(Shuttl.textTertiary)
                 .padding(.top, 16)
-            ShuttlPillTabs(
-                labels: Metrics.racketArms.map(\.label),
-                selectedIndex: Metrics.racketArms.firstIndex { $0.arm == racketArm } ?? 0,
-                onSelect: { onRacketArm(Metrics.racketArms[$0].arm) }
-            )
-            .padding(.top, 8)
+            if !racketArmFromProfile {
+                ShuttlPillTabs(
+                    labels: Metrics.racketArms.map(\.label),
+                    selectedIndex: Metrics.racketArms.firstIndex { $0.arm == racketArm } ?? 0,
+                    onSelect: { onRacketArm(Metrics.racketArms[$0].arm) }
+                )
+                .padding(.top, 8)
+            }
             Text(detail)
                 .shuttlType(ShuttlType.bodySmall)
                 .foregroundStyle(Shuttl.textTertiary)

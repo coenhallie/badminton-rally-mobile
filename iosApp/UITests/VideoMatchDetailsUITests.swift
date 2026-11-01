@@ -56,9 +56,19 @@ final class VideoMatchDetailsUITests: XCTestCase {
         let name = app.textFields["Match name"].firstMatch
         XCTAssertTrue(name.waitForExistence(timeout: 5), "the details editor did not open")
         XCTAssertEqual(name.value as? String, "cloudia", "the editor did not open on the video's name")
-        XCTAssertTrue(app.staticTexts["Description"].firstMatch.exists, "the video's description is not editable")
+        // The field carries its label for VoiceOver; a description grows, so it
+        // may surface as either kind of text input.
+        XCTAssertTrue(
+            app.textViews["Description"].firstMatch.exists || app.textFields["Description"].firstMatch.exists,
+            "the video's description is not editable"
+        )
         XCTAssertTrue(app.buttons["Doubles"].firstMatch.exists, "the format picker is missing")
-        XCTAssertTrue(app.textFields["Home player"].firstMatch.exists, "the player fields are missing")
+        // Singles (or no format) is the Who's playing section, by court end;
+        // doubles is the typed names, two a side.
+        XCTAssertTrue(
+            app.buttons["One player"].firstMatch.exists || app.textFields["Home player 1"].firstMatch.exists,
+            "who played is missing"
+        )
         Thread.sleep(forTimeInterval: 8)
 
         app.buttons["Cancel"].firstMatch.tap()

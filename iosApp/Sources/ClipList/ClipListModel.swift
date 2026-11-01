@@ -292,6 +292,27 @@ final class ClipListModel {
         await refresh()
     }
 
+    /// The row menu's "Match details" save, for a match only its local entry
+    /// speaks for: who's playing wherever the entry's stage sends it, then the
+    /// name and description while the entry is still LOCAL. See
+    /// `saveEntryMatchDetailsOrMessage`; its sentence goes to `error`, which
+    /// the root toast says. Mirrors Android's `ClipListViewModel.saveEntryDetails`.
+    func saveEntryDetails(
+        entryId: String, title: String, description: String, players: MatchPlayers, nearSide: Side?
+    ) async {
+        // do/catch, not `try?`: a throw read as nil would be this save's success.
+        do {
+            if let message = try await SaveMatchPlayersKt.saveEntryMatchDetailsOrMessage(
+                scoreLogs: scoreLogsRepo, videos: videos, localVideos: localVideos, entryId: entryId,
+                title: title, description: description, players: players, nearSide: nearSide
+            ) {
+                error = message
+            }
+        } catch {
+            self.error = PlayersCopy.shared.WHOS_PLAYING_SAVE_FAILED
+        }
+    }
+
     func leaveShare(videoId: String) async {
         // do/catch, not `try?`: a throw read as nil, the call's success, and
         // pruned a share the server never confirmed leaving. See `deleteMatch`.

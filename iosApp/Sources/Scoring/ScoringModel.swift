@@ -233,17 +233,16 @@ final class ScoringModel {
         readStore()
     }
 
-    func updateDetails(title: String, format: MatchFormat?, homePlayers: [String], awayPlayers: [String]) {
-        guard let log else { return }
-        // The editor does not choose a profile yet, so the log keeps the ones it has.
-        scorer.updateDetails(
-            title: title, format: format,
-            players: MatchPlayers(
-                homePlayerId: log.homePlayerId, awayPlayerId: log.awayPlayerId,
-                homePlayers: homePlayers, awayPlayers: awayPlayers
-            )
-        )
+    /// The details editor's save: the name, the format and who played, in one
+    /// write. Nil once saved, or the sentence saying why not (a profile on a
+    /// doubles match), with nothing written, so the editor stays open on it.
+    /// Mirrors Android's `ScoringViewModel.updateDetails`.
+    func updateDetails(title: String, format: MatchFormat?, players: MatchPlayers) -> String? {
+        guard log != nil else { return nil }
+        if let problem = MatchPlayersKt.matchPlayersProblem(players: players, format: format) { return problem }
+        scorer.updateDetails(title: title, format: format, players: players)
         readStore()
+        return nil
     }
 
     func switchFirstServer() {

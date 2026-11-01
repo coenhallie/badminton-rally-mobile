@@ -305,7 +305,10 @@ final class MatchModelTests: XCTestCase {
 
         await m.updateVideoDetails(
             videoId: "vid-1", title: "Club final", description: "", format: .doubles,
-            homePlayers: ["Coen", "Ana"], awayPlayers: ["Marco", "Li"]
+            players: MatchPlayers(
+                homePlayerId: nil, awayPlayerId: nil, homePlayers: ["Coen", "Ana"], awayPlayers: ["Marco", "Li"]
+            ),
+            nearSide: nil
         )
 
         let written = videos.detailUpdates.first
@@ -325,11 +328,110 @@ final class MatchModelTests: XCTestCase {
 
         await m.updateVideoDetails(
             videoId: "vid-1", title: "Club final", description: "", format: nil,
-            homePlayers: [], awayPlayers: []
+            players: MatchPlayers.companion.NONE, nearSide: nil
         )
 
         XCTAssertEqual(m.error, VideoMatchDetailsKt.VIDEO_DETAILS_SAVE_FAILED_MESSAGE)
         XCTAssertEqual(localVideos.get(id: "vid-1")?.title, "cloudia")
+    }
+
+    // MARK: - Who played
+
+    /// Marco, a profile, against Li, a typed name: the assignment the editors
+    /// hand over for a singles match.
+    private let marcoVsLi = MatchPlayers(
+        homePlayerId: "p-marco", awayPlayerId: nil, homePlayers: [], awayPlayers: ["Li"]
+    )
+
+    func testSavingPlayersOnAScoredMatchAssignsTheLog() async {
+        // Title, format and players in the one write (Ruling 1).
+        let store = store()
+        let log = newMatch(store)
+        let m = model(scoreLogs: store, scoreLogId: log.id)
+
+        await m.updateDetails(title: "Club final", format: .singles, players: marcoVsLi, end: nil)
+
+        let saved = store.get(id: log.id)
+        XCTAssertEqual(saved?.title, "Club final")
+        XCTAssertEqual(saved?.format, .singles)
+        XCTAssertEqual(saved?.matchPlayers, marcoVsLi)
+        XCTAssertNil(m.error)
+    }
+
+    func testAProfileOnADoublesScoreLogIsRefusedWithTheSentence() async {
+        // The database refuses a profile on a doubles log, so the page says why
+        // instead and writes nothing at all, the name included.
+        let store = store()
+        let log = newMatch(store)
+        let m = model(scoreLogs: store, scoreLogId: log.id)
+
+        await m.updateDetails(title: "Club final", format: .doubles, players: marcoVsLi, end: nil)
+
+        XCTAssertEqual(m.error, PlayersCopy.shared.DOUBLES_NOTE)
+        XCTAssertEqual(store.get(id: log.id)?.title, "Thu League")
+        XCTAssertNil(store.get(id: log.id)?.homePlayerId)
+    }
+
+    func testAChangedEndOfAScoredMatchIsWrittenToItsVideoWithNobodyOnIt() async {
+        // The log speaks for the players; its video, still on the phone, learns
+        // only which end Home was at.
+        let store = store()
+        let log = newMatch(store)
+        store.finish(id: log.id)
+        let localVideos = IosTestDoublesKt.testLocalVideoRepository()
+        localVideos.add(entry: entry(scoreLogId: log.id))
+        let m = model(scoreLogs: store, scoreLogId: log.id, localVideos: localVideos)
+
+        await m.updateDetails(
+            title: "Thu League", format: nil, players: marcoVsLi,
+            end: VideoEndChange(nearSide: .away, videoId: nil, entryId: "e1")
+        )
+
+        XCTAssertEqual(store.get(id: log.id)?.matchPlayers, marcoVsLi)
+        XCTAssertEqual(localVideos.get(id: "e1")?.nearSide, .away)
+        XCTAssertEqual(localVideos.get(id: "e1")?.matchPlayers, MatchPlayers.companion.NONE)
+        XCTAssertNil(m.error)
+    }
+
+    func testSavingPlayersOnAPhoneOnlyMatchWritesTheEntry() async {
+        let localVideos = IosTestDoublesKt.testLocalVideoRepository()
+        localVideos.add(entry: LocalVideoEntry(
+            id: "e1", uri: "content://x/e1", displayName: "m.mp4",
+            durationMs: 1000, sizeBytes: 10, addedAtEpochMs: 0,
+            title: nil, description: nil, keypoints: nil,
+            stage: .local, failedStep: nil, failureMessage: nil, resultSeen: false,
+            scoreLogId: nil,
+            homePlayerId: nil, awayPlayerId: nil, homePlayers: [], awayPlayers: [], nearSide: nil
+        ))
+        let m = model(scoreLogs: store(), scoreLogId: nil, localVideos: localVideos)
+
+        await m.saveEntryDetails(
+            entryId: "e1", title: "Club final", description: "", players: marcoVsLi, nearSide: .home
+        )
+
+        XCTAssertEqual(localVideos.get(id: "e1")?.matchPlayers, marcoVsLi)
+        XCTAssertEqual(localVideos.get(id: "e1")?.nearSide, .home)
+        XCTAssertEqual(localVideos.get(id: "e1")?.title, "Club final")
+        XCTAssertNil(m.error)
+    }
+
+    func testAVideoBornMatchSavesItsPlayersAndEndInTheOneDetailsWrite() async {
+        let videos = IosTestDoublesKt.testVideosRepository()
+        let localVideos = IosTestDoublesKt.testLocalVideoRepository()
+        localVideos.add(entry: uploadedEntry(id: "vid-1", title: "cloudia"))
+        let m = model(scoreLogs: store(), scoreLogId: nil, localVideos: localVideos, videos: videos)
+
+        await m.updateVideoDetails(
+            videoId: "vid-1", title: "cloudia", description: "", format: .singles,
+            players: marcoVsLi, nearSide: .away
+        )
+
+        XCTAssertEqual(videos.detailUpdates.count, 1)
+        XCTAssertEqual(videos.detailUpdates.first?.homePlayerId, "p-marco")
+        XCTAssertEqual(videos.detailUpdates.first?.awayPlayers, ["Li"])
+        XCTAssertEqual(videos.detailUpdates.first?.nearSide, .away)
+        XCTAssertEqual(localVideos.get(id: "vid-1")?.nearSide, .away)
+        XCTAssertNil(m.error)
     }
 
     func testComingBackToThePageFollowsTheStoreAgain() async throws {

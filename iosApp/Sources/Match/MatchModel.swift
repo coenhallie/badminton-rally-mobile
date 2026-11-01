@@ -1,6 +1,15 @@
 import Foundation
 import Shared
 
+/// A new "Home was at the" answer for the video of a scored match: the side
+/// nearest the camera (nil: not set) and the video's ids, as the page knows
+/// them. Mirrors Android's `VideoEndChange`.
+struct VideoEndChange {
+    let nearSide: Side?
+    let videoId: String?
+    let entryId: String?
+}
+
 /// One match, folded. Everything is derived from the store directly, so a point
 /// scored elsewhere or a video finishing its pipeline redraws this page without a
 /// refresh once `start()`'s loop picks up the change.
@@ -32,8 +41,9 @@ final class MatchModel {
     /// to be lost - an entry that never reached CREATE_ROW has no rallies and no
     /// notes to lose.
     private(set) var hasServerVideo: Bool = false
-    /// A failed removal, for the page's error banner. Nothing else on this page
-    /// can fail: everything else it shows is derived from stores it only reads.
+    /// A failed removal or details save, for the page's error banner. Nothing
+    /// else on this page can fail: everything else it shows is derived from
+    /// stores it only reads.
     var error: String? = nil
 
     private let scoreLogs: ScoreLogsRepository
@@ -75,48 +85,60 @@ final class MatchModel {
         )
     }
 
-    /// Takes the video off this match and leaves the match: the ordering, and the
-    /// message on failure, are `removeMatchVideoOrMessage`'s. Returns whether the
-    /// video is gone, which is what makes "Change video" one gesture rather than
-    /// two - once removal lands this match has no video in either sense, so the
-    /// caller can go straight to the picker the page already owns. Mirrors
-    /// Android's `MatchViewModel.removeVideo`.
-    @discardableResult
-    /// The details editor's save. Local-first like every other edit to a match;
-    /// sync carries it.
-    func updateDetails(title: String, format: MatchFormat?, homePlayers: [String], awayPlayers: [String]) {
-        guard let scoreLogId, let log = scoreLogs.get(id: scoreLogId) else { return }
-        // The editor does not choose a profile yet, so the log keeps the ones it has.
-        scoreLogs.updateDetails(
-            id: scoreLogId, title: title, format: format,
-            players: MatchPlayers(
-                homePlayerId: log.homePlayerId, awayPlayerId: log.awayPlayerId,
-                homePlayers: homePlayers, awayPlayers: awayPlayers
-            )
-        )
+    /// The details editor's save for a scored match: the name, the format and who
+    /// played, in the one write to the log (local-first like every other edit to a
+    /// match; sync carries it). A combination the database would refuse, a profile
+    /// on a doubles log, is said instead and nothing is written.
+    ///
+    /// `end` is passed only when the editor's "Home was at the" row changed. The
+    /// log speaks for the players, so the attached video learns the end alone,
+    /// with nobody on it, wherever its own target sends it (the entry before
+    /// upload, the row after). Mirrors Android's `MatchViewModel.updateDetails`.
+    func updateDetails(title: String, format: MatchFormat?, players: MatchPlayers, end: VideoEndChange?) async {
+        guard let scoreLogId, scoreLogs.get(id: scoreLogId) != nil else { return }
+        error = nil
+        if let problem = MatchPlayersKt.matchPlayersProblem(players: players, format: format) {
+            error = problem
+            return
+        }
+        scoreLogs.updateDetails(id: scoreLogId, title: title, format: format, players: players)
         readStore()
+        guard let end else { return }
+        let entry = end.entryId.flatMap { localVideos.get(id: $0) }
+        guard let target = SaveMatchPlayersKt.playersTarget(scoreLogId: nil, entry: entry, videoId: end.videoId) else {
+            return
+        }
+        // do/catch, not `try?`: a throw read as nil would be this save's success.
+        do {
+            if let message = try await SaveMatchPlayersKt.saveMatchPlayersOrMessage(
+                target: target, scoreLogs: scoreLogs, videos: videos, localVideos: localVideos,
+                scoreLogId: nil, videoId: end.videoId, entryId: end.entryId,
+                players: MatchPlayers.companion.NONE, nearSide: end.nearSide, format: nil
+            ) {
+                error = message
+            }
+        } catch {
+            self.error = PlayersCopy.shared.WHOS_PLAYING_SAVE_FAILED
+        }
     }
 
     /// The details editor's save for a match that was only ever filmed, whose
-    /// details live on its videos row rather than on a score log. Server first,
-    /// then the local entry that uploaded it: the ordering, and the message on
-    /// failure, are `updateVideoMatchDetailsOrMessage`'s. The page reads the
-    /// result back through the repository's metadata cache, so nothing here has
-    /// to hand it over. Mirrors Android's `MatchViewModel.updateVideoDetails`.
+    /// details live on its videos row rather than on a score log: name,
+    /// description, format, who played and which end Home was at, in one write.
+    /// Server first, then the local entry that uploaded it: the ordering, and the
+    /// message on failure, are `updateVideoMatchDetailsOrMessage`'s. The page reads
+    /// the result back through the repository's metadata cache, so nothing here
+    /// has to hand it over. Mirrors Android's `MatchViewModel.updateVideoDetails`.
     func updateVideoDetails(
         videoId: String, title: String, description: String, format: MatchFormat?,
-        homePlayers: [String], awayPlayers: [String]
+        players: MatchPlayers, nearSide: Side?
     ) async {
         error = nil
         do {
             let message = try await VideoMatchDetailsKt.updateVideoMatchDetailsOrMessage(
                 videos: videos, localVideos: localVideos, videoId: videoId,
                 title: title, description: description, format: format,
-                players: MatchPlayers(
-                    homePlayerId: nil, awayPlayerId: nil,
-                    homePlayers: homePlayers, awayPlayers: awayPlayers
-                ),
-                nearSide: nil
+                players: players, nearSide: nearSide
             )
             if let message { error = message }
         } catch {
@@ -124,6 +146,34 @@ final class MatchModel {
         }
     }
 
+    /// The "Match details" sheet's save, for a match only its local entry speaks
+    /// for (no score log, no clips yet): who's playing wherever the entry's stage
+    /// sends it, then the name and description while the entry is still LOCAL.
+    /// See `saveEntryMatchDetailsOrMessage`; its sentence goes on the page's
+    /// banner. Mirrors Android's `MatchViewModel.saveEntryDetails`.
+    func saveEntryDetails(
+        entryId: String, title: String, description: String, players: MatchPlayers, nearSide: Side?
+    ) async {
+        error = nil
+        do {
+            if let message = try await SaveMatchPlayersKt.saveEntryMatchDetailsOrMessage(
+                scoreLogs: scoreLogs, videos: videos, localVideos: localVideos, entryId: entryId,
+                title: title, description: description, players: players, nearSide: nearSide
+            ) {
+                error = message
+            }
+        } catch {
+            self.error = PlayersCopy.shared.WHOS_PLAYING_SAVE_FAILED
+        }
+    }
+
+    /// Takes the video off this match and leaves the match: the ordering, and the
+    /// message on failure, are `removeMatchVideoOrMessage`'s. Returns whether the
+    /// video is gone, which is what makes "Change video" one gesture rather than
+    /// two - once removal lands this match has no video in either sense, so the
+    /// caller can go straight to the picker the page already owns. Mirrors
+    /// Android's `MatchViewModel.removeVideo`.
+    @discardableResult
     func removeVideo() async -> Bool {
         guard let scoreLogId else { return false }
         // A previous failure must not sit over a fresh attempt: the banner has no

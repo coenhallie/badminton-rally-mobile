@@ -124,6 +124,11 @@ struct HomeView: View {
         // screen, and it stays mounted for as long as the app does, regardless
         // of which destination is pushed on top of it. See `MatchListFeed`.
         .feedsMatchList(model: listModel, localAnalysis: localAnalysis)
+        // The players, followed for as long as the app is signed in: the
+        // pickers in every details editor read this one list, and a screen's
+        // own loop stops while another is pushed over it. Players runs its
+        // own as well; the two write the same values.
+        .task { await playersModel.observe() }
         // Inside the stack, because every destination that carries the indicator
         // is inside it and the path this rewrites is Home's.
         .environment(\.backgroundWorkClick, goToAllMatches)
@@ -154,7 +159,7 @@ struct HomeView: View {
         switch route {
         case .allMatches:
             MatchesScreen(
-                rally: rally, analyze: analyze, intake: intake, model: listModel,
+                rally: rally, analyze: analyze, intake: intake, model: listModel, playersModel: playersModel,
                 heroPaused: !nothingAbove,
                 onMatchTap: { path.append(.match($0)) },
                 onCourtMarking: { path.append(.courtMarking($0)) },
@@ -179,7 +184,7 @@ struct HomeView: View {
         case .match(let matchRoute):
             MatchView(
                 rally: rally, analyze: analyze,
-                localAnalysis: localAnalysis, listModel: listModel, route: matchRoute
+                localAnalysis: localAnalysis, listModel: listModel, playersModel: playersModel, route: matchRoute
             )
         case .courtMarking(let markingRoute):
             CourtMarkingView(
@@ -200,6 +205,7 @@ struct HomeView: View {
         case .scoring(let scoreLogId):
             ScoringView(
                 rally: rally,
+                playersModel: playersModel,
                 scoreLogId: scoreLogId,
                 matchPageAlreadyOpen: false,
                 onFinished: onScoringFinished(scoreLogId)
@@ -207,6 +213,7 @@ struct HomeView: View {
         case .finished(let scoreLogId, let attach):
             MatchView(
                 rally: rally, analyze: analyze, localAnalysis: localAnalysis, listModel: listModel,
+                playersModel: playersModel,
                 route: MatchRoute(scoreLogId: scoreLogId, videoId: nil, attach: attach)
             )
         }
@@ -264,13 +271,19 @@ struct HomeView: View {
         .sheet(item: $detailsTarget) { target in
             MatchDetailsSheet(
                 entry: target.entry,
+                roster: playersModel.players,
+                onAddPlayer: playersModel.create,
                 autoOpened: target.autoOpened,
-                onSave: { title, description in
-                    rally.localVideos.setDetails(
-                        id: target.entry.id,
-                        title: LocalVideoDetailsKt.normalizeTitle(raw: title),
-                        description: LocalVideoDetailsKt.normalizeDescription(raw: description)
-                    )
+                onSave: { title, description, players, nearSide in
+                    // On the list's model, which outlives the sheet: the save
+                    // may still be waiting on the server when the sheet has
+                    // gone, and its sentence goes to the root toast.
+                    Task {
+                        await listModel.saveEntryDetails(
+                            entryId: target.entry.id, title: title, description: description,
+                            players: players, nearSide: nearSide
+                        )
+                    }
                 }
             )
         }

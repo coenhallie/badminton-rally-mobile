@@ -24,6 +24,8 @@ import SwiftUI
 struct BasePositionPanel: View {
     let source: HeatmapSource?
     let windows: [RallyWindow]
+    /// Who stands at each end, for the toggle's names. See `SideToggle`.
+    let sideNames: CourtSideNames?
 
     /// The medians, held rather than computed in the body.
     ///
@@ -49,7 +51,8 @@ struct BasePositionPanel: View {
                     SideToggle(
                         sides: source.tracks.map(\.side),
                         selected: shown.side,
-                        onSelect: { side = $0 }
+                        onSelect: { side = $0 },
+                        names: sideNames
                     )
                     .padding(.horizontal, ShuttlGutter.page)
                     .padding(.vertical, 8)

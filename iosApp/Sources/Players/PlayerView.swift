@@ -166,6 +166,7 @@ struct PlayerView: View {
                     if tab == Self.matchesTab {
                         MatchesList(
                             rally: rally, analyze: analyze, intake: intake, model: listModel,
+                            playersModel: model,
                             onMatchTap: onMatchTap, onCourtMarking: onCourtMarking,
                             // A player's list never draws the hero.
                             heroPaused: true,

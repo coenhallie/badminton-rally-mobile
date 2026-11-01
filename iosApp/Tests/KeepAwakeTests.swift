@@ -44,7 +44,8 @@ final class KeepAwakeTests: XCTestCase {
                 // on this phone" state, which has the same lifecycle and leaves
                 // nothing behind in the simulator's defaults.
                 ScoringView(
-                    rally: rally, scoreLogId: "keep-awake-\(UUID().uuidString)",
+                    rally: rally, playersModel: PlayersModel(rally: rally),
+                    scoreLogId: "keep-awake-\(UUID().uuidString)",
                     matchPageAlreadyOpen: false, onFinished: { _ in }
                 )
             }

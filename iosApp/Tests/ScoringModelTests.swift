@@ -39,10 +39,13 @@ final class ScoringModelTests: XCTestCase {
         // places it gets filled in - mid-match, with points already on the log.
         let (repo, id, model) = fixture()
         model.score(.home)
-        model.updateDetails(
+        let refused = model.updateDetails(
             title: "Club final", format: .mixedDoubles,
-            homePlayers: ["Coen", "Ana"], awayPlayers: ["Marco", " "]
+            players: MatchPlayers(
+                homePlayerId: nil, awayPlayerId: nil, homePlayers: ["Coen", "Ana"], awayPlayers: ["Marco", " "]
+            )
         )
+        XCTAssertNil(refused)
         let stored = repo.get(id: id)
         XCTAssertEqual(stored?.title, "Club final")
         XCTAssertEqual(stored?.format, .mixedDoubles)
@@ -50,6 +53,26 @@ final class ScoringModelTests: XCTestCase {
         XCTAssertEqual(stored?.awayPlayers, ["Marco"])
         XCTAssertEqual(model.match?.currentGame.home, 1)
         XCTAssertEqual(model.log.map { $0.sideName(side: .home, players: []) }, "Coen / Ana")
+    }
+
+    func testTheDetailsEditorSavesWhoPlayedOntoTheLog() {
+        let (repo, id, model) = fixture()
+        let marcoVsLi = MatchPlayers(homePlayerId: "p-marco", awayPlayerId: nil, homePlayers: [], awayPlayers: ["Li"])
+        XCTAssertNil(model.updateDetails(title: "Club final", format: .singles, players: marcoVsLi))
+        XCTAssertEqual(repo.get(id: id)?.matchPlayers, marcoVsLi)
+        XCTAssertEqual(repo.get(id: id)?.format, .singles)
+    }
+
+    func testAProfileOnADoublesMatchIsRefusedAndNothingIsWritten() {
+        // The editor stays open on the sentence; the log keeps what it had.
+        let (repo, id, model) = fixture()
+        let marcoVsLi = MatchPlayers(homePlayerId: "p-marco", awayPlayerId: nil, homePlayers: [], awayPlayers: ["Li"])
+        XCTAssertEqual(
+            model.updateDetails(title: "Club final", format: .doubles, players: marcoVsLi),
+            PlayersCopy.shared.DOUBLES_NOTE
+        )
+        XCTAssertNil(repo.get(id: id)?.homePlayerId)
+        XCTAssertNotEqual(repo.get(id: id)?.title, "Club final")
     }
 
     func testTheOpeningServeCanBeSwitchedUntilTheFirstPoint() {

@@ -18,10 +18,15 @@ import SwiftUI
 /// cannot disagree about which run they are showing.
 ///
 /// `analysisId` is `analysisId(item)`: the heatmap's own id, else the entry.
+/// `sideNames` names the player at each end on the three panels' toggle, and
+/// supplies a profile's playing hand to the skeleton's metrics.
 struct AnalysisSection: View {
     let rally: RallyApp
     let localAnalysis: LocalAnalysisRunner?
     let analysisId: String
+    /// Who stands at each end (`courtSideNames`); nil while the match does not
+    /// say which end Home was at.
+    let sideNames: CourtSideNames?
 
     @State private var chosen: AnalyticsPanel = .heatmap
 
@@ -120,11 +125,12 @@ struct AnalysisSection: View {
                             videoRelativePath: entry?.uri,
                             runner: localAnalysis,
                             prefs: rally.playbackPrefs,
-                            racketArmPrefs: rally.racketArmPrefs
+                            racketArmPrefs: rally.racketArmPrefs,
+                            sideNames: sideNames
                         )
                     }
                 case .base:
-                    BasePositionPanel(source: source, windows: windows)
+                    BasePositionPanel(source: source, windows: windows, sideNames: sideNames)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -214,7 +220,8 @@ struct AnalysisSection: View {
                     SideToggle(
                         sides: source.tracks.map(\.side),
                         selected: shown.side,
-                        onSelect: { side = $0 }
+                        onSelect: { side = $0 },
+                        names: sideNames
                     )
                     // The court's gutter, as on Base and Skeleton: at 16pt this
                     // row stood wider than the section and panel rows above it
@@ -265,28 +272,33 @@ struct HeatmapSource {
     let fps: Double
 }
 
-/// Near or Far, shown only where both were found.
+/// The two ends of the court, shown only where both were found.
 ///
-/// Camera-relative labels. `videos.player_labels` carries the coach's own names
-/// and Phase 2's thumbnails; using them is out of scope (spec 10), and a label
-/// saying "Anna" over a track the gates assigned by net side would claim an
-/// identification this pipeline does not make.
+/// Each pill is the name of whoever stands at that end, per `names`
+/// (`sideToggleLabel`), and "Near" / "Far" while the match does not say which
+/// end Home was at. The tracks are assigned by net side, and the coach's own
+/// record of which end each player took is what turns a side into a name; the
+/// pipeline identifies no one. Names are the coach's own text, so each pill
+/// keeps to one line and ends in an ellipsis, and VoiceOver reads the whole
+/// name.
 ///
 /// Mirrors androidApp's `SideToggle` in HeatmapPanel.kt, label for label.
 struct SideToggle: View {
     let sides: [CourtSide]
     let selected: CourtSide
     let onSelect: (CourtSide) -> Void
+    let names: CourtSideNames?
 
     var body: some View {
         ShuttlPillTabs(
-            labels: sides.map { $0 == .near ? "Near" : "Far" },
+            labels: sides.map { CourtSideNamesKt.sideToggleLabel(side: $0, names: names) },
             selectedIndex: max(0, sides.firstIndex(of: selected) ?? 0),
             onSelect: { onSelect(sides[$0]) },
             accessibilityLabel: "Which player",
             // Secondary: the row belongs to the panel it sits in, under the
             // Analysis section's own panel row.
-            secondary: true
+            secondary: true,
+            singleLine: true
         )
     }
 }

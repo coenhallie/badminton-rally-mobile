@@ -37,6 +37,14 @@ enum MatchPageLayout {
     static let rowInset: CGFloat = 14
 }
 
+/// "Which end was Home on?" for one attached video: its entry, and the match it
+/// joined as it was when the video landed, for the title should the log go
+/// while the question is up.
+private struct HomeEndQuestion {
+    let entryId: String
+    let log: ScoreLog
+}
+
 /// A confirmed answer to the video confirm, distinct from "not answered yet":
 /// `intent` is nil for a plain removal, which is not the same as a Cancel.
 private struct ConfirmedVideoRemoval {
@@ -60,6 +68,9 @@ private enum MatchSheet: Identifiable, Hashable {
     case share
     case summary
     case details
+    /// "Which end was Home on?", for the video just attached: see
+    /// `homeEndEntryId`.
+    case homeEnd
     var id: Self { self }
 }
 
@@ -78,6 +89,9 @@ struct MatchView: View {
     let localAnalysis: LocalAnalysisRunner?
     /// The app's one list model (Home's): the page finds its row in it.
     let listModel: ClipListModel
+    /// The coach's players (Home's one model), for "Add player" in the details
+    /// editors' pickers.
+    let playersModel: PlayersModel
     let route: MatchRoute
 
     @State private var matchModel: MatchModel
@@ -91,6 +105,17 @@ struct MatchView: View {
     @State private var showImporter = false
     @State private var showRecorder = false
     @State private var pendingAttachTarget: MatchTarget? = nil
+    /// Whether the picker or the camera this page opened is still on screen,
+    /// up to the end of its dismissal: a sheet raised before then is silently
+    /// dropped. Cleared by their `onDismiss`, not by `showImporter` or
+    /// `showRecorder` going false, which happens as the dismissal starts.
+    @State private var capturePresented = false
+    /// A video just attached to this match whose end is to be asked before
+    /// court marking (`asksForHomeEnd`), until the question can be raised.
+    @State private var homeEndPending: HomeEndQuestion? = nil
+    /// The question on screen. Its sheet's dismissal, whatever the answer,
+    /// goes on to court marking.
+    @State private var homeEndAsked: HomeEndQuestion? = nil
     @State private var navigationTarget: CourtMarkingRoute? = nil
     // This page is the one and only pusher of its own board: Score/Resume
     // pushes through this state, not a bare `NavigationLink(value:)` resolved
@@ -144,12 +169,14 @@ struct MatchView: View {
         analyze: AnalyzeCoordinator,
         localAnalysis: LocalAnalysisRunner?,
         listModel: ClipListModel,
+        playersModel: PlayersModel,
         route: MatchRoute
     ) {
         self.rally = rally
         self.analyze = analyze
         self.localAnalysis = localAnalysis
         self.listModel = listModel
+        self.playersModel = playersModel
         self.route = route
         _matchModel = State(initialValue: MatchModel(rally: rally, scoreLogId: route.scoreLogId))
         _chosenSection = State(initialValue: route.section)
@@ -216,11 +243,19 @@ struct MatchView: View {
 
     private var isOwned: Bool { ownedVideo != nil }
 
+    /// Whether "Edit details" is offered: see the overflow in `toolbarContent`.
+    private var editsDetails: Bool {
+        matchModel.log != nil || isOwned || item?.canEditPlayers == true
+    }
+
     // The score log's details when there is one, the video's own otherwise: a
-    // scored match that was later filmed keeps the log as its record.
+    // scored match that was later filmed keeps the log as its record. A video's
+    // own players are the list row's, whose sides read a profile's name, for
+    // the coach's matches (Ruling 11).
     private var detailsLine: String? {
-        MatchDetailsKt.matchDetailsLine(
-            playersLine: matchModel.log?.playersLine(players: matchModel.players) ?? ownedVideo?.playersLine,
+        let videoLine = item?.isOwned == true ? item?.playersLine : ownedVideo?.playersLine
+        return MatchDetailsKt.matchDetailsLine(
+            playersLine: matchModel.log?.playersLine(players: matchModel.players) ?? videoLine,
             format: matchModel.log?.format ?? ownedVideo?.format
         )
     }
@@ -398,31 +433,37 @@ struct MatchView: View {
             if isEmpty != false, activeSheet == .summary { activeSheet = nil }
         }
         .sheet(item: $activeSheet, onDismiss: {
+            // Court marking after the attach question, however it went (Near,
+            // Far, Skip or a swipe down): pushed once the sheet is gone, as
+            // the rally below is, since a push made mid-dismissal is dropped.
+            if let asked = homeEndAsked {
+                homeEndAsked = nil
+                if rally.localVideos.get(id: asked.entryId) != nil {
+                    navigationTarget = CourtMarkingRoute(entryId: asked.entryId)
+                }
+                return
+            }
+            // A question that waited on this sheet can be asked now.
+            askHomeEndIfClear()
             guard let clipId = pendingTopRallyClipId else { return }
             pendingTopRallyClipId = nil
             clipRoute = ClipRoute(id: clipId)
         }) { sheet in
             switch sheet {
             case .details:
-                if let log = matchModel.log {
-                    EditMatchDetailsSheet(
-                        initial: MatchDetailsDraft(log: log), titleCap: Int(ScoreLogKt.MAX_MATCH_TITLE)
-                    ) { draft in
-                        matchModel.updateDetails(
-                            title: draft.title, format: draft.format,
-                            homePlayers: draft.homePlayers, awayPlayers: draft.awayPlayers
-                        )
-                    }
-                } else if let video = ownedVideo {
-                    EditMatchDetailsSheet(
-                        initial: MatchDetailsDraft(video: video),
-                        titleCap: Int(VideoMatchDetailsKt.VIDEO_MATCH_TITLE_CAP)
-                    ) { draft in
-                        Task {
-                            await matchModel.updateVideoDetails(
-                                videoId: video.videoId, title: draft.title,
-                                description: draft.description ?? "", format: draft.format,
-                                homePlayers: draft.homePlayers, awayPlayers: draft.awayPlayers
+                detailsSheet
+            case .homeEnd:
+                if let asked = homeEndAsked {
+                    HomeEndPrompt(
+                        // The page's own log as it is now, so a rename or a
+                        // players list still loading reaches the title.
+                        title: PlayersDraftKt.homeEndTitle(log: matchModel.log ?? asked.log, players: matchModel.players)
+                    ) { nearSide in
+                        // Near is Home at the near end; Far is Home at the far
+                        // end, so Away is nearest the camera. Skip writes nothing.
+                        if let nearSide {
+                            rally.localVideos.setMatchPlayers(
+                                id: asked.entryId, players: MatchPlayers.companion.NONE, nearSide: nearSide
                             )
                         }
                     }
@@ -467,6 +508,7 @@ struct MatchView: View {
         .navigationDestination(item: $scoringTarget) { route in
             ScoringView(
                 rally: rally,
+                playersModel: playersModel,
                 scoreLogId: route.scoreLogId,
                 matchPageAlreadyOpen: true,
                 onFinished: { intent in
@@ -502,7 +544,7 @@ struct MatchView: View {
             confirmedVideoRemoval = nil
             Task { await removeVideo(then: confirmed.intent) }
         }
-        .sheet(isPresented: $showImporter) {
+        .sheet(isPresented: $showImporter, onDismiss: captureDismissed) {
             VideoPicker(
                 onPicked: { tempURL, suggestedName in
                     let target = pendingAttachTarget
@@ -517,7 +559,7 @@ struct MatchView: View {
                 onFailed: { intake.error = "Couldn't import the video. Please try again." }
             )
         }
-        .fullScreenCover(isPresented: $showRecorder) {
+        .fullScreenCover(isPresented: $showRecorder, onDismiss: captureDismissed) {
             CameraRecorder { tempURL in
                 let target = pendingAttachTarget
                 Task {
@@ -538,7 +580,15 @@ struct MatchView: View {
             // straight to court marking rather than back to this page first is
             // the same shortcut `AuthGate.kt`'s `onAdded` takes for a match-
             // attached pick, and the whole reason Step 2 skips the details sheet.
-            navigationTarget = CourtMarkingRoute(entryId: id)
+            // A match with a profile on either side asks which end Home was on
+            // first (section 4.4a), and court marking follows the answer.
+            let log = rally.localVideos.get(id: id)?.scoreLogId.flatMap { rally.scoreLogs.get(id: $0) }
+            if let log, PlayersDraftKt.asksForHomeEnd(log: log) {
+                homeEndPending = HomeEndQuestion(entryId: id, log: log)
+                askHomeEndIfClear()
+            } else {
+                navigationTarget = CourtMarkingRoute(entryId: id)
+            }
         }
         // The picker is plumbed to this page and nowhere else, so "attach a video
         // to this match" has one implementation and two entry points: the "Add
@@ -617,7 +667,13 @@ struct MatchView: View {
             }
         case .analysis:
             if let item, let id = MatchPageSectionKt.analysisId(item: item) {
-                AnalysisSection(rally: rally, localAnalysis: localAnalysis, analysisId: id)
+                AnalysisSection(
+                    rally: rally, localAnalysis: localAnalysis, analysisId: id,
+                    // Who stands at each end, for the toggles and a profile's
+                    // hand; the players are followed, so a list still loading
+                    // names them once it lands.
+                    sideNames: CourtSideNamesKt.courtSideNames(item: item, players: matchModel.players)
+                )
             }
         case nil:
             EmptyView()
@@ -685,6 +741,7 @@ struct MatchView: View {
         pendingAttachTarget = MatchTarget(scoreLogId: log.id, title: log.title)
         switch intent {
         case .importVideo:
+            capturePresented = true
             showImporter = true
         case .record:
             // Same guard as ClipListView's own record entry point: the
@@ -693,9 +750,123 @@ struct MatchView: View {
             // site, so both this page's own menu and the board's finish prompt
             // (which reaches this through `route.attach`) get it for free.
             if CameraRecorder.isAvailable {
+                capturePresented = true
                 showRecorder = true
             } else {
                 intake.error = "Camera is not available on this device."
+            }
+        }
+    }
+
+    /// The picker or the camera has finished going away: a question held for
+    /// it can be raised now.
+    private func captureDismissed() {
+        capturePresented = false
+        askHomeEndIfClear()
+    }
+
+    /// Raises the attach question held in `homeEndPending` once nothing this
+    /// page opened is still on screen. The video can land before the picker
+    /// has finished closing, and a sheet raised then is dropped.
+    private func askHomeEndIfClear() {
+        guard let pending = homeEndPending, !capturePresented, activeSheet == nil else { return }
+        homeEndPending = nil
+        homeEndAsked = pending
+        activeSheet = .homeEnd
+    }
+
+    /// The details editor for this match, wherever its record lives. A score
+    /// log: Home and Away, with "Home was at the" once a video is attached. A
+    /// filmed match of the coach's own with clips: its videos row, by court
+    /// end. Any other match the coach owns (a video with no score log and no
+    /// clips yet, on the phone or uploaded): the entry's own sheet, with who's
+    /// playing at any stage and the name and description only while LOCAL.
+    /// Mirrors androidApp's MatchScreen.
+    @ViewBuilder
+    private var detailsSheet: some View {
+        // The video, for a scored match's "Home was at the" row: the row's
+        // entry and the effective video id, the ids the end is routed by.
+        let endVideoId = effectiveVideoId
+        let endEntryId = item?.entryId
+        if let log = matchModel.log {
+            let initialNearSide = item?.nearSide
+            let hasVideo = endEntryId != nil || endVideoId != nil
+            let entry = endEntryId.flatMap { rally.localVideos.get(id: $0) }
+            EditMatchDetailsSheet(
+                initialTitle: log.title,
+                initialDescription: nil,
+                initialFormat: log.format,
+                initialPlayers: DetailsPlayersDraftKt.scoreLogPlayersDraft(log: log, nearSide: initialNearSide),
+                titleCap: Int(ScoreLogKt.MAX_MATCH_TITLE),
+                roster: matchModel.players,
+                onAddPlayer: playersModel.create,
+                showsEnds: hasVideo,
+                uploading: SaveMatchPlayersKt.playersTarget(scoreLogId: nil, entry: entry, videoId: endVideoId)
+                    == .uploading
+            ) { draft in
+                // The end only when it changed: the log speaks for the
+                // players, the video learns the end alone.
+                let end = hasVideo && draft.nearSide != initialNearSide
+                    ? VideoEndChange(nearSide: draft.nearSide, videoId: endVideoId, entryId: endEntryId)
+                    : nil
+                Task {
+                    await matchModel.updateDetails(
+                        title: draft.title, format: draft.format, players: draft.players, end: end
+                    )
+                }
+                return nil
+            }
+        } else if let video = ownedVideo {
+            // Every field the video carries, the description included: it was
+            // typed at upload and this is the only place it can change since.
+            // Who played as the list row reads it (the row's record, a
+            // profile's id), so the editor and the row cannot disagree.
+            EditMatchDetailsSheet(
+                initialTitle: video.title ?? "",
+                initialDescription: video.description ?? "",
+                initialFormat: video.format,
+                initialPlayers: DetailsPlayersDraftKt.videoPlayersDraft(
+                    players: item?.matchPlayers ?? MatchPlayers(
+                        homePlayerId: nil, awayPlayerId: nil,
+                        homePlayers: video.homePlayers, awayPlayers: video.awayPlayers
+                    ),
+                    nearSide: item?.nearSide,
+                    format: video.format
+                ),
+                titleCap: Int(VideoMatchDetailsKt.VIDEO_MATCH_TITLE_CAP),
+                roster: matchModel.players,
+                onAddPlayer: playersModel.create,
+                uploading: item?.playersTarget == .uploading
+            ) { draft in
+                Task {
+                    await matchModel.updateVideoDetails(
+                        videoId: video.videoId, title: draft.title,
+                        description: draft.description ?? "", format: draft.format,
+                        players: draft.players, nearSide: draft.nearSide
+                    )
+                }
+                return nil
+            }
+        } else if let item, item.canEditPlayers, let entryId = item.entryId,
+                  let entry = rally.localVideos.get(id: entryId) {
+            MatchDetailsSheet(
+                initialTitle: entry.title,
+                initialDescription: entry.description_,
+                detailsEditable: item.canEditDetails,
+                playersDraft: PlayersDraftKt.endsDraft(
+                    players: item.matchPlayers, nearSide: item.nearSide, prefillPlayerId: nil
+                ),
+                playersEditable: item.playersTarget != .uploading,
+                roster: matchModel.players,
+                onAddPlayer: playersModel.create,
+                autoOpened: false
+            ) { title, description, players, nearSide in
+                Task {
+                    await matchModel.saveEntryDetails(
+                        entryId: entryId, title: title, description: description,
+                        players: players, nearSide: nearSide
+                    )
+                }
             }
         }
     }
@@ -819,16 +990,18 @@ struct MatchView: View {
         // near-identical icons under VoiceOver.
         //
         // A scored match, or a filmed one that is the coach's own: both have
-        // details to edit. A video on this phone that can be analyzed again has
-        // that to offer. A shared match has none of these, so it gets no menu
-        // at all.
-        if matchModel.log != nil || isOwned || item?.canAnalyzeAgain == true {
+        // details to edit, and so does every other match the coach owns, whose
+        // players can be said wherever its record lives (`canEditPlayers`: a
+        // video with no clips yet, on the phone or uploaded). A video on this
+        // phone that can be analyzed again has that to offer. A shared match
+        // has none of these, so it gets no menu at all.
+        if editsDetails || item?.canAnalyzeAgain == true {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     // First, because it is the one a coach comes here for: the
                     // new match form asks for none of this, and a video is
                     // uploaded with a name at most.
-                    if matchModel.log != nil || isOwned {
+                    if editsDetails {
                         Button {
                             activeSheet = .details
                         } label: {

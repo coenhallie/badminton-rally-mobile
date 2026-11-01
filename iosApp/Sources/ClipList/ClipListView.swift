@@ -28,6 +28,9 @@ struct MatchesList: View {
     /// doubling four flow subscriptions and four network calls per refresh.
     /// The match page reads the same one.
     let model: ClipListModel
+    /// The coach's players, for the row's "Edit details" sheet: its pickers
+    /// and their "Add player". Home's one instance.
+    let playersModel: PlayersModel
     let onMatchTap: (MatchRoute) -> Void
     let onCourtMarking: (CourtMarkingRoute) -> Void
     /// The empty state's hero ticker stops while something is pushed or
@@ -105,13 +108,18 @@ struct MatchesList: View {
         .sheet(item: $detailsTarget) { target in
             MatchDetailsSheet(
                 entry: target.entry,
+                roster: playersModel.players,
+                onAddPlayer: playersModel.create,
                 autoOpened: target.autoOpened,
-                onSave: { title, description in
-                    rally.localVideos.setDetails(
-                        id: target.entry.id,
-                        title: LocalVideoDetailsKt.normalizeTitle(raw: title),
-                        description: LocalVideoDetailsKt.normalizeDescription(raw: description)
-                    )
+                onSave: { title, description, players, nearSide in
+                    // The list's own model, not this view: the save outlives
+                    // the sheet, and its sentence goes to the root toast.
+                    Task {
+                        await model.saveEntryDetails(
+                            entryId: target.entry.id, title: title, description: description,
+                            players: players, nearSide: nearSide
+                        )
+                    }
                 }
             )
         }

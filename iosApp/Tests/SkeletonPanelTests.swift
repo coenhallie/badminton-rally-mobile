@@ -176,6 +176,39 @@ final class SkeletonPanelTests: XCTestCase {
         XCTAssertEqual(model.selected, .elbowLeft)
     }
 
+    @MainActor
+    func testAProfileHandWinsOverTheVideosChoiceAndLeavesItAlone() async throws {
+        try SkeletonStore().save(
+            entryId: entry, poses: poses(2), fps: 30,
+            videoWidth: 640, videoHeight: 360, marks: nil
+        )
+        let armPrefs = prefs()
+        armPrefs.setRacketArm(entryId: entry, arm: .right)
+        let model = SkeletonPanelModel(entryId: entry, runner: LocalAnalysisRunner(), racketArmPrefs: armPrefs)
+        await model.loadSkeleton(videoRelativePath: nil)
+        model.chosen = .elbowRight
+        XCTAssertNil(model.profileArm)
+        XCTAssertEqual(model.shownArm, .right)
+
+        // Marco, left-handed, at the near end: the side shown. His hand is the
+        // one the tiles are read for, whatever this video was set to.
+        model.sideNames = CourtSideNames(near: "Marco", far: "Opponent", nearArm: .left, farArm: nil)
+        XCTAssertEqual(model.profileArm, .left)
+        XCTAssertEqual(model.shownArm, .left)
+        XCTAssertTrue(
+            MetricsFormatKt.visibleKinds(hasCourt: false, racketArm: .left).contains(model.selected)
+        )
+        XCTAssertNotEqual(model.selected, .elbowRight)
+
+        // The per-video choice is untouched, for a side or a match with no
+        // profile hand.
+        XCTAssertEqual(model.racketArm, .right)
+        XCTAssertEqual(armPrefs.racketArm(entryId: entry), .right)
+        model.sideNames = nil
+        XCTAssertEqual(model.shownArm, .right)
+        XCTAssertEqual(model.selected, .elbowRight)
+    }
+
     // MARK: - The camera
 
     @MainActor

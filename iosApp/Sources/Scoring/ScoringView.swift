@@ -23,6 +23,8 @@ enum AttachIntent: Hashable {
 /// and which end each side is on. Nothing here computes a rule.
 struct ScoringView: View {
     let rally: RallyApp
+    /// The coach's players, for "Add player" in the details editor's pickers.
+    let playersModel: PlayersModel
     let scoreLogId: String
     /// Whether the match page this board is scoring for is already sitting on
     /// the stack directly underneath it - true when pushed from that page's own
@@ -140,11 +142,19 @@ struct ScoringView: View {
             }
         }
         .sheet(isPresented: $editingDetails) {
-            EditMatchDetailsSheet(initial: MatchDetailsDraft(log: log), titleCap: Int(ScoreLogKt.MAX_MATCH_TITLE)) { draft in
-                model.updateDetails(
-                    title: draft.title, format: draft.format,
-                    homePlayers: draft.homePlayers, awayPlayers: draft.awayPlayers
-                )
+            // No ends row on the board: which end Home was at is a fact about
+            // the footage, set on the match page, where the video is.
+            EditMatchDetailsSheet(
+                initialTitle: log.title,
+                initialDescription: nil,
+                initialFormat: log.format,
+                initialPlayers: DetailsPlayersDraftKt.scoreLogPlayersDraft(log: log, nearSide: nil),
+                titleCap: Int(ScoreLogKt.MAX_MATCH_TITLE),
+                roster: model.players,
+                onAddPlayer: playersModel.create
+            ) { draft in
+                // Open on a refusal: the editor already says the same sentence.
+                model.updateDetails(title: draft.title, format: draft.format, players: draft.players)
             }
         }
         .confirmationDialog(

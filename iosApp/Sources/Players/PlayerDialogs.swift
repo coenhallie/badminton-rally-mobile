@@ -214,8 +214,9 @@ private struct SizedToContentSheet: ViewModifier {
     }
 }
 
-private extension View {
-    /// See `SizedToContentSheet`.
+extension View {
+    /// See `SizedToContentSheet`. Shared by the player sheets and the attach
+    /// question (`HomeEndPrompt`).
     func sizedToContentSheet() -> some View {
         modifier(SizedToContentSheet())
     }

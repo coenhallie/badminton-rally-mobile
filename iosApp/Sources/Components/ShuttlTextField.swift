@@ -22,10 +22,17 @@ import SwiftUI
 /// Keyboard, content type, submit label and focus are set by the caller on
 /// this view, as on a plain `TextField`; they reach the field through the
 /// environment. A disabled field dims to 0.6, as Android's does.
+///
+/// `maxLength`, as Android's, caps typing at that many characters and shows an
+/// n/max counter at the label's right. `minLines` above 1 makes the field grow
+/// from that many lines as it is typed into (a description), rather than one
+/// fixed line.
 struct ShuttlTextField: View {
     let label: String
     @Binding var text: String
     var secure: Bool = false
+    var maxLength: Int? = nil
+    var minLines: Int = 1
 
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.displayScale) private var displayScale
@@ -35,16 +42,17 @@ struct ShuttlTextField: View {
     @ScaledMetric(relativeTo: .body) private var lineHeight: CGFloat =
         ShuttlType.bodyLarge.size * ShuttlType.bodyLarge.lineHeightMultiple
 
-    init(_ label: String, text: Binding<String>, secure: Bool = false) {
+    init(_ label: String, text: Binding<String>, secure: Bool = false, maxLength: Int? = nil, minLines: Int = 1) {
         self.label = label
         self._text = text
         self.secure = secure
+        self.maxLength = maxLength
+        self.minLines = minLines
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Shuttl.sectionLabel(label)
-                .accessibilityHidden(true)
+            header
             input
                 // Set here as well as through the label view: with an empty
                 // prompt, which keeps a placeholder from repeating the label
@@ -61,7 +69,9 @@ struct ShuttlTextField: View {
                 // heights (1px at the default size, 5px at an accessibility
                 // size). Rounded up to whole pixels so both boxes land on the
                 // same pixel height wherever they sit.
-                .frame(height: (lineHeight * displayScale).rounded(.up) / displayScale)
+                .frame(height: multiline ? nil : (lineHeight * displayScale).rounded(.up) / displayScale)
+                // A description grows from `minLines` lines instead.
+                .frame(minHeight: multiline ? lineHeight * CGFloat(minLines) : nil, alignment: .topLeading)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
                 // The whole box focuses the field, as Android's does: the
@@ -90,11 +100,37 @@ struct ShuttlTextField: View {
                 )
         }
         .opacity(isEnabled ? 1 : 0.6)
+        .onChange(of: text) { _, new in
+            if let maxLength, new.count > maxLength { text = String(new.prefix(maxLength)) }
+        }
+    }
+
+    private var multiline: Bool { minLines > 1 && !secure }
+
+    /// The label, and the counter at its right when the field is capped. The
+    /// counter is read by VoiceOver from the field itself, not from here.
+    @ViewBuilder private var header: some View {
+        if let maxLength {
+            HStack(alignment: .firstTextBaseline) {
+                Shuttl.sectionLabel(label)
+                Spacer(minLength: 8)
+                Text("\(text.count)/\(maxLength)")
+                    .shuttlType(ShuttlType.labelSmall)
+                    .foregroundStyle(Shuttl.textSecondary)
+            }
+            .accessibilityHidden(true)
+        } else {
+            Shuttl.sectionLabel(label)
+                .accessibilityHidden(true)
+        }
     }
 
     @ViewBuilder private var input: some View {
         if secure {
             SecureField(text: $text, prompt: Text("")) { Text(label) }
+        } else if multiline {
+            TextField(text: $text, prompt: Text(""), axis: .vertical) { Text(label) }
+                .lineLimit(minLines...)
         } else {
             TextField(text: $text, prompt: Text("")) { Text(label) }
         }

@@ -40,6 +40,20 @@ import UIKit
 /// writes into: it goes with the row when the row goes (one section left, a
 /// pop), and comes back with it, with no last write to go stale.
 ///
+/// `singleLine` is for labels that are not words of ours but somebody's text, a
+/// player's name of up to 40 characters: each pill keeps its label on one line
+/// at the row's size and ends it in an ellipsis, rather than wrapping (which
+/// makes the row taller than its neighbours) or shrinking every label for the
+/// sake of one long name. The pills still share the track equally, and VoiceOver
+/// reads the whole label.
+///
+/// `enabled` false draws the whole row read-only (a value that cannot be
+/// changed right now, still shown); `disabledIndices` are the pills that cannot
+/// be chosen while the rest can (the details editor's Doubles and Mixed while a
+/// side holds a profile). A disabled pill keeps its place and its label, the
+/// whole pill dimmed to the text field's 0.6, fill included, and takes no tap;
+/// VoiceOver hears it as dimmed.
+///
 /// `labels` and `selectedIndex` rather than a generic over the caller's enum: the
 /// callers keep their own type and pass its labels, which keeps this file free of
 /// them. Port of androidApp's `ShuttlPillTabs.kt`, behaviour for behaviour.
@@ -55,6 +69,9 @@ struct ShuttlPillTabs: View {
     /// nearest `.pillLabelCeilingHost()`. For a primary row; a secondary row
     /// that set it would be capping itself.
     var setsCeiling: Bool = false
+    var enabled: Bool = true
+    var disabledIndices: Set<Int> = []
+    var singleLine: Bool = false
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.pillLabelCeiling) private var ceiling
@@ -67,6 +84,7 @@ struct ShuttlPillTabs: View {
         HStack(spacing: Metrics.gap) {
             ForEach(Array(labels.enumerated()), id: \.offset) { index, label in
                 let selected = index == selectedIndex
+                let pillEnabled = enabled && !disabledIndices.contains(index)
                 Button {
                     onSelect(index)
                 } label: {
@@ -78,9 +96,11 @@ struct ShuttlPillTabs: View {
                         // layout and UIKit's measure disagree. Lifted past the floor,
                         // where no size fits and Android's rule holds: a break
                         // inside the word is the lesser harm than an unreadable
-                        // label or a truncated one.
-                        .lineLimit(fit.fits ? max(1, Self.words(label).count) : nil)
-                        .minimumScaleFactor(fit.fits ? 0.95 : 1)
+                        // label or a truncated one. A `singleLine` row is one line
+                        // ending in an ellipsis, at the row's own size.
+                        .lineLimit(singleLine ? 1 : (fit.fits ? max(1, Self.words(label).count) : nil))
+                        .truncationMode(.tail)
+                        .minimumScaleFactor(singleLine ? 1 : (fit.fits ? 0.95 : 1))
                         // The mock letters an unchosen pill in `#5d6462`, which is
                         // `textMuted`. Not used here, and Android made the same
                         // call: that token is documented for the hero line only
@@ -101,8 +121,14 @@ struct ShuttlPillTabs: View {
                         // secondary pill reaches about 6pt past its track, so
                         // two rows' targets do not meet.
                         .contentShape(MinimumTargetShape(axes: .vertical))
+                        // The whole pill, fill included, so a chosen pill in a
+                        // read-only row dims with it, as a disabled field does.
+                        .opacity(pillEnabled ? 1 : Metrics.disabledOpacity)
                 }
                 .buttonStyle(.plain)
+                .disabled(!pillEnabled)
+                // The whole label, which a `singleLine` pill may cut short.
+                .accessibilityLabel(label)
                 .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
             }
         }
@@ -160,6 +186,19 @@ struct ShuttlPillTabs: View {
         guard trackWidth > 0, !labels.isEmpty else {
             return PillFit(role: base, padding: Metrics.tabPaddingH, labelPoints: points(base.size), fits: true)
         }
+        // Somebody's text is not fitted by its words: it keeps the row's size,
+        // still held under the ceiling, and ends in an ellipsis (see `singleLine`).
+        if singleLine {
+            let scale = secondary && ceiling.isFinite
+                ? pillLabelScale(limit: ceiling, measure: { points(base.size * $0) })
+                : 1
+            return PillFit(
+                role: scale < 1 ? base.at(size: base.size * scale) : base,
+                padding: Metrics.tabPaddingH,
+                labelPoints: points(base.size * scale),
+                fits: true
+            )
+        }
         let count = CGFloat(labels.count)
         // Each pill's width: the track less its padding and the gaps, shared
         // equally. Half a point under that, for the rounding the stack does when
@@ -206,6 +245,8 @@ struct ShuttlPillTabs: View {
         static let tabPaddingV: CGFloat = 11
         /// A secondary pill's: with its smaller label, 8pt shorter than a primary.
         static let secondaryPaddingV: CGFloat = 7
+        /// A disabled pill's, the text field's own (`ShuttlTextField`).
+        static let disabledOpacity: Double = 0.6
     }
 }
 

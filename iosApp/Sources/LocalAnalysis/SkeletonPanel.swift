@@ -78,7 +78,22 @@ final class SkeletonPanelModel {
     private(set) var pose: PlayerPose?
     private(set) var metrics: PoseMetrics?
     private var resolvedFrame: Int32? = nil
+    /// The per-video choice, as stored. What the metrics use is `shownArm`.
     var racketArm: RacketArm?
+    /// Who stands at each end (`courtSideNames`), for a profile's playing hand.
+    /// Set by the panel as the match says it, not at init: this model outlives
+    /// the panel's own redraws.
+    var sideNames: CourtSideNames?
+
+    /// The playing hand of the profile on the side shown, when it has one set.
+    var profileArm: RacketArm? { CourtSideNamesKt.profileArm(side: shownSide, names: sideNames) }
+
+    /// The arm the metrics are read for. The shown player's profile hand wins
+    /// over the per-video choice: it is the one answer for that person on every
+    /// video, and the pills that would contradict it are not drawn. The
+    /// per-video choice is kept untouched, so a side with no profile hand (or a
+    /// match with no profile) still reads it. Mirrors androidApp's SkeletonPanel.
+    var shownArm: RacketArm? { profileArm ?? racketArm }
     /// The coach's pick, kept even while the racket-arm control hides its tile -
     /// see `selected`.
     var chosen: MetricKind = .elbowRight
@@ -228,7 +243,7 @@ final class SkeletonPanelModel {
     /// kind with no tile. Derived rather than written back, so the choice itself
     /// is kept and putting the arm back brings the tile back selected.
     var selected: MetricKind {
-        let visible = MetricsFormatKt.visibleKinds(hasCourt: hasCourt, racketArm: racketArm)
+        let visible = MetricsFormatKt.visibleKinds(hasCourt: hasCourt, racketArm: shownArm)
         return visible.contains(chosen) ? chosen : (visible.first ?? .elbowRight)
     }
 
@@ -295,6 +310,8 @@ struct SkeletonPanel: View {
     let runner: LocalAnalysisRunner
     let prefs: PlaybackPreferenceRepository
     let racketArmPrefs: RacketArmPreferenceRepository
+    /// Who stands at each end: the toggle's names and a profile's hand.
+    let sideNames: CourtSideNames?
 
     @State private var model: SkeletonPanelModel
 
@@ -303,20 +320,23 @@ struct SkeletonPanel: View {
         videoRelativePath: String?,
         runner: LocalAnalysisRunner,
         prefs: PlaybackPreferenceRepository,
-        racketArmPrefs: RacketArmPreferenceRepository
+        racketArmPrefs: RacketArmPreferenceRepository,
+        sideNames: CourtSideNames?
     ) {
         self.entryId = entryId
         self.videoRelativePath = videoRelativePath
         self.runner = runner
         self.prefs = prefs
         self.racketArmPrefs = racketArmPrefs
-        _model = State(initialValue: SkeletonPanelModel(
-            entryId: entryId, runner: runner, racketArmPrefs: racketArmPrefs
-        ))
+        self.sideNames = sideNames
+        let model = SkeletonPanelModel(entryId: entryId, runner: runner, racketArmPrefs: racketArmPrefs)
+        model.sideNames = sideNames
+        _model = State(initialValue: model)
     }
 
     var body: some View {
         content
+            .onChange(of: sideNames) { _, names in model.sideNames = names }
             .task { await model.loadSkeleton(videoRelativePath: videoRelativePath) }
             .task {
                 for await value in prefs.metricsExpanded {
@@ -403,7 +423,8 @@ struct SkeletonPanel: View {
                 SideToggle(
                     sides: model.drawableSides,
                     selected: model.shownSide,
-                    onSelect: { model.setSide($0) }
+                    onSelect: { model.setSide($0) },
+                    names: model.sideNames
                 )
                 .padding(.horizontal, ShuttlGutter.page)
                 .padding(.vertical, 8)
@@ -411,8 +432,9 @@ struct SkeletonPanel: View {
             MetricsStrip(
                 metrics: model.metrics,
                 hasCourt: model.hasCourt,
-                racketArm: model.racketArm,
+                racketArm: model.shownArm,
                 onRacketArm: { model.setRacketArm($0) },
+                racketArmFromProfile: model.profileArm != nil,
                 selected: model.selected,
                 onSelect: { model.chosen = $0 },
                 expanded: model.expanded,
@@ -425,7 +447,7 @@ struct SkeletonPanel: View {
             MetricGraph(
                 series: model.shownSeries,
                 kind: model.selected,
-                label: MetricsFormatKt.metricLabel(kind: model.selected, racketArm: model.racketArm),
+                label: MetricsFormatKt.metricLabel(kind: model.selected, racketArm: model.shownArm),
                 positionS: Double(model.position.positionMs) / 1000,
                 fps: stored.fps,
                 durationS: model.position.durationMs > 0

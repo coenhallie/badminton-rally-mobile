@@ -12,6 +12,7 @@ struct MatchesScreen: View {
     let analyze: AnalyzeCoordinator
     let intake: LocalVideoIntake
     let model: ClipListModel
+    let playersModel: PlayersModel
     let heroPaused: Bool
     let onMatchTap: (MatchRoute) -> Void
     let onCourtMarking: (CourtMarkingRoute) -> Void
@@ -25,7 +26,7 @@ struct MatchesScreen: View {
 
     var body: some View {
         MatchesList(
-            rally: rally, analyze: analyze, intake: intake, model: model,
+            rally: rally, analyze: analyze, intake: intake, model: model, playersModel: playersModel,
             onMatchTap: onMatchTap, onCourtMarking: onCourtMarking,
             heroPaused: heroPaused, onOverlayChange: onOverlayChange,
             playerId: nil,
