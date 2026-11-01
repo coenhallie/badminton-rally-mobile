@@ -350,16 +350,15 @@ private struct ProfileTab: View {
                         .shuttlType(ShuttlType.bodyMedium)
                         .foregroundStyle(Shuttl.textSecondary)
                 }
-                // One height for the three. Every value is one line at the
-                // default text size ("Oct 28", "Oct '25", "None yet"); at a
-                // large one a value can wrap, and the captions still stay
-                // level: see ShuttlStatTile's `compact`.
-                HStack(spacing: 8) {
-                    tile(String(summary.matchCount), copy.TILE_MATCHES)
-                    tile(String(summary.rallyCount), copy.TILE_RALLIES)
-                    tile(PlayerMatchesKt.lastMatchTile(summary: summary), copy.TILE_LAST_MATCH)
-                }
-                .fixedSize(horizontal: false, vertical: true)
+                // One width and one height for the three. Every value is one
+                // line at the default text size ("Oct 28", "Oct '25",
+                // "None yet") down to 320pt; at a large one a value can wrap,
+                // and the captions still stay level: see ShuttlStatTileRow.
+                ShuttlStatTileRow(tiles: [
+                    .init(value: String(summary.matchCount), label: copy.TILE_MATCHES),
+                    .init(value: String(summary.rallyCount), label: copy.TILE_RALLIES),
+                    .init(value: PlayerMatchesKt.lastMatchTile(summary: summary), label: copy.TILE_LAST_MATCH),
+                ])
             }
             .padding(.horizontal, ShuttlGutter.page)
             .padding(.top, MatchPageLayout.sectionGap)
@@ -367,10 +366,5 @@ private struct ProfileTab: View {
         // Clear of the Add button, which floats over the page.
         .safeAreaPadding(.bottom, 88)
         .background(Shuttl.bg)
-    }
-
-    private func tile(_ value: String, _ label: String) -> some View {
-        ShuttlStatTile(value: value, unit: "", label: label, compact: true)
-            .accessibilityElement(children: .combine)
     }
 }
