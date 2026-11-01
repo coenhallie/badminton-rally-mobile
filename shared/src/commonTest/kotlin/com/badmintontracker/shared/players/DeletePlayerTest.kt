@@ -359,4 +359,44 @@ class DeletePlayerTest {
         pushed["away_players"]?.jsonArray?.map { it.jsonPrimitive.content } shouldBe listOf("Jo")
         server.rows.keys shouldBe setOf("log-li", scoredHere.id)
     }
+
+    @Test
+    fun with_no_name_only_a_dirty_log_is_cleared_and_a_clean_one_heals_on_the_pull() = runTest {
+        // Two logs from the other phone name Li, whom this phone never cached. One
+        // is edited here (dirty), one is not (clean).
+        fun li(id: String) = ScoreLog(
+            id = id, videoId = null, title = "Thu League",
+            homePlayerId = "player-li", awayPlayers = listOf("Jo"),
+            rules = ScoringRules.BWF_21, setup = MatchSetup(firstServer = Side.HOME),
+            events = emptyList(), status = ScoreLogStatus.LIVE, createdAt = t0, updatedAt = t0,
+        )
+        val server = ScoreLogsServer(livePlayers = setOf("player-li"))
+        server.seed(li("log-clean"))
+        server.seed(li("log-dirty"))
+        val logs = ScoreLogsRepository(server.client(), MapSettings(), now = { t0 }, ownerId = { owner })
+        logs.sync().isSuccess shouldBe true
+        logs.updateDetails("log-dirty", "Thu League final", null, logs.get("log-dirty")!!.matchPlayers)
+
+        // Li is deleted on the other phone. The server's delete trigger writes the
+        // name onto both rows; the dirty log here still holds the id.
+        server.livePlayers = emptySet()
+        server.seed(li("log-clean").copy(homePlayerId = null, homePlayers = listOf("Li")))
+        server.seed(li("log-dirty").copy(homePlayerId = null, homePlayers = listOf("Li")))
+        val players = StubPlayers(listOf(ana)).apply { refreshed = listOf(ana) }
+
+        refreshPlayersAndForgetVanishedOrMessage(players, logs, localVideos) { owner }.shouldBeNull()
+
+        // The clean log is left alone: nothing of it is pushed over the server's name.
+        logs.get("log-clean")?.matchPlayers shouldBe li("log-clean").matchPlayers
+        // The dirty one could not wait for the pull: it is cleared, with no name to keep.
+        logs.get("log-dirty")?.matchPlayers shouldBe MatchPlayers(null, null, emptyList(), listOf("Jo"))
+
+        logs.sync().isSuccess shouldBe true
+        // The clean log takes the server's row, name and all.
+        logs.get("log-clean")?.matchPlayers shouldBe MatchPlayers(null, null, listOf("Li"), listOf("Jo"))
+        server.rows.getValue("log-clean")["home_players"]?.jsonArray?.map { it.jsonPrimitive.content } shouldBe
+            listOf("Li")
+        server.rows.getValue("log-dirty")["title"]?.jsonPrimitive?.content shouldBe "Thu League final"
+        server.rows.getValue("log-dirty")["home_player_id"] shouldBe JsonNull
+    }
 }

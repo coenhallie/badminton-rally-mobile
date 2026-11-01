@@ -58,8 +58,11 @@ internal fun referencedPlayerIds(
  *
  * The name kept is the one [before] held. An id it never held (the refresh that
  * would have cached it failed, or the cache had not been re-read yet) has no name
- * on this phone, and its side is left unnamed. No local record carries a resolved
- * name to fall back on.
+ * on this phone. No local record carries a resolved name to fall back on, so the
+ * side is left unnamed, and only where it has to be: in local entries, which have
+ * no server copy yet, and in score logs with unpushed changes. A clean score log
+ * keeps the id until the next pull brings the server's row, with the name its
+ * delete trigger wrote (see [ScoreLogsRepository.forgetPlayer]).
  */
 internal fun forgetVanishedPlayers(
     before: List<Player>,
