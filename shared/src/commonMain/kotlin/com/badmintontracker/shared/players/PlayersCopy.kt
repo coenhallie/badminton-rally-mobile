@@ -59,7 +59,12 @@ object PlayersCopy {
     /** The title's name, which opens the menu of every player. */
     const val SWITCH_PLAYER = "Switch player"
 
-    /** What a screen reader hears of the switcher: whether its menu is open. */
+    /**
+     * What a screen reader hears of the switcher: whether its menu is open.
+     * Android only: on iOS the switcher is a native menu, whose pop-up button
+     * role VoiceOver announces itself, and SwiftUI exposes no open state to
+     * describe (Ruling 21).
+     */
     const val MENU_EXPANDED = "Expanded"
     const val MENU_COLLAPSED = "Collapsed"
 

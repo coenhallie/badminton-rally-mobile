@@ -77,14 +77,15 @@ enum HomePath {
         return Array(path[..<at]) + [.player(id: id)]
     }
 
-    /// Back to Players once the player `id` has gone (deleted here or on
-    /// another device), but only while their page is the one in front: a page
-    /// under a match must not pop the match from under the coach, and closes
-    /// once the coach is back on it. Mirrors androidApp's `onGone`, which is
-    /// held until the page is resumed.
+    /// The page of the player `id` closed once they have gone (deleted here
+    /// or on another device), back to the screen under it, which is Players:
+    /// but only while their page is the one in front. A page under a match
+    /// must not pop the match from under the coach, and closes once the coach
+    /// is back on it. Mirrors androidApp's `onGone`, which is held until the
+    /// page is resumed.
     static func closingPlayer(_ id: String, in path: [HomeRoute]) -> [HomeRoute] {
         guard path.last == .player(id: id) else { return path }
-        return []
+        return Array(path.dropLast())
     }
 
     /// `next` in `current`'s place, and nothing above it: New match giving way

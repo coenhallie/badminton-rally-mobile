@@ -33,7 +33,6 @@ struct PlayerNameSheet: View {
     /// The last save's sentence, and the name it was about: typing past that
     /// name hides it, since it no longer describes what is in the field.
     @State private var failure: (message: String, name: String)? = nil
-    @State private var contentHeight: CGFloat = 0
     @FocusState private var nameFocused: Bool
 
     private let nameCap = Int(MatchDetailsKt.MAX_PLAYER_NAME)
@@ -116,17 +115,9 @@ struct PlayerNameSheet: View {
         .padding(.horizontal, 20)
         .padding(.top, 24)
         .padding(.bottom, 16)
-        .background {
-            GeometryReader { proxy in
-                Color.clear.onChange(of: proxy.size.height, initial: true) { _, height in
-                    contentHeight = height
-                }
-            }
-        }
+        .sizedToContentSheet()
         .onAppear { nameFocused = true }
         .interactiveDismissDisabled(saving)
-        // As tall as its content, the way ScoreEditSheet sizes itself.
-        .presentationDetents([.height(contentHeight)])
         .presentationDragIndicator(.visible)
         // Not bgSecondary, the sheets' usual fill: that is the pill track's
         // own value, which would leave the unselected pills floating on
@@ -163,7 +154,6 @@ struct PlayingHandSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var armIndex: Int
-    @State private var contentHeight: CGFloat = 0
 
     init(initialArm: RacketArm?, onSave: @escaping (RacketArm?) -> Void) {
         self.onSave = onSave
@@ -199,16 +189,34 @@ struct PlayingHandSheet: View {
         .padding(.horizontal, 20)
         .padding(.top, 24)
         .padding(.bottom, 16)
-        .background {
-            GeometryReader { proxy in
-                Color.clear.onChange(of: proxy.size.height, initial: true) { _, height in
-                    contentHeight = height
-                }
-            }
-        }
-        .presentationDetents([.height(contentHeight)])
+        .sizedToContentSheet()
         .presentationDragIndicator(.visible)
         // See `PlayerNameSheet`: the sheets' usual fill is the pill track's.
         .presentationBackground(Shuttl.bgDialog)
+    }
+}
+
+/// A sheet as tall as its content, the way ScoreEditSheet sizes itself: the
+/// content's measured height is its one detent.
+private struct SizedToContentSheet: ViewModifier {
+    @State private var height: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        content
+            .background {
+                GeometryReader { proxy in
+                    Color.clear.onChange(of: proxy.size.height, initial: true) { _, new in
+                        height = new
+                    }
+                }
+            }
+            .presentationDetents([.height(height)])
+    }
+}
+
+private extension View {
+    /// See `SizedToContentSheet`.
+    func sizedToContentSheet() -> some View {
+        modifier(SizedToContentSheet())
     }
 }
