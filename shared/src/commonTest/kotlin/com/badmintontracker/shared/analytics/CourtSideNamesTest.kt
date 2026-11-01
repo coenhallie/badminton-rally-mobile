@@ -127,8 +127,21 @@ class CourtSideNamesTest {
         val awayUnnamed = courtSideNames(item(listOf("Marco"), emptyList(), Side.HOME), emptyList())
         awayUnnamed shouldBe CourtSideNames("Marco", "Opponent", null, null)
 
-        courtSideNames(item(emptyList(), emptyList(), Side.AWAY), emptyList()) shouldBe
-            CourtSideNames("Opponent", "Opponent", null, null)
+        // A blank typed name is no name.
+        courtSideNames(item(listOf(" "), listOf("Li"), Side.HOME), emptyList()) shouldBe
+            CourtSideNames("Opponent", "Li", null, null)
+    }
+
+    @Test
+    fun no_name_on_either_side_keeps_near_and_far() {
+        // Not "Opponent | Opponent": the ends are known but there is nobody to name.
+        courtSideNames(item(emptyList(), emptyList(), Side.AWAY), emptyList()).shouldBeNull()
+        courtSideNames(item(listOf(""), listOf(" ", ""), Side.HOME), emptyList()).shouldBeNull()
+        // A profile this phone has not loaded (or that was deleted) resolves to no name.
+        courtSideNames(
+            item(emptyList(), emptyList(), Side.HOME, homePlayerId = "p-gone"),
+            listOf(marco),
+        ).shouldBeNull()
     }
 
     @Test

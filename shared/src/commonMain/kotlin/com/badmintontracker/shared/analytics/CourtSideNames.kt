@@ -22,9 +22,12 @@ data class CourtSideNames(
 
 /**
  * The names of the two ends of [item]'s court, or null when the match does not
- * say which end Home was at (the toggle then reads "Near" / "Far"). A side
- * with no name is "Opponent". [players] is the coach's profile list, for the
- * hand: the item's names are already resolved, its ids are not.
+ * say which end Home was at, or names nobody on either side (the toggle then
+ * reads "Near" / "Far", never "Opponent" twice). A side with no name next to one
+ * with a name is "Opponent". [players] is the coach's profile list, for the
+ * hand: the item's names are already resolved, its ids are not. A side with no
+ * name has no hand either (a profile this phone cannot name is one it has not
+ * loaded), so nothing is lost by the null.
  */
 fun courtSideNames(item: MatchListItem, players: List<Player>): CourtSideNames? {
     val homeAtNear = when (item.nearSide) {
@@ -34,11 +37,13 @@ fun courtSideNames(item: MatchListItem, players: List<Player>): CourtSideNames? 
     }
     fun arm(playerId: String?): RacketArm? =
         playerId?.let { id -> players.firstOrNull { it.id == id }?.racketArm }
-    fun name(names: List<String>): String =
-        names.joinToString(" / ").ifEmpty { PlayersCopy.OPPONENT }
+    fun named(names: List<String>): String = names.filter { it.isNotBlank() }.joinToString(" / ")
 
-    val home = name(item.homeNames)
-    val away = name(item.awayNames)
+    val homeNamed = named(item.homeNames)
+    val awayNamed = named(item.awayNames)
+    if (homeNamed.isEmpty() && awayNamed.isEmpty()) return null
+    val home = homeNamed.ifEmpty { PlayersCopy.OPPONENT }
+    val away = awayNamed.ifEmpty { PlayersCopy.OPPONENT }
     val homeArm = arm(item.homePlayerId)
     val awayArm = arm(item.awayPlayerId)
     return if (homeAtNear) CourtSideNames(home, away, homeArm, awayArm)
