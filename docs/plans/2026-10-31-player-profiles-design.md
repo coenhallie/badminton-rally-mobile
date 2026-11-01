@@ -1,8 +1,10 @@
 # Design: player profiles under the coach's account
 
 **Date:** 2026-10-31
-**Status:** Draft, for Coen's review. Doubles and the attach-time end question
-answered by Coen 2026-10-31 (section 9).
+**Status:** Approved by Coen 2026-10-31. Doubles and the attach-time end question
+answered by Coen 2026-10-31 (section 9). Built 2026-10-31 to 2026-11-01 on
+`feat/player-profiles` (plan: `2026-10-31-player-profiles-plan.md`); the device
+pass is owed. Section 12 records what shipped differently.
 **Asked for:** Coen, 2026-10-19: the coach creates separate player accounts,
 toggles between them to see each player's analytics, and later each player logs
 in to see their own data and the coach's recommendations. "Let's go step by step."
@@ -520,3 +522,41 @@ None open.
   migrations. Prod may have a hand-added policy; unverified.
 - Sign-out leaves the previous account's local data, and the score log cache
   overwrite (section 6). Both matter from step 4.
+
+---
+
+## 12. What shipped differently
+
+Decided during the build, each recorded as a controller ruling with its reason.
+
+- **Delete is server-first** (section 3.2 rule 4 already says so): the phone
+  rewrites its own copies only after the server delete succeeds. Players deleted
+  on another device, or ids this phone never cached, are forgotten after the next
+  successful players refresh, so a dead id can never block the score-log sync.
+- **Profile names everywhere a side is named.** The plan had no task for the
+  board, the score editor, the Points facet, the match page header, the score
+  card and the export; an extra task (plan Task 16) routes all of them through
+  the players list.
+- **One atomic write per record** for details plus players, so no save can reach
+  the server half-done and trip the new checks.
+- **Who's playing drafts** carry a typed name on each end, every end picker
+  offers "Someone else", names-only matches keep their ends unknown, and the same
+  player cannot be on both sides ("A player can't be on both sides.").
+- **Announcements** (finished runs, failed runs, a failed refresh) reach the coach
+  on Players and All matches, not only the match list. On iOS the failed-run
+  alert waits for a list screen with no sheet over it, because a root alert would
+  close the coach's open sheet.
+- **Background work** takes the coach to All matches on both platforms.
+- **Player dates** read "Oct 28" in the current year, "Oct 28, 2025" in rows and
+  "Oct '25" in the Last match tile otherwise.
+- **iOS navigation** runs on one `NavigationStack(path:)` with a route enum, the
+  only shape that lets a match push over All matches or a player page and pop
+  back to it.
+- **iOS player switcher** is the page's title row under the navigation bar, not a
+  bar item: the iOS bar cannot give an item the free space without measured
+  constants. Android keeps the switcher in the bar.
+- **A player's matches** come from one unfiltered list filtered by
+  `MatchList.forPlayer`, not a `playerId` on `MatchListInput` (section 3.5), so the
+  row count, the tiles and the tab read one list.
+- `PlayersRepository` lives in `shared/players`, not `shared/repo` (section 3.7).
+

@@ -120,7 +120,7 @@
 
 House style is `20260922000000_video_match_details.sql`: header comment with `See docs/plans/2026-10-31-player-profiles-design.md`, idempotent statements, constraints guarded by `pg_constraint` lookups, `drop policy if exists` before `create policy`.
 
-- [ ] **Step 1: Write `supabase/tests/players_test.sql`** in the shape of `video_match_details_test.sql` (two users `...0001` owner, `...0002` other; `pg_temp.expect_refused`, `pg_temp.expect_denied`, `pg_temp.act_as`; `begin` ... `rollback`). Add `pg_temp.expect_raised(label, stmt)` that swallows `raise_exception` (SQLSTATE `P0001`) for the trigger refusals. Cases, each a labelled block:
+- [x] **Step 1: Write `supabase/tests/players_test.sql`** in the shape of `video_match_details_test.sql` (two users `...0001` owner, `...0002` other; `pg_temp.expect_refused`, `pg_temp.expect_denied`, `pg_temp.act_as`; `begin` ... `rollback`). Add `pg_temp.expect_raised(label, stmt)` that swallows `raise_exception` (SQLSTATE `P0001`) for the trigger refusals. Cases, each a labelled block:
   1. `players are owner-only`: the owner inserts `Marco` (no `owner_id` given, the default fills it); the other user selects zero rows, and updates and deletes match zero rows.
   2. `refuses an empty or long name`: `''`, `'   '` and a 41-character name are refused.
   3. `refuses an unknown hand`: `racket_arm = 'both'` refused; `'left'`, `'right'`, null accepted.
@@ -134,12 +134,12 @@ House style is `20260922000000_video_match_details.sql`: header comment with `Se
   11. `metadata resolves names`: owner's video with `home_player_id = Marco` and typed `away_players = '{Jip}'` returns `home_names = '{Marco}'`, `away_names = '{Jip}'`, and the ids and `near_side` as stored.
   12. `metadata resolves names for a recipient through the bound score log`: owner's video with no assignment, a score log bound to it (`video_id`) with Marco home; share the video with the other user (insert into `match_shares` as `supabase_admin` before switching role); as other, `list_match_metadata()` returns that video with `home_names = '{Marco}'`.
 
-- [ ] **Step 2: Run it and see it fail**
+- [x] **Step 2: Run it and see it fail**
 
 Run: `supabase/tests/run.sh`
 Expected: `FAIL  players_test` (relation "players" does not exist); the three existing tests `ok`.
 
-- [ ] **Step 3: Write the migration**, in this order:
+- [x] **Step 3: Write the migration**, in this order:
   1. `players` per design section 3.1: `name` checked as `char_length(btrim(name)) between 1 and 40`; `racket_arm text check (racket_arm in ('left','right'))`; `created_at`, `updated_at timestamptz not null default now()`; non-unique index `players_owner_name_idx on (owner_id, lower(name))`; RLS enabled; policies `players_select_own`, `players_insert_own`, `players_update_own`, `players_delete_own` (`to authenticated`, `owner_id = auth.uid()`, update with `using` and `with check`); a `touch_players_updated_at()` trigger with the body of `touch_score_logs_updated_at()`.
   2. On `score_logs` and `videos`: `home_player_id`, `away_player_id uuid references public.players(id) on delete set null`; on `videos` only `near_side text`. Constraints `<table>_home_profile_or_names_check` (`home_player_id is null or cardinality(home_players) = 0`), the same for away, `<table>_profiles_singles_check` (`(home_player_id is null and away_player_id is null) or format is null or format = 'singles'`), `videos_near_side_check`.
   3. `public.check_match_players_owner()` (plpgsql, `security definer`, `set search_path = public`): for each non-null id, `raise exception 'player % belongs to another coach', id` unless `exists (select 1 from players p where p.id = id and p.owner_id = new.owner_id)`. Triggers `score_logs_players_owner` and `videos_players_owner`, `before insert or update of home_player_id, away_player_id, owner_id`.
@@ -147,12 +147,12 @@ Expected: `FAIL  players_test` (relation "players" does not exist); the three ex
   5. `grant update (home_player_id, away_player_id, near_side) on public.videos to authenticated;` (INSERT has no column grant in either repo; nothing to add).
   6. `drop function if exists public.list_match_metadata();` then recreate with the columns above, the same `where` clause as today, and names resolved by a `left join lateral` on the bound score log (`select ... from score_logs s where s.video_id = v.id order by s.created_at limit 1`): `home_names` is the score log's resolution when it exists, otherwise the video's, where a side's resolution is `array[p.name]` when its id is set, else its `home_players`. Keep `revoke all ... from public; grant execute ... to authenticated;` and the comment that this is one of the five copies of "own or shared".
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `supabase/tests/run.sh`
 Expected: `ok    players_test`, and `ok` for the three existing tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add supabase/migrations/20261031000000_player_profiles.sql supabase/tests/players_test.sql
@@ -187,15 +187,15 @@ git commit -m "feat(db): players owned by the coach, who is on each side of a ma
 
 Mirror `AnnotationLabelsRepositoryImpl` throughout: the auth-restore reconciliation job, `publish(next)`, owner-checked `loadCache()`, validation before the round trip, sorted state (`sortedPlayers`). Refresh is `select { order("created_at", Order.ASCENDING) }`; create is `insert(NewPlayerRow(name.trim(), racketArm)) { select() }.decodeSingle()`; rename and hand are `update(...) { filter { eq("id", id) } }`; delete is `delete { filter { eq("id", id) } }`, publishing the list without the player on success. The hand patch must send `"racket_arm":null` when clearing (use `@EncodeDefault` or a non-default property).
 
-- [ ] **Step 1: Write the failing tests.** `PlayerTest`: `initials_take_the_first_and_last_word`, `initials_of_one_word_is_one_letter`, `a_blank_name_is_a_problem`, `a_41_character_name_is_a_problem`, `players_sort_by_name_ignoring_case`. `PlayersRepositoryTest`, on the `AnnotationLabelsRepositoryTest` pattern (`TestSupabase.client`, `signInAs`, handler by path): `refresh_publishes_players_sorted_by_name`, `the_cache_survives_a_cold_start_offline`, `another_owner_never_sees_the_cache` (two clients over one `MapSettings`), `create_refuses_a_blank_name_without_a_request`, `create_sends_the_trimmed_name_and_hand`, `clearing_the_hand_sends_null` (body contains `"racket_arm":null`), `delete_drops_the_player_from_the_list`.
+- [x] **Step 1: Write the failing tests.** `PlayerTest`: `initials_take_the_first_and_last_word`, `initials_of_one_word_is_one_letter`, `a_blank_name_is_a_problem`, `a_41_character_name_is_a_problem`, `players_sort_by_name_ignoring_case`. `PlayersRepositoryTest`, on the `AnnotationLabelsRepositoryTest` pattern (`TestSupabase.client`, `signInAs`, handler by path): `refresh_publishes_players_sorted_by_name`, `the_cache_survives_a_cold_start_offline`, `another_owner_never_sees_the_cache` (two clients over one `MapSettings`), `create_refuses_a_blank_name_without_a_request`, `create_sends_the_trimmed_name_and_hand`, `clearing_the_hand_sends_null` (body contains `"racket_arm":null`), `delete_drops_the_player_from_the_list`.
 
-- [ ] **Step 2: Run them, expect compile failures.** `./gradlew --offline :shared:jvmTest --tests "*Player*"`.
+- [x] **Step 2: Run them, expect compile failures.** `./gradlew --offline :shared:jvmTest --tests "*Player*"`.
 
-- [ ] **Step 3: Implement** the produced interfaces above, wire `val players: PlayersRepository = PlayersRepositoryImpl(client, settings)` beside `labels` in `RallyApp.kt`, the Swift entry points (the `...OrMessage` pattern in `SwiftInterop.kt`), the iOS test factory, and the Android fake.
+- [x] **Step 3: Implement** the produced interfaces above, wire `val players: PlayersRepository = PlayersRepositoryImpl(client, settings)` beside `labels` in `RallyApp.kt`, the Swift entry points (the `...OrMessage` pattern in `SwiftInterop.kt`), the iOS test factory, and the Android fake.
 
-- [ ] **Step 4: Run** `./gradlew --offline :shared:jvmTest --tests "*Player*"` (PASS), then `./gradlew --offline :shared:jvmTest :androidApp:testDebugUnitTest` (BUILD SUCCESSFUL).
+- [x] **Step 4: Run** `./gradlew --offline :shared:jvmTest --tests "*Player*"` (PASS), then `./gradlew --offline :shared:jvmTest :androidApp:testDebugUnitTest` (BUILD SUCCESSFUL).
 
-- [ ] **Step 5: Commit** `feat(shared): players repository with an owner-scoped cache`.
+- [x] **Step 5: Commit** `feat(shared): players repository with an owner-scoped cache`.
 
 ---
 
@@ -221,20 +221,20 @@ Mirror `AnnotationLabelsRepositoryImpl` throughout: the auth-restore reconciliat
   - `MatchMetadata` gains defaulted `homePlayerId`, `awayPlayerId`, `nearSide: Side?`, `homeNames: List<String>`, `awayNames: List<String>` with the RPC's serial names.
   - `AnalyzeCoordinator` passes `entry.matchPlayers` and `entry.nearSide` to `createVideo`.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   - `MatchPlayersTest`: `forgetting_moves_the_name_onto_the_side_and_clears_the_id`, `forgetting_another_player_changes_nothing`, `names_resolve_a_profile_and_keep_typed_names`, `an_unknown_profile_has_no_names`.
   - `ScoreLogsRepositoryTest`: `the_upsert_sends_cleared_assignment_columns_explicitly` (assign Marco home, sync, assign typed `["Jo"]` with no id, sync; the second POST body contains `"home_player_id":null` and `"away_players":[]`). This test must push through a **real** supabase-kt client with Postgrest installed (`TestSupabase.client` over a `MockEngine` handler that echoes the POST, as `FakeScoreLogsServer` does), because the omission it guards against is supabase-kt's own serializer (its default `Json` sets only `ignoreUnknownKeys`); a `client = null` repository never encodes through it. Also `forget_player_rewrites_and_dirties_every_cached_log`.
   - `VideosRepositoryTest`: `createVideo_writes_the_assignment_on_the_insert`, `updateMatchPlayers_sends_every_column_even_when_cleared`.
   - `LocalVideoEntrySerializationTest`: `an_entry_without_the_assignment_decodes_with_none`.
   - `MatchMetadataSerializationTest`: decodes a row with the five new keys; decodes a row without them.
 
-- [ ] **Step 2: Run, expect failures.** `./gradlew --offline :shared:jvmTest --tests "*MatchPlayers*" --tests "*ScoreLogsRepository*" --tests "*VideosRepository*" --tests "*Serialization*"`.
+- [x] **Step 2: Run, expect failures.** `./gradlew --offline :shared:jvmTest --tests "*MatchPlayers*" --tests "*ScoreLogsRepository*" --tests "*VideosRepository*" --tests "*Serialization*"`.
 
-- [ ] **Step 3: Implement** the produced interfaces. Update every `createVideo` implementer and the Swift `LocalVideoEntry(...)` constructions (append `homePlayerId: nil, awayPlayerId: nil, homePlayers: [], awayPlayers: [], nearSide: nil`).
+- [x] **Step 3: Implement** the produced interfaces. Update every `createVideo` implementer and the Swift `LocalVideoEntry(...)` constructions (append `homePlayerId: nil, awayPlayerId: nil, homePlayers: [], awayPlayers: [], nearSide: nil`).
 
-- [ ] **Step 4: Run** the focused tests (PASS), then `./gradlew --offline :shared:jvmTest :androidApp:testDebugUnitTest` and the iOS build command (`BUILD SUCCEEDED`).
+- [x] **Step 4: Run** the focused tests (PASS), then `./gradlew --offline :shared:jvmTest :androidApp:testDebugUnitTest` and the iOS build command (`BUILD SUCCEEDED`).
 
-- [ ] **Step 5: Commit** `feat(shared): who is on each side, on score logs, local entries and videos`.
+- [x] **Step 5: Commit** `feat(shared): who is on each side, on score logs, local entries and videos`.
 
 ---
 
@@ -259,11 +259,11 @@ Mirror `AnnotationLabelsRepositoryImpl` throughout: the auth-restore reconciliat
   - `fun asksForHomeEnd(log: ScoreLog): Boolean` (either side is a profile).
   - `fun homeEndTitle(log: ScoreLog, players: List<Player>): String` ("Which end was {home} on?", `{home}` from `names(Side.HOME, players)` joined with " / ", or "Home").
 
-- [ ] **Step 1: Write the failing tests** in `PlayersDraftTest`: `a_prefilled_player_starts_at_near_in_one_mode`, `swapping_moves_the_player_to_far`, `one_mode_saves_the_player_and_the_opponent_by_end`, `both_mode_saves_two_profiles_home_near`, `an_existing_assignment_reads_back_as_both`, `a_far_profile_shows_the_device_line`, `an_empty_draft_saves_nothing`, `a_side_with_a_profile_saves_no_names`, `asks_for_the_home_end_only_with_a_profile`, `the_home_end_title_names_the_home_side`. In `MatchPlayersTest`: `doubles_with_a_profile_is_a_problem`, `names_and_a_profile_on_one_side_is_a_problem`.
-- [ ] **Step 2: Run, expect failures.** `./gradlew --offline :shared:jvmTest --tests "*PlayersDraft*" --tests "*MatchPlayers*"`.
-- [ ] **Step 3: Implement.** Every function Swift calls gets a no-default form.
-- [ ] **Step 4: Run** the same command: PASS.
-- [ ] **Step 5: Commit** `feat(shared): the who's playing and details drafts, with singles and one-source rules`.
+- [x] **Step 1: Write the failing tests** in `PlayersDraftTest`: `a_prefilled_player_starts_at_near_in_one_mode`, `swapping_moves_the_player_to_far`, `one_mode_saves_the_player_and_the_opponent_by_end`, `both_mode_saves_two_profiles_home_near`, `an_existing_assignment_reads_back_as_both`, `a_far_profile_shows_the_device_line`, `an_empty_draft_saves_nothing`, `a_side_with_a_profile_saves_no_names`, `asks_for_the_home_end_only_with_a_profile`, `the_home_end_title_names_the_home_side`. In `MatchPlayersTest`: `doubles_with_a_profile_is_a_problem`, `names_and_a_profile_on_one_side_is_a_problem`.
+- [x] **Step 2: Run, expect failures.** `./gradlew --offline :shared:jvmTest --tests "*PlayersDraft*" --tests "*MatchPlayers*"`.
+- [x] **Step 3: Implement.** Every function Swift calls gets a no-default form.
+- [x] **Step 4: Run** the same command: PASS.
+- [x] **Step 5: Commit** `feat(shared): the who's playing and details drafts, with singles and one-source rules`.
 
 ---
 
@@ -283,11 +283,11 @@ Mirror `AnnotationLabelsRepositoryImpl` throughout: the auth-restore reconciliat
 
   - `fun forgetVanishedPlayers(before: List<Player>, after: List<Player>, scoreLogs: ScoreLogsRepository, localVideos: LocalVideoRepository)`: every player in `before` and not in `after` is forgotten with its cached name. Called after every successful `PlayersRepository.refresh()` by the list's owner (`ClipListViewModel.refresh()` and `ClipListModel.refresh()`, Task 6), so a player deleted on another device of the same coach cannot leave this phone's cached logs or un-uploaded entries pointing at a dead id, and the same-phone window of the server-first delete closes on the next refresh. `before` is the repository's state read just before the refresh.
 
-- [ ] **Step 1: Write the failing tests.** `SaveMatchPlayersTest` (repositories over `MapSettings`, `FakeVideosRepository`): `players_target_prefers_the_score_log`, `players_target_is_the_entry_before_the_row_exists`, `players_target_is_the_entry_after_a_failed_upload`, `players_target_waits_during_the_upload`, `players_target_is_the_row_once_uploaded`, `a_problem_saves_nothing`, `saving_to_a_score_log_dirties_it`, `saving_the_home_end_of_a_scored_match_writes_the_entry_before_upload`, `saving_the_home_end_of_a_scored_match_with_an_uploaded_video_writes_the_row`, `saving_to_a_row_mirrors_the_entry`, `a_refused_row_save_leaves_the_entry_alone`. `DeletePlayerTest`: `deleting_a_player_rewrites_cached_logs_and_entries`, `a_failed_delete_rewrites_nothing`, `a_player_missing_after_refresh_is_forgotten_in_cached_logs_and_entries`.
-- [ ] **Step 2: Run, expect failures.** `./gradlew --offline :shared:jvmTest --tests "*SaveMatchPlayers*" --tests "*DeletePlayer*"`.
-- [ ] **Step 3: Implement**, plus Swift entry points `SwiftInteropKt.saveMatchPlayersOrMessage(...)` and `deletePlayerOrMessage(...)` if the shared `suspend fun` shapes do not bridge directly (they return `String?`, so they should).
-- [ ] **Step 4: Run** the same command: PASS.
-- [ ] **Step 5: Commit** `feat(shared): one save path for who's playing, and a delete that keeps the name`.
+- [x] **Step 1: Write the failing tests.** `SaveMatchPlayersTest` (repositories over `MapSettings`, `FakeVideosRepository`): `players_target_prefers_the_score_log`, `players_target_is_the_entry_before_the_row_exists`, `players_target_is_the_entry_after_a_failed_upload`, `players_target_waits_during_the_upload`, `players_target_is_the_row_once_uploaded`, `a_problem_saves_nothing`, `saving_to_a_score_log_dirties_it`, `saving_the_home_end_of_a_scored_match_writes_the_entry_before_upload`, `saving_the_home_end_of_a_scored_match_with_an_uploaded_video_writes_the_row`, `saving_to_a_row_mirrors_the_entry`, `a_refused_row_save_leaves_the_entry_alone`. `DeletePlayerTest`: `deleting_a_player_rewrites_cached_logs_and_entries`, `a_failed_delete_rewrites_nothing`, `a_player_missing_after_refresh_is_forgotten_in_cached_logs_and_entries`.
+- [x] **Step 2: Run, expect failures.** `./gradlew --offline :shared:jvmTest --tests "*SaveMatchPlayers*" --tests "*DeletePlayer*"`.
+- [x] **Step 3: Implement**, plus Swift entry points `SwiftInteropKt.saveMatchPlayersOrMessage(...)` and `deletePlayerOrMessage(...)` if the shared `suspend fun` shapes do not bridge directly (they return `String?`, so they should).
+- [x] **Step 4: Run** the same command: PASS.
+- [x] **Step 5: Commit** `feat(shared): one save path for who's playing, and a delete that keeps the name`.
 
 ---
 
@@ -309,11 +309,11 @@ Mirror `AnnotationLabelsRepositoryImpl` throughout: the auth-restore reconciliat
   - `data class PlayerSummary(val matchCount: Int, val rallyCount: Int, val lastMatchAtEpochMs: Long?)`, `fun playerSummary(list: MatchList, playerId: String): PlayerSummary`.
   - `fun playerRowDetail(summary: PlayerSummary): String` and `fun lastMatchTile(summary: PlayerSummary): String` (system time zone, plus `internal` overloads taking `TimeZone` for tests), producing the Global Constraints copy.
 
-- [ ] **Step 1: Write the failing tests.** `MatchListBuilderTest`: `a_score_match_names_its_profile`, `a_phone_only_match_shows_its_players`, `a_video_match_names_its_profile_from_metadata`, `a_shared_match_takes_resolved_names`, `a_renamed_player_renames_every_match`, `players_target_is_set_per_kind`, `a_shared_match_cannot_edit_players`. `PlayerMatchesTest`: `for_player_keeps_matches_naming_the_player_on_either_side`, `for_player_skips_shared_matches`, `the_summary_counts_matches_rallies_and_the_last_date`, `a_player_with_no_matches_reads_no_matches_yet`, `one_match_is_singular`.
-- [ ] **Step 2: Run, expect failures.** `./gradlew --offline :shared:jvmTest --tests "*MatchListBuilder*" --tests "*PlayerMatches*"`.
-- [ ] **Step 3: Implement**; feed `players.players` into `ClipListViewModel` (combine it into `cloud` or the outer `combine`; `refresh()` also calls `players.refresh()`, failures soft like the others, and on success `forgetVanishedPlayers(before, after, ...)` from Task 5) and into `ClipListModel.swift` (a seventh child in `observe()`, a `players` init parameter defaulting to `rally.players`, and `refresh()` calls `SwiftInteropKt.refreshPlayersOrMessage` followed by `forgetVanishedPlayers` on success). Update every construction site.
-- [ ] **Step 4: Run** `./gradlew --offline :shared:jvmTest :androidApp:testDebugUnitTest`, the iOS build, and the iOS `ClipListModelTests` and `MatchListBridgingTests`. All pass.
-- [ ] **Step 5: Commit** `feat(shared): the match list resolves players, and filters and counts per player`.
+- [x] **Step 1: Write the failing tests.** `MatchListBuilderTest`: `a_score_match_names_its_profile`, `a_phone_only_match_shows_its_players`, `a_video_match_names_its_profile_from_metadata`, `a_shared_match_takes_resolved_names`, `a_renamed_player_renames_every_match`, `players_target_is_set_per_kind`, `a_shared_match_cannot_edit_players`. `PlayerMatchesTest`: `for_player_keeps_matches_naming_the_player_on_either_side`, `for_player_skips_shared_matches`, `the_summary_counts_matches_rallies_and_the_last_date`, `a_player_with_no_matches_reads_no_matches_yet`, `one_match_is_singular`.
+- [x] **Step 2: Run, expect failures.** `./gradlew --offline :shared:jvmTest --tests "*MatchListBuilder*" --tests "*PlayerMatches*"`.
+- [x] **Step 3: Implement**; feed `players.players` into `ClipListViewModel` (combine it into `cloud` or the outer `combine`; `refresh()` also calls `players.refresh()`, failures soft like the others, and on success `forgetVanishedPlayers(before, after, ...)` from Task 5) and into `ClipListModel.swift` (a seventh child in `observe()`, a `players` init parameter defaulting to `rally.players`, and `refresh()` calls `SwiftInteropKt.refreshPlayersOrMessage` followed by `forgetVanishedPlayers` on success). Update every construction site.
+- [x] **Step 4: Run** `./gradlew --offline :shared:jvmTest :androidApp:testDebugUnitTest`, the iOS build, and the iOS `ClipListModelTests` and `MatchListBridgingTests`. All pass.
+- [x] **Step 5: Commit** `feat(shared): the match list resolves players, and filters and counts per player`.
 
 ---
 
@@ -329,11 +329,11 @@ Mirror `AnnotationLabelsRepositoryImpl` throughout: the auth-restore reconciliat
   - `fun courtSideNames(item: MatchListItem, players: List<Player>): CourtSideNames?`: null when `item.nearSide` is null. A side's name is `item.homeNames` / `awayNames` joined with " / ", or "Opponent" when empty. A side's arm is its profile's `racketArm`, looked up by `item.homePlayerId` / `awayPlayerId` (null for typed names or no hand).
   - `fun sideToggleLabel(side: CourtSide, names: CourtSideNames?): String` ("Near"/"Far" when `names` is null).
   - `fun profileArm(side: CourtSide, names: CourtSideNames?): RacketArm?`
-- [ ] **Step 1: Write the failing tests**: `unknown_ends_keep_near_and_far`, `home_near_names_the_ends`, `home_far_swaps_them`, `an_empty_side_is_the_opponent`, `a_profile_hand_is_the_sides_arm`, `typed_names_have_no_arm`. Two of them must go through `buildMatchList` -> item -> `courtSideNames`, not a hand-made item, because `nearSide` reaches the item from different places: `a_scored_match_with_a_phone_video_takes_the_end_from_the_entry` and `a_cloud_video_takes_the_end_from_its_metadata`.
-- [ ] **Step 2: Run, expect failures.** `./gradlew --offline :shared:jvmTest --tests "*CourtSideNames*"`.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run**: PASS.
-- [ ] **Step 5: Commit** `feat(shared): name the near and far player when the ends are known`.
+- [x] **Step 1: Write the failing tests**: `unknown_ends_keep_near_and_far`, `home_near_names_the_ends`, `home_far_swaps_them`, `an_empty_side_is_the_opponent`, `a_profile_hand_is_the_sides_arm`, `typed_names_have_no_arm`. Two of them must go through `buildMatchList` -> item -> `courtSideNames`, not a hand-made item, because `nearSide` reaches the item from different places: `a_scored_match_with_a_phone_video_takes_the_end_from_the_entry` and `a_cloud_video_takes_the_end_from_its_metadata`.
+- [x] **Step 2: Run, expect failures.** `./gradlew --offline :shared:jvmTest --tests "*CourtSideNames*"`.
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run**: PASS.
+- [x] **Step 5: Commit** `feat(shared): name the near and far player when the ends are known`.
 
 ---
 
@@ -355,11 +355,11 @@ Mirror `AnnotationLabelsRepositoryImpl` throughout: the auth-restore reconciliat
 
 Layout of `PlayersScreen` (design 4.1 and the mockup): `HomeTopBar(PlayersCopy.PLAYERS_TITLE) { BackgroundWorkAction(); gear }`, a `LazyColumn` of player rows built from `DrawerList` and `DrawerRowContainer` (avatar, name, `playerRowDetail`, chevron), an "Add player" row, an "All matches" `ShuttlButton(variant = Secondary)`, `AddMatchButton` + `AddMatchSheet` as on `HomeScreen`, `ShuttlEmptyState` for no players (with Add player as its action and All matches still below it). The run-announce effect and the intake-error snackbar move from `HomeScreen` to `PlayersScreen`; `HomeScreen` becomes the All matches screen (back arrow `TopAppBar`, title "All matches", list unchanged). The one `ClipListViewModel` is scoped to the `Route.Players` entry; Settings, Match, All matches and Player read it with `nav.getBackStackEntry<Route.Players>()`. Review every `Route.Home` site listed in `AuthGate.kt` (144, 315, 341-344, 359, 401, 455, 471).
 
-- [ ] **Step 1: Write the failing tests.** `AuthNavigationTest`: the authenticated start is `Route.Players`. `PlayersViewModelTest` (`FakePlayersRepository`, `StandardTestDispatcher`): `refresh_failure_sets_load_failed`, `create_returns_the_player`, `a_failed_rename_shows_the_save_sentence`, `delete_goes_through_the_shared_rewrite`.
-- [ ] **Step 2: Run, expect failures.** `./gradlew --offline :androidApp:testDebugUnitTest --tests "*AuthNavigation*" --tests "*PlayersViewModel*"`.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run** the Android gate: `BUILD SUCCESSFUL` for unit tests, debug and release.
-- [ ] **Step 5: Commit** `feat(android): Players is the home screen, the match list is All matches`.
+- [x] **Step 1: Write the failing tests.** `AuthNavigationTest`: the authenticated start is `Route.Players`. `PlayersViewModelTest` (`FakePlayersRepository`, `StandardTestDispatcher`): `refresh_failure_sets_load_failed`, `create_returns_the_player`, `a_failed_rename_shows_the_save_sentence`, `delete_goes_through_the_shared_rewrite`.
+- [x] **Step 2: Run, expect failures.** `./gradlew --offline :androidApp:testDebugUnitTest --tests "*AuthNavigation*" --tests "*PlayersViewModel*"`.
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run** the Android gate: `BUILD SUCCESSFUL` for unit tests, debug and release.
+- [x] **Step 5: Commit** `feat(android): Players is the home screen, the match list is All matches`.
 
 ---
 
@@ -379,11 +379,11 @@ Layout of `PlayersScreen` (design 4.1 and the mockup): `HomeTopBar(PlayersCopy.P
 
 Layout (design 4.2 and the mockup): a `TopAppBar` with back, the player's name with `ShuttlIcons.ChevronDown` as a `DropdownMenu` switcher listing `sortedPlayers` (picking one `navigate(Route.Player(id)) { popUpTo<Route.Player> { inclusive = true } }`), and an overflow with "Rename", "Playing hand" (a small dialog with the three pills), "Delete player" (`ConfirmDialog` with the delete copy and the player's `matchCount`; on success pop back to Players). `ShuttlPillTabs(listOf("Profile", "Matches"))` saved in `rememberSaveable`. Profile: 60dp avatar, name in `headlineMedium`, the hand line, three `ShuttlStatTile`s in a row. Matches: `ClipListScreen(playerId = ...)`. The add button opens `AddMatchSheet`; New match navigates `Route.NewMatch(playerId)`, Record/Import call the intake with `forPlayer`.
 
-- [ ] **Step 1: Write the failing tests**: `NewMatchViewModelTest.a_match_started_for_a_player_makes_them_home`; any derived-state test the implementation introduces.
-- [ ] **Step 2: Run, expect failures.**
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run** the Android gate: `BUILD SUCCESSFUL`.
-- [ ] **Step 5: Commit** `feat(android): a player's page with their profile and their matches`.
+- [x] **Step 1: Write the failing tests**: `NewMatchViewModelTest.a_match_started_for_a_player_makes_them_home`; any derived-state test the implementation introduces.
+- [x] **Step 2: Run, expect failures.**
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run** the Android gate: `BUILD SUCCESSFUL`.
+- [x] **Step 5: Commit** `feat(android): a player's page with their profile and their matches`.
 
 ---
 
@@ -404,11 +404,11 @@ Layout (design 4.2 and the mockup): a `TopAppBar` with back, the player's name w
   - `MatchScreen`: "Edit details" offered whenever `matchItem.canEditPlayers` or today's condition; a phone-only or no-clips match opens the dialog with only the fields it can save (players always; title and description only when the existing rules allow). `UPLOADING` shows the section read-only with the upload sentence.
   - `HomeEndDialog(title: String, onNear, onFar, onSkip)`: an `AlertDialog`-shaped dialog using `ShuttlButton`s, subtitle "As the camera sees it.". In `AuthGate`'s intake `onAdded` `else` arm (an entry with `scoreLogId`), when `asksForHomeEnd(log)` show it before `nav.navigate(Route.CourtMarking(entry.id))`; Near/Far call `localVideos.setMatchPlayers(entry.id, MatchPlayers.NONE, Side.HOME or Side.AWAY)` (Home at near is `nearSide = HOME`; Home at far is `nearSide = AWAY`); Skip leaves it null. Navigation follows any of the three.
 
-- [ ] **Step 1: Write the failing tests**: `MatchViewModelTest.saving_players_on_a_scored_match_assigns_the_log`, `saving_players_on_a_phone_only_match_writes_the_entry`, `a_refused_save_surfaces_the_sentence`.
-- [ ] **Step 2: Run, expect failures.** `./gradlew --offline :androidApp:testDebugUnitTest --tests "*MatchViewModel*"`.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run** the Android gate: `BUILD SUCCESSFUL`.
-- [ ] **Step 5: Commit** `feat(android): who's playing after a recording, in the details editor, and when a video joins a scored match`.
+- [x] **Step 1: Write the failing tests**: `MatchViewModelTest.saving_players_on_a_scored_match_assigns_the_log`, `saving_players_on_a_phone_only_match_writes_the_entry`, `a_refused_save_surfaces_the_sentence`.
+- [x] **Step 2: Run, expect failures.** `./gradlew --offline :androidApp:testDebugUnitTest --tests "*MatchViewModel*"`.
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run** the Android gate: `BUILD SUCCESSFUL`.
+- [x] **Step 5: Commit** `feat(android): who's playing after a recording, in the details editor, and when a video joins a scored match`.
 
 ---
 
@@ -422,9 +422,9 @@ Layout (design 4.2 and the mockup): a `TopAppBar` with back, the player's name w
 - Consumes: `courtSideNames`, `sideToggleLabel`, `profileArm`.
 - Produces: `AnalysisSection(..., sideNames: CourtSideNames?)` threaded to the three panels; `SideToggle(sides, selected, onSelect, names: CourtSideNames?)` labels with `sideToggleLabel` (update its KDoc, which says names are out of scope); in `SkeletonPanel`, when `profileArm(shownSide, names)` is non-null the arm pills are hidden and that arm is used; otherwise the per-video preference as today.
 
-- [ ] **Step 1: Implement** (the logic is Task 7's and is tested there; this is wiring).
-- [ ] **Step 2: Run** the Android gate: `BUILD SUCCESSFUL`.
-- [ ] **Step 3: Commit** `feat(android): the analysis names the near and far player`.
+- [x] **Step 1: Implement** (the logic is Task 7's and is tested there; this is wiring).
+- [x] **Step 2: Run** the Android gate: `BUILD SUCCESSFUL`.
+- [x] **Step 3: Commit** `feat(android): the analysis names the near and far player`.
 
 ---
 
@@ -442,11 +442,11 @@ Layout (design 4.2 and the mockup): a `TopAppBar` with back, the player's name w
   - `PlayerAvatar(name: String, size: CGFloat)`, `PlayerNameSheet` (Add with hand pills, Rename name only).
   - `HomeView`'s `NavigationStack` root becomes `PlayersScreen`; `MatchesScreen` is pushed for All matches (new `@State showAllMatches`); the header, gear, background-work action, add button and toast move to `PlayersScreen`, and `MatchesScreen` takes a back-button title bar ("All matches"). `.feedsMatchList(model:localAnalysis:)` stays on the one stack. `nothingAbove` and the renamed `goToPlayers()` (was `goToMatches()`) include the new routes.
 
-- [ ] **Step 1: Write the failing tests**: `PlayersModelTests.testRefreshFailureSetsLoadFailed`, `testCreateReturnsThePlayer`, `testLeavingStopsObserving` (the `ObservationLifecycle.runAndCancel` pattern from `ClipListModelTests`).
-- [ ] **Step 2: Build and run them, expect failures.** `cd iosApp && xcodegen generate && cd ..`, the iOS build, then the xctest recipe with `-XCTest PlayersModelTests`.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run** the build (`BUILD SUCCEEDED`), `PlayersModelTests`, `ClipListModelTests`, and `TypographyAdoptionTests`: all pass.
-- [ ] **Step 5: Commit** `feat(ios): Players is the home screen, the match list is All matches`.
+- [x] **Step 1: Write the failing tests**: `PlayersModelTests.testRefreshFailureSetsLoadFailed`, `testCreateReturnsThePlayer`, `testLeavingStopsObserving` (the `ObservationLifecycle.runAndCancel` pattern from `ClipListModelTests`).
+- [x] **Step 2: Build and run them, expect failures.** `cd iosApp && xcodegen generate && cd ..`, the iOS build, then the xctest recipe with `-XCTest PlayersModelTests`.
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run** the build (`BUILD SUCCEEDED`), `PlayersModelTests`, `ClipListModelTests`, and `TypographyAdoptionTests`: all pass.
+- [x] **Step 5: Commit** `feat(ios): Players is the home screen, the match list is All matches`.
 
 ---
 
@@ -460,11 +460,11 @@ Layout (design 4.2 and the mockup): a `TopAppBar` with back, the player's name w
 **Interfaces:**
 - Produces: `MatchesList(..., playerId: String?)` (filters `mine` with `forPlayer`, hides "Shared with me", gates the empty overlay to "No matches yet"); `LocalVideoIntake.add(tempURL:suggestedName:isRecording:forMatch:forPlayer:)`; `NewMatchView(rally:playerId:onCreated:)` assigning home after create. `PlayerView` mirrors Task 9's layout: a toolbar with the name as a `Menu` switcher, overflow `Menu` with Rename, Playing hand, Delete player (`confirmationDialog` with the delete copy), `ShuttlPillTabs(["Profile", "Matches"])` under `.pillLabelCeilingHost()`, the profile with `PlayerAvatar(size: 60)`, the hand line and three `ShuttlStatTile`s, and Matches as `MatchesList(playerId:)`.
 
-- [ ] **Step 1: Write the failing test(s)** for any derived state (`testANewMatchForAPlayerMakesThemHome` against `testScoreLogsRepository`).
-- [ ] **Step 2: Run, expect failures.**
-- [ ] **Step 3: Implement**; `xcodegen generate` for new files.
-- [ ] **Step 4: Run** the build and the iOS unit bundle: all pass.
-- [ ] **Step 5: Commit** `feat(ios): a player's page with their profile and their matches`.
+- [x] **Step 1: Write the failing test(s)** for any derived state (`testANewMatchForAPlayerMakesThemHome` against `testScoreLogsRepository`).
+- [x] **Step 2: Run, expect failures.**
+- [x] **Step 3: Implement**; `xcodegen generate` for new files.
+- [x] **Step 4: Run** the build and the iOS unit bundle: all pass.
+- [x] **Step 5: Commit** `feat(ios): a player's page with their profile and their matches`.
 
 ---
 
@@ -478,11 +478,11 @@ Layout (design 4.2 and the mockup): a `TopAppBar` with back, the player's name w
 **Interfaces:**
 - Mirrors Task 10 and Task 11: `WhoIsPlayingSection(draft: Binding<EndsDraft>, players: [Player], onAddPlayer: (String, RacketArm?) async -> Player?)`; `MatchDetailsSheet` with the section; `EditMatchDetailsSheet` with side pickers, "Someone else", the ends row and the doubles rule; `MatchModel.saveMatchPlayers(players:nearSide:format:) async`; the editor reachable for every owned match (`MatchView.swift:206-215, 406-429, 814-826`); `HomeEndPrompt` shown in `MatchView`'s `.onChange(of: intake.lastAddedId)` before `navigationTarget = CourtMarkingRoute(...)` when `asksForHomeEnd(log)`; `SideToggle(..., names:)` and the skeleton arm rule.
 
-- [ ] **Step 1: Write the failing tests**: `MatchModelTests.testSavingPlayersOnAScoredMatchAssignsTheLog`, `testSavingPlayersOnAPhoneOnlyMatchWritesTheEntry`.
-- [ ] **Step 2: Run, expect failures.**
-- [ ] **Step 3: Implement**; `xcodegen generate`.
-- [ ] **Step 4: Run** the build and the iOS unit bundle, including `TypographyAdoptionTests` and `SkeletonPanelTests`: all pass. `VideoMatchDetailsUITests` must still compile.
-- [ ] **Step 5: Commit** `feat(ios): who's playing, the details editor, the attach question, and names in the analysis`.
+- [x] **Step 1: Write the failing tests**: `MatchModelTests.testSavingPlayersOnAScoredMatchAssignsTheLog`, `testSavingPlayersOnAPhoneOnlyMatchWritesTheEntry`.
+- [x] **Step 2: Run, expect failures.**
+- [x] **Step 3: Implement**; `xcodegen generate`.
+- [x] **Step 4: Run** the build and the iOS unit bundle, including `TypographyAdoptionTests` and `SkeletonPanelTests`: all pass. `VideoMatchDetailsUITests` must still compile.
+- [x] **Step 5: Commit** `feat(ios): who's playing, the details editor, the attach question, and names in the analysis`.
 
 ---
 
@@ -531,8 +531,8 @@ Added by controller Ruling 10: the spec says a profile side's name is read from 
   - `buildScoreMatchCard(log: ScoreLog, players: List<Player>)`; `ScoreTagSummary`'s export text takes `players` too.
   - The board, the score editor, the Points facet and the match page header read names through these, with the players list observed from `RallyApp.players` by their view model / model.
 
-- [ ] **Step 1: Write the failing tests**: `a_profile_side_is_named_by_the_profile`, `a_renamed_profile_renames_the_side`, `an_unknown_profile_side_reads_its_label`, `the_card_says_the_profile_won`, `the_export_names_profile_sides`.
-- [ ] **Step 2: Run, expect failures.** `./gradlew --offline :shared:jvmTest --tests "*MatchDetails*" --tests "*ScoreMatchCard*" --tests "*ScoreTagSummary*"`.
-- [ ] **Step 3: Implement**, then update every call site on both platforms.
-- [ ] **Step 4: Run** `./gradlew --offline :shared:jvmTest :androidApp:testDebugUnitTest :androidApp:assembleDebug :androidApp:assembleRelease`, the iOS build, and `ScoringModelTests` / `MatchModelTests` with the xctest recipe: all pass.
-- [ ] **Step 5: Commit** `feat: a side held by a player is named by the player on the board, the match page and the export`.
+- [x] **Step 1: Write the failing tests**: `a_profile_side_is_named_by_the_profile`, `a_renamed_profile_renames_the_side`, `an_unknown_profile_side_reads_its_label`, `the_card_says_the_profile_won`, `the_export_names_profile_sides`.
+- [x] **Step 2: Run, expect failures.** `./gradlew --offline :shared:jvmTest --tests "*MatchDetails*" --tests "*ScoreMatchCard*" --tests "*ScoreTagSummary*"`.
+- [x] **Step 3: Implement**, then update every call site on both platforms.
+- [x] **Step 4: Run** `./gradlew --offline :shared:jvmTest :androidApp:testDebugUnitTest :androidApp:assembleDebug :androidApp:assembleRelease`, the iOS build, and `ScoringModelTests` / `MatchModelTests` with the xctest recipe: all pass.
+- [x] **Step 5: Commit** `feat: a side held by a player is named by the player on the board, the match page and the export`.
