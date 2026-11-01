@@ -17,12 +17,13 @@ final class VideoMatchDetailsUITests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
 
-        // Gated on the list's Settings gear, which only exists behind sign-in,
-        // rather than on a control this test otherwise needs - the match list
-        // is on screen at launch, with nothing to open first.
+        // Gated on the Players screen's Settings gear, which only exists
+        // behind sign-in, rather than on a control this test otherwise needs.
         guard app.buttons["Settings"].firstMatch.waitForExistence(timeout: 15) else {
             throw XCTSkip("not signed in on this simulator - cannot reach a match")
         }
+        // The match list is All matches, pushed from Players.
+        app.buttons["All matches"].firstMatch.tap()
         // Scrolled to, not assumed on screen: the list carries the videos on this
         // phone above the matches, and a SwiftUI List is lazy, so a row below the
         // fold is not in the accessibility tree at all - see ScoringBoardUITests.

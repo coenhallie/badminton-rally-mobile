@@ -75,3 +75,20 @@ fun testPlayersRepository(players: List<Player>): PlayersRepository = InMemoryPl
  */
 fun testPlayersRepository(players: List<Player>, afterRefresh: List<Player>): PlayersRepository =
     InMemoryPlayersRepository(players, afterRefresh)
+
+/**
+ * A [PlayersRepository] with no signal, seeded with [players]: the cached list
+ * stays, and every call that would reach the server fails, as supabase-kt does
+ * offline. For the failed-load and failed-save paths of the Players screen.
+ */
+fun testOfflinePlayersRepository(players: List<Player>): PlayersRepository =
+    object : PlayersRepository by InMemoryPlayersRepository(players, null) {
+        override suspend fun refresh(): Result<Unit> = Result.failure(IllegalStateException("offline"))
+        override suspend fun create(name: String, racketArm: RacketArm?): Result<Player> =
+            Result.failure(IllegalStateException("offline"))
+        override suspend fun rename(id: String, name: String): Result<Unit> =
+            Result.failure(IllegalStateException("offline"))
+        override suspend fun setRacketArm(id: String, racketArm: RacketArm?): Result<Unit> =
+            Result.failure(IllegalStateException("offline"))
+        override suspend fun delete(id: String): Result<Unit> = Result.failure(IllegalStateException("offline"))
+    }

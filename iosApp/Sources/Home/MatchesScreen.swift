@@ -1,11 +1,12 @@
 import SwiftUI
 import Shared
 
-/// The root screen: its title with the background-work indicator and the
-/// Settings gear, record and import errors, the match list, the Add button,
-/// and the toast a finished run leaves. Every other screen is pushed over it.
-/// The errors show here because Add, which starts a record or import, is only
-/// on this screen. Mirrors androidApp's HomeScreen.kt.
+/// All matches: the match list, every match whether a player holds it or not,
+/// with its filters, sort and "Shared with me". Pushed from the Players
+/// screen, which holds the Add button and the gear; this is the list under a
+/// back bar with the background-work indicator. It draws the root toast too,
+/// as Players does, so a finished run or a failed refresh is said here.
+/// Mirrors androidApp's AllMatchesScreen.kt.
 struct MatchesScreen: View {
     let rally: RallyApp
     let analyze: AnalyzeCoordinator
@@ -15,44 +16,26 @@ struct MatchesScreen: View {
     let onMatchTap: (MatchRoute) -> Void
     let onCourtMarking: (CourtMarkingRoute) -> Void
     let onOverlayChange: (Bool) -> Void
-    let onAdd: () -> Void
-    let onSettings: () -> Void
-    /// What a finished run says. Owned by HomeView, which hears the runs land.
+    /// What the root says. Owned by HomeView, which hears the runs land.
     @Binding var toast: ToastMessage?
 
     var body: some View {
-        VStack(spacing: 0) {
-            HomeHeader(HomeCopy.shared.MATCHES_TITLE) {
-                BackgroundWorkAction()
-                Button(action: onSettings) {
-                    Image(systemName: "gearshape")
-                        .shuttlType(ShuttlType.titleMedium)
-                        .foregroundStyle(Shuttl.textSecondary)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.borderless)
-                .accessibilityLabel(MatchPageCopy.shared.SETTINGS)
-            }
-            if let error = intake.error {
-                ErrorBanner(message: error)
-                    .padding(.horizontal, ShuttlGutter.page)
-                    .padding(.bottom, 8)
-            }
-            MatchesList(
-                rally: rally, analyze: analyze, intake: intake, model: model,
-                onMatchTap: onMatchTap, onCourtMarking: onCourtMarking,
-                heroPaused: heroPaused, onOverlayChange: onOverlayChange
-            )
-        }
+        MatchesList(
+            rally: rally, analyze: analyze, intake: intake, model: model,
+            onMatchTap: onMatchTap, onCourtMarking: onCourtMarking,
+            heroPaused: heroPaused, onOverlayChange: onOverlayChange
+        )
         .background(Shuttl.bg)
-        .overlay(alignment: .bottomTrailing) {
-            AddMatchButton(action: onAdd)
-                .padding(.trailing, 16)
-                .padding(.bottom, 16)
+        .navigationTitle(PlayersCopy.shared.ALL_MATCHES)
+        .navigationBarTitleDisplayMode(.inline)
+        .shuttlNavigationBarBackground()
+        .toolbar {
+            // The chrome indicator, on every bar androidApp puts it on. See
+            // `BackgroundWorkAction`.
+            ToolbarItem(placement: .topBarTrailing) { BackgroundWorkAction() }
         }
-        // Above the Add button rather than over it: the 56pt button, its 16pt
-        // margin, and 16pt of air.
-        .shuttlToast($toast, bottomInset: 88)
+        // No Add button here to stand clear of: the toast sits the button's
+        // own 16pt margin off the bottom, where Players' Add button would be.
+        .shuttlToast($toast, bottomInset: 16)
     }
 }

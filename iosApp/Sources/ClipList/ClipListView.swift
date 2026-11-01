@@ -1,7 +1,7 @@
 import SwiftUI
 import Shared
 
-/// The list of matches, on the root screen: one row per match, wherever its
+/// The list of matches, on All matches: one row per match, wherever its
 /// video is, with "Shared with me" below.
 ///
 /// Every row comes from the shared builder (`ClipListModel.matchList`); this
@@ -17,10 +17,8 @@ struct MatchesList: View {
     let rally: RallyApp
     let analyze: AnalyzeCoordinator
     /// Owned outside this list, like every destination it used to register.
-    /// The screen's own Add button (`AddMatchButton`, in `MatchesScreen`) is
-    /// what starts a record or import now, and `intake.error` and
-    /// `intake.lastAddedId` are surfaced and consumed on that screen, not
-    /// behind a closed drawer.
+    /// The Players screen's Add button is what starts a record or import, and
+    /// HomeView surfaces `intake.error` and consumes `intake.lastAddedId`.
     let intake: LocalVideoIntake
     /// Owned by Home, like every destination this list used to register. It has
     /// to be one instance for the whole app rather than one per screen: its own
@@ -40,7 +38,6 @@ struct MatchesList: View {
 
     @State private var shareTarget: ShareTarget? = nil
     @State private var thumbnails = LocalThumbnails()
-    @State private var resultEntry: LocalVideoEntry? = nil
     @State private var detailsTarget: MatchDetailsTarget? = nil
     @State private var legendOpen = false
     /// The chosen filter. What the list applies is `effectiveFilter` of it, so
@@ -70,7 +67,7 @@ struct MatchesList: View {
     /// through `onOverlayChange` so HomeView can fold it into "nothing above
     /// the list" alongside its own sheets and pushes.
     private var overlayOpen: Bool {
-        shareTarget != nil || detailsTarget != nil || legendOpen || resultEntry != nil
+        shareTarget != nil || detailsTarget != nil || legendOpen
             || choiceKey != nil || deleteKey != nil || removeKey != nil
     }
 
@@ -90,20 +87,6 @@ struct MatchesList: View {
     private var listBody: some View {
         content
         .task { await model.start() }
-        .task {
-            // Drives only the auto-alert side effect. `model.localEntries` (fed by
-            // its own subscription to this same flow) is the list's source of
-            // truth for rendering, so this loop must not keep a second copy that
-            // could momentarily disagree with it.
-            for await entries in rally.localVideos.entries {
-                if resultEntry == nil {
-                    // A video claimed by a match fails on its match's row, which
-                    // says so in its own failure line and offers Retry.
-                    resultEntry = entries.filter { $0.scoreLogId == nil }
-                        .first { $0.stage == .failed && !$0.resultSeen }
-                }
-            }
-        }
         .sheet(item: $shareTarget) { target in
             ShareSheetView(rally: rally, videoId: target.videoId)
         }
@@ -120,27 +103,6 @@ struct MatchesList: View {
                     )
                 }
             )
-        }
-        .alert(
-            (resultEntry?.failureMessage ?? "").localizedCaseInsensitiveContains("no rallies")
-                ? "No rallies found" : "Analysis failed",
-            isPresented: Binding(
-                get: { resultEntry != nil },
-                set: { if !$0 { resultEntry = nil } }
-            ),
-            presenting: resultEntry
-        ) { entry in
-            Button("Retry") {
-                rally.localVideos.acknowledgeResult(id: entry.id)
-                resultEntry = nil
-                analyzeAction(entryId: entry.id)
-            }
-            Button("Close", role: .cancel) {
-                rally.localVideos.acknowledgeResult(id: entry.id)
-                resultEntry = nil
-            }
-        } message: { entry in
-            Text(entry.failureMessage ?? "Unknown error")
         }
         .refreshable { await model.refresh() }
         .onChange(of: overlayOpen, initial: true) { _, open in onOverlayChange(open) }
@@ -178,10 +140,6 @@ struct MatchesList: View {
             ))
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
-            if let error = model.error {
-                ErrorBanner(message: error)
-                    .drawerListRow()
-            }
             ForEach(visible, id: \.key) { item in
                 row(item)
             }
@@ -230,20 +188,18 @@ struct MatchesList: View {
                 sort = .newest
             }
         }
-        // Room at the foot so the last row clears the Add button, which floats
-        // over the list rather than reserving space in its layout. 88, not
-        // the button's own 56: the button also floats 16pt off the bottom and
-        // casts a 12pt shadow, and the last row needs air past the shadow, not
-        // just past the button's edge.
-        .safeAreaPadding(.bottom, 88)
+        // The panel's gutter at the foot, as Android's list ends: All matches
+        // has no Add button floating over it, so the last row needs no more
+        // than the air every other edge of the list has.
+        .safeAreaPadding(.bottom, DrawerList.sideMargin)
         // Over the list rather than in it: the hero needs the full available
         // height to top-align itself, which a row cannot do, and the list
         // underneath keeps `.refreshable` working.
         .overlay {
             if mine.isEmpty && shared.isEmpty && !model.isRefreshing {
-                // The old Home hero, then what the Add button does. No button of
-                // its own: the Add button is on screen, and two controls doing one
-                // thing is noise. Top aligned so the cycling line never moves it.
+                // The old Home hero, then how matches get here (the Players
+                // screen's Add button, which `EMPTY_BODY` describes). Top
+                // aligned so the cycling line never moves it.
                 VStack(alignment: .leading, spacing: 22) {
                     HeroTickerView(isPaused: heroPaused)
                     Text(HomeCopy.shared.EMPTY_BODY)

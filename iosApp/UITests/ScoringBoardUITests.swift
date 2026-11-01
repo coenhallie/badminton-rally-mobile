@@ -208,7 +208,7 @@ final class ScoringBoardUITests: XCTestCase {
             throw XCTSkip("not signed in on this simulator - cannot reach the board")
         }
         // "Add" was the list's own toolbar icon, then Home's "Add new match"
-        // pill; the match list's own round "Add match" button opens the same
+        // pill; the Players screen's round "Add match" button opens the same
         // three-row sheet now.
         app.buttons["Add match"].firstMatch.tap()
         let newMatch = app.buttons["New match"].firstMatch
@@ -271,8 +271,11 @@ final class ScoringBoardUITests: XCTestCase {
     /// back to a clean device stays red for a reason that is not about the board.
     private func deleteMatch(_ app: XCUIApplication) throws {
         app.buttons["Back"].firstMatch.tap()
-        // Back lands on the match list the board was created from, already on
-        // screen - no hamburger, no drawer to open first.
+        // Back lands on Players, where the board was created from; the match
+        // list is All matches, one push over it.
+        let allMatches = app.buttons["All matches"].firstMatch
+        XCTAssertTrue(allMatches.waitForExistence(timeout: 5), "Back did not land on Players")
+        allMatches.tap()
         //
         // Scrolled to, not assumed on screen. The list carries videos on this
         // phone above matches, and a SwiftUI List is lazy, so a row below the

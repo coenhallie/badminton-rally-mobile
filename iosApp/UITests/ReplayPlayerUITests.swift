@@ -16,12 +16,13 @@ final class ReplayPlayerUITests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
 
-        // Gated on the list's Settings gear, which only exists behind sign-in,
-        // rather than on a control this test otherwise needs - the match list
-        // is on screen at launch, with nothing to open first.
+        // Gated on the Players screen's Settings gear, which only exists
+        // behind sign-in, rather than on a control this test otherwise needs.
         guard app.buttons["Settings"].firstMatch.waitForExistence(timeout: 15) else {
             throw XCTSkip("not signed in on this simulator - cannot reach a player")
         }
+        // The match list is All matches, pushed from Players.
+        app.buttons["All matches"].firstMatch.tap()
         let video = app.staticTexts["Chrome fixture"].firstMatch
         guard video.waitForExistence(timeout: 5) else {
             throw XCTSkip("the fixture video is not on this simulator")

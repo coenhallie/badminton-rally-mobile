@@ -29,6 +29,14 @@ enum ShuttlPalette {
     /// which checks only `text` and `textSecondary`, the two this token is
     /// actually drawn under today.
     static let bgRaised:        Pair = (0xF5F7F6, 0x1E2123)
+    /// A sheet that holds a pill track (`ShuttlPillTabs`, drawn on
+    /// `bgSecondary`), such as the add-player sheet's playing-hand pills.
+    /// Light's `bgRaised` is `bgSecondary`'s own value, which would leave the
+    /// unselected pills floating on nothing, so light takes the page white;
+    /// dark keeps `bgRaised`, a step off the track. Mirrors androidApp's
+    /// ShuttlPalette.bgDialog; see
+    /// ShuttlPaletteTests.testADialogWithPillsStandsOffTheirTrack.
+    static let bgDialog:        Pair = (0xFFFFFF, 0x1E2123)
     static let border:          Pair = (0xE3E6E4, 0x1A1D1E)
     static let borderSecondary: Pair = (0xCED3D0, 0x22262A)
     static let textHeading:     Pair = (0x0B0C0D, 0xF2F4F3)
@@ -71,6 +79,12 @@ enum ShuttlPalette {
     static let analysisChipOpacity: (light: Double, dark: Double) = (0.20, 0.16)
     static let sideHome:        Pair = (0x15803D, 0x14532D)
     static let sideAway:        Pair = (0x1D4ED8, 0x1E3A8A)
+    /// A player avatar's initials, on its `sideHome` disc. The mock letters the
+    /// dark disc in the accent; light's accent on light's `sideHome` is about
+    /// 1.2:1, so light letters it in white, as the scoreboard does on that
+    /// fill. Mirrors androidApp's ShuttlPalette.playerInitials; see
+    /// ShuttlPaletteTests.testPlayerInitialsReadOnTheirDisc.
+    static let playerInitials:  Pair = (0xFFFFFF, 0x3EE27C)
     static let error:           Pair = (0xEF4444, 0xEF4444)
     /// What sits on top of an `error` fill, in both themes. `error` itself is
     /// theme-invariant, so one near-black value clears 4.5:1 in both: 5.075:1.

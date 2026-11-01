@@ -129,6 +129,33 @@ final class ShuttlPaletteTests: XCTestCase {
         }
     }
 
+    func testPlayerInitialsReadOnTheirDisc() {
+        eachTheme { theme, pick in
+            XCTAssertGreaterThanOrEqual(
+                contrast(pick(ShuttlPalette.playerInitials), pick(ShuttlPalette.sideHome)), 4.5,
+                "\(theme) playerInitials is unreadable on the sideHome disc"
+            )
+        }
+    }
+
+    /// The add-player sheet's hand pills sit on a bgSecondary track: the
+    /// sheet's fill must not be that value, and its text must read on it.
+    /// Mirrors androidApp's ShuttlPaletteTest.a_dialog_with_pills_stands_off_their_track.
+    func testADialogWithPillsStandsOffTheirTrack() {
+        eachTheme { theme, pick in
+            XCTAssertNotEqual(
+                pick(ShuttlPalette.bgDialog), pick(ShuttlPalette.bgSecondary),
+                "\(theme) bgDialog is the pill track's own value"
+            )
+            for (name, fg) in [("text", ShuttlPalette.text), ("textSecondary", ShuttlPalette.textSecondary)] {
+                XCTAssertGreaterThanOrEqual(
+                    contrast(pick(fg), pick(ShuttlPalette.bgDialog)), 4.5,
+                    "\(theme) \(name) is unreadable on bgDialog"
+                )
+            }
+        }
+    }
+
     func testAccentIsAFillColourNotATextColour() {
         // The rule this encodes: accent-coloured TEXT uses accentDark. If someone
         // brightens the light accent until it passes as text, this fails and they

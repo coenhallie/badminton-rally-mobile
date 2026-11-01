@@ -1,15 +1,15 @@
 import SwiftUI
 
-/// The root screen's own title: "Matches" at headline size, with the
+/// The root screen's own title: "Players" at headline size, with the
 /// background-work indicator and the Settings gear trailing. Not a navigation
-/// bar title: the stack's bar is hidden on its root, the list (see HomeView),
-/// and every page pushed over it has a bar of its own. Mirrors androidApp's
-/// `HomeTopBar`.
+/// bar title: the stack's bar is hidden on its root, the Players screen (see
+/// HomeView), and every page pushed over it has a bar of its own. Mirrors
+/// androidApp's `HomeTopBar`.
 ///
 /// The splash and the sign-in screen draw the same header with the wordmark
 /// as the title in `titleRole` (`ShuttlType.wordmark`), so the title slot is
 /// one place across the launch: the wordmark holds still from the splash to
-/// sign-in, and "Matches" takes its place once signed in.
+/// sign-in, and "Players" takes its place once signed in.
 struct HomeHeader<Trailing: View>: View {
     let title: String
     let titleRole: ShuttlType.Role

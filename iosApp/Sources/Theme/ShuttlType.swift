@@ -63,6 +63,13 @@ enum ShuttlType {
         var font: Font {
             .custom(weight.rawValue, size: size)
         }
+
+        /// The same face at exactly `size`, whatever the text size setting:
+        /// for lettering sized to a shape that does not grow with the text,
+        /// such as a player avatar's initials on its fixed disc.
+        var fixedFont: Font {
+            .custom(weight.rawValue, fixedSize: size)
+        }
     }
 
     static let display          = Role(name: "display", size: 40, weight: .medium, trackingEm: -0.035, lineHeightMultiple: 1.08)
@@ -120,6 +127,14 @@ extension View {
     /// leading entirely and hits 1.08 exactly.
     func shuttlType(_ role: ShuttlType.Role) -> some View {
         self.font(role.font)
+            .kerning(role.kerning)
+            .lineSpacing(role.lineSpacing)
+    }
+
+    /// Same as `shuttlType(_:)`, at the role's size whatever the text size
+    /// setting. Only for lettering inside a fixed shape: see `Role.fixedFont`.
+    func shuttlFixedType(_ role: ShuttlType.Role) -> some View {
+        self.font(role.fixedFont)
             .kerning(role.kerning)
             .lineSpacing(role.lineSpacing)
     }

@@ -140,9 +140,6 @@ suspend fun PlayersRepository.renamePlayerOrMessage(id: String, name: String): S
 suspend fun PlayersRepository.setPlayerRacketArmOrMessage(id: String, racketArm: RacketArm?): String? =
     setRacketArm(id, racketArm).exceptionOrNull()?.let { PlayersCopy.failureMessage(it, PlayersCopy.SAVE_FAILED) }
 
-suspend fun PlayersRepository.refreshPlayersOrMessage(): String? =
-    refresh().exceptionOrNull()?.let { PlayersCopy.failureMessage(it, PlayersCopy.LOAD_FAILED) }
-
 /**
  * Soft-failing: nil means the sync landed, a string is ready to display. The
  * message says what actually happened rather than "please try again", because the

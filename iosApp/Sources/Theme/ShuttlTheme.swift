@@ -37,6 +37,8 @@ enum Shuttl {
     /// One step above a raised card, for a self-drawn menu or dialog. See
     /// `ShuttlPalette.bgRaised`.
     static let bgRaised        = token(ShuttlPalette.bgRaised)
+    /// A sheet holding a pill track. See `ShuttlPalette.bgDialog`.
+    static let bgDialog        = token(ShuttlPalette.bgDialog)
     static let border          = token(ShuttlPalette.border)
     static let borderSecondary = token(ShuttlPalette.borderSecondary)
     static let textHeading     = token(ShuttlPalette.textHeading)
@@ -71,6 +73,8 @@ enum Shuttl {
     // androidApp's ShuttlExtendedColors.sideHome / sideAway.
     static let sideHome        = token(ShuttlPalette.sideHome)
     static let sideAway        = token(ShuttlPalette.sideAway)
+    /// A player avatar's letters, on its `sideHome` disc.
+    static let playerInitials  = token(ShuttlPalette.playerInitials)
 
     /// Tiny uppercase tracked label - matches Android labelSmall.
     static func sectionLabel(_ text: String) -> some View {
