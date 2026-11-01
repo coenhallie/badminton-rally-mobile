@@ -143,7 +143,7 @@ struct EditMatchDetailsSheet: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                .padding(.horizontal, 20)
+                .padding(.horizontal, ShuttlGutter.page)
                 .padding(.top, 8)
                 .padding(.bottom, 24)
                 .animation(.default, value: pairs)
@@ -296,7 +296,7 @@ struct EditMatchDetailsSheet: View {
                     let names = side == .home ? who.sides.homeNames : who.sides.awayNames
                     return index < names.count ? names[index] : ""
                 },
-                set: { setSides(who.sides.withName(side: side, index: Int32(index), name: String($0.prefix(nameCap)))) }
+                set: { setSides(who.sides.withName(side: side, index: Int32(index), name: $0.prefix(sharedLength: nameCap))) }
             ),
             maxLength: nameCap
         )

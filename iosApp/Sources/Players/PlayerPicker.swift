@@ -106,7 +106,9 @@ struct PlayerPicker: View {
                 RoundedRectangle(cornerRadius: ShuttlRadius.small)
                     .strokeBorder(Shuttl.textTertiary, lineWidth: 1)
             )
-            .contentShape(RoundedRectangle(cornerRadius: ShuttlRadius.small))
+            // Taps land at least 44pt tall, reaching just past the box
+            // rather than making it taller than the text field beside it.
+            .contentShape(MinimumTargetShape(axes: .vertical))
         }
         // The whole control, box and stroke too, as a disabled ShuttlTextField
         // dims: the two sit side by side.

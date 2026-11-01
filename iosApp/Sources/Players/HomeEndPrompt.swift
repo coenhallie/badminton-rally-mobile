@@ -30,10 +30,11 @@ struct HomeEndPrompt: View {
                 .foregroundStyle(Shuttl.textHeading)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
+            // Android's AlertDialog title-to-text gap.
             Text(copy.ATTACH_SUBTITLE)
                 .shuttlType(ShuttlType.bodyMedium)
                 .foregroundStyle(Shuttl.textSecondary)
-                .padding(.top, 8)
+                .padding(.top, 16)
             HStack(spacing: 12) {
                 Button(copy.NEAR) { answer(.home) }
                     .buttonStyle(PrimaryButtonStyle())
@@ -45,7 +46,7 @@ struct HomeEndPrompt: View {
                 .buttonStyle(SecondaryPillButtonStyle())
                 .padding(.top, 12)
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, ShuttlGutter.page)
         .padding(.top, 24)
         .padding(.bottom, 16)
         .sizedToContentSheet()

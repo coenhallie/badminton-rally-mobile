@@ -24,7 +24,9 @@ import SwiftUI
 /// environment. A disabled field dims to 0.6, as Android's does.
 ///
 /// `maxLength`, as Android's, caps typing at that many characters and shows an
-/// n/max counter at the label's right. `minLines` above 1 makes the field grow
+/// n/max counter at the label's right, which VoiceOver hears as the field's
+/// hint. Characters are counted as shared counts them (`sharedLength`, UTF-16
+/// units), so the counter and the cap agree with the rule that judges the save. `minLines` above 1 makes the field grow
 /// from that many lines as it is typed into (a description), rather than one
 /// fixed line.
 struct ShuttlTextField: View {
@@ -58,6 +60,7 @@ struct ShuttlTextField: View {
                 // prompt, which keeps a placeholder from repeating the label
                 // above, iOS leaves the field with no accessibility label.
                 .accessibilityLabel(label)
+                .accessibilityHint(maxLength.map { "\(text.sharedLength) of \($0) characters" } ?? "")
                 .shuttlType(ShuttlType.bodyLarge)
                 .foregroundStyle(Shuttl.text)
                 .tint(Shuttl.accent)
@@ -101,20 +104,20 @@ struct ShuttlTextField: View {
         }
         .opacity(isEnabled ? 1 : 0.6)
         .onChange(of: text) { _, new in
-            if let maxLength, new.count > maxLength { text = String(new.prefix(maxLength)) }
+            if let maxLength, new.sharedLength > maxLength { text = new.prefix(sharedLength: maxLength) }
         }
     }
 
     private var multiline: Bool { minLines > 1 && !secure }
 
-    /// The label, and the counter at its right when the field is capped. The
-    /// counter is read by VoiceOver from the field itself, not from here.
+    /// The label, and the counter at its right when the field is capped. Hidden
+    /// here: VoiceOver hears the count as the field's hint (see `body`).
     @ViewBuilder private var header: some View {
         if let maxLength {
             HStack(alignment: .firstTextBaseline) {
                 Shuttl.sectionLabel(label)
                 Spacer(minLength: 8)
-                Text("\(text.count)/\(maxLength)")
+                Text("\(text.sharedLength)/\(maxLength)")
                     .shuttlType(ShuttlType.labelSmall)
                     .foregroundStyle(Shuttl.textSecondary)
             }
@@ -134,5 +137,27 @@ struct ShuttlTextField: View {
         } else {
             TextField(text: $text, prompt: Text("")) { Text(label) }
         }
+    }
+}
+
+extension String {
+    /// This string's length as shared measures it: Kotlin's `String.length`,
+    /// UTF-16 units. An emoji is two, where `count` says one; every cap the
+    /// shared rules check (a player's name, a match's name) is in these units.
+    var sharedLength: Int { utf16.count }
+
+    /// The longest run of whole characters from the start that comes to at
+    /// most `units` in `sharedLength`. Never cuts inside a character, so a
+    /// surrogate pair or a flag is kept whole or left out whole.
+    func prefix(sharedLength units: Int) -> String {
+        var used = 0
+        var end = startIndex
+        for character in self {
+            let width = character.utf16.count
+            if used + width > units { break }
+            used += width
+            end = index(after: end)
+        }
+        return String(self[..<end])
     }
 }

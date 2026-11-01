@@ -34,6 +34,7 @@ import com.badmintontracker.android.ui.components.ShuttlOutlinedTextField
 import com.badmintontracker.android.ui.components.ShuttlPillTabs
 import com.badmintontracker.android.ui.icons.ShuttlIcons
 import com.badmintontracker.android.ui.theme.ShuttlRadius
+import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.shared.players.EndField
 import com.badmintontracker.shared.players.EndsDraft
 import com.badmintontracker.shared.players.Player
@@ -182,7 +183,10 @@ private fun Court(
     near: @Composable (Modifier) -> Unit,
 ) {
     val shape = RoundedCornerShape(ShuttlRadius.small)
-    val netColor = MaterialTheme.colorScheme.outline
+    // textTertiary, the text field's own stroke, rather than outline
+    // (borderSecondary): on the dark dialog fill outline is about 1.1:1, and
+    // the card and its net all but vanished. iOS draws the same token.
+    val strokeColor = ShuttlTheme.extended.textTertiary
     val tagStyle = MaterialTheme.typography.labelMedium
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
@@ -212,7 +216,7 @@ private fun Court(
     Column(
         Modifier
             .fillMaxWidth()
-            .border(1.dp, MaterialTheme.colorScheme.outline, shape),
+            .border(1.dp, strokeColor, shape),
     ) {
         Half(PlayersCopy.FAR, farLine, far)
         // The net: dashed, as the mock draws it, across the card's inner width.
@@ -222,7 +226,7 @@ private fun Court(
                 .height(NetStroke)
                 .drawBehind {
                     drawLine(
-                        color = netColor,
+                        color = strokeColor,
                         start = Offset(0f, size.height / 2),
                         end = Offset(size.width, size.height / 2),
                         strokeWidth = size.height,

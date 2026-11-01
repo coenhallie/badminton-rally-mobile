@@ -79,6 +79,7 @@ struct WhoIsPlayingSection: View {
             // The net: dashed, as the mock draws it, across the card's width.
             Net()
                 .stroke(Shuttl.textTertiary, style: StrokeStyle(lineWidth: Self.netStroke, dash: [6, 4]))
+                .opacity(readOnlyOpacity)
                 .frame(height: Self.netStroke)
                 .padding(.horizontal, -Self.inset)
                 .accessibilityHidden(true)
@@ -91,8 +92,14 @@ struct WhoIsPlayingSection: View {
         .overlay(
             RoundedRectangle(cornerRadius: ShuttlRadius.small)
                 .strokeBorder(Shuttl.textTertiary, lineWidth: 1)
+                .opacity(readOnlyOpacity)
         )
     }
+
+    /// The card's own drawing (its stroke, net and end tags) while read-only:
+    /// the text field's 0.6, which the pickers and fields inside take from
+    /// `.disabled`, so the whole card dims as one.
+    private var readOnlyOpacity: Double { uploading ? 0.6 : 1 }
 
     private func half(_ end: CourtSide) -> some View {
         let field = draft.field(end: end)
@@ -102,6 +109,7 @@ struct WhoIsPlayingSection: View {
                 .foregroundStyle(Shuttl.textSecondary)
                 .lineLimit(1)
                 .fixedSize()
+                .opacity(readOnlyOpacity)
                 // The control is named after the end, so the tag is not read
                 // a second time.
                 .accessibilityHidden(true)
@@ -122,7 +130,7 @@ struct WhoIsPlayingSection: View {
         let endName = near ? copy.NEAR : copy.FAR
         let name = Binding(
             get: { near ? draft.nearName : draft.farName },
-            set: { draft = draft.withName(end: end, name: String($0.prefix(nameCap))) }
+            set: { draft = draft.withName(end: end, name: $0.prefix(sharedLength: nameCap)) }
         )
         if field == .opponent {
             ShuttlTextField(copy.OPPONENT_FIELD, text: name, maxLength: nameCap)

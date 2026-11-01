@@ -75,7 +75,7 @@ struct PlayerNameSheet: View {
                 // Held to the cap as typed, as the match details editor holds
                 // its names: the database refuses a longer one.
                 .onChange(of: name) { _, new in
-                    if new.count > nameCap { name = String(new.prefix(nameCap)) }
+                    if new.sharedLength > nameCap { name = new.prefix(sharedLength: nameCap) }
                     edited = true
                 }
                 if let shownError {

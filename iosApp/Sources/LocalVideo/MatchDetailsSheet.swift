@@ -118,7 +118,7 @@ struct MatchDetailsSheet: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                .padding(.horizontal, 20)
+                .padding(.horizontal, ShuttlGutter.page)
                 .padding(.top, 8)
                 .padding(.bottom, 24)
             }
