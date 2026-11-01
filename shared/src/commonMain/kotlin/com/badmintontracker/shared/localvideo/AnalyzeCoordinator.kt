@@ -214,9 +214,13 @@ class AnalyzeCoordinator(
         }
 
         if (startFrom <= AnalyzeStep.CREATE_ROW) {
+            // Read again: the upload can take minutes, and a player deleted
+            // meanwhile is forgotten in the entry. The copy read before the upload
+            // would INSERT the dead id and have the row refused.
+            val current = localVideos.get(entryId) ?: entry
             val error = videos.createVideo(
-                entry.id, entry.displayName, entry.sizeBytes, entry.title, entry.description,
-                entry.matchPlayers, entry.nearSide,
+                current.id, current.displayName, current.sizeBytes, current.title, current.description,
+                current.matchPlayers, current.nearSide,
             ).exceptionOrNull()
             if (error != null && !error.isDuplicateKey()) {
                 return fail(entryId, AnalyzeStep.CREATE_ROW, error.message ?: "Couldn't register video")

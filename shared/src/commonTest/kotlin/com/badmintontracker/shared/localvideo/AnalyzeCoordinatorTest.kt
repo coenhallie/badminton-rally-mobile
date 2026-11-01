@@ -4,6 +4,8 @@ import com.badmintontracker.shared.testing.FakeClipsRepository
 import com.badmintontracker.shared.testing.FakeVideosRepository
 import com.badmintontracker.shared.model.CourtKeypoints
 import com.badmintontracker.shared.model.RallyClip
+import com.badmintontracker.shared.players.MatchPlayers
+import com.badmintontracker.shared.scoring.Side
 import com.badmintontracker.shared.repo.ProcessingUpdate
 import com.badmintontracker.shared.repo.UploadState
 import com.russhwolf.settings.MapSettings
@@ -425,6 +427,30 @@ class AnalyzeCoordinatorTest {
         val call = videos.createCalls.single()
         call.title shouldBe "Thu League vs Marco"
         call.description shouldBe "Indoor court 2."
+    }
+
+    @Test
+    fun create_row_carries_who_is_playing_as_it_is_after_the_upload() = runTest {
+        // A player deleted while the file uploads (here, or on another phone and
+        // seen by a refresh) is forgotten in the entry; the INSERT must not still
+        // name the dead id, or the row is refused and the run fails.
+        localVideos.add(
+            entry().copy(homePlayerId = "player-marco", awayPlayers = listOf("Li"), nearSide = Side.AWAY),
+        )
+        clips.clips.value = listOf(clipFor("e1"))
+        val gate = CompletableDeferred<Unit>()
+        videos.uploadGates["e1"] = gate
+        val c = coordinator()
+
+        c.startAnalysis("e1", keypoints())
+        runCurrent()
+        localVideos.forgetPlayer("player-marco", "Marco")
+        gate.complete(Unit)
+        runCurrent()
+
+        val call = videos.createCalls.single()
+        call.players shouldBe MatchPlayers(null, null, listOf("Marco"), listOf("Li"))
+        call.nearSide shouldBe Side.AWAY
     }
 
     @Test
