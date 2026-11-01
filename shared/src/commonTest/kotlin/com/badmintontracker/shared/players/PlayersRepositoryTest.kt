@@ -10,8 +10,15 @@ import io.github.jan.supabase.auth.providers.builtin.Email
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.ktor.client.engine.mock.respond
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.headersOf
+import io.ktor.utils.io.ByteReadChannel
+import io.ktor.client.engine.mock.MockRequestHandler
 import io.ktor.http.content.TextContent
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -46,10 +53,26 @@ class PlayersRepositoryTest {
         }
     }
 
+    /**
+     * A client signed in as "u1", who owns [seeded]: the list only ever shows the
+     * signed-in coach's players. [handler] answers everything but the sign-in.
+     */
+    private suspend fun signedInAsU1(
+        settings: MapSettings = MapSettings(),
+        handler: MockRequestHandler,
+    ): SupabaseClient {
+        val client = TestSupabase.client(settings) { request ->
+            if (request.url.encodedPath.contains("/token")) jsonResponse(tokenResponseFor("u1"))
+            else handler(request)
+        }
+        client.signInAs("u1")
+        return client
+    }
+
     @Test
     fun refresh_publishes_players_sorted_by_name() = runTest {
         var capturedUrl: String? = null
-        val client = TestSupabase.client { request ->
+        val client = signedInAsU1 { request ->
             capturedUrl = request.url.toString()
             jsonResponse(seeded)
         }
@@ -123,7 +146,7 @@ class PlayersRepositoryTest {
     @Test
     fun create_sends_the_trimmed_name_and_hand() = runTest {
         var posted: String? = null
-        val client = TestSupabase.client { request ->
+        val client = signedInAsU1 { request ->
             val body = (request.body as? TextContent)?.text
             if (body == null) jsonResponse(seeded)
             else {
@@ -148,7 +171,7 @@ class PlayersRepositoryTest {
     @Test
     fun clearing_the_hand_sends_null() = runTest {
         var patched: String? = null
-        val client = TestSupabase.client { request ->
+        val client = signedInAsU1 { request ->
             val body = (request.body as? TextContent)?.text
             if (body == null) jsonResponse(seeded)
             else {
@@ -168,7 +191,7 @@ class PlayersRepositoryTest {
     @Test
     fun rename_sends_the_trimmed_name_and_resorts() = runTest {
         var patched: String? = null
-        val client = TestSupabase.client { request ->
+        val client = signedInAsU1 { request ->
             val body = (request.body as? TextContent)?.text
             if (body == null) jsonResponse(seeded)
             else {
@@ -187,7 +210,7 @@ class PlayersRepositoryTest {
 
     @Test
     fun delete_drops_the_player_from_the_list() = runTest {
-        val client = TestSupabase.client { jsonResponse(seeded) }
+        val client = signedInAsU1 { jsonResponse(seeded) }
         val repo = PlayersRepositoryImpl(client, MapSettings())
         repo.refresh()
 
@@ -255,5 +278,101 @@ class PlayersRepositoryTest {
         repo.cacheReconciliation.join()
 
         repo.players.value.shouldBeEmpty()
+    }
+
+    @Test
+    fun a_list_longer_than_one_response_arrives_whole() = runTest {
+        // A player missing from the refreshed list is taken as deleted and
+        // forgotten in every match that names them, so a list cut at PostgREST's
+        // max_rows would unassign live players.
+        val total = 1_050
+        val client = signedInAsU1 { request ->
+            val offset = request.url.parameters["offset"]?.toInt() ?: 0
+            val limit = minOf(request.url.parameters["limit"]?.toInt() ?: 1_000, 1_000)
+            val end = minOf(offset + limit, total)
+            val page = (offset until end).joinToString(",") { i ->
+                """{"id":"p$i","owner_id":"u1","name":"P$i","racket_arm":null,"created_at":"2026-10-31T12:00:00Z","updated_at":"2026-10-31T12:00:00Z"}"""
+            }
+            respond(
+                content = ByteReadChannel("[$page]"),
+                status = HttpStatusCode.OK,
+                headers = headersOf(
+                    HttpHeaders.ContentType to listOf(ContentType.Application.Json.toString()),
+                    HttpHeaders.ContentRange to listOf("$offset-${end - 1}/$total"),
+                ),
+            )
+        }
+        val repo = PlayersRepositoryImpl(client, MapSettings())
+
+        repo.refresh().isSuccess shouldBe true
+
+        repo.players.value.map { it.id }.toSet().size shouldBe total
+    }
+
+    @Test
+    fun pages_are_cut_from_a_total_order() = runTest {
+        var query: String? = null
+        val client = signedInAsU1 { request ->
+            query = request.url.toString()
+            jsonResponse("[]")
+        }
+        PlayersRepositoryImpl(client, MapSettings()).refresh()
+        query!!.shouldContain("order=created_at.asc.nullslast%2Cid.asc.nullslast")
+    }
+
+    // The list in memory follows the signed-in coach.
+
+    @Test
+    fun a_refresh_answered_for_another_coach_shows_nothing() = runTest {
+        // A response that raced a change of account: the rows are u1's, the
+        // session is user-b's.
+        val client = TestSupabase.client { request ->
+            if (request.url.encodedPath.contains("/token")) jsonResponse(tokenResponseFor("user-b"))
+            else jsonResponse(seeded)
+        }
+        client.signInAs("user-b")
+        val settings = MapSettings()
+        val repo = PlayersRepositoryImpl(client, settings)
+
+        repo.refresh().isSuccess shouldBe true
+
+        repo.players.value.shouldBeEmpty()
+    }
+
+    @Test
+    fun signing_out_takes_the_players_off_the_list() = runTest {
+        val client = signedInAsU1 { jsonResponse(seeded) }
+        val repo = PlayersRepositoryImpl(client, MapSettings())
+        repo.refresh()
+        repo.players.value.map { it.id }.toSet() shouldBe setOf("p1", "p2", "p3")
+
+        client.auth.signOut()
+
+        repo.players.first { it.isEmpty() }.shouldBeEmpty()
+    }
+
+    @Test
+    fun the_next_coach_never_sees_or_picks_the_last_ones_players() = runTest {
+        val settings = MapSettings()
+        val client = TestSupabase.client(settings) { request ->
+            when {
+                request.url.encodedPath.contains("/token") &&
+                    (request.body as? TextContent)?.text?.contains("user-b") == true ->
+                    jsonResponse(tokenResponseFor("user-b"))
+                request.url.encodedPath.contains("/token") -> jsonResponse(tokenResponseFor("u1"))
+                else -> jsonResponse(seeded)
+            }
+        }
+        client.signInAs("u1")
+        val repo = PlayersRepositoryImpl(client, settings)
+        repo.refresh()
+        repo.players.value.map { it.id }.toSet() shouldBe setOf("p1", "p2", "p3")
+
+        // Straight into another account, offline or before any refresh of theirs.
+        client.signInAs("user-b")
+
+        repo.players.first { it.isEmpty() }.shouldBeEmpty()
+        // And u1's cache is still u1's, for when they are back.
+        settings.getStringOrNull(cacheKey)!!.shouldContain("\"owner_id\":\"u1\"")
     }
 }

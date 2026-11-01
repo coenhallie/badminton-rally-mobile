@@ -1,9 +1,11 @@
 package com.badmintontracker.shared.players
 
 import com.badmintontracker.shared.prefs.RacketArm
+import com.badmintontracker.shared.repo.selectAllPages
 import com.russhwolf.settings.Settings
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
+import io.github.jan.supabase.auth.status.SessionStatus
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.coroutines.CoroutineScope
@@ -19,7 +21,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 interface PlayersRepository {
-    /** Last known list, sorted by [sortedPlayers]. Survives a cold start offline. */
+    /** The signed-in coach's last known list, sorted by [sortedPlayers]. Survives a cold start offline. */
     val players: StateFlow<List<Player>>
 
     suspend fun refresh(): Result<Unit>
@@ -57,7 +59,7 @@ class PlayersRepositoryImpl internal constructor(
     /** Runs [cacheReconciliation] once. This object lives as long as the process, so it is never cancelled. */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    private val state = MutableStateFlow(loadCache())
+    private val state = MutableStateFlow(loadCache(currentOwnerId()))
     override val players: StateFlow<List<Player>> = state.asStateFlow()
 
     /**
@@ -71,8 +73,40 @@ class PlayersRepositoryImpl internal constructor(
     internal val cacheReconciliation: Job = scope.launch {
         runCatching {
             awaitAuthReady()
-            val reconciled = loadCache()
+            val reconciled = loadCache(currentOwnerId())
             if (reconciled.isNotEmpty()) state.compareAndSet(emptyList(), reconciled)
+        }
+    }
+
+    /**
+     * Takes one coach's players off the list as soon as the session stops being
+     * theirs: on a sign-out, and on a sign-in as someone else, offline or before
+     * the new coach's first refresh lands. Otherwise the next coach would see them
+     * in the Players list and pick them, and the database refuses another coach's
+     * player on a match. A restore still in progress, or a token refresh that
+     * failed offline, is the same coach and changes nothing.
+     */
+    internal val ownerFollower: Job = scope.launch {
+        client.auth.sessionStatus.collect { status ->
+            when (status) {
+                is SessionStatus.Authenticated -> keepOnlyOwnedBy(status.session.user?.id)
+                is SessionStatus.NotAuthenticated -> keepOnlyOwnedBy(null)
+                is SessionStatus.Initializing, is SessionStatus.RefreshFailure -> Unit
+            }
+        }
+    }
+
+    /**
+     * Swaps a list holding anyone else's players for [owner]'s own cache (empty
+     * when there is no owner or the cache is not theirs). Compare-and-set, so a
+     * refresh publishing at the same moment is not overwritten with a stale read;
+     * that publish is owner-checked itself.
+     */
+    private fun keepOnlyOwnedBy(owner: String?) {
+        while (true) {
+            val shown = state.value
+            if (shown.all { it.ownerId == owner }) return
+            if (state.compareAndSet(shown, loadCache(owner))) return
         }
     }
 
@@ -96,10 +130,16 @@ class PlayersRepositoryImpl internal constructor(
         val players: List<Player>,
     )
 
+    /**
+     * Every page, not PostgREST's first max_rows: a player missing from this list
+     * is taken as deleted and forgotten in the matches that name them (see
+     * refreshPlayersAndForgetVanishedOrMessage).
+     */
     override suspend fun refresh(): Result<Unit> = runCatching {
-        val rows = client.postgrest.from(TABLE)
-            .select { order("created_at", Order.ASCENDING) }
-            .decodeList<Player>()
+        val rows = client.postgrest.from(TABLE).selectAllPages<Player> {
+            order("created_at", Order.ASCENDING)
+            order("id", Order.ASCENDING)
+        }
         publish(rows)
     }
 
@@ -133,23 +173,30 @@ class PlayersRepositoryImpl internal constructor(
         publish(state.value.filterNot { it.id == id })
     }
 
+    /**
+     * Shows and caches [next], keeping only the signed-in coach's players: a
+     * response that raced a sign-out or a change of account publishes nothing of
+     * the coach it was for. With nobody signed in nothing is cached, so the last
+     * coach's cache is never replaced by an empty, ownerless one.
+     */
     private fun publish(next: List<Player>) {
-        val sorted = sortedPlayers(next)
+        val owner = currentOwnerId()
+        val sorted = sortedPlayers(next.filter { it.ownerId == owner })
         state.value = sorted
-        val envelope = CachedPlayers(currentOwnerId(), sorted)
+        if (owner == null) return
+        val envelope = CachedPlayers(owner, sorted)
         settings.putString(KEY_CACHE, json.encodeToString(CachedPlayers.serializer(), envelope))
     }
 
     /**
-     * Hands back a cached list only when it was written by whoever is signed in
-     * right now. A missing owner on either side is treated as a mismatch: better
-     * an empty picker than one coach's players in another coach's app.
+     * Hands back a cached list only when it was written by [owner]. A missing
+     * owner on either side is treated as a mismatch: better an empty picker than
+     * one coach's players in another coach's app.
      */
-    private fun loadCache(): List<Player> {
+    private fun loadCache(owner: String?): List<Player> {
         val cached = settings.getStringOrNull(KEY_CACHE)
             ?.let { runCatching { json.decodeFromString(CachedPlayers.serializer(), it) }.getOrNull() }
             ?: return emptyList()
-        val owner = currentOwnerId()
         return if (owner != null && owner == cached.ownerId) sortedPlayers(cached.players) else emptyList()
     }
 
