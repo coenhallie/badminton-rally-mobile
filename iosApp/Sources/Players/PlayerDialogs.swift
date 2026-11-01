@@ -112,7 +112,7 @@ struct PlayerNameSheet: View {
             }
             .padding(.top, 8)
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, ShuttlGutter.page)
         .padding(.top, 24)
         .padding(.bottom, 16)
         .sizedToContentSheet()
@@ -186,7 +186,7 @@ struct PlayingHandSheet: View {
             }
             .padding(.top, 8)
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, ShuttlGutter.page)
         .padding(.top, 24)
         .padding(.bottom, 16)
         .sizedToContentSheet()
