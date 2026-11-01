@@ -30,6 +30,15 @@ class MatchPlayersTest {
     }
 
     @Test
+    fun forgetting_with_no_name_leaves_the_side_empty() {
+        // Never a typed name of "": that would be pushed to the server as one.
+        val players = MatchPlayers("player-marco", null, emptyList(), listOf("Jo"))
+
+        players.forgetting("player-marco", null) shouldBe
+            MatchPlayers(null, null, emptyList(), listOf("Jo"))
+    }
+
+    @Test
     fun forgetting_another_player_changes_nothing() {
         val players = MatchPlayers("player-marco", null, emptyList(), listOf("Jo"))
 

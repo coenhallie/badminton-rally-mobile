@@ -189,9 +189,10 @@ fun LocalVideoRepository.setMatchPlayers(id: String, players: MatchPlayers, near
 
 /**
  * A player was deleted: every entry that named them keeps [name] as a typed name
- * and loses the id. Entries that do not hold the id are not written.
+ * and loses the id (see [com.badmintontracker.shared.players.forgetting] for a null
+ * [name]). Entries that do not hold the id are not written.
  */
-fun LocalVideoRepository.forgetPlayer(playerId: String, name: String) {
+fun LocalVideoRepository.forgetPlayer(playerId: String, name: String?) {
     for (id in entries.value.filter { it.matchPlayers.holds(playerId) }.map { it.id }) {
         update(id) { entry ->
             val after = entry.matchPlayers.forgetting(playerId, name)

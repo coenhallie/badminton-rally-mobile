@@ -210,10 +210,11 @@ class ScoreLogsRepository internal constructor(
     /**
      * A player was deleted: every cached match that named them keeps [name] as a
      * typed name and loses the id (the server does the same with a trigger, so a
-     * dirty row pushed after it agrees). Only the matches that hold the id are
-     * rewritten and marked dirty; the rest are left alone.
+     * dirty row pushed after it agrees). A null [name] leaves the side unnamed:
+     * see [com.badmintontracker.shared.players.forgetting]. Only the matches that
+     * hold the id are rewritten and marked dirty; the rest are left alone.
      */
-    fun forgetPlayer(playerId: String, name: String) = mutate { list ->
+    fun forgetPlayer(playerId: String, name: String?) = mutate { list ->
         list.map { stored ->
             val log = stored.log
             if (!log.matchPlayers.holds(playerId)) stored

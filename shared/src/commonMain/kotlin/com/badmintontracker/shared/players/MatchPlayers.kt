@@ -40,14 +40,19 @@ val MatchMetadata.matchPlayers: MatchPlayers
 
 /**
  * What a deleted player leaves behind: the side that held [playerId] keeps [name]
- * as a typed name and loses the id, so the match still reads as it did.
+ * as a typed name and loses the id, so the match still reads as it did. A null
+ * [name] (this phone never knew it) leaves the side with no name at all, never a
+ * typed name of "".
  */
-fun MatchPlayers.forgetting(playerId: String, name: String): MatchPlayers = copy(
-    homePlayerId = if (homePlayerId == playerId) null else homePlayerId,
-    homePlayers = if (homePlayerId == playerId) listOf(name) else homePlayers,
-    awayPlayerId = if (awayPlayerId == playerId) null else awayPlayerId,
-    awayPlayers = if (awayPlayerId == playerId) listOf(name) else awayPlayers,
-)
+fun MatchPlayers.forgetting(playerId: String, name: String?): MatchPlayers {
+    val left = listOfNotNull(name)
+    return copy(
+        homePlayerId = if (homePlayerId == playerId) null else homePlayerId,
+        homePlayers = if (homePlayerId == playerId) left else homePlayers,
+        awayPlayerId = if (awayPlayerId == playerId) null else awayPlayerId,
+        awayPlayers = if (awayPlayerId == playerId) left else awayPlayers,
+    )
+}
 
 /** Whether either side holds [playerId]. */
 fun MatchPlayers.holds(playerId: String): Boolean =
