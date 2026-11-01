@@ -243,9 +243,20 @@ struct MatchView: View {
 
     private var isOwned: Bool { ownedVideo != nil }
 
+    /// The entry whose own sheet edits this match (`detailsSheet`'s last
+    /// branch): a match the coach owns whose players can be said
+    /// (`canEditPlayers`) and whose entry is still on this phone.
+    private var detailsEntry: LocalVideoEntry? {
+        guard let item, item.canEditPlayers, let entryId = item.entryId else { return nil }
+        return rally.localVideos.get(id: entryId)
+    }
+
     /// Whether "Edit details" is offered: see the overflow in `toolbarContent`.
+    /// Exactly the cases `detailsSheet` draws something for, so the item never
+    /// opens an empty sheet (an owned video's clips not read yet, an entry
+    /// removed from the phone).
     private var editsDetails: Bool {
-        matchModel.log != nil || isOwned || item?.canEditPlayers == true
+        matchModel.log != nil || isOwned || detailsEntry != nil
     }
 
     // The score log's details when there is one, the video's own otherwise: a
@@ -847,8 +858,8 @@ struct MatchView: View {
                 }
                 return nil
             }
-        } else if let item, item.canEditPlayers, let entryId = item.entryId,
-                  let entry = rally.localVideos.get(id: entryId) {
+        } else if let item, let entry = detailsEntry {
+            let entryId = entry.id
             MatchDetailsSheet(
                 initialTitle: entry.title,
                 initialDescription: entry.description_,
