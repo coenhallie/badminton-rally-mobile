@@ -24,9 +24,10 @@ typealias AddPlayer = (String, RacketArm?) async -> PlayerCreation
 /// dims to the field's 0.6.
 ///
 /// The menu's rows carry no avatar (a menu row draws only text and a symbol)
-/// and no symbol either, "Add player" included, where androidApp leads it with
-/// a "+": a menu sets the text of a section with a symbol in it further right,
-/// so "Someone else" and "Add player" read as a second column of text.
+/// and no symbol either, "Add player" included: a menu sets the text of a
+/// section with a symbol in it further right, so "Someone else" and "Add
+/// player" read as a second column of text. androidApp's rows are text alone
+/// too.
 /// Mirrors androidApp's PlayerPicker.kt.
 struct PlayerPicker: View {
     let selectedId: String?

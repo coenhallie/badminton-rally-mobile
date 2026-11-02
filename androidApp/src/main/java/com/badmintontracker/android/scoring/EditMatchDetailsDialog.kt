@@ -12,7 +12,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -24,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -40,6 +43,7 @@ import com.badmintontracker.android.players.PlayerPicker
 import com.badmintontracker.android.players.PlayersNote
 import com.badmintontracker.android.players.WhoIsPlayingSection
 import com.badmintontracker.android.ui.components.ShuttlButton
+import com.badmintontracker.android.ui.components.ShuttlMenuField
 import com.badmintontracker.android.ui.components.ShuttlOutlinedTextField
 import com.badmintontracker.android.ui.components.ShuttlPillTabs
 import com.badmintontracker.shared.localvideo.MAX_MATCH_DESCRIPTION_LENGTH
@@ -195,14 +199,22 @@ fun EditMatchDetailsDialog(
                 }
 
                 SectionLabel("Format")
+                val formatLabels = listOf("Not set") + MatchFormat.entries.map { it.shortLabel }
+                val unavailableFormats = if (offersPairs) emptySet() else PAIRS_FORMAT_INDICES
+                val selectFormat = { index: Int ->
+                    formatIndex = index
+                    who = who.withFormat(MatchFormat.entries.getOrNull(index - 1))
+                }
                 ShuttlPillTabs(
-                    labels = listOf("Not set") + MatchFormat.entries.map { it.shortLabel },
+                    labels = formatLabels,
                     selectedIndex = formatIndex,
-                    onSelect = { index ->
-                        formatIndex = index
-                        who = who.withFormat(MatchFormat.entries.getOrNull(index - 1))
+                    onSelect = selectFormat,
+                    disabledIndices = unavailableFormats,
+                    // At a large font scale four pills split "Doubles" inside
+                    // the word: the same choice as a menu there, as on iOS.
+                    tooNarrow = {
+                        FormatMenu(formatLabels, formatIndex, unavailableFormats, selectFormat)
                     },
-                    disabledIndices = if (offersPairs) emptySet() else PAIRS_FORMAT_INDICES,
                 )
                 if (!offersPairs) PlayersNote(PlayersCopy.DOUBLES_NOTE)
 
@@ -263,6 +275,37 @@ fun EditMatchDetailsDialog(
                 )
                 Spacer(Modifier.height(16.dp))
             }
+        }
+    }
+}
+
+/**
+ * Format as a menu, for where its pills would break a word (ShuttlPillTabs'
+ * tooNarrow): the chosen format in the box, and in the menu every format with
+ * the chosen one ticked and [unavailable] ones (Doubles and Mixed while a side
+ * holds a profile) shown but disabled. The doubles note follows it as it
+ * follows the pills.
+ */
+@Composable
+private fun FormatMenu(labels: List<String>, selectedIndex: Int, unavailable: Set<Int>, onSelect: (Int) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    ShuttlMenuField(
+        text = labels[selectedIndex],
+        expanded = open,
+        onExpandedChange = { open = it },
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        labels.forEachIndexed { index, label ->
+            DropdownMenuItem(
+                text = { Text(label) },
+                trailingIcon = if (index == selectedIndex) {
+                    { Icon(Icons.Default.Check, contentDescription = null) }
+                } else {
+                    null
+                },
+                enabled = index !in unavailable,
+                onClick = { open = false; onSelect(index) },
+            )
         }
     }
 }

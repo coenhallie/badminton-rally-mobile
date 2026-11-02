@@ -4,10 +4,15 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -95,6 +100,14 @@ fun MatchDetailsSheet(
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
+        // The sheet's window spans the screen, status bar included, and a tall
+        // sheet (Who's playing with a name field, the keyboard up) grew under
+        // it: its light fill behind icons drawn for the scrim, white on white.
+        // Laid out below the status bar, the sheet tops out there and scrolls,
+        // and the status bar keeps the scrim behind it, as every shorter sheet
+        // does. Material puts this modifier ahead of the sheet's fill, so the
+        // padding is clear space over the scrim, not a strip of sheet.
+        modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top)),
         sheetState = sheetState,
         containerColor = ShuttlTheme.extended.bgDialog,
     ) {

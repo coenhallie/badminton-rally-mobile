@@ -96,6 +96,13 @@ import com.badmintontracker.android.ui.theme.ShuttlRadius
  * be chosen while the rest can (the details editor's Doubles and Mixed while a
  * side holds a profile). A disabled pill keeps its place and its label, dimmed,
  * and does not take a tap; a screen reader hears it as disabled.
+ *
+ * [tooNarrow] is drawn instead of the pills where even the smallest label
+ * ([MIN_PILL_LABEL_SCALE]) leaves a word wider than its pill, the one case in
+ * which the row would break inside a word: the details editor's four Format
+ * pills at a large font scale on a phone ("Doub / les"). The caller gives the
+ * same choice another shape there (a menu), as iOS does at accessibility sizes.
+ * Without it the row draws as always, broken word and all.
  */
 @Composable
 fun ShuttlPillTabs(
@@ -109,6 +116,7 @@ fun ShuttlPillTabs(
     enabled: Boolean = true,
     disabledIndices: Set<Int> = emptySet(),
     singleLine: Boolean = false,
+    tooNarrow: (@Composable () -> Unit)? = null,
 ) {
     val shape = RoundedCornerShape(ShuttlRadius.pill)
     val baseStyle = if (secondary) {
@@ -157,7 +165,12 @@ fun ShuttlPillTabs(
                 scale = minOf(scale, fitScale(limit = ceilingPx) { with(density) { scaled(it).fontSize.toPx() } })
             }
             val style = scaled(scale)
-            PillFit(with(density) { padPx.toDp() }, style, with(density) { style.fontSize.toPx() })
+            PillFit(
+                pad = with(density) { padPx.toDp() },
+                style = style,
+                labelPx = with(density) { style.fontSize.toPx() },
+                breaksAWord = breaksAWord(limit = pillWidthPx - padPx * 2, scale = scale, measure = ::widestWord),
+            )
         }
         ceilingFor?.let { ceiling ->
             SideEffect { ceiling.px = fit.labelPx }
@@ -166,6 +179,10 @@ fun ShuttlPillTabs(
             // more. iOS gets the same from its preference key, which goes
             // with the view that published it.
             DisposableEffect(ceiling) { onDispose { ceiling.px = Float.POSITIVE_INFINITY } }
+        }
+        if (tooNarrow != null && fit.breaksAWord) {
+            tooNarrow()
+            return@BoxWithConstraints
         }
         val pad = fit.pad
         val style = fit.style
@@ -264,8 +281,18 @@ internal fun fitScale(limit: Float, measure: (Float) -> Float): Float {
     return scale
 }
 
-/** What a row draws at: its pills' side padding, its label style, and that style's size in pixels. */
-private data class PillFit(val pad: Dp, val style: TextStyle, val labelPx: Float)
+/**
+ * Whether the widest word, [measure]d at [scale] (what fitScale settled on),
+ * is still wider than [limit], a pill's room for its label: true only once
+ * the floor has been reached, where the row breaks inside a word.
+ */
+internal fun breaksAWord(limit: Float, scale: Float, measure: (Float) -> Float): Boolean = measure(scale) > limit
+
+/**
+ * What a row draws at: its pills' side padding, its label style, that style's
+ * size in pixels, and whether a word is still too wide for its pill at it.
+ */
+private data class PillFit(val pad: Dp, val style: TextStyle, val labelPx: Float, val breaksAWord: Boolean)
 
 /**
  * The label size, in pixels, of the primary row that secondary rows under it

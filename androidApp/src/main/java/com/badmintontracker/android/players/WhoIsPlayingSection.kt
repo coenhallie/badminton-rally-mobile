@@ -5,12 +5,15 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -26,6 +29,7 @@ import androidx.compose.ui.layout.FirstBaseline
 import androidx.compose.ui.layout.HorizontalAlignmentLine
 import androidx.compose.ui.layout.LastBaseline
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import com.badmintontracker.analysis.player.CourtSide
@@ -95,10 +99,15 @@ fun WhoIsPlayingSection(
             near = { mod -> End(CourtSide.NEAR, draft, players, onChange, onAddPlayer, editable, mod) },
         )
         if (draft.tracked == Tracked.ONE) {
+            // Out by the button's own end padding, so its label, not its
+            // ripple, ends on the court card's right edge. The ripple then
+            // reaches 12dp into the screen's 24dp margin, inside the scroll
+            // area of both hosts (the details sheet and editor).
+            val textInset = ButtonDefaults.TextButtonContentPadding.calculateEndPadding(LocalLayoutDirection.current)
             TextButton(
                 onClick = { onChange(draft.swapped()) },
                 enabled = editable,
-                modifier = Modifier.align(Alignment.End),
+                modifier = Modifier.align(Alignment.End).offset(x = textInset),
             ) {
                 Icon(ShuttlIcons.Swap, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(8.dp))

@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.badmintontracker.shared.prefs.ThemeMode
+import com.badmintontracker.android.players.AddPlayerDialogHost
 import com.badmintontracker.android.ui.theme.RallyTheme
 
 class MainActivity : ComponentActivity() {
@@ -66,16 +67,20 @@ class MainActivity : ComponentActivity() {
 
             RallyTheme(darkTheme = darkTheme) {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    AuthGate(
-                        rally = app.rally,
-                        themePrefs = app.themePrefs,
-                        localVideos = app.localVideos,
-                        coordinator = app.analyzeCoordinator,
-                        localAnalysis = app.localAnalysis,
-                        backgroundWork = app.backgroundWork,
-                        throughput = app.throughput,
-                        localAnnotations = app.localAnnotations,
-                    )
+                    // The player pickers' "Add player" dialogs open here, in
+                    // this window, wherever their picker is (see the host).
+                    AddPlayerDialogHost {
+                        AuthGate(
+                            rally = app.rally,
+                            themePrefs = app.themePrefs,
+                            localVideos = app.localVideos,
+                            coordinator = app.analyzeCoordinator,
+                            localAnalysis = app.localAnalysis,
+                            backgroundWork = app.backgroundWork,
+                            throughput = app.throughput,
+                            localAnnotations = app.localAnnotations,
+                        )
+                    }
                 }
             }
         }

@@ -6,7 +6,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -21,18 +20,21 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import com.badmintontracker.android.ui.theme.ShuttlRadius
 import com.badmintontracker.android.ui.theme.ShuttlTheme
+import java.util.Locale
 
 enum class ShuttlFieldType { Text, Email, Password }
 
@@ -128,14 +130,7 @@ fun ShuttlOutlinedTextField(
                 if (maxLength == null) {
                     FieldLabel(label)
                 } else {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        FieldLabel(label, modifier = Modifier.weight(1f))
-                        Text(
-                            text  = "${value.length}/$maxLength",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                    LabelWithCounter(label, "${value.length}/$maxLength")
                 }
                 Spacer(Modifier.height(6.dp))
                 Box(
@@ -152,3 +147,64 @@ fun ShuttlOutlinedTextField(
         },
     )
 }
+
+/**
+ * A capped field's label and its n/max counter. Side by side, the counter at
+ * the end and both centred on one line, while the label's longest word fits
+ * beside the counter. Otherwise the label takes the whole width and the
+ * counter a line of its own under it, still at the end: in a narrow field at a
+ * large font scale (Who's playing's "OPPONENT (OPTIONAL)" on a small screen)
+ * the label then wraps between its words instead of inside one. iosApp's
+ * ShuttlTextField moves its counter the same way at accessibility sizes.
+ */
+@Composable
+private fun LabelWithCounter(label: String, counter: String) {
+    val labelStyle = MaterialTheme.typography.labelSmall
+    val measurer = rememberTextMeasurer()
+    // FieldLabel's own text and style, so the words measured are the ones drawn.
+    val words = remember(label) { label.uppercase(Locale.ROOT).split(' ').filter { it.isNotEmpty() } }
+    Layout(
+        content = {
+            FieldLabel(label)
+            Text(
+                text  = counter,
+                style = labelStyle,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        },
+    ) { measurables, constraints ->
+        val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        val counterPlaceable = measurables[1].measure(loose)
+        val bounded = constraints.hasBoundedWidth
+        val widestWord = words.maxOfOrNull {
+            measurer.measure(it, labelStyle, softWrap = false, maxLines = 1).size.width
+        } ?: 0
+        // An unbounded width (an intrinsic measure) has room for anything.
+        val beside = !bounded || counterBesideLabel(constraints.maxWidth, counterPlaceable.width, widestWord)
+        if (beside) {
+            val labelMax = if (bounded) (constraints.maxWidth - counterPlaceable.width).coerceAtLeast(0) else Constraints.Infinity
+            val labelPlaceable = measurables[0].measure(loose.copy(maxWidth = labelMax))
+            val width = if (bounded) constraints.maxWidth else labelPlaceable.width + counterPlaceable.width
+            val height = maxOf(labelPlaceable.height, counterPlaceable.height)
+            layout(width, height) {
+                labelPlaceable.placeRelative(0, (height - labelPlaceable.height) / 2)
+                counterPlaceable.placeRelative(width - counterPlaceable.width, (height - counterPlaceable.height) / 2)
+            }
+        } else {
+            val labelPlaceable = measurables[0].measure(loose)
+            val width = constraints.maxWidth
+            layout(width, labelPlaceable.height + counterPlaceable.height) {
+                labelPlaceable.placeRelative(0, 0)
+                counterPlaceable.placeRelative(width - counterPlaceable.width, labelPlaceable.height)
+            }
+        }
+    }
+}
+
+/**
+ * Whether a capped field's counter can share the label's line: only while the
+ * label's widest word ([widestLabelWord]) fits in what the counter leaves of
+ * [rowWidth], so the label never has to break inside a word. All in pixels.
+ */
+internal fun counterBesideLabel(rowWidth: Int, counterWidth: Int, widestLabelWord: Int): Boolean =
+    widestLabelWord <= rowWidth - counterWidth

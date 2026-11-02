@@ -66,4 +66,29 @@ class PillLabelScaleTest {
     fun a_pill_keeps_its_minimum_padding_and_leaves_the_rest_to_the_scale() {
         pillPadding(pillWidth = 200f, widestWord = 199f, min = 6f, max = 24f) shouldBe 6f
     }
+
+    // tooNarrow: the row hands over to another shape only where a word breaks.
+    @Test
+    fun a_row_whose_words_fit_at_some_scale_does_not_break_a_word() {
+        // "Analysis" at 1.3x: fits once shrunk, so the pills stay.
+        val scale = fitScale(limit = 171f, measure = linear(198f))
+        breaksAWord(limit = 171f, scale = scale, measure = linear(198f)) shouldBe false
+    }
+
+    @Test
+    fun a_word_still_too_wide_at_the_floor_breaks() {
+        // The editor's Format at font scale 2.0 on a 360dp phone, at 3px/dp:
+        // "Doubles" is 94.6dp of label in 61dp of pill, and Android's
+        // non-linear scaling keeps it wider than a linear 0.75 would.
+        val doubles: (Float) -> Float = { scale -> 284f * (0.3f + 0.7f * scale) }
+        val scale = fitScale(limit = 183f, measure = doubles)
+        scale shouldBe MIN_PILL_LABEL_SCALE
+        breaksAWord(limit = 183f, scale = scale, measure = doubles) shouldBe true
+    }
+
+    @Test
+    fun a_single_line_row_never_breaks_a_word() {
+        // singleLine measures no words: its widest is 0.
+        breaksAWord(limit = 100f, scale = 1f, measure = { 0f }) shouldBe false
+    }
 }

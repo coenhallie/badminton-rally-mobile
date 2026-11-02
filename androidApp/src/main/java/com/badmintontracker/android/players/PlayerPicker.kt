@@ -1,46 +1,27 @@
 package com.badmintontracker.android.players
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.collapse
-import androidx.compose.ui.semantics.expand
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.badmintontracker.android.ui.icons.ShuttlIcons
-import com.badmintontracker.android.ui.theme.ShuttlRadius
-import com.badmintontracker.android.ui.theme.ShuttlTheme
+import com.badmintontracker.android.ui.components.ShuttlMenuField
 import com.badmintontracker.shared.players.Player
 import com.badmintontracker.shared.players.PlayersCopy
 import com.badmintontracker.shared.prefs.RacketArm
@@ -50,21 +31,22 @@ import kotlinx.coroutines.launch
 typealias AddPlayer = suspend (name: String, racketArm: RacketArm?) -> PlayerCreation
 
 /**
- * One end's or one side's player: a field-shaped control showing the chosen
- * player (their avatar and name), "Someone else" when [someoneElse] is chosen,
- * or "Choose a player", which opens a menu of [players] with the chosen one
+ * One end's or one side's player: a ShuttlMenuField showing the chosen player
+ * (their avatar and name), "Someone else" when [someoneElse] is chosen, or
+ * "Choose a player", which opens a menu of [players] with the chosen one
  * ticked, then "Someone else" when [onSomeoneElse] is given, then "Add player".
  * [onClear] adds "Choose a player" at the top of the menu while a player is
  * chosen, to take them off again.
  *
- * "Add player" opens the add dialog over the picker and, once the player is
- * created ([onAddPlayer]), picks them; a failed add stays in the dialog with
- * the name typed, as on the Players screen.
+ * The menu's rows are text alone: no avatar on a player and no "+" on "Add
+ * player", so every row's text starts at one x, under the box's own text, as
+ * on iOS (whose menu rows draw no avatar). With a leading icon on some rows
+ * only, the menu read as two columns of text.
  *
- * Drawn like ShuttlOutlinedTextField's box (the same fill, stroke, radius and
- * padding, the text in the field's style), so a picker and a typed name beside
- * it read as one form; a 24dp avatar keeps the box the field's height. A screen
- * reader hears what is chosen and whether the menu is open.
+ * "Add player" opens the add dialog and, once the player is created
+ * ([onAddPlayer]), picks them; a failed add stays in the dialog with the name
+ * typed, as on the Players screen. The dialog is composed in the nearest
+ * [AddPlayerDialogHost] rather than here: see there for why.
  */
 @Composable
 internal fun PlayerPicker(
@@ -81,100 +63,145 @@ internal fun PlayerPicker(
     var open by remember { mutableStateOf(false) }
     var adding by rememberSaveable { mutableStateOf(false) }
     val selected = selectedId?.let { id -> players.firstOrNull { it.id == id } }
-    val shape = RoundedCornerShape(ShuttlRadius.small)
     val shown = when {
         selected != null -> selected.name
         someoneElse -> PlayersCopy.SOMEONE_ELSE
         else -> PlayersCopy.CHOOSE_PLAYER
     }
 
-    Box(modifier) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                // On the whole control, box and stroke too, as a disabled
-                // ShuttlOutlinedTextField dims: the two sit side by side.
-                .alpha(if (enabled) 1f else DISABLED_ALPHA)
-                .clip(shape)
-                .background(ShuttlTheme.extended.bgInput, shape)
-                .border(1.dp, ShuttlTheme.extended.textTertiary, shape)
-                .clickable(enabled = enabled, role = Role.DropdownList) { open = true }
-                .semantics {
-                    stateDescription = if (open) PlayersCopy.MENU_EXPANDED else PlayersCopy.MENU_COLLAPSED
-                    if (enabled) {
-                        if (open) collapse { open = false; true } else expand { open = true; true }
-                    }
-                }
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (selected != null) {
-                PlayerAvatar(selected.name, PickerAvatarSize)
-                Spacer(Modifier.width(8.dp))
-            }
-            Text(
-                text = shown,
-                style = MaterialTheme.typography.bodyLarge,
-                color = if (selected != null || someoneElse) MaterialTheme.colorScheme.onSurface
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            Spacer(Modifier.width(8.dp))
-            Icon(
-                ShuttlIcons.ChevronDown,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(16.dp),
-            )
-        }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            if (onClear != null && selected != null) {
-                DropdownMenuItem(
-                    text = { Text(PlayersCopy.CHOOSE_PLAYER) },
-                    onClick = { open = false; onClear() },
-                )
-                HorizontalDivider()
-            }
-            players.forEach { player ->
-                DropdownMenuItem(
-                    text = { Text(player.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    leadingIcon = { PlayerAvatar(player.name, PickerAvatarSize) },
-                    trailingIcon = if (player.id == selectedId) {
-                        { Icon(Icons.Default.Check, contentDescription = null) }
-                    } else {
-                        null
-                    },
-                    onClick = { open = false; onPick(player) },
-                )
-            }
-            if (players.isNotEmpty()) HorizontalDivider()
-            if (onSomeoneElse != null) {
-                DropdownMenuItem(
-                    text = { Text(PlayersCopy.SOMEONE_ELSE) },
-                    trailingIcon = if (someoneElse && selected == null) {
-                        { Icon(Icons.Default.Check, contentDescription = null) }
-                    } else {
-                        null
-                    },
-                    onClick = { open = false; onSomeoneElse() },
-                )
-            }
+    ShuttlMenuField(
+        text = shown,
+        expanded = open,
+        onExpandedChange = { open = it },
+        modifier = modifier,
+        enabled = enabled,
+        placeholder = selected == null && !someoneElse,
+        leading = if (selected != null) {
+            { PlayerAvatar(selected.name, PickerAvatarSize) }
+        } else {
+            null
+        },
+    ) {
+        if (onClear != null && selected != null) {
             DropdownMenuItem(
-                text = { Text(PlayersCopy.PICKER_ADD_PLAYER) },
-                leadingIcon = { Icon(Icons.Default.Add, contentDescription = null) },
-                onClick = { open = false; adding = true },
+                text = { Text(PlayersCopy.CHOOSE_PLAYER) },
+                onClick = { open = false; onClear() },
+            )
+            HorizontalDivider()
+        }
+        players.forEach { player ->
+            DropdownMenuItem(
+                text = { Text(player.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                trailingIcon = if (player.id == selectedId) {
+                    { Icon(Icons.Default.Check, contentDescription = null) }
+                } else {
+                    null
+                },
+                onClick = { open = false; onPick(player) },
             )
         }
+        if (players.isNotEmpty()) HorizontalDivider()
+        if (onSomeoneElse != null) {
+            DropdownMenuItem(
+                text = { Text(PlayersCopy.SOMEONE_ELSE) },
+                trailingIcon = if (someoneElse && selected == null) {
+                    { Icon(Icons.Default.Check, contentDescription = null) }
+                } else {
+                    null
+                },
+                onClick = { open = false; onSomeoneElse() },
+            )
+        }
+        DropdownMenuItem(
+            text = { Text(PlayersCopy.PICKER_ADD_PLAYER) },
+            onClick = { open = false; adding = true },
+        )
     }
 
     if (adding) {
-        AddPlayerDialog(
+        AddPlayerDialogRequest(
             onAddPlayer = onAddPlayer,
             onAdded = { adding = false; onPick(it) },
             onDismiss = { adding = false },
         )
+    }
+}
+
+/**
+ * Where the pickers' add dialogs are composed: wrap the app's content in it,
+ * inside the theme (MainActivity does), and every PlayerPicker under it opens
+ * its "Add player" dialog here.
+ *
+ * A dialog takes its window theme from the window it is composed in. A
+ * ModalBottomSheet's window is full-screen and not floating (Material3 1.3's
+ * EdgeToEdgeFloatingDialogWindowTheme sets windowIsFloating false), so an
+ * AlertDialog composed inside the Match details sheet spanned the screen edge
+ * to edge, while the same dialog from Players was inset. Composed here, in the
+ * activity's own window, the dialog is the Players one wherever its picker is:
+ * in a sheet, in the details editor's full-screen dialog, or on a page. Its
+ * window is opened after the one the picker is in, so it stands above it.
+ *
+ * Only the dialog moves: the picker keeps its own (saveable) "adding" state and
+ * hands its callbacks here while it is set, so the dialog closes when the
+ * picker goes, and comes back, with the name typed, after the activity is
+ * recreated.
+ */
+@Composable
+fun AddPlayerDialogHost(content: @Composable () -> Unit) {
+    val host = remember { AddPlayerDialogHostState() }
+    CompositionLocalProvider(LocalAddPlayerDialogHost provides host, content = content)
+    host.request?.let { request ->
+        AddPlayerDialog(
+            onAddPlayer = request.onAddPlayer,
+            onAdded = request.onAdded,
+            onDismiss = request.onDismiss,
+        )
+    }
+}
+
+/** The add dialog one picker wants shown, by the callbacks it is to call. */
+private class AddPlayerRequest(
+    val onAddPlayer: AddPlayer,
+    val onAdded: (Player) -> Unit,
+    val onDismiss: () -> Unit,
+)
+
+@Stable
+private class AddPlayerDialogHostState {
+    var request by mutableStateOf<AddPlayerRequest?>(null)
+}
+
+private val LocalAddPlayerDialogHost = staticCompositionLocalOf<AddPlayerDialogHostState?> { null }
+
+/**
+ * Shows the add dialog in the [AddPlayerDialogHost] for as long as this is in
+ * composition, calling the latest of the callbacks given. With no host (a
+ * preview), the dialog is composed here instead.
+ */
+@Composable
+private fun AddPlayerDialogRequest(
+    onAddPlayer: AddPlayer,
+    onAdded: (Player) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val host = LocalAddPlayerDialogHost.current
+    if (host == null) {
+        AddPlayerDialog(onAddPlayer, onAdded, onDismiss)
+        return
+    }
+    val latestAdd by rememberUpdatedState(onAddPlayer)
+    val latestAdded by rememberUpdatedState(onAdded)
+    val latestDismiss by rememberUpdatedState(onDismiss)
+    val request = remember {
+        AddPlayerRequest(
+            onAddPlayer = { name, arm -> latestAdd(name, arm) },
+            onAdded = { latestAdded(it) },
+            onDismiss = { latestDismiss() },
+        )
+    }
+    DisposableEffect(host, request) {
+        host.request = request
+        onDispose { if (host.request === request) host.request = null }
     }
 }
 
@@ -221,5 +248,3 @@ private fun AddPlayerDialog(
 /** The avatar in a picker and its menu: the switcher's size less 2dp, so the box keeps a text field's height. */
 private val PickerAvatarSize = 24.dp
 
-/** A disabled picker's alpha: ShuttlOutlinedTextField's own. */
-private const val DISABLED_ALPHA = 0.6f
