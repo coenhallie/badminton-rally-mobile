@@ -89,8 +89,15 @@ final class TrackNetRunner {
                 input: input,
                 shape: [1, NSNumber(value: Self.channels), NSNumber(value: Self.height), NSNumber(value: Self.width)]
             )
+            guard output.count >= inSequence * Self.plane else {
+                throw VideoFrameSource.Failure.decodeFailed(
+                    "TrackNet output too short: got \(output.count) floats, expected at least \(inSequence * Self.plane)",
+                    nil
+                )
+            }
             output.withUnsafeBufferPointer { heatmaps in
-                let base = UnsafeMutableRawPointer(mutating: heatmaps.baseAddress!)
+                guard let baseAddress = heatmaps.baseAddress else { return }
+                let base = UnsafeMutableRawPointer(mutating: baseAddress)
                 for i in 0..<inSequence {
                     // The blob detector reads straight out of the model's own
                     // output buffer, at an offset. No slice is copied: this is
@@ -113,9 +120,11 @@ final class TrackNetRunner {
 
         try source.forEachFrame(maxFrames: maxFrames) { frame in
             try onFrame(frame.index, frame.seconds, frame.pixelBuffer)
-            FramePreprocessor.toRgbResized(
+            guard FramePreprocessor.toRgbResized(
                 frame.pixelBuffer, into: &resized, width: Self.width, height: Self.height
-            )
+            ) else {
+                throw VideoFrameSource.Failure.decodeFailed("unsupported pixel format at frame \(frame.index)", nil)
+            }
             // Background occupies planes 0...2, so frame i starts at
             // (1 + i) * 3. Ordering matters: production concatenates
             // [background, frames], and reversing it feeds the model a sequence
@@ -201,7 +210,9 @@ final class TrackNetRunner {
         var scratch = [UInt8](repeating: 0, count: Self.plane * 3)
         var taken = 0
         let samples = try source.sampleFramesForBackground(indices: indices) { buffer -> Bool in
-            FramePreprocessor.toRgbResized(buffer, into: &scratch, width: Self.width, height: Self.height)
+            guard FramePreprocessor.toRgbResized(buffer, into: &scratch, width: Self.width, height: Self.height) else {
+                throw VideoFrameSource.Failure.decodeFailed("unsupported pixel format in background sample", nil)
+            }
             frames.append(contentsOf: scratch)
             taken += 1
             onProgress(Self.backgroundShare * Float(taken) / Float(indices.count))
@@ -212,13 +223,16 @@ final class TrackNetRunner {
         }
 
         var median = [UInt8](repeating: 0, count: Self.plane * 3)
-        frames.withUnsafeBufferPointer { source in
-            median.withUnsafeMutableBufferPointer { out in
+        try frames.withUnsafeBufferPointer { source in
+            try median.withUnsafeMutableBufferPointer { out in
+                guard let sourceBase = source.baseAddress, let outBase = out.baseAddress else {
+                    throw VideoFrameSource.Failure.decodeFailed("empty background buffer", nil)
+                }
                 BulkInterop.shared.medianBackgroundInto(
-                    frames: UnsafeMutableRawPointer(mutating: source.baseAddress!),
+                    frames: UnsafeMutableRawPointer(mutating: sourceBase),
                     frameCount: Int32(samples.count),
                     frameLength: Int32(Self.plane * 3),
-                    out: UnsafeMutableRawPointer(out.baseAddress!)
+                    out: UnsafeMutableRawPointer(outBase)
                 )
             }
         }

@@ -29,8 +29,9 @@ struct MatchVideoSection: View {
                 LoadingView()
             }
         }
-        // Both keyed on the entry they read, so a host that swaps the entry
-        // under this section plays and lists the new one, not the old.
+        // One task keyed on `entryId` (never two `.task(id:)` with the same id):
+        // rebuilds the model when the host swaps entries, then runs the model's
+        // observers and the live-entry observer concurrently until cancellation.
         .task(id: entryId) {
             // The model is built once per entry; what it observes is restarted
             // on every appearance. This used to `guard model == nil` around both,
@@ -43,16 +44,21 @@ struct MatchVideoSection: View {
                 guard let entry = rally.localVideos.get(id: entryId) else { return }
                 model = LocalPlayerModel(rally: rally, entry: entry)
             }
-            await model?.start()
-        }
-        .task(id: entryId) {
-            // Keep the entry live (Android observes it the same way): its
-            // description is drawn under the player, and an edit made elsewhere
-            // must show here, not just on the match list. An entry that goes is
-            // the host's to handle, as above.
-            for await entries in rally.localVideos.entries {
-                guard let entry = entries.first(where: { $0.id == entryId }) else { return }
-                liveEntry = entry
+            let activeModel = model
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask { @MainActor in
+                    await activeModel?.start()
+                }
+                group.addTask { @MainActor in
+                    // Keep the entry live (Android observes it the same way): its
+                    // description is drawn under the player, and an edit made
+                    // elsewhere must show here, not just on the match list.
+                    for await entries in rally.localVideos.entries {
+                        guard !Task.isCancelled else { return }
+                        guard let entry = entries.first(where: { $0.id == entryId }) else { return }
+                        liveEntry = entry
+                    }
+                }
             }
         }
         // Paused here, on leaving: another section, the page, or a push over
@@ -81,7 +87,7 @@ struct MatchVideoSection: View {
                     model.add(label: label, body: body, atSeconds: item.timestamp)
                 }
             )
-            .presentationDetents([.medium])
+            .presentationDetents([.medium, .large])
         }
         .alert("Delete note?", isPresented: Binding(
             get: { deleteTarget != nil },

@@ -2,23 +2,30 @@ import AVFoundation
 import Shared
 import SwiftUI
 
-/// Everything the panel reads that does not change with the playhead, plus the
-/// playhead itself.
+/// Everything the panel reads that does not change with the playhead, plus
+/// frame-resolved pose state and an isolated playhead object.
 ///
-/// One observable object rather than a screenful of `@State`, because the
-/// position moves thirty times a second: held in the view, every tick would
-/// re-evaluate the body that owns the loaded skeleton and the series, and
-/// neither is cheap to hand back to SwiftUI. Held here, a tick invalidates only
-/// the views that actually read `position`.
-///
-/// The series stays the Kotlin list `poseMetrics` produced. Mapping it into
-/// Swift values would be an O(poses) bridge crossing, and `graphSegments` - the
-/// only thing that reads it - takes the Kotlin list anyway.
+/// One observable object rather than a screenful of `@State`, with the 30 Hz
+/// playhead isolated inside `PlaybackPlayhead` and poses/series pre-converted
+/// into pure-Swift arrays off the main actor so playback never bridges Kotlin
+/// lists or invalidates `SkeletonPanel`'s outer layout at 30 Hz.
 @Observable @MainActor
 final class SkeletonPanelModel {
     enum Load {
         case loading
         case loaded(Loaded)
+    }
+
+    /// Pure-Swift cached pose built once off the main actor during load so
+    /// binary search, overlay drawing, and tile updates never cross Objective-C
+    /// or re-compute `poseMetrics` on every frame.
+    struct CachedPose {
+        let frame: Int32
+        let timestamp: Double
+        let keypoints: [CGPoint]
+        let confidence: [Float]
+        let source: PlayerPose
+        let metrics: PoseMetrics
     }
 
     struct Loaded {
@@ -33,6 +40,13 @@ final class SkeletonPanelModel {
         /// a cloud analysis carries both players and the graph belongs to
         /// whichever one the toggle is showing.
         let seriesBySide: [CourtSide: [MetricSample]]
+        /// Pure-Swift cached poses per side for O(log N) lookup and zero-bridge
+        /// skeleton rendering.
+        let cachedPosesBySide: [CourtSide: [CachedPose]]
+        /// Pure-Swift cached metric series per side for zero-bridge graph drawing.
+        let cachedSeriesBySide: [CourtSide: [CachedMetricSample]]
+        /// Precomputed pose match tolerance matching `PoseLookupKt.poseToleranceS`.
+        let poseToleranceS: Double
     }
 
     /// The side on screen. Held by side rather than by index so a reload that
@@ -52,9 +66,19 @@ final class SkeletonPanelModel {
         return (drawable.first { $0.side == side } ?? drawable.first)?.poses ?? []
     }
 
+    var shownCachedPoses: [CachedPose] {
+        guard case .loaded(let l) = load else { return [] }
+        return l.cachedPosesBySide[shownSide] ?? []
+    }
+
     var shownSeries: [MetricSample] {
         guard case .loaded(let l) = load else { return [] }
         return l.seriesBySide[shownSide] ?? []
+    }
+
+    var shownCachedSeries: [CachedMetricSample] {
+        guard case .loaded(let l) = load else { return [] }
+        return l.cachedSeriesBySide[shownSide] ?? []
     }
 
     var shownSide: CourtSide { drawableSides.contains(side) ? side : (drawableSides.first ?? .near) }
@@ -62,22 +86,24 @@ final class SkeletonPanelModel {
     func setSide(_ next: CourtSide) {
         guard next != side else { return }
         side = next
+        resolvedFrame = nil
+        resolvedSide = nil
         resolvePose()
     }
 
     private(set) var load: Load = .loading
-    private(set) var position = PlaybackPosition()
+    /// Isolated 30 Hz playhead read only by the graph plot leaf view.
+    let playhead = PlaybackPlayhead()
+    var position: PlaybackPosition { playhead.position }
     /// The pose the playhead is on, and what it measures.
     ///
-    /// Resolved when the position moves rather than read from the view, and only
-    /// when the FRAME changes: the playhead ticks thirty times a second, a frame
-    /// lasts one thirtieth, and `poseMetrics` is a full pass over seventeen
-    /// joints while `nearestPose` hands the whole pose list back across the
-    /// Objective-C bridge. androidApp gets the same for free from
-    /// `remember(positionMs, stored)` and `remember(pose, homography)`.
+    /// Resolved via pure-Swift binary search and only updated when the frame
+    /// (or active side) actually changes.
+    private(set) var cachedPose: CachedPose?
     private(set) var pose: PlayerPose?
     private(set) var metrics: PoseMetrics?
     private var resolvedFrame: Int32? = nil
+    private var resolvedSide: CourtSide? = nil
     /// The per-video choice, as stored. What the metrics use is `shownArm`.
     var racketArm: RacketArm?
     /// Who stands at each end (`courtSideNames`), for a profile's playing hand.
@@ -106,6 +132,12 @@ final class SkeletonPanelModel {
     /// player's media.
     private var fps: Float = 0
     private var failureObservation: NSKeyValueObservation?
+    private var loadedKey: LoadKey?
+
+    private struct LoadKey: Equatable {
+        let entryId: String
+        let videoRelativePath: String?
+    }
 
     let entryId: String
     private let runner: LocalAnalysisRunner
@@ -129,6 +161,8 @@ final class SkeletonPanelModel {
     /// gate is dropped rather than turned into a stance in metres that is metres
     /// wrong.
     func loadSkeleton(videoRelativePath: String?) async {
+        let key = LoadKey(entryId: entryId, videoRelativePath: videoRelativePath)
+        if case .loaded = load, loadedKey == key { return }
         let entryId = self.entryId
         let runner = self.runner
         let loaded = await Task.detached(priority: .userInitiated) { () -> Loaded in
@@ -148,40 +182,78 @@ final class SkeletonPanelModel {
             // the frame they were placed on, and a pose from a frame the camera
             // had moved in reaches the court through its camera.
             var seriesBySide: [CourtSide: [MetricSample]] = [:]
+            var cachedPosesBySide: [CourtSide: [CachedPose]] = [:]
+            var cachedSeriesBySide: [CourtSide: [CachedMetricSample]] = [:]
             for track in stored?.tracks ?? [] {
-                seriesBySide[track.side] = track.poses.map { pose in
-                    MetricSample(
-                        timestamp: pose.timestamp,
-                        metrics: PoseMetricsKt.poseMetrics(
-                            keypoints: pose.keypoints,
-                            confidence: pose.confidence,
-                            homography: PoseMetricsKt.poseCourtFit(h: homography, pose: pose),
-                            minConfidence: NearPlayerSelector.companion.MIN_KEYPOINT_CONFIDENCE
-                        )
+                var samples: [MetricSample] = []
+                var cachedPoses: [CachedPose] = []
+                var cachedSamples: [CachedMetricSample] = []
+                samples.reserveCapacity(track.poses.count)
+                cachedPoses.reserveCapacity(track.poses.count)
+                cachedSamples.reserveCapacity(track.poses.count)
+                for pose in track.poses {
+                    let measured = PoseMetricsKt.poseMetrics(
+                        keypoints: pose.keypoints,
+                        confidence: pose.confidence,
+                        homography: PoseMetricsKt.poseCourtFit(h: homography, pose: pose),
+                        minConfidence: NearPlayerSelector.companion.MIN_KEYPOINT_CONFIDENCE
                     )
+                    samples.append(MetricSample(timestamp: pose.timestamp, metrics: measured))
+                    cachedPoses.append(CachedPose(
+                        frame: pose.frame,
+                        timestamp: pose.timestamp,
+                        keypoints: pose.keypoints.map { CGPoint(x: $0.x, y: $0.y) },
+                        confidence: pose.confidence.map(\.floatValue),
+                        source: pose,
+                        metrics: measured
+                    ))
+                    cachedSamples.append(CachedMetricSample(timestamp: pose.timestamp, metrics: measured))
                 }
+                seriesBySide[track.side] = samples
+                cachedPosesBySide[track.side] = cachedPoses
+                cachedSeriesBySide[track.side] = cachedSamples
             }
+            let tolerance = stored.map { PoseLookupKt.poseToleranceS(fps: $0.fps) } ?? 0
             return Loaded(
-                stored: stored, homography: homography, courtFit: courtFit, seriesBySide: seriesBySide
+                stored: stored,
+                homography: homography,
+                courtFit: courtFit,
+                seriesBySide: seriesBySide,
+                cachedPosesBySide: cachedPosesBySide,
+                cachedSeriesBySide: cachedSeriesBySide,
+                poseToleranceS: tolerance
             )
         }.value
+        guard !Task.isCancelled else { return }
 
         load = .loaded(loaded)
+        loadedKey = key
         chosen = loaded.courtFit == .ok ? .stance : .elbowRight
         // The first tick is a thirtieth of a second away and the panel draws
         // before it: without this the video's opening frame has no skeleton on
         // it and every tile reads as a dash.
         resolvedFrame = nil
+        resolvedSide = nil
         resolvePose()
         guard loaded.stored != nil,
               let videoRelativePath,
               let url = runner.analysedSource(relativePath: videoRelativePath)
-        else { return }
+        else {
+            failureObservation?.invalidate()
+            failureObservation = nil
+            player?.pause()
+            player = nil
+            return
+        }
         preparePlayer(url: url)
         await loadFrameRate(url: url)
     }
 
     private func preparePlayer(url: URL) {
+        failureObservation?.invalidate()
+        failureObservation = nil
+        player?.pause()
+        playbackError = nil
         let created = AVPlayer(url: url)
         // Mirrors LocalPlayerModel: the analysed file can be moved or deleted
         // behind us, and without this the player just freezes silently instead
@@ -204,33 +276,63 @@ final class SkeletonPanelModel {
         }
     }
 
+    /// Pure-Swift port of `PoseLookupKt.nearestPose`: binary search over
+    /// timestamp-sorted cached poses with zero Objective-C bridging.
+    nonisolated static func nearestPose(
+        in poses: [CachedPose],
+        seconds: Double,
+        toleranceS: Double
+    ) -> CachedPose? {
+        guard !poses.isEmpty else { return nil }
+        var lo = 0
+        var hi = poses.count - 1
+        while lo < hi {
+            let mid = (lo + hi) / 2
+            if poses[mid].timestamp < seconds {
+                lo = mid + 1
+            } else {
+                hi = mid
+            }
+        }
+        let after = poses[lo]
+        let best: CachedPose
+        if lo > 0 {
+            let before = poses[lo - 1]
+            best = abs(before.timestamp - seconds) <= abs(after.timestamp - seconds) ? before : after
+        } else {
+            best = after
+        }
+        return abs(best.timestamp - seconds) <= toleranceS ? best : nil
+    }
+
     /// Moves the playhead, and with it the pose and the measurements - but only
     /// when the frame under it actually changed. See `pose`.
     func setPosition(_ next: PlaybackPosition) {
-        position = next
+        if playhead.position != next {
+            playhead.position = next
+        }
         resolvePose()
     }
 
     private func resolvePose() {
-        guard case .loaded(let loaded) = load, let stored = loaded.stored else { return }
-        let found = PoseLookupKt.nearestPose(
-            poses: shownPoses,
-            seconds: Double(position.positionMs) / 1000,
-            toleranceS: PoseLookupKt.poseToleranceS(fps: stored.fps)
+        guard case .loaded(let loaded) = load, loaded.stored != nil else { return }
+        let activeSide = shownSide
+        let found = Self.nearestPose(
+            in: loaded.cachedPosesBySide[activeSide] ?? [],
+            seconds: Double(playhead.position.positionMs) / 1000,
+            toleranceS: loaded.poseToleranceS
         )
         // Nil is a frame with no pose and is a state of its own, so "no change"
         // has to compare the two absences too, not just two frame numbers.
-        guard found?.frame != resolvedFrame || (found == nil) != (pose == nil) else { return }
+        guard found?.frame != resolvedFrame
+            || (found == nil) != (cachedPose == nil)
+            || resolvedSide != activeSide
+        else { return }
         resolvedFrame = found?.frame
-        pose = found
-        metrics = found.map { found in
-            PoseMetricsKt.poseMetrics(
-                keypoints: found.keypoints,
-                confidence: found.confidence,
-                homography: PoseMetricsKt.poseCourtFit(h: loaded.homography, pose: found),
-                minConfidence: NearPlayerSelector.companion.MIN_KEYPOINT_CONFIDENCE
-            )
-        }
+        resolvedSide = activeSide
+        cachedPose = found
+        pose = found?.source
+        metrics = found?.metrics
     }
 
     var hasCourt: Bool {
@@ -337,7 +439,8 @@ struct SkeletonPanel: View {
     var body: some View {
         content
             .onChange(of: sideNames) { _, names in model.sideNames = names }
-            .task { await model.loadSkeleton(videoRelativePath: videoRelativePath) }
+            .onDisappear { model.player?.pause() }
+            .task(id: videoRelativePath) { await model.loadSkeleton(videoRelativePath: videoRelativePath) }
             .task {
                 for await value in prefs.metricsExpanded {
                     model.expanded = value.boolValue
@@ -377,8 +480,7 @@ struct SkeletonPanel: View {
     }
 
     private func player(stored: SkeletonStore.Stored, loaded: SkeletonPanelModel.Loaded) -> some View {
-        let pose = model.pose
-        return VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 0) {
             ShuttlPlayer(
                 player: model.player,
                 prefs: prefs,
@@ -389,15 +491,11 @@ struct SkeletonPanel: View {
                 aspectRatio: Double(stored.videoWidth) / Double(stored.videoHeight),
                 onPosition: { model.setPosition($0) },
                 overlay: {
-                    if let pose {
-                        SkeletonOverlay(
-                            keypoints: pose.keypoints,
-                            confidence: pose.confidence.map(\.floatValue),
-                            videoWidth: Int(stored.videoWidth),
-                            videoHeight: Int(stored.videoHeight),
-                            highlight: poseHighlight(for: model.selected)
-                        )
-                    }
+                    SkeletonOverlayHost(
+                        model: model,
+                        videoWidth: Int(stored.videoWidth),
+                        videoHeight: Int(stored.videoHeight)
+                    )
                 },
                 errorContent: {
                     if let error = model.playbackError {
@@ -405,17 +503,12 @@ struct SkeletonPanel: View {
                     }
                 }
             )
-            // The frame is the one fact read per frame. The speed used to sit
-            // opposite it; it is read out in the transport row now, on every
-            // player, and saying it twice a few lines apart would be noise.
-            HStack(alignment: .firstTextBaseline) {
-                Text(SkeletonSummaryKt.skeletonFooter(frame: pose.map { KotlinInt(int: $0.frame) }))
-                    .shuttlType(ShuttlType.bodySmall)
-                    .foregroundStyle(Shuttl.textTertiary)
-                Spacer(minLength: 8)
-            }
-            .padding(.horizontal, ShuttlGutter.page)
-            .padding(.top, 22)
+            // The frame is the one fact read per frame. Isolated in a leaf view
+            // so `ShuttlPlayer`, `ShuttlTransportBar`, `SideToggle`, and
+            // `MetricsStrip` do not re-evaluate on every frame tick.
+            SkeletonFooterRow(model: model)
+                .padding(.horizontal, ShuttlGutter.page)
+                .padding(.top, 22)
             // With the strip rather than above it, so one row of controls does
             // not become two. Absent on a device run, which only has the near
             // player.
@@ -429,33 +522,10 @@ struct SkeletonPanel: View {
                 .padding(.horizontal, ShuttlGutter.page)
                 .padding(.vertical, 8)
             }
-            MetricsStrip(
-                metrics: model.metrics,
-                hasCourt: model.hasCourt,
-                racketArm: model.shownArm,
-                onRacketArm: { model.setRacketArm($0) },
-                racketArmFromProfile: model.profileArm != nil,
-                selected: model.selected,
-                onSelect: { model.chosen = $0 },
-                expanded: model.expanded,
-                onExpanded: { prefs.setMetricsExpanded(expanded: $0) },
-                detail: SkeletonSummaryKt.skeletonDetail(
-                    frames: Int32(model.shownPoses.count), courtFit: loaded.courtFit
-                )
-            )
-            .padding(.top, 10)
-            MetricGraph(
-                series: model.shownSeries,
-                kind: model.selected,
-                label: MetricsFormatKt.metricLabel(kind: model.selected, racketArm: model.shownArm),
-                positionS: Double(model.position.positionMs) / 1000,
-                fps: stored.fps,
-                durationS: model.position.durationMs > 0
-                    ? Double(model.position.durationMs) / 1000
-                    : .infinity,
-                onSeek: { model.seek(toSeconds: $0) }
-            )
-            .padding(.top, 8)
+            SkeletonMetricsHost(model: model, loaded: loaded, prefs: prefs)
+                .padding(.top, 10)
+            SkeletonGraphHost(model: model, fps: stored.fps)
+                .padding(.top, 8)
             // A court warning is shown here, not only in the expanded detail: a
             // coach looking for the Stance tile should not have to open the grid
             // to learn why it is not there.
@@ -468,5 +538,81 @@ struct SkeletonPanel: View {
             }
             Spacer(minLength: ShuttlGutter.page)
         }
+    }
+}
+
+/// Leaf view that observes `model.cachedPose` and `model.selected` for the
+/// skeleton overlay without invalidating `ShuttlPlayer` or `ShuttlTransportBar`.
+private struct SkeletonOverlayHost: View {
+    let model: SkeletonPanelModel
+    let videoWidth: Int
+    let videoHeight: Int
+
+    var body: some View {
+        if let pose = model.cachedPose {
+            SkeletonOverlay(
+                keypoints: pose.keypoints,
+                confidence: pose.confidence,
+                videoWidth: videoWidth,
+                videoHeight: videoHeight,
+                highlight: poseHighlight(for: model.selected)
+            )
+        }
+    }
+}
+
+/// Leaf view for the per-frame footer line.
+private struct SkeletonFooterRow: View {
+    let model: SkeletonPanelModel
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(SkeletonSummaryKt.skeletonFooter(frame: model.cachedPose.map { KotlinInt(int: $0.frame) }))
+                .shuttlType(ShuttlType.bodySmall)
+                .foregroundStyle(Shuttl.textTertiary)
+            Spacer(minLength: 8)
+        }
+    }
+}
+
+/// Leaf view that observes `model.metrics` for `MetricsStrip` alone.
+private struct SkeletonMetricsHost: View {
+    let model: SkeletonPanelModel
+    let loaded: SkeletonPanelModel.Loaded
+    let prefs: PlaybackPreferenceRepository
+
+    var body: some View {
+        MetricsStrip(
+            metrics: model.metrics,
+            hasCourt: model.hasCourt,
+            racketArm: model.shownArm,
+            onRacketArm: { model.setRacketArm($0) },
+            racketArmFromProfile: model.profileArm != nil,
+            selected: model.selected,
+            onSelect: { model.chosen = $0 },
+            expanded: model.expanded,
+            onExpanded: { prefs.setMetricsExpanded(expanded: $0) },
+            detail: SkeletonSummaryKt.skeletonDetail(
+                frames: Int32(model.shownCachedPoses.count), courtFit: loaded.courtFit
+            )
+        )
+    }
+}
+
+/// Leaf view that connects `MetricGraph` to `model.playhead` and the active
+/// side's pre-converted pure-Swift series.
+private struct SkeletonGraphHost: View {
+    let model: SkeletonPanelModel
+    let fps: Double
+
+    var body: some View {
+        MetricGraph(
+            cachedSeries: model.shownCachedSeries,
+            kind: model.selected,
+            label: MetricsFormatKt.metricLabel(kind: model.selected, racketArm: model.shownArm),
+            playhead: model.playhead,
+            fps: fps,
+            onSeek: { model.seek(toSeconds: $0) }
+        )
     }
 }

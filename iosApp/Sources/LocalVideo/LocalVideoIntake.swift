@@ -18,6 +18,8 @@ struct MatchTarget {
 final class LocalVideoIntake {
     let rally: RallyApp
     var error: String? = nil
+    /// True while `add(...)` is copying and storing a picked or recorded video.
+    private(set) var isImporting: Bool = false
     /// Id of the entry this intake just persisted, for the host view to open the
     /// details sheet over. Cleared by the host once it has acted on it.
     var lastAddedId: String? = nil
@@ -34,6 +36,12 @@ final class LocalVideoIntake {
         tempURL: URL, suggestedName: String?, isRecording: Bool,
         forMatch: MatchTarget?, forPlayer: String?
     ) async {
+        guard !isImporting else {
+            try? FileManager.default.removeItem(at: tempURL)
+            return
+        }
+        isImporting = true
+        defer { isImporting = false }
         error = nil
         let sizeBytes = (try? FileManager.default
             .attributesOfItem(atPath: tempURL.path)[.size] as? Int64).flatMap { $0 } ?? 0
@@ -52,7 +60,9 @@ final class LocalVideoIntake {
 
         let relativePath: String
         do {
-            relativePath = try LocalVideoFiles.store(tempURL: tempURL)
+            relativePath = try await Task.detached(priority: .userInitiated) {
+                try LocalVideoFiles.store(tempURL: tempURL)
+            }.value
         } catch {
             try? FileManager.default.removeItem(at: tempURL)
             self.error = "Couldn't save the video. Please try again."
@@ -121,10 +131,13 @@ final class LocalVideoIntake {
         // the change block, and store(tempURL:) moves the original afterwards.
         let photosCopy = FileManager.default.temporaryDirectory
             .appendingPathComponent("photos-\(UUID().uuidString).mp4")
-        guard (try? FileManager.default.copyItem(at: url, to: photosCopy)) != nil else { return }
+        defer { try? FileManager.default.removeItem(at: photosCopy) }
+        let copied = await Task.detached(priority: .userInitiated) {
+            (try? FileManager.default.copyItem(at: url, to: photosCopy)) != nil
+        }.value
+        guard copied else { return }
         try? await PHPhotoLibrary.shared().performChanges {
             PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: photosCopy)
         }
-        try? FileManager.default.removeItem(at: photosCopy)
     }
 }

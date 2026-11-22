@@ -106,6 +106,7 @@ struct SkeletonStore {
         videoHeight: Int,
         marks: AnalysisCourtKeypoints?
     ) throws {
+        guard AnalysisFiles.isValidEntryId(entryId) else { throw AnalysisFiles.Failure.invalidEntryId(entryId) }
         // Nothing to draw is nothing to offer: no file, so `has` stays false.
         guard !poses.isEmpty else { return }
         let data = try Self.encode(
@@ -113,9 +114,13 @@ struct SkeletonStore {
             fps: fps, videoWidth: videoWidth, videoHeight: videoHeight, marks: marks
         )
         let directory = try AnalysisFiles.directory(TrackSource.local.skeletonDir)
+        let target = directory.appendingPathComponent("\(entryId).skel")
+        guard AnalysisFiles.isStrictlyInside(target, base: directory) else {
+            throw AnalysisFiles.Failure.invalidEntryId(entryId)
+        }
         // Atomically: a partial write must never become visible, which is what
         // makes `has` reading the header alone sound for files this store wrote.
-        try data.write(to: directory.appendingPathComponent("\(entryId).skel"), options: .atomic)
+        try data.write(to: target, options: .atomic)
     }
 
     /// Every player's joints from one analysis, in the version 4 format.
@@ -133,6 +138,7 @@ struct SkeletonStore {
         videoHeight: Int,
         marks: AnalysisCourtKeypoints?
     ) throws {
+        guard AnalysisFiles.isValidEntryId(entryId) else { throw AnalysisFiles.Failure.invalidEntryId(entryId) }
         let withPoses = selections.filter { !$0.poses.isEmpty }
         // Nothing to draw is nothing to offer, matching save().
         guard !withPoses.isEmpty else { return }
@@ -141,9 +147,11 @@ struct SkeletonStore {
             fps: fps, videoWidth: videoWidth, videoHeight: videoHeight, marks: marks
         )
         let directory = try AnalysisFiles.directory(source.skeletonDir)
-        try data.write(
-            to: directory.appendingPathComponent("\(entryId).skel"), options: .atomic
-        )
+        let target = directory.appendingPathComponent("\(entryId).skel")
+        guard AnalysisFiles.isStrictlyInside(target, base: directory) else {
+            throw AnalysisFiles.Failure.invalidEntryId(entryId)
+        }
+        try data.write(to: target, options: .atomic)
     }
 
     /// The version 4 bytes for `tracks`, none of them empty.
@@ -159,7 +167,9 @@ struct SkeletonStore {
         guard withCamera == 0 || withCamera == total else {
             throw Failure.mixedCameras(withCamera: withCamera, total: total)
         }
-        var out = Writer()
+        let recordBytes = poseBytes + (withCamera > 0 ? cameraBytes : 0)
+        let expectedBytes = headerBytesV1 + 4 + markBytes + 4 + 4 + tracks.count * 8 + total * recordBytes
+        var out = Writer(capacity: expectedBytes)
         out.bytes(magic)
         out.int32(version)
         out.double(fps)
@@ -219,7 +229,7 @@ struct SkeletonStore {
     /// Whether a skeleton this version can draw exists for `entryId`, from the
     /// header alone.
     func has(entryId: String, source: TrackSource = .local) -> Bool {
-        let url = fileFor(entryId, source)
+        guard let url = fileFor(entryId, source) else { return false }
         guard let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size]) as? Int,
               // The v1 floor, not a later one: this reads only the first eight
               // bytes, so the shortest header is the right floor for every version.
@@ -237,7 +247,9 @@ struct SkeletonStore {
     /// Nil when there is nothing stored, or when what is stored cannot be read
     /// whole.
     func load(entryId: String, source: TrackSource = .local) -> Stored? {
-        guard let data = try? Data(contentsOf: fileFor(entryId, source)) else { return nil }
+        guard let url = fileFor(entryId, source),
+              let data = try? Data(contentsOf: url)
+        else { return nil }
         var reader = Reader(data)
         guard reader.bytes(4) == Self.magic, let version = reader.int32() else { return nil }
         switch version {
@@ -364,6 +376,8 @@ struct SkeletonStore {
             guard let frame = reader.int32(), let timestamp = reader.double() else { return nil }
             var keypoints: [Point] = []
             var confidence: [KotlinFloat] = []
+            keypoints.reserveCapacity(keypointCount)
+            confidence.reserveCapacity(keypointCount)
             for _ in 0..<keypointCount {
                 guard let x = reader.float(), let y = reader.float(), let c = reader.float() else { return nil }
                 keypoints.append(Point(x: Double(x), y: Double(y)))
@@ -372,6 +386,7 @@ struct SkeletonStore {
             var camera: [[KotlinDouble]]?
             if withCamera {
                 var h: [Double] = []
+                h.reserveCapacity(8)
                 for _ in 0..<8 {
                     guard let value = reader.double() else { return nil }
                     h.append(value)
@@ -395,15 +410,13 @@ struct SkeletonStore {
     /// skeleton that silently failed to delete keeps answering `has` and `load`
     /// as if this call had succeeded.
     func delete(entryId: String, source: TrackSource = .local) throws {
-        let url = fileFor(entryId, source)
+        guard let url = fileFor(entryId, source) else { throw AnalysisFiles.Failure.invalidEntryId(entryId) }
         guard FileManager.default.fileExists(atPath: url.path) else { return }
         try FileManager.default.removeItem(at: url)
     }
 
-    private func fileFor(_ entryId: String, _ source: TrackSource = .local) -> URL {
-        AnalysisFiles.directory
-            .appendingPathComponent(source.skeletonDir, isDirectory: true)
-            .appendingPathComponent("\(entryId).skel")
+    private func fileFor(_ entryId: String, _ source: TrackSource = .local) -> URL? {
+        AnalysisFiles.validatedFile(in: source.skeletonDir, entryId: entryId, suffix: ".skel")
     }
 }
 
@@ -413,7 +426,12 @@ struct SkeletonStore {
 /// the byte order is the contract with the other platform, and a layout that
 /// happens to match today is not the same as one that is stated.
 private struct Writer {
-    private(set) var data = Data()
+    private(set) var data: Data
+
+    init(capacity: Int = 0) {
+        self.data = Data()
+        if capacity > 0 { self.data.reserveCapacity(capacity) }
+    }
 
     mutating func bytes(_ value: [UInt8]) { data.append(contentsOf: value) }
     mutating func int32(_ value: Int32) { append(UInt32(bitPattern: value)) }
@@ -453,16 +471,20 @@ private struct Reader {
     mutating func int32() -> Int32? { unsigned32().map(Int32.init(bitPattern:)) }
     mutating func float() -> Float? { unsigned32().map(Float.init(bitPattern:)) }
     mutating func double() -> Double? {
-        guard let raw = bytes(8) else { return nil }
-        var value: UInt64 = 0
-        for (i, byte) in raw.enumerated() { value |= UInt64(byte) << (8 * i) }
-        return Double(bitPattern: value)
+        guard remaining >= 8 else { return nil }
+        let bits = data.withUnsafeBytes { raw in
+            UInt64(littleEndian: raw.loadUnaligned(fromByteOffset: offset, as: UInt64.self))
+        }
+        offset += 8
+        return Double(bitPattern: bits)
     }
 
     private mutating func unsigned32() -> UInt32? {
-        guard let raw = bytes(4) else { return nil }
-        var value: UInt32 = 0
-        for (i, byte) in raw.enumerated() { value |= UInt32(byte) << (8 * i) }
+        guard remaining >= 4 else { return nil }
+        let value = data.withUnsafeBytes { raw in
+            UInt32(littleEndian: raw.loadUnaligned(fromByteOffset: offset, as: UInt32.self))
+        }
+        offset += 4
         return value
     }
 }

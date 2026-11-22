@@ -40,6 +40,7 @@ final class OnnxSession {
     }
 
     private let session: ORTSession
+    private let runOptions: ORTRunOptions
     private let name: String
     let inputName: String
     let outputName: String
@@ -49,6 +50,10 @@ final class OnnxSession {
         do {
             let options = try ORTSessionOptions()
             try options.setGraphOptimizationLevel(ORTGraphOptimizationLevel.all)
+            try options.setIntraOpNumThreads(
+                Int32(min(4, max(1, ProcessInfo.processInfo.activeProcessorCount / 2)))
+            )
+            runOptions = try ORTRunOptions()
             session = try ORTSession(
                 env: try OnnxSession.env.get(),
                 modelPath: modelPath,
@@ -97,43 +102,50 @@ final class OnnxSession {
     /// one of them.
     func run(input: [Float], shape: [NSNumber]) throws -> [Float] {
         do {
-            // ORTValue does NOT copy: it wraps the bytes and the caller must
-            // keep them alive for as long as the value is. Holding `data` in a
-            // local through the run is what does that - handing
-            // `NSMutableData(bytes:length:)` straight into the initialiser as a
-            // temporary is the classic way to get a tensor of freed memory,
-            // which reads as nondeterministic model output rather than as a
-            // crash.
-            let data = input.withUnsafeBufferPointer {
-                NSMutableData(bytes: $0.baseAddress, length: $0.count * MemoryLayout<Float>.size)
-            }
-            let value = try ORTValue(
-                tensorData: data,
-                elementType: ORTTensorElementDataType.float,
-                shape: shape
-            )
-            let outputs = try session.run(
-                withInputs: [inputName: value],
-                outputNames: [outputName],
-                runOptions: try ORTRunOptions()
-            )
-            guard let result = outputs[outputName] else {
-                throw Failure(
-                    model: name, stage: "run",
-                    underlying: NSError(
-                        domain: "OnnxSession", code: 2,
-                        userInfo: [NSLocalizedDescriptionKey: "no output named \(outputName)"]
+            // ORTValue wraps the buffer without copying. Wrapping `input`'s
+            // storage with `bytesNoCopy` inside `withUnsafeBufferPointer` avoids
+            // copying ~16.7 MB per frame while guaranteeing the pointer stays
+            // valid for the entire duration of `session.run`.
+            return try input.withUnsafeBufferPointer { buffer in
+                let byteCount = buffer.count * MemoryLayout<Float>.size
+                let data: NSMutableData
+                if let base = buffer.baseAddress, byteCount > 0 {
+                    data = NSMutableData(
+                        bytesNoCopy: UnsafeMutableRawPointer(mutating: base),
+                        length: byteCount,
+                        freeWhenDone: false
                     )
+                } else {
+                    data = NSMutableData()
+                }
+                let value = try ORTValue(
+                    tensorData: data,
+                    elementType: ORTTensorElementDataType.float,
+                    shape: shape
                 )
-            }
-            let bytes = try result.tensorData() as Data
-            // withUnsafeBytes over the whole buffer, rather than an element
-            // loop: TrackNet's output is 1.2M floats per sequence and the naive
-            // loop is a bounds check and a retain per element. Android's own
-            // comment on this function records the same class of mistake
-            // costing it a 256MB heap.
-            return bytes.withUnsafeBytes { raw in
-                Array(raw.bindMemory(to: Float.self))
+                let outputs = try session.run(
+                    withInputs: [inputName: value],
+                    outputNames: [outputName],
+                    runOptions: runOptions
+                )
+                guard let result = outputs[outputName] else {
+                    throw Failure(
+                        model: name, stage: "run",
+                        underlying: NSError(
+                            domain: "OnnxSession", code: 2,
+                            userInfo: [NSLocalizedDescriptionKey: "no output named \(outputName)"]
+                        )
+                    )
+                }
+                let bytes = try result.tensorData() as Data
+                // withUnsafeBytes over the whole buffer, rather than an element
+                // loop: TrackNet's output is 1.2M floats per sequence and the naive
+                // loop is a bounds check and a retain per element. Android's own
+                // comment on this function records the same class of mistake
+                // costing it a 256MB heap.
+                return bytes.withUnsafeBytes { raw in
+                    Array(raw.bindMemory(to: Float.self))
+                }
             }
         } catch let failure as Failure {
             throw failure

@@ -74,7 +74,7 @@ final class ClipCutterTests: XCTestCase {
         return result
     }
 
-    func testAClipHoldsExactlyTheFramesInsideItsWindow() throws {
+    func testAClipHoldsExactlyTheFramesInsideItsWindow() async throws {
         // Both bounds fall INSIDE a frame, so there is one right answer and no
         // argument about an edge. Frame 7 runs 0.2333..0.2667 s and is what is
         // on screen at 0.25 s, so the clip opens on it - AVAssetReader's time
@@ -85,7 +85,7 @@ final class ClipCutterTests: XCTestCase {
         let directory = scratch.appendingPathComponent("clips", isDirectory: true)
         var progress: [Int] = []
 
-        let clips = try ClipCutter().cut(
+        let clips = try await ClipCutter().cut(
             source: try source(), windows: [window(0.25, 0.75)], into: directory
         ) { progress.append($0) }
 
@@ -109,31 +109,24 @@ final class ClipCutterTests: XCTestCase {
         XCTAssertEqual(cut[15].seconds, 22.0 / 30.0 - 0.25, accuracy: 0.002)
     }
 
-    func testTheClipPlaysForTheLengthOfItsWindow() throws {
+    func testTheClipPlaysForTheLengthOfItsWindow() async throws {
         let directory = scratch.appendingPathComponent("clips", isDirectory: true)
-        let clips = try ClipCutter().cut(source: try source(), windows: [window(0.25, 0.75)], into: directory)
+        let clips = try await ClipCutter().cut(source: try source(), windows: [window(0.25, 0.75)], into: directory)
         let asset = AVURLAsset(url: try XCTUnwrap(clips.first).url)
 
-        let loaded = expectation(description: "asset loads")
-        var playable = false
-        var seconds = 0.0
-        Task {
-            playable = (try? await asset.load(.isPlayable)) ?? false
-            seconds = ((try? await asset.load(.duration)).map(CMTimeGetSeconds)) ?? 0
-            loaded.fulfill()
-        }
-        wait(for: [loaded], timeout: 30)
+        let playable = (try? await asset.load(.isPlayable)) ?? false
+        let seconds = ((try? await asset.load(.duration)).map(CMTimeGetSeconds)) ?? 0
 
         XCTAssertTrue(playable)
         // Half a second, give or take the one frame either bound can fall short by.
         XCTAssertEqual(seconds, 0.5, accuracy: 1.0 / 30.0 + 0.002)
     }
 
-    func testOverlappingWindowsAreCutIndependently() throws {
+    func testOverlappingWindowsAreCutIndependently() async throws {
         // `refineRallies` produces overlapping rallies and padding keeps them,
         // which is why there is one reader per clip.
         let directory = scratch.appendingPathComponent("clips", isDirectory: true)
-        let clips = try ClipCutter().cut(
+        let clips = try await ClipCutter().cut(
             source: try source(), windows: [window(0.05, 0.55), window(0.35, 0.85)], into: directory
         )
 
@@ -142,14 +135,15 @@ final class ClipCutterTests: XCTestCase {
         XCTAssertEqual(try frames(of: clips[1].url).map(\.frame), Array(10...25))
     }
 
-    func testAWindowPastTheEndOfTheVideoFailsAndLeavesNoFile() throws {
+    func testAWindowPastTheEndOfTheVideoFailsAndLeavesNoFile() async throws {
         let directory = scratch.appendingPathComponent("clips", isDirectory: true)
-        XCTAssertThrowsError(
-            try ClipCutter().cut(source: try source(), windows: [window(5, 6)], into: directory)
-        ) { error in
-            guard case ClipCutter.Failure.noFramesInWindow = error else {
-                return XCTFail("expected noFramesInWindow, got \(error)")
-            }
+        do {
+            _ = try await ClipCutter().cut(source: try source(), windows: [window(5, 6)], into: directory)
+            XCTFail("expected noFramesInWindow")
+        } catch ClipCutter.Failure.noFramesInWindow {
+            // expected
+        } catch {
+            XCTFail("expected noFramesInWindow, got \(error)")
         }
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("rally-1.mp4").path))
     }

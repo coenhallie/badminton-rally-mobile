@@ -25,6 +25,7 @@ struct NewMatchView: View {
     @State private var points: GamePoints = .companion.DEFAULT
     @State private var sets: MatchSets = .companion.DEFAULT
     @State private var places = PlaceNames()
+    @State private var isCreating = false
 
     init(rally: RallyApp, playerId: String?, onCreated: @escaping (String) -> Void) {
         self.rally = rally
@@ -45,33 +46,56 @@ struct NewMatchView: View {
     }
 
     var body: some View {
-        Form {
-            Section {
-                TextField("Match name", text: typedTitle)
-            }
+        let pointOptions = GamePoints.allCases
+        let setOptions = MatchSets.allCases
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                ShuttlTextField("Match name", text: typedTitle, maxLength: Int(ScoreLogKt.MAX_MATCH_TITLE))
+                    .submitLabel(.done)
 
-            Section("Points") {
-                Picker("Points", selection: $points) {
-                    ForEach(GamePoints.allCases, id: \.self) { Text("\($0.pointsToWin)").tag($0) }
+                VStack(alignment: .leading, spacing: 6) {
+                    Shuttl.sectionLabel("Points")
+                        .accessibilityHidden(true)
+                    ShuttlPillTabs(
+                        labels: pointOptions.map { "\($0.pointsToWin)" },
+                        selectedIndex: pointOptions.firstIndex(of: points) ?? 0,
+                        onSelect: { points = pointOptions[$0] },
+                        accessibilityLabel: "Points"
+                    )
                 }
-                .pickerStyle(.segmented)
-            }
 
-            Section("Sets") {
-                Picker("Sets", selection: $sets) {
-                    ForEach(MatchSets.allCases, id: \.self) { Text("\($0.sets)").tag($0) }
+                VStack(alignment: .leading, spacing: 6) {
+                    Shuttl.sectionLabel("Sets")
+                        .accessibilityHidden(true)
+                    ShuttlPillTabs(
+                        labels: setOptions.map { "\($0.sets)" },
+                        selectedIndex: setOptions.firstIndex(of: sets) ?? 0,
+                        onSelect: { sets = setOptions[$0] },
+                        accessibilityLabel: "Sets"
+                    )
                 }
-                .pickerStyle(.segmented)
-            }
 
-            if titleEdited, let problem {
-                Section {
+                if titleEdited, let problem {
                     // Shuttl.error rather than a literal red: it is the same
                     // token Android reaches for (colorScheme.error) for this line.
-                    Text(problem).foregroundStyle(Shuttl.error).shuttlType(ShuttlType.bodySmall)
+                    Text(problem)
+                        .foregroundStyle(Shuttl.error)
+                        .shuttlType(ShuttlType.bodySmall)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
+
+                Button("Create match") { create() }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .disabled(problem != nil || isCreating)
+                    .padding(.top, 8)
             }
+            .padding(.horizontal, ShuttlGutter.page)
+            .padding(.top, 16)
+            .padding(.bottom, 24)
         }
+        .scrollDismissesKeyboard(.interactively)
+        .background(Shuttl.bg)
+        .shuttlNavigationBarBackground()
         .navigationTitle("New match")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -80,7 +104,7 @@ struct NewMatchView: View {
             ToolbarItem(placement: .topBarTrailing) { BackgroundWorkAction() }
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Create") { create() }
-                    .disabled(problem != nil)
+                    .disabled(problem != nil || isCreating)
             }
         }
         .task {
@@ -90,7 +114,8 @@ struct NewMatchView: View {
     }
 
     private func create() {
-        guard problem == nil else { return }
+        guard !isCreating, problem == nil else { return }
+        isCreating = true
         onCreated(Self.createMatch(
             in: rally.scoreLogs,
             title: title,

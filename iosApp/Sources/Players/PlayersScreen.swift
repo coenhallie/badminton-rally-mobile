@@ -82,25 +82,77 @@ struct PlayersScreen: View {
 
     @ViewBuilder private var content: some View {
         if model.players.isEmpty {
-            // Nothing at all until the first refresh settles: see
-            // `PlayersModel.loaded`.
-            if model.showsNoPlayers { noPlayers } else { Color.clear }
+            // Until the first refresh settles, show a centered spinner rather
+            // than blank space; once settled with no players, show the empty or
+            // retry state.
+            if model.showsNoPlayers {
+                noPlayers
+            } else {
+                ProgressView()
+                    .tint(Shuttl.accent)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         } else {
             list
         }
     }
 
+    /// Single O(M) pass over `matchList.mine` building every player's summary,
+    /// avoiding an O(P × M) Kotlin-bridged scan inside `ForEach`.
+    static func playerSummaries(from matchList: MatchList) -> [String: PlayerSummary] {
+        struct Accumulator {
+            var matchCount: Int32 = 0
+            var rallyCount: Int32 = 0
+            var lastMatchAtEpochMs: Int64? = nil
+        }
+        var acc: [String: Accumulator] = [:]
+        for item in matchList.mine {
+            let homeId = item.homePlayerId
+            let awayId = item.awayPlayerId
+            if let homeId {
+                var entry = acc[homeId] ?? Accumulator()
+                entry.matchCount += 1
+                entry.rallyCount += item.rallyCount
+                entry.lastMatchAtEpochMs = entry.lastMatchAtEpochMs.map { max($0, item.sortAtEpochMs) }
+                    ?? item.sortAtEpochMs
+                acc[homeId] = entry
+            }
+            if let awayId, awayId != homeId {
+                var entry = acc[awayId] ?? Accumulator()
+                entry.matchCount += 1
+                entry.rallyCount += item.rallyCount
+                entry.lastMatchAtEpochMs = entry.lastMatchAtEpochMs.map { max($0, item.sortAtEpochMs) }
+                    ?? item.sortAtEpochMs
+                acc[awayId] = entry
+            }
+        }
+        return acc.mapValues {
+            PlayerSummary(
+                matchCount: $0.matchCount,
+                rallyCount: $0.rallyCount,
+                lastMatchAtEpochMs: $0.lastMatchAtEpochMs.map { KotlinLong(value: $0) }
+            )
+        }
+    }
+
+    private func refresh() async {
+        async let playersRefresh: Void = model.refresh()
+        async let matchesRefresh: Void = listModel.refresh()
+        _ = await (playersRefresh, matchesRefresh)
+    }
+
     private var list: some View {
-        // Worked out here, not per row: the body only runs again when the
-        // players or the match list change, which is when the details do.
-        let matchList = listModel.matchList
+        // Precomputed once in O(M) before ForEach rather than scanning the
+        // match list per player row.
+        let summaries = Self.playerSummaries(from: listModel.matchList)
+        let emptySummary = PlayerSummary(matchCount: 0, rallyCount: 0, lastMatchAtEpochMs: nil)
         return ScrollView {
             LazyVStack(spacing: DrawerList.rowGap) {
                 ForEach(model.players, id: \.id) { player in
                     PlayerRow(
                         player: player,
                         detail: PlayerMatchesKt.playerRowDetail(
-                            summary: PlayerMatchesKt.playerSummary(list: matchList, playerId: player.id)
+                            summary: summaries[player.id] ?? emptySummary
                         ),
                         onTap: { onOpenPlayer(player.id) }
                     )
@@ -114,6 +166,7 @@ struct PlayersScreen: View {
             .padding(.horizontal, DrawerList.sideMargin)
             .padding(.top, DrawerList.listTopInset)
         }
+        .refreshable { await refresh() }
         // The last row and All matches scroll clear of the Add button, which
         // floats over the list: see `MatchesList`'s own foot for the 88.
         .safeAreaPadding(.bottom, 88)
@@ -157,6 +210,7 @@ struct PlayersScreen: View {
             }
             .padding(.top, 48)
         }
+        .refreshable { await refresh() }
         .safeAreaPadding(.bottom, 88)
     }
 

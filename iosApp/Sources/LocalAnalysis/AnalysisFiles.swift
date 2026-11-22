@@ -17,7 +17,57 @@ import Shared
 /// re-run is not a trade this app gets to make for them.
 enum AnalysisFiles {
 
+    enum Failure: LocalizedError {
+        case invalidEntryId(String)
+        case invalidPath(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .invalidEntryId(let id): return "invalid analysis entry id: \(id)"
+            case .invalidPath(let path): return "invalid analysis path: \(path)"
+            }
+        }
+    }
+
     private static let root = "Analysis"
+
+    /// Validates that `entryId` matches `^[A-Za-z0-9_-]{1,128}$` so it can
+    /// never traverse directories or escape its store.
+    static func isValidEntryId(_ entryId: String) -> Bool {
+        let count = entryId.utf8.count
+        guard count >= 1, count <= 128 else { return false }
+        return entryId.utf8.allSatisfy { b in
+            (b >= 0x30 && b <= 0x39)       // 0-9
+                || (b >= 0x41 && b <= 0x5A) // A-Z
+                || (b >= 0x61 && b <= 0x7A) // a-z
+                || b == 0x5F                // _
+                || b == 0x2D                // -
+        }
+    }
+
+    /// Verifies that `url`'s standardized file path remains strictly inside `base`.
+    static func isStrictlyInside(_ url: URL, base: URL) -> Bool {
+        let basePath = base.standardizedFileURL.path
+        let prefix = basePath.hasSuffix("/") ? basePath : basePath + "/"
+        let resolvedPath = url.standardizedFileURL.path
+        return resolvedPath.hasPrefix(prefix) && resolvedPath.count > prefix.count
+    }
+
+    static func validatedFile(in store: String, entryId: String, suffix: String) -> URL? {
+        guard isValidEntryId(entryId) else { return nil }
+        let base = directory.appendingPathComponent(store, isDirectory: true)
+        let target = base.appendingPathComponent(entryId + suffix)
+        guard isStrictlyInside(target, base: base) else { return nil }
+        return target
+    }
+
+    static func validatedSubdirectory(in store: String, entryId: String) -> URL? {
+        guard isValidEntryId(entryId) else { return nil }
+        let base = directory.appendingPathComponent(store, isDirectory: true)
+        let target = base.appendingPathComponent(entryId, isDirectory: true)
+        guard isStrictlyInside(target, base: base) else { return nil }
+        return target
+    }
 
     /// Paths are relative to this and resolved on every use, never persisted:
     /// the app container path changes across updates, which is the same reason
@@ -34,6 +84,7 @@ enum AnalysisFiles {
         var base = directory
         let existed = FileManager.default.fileExists(atPath: base.path)
         let url = base.appendingPathComponent(name, isDirectory: true)
+        guard isStrictlyInside(url, base: base) else { throw Failure.invalidPath(name) }
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         if !existed {
             var values = URLResourceValues()
@@ -74,15 +125,22 @@ enum AnalysisFiles {
     /// Mirrors Android's `AnalysisFiles.deleteAll`, over the same six names and
     /// the same rule.
     static func deleteAll(entryId: String, reason: LocalVideoRemoval) {
+        guard isValidEntryId(entryId) else { return }
         let stores = reason == .discarded ? videoStores + trackStores : videoStores
         for store in stores {
             let base = directory.appendingPathComponent(store, isDirectory: true)
             // Two shapes: a directory named for the entry (clips) and a file
             // named for it with an extension (the rest). Removing a path that
             // is not there is not an error worth reporting.
-            try? FileManager.default.removeItem(at: base.appendingPathComponent(entryId, isDirectory: true))
+            let dirTarget = base.appendingPathComponent(entryId, isDirectory: true)
+            if isStrictlyInside(dirTarget, base: base) {
+                try? FileManager.default.removeItem(at: dirTarget)
+            }
             for suffix in [".track", ".skel", ".mp4"] {
-                try? FileManager.default.removeItem(at: base.appendingPathComponent(entryId + suffix))
+                let fileTarget = base.appendingPathComponent(entryId + suffix)
+                if isStrictlyInside(fileTarget, base: base) {
+                    try? FileManager.default.removeItem(at: fileTarget)
+                }
             }
         }
     }

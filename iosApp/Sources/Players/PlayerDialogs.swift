@@ -115,7 +115,7 @@ struct PlayerNameSheet: View {
         .padding(.horizontal, ShuttlGutter.page)
         .padding(.top, 24)
         .padding(.bottom, 16)
-        .sizedToContentSheet()
+        .sizedToContentSheet(defaultHeight: showArm ? 320 : 240)
         .onAppear { nameFocused = true }
         .interactiveDismissDisabled(saving)
         .presentationDragIndicator(.visible)
@@ -189,35 +189,41 @@ struct PlayingHandSheet: View {
         .padding(.horizontal, ShuttlGutter.page)
         .padding(.top, 24)
         .padding(.bottom, 16)
-        .sizedToContentSheet()
+        .sizedToContentSheet(defaultHeight: 240)
         .presentationDragIndicator(.visible)
         // See `PlayerNameSheet`: the sheets' usual fill is the pill track's.
         .presentationBackground(Shuttl.bgDialog)
     }
 }
 
-/// A sheet as tall as its content, the way ScoreEditSheet sizes itself: the
-/// content's measured height is its one detent.
+/// A sheet as tall as its content, wrapped in a scroll container so large
+/// Dynamic Type never clips and seeded with a non-zero height to eliminate the
+/// opening detent jump.
 private struct SizedToContentSheet: ViewModifier {
-    @State private var height: CGFloat = 0
+    @State private var height: CGFloat
+
+    init(defaultHeight: CGFloat = 280) {
+        _height = State(initialValue: defaultHeight)
+    }
 
     func body(content: Content) -> some View {
-        content
-            .background {
-                GeometryReader { proxy in
-                    Color.clear.onChange(of: proxy.size.height, initial: true) { _, new in
-                        height = new
-                    }
+        ScrollView {
+            content
+                .fixedSize(horizontal: false, vertical: true)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { new in
+                    if new > 0 { height = new }
                 }
-            }
-            .presentationDetents([.height(height)])
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .scrollDismissesKeyboard(.interactively)
+        .presentationDetents([.height(height)])
     }
 }
 
 extension View {
     /// See `SizedToContentSheet`. Shared by the player sheets and the attach
     /// question (`HomeEndPrompt`).
-    func sizedToContentSheet() -> some View {
-        modifier(SizedToContentSheet())
+    func sizedToContentSheet(defaultHeight: CGFloat = 280) -> some View {
+        modifier(SizedToContentSheet(defaultHeight: defaultHeight))
     }
 }

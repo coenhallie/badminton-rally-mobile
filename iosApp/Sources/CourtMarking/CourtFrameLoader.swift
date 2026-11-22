@@ -58,9 +58,7 @@ enum CourtFrameLoader {
         // A failure here is not a failure to mark a court. The estimate loses
         // its footing and says so through `AnalysisEstimate`; refusing the
         // whole screen would block the cloud run too, which needs none of this.
-        let metadata = try? await Task.detached(priority: .userInitiated) {
-            try VideoFrameSource(url: url).metadata()
-        }.value
+        let metadata = try? await VideoFrameSource(url: url).loadMetadata()
 
         return CourtFrame(
             image: UIImage(cgImage: cgImage),

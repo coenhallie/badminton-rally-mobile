@@ -10,6 +10,7 @@ struct LabelsView: View {
     let rally: RallyApp
     @StateObject private var model: LabelsModel
     @State private var pendingDelete: AnnotationLabel? = nil
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(rally: RallyApp) {
         self.rally = rally
@@ -39,9 +40,10 @@ struct LabelsView: View {
                             Text("Add label")
                         }
                     }
-                    .buttonStyle(CompactPillButtonStyle())
+                    .buttonStyle(CompactPillButtonStyle(fullTarget: true))
                     .accessibilityLabel("Add label")
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List {
                     if model.expanded == .new {
@@ -51,6 +53,7 @@ struct LabelsView: View {
                                 await model.create(name, color: color, usage: usage)
                             }
                         )
+                        .listRowBackground(Color.clear)
                     }
                     ForEach(model.labels, id: \.id) { label in
                         LabelRow(
@@ -61,6 +64,7 @@ struct LabelsView: View {
                             onRecolor: { color in Task { await model.recolor(label.id, to: color) } },
                             onSetUsage: { usage in Task { await model.setUsage(label.id, to: usage) } }
                         )
+                        .listRowBackground(Color.clear)
                         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                             Button(role: .destructive) {
                                 pendingDelete = label
@@ -71,8 +75,12 @@ struct LabelsView: View {
                     }
                 }
                 .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .animation(reduceMotion ? nil : .snappy, value: model.expanded)
             }
         }
+        .background(Shuttl.bg)
+        .shuttlNavigationBarBackground()
         .navigationTitle("Labels")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -192,10 +200,8 @@ private struct EditorFields: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            TextField("Name", text: $name)
+            ShuttlTextField("Name", text: $name)
                 .submitLabel(.done)
-                .padding(12)
-                .background(Shuttl.bgInput)
                 .focused($focused)
                 .onSubmit(onCommit)
                 .onChange(of: focused) { _, isFocused in
@@ -210,9 +216,8 @@ private struct EditorFields: View {
             // `accessibilityLabel` does the same for VoiceOver - the `Picker`
             // this replaced supplied both from one string.
             VStack(alignment: .leading, spacing: 6) {
-                Text("Use")
-                    .shuttlType(ShuttlType.bodySmall)
-                    .foregroundStyle(Shuttl.textSecondary)
+                Shuttl.sectionLabel("Use")
+                    .accessibilityHidden(true)
                 ShuttlPillTabs(
                     labels: LabelUsageTabs.labels,
                     selectedIndex: LabelUsageTabs.index(of: selectedUsage),

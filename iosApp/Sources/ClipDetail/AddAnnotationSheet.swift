@@ -15,31 +15,41 @@ struct AddAnnotationSheet: View {
     @State private var body_ = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Add note")
-                .shuttlType(ShuttlType.headlineMedium)
-            ChipFlow(spacing: 8) {
-                ForEach(labels, id: \.id) { label in
-                    chip(label)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Add note")
+                    .shuttlType(ShuttlType.headlineMedium)
+                    .foregroundStyle(Shuttl.textHeading)
+                    .accessibilityAddTraits(.isHeader)
+                if !labels.isEmpty {
+                    ChipFlow(spacing: 8) {
+                        ForEach(labels, id: \.id) { label in
+                            chip(label)
+                        }
+                    }
                 }
-            }
-            TextField("Note (optional)", text: $body_, axis: .vertical)
-                .padding(12)
-                .background(Shuttl.bgInput)
-            HStack {
-                Spacer()
-                Button("Cancel") { dismiss() }
-                Button("Add") {
-                    onAdd(selected, body_)
-                    dismiss()
+                ShuttlTextField("Note (optional)", text: $body_, minLines: 3)
+                HStack(spacing: 12) {
+                    Button("Cancel") { dismiss() }
+                        .buttonStyle(SecondaryPillButtonStyle())
+                    Button("Add") {
+                        onAdd(selected, body_)
+                        dismiss()
+                    }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .disabled(selected == nil && body_.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
-                .disabled(selected == nil && body_.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .padding(.top, 8)
             }
+            .padding(.horizontal, ShuttlGutter.page)
+            .padding(.top, 24)
+            .padding(.bottom, 16)
         }
-        .padding(.horizontal, 24)
-        .padding(.top, 24)
-        .padding(.bottom, 16)
-        .frame(maxHeight: .infinity, alignment: .top)
+        .scrollBounceBehavior(.basedOnSize)
+        .scrollDismissesKeyboard(.interactively)
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+        .presentationBackground(Shuttl.bgSecondary)
     }
 
     private func chip(_ label: AnnotationLabel) -> some View {
@@ -48,11 +58,15 @@ struct AddAnnotationSheet: View {
             selected = isSelected ? nil : label   // tapping selected chip deselects
         } label: {
             Text(label.name)
-                .shuttlType(ShuttlType.bodySmall)
+                .shuttlType(ShuttlType.labelMedium)
                 .padding(.horizontal, 12)
-                .padding(.vertical, 6)
+                .padding(.vertical, 8)
                 .background(Capsule().fill(isSelected ? Shuttl.accent : Shuttl.bgTertiary))
                 .foregroundStyle(isSelected ? Shuttl.onAccent : Shuttl.text)
+                .frame(minHeight: ShuttlTarget.minimum)
+                .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

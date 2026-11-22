@@ -18,10 +18,27 @@ final class LabelsModel: ObservableObject {
     /// state, so this same subscription is what shows their result on screen;
     /// no separate reload is needed after each one.
     func start() async {
-        let message = try? await SwiftInteropKt.refreshLabelsOrMessage(rally.labels)
-        if let message { errorMessage = message }
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await self.observeLabels() }
+            group.addTask { await self.refreshLabels() }
+        }
+    }
+
+    private func observeLabels() async {
         for await ls in rally.labels.labels {
             labels = ls
+        }
+    }
+
+    private func refreshLabels() async {
+        do {
+            if let message = try await SwiftInteropKt.refreshLabelsOrMessage(rally.labels) {
+                errorMessage = message
+            }
+        } catch {
+            if !Task.isCancelled {
+                errorMessage = "Couldn't load labels"
+            }
         }
     }
 
@@ -67,7 +84,11 @@ final class LabelsModel: ObservableObject {
     }
 
     func setUsage(_ id: String, to usage: LabelUsage) async {
-        errorMessage = try? await SwiftInteropKt.setLabelUsageOrMessage(rally.labels, id: id, usage: usage)
+        do {
+            errorMessage = try await SwiftInteropKt.setLabelUsageOrMessage(rally.labels, id: id, usage: usage)
+        } catch {
+            errorMessage = "Couldn't change where this label is used"
+        }
     }
 
     /// Returns whether the rename succeeded, so the editor can roll its local
@@ -76,16 +97,29 @@ final class LabelsModel: ObservableObject {
     /// rejected edit as if it had gone through.
     @discardableResult
     func rename(_ id: String, to name: String) async -> Bool {
-        let message = try? await SwiftInteropKt.renameLabelOrMessage(rally.labels, id: id, name: name)
-        errorMessage = message
-        return message == nil
+        do {
+            let message = try await SwiftInteropKt.renameLabelOrMessage(rally.labels, id: id, name: name)
+            errorMessage = message
+            return message == nil
+        } catch {
+            errorMessage = "Couldn't rename label"
+            return false
+        }
     }
 
     func recolor(_ id: String, to color: LabelColor) async {
-        errorMessage = try? await SwiftInteropKt.recolorLabelOrMessage(rally.labels, id: id, color: color)
+        do {
+            errorMessage = try await SwiftInteropKt.recolorLabelOrMessage(rally.labels, id: id, color: color)
+        } catch {
+            errorMessage = "Couldn't change colour"
+        }
     }
 
     func delete(_ id: String) async {
-        errorMessage = try? await SwiftInteropKt.deleteLabelOrMessage(rally.labels, id: id)
+        do {
+            errorMessage = try await SwiftInteropKt.deleteLabelOrMessage(rally.labels, id: id)
+        } catch {
+            errorMessage = "Couldn't delete label"
+        }
     }
 }

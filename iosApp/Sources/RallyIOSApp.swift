@@ -39,7 +39,7 @@ struct RallyIOSApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView(rally: rally, analyze: analyze)
+            RootView(rally: rally, analyze: analyze, localAnalysis: localAnalysis)
         }
     }
 }

@@ -13,6 +13,9 @@ struct SettingsView: View {
     /// page, and a destination belongs on the view that is on screen when it
     /// is pushed, not on one under it.
     @State private var showLabels = false
+    @State private var confirmSignOut = false
+    @State private var isSigningOut = false
+    @State private var signOutError: String? = nil
 
     init(rally: RallyApp) {
         self.rally = rally
@@ -40,11 +43,12 @@ struct SettingsView: View {
                             Image(systemName: "chevron.right")
                                 .shuttlType(ShuttlType.bodySmall)
                                 .foregroundStyle(Shuttl.textSecondary)
+                                .accessibilityHidden(true)
                         }
                         .settingsRow()
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(HomeCopy.shared.SETTINGS_LABELS)
+                    .accessibilityElement(children: .combine)
                     Divider().overlay(Shuttl.border)
                     Toggle(isOn: Binding(
                         get: { themeMode == .dark },
@@ -72,15 +76,21 @@ struct SettingsView: View {
                         Divider().overlay(Shuttl.border)
                     }
                     Button {
-                        Task { _ = try? await SwiftInteropKt.signOutOrMessage(rally.auth) }
+                        signOutError = nil
+                        confirmSignOut = true
                     } label: {
                         Text(HomeCopy.shared.SETTINGS_SIGN_OUT)
                             .shuttlType(ShuttlType.bodyLarge)
                             .foregroundStyle(Shuttl.error)
+                            .opacity(isSigningOut ? 0.4 : 1)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .settingsRow()
                     }
                     .buttonStyle(.plain)
+                    .disabled(isSigningOut)
+                }
+                if let signOutError {
+                    ErrorBanner(message: signOutError)
                 }
                 Text(versionLabel())
                     .shuttlType(ShuttlType.bodySmall)
@@ -105,8 +115,32 @@ struct SettingsView: View {
         .navigationDestination(isPresented: $showLabels) {
             LabelsView(rally: rally)
         }
+        .alert("Sign out?", isPresented: $confirmSignOut) {
+            Button("Cancel", role: .cancel) {}
+            Button(HomeCopy.shared.SETTINGS_SIGN_OUT, role: .destructive) {
+                signOut()
+            }
+        } message: {
+            Text("You'll need to sign in again to access your cloud matches and labels.")
+        }
         .task {
             for await mode in rally.themePrefs.mode { themeMode = mode }
+        }
+    }
+
+    private func signOut() {
+        guard !isSigningOut else { return }
+        isSigningOut = true
+        signOutError = nil
+        Task {
+            do {
+                if let message = try await SwiftInteropKt.signOutOrMessage(rally.auth) {
+                    signOutError = message
+                }
+            } catch {
+                signOutError = "Sign-out failed."
+            }
+            isSigningOut = false
         }
     }
 

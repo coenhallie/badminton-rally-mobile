@@ -50,7 +50,10 @@ struct ShuttlPlayer<Overlay: View, ErrorContent: View>: View {
     @ViewBuilder var overlay: Overlay
     @ViewBuilder var errorContent: ErrorContent
 
-    @State private var position = PlaybackPosition()
+    /// Isolated playhead so 30 Hz ticks update only the video card's timecode
+    /// chip and scrub bar without re-evaluating `ShuttlPlayer`,
+    /// `ShuttlTransportBar`, or any parent view.
+    @State private var playhead = PlaybackPlayhead()
     @State private var speed = PlaybackOptions.shared.DEFAULT_SPEED
     @State private var showSettings = false
     @State private var skipSeconds = Int(PlaybackOptions.shared.DEFAULT_SKIP_SECONDS)
@@ -62,7 +65,7 @@ struct ShuttlPlayer<Overlay: View, ErrorContent: View>: View {
     private func card(fullscreen: Bool) -> some View {
         ShuttlVideoCard(
             player: player,
-            position: position,
+            playhead: playhead,
             onSettingsTap: { showSettings = true },
             aspectRatio: aspectRatio,
             onSeek: player.map { p in { fraction in seek(p, to: fraction) } },
@@ -74,7 +77,7 @@ struct ShuttlPlayer<Overlay: View, ErrorContent: View>: View {
     }
 
     private func tag(_ label: AnnotationLabel) {
-        let at = position.positionMs
+        let at = playhead.position.positionMs
         onTag?(label, at)
         tagMessage = quickTagConfirmation(label, positionMs: at)
         tagMessageClock += 1
@@ -226,7 +229,7 @@ struct ShuttlPlayer<Overlay: View, ErrorContent: View>: View {
     /// old player alive and freeze the timecode on the new one.
     private func observePosition() async {
         guard let player else {
-            position = PlaybackPosition()
+            playhead.position = PlaybackPosition()
             return
         }
         let interval = CMTime(seconds: 1.0 / 30.0, preferredTimescale: 600)
@@ -245,7 +248,9 @@ struct ShuttlPlayer<Overlay: View, ErrorContent: View>: View {
             }
         }
         for await next in stream {
-            position = next
+            if playhead.position != next {
+                playhead.position = next
+            }
             onPosition?(next)
         }
     }

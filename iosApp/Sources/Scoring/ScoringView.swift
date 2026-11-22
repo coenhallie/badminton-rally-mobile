@@ -107,6 +107,22 @@ struct ScoringView: View {
 
             controlBar(model, match)
         }
+        // Purposeful milestone haptics on transitions into Game Point, Match
+        // Point, or Match Won (never on initial appearance of an already-won
+        // match).
+        .onChange(of: ScoreMilestone(match: match)) { previous, current in
+            guard current != previous else { return }
+            switch current {
+            case .matchWon:
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+            case .matchPoint:
+                UINotificationFeedbackGenerator().notificationOccurred(.warning)
+            case .gamePoint:
+                UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+            case .none:
+                break
+            }
+        }
         // Keyed on both, not on `model.canScore` alone: an early "Finish match"
         // from the menu can leave `match.isOver` false (the rules never ended it)
         // while `log.status` moves off LIVE, and that exit must raise the prompt
@@ -256,9 +272,12 @@ struct ScoringView: View {
     private func statusStrip(_ model: ScoringModel, _ log: ScoreLog, _ match: MatchState) -> some View {
         let notice = model.noticeMessage
         let announcement = notice ?? Self.announcement(log, match, model.players)
-        HStack {
+        HStack(spacing: 4) {
             Button { dismiss() } label: {
-                Image(systemName: "chevron.left").shuttlType(ShuttlType.titleLarge)
+                Image(systemName: "chevron.left")
+                    .shuttlType(ShuttlType.titleLarge)
+                    .frame(minWidth: ShuttlTarget.minimum, minHeight: ShuttlTarget.minimum)
+                    .contentShape(Rectangle())
             }
             .foregroundStyle(Shuttl.text)
             .accessibilityLabel("Back")
@@ -277,10 +296,17 @@ struct ScoringView: View {
             Spacer()
 
             if let action = model.noticeAction {
-                Button(action) { model.reverseNotice() }
-                    .shuttlType(ShuttlType.titleMedium)
-                    .foregroundStyle(Shuttl.accent)
-                    .padding(.trailing, 8)
+                Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    model.reverseNotice()
+                } label: {
+                    Text(action)
+                        .shuttlType(ShuttlType.titleMedium)
+                        .foregroundStyle(Shuttl.accent)
+                        .padding(.horizontal, 6)
+                        .frame(minHeight: ShuttlTarget.minimum)
+                        .contentShape(Rectangle())
+                }
             }
 
             Menu {
@@ -288,13 +314,19 @@ struct ScoringView: View {
                 // place: the editor only reaches the game being played, and a
                 // mis-tap that ends a game has already moved the board on to
                 // the next one. Its notice and Redo still come up in the strip.
-                Button("Undo last rally") { model.undo() }
-                    .disabled(!model.canUndo)
+                Button("Undo last rally") {
+                    UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+                    model.undo()
+                }
+                .disabled(!model.canUndo)
                 // Only when there is one. Beside Undo last rally rather than
                 // replacing it: after Reset game the row logs moments while
                 // earlier games still have rallies to take back.
                 if model.canRemoveMoment {
-                    Button("Remove last moment") { model.removeLastMoment() }
+                    Button("Remove last moment") {
+                        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+                        model.removeLastMoment()
+                    }
                 }
                 // Names and format are not asked for when the match is created, so
                 // courtside, between games, is one of the places they get filled
@@ -305,13 +337,16 @@ struct ScoringView: View {
                 Button("Finish match") { confirming = .finish }
                     .disabled(match.isOver)
             } label: {
-                Image(systemName: "ellipsis").shuttlType(ShuttlType.titleLarge)
+                Image(systemName: "ellipsis")
+                    .shuttlType(ShuttlType.titleLarge)
+                    .frame(minWidth: ShuttlTarget.minimum, minHeight: ShuttlTarget.minimum)
+                    .contentShape(Rectangle())
             }
             .foregroundStyle(Shuttl.text)
             .accessibilityLabel("Match options")
         }
-        .padding(.horizontal, 12)
-        .frame(height: 48)
+        .padding(.horizontal, 4)
+        .frame(minHeight: 48)
         .background(Shuttl.bg)
     }
 
@@ -347,9 +382,13 @@ struct ScoringView: View {
                 // pill switches the serve: the hidden one must not take taps.
                 servePill(
                     match.serviceCourt,
-                    onSwitch: serving && model.canSwitchFirstServer ? { model.switchFirstServer() } : nil
+                    onSwitch: serving && model.canSwitchFirstServer ? {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        model.switchFirstServer()
+                    } : nil
                 )
                 .opacity(serving ? 1 : 0)
+                .accessibilityHidden(!serving)
 
                 if match.rules.gamesToWin > 1 {
                     gamesWonBox(Int(match.gamesWon.of(side: side)))
@@ -379,6 +418,9 @@ struct ScoringView: View {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             model.score(side)
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint("Double tap to score a point")
     }
 
     /// The side itself carries the serve and its court, there being no player to mark.
@@ -407,23 +449,36 @@ struct ScoringView: View {
         .padding(.vertical, 4)
         .background(Color.white)
         .clipShape(RoundedRectangle(cornerRadius: ShuttlRadius.extraSmall))
-        // A child's tap wins over the half's own, which is what keeps this from
-        // scoring a rally.
-        label
-            .gesture(onSwitch.map { action in TapGesture().onEnded { action() } })
+        // A child Button with a full 44x44pt hit area wins over the half's own
+        // tap gesture, so aiming for SERVE never accidentally scores a point.
+        // Both branches reserve the same 44pt height so the games boxes and
+        // scores stay aligned across halves.
+        if let onSwitch {
+            Button(action: onSwitch) {
+                label
+                    .frame(minWidth: ShuttlTarget.minimum, minHeight: ShuttlTarget.minimum)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
             .accessibilityElement(children: .combine)
-            .accessibilityAddTraits(onSwitch == nil ? [] : .isButton)
-            .accessibilityHint(onSwitch == nil ? "" : "Switches who serves first")
+            .accessibilityHint("Switches who serves first")
+        } else {
+            label
+                .frame(minWidth: ShuttlTarget.minimum, minHeight: ShuttlTarget.minimum)
+                .allowsHitTesting(false)
+                .accessibilityElement(children: .combine)
+        }
     }
 
     @ViewBuilder
     private func gamesWonBox(_ games: Int) -> some View {
         Text("\(games)")
-            // Not the scoreboard exemption: this is a fixed 17pt digit in a
-            // fixed 40x34 box, not a size derived from the half it fills.
             .shuttlType(ShuttlType.titleLarge)
             .foregroundStyle(.white)
-            .frame(width: 40, height: 34)
+            .lineLimit(1)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .frame(minWidth: 40, minHeight: 34)
             .background(Color.white.opacity(0.16))
             .clipShape(RoundedRectangle(cornerRadius: ShuttlRadius.extraSmall))
     }
@@ -479,12 +534,10 @@ struct ScoringView: View {
                                     : "Logs a moment",
                             flashes: quick
                         ) {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
                             if let ordinal = model.pendingTagOrdinal {
                                 model.toggleTag(ordinal: ordinal, label: label)
                             } else {
-                                // A quick moment changes nothing else on the board,
-                                // so it is felt as well as seen.
-                                if quick { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
                                 model.tapMomentLabel(label)
                             }
                         }
@@ -505,7 +558,8 @@ struct ScoringView: View {
                 NoteField(
                     ordinal: ordinal,
                     original: point.comment ?? "",
-                    onCommit: { model.setComment(ordinal: ordinal, text: $0) }
+                    onCommit: { model.setComment(ordinal: ordinal, text: $0) },
+                    onClose: { noteOpen = false }
                 )
                 .padding(.horizontal, 8)
             }
@@ -546,7 +600,7 @@ struct ScoringView: View {
                 // became unreachable once a few labels existed.
                 // The rally's note while the row tags a rally, otherwise the moment
                 // composer: opened here, and saved here as well as by the field.
-                Button("Note") {
+                Button {
                     if target is BoardTarget.Rally {
                         noteOpen.toggle()
                     } else if model.momentDraft == nil {
@@ -554,10 +608,15 @@ struct ScoringView: View {
                     } else {
                         model.commitMomentDraft()
                     }
+                } label: {
+                    Text("Note")
+                        .shuttlType(ShuttlType.titleMedium)
+                        .frame(minWidth: ShuttlTarget.minimum, minHeight: ShuttlTarget.minimum)
+                        .contentShape(Rectangle())
                 }
-                    // Accent like Edit score beside it, and like Android's Note, rather
-                    // than the system blue it fell back to.
-                    .tint(Shuttl.accent)
+                // Accent like Edit score beside it, and like Android's Note, rather
+                // than the system blue it fell back to.
+                .tint(Shuttl.accent)
                 // Only once the match is actually over. While it is live, finishing
                 // lives in the menu behind a confirm: a call to action beside a
                 // board being tapped every rally is a match ended by accident.
@@ -569,10 +628,11 @@ struct ScoringView: View {
                         Text("Done")
                             .shuttlType(ShuttlType.titleLarge)
                             .foregroundStyle(Shuttl.onAccent)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(Shuttl.accent)
-                            .clipShape(Capsule())
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(Shuttl.accent, in: Capsule())
+                            .frame(minHeight: ShuttlTarget.minimum)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.borderless)
                 }
@@ -604,6 +664,26 @@ struct ScoringView: View {
     static func runningSummary(_ log: ScoreLog, _ match: MatchState) -> String {
         if match.completedGames.isEmpty { return log.title }
         return match.completedGames.map { "\($0.home)-\($0.away)" }.joined(separator: ", ")
+    }
+
+    /// Milestone state for purposeful courtside haptics on transitions.
+    private enum ScoreMilestone: Equatable {
+        case none
+        case gamePoint
+        case matchPoint
+        case matchWon
+
+        init(match: MatchState) {
+            if match.winner != nil {
+                self = .matchWon
+            } else if match.matchPoint.any {
+                self = .matchPoint
+            } else if match.gamePoint.any {
+                self = .gamePoint
+            } else {
+                self = .none
+            }
+        }
     }
 
     /// The `.task(id:)` key for the finish-prompt watcher. Both fields matter:
@@ -736,6 +816,8 @@ private struct TagChip: View {
                         SpringKeyframe(1, spring: Self.springBack)
                     }
                 }
+                .frame(minWidth: ShuttlTarget.minimum, minHeight: ShuttlTarget.minimum)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityHint(hint)
@@ -774,14 +856,17 @@ private struct NoteField: View {
     let ordinal: Int
     let original: String
     let onCommit: (String) -> Void
+    let onClose: () -> Void
 
     @State private var draft: String
+    @State private var committed = false
     @FocusState private var focused: Bool
 
-    init(ordinal: Int, original: String, onCommit: @escaping (String) -> Void) {
+    init(ordinal: Int, original: String, onCommit: @escaping (String) -> Void, onClose: @escaping () -> Void) {
         self.ordinal = ordinal
         self.original = original
         self.onCommit = onCommit
+        self.onClose = onClose
         _draft = State(initialValue: original)
     }
 
@@ -789,11 +874,25 @@ private struct NoteField: View {
         TextField("Note on this rally", text: $draft)
             .textFieldStyle(.roundedBorder)
             .focused($focused)
+            .submitLabel(.done)
+            .onSubmit {
+                commitIfNeeded()
+                onClose()
+            }
             .id(ordinal)
             // Focused as it opens. Opening the note is already a deliberate detour
             // from scoring; making the coach tap twice to start typing is the kind
             // of thing that gets the feature abandoned.
-            .onAppear { focused = true }
-            .onDisappear { if draft != original { onCommit(draft) } }
+            .onAppear {
+                committed = false
+                focused = true
+            }
+            .onDisappear { commitIfNeeded() }
+    }
+
+    private func commitIfNeeded() {
+        guard !committed else { return }
+        committed = true
+        if draft != original { onCommit(draft) }
     }
 }

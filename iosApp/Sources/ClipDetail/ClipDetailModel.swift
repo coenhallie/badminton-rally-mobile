@@ -158,11 +158,15 @@ final class ClipDetailModel {
         )
     }
 
-    func add(label: AnnotationLabel?, body: String) async {
+    func addQuickTag(label: AnnotationLabel, positionMs: Int64) async {
+        await add(label: label, body: "", atSeconds: Float(positionMs) / 1000)
+    }
+
+    func add(label: AnnotationLabel?, body: String, atSeconds: Float? = nil) async {
         guard isOwner else { return }
         let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty && label == nil { return }
-        let ts = max(0, currentTimeSeconds())
+        let ts = max(0, atSeconds ?? currentTimeSeconds())
         guard let outcome = try? await SwiftInteropKt.addAnnotationForSwift(
             rally.annotations, clipId: clipId, timestampSeconds: ts, body: trimmed, label: label
         ) else {
@@ -179,15 +183,15 @@ final class ClipDetailModel {
 
     func delete(id: String) async {
         guard isOwner else { return }
-        // `try?` on an async-throws call returning `String?` flattens to `String?`
-        // (SE-0230), so a single unwrap already covers both "call threw" and
-        // "call succeeded with nil" — both fall through to local removal below,
-        // matching the intended double-optional semantics.
-        if let message = try? await SwiftInteropKt.deleteAnnotationOrMessage(rally.annotations, id: id) {
-            actionError = message
-        } else {
-            annotations = annotations.filter { $0.id != id }
-            actionError = nil
+        do {
+            if let message = try await SwiftInteropKt.deleteAnnotationOrMessage(rally.annotations, id: id) {
+                actionError = message
+            } else {
+                annotations = annotations.filter { $0.id != id }
+                actionError = nil
+            }
+        } catch {
+            actionError = "Couldn't delete note"
         }
     }
 

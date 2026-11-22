@@ -52,6 +52,7 @@ targets:
           - Archivo-Medium.ttf
           - Archivo-SemiBold.ttf
           - Archivo-Bold.ttf
+        UIRequiresFullScreen: true
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSCameraUsageDescription: Shuttl uses the camera to record match videos.
         NSMicrophoneUsageDescription: Shuttl records audio with your match videos.

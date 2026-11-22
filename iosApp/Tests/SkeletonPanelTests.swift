@@ -257,6 +257,68 @@ final class SkeletonPanelTests: XCTestCase {
         XCTAssertGreaterThan(abs(try XCTUnwrap(unmapped.behindServiceLineM?.doubleValue) - behind), 0.05)
     }
 
+    // MARK: - Pure-Swift pose lookup & graph segments parity
+
+    func testNearestCachedPoseMatchesKotlinPoseLookup() {
+        let raw = poses(5)
+        let cached = raw.map { pose in
+            SkeletonPanelModel.CachedPose(
+                frame: pose.frame,
+                timestamp: pose.timestamp,
+                keypoints: pose.keypoints.map { CGPoint(x: $0.x, y: $0.y) },
+                confidence: pose.confidence.map(\.floatValue),
+                source: pose,
+                metrics: PoseMetrics.companion.NONE
+            )
+        }
+        let tol = PoseLookupKt.poseToleranceS(fps: 30)
+        for t in [-1.0, 0.0, 0.016, 0.017, 0.0333, 0.05, 0.1333, 0.5] {
+            let expected = PoseLookupKt.nearestPose(poses: raw, seconds: t, toleranceS: tol)
+            let actual = SkeletonPanelModel.nearestPose(in: cached, seconds: t, toleranceS: tol)
+            XCTAssertEqual(actual?.frame, expected?.frame, "mismatch at t=\(t)")
+        }
+    }
+
+    func testSwiftGraphSegmentsMatchesKotlinGraphSegments() {
+        func makeSample(_ t: Double, elbow: Double?) -> MetricSample {
+            MetricSample(
+                timestamp: t,
+                metrics: PoseMetrics(
+                    stanceM: nil, behindServiceLineM: nil, fromCentreLineM: nil,
+                    elbowLeftDeg: nil, elbowRightDeg: elbow.map { KotlinDouble(double: $0) },
+                    armLeftDeg: nil, armRightDeg: nil,
+                    kneeLeftDeg: nil, kneeRightDeg: nil,
+                    trunkLeanDeg: nil, shoulderTiltDeg: nil, hipTiltDeg: nil
+                )
+            )
+        }
+        let kotlinSeries = [
+            makeSample(0.0, elbow: 110),
+            makeSample(0.05, elbow: 120),
+            makeSample(0.10, elbow: nil),
+            makeSample(0.15, elbow: 130),
+            makeSample(0.50, elbow: 140),
+            makeSample(0.55, elbow: 150),
+            makeSample(2.10, elbow: 160),
+        ]
+        let cachedSeries = kotlinSeries.map { CachedMetricSample(timestamp: $0.timestamp, metrics: $0.metrics) }
+
+        let expected = MetricsFormatKt.graphSegments(
+            series: kotlinSeries, kind: .elbowRight, startS: 0.02, endS: 1.0, gapS: 0.1
+        )
+        let actual = swiftGraphSegments(
+            series: cachedSeries, kind: .elbowRight, startS: 0.02, endS: 1.0, gapS: 0.1
+        )
+
+        XCTAssertEqual(actual.polylines.count, expected.polylines.count)
+        for (aLine, eLine) in zip(actual.polylines, expected.polylines) {
+            XCTAssertEqual(aLine.map(\.timestamp), eLine.map(\.timestamp))
+            XCTAssertEqual(aLine.map(\.value), eLine.map(\.value))
+        }
+        XCTAssertEqual(actual.points.map(\.timestamp), expected.points.map(\.timestamp))
+        XCTAssertEqual(actual.points.map(\.value), expected.points.map(\.value))
+    }
+
     // MARK: - Fixtures
 
     private func prefs() -> RacketArmPreferenceRepository {

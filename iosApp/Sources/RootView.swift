@@ -5,15 +5,12 @@ import Shared
 struct RootView: View {
     let rally: RallyApp
     let analyze: AnalyzeCoordinator
-    /// The on-device pipeline, held here rather than by a screen because an
-    /// analysis outlives the screen that starts it - the same reason
-    /// `analyze` is held here.
-    ///
-    /// Nil when this build has no ONNX graphs staged, which is CI's build and
-    /// any checkout that has not run the export scripts. Passed down as nil so
-    /// every screen offers the cloud alone rather than a second button that
-    /// fails on the tap.
-    @State private var localAnalysis: LocalAnalysisRunner?
+    /// The single app-wide runner owned by `RallyIOSApp`, used both for reading
+    /// stored cloud/local analyses and (when ONNX models are staged) running
+    /// on-device analyses. Always non-nil so cloud heatmaps, base positions,
+    /// and skeletons stay available even when on-device inference models are
+    /// absent; UI buttons for on-device runs gate on `ModelCatalog.canAnalyseOnDevice`.
+    let localAnalysis: LocalAnalysisRunner
     /// What the app is working on, for the chrome indicator. Held here for the
     /// same reason `localAnalysis` is: a run outlives every screen that shows it,
     /// and its two `for await` loops never return.
@@ -29,17 +26,16 @@ struct RootView: View {
     /// `rally`, which a property initialiser cannot see, and a second instance
     /// of either would restart loops that are meant to run for the life of the
     /// app.
-    init(rally: RallyApp, analyze: AnalyzeCoordinator) {
+    init(rally: RallyApp, analyze: AnalyzeCoordinator, localAnalysis: LocalAnalysisRunner) {
         self.rally = rally
         self.analyze = analyze
+        self.localAnalysis = localAnalysis
         // Seeded from the stored preference, not a fixed .light: the `.task`
         // below only delivers it after the first frame, so a dark-theme cold
         // start drew the splash (and a signed-out sign-in) light, then flipped.
         _themeMode = State(initialValue: rally.themePrefs.mode.value)
-        let runner = ModelCatalog.canAnalyseOnDevice ? LocalAnalysisRunner(log: LocalAnalysisRunner.systemLog) : nil
-        _localAnalysis = State(initialValue: runner)
         _backgroundWork = State(
-            initialValue: BackgroundWorkModel(localVideos: rally.localVideos, analyze: analyze, runner: runner)
+            initialValue: BackgroundWorkModel(localVideos: rally.localVideos, analyze: analyze, runner: localAnalysis)
         )
     }
 
@@ -86,7 +82,7 @@ struct RootView: View {
         .environment(keepAwake)
         .onChange(of: shouldKeepAwake(keepAwakeReasons(
             uploading: uploading,
-            analysing: localAnalysis?.isRunning ?? false,
+            analysing: localAnalysis.isRunning,
             boardsOnScreen: keepAwake.boardsOnScreen.count
         ))) { _, awake in
             UIApplication.shared.isIdleTimerDisabled = awake
@@ -101,8 +97,8 @@ struct RootView: View {
             // running, and a row that announced a stopped analysis for each of
             // them would be wrong every time.
             switch phase {
-            case .background: localAnalysis?.suspendForBackground()
-            case .active:     localAnalysis?.resumeFromBackground()
+            case .background: localAnalysis.suspendForBackground()
+            case .active:     localAnalysis.resumeFromBackground()
             default:          break
             }
         }

@@ -41,6 +41,12 @@ struct ClipCutter {
         }
     }
 
+    /// Dedicated queue for the blocking sample-copy loop so Swift Concurrency's
+    /// cooperative pool threads are never blocked while waiting on the encoder.
+    private static let queue = DispatchQueue(
+        label: "com.badmintontracker.clip-cutter", qos: .userInitiated
+    )
+
     /// Cuts every window, reporting after each so a long cut can show progress.
     ///
     /// `onProgress` fires with the number finished, not a fraction: the caller
@@ -51,7 +57,7 @@ struct ClipCutter {
         windows: [ClipWindow],
         into directory: URL,
         onProgress: (Int) -> Void = { _ in }
-    ) throws -> [PlayerTrackStore.Clip] {
+    ) async throws -> [PlayerTrackStore.Clip] {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         var clips: [PlayerTrackStore.Clip] = []
         for (i, window) in windows.enumerated() {
@@ -59,7 +65,7 @@ struct ClipCutter {
             // filenames follow it so a file can be matched to a row by eye.
             let index = i + 1
             let out = directory.appendingPathComponent("rally-\(index).mp4")
-            try cutOne(source: source, start: window.clipStart, end: window.clipEnd, to: out)
+            try await cutOne(source: source, start: window.clipStart, end: window.clipEnd, to: out)
             clips.append(PlayerTrackStore.Clip(
                 index: index, url: out,
                 startSeconds: window.clipStart, endSeconds: window.clipEnd
@@ -69,14 +75,16 @@ struct ClipCutter {
         return clips
     }
 
-    private func cutOne(source: URL, start: Double, end: Double, to out: URL) throws {
+    private func cutOne(source: URL, start: Double, end: Double, to out: URL) async throws {
         // A stale file from an interrupted run would make the writer refuse to
         // start, and the error it gives says nothing about why.
         try? FileManager.default.removeItem(at: out)
 
         let asset = AVURLAsset(url: source)
-        guard let track = try loadTrack(asset) else { throw Failure.noVideoTrack(source.lastPathComponent) }
-        let size = try load { try await track.load(.naturalSize) }
+        guard let track = try await asset.loadTracks(withMediaType: .video).first else {
+            throw Failure.noVideoTrack(source.lastPathComponent)
+        }
+        let size = try await track.load(.naturalSize)
 
         let reader = try AVAssetReader(asset: asset)
         // The reader's own time range does the seeking, and it is what makes the
@@ -98,17 +106,17 @@ struct ClipCutter {
         guard reader.canAdd(output) else { throw Failure.writeFailed(out.lastPathComponent, nil) }
         reader.add(output)
 
+        let width = Int(size.width.rounded())
+        let height = Int(size.height.rounded())
         let writer = try AVAssetWriter(outputURL: out, fileType: .mp4)
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.h264,
-            AVVideoWidthKey: Int(size.width.rounded()),
-            AVVideoHeightKey: Int(size.height.rounded()),
+            AVVideoWidthKey: width,
+            AVVideoHeightKey: height,
             AVVideoCompressionPropertiesKey: [
-                // Generous rather than tuned, matching Android: these clips are
-                // the reviewing surface for a coach looking at a shuttle a few
-                // pixels across, and re-encoding artifacts there defeat the
-                // point of the app.
-                AVVideoAverageBitRateKey: max(Int(size.width * size.height * 8), 4_000_000),
+                // Generous rather than tuned, matching Android, capped at 16 Mbps
+                // so 4K recordings do not inflate clips to 66 Mbps+.
+                AVVideoAverageBitRateKey: min(max(width * height * 8, 4_000_000), 16_000_000),
                 // Every second. A clip is seconds long and gets scrubbed, so
                 // sparse keyframes make seeking within it unpleasant.
                 AVVideoMaxKeyFrameIntervalDurationKey: 1.0,
@@ -119,51 +127,63 @@ struct ClipCutter {
         writer.add(input)
 
         guard reader.startReading() else { throw Failure.writeFailed(out.lastPathComponent, reader.error) }
+        defer { if reader.status == .reading { reader.cancelReading() } }
         guard writer.startWriting() else { throw Failure.writeFailed(out.lastPathComponent, writer.error) }
         writer.startSession(atSourceTime: .zero)
 
         let startTime = CMTime(seconds: start, preferredTimescale: 600)
-        var rendered = 0
-        var failure: Error?
+        let outName = out.lastPathComponent
 
-        // Pull-driven rather than the callback form: this runs on the analysis
-        // queue with nothing else to do, and requestMediaDataWhenReady would
-        // hand the loop to a second queue for no benefit.
-        while let sample = output.copyNextSampleBuffer() {
-            defer { CMSampleBufferInvalidate(sample) }
-            guard let buffer = CMSampleBufferGetImageBuffer(sample) else { continue }
-            // Rebase to the clip's own zero, as Android does. A clip that kept
-            // the source's timestamps would start playing at minute nine.
-            let presentation = CMTimeSubtract(CMSampleBufferGetPresentationTimeStamp(sample), startTime)
-            do {
-                try Self.waitUntilReady(
-                    name: out.lastPathComponent,
-                    isReady: { input.isReadyForMoreMediaData },
-                    status: { writer.status },
-                    error: { writer.error }
-                )
-            } catch {
-                // The writer's error rather than the one thrown: everything
-                // that ends this loop is wrapped once, below, and wrapping a
-                // `writeFailed` in a `writeFailed` reads "couldn't write x:
-                // couldn't write x". A writer that stopped without an error
-                // leaves this nil and is caught by the status check below.
-                failure = writer.error
-                break
+        // Run the pull-driven sample copy on a dedicated DispatchQueue so
+        // waiting for the encoder never blocks a cooperative pool thread.
+        let copyResult: (rendered: Int, failure: Error?) = await withCheckedContinuation { continuation in
+            Self.queue.async {
+                var rendered = 0
+                var failure: Error?
+                while true {
+                    let keepGoing = autoreleasepool { () -> Bool in
+                        guard let sample = output.copyNextSampleBuffer() else { return false }
+                        defer { CMSampleBufferInvalidate(sample) }
+                        guard let buffer = CMSampleBufferGetImageBuffer(sample) else { return true }
+                        // Rebase to the clip's own zero, as Android does. A clip that kept
+                        // the source's timestamps would start playing at minute nine.
+                        let presentation = CMTimeSubtract(CMSampleBufferGetPresentationTimeStamp(sample), startTime)
+                        do {
+                            try Self.waitUntilReady(
+                                name: outName,
+                                isReady: { input.isReadyForMoreMediaData },
+                                status: { writer.status },
+                                error: { writer.error }
+                            )
+                        } catch {
+                            // The writer's error rather than the one thrown: everything
+                            // that ends this loop is wrapped once, below, and wrapping a
+                            // `writeFailed` in a `writeFailed` reads "couldn't write x:
+                            // couldn't write x". A writer that stopped without an error
+                            // leaves this nil and is caught by the status check below.
+                            failure = writer.error
+                            return false
+                        }
+                        guard let timed = Self.retimed(sample, buffer: buffer, to: presentation) else { return true }
+                        if !input.append(timed) {
+                            failure = writer.error
+                            return false
+                        }
+                        rendered += 1
+                        return true
+                    }
+                    if !keepGoing { break }
+                }
+                continuation.resume(returning: (rendered, failure))
             }
-            guard let timed = Self.retimed(sample, buffer: buffer, to: presentation) else { continue }
-            if !input.append(timed) {
-                failure = writer.error
-                break
-            }
-            rendered += 1
         }
+
+        let rendered = copyResult.rendered
+        var failure = copyResult.failure
 
         input.markAsFinished()
         if reader.status == .failed { failure = failure ?? reader.error }
-        let finished = DispatchSemaphore(value: 0)
-        writer.finishWriting { finished.signal() }
-        finished.wait()
+        await writer.finishWriting()
 
         if let failure {
             try? FileManager.default.removeItem(at: out)
@@ -236,24 +256,5 @@ struct ClipCutter {
             formatDescription: format, sampleTiming: &timing, sampleBufferOut: &out
         ) == noErr else { return nil }
         return out
-    }
-
-    private func loadTrack(_ asset: AVURLAsset) throws -> AVAssetTrack? {
-        try load { try await asset.loadTracks(withMediaType: .video).first }
-    }
-
-    /// Bridges AVFoundation's async loaders into this synchronous cut, for the
-    /// reason `VideoFrameSource` does the same: the loop hands buffers to an
-    /// encoder that must finish with them in order, and it runs on a background
-    /// queue where blocking costs nothing a person can see.
-    private func load<T>(_ work: @escaping () async throws -> T) throws -> T {
-        let semaphore = DispatchSemaphore(value: 0)
-        var result: Result<T, Error>!
-        Task {
-            do { result = .success(try await work()) } catch { result = .failure(error) }
-            semaphore.signal()
-        }
-        semaphore.wait()
-        return try result.get()
     }
 }

@@ -14,25 +14,48 @@ enum LocalVideoFiles {
     }
 
     static func resolve(relativePath: String) -> URL {
-        documents.appendingPathComponent(relativePath)
+        let base = documents.standardizedFileURL
+        let basePath = base.path.hasSuffix("/") ? base.path : base.path + "/"
+        guard !relativePath.isEmpty,
+              !relativePath.hasPrefix("/"),
+              !relativePath.split(separator: "/").contains("..")
+        else {
+            return directory.appendingPathComponent("_invalid_path_")
+        }
+        let candidate = base.appendingPathComponent(relativePath).standardizedFileURL
+        guard candidate.path.hasPrefix(basePath) && candidate.path.count > basePath.count else {
+            return directory.appendingPathComponent("_invalid_path_")
+        }
+        return candidate
     }
 
     /// Moves (or copies, if moving across volumes fails) the temp file into the
     /// store under a fresh UUID name. Returns the relative path to persist.
     static func store(tempURL: URL) throws -> String {
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        var storeDir = directory
+        try FileManager.default.createDirectory(at: storeDir, withIntermediateDirectories: true)
+        var resourceValues = URLResourceValues()
+        resourceValues.isExcludedFromBackup = true
+        try? storeDir.setResourceValues(resourceValues)
         let name = "\(UUID().uuidString).mp4"
-        let dest = directory.appendingPathComponent(name)
+        let dest = storeDir.appendingPathComponent(name)
         do {
             try FileManager.default.moveItem(at: tempURL, to: dest)
         } catch {
             try FileManager.default.copyItem(at: tempURL, to: dest)
+            try? FileManager.default.removeItem(at: tempURL)
         }
+        try? FileManager.default.setAttributes(
+            [.protectionKey: FileProtectionType.completeUnlessOpen],
+            ofItemAtPath: dest.path
+        )
         return "\(folderName)/\(name)"
     }
 
     static func delete(relativePath: String) {
-        try? FileManager.default.removeItem(at: resolve(relativePath: relativePath))
+        let resolved = resolve(relativePath: relativePath)
+        guard resolved.lastPathComponent != "_invalid_path_" else { return }
+        try? FileManager.default.removeItem(at: resolved)
     }
 
     /// Deletes every stored file that no registry entry references, and returns how

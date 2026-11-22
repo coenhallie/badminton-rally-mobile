@@ -154,34 +154,37 @@ struct PlayerView: View {
                 )
                 .padding(.horizontal, ShuttlGutter.page)
                 .padding(.top, 8)
-                // Only the tab shown is built. The list kept mounted and hidden
-                // under Profile went on being read by VoiceOver (a hidden List
-                // keeps its rows in the accessibility tree), so it goes, and
-                // its filter and order are kept here instead. Its scroll
-                // starts at the top again after a trip to Profile, where
-                // androidApp keeps it.
-                Group {
-                    if tab == Self.matchesTab {
-                        MatchesList(
-                            rally: rally, analyze: analyze, intake: intake, model: listModel,
-                            playersModel: model,
-                            onMatchTap: onMatchTap, onCourtMarking: onCourtMarking,
-                            // A player's list never draws the hero.
-                            heroPaused: true,
-                            onOverlayChange: { listOverlayOpen = $0 },
-                            playerId: playerId,
-                            // The last row scrolls clear of the Add button:
-                            // see the Players screen's own foot for the 88.
-                            bottomInset: 88,
-                            filter: $matchesFilter,
-                            sort: $matchesSort
-                        )
-                    } else {
-                        ProfileTab(player: shown, summary: summary)
-                            // The tiles read the match list; the Matches
-                            // tab's list runs the same loops when it is shown.
-                            .task { await listModel.start() }
-                    }
+                // Both tabs stay mounted so `MatchesList` keeps its scroll
+                // position across tab switches. The inactive tab is hidden from
+                // hit testing and from the accessibility tree so VoiceOver
+                // never reads rows under Profile (or tiles under Matches).
+                // `MatchesList` runs `listModel.start()` for the page's
+                // lifetime, so Profile reads the same live match list without
+                // spawning a duplicate set of observation loops.
+                ZStack {
+                    ProfileTab(player: shown, summary: summary)
+                        .opacity(tab == Self.profileTab ? 1 : 0)
+                        .zIndex(tab == Self.profileTab ? 1 : 0)
+                        .allowsHitTesting(tab == Self.profileTab)
+                        .accessibilityHidden(tab != Self.profileTab)
+                    MatchesList(
+                        rally: rally, analyze: analyze, intake: intake, model: listModel,
+                        playersModel: model,
+                        onMatchTap: onMatchTap, onCourtMarking: onCourtMarking,
+                        // A player's list never draws the hero.
+                        heroPaused: true,
+                        onOverlayChange: { listOverlayOpen = $0 },
+                        playerId: playerId,
+                        // The last row scrolls clear of the Add button:
+                        // see the Players screen's own foot for the 88.
+                        bottomInset: 88,
+                        filter: $matchesFilter,
+                        sort: $matchesSort
+                    )
+                    .opacity(tab == Self.matchesTab ? 1 : 0)
+                    .zIndex(tab == Self.matchesTab ? 1 : 0)
+                    .allowsHitTesting(tab == Self.matchesTab)
+                    .accessibilityHidden(tab != Self.matchesTab)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }

@@ -1,6 +1,7 @@
 import AVKit
 import SwiftUI
 import Shared
+import UIKit
 
 struct ClipDetailView: View {
     let rally: RallyApp
@@ -23,16 +24,17 @@ struct ClipDetailView: View {
             // `BackgroundWorkAction`.
             ToolbarItem(placement: .topBarTrailing) { BackgroundWorkAction() }
         }
+        .onDisappear { model?.player?.pause() }
         .task {
-            if model == nil {
-                let m = ClipDetailModel(rally: rally, clipId: clipId)
-                model = m
-                await m.load()
-                await m.refreshLabels()
-                // Structured child task: torn down automatically if this .task
-                // is cancelled (the view disappearing) before it is awaited.
-                async let labelsLoop: Void = m.observeLabels()
-                _ = await labelsLoop
+            let isInitial = model == nil
+            let m = model ?? ClipDetailModel(rally: rally, clipId: clipId)
+            model = m
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask { await m.observeLabels() }
+                group.addTask { await m.refreshLabels() }
+                if isInitial {
+                    group.addTask { await m.load() }
+                }
             }
         }
     }
@@ -59,7 +61,7 @@ struct ClipDetailView: View {
                     Task { await model.add(label: label, body: body) }
                 }
             )
-            .presentationDetents([.medium])
+            .presentationDetents([.medium, .large])
         }
         .alert("Delete note?", isPresented: Binding(
             get: { deleteTarget != nil },
@@ -93,7 +95,10 @@ struct ClipDetailView: View {
             // Tagging is the owner's, like the "+" beside the title: a viewer
             // of a shared match gets no chips rather than chips that do nothing.
             labels: model.isOwner ? model.labels : [],
-            onTag: model.isOwner ? { label, _ in Task { await model.add(label: label, body: "") } } : nil,
+            onTag: model.isOwner ? { label, positionMs in
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                Task { await model.addQuickTag(label: label, positionMs: positionMs) }
+            } : nil,
             tagError: model.actionError,
             allowsFullscreen: true
         )
@@ -120,7 +125,10 @@ struct ClipDetailView: View {
                     showAddSheet = true
                 } label: {
                     Image(systemName: "plus")
+                        .frame(minWidth: ShuttlTarget.minimum, minHeight: ShuttlTarget.minimum)
+                        .contentShape(Rectangle())
                 }
+                .accessibilityLabel("Add note")
             }
         }
         .padding(16)
@@ -151,6 +159,8 @@ struct ClipDetailView: View {
                     deleteTarget = annotation
                 } label: {
                     Image(systemName: "trash")
+                        .frame(minWidth: ShuttlTarget.minimum, minHeight: ShuttlTarget.minimum)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.borderless)
                 .accessibilityLabel("Delete note")

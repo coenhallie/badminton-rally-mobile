@@ -63,6 +63,7 @@ struct MatchSummarySheet: View {
             List {
                 ForEach(Array(summary.labels.enumerated()), id: \.offset) { _, label in
                     LabelShareRow(label: label)
+                        .listRowBackground(Color.clear)
                 }
                 if let name = topRallyName, let top = summary.topRally {
                     Button {
@@ -79,12 +80,22 @@ struct MatchSummarySheet: View {
                                 .foregroundStyle(Shuttl.textSecondary)
                         }
                     }
+                    .listRowBackground(Color.clear)
                 }
             }
             .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(Shuttl.bg)
+            .shuttlNavigationBarBackground()
             .navigationTitle(labelledNotes(summary.labelledNoteCount))
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
         }
+        .presentationBackground(Shuttl.bg)
     }
 }
 

@@ -75,12 +75,9 @@ struct RalliesFacet: View {
     }
 }
 
-/// "25.2s · 3 notes" (the row sets it in capitals): the length through the
-/// shared formatter the device rows use, left out rather than printed as "0.0s"
-/// when the clip has none. The stored float printed as it came read "25.1727S".
-/// Port of the meta line androidApp's `ClipRow` draws.
-func clipRowMeta(_ clip: RallyClip) -> String {
-    [RallyLengthKt.rallyLengthText(seconds: Double(clip.durationSeconds)), "\(clip.annotationCount) notes"]
-        .compactMap { $0 }
-        .joined(separator: " · ")
+/// "15.6s · 3 notes", "15.6s" with no notes: the shared `rallyRowMeta`, so the
+/// two platforms' rally rows say it alike. Port of the meta line androidApp's
+/// `ClipRow` draws.
+func clipRowMeta(_ clip: RallyClip) -> String? {
+    RallyLengthKt.rallyRowMeta(seconds: Double(clip.durationSeconds), noteCount: clip.annotationCount)
 }

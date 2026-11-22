@@ -1,5 +1,6 @@
 import Shared
 import SwiftUI
+import UIKit
 
 struct CourtMarkingRoute: Hashable {
     let entryId: String
@@ -75,13 +76,32 @@ struct CourtMarkingView: View {
     @State private var offset: CGSize = .zero
     @State private var lastPanTranslation: CGSize = .zero
     @GestureState private var magnifyFrom: CGFloat = 1
+    @GestureState private var isPanning = false
+    @State private var loadAttempt = 0
+    @State private var showDiscardAlert = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ScaledMetric(relativeTo: .body) private var helpRingSize: CGFloat = 26
+
+    /// True when leaving Step 1 would silently discard court points the coach
+    /// placed or edited in this session.
+    private var shouldConfirmBack: Bool {
+        step == .mapping && !(marking?.points.isEmpty ?? true) && !showsSavedMarks
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             if let error {
                 // At the page gutter, as androidApp's CourtMarkingScreen puts it.
-                ErrorBanner(message: error)
-                    .padding(ShuttlGutter.page)
+                VStack(spacing: 16) {
+                    ErrorBanner(message: error)
+                    Button("Retry") {
+                        self.error = nil
+                        loadAttempt += 1
+                    }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .frame(maxWidth: 160)
+                }
+                .padding(ShuttlGutter.page)
                 Spacer()
             } else if step == .options, let courtFrame, let marking, marking.isComplete {
                 optionsStep(courtFrame: courtFrame, marking: marking)
@@ -100,12 +120,9 @@ struct CourtMarkingView: View {
         // simulator with the error banner: a video whose file has gone paints
         // the whole top of the screen red, "Court mapping" included.
         .shuttlNavigationBarBackground()
-        // The system back button REPLACED on the options step, not joined by a
-        // second one. Adding a leading item leaves the navigation chevron in
-        // place beside it, and the two then do different things - one returns to
-        // the marks, the other leaves court marking entirely - which is two back
-        // buttons on one screen doing two things.
-        .navigationBarBackButtonHidden(step == .options)
+        // The system back button REPLACED on the options step (returns to
+        // mapping) and on mapping once unsaved points exist (confirms discard).
+        .navigationBarBackButtonHidden(step == .options || shouldConfirmBack)
         .toolbar {
             // Back out of the options step to the mapping step rather than off
             // the screen, which is what Android's BackHandler does. Without it
@@ -120,39 +137,59 @@ struct CourtMarkingView: View {
                     }
                     .accessibilityLabel("Back to court mapping")
                 }
+            } else if shouldConfirmBack {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showDiscardAlert = true
+                    } label: {
+                        Image(systemName: "chevron.left")
+                    }
+                    .accessibilityLabel("Back")
+                }
             }
         }
-        .task {
-            guard marking == nil, error == nil else { return }
-            guard let entry = rally.localVideos.get(id: entryId) else {
+        .alert("Discard court marks?", isPresented: $showDiscardAlert) {
+            Button("Keep marking", role: .cancel) {}
+            Button("Discard", role: .destructive) {
+                cancelFinder()
                 dismiss()
-                return
             }
-            do {
-                let loaded = try await CourtFrameLoader.loadFirstFrame(relativePath: entry.uri)
-                courtFrame = loaded
-                frame = loaded.image
-                // Opened on the marks this entry was analysed with last time,
-                // when it has any. They are persisted before either pipeline
-                // starts and were read back by nothing, so a second run over a
-                // video - cloud after device, a different metric set, a retry
-                // that falls through to here - meant placing all twelve again.
-                let restored = loaded.marking(restoring: entry.keypoints)
-                marking = restored
-                showsSavedMarks = restored.isComplete
-                // What this phone has learned about itself, if anything. Read
-                // here rather than in the selector so the selector stays a view
-                // over values it is given.
-                throughput = rally.deviceThroughput.throughput.value
-                // Saved marks are what the coach used last time: opening on
-                // them is a review, and the finder stays out of it unless he
-                // asks (Find court).
-                if restored.points.isEmpty { findOnOpening() }
-            } catch {
-                self.error = error.localizedDescription   // "Couldn't extract video frame"
-            }
+        } message: {
+            Text("You have placed \(marking?.points.count ?? 0) court points that haven't been saved yet.")
         }
+        .task(id: loadAttempt) { await loadFrame() }
         .onDisappear { cancelFinder() }
+    }
+
+    private func loadFrame() async {
+        guard marking == nil, error == nil else { return }
+        guard let entry = rally.localVideos.get(id: entryId) else {
+            dismiss()
+            return
+        }
+        do {
+            let loaded = try await CourtFrameLoader.loadFirstFrame(relativePath: entry.uri)
+            courtFrame = loaded
+            frame = loaded.image
+            // Opened on the marks this entry was analysed with last time,
+            // when it has any. They are persisted before either pipeline
+            // starts and were read back by nothing, so a second run over a
+            // video - cloud after device, a different metric set, a retry
+            // that falls through to here - meant placing all twelve again.
+            let restored = loaded.marking(restoring: entry.keypoints)
+            marking = restored
+            showsSavedMarks = restored.isComplete
+            // What this phone has learned about itself, if anything. Read
+            // here rather than in the selector so the selector stays a view
+            // over values it is given.
+            throughput = rally.deviceThroughput.throughput.value
+            // Saved marks are what the coach used last time: opening on
+            // them is a review, and the finder stays out of it unless he
+            // asks (Find court).
+            if restored.points.isEmpty { findOnOpening() }
+        } catch {
+            self.error = error.localizedDescription   // "Couldn't extract video frame"
+        }
     }
 
     @ViewBuilder
@@ -191,8 +228,34 @@ struct CourtMarkingView: View {
                 // letterbox inset too low, and the near half of the court could
                 // not be marked at all.
                 .gesture(tapGesture(displaySize: displaySize))
-                .simultaneousGesture(magnifyGesture())
-                .simultaneousGesture(panGesture)
+                .simultaneousGesture(magnifyGesture(displaySize: displaySize))
+                .simultaneousGesture(panGesture(displaySize: displaySize))
+                .onChange(of: isPanning) { _, active in
+                    if !active { lastPanTranslation = .zero }
+                }
+                .overlay(alignment: .topTrailing) {
+                    if scale > 1.01 {
+                        Button {
+                            withAnimation(reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.85)) {
+                                scale = 1
+                                offset = .zero
+                            }
+                        } label: {
+                            Text("Reset zoom")
+                                .shuttlType(ShuttlType.labelSmall)
+                                .foregroundStyle(ShuttlVideoOverlay.text)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(ShuttlVideoOverlay.scrim, in: Capsule())
+                                .frame(minWidth: ShuttlTarget.minimum, minHeight: ShuttlTarget.minimum)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.trailing, 8)
+                        .padding(.top, 4)
+                        .accessibilityLabel("Reset zoom")
+                    }
+                }
                 .frame(maxWidth: .infinity)
 
                 ScrollView {
@@ -273,10 +336,10 @@ struct CourtMarkingView: View {
                         Text("?")
                             .shuttlType(ShuttlType.labelMedium)
                             .foregroundStyle(Shuttl.textTertiary)
-                            .frame(width: 26, height: 26)
+                            .frame(width: helpRingSize, height: helpRingSize)
                             .overlay(Circle().stroke(Shuttl.textTertiary, lineWidth: 1))
-                            // 44pt is the minimum touch target; the ring stays 26.
-                            .frame(width: 44, height: 44)
+                            // 44pt minimum touch target; the ring scales cleanly with Dynamic Type.
+                            .frame(minWidth: ShuttlTarget.minimum, minHeight: ShuttlTarget.minimum)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -309,7 +372,7 @@ struct CourtMarkingView: View {
         VStack(spacing: 10) {
             Button("Analyze in cloud") { start(onDevice: false, marking: marking) }
                 .buttonStyle(PrimaryButtonStyle())
-            if localAnalysis != nil {
+            if ModelCatalog.canAnalyseOnDevice && localAnalysis != nil {
                 Button("Analyze on device") { start(onDevice: true, marking: marking) }
                     .buttonStyle(SecondaryPillButtonStyle())
                     .disabled(metrics.isEmpty)
@@ -322,7 +385,7 @@ struct CourtMarkingView: View {
 
     private func start(onDevice: Bool, marking: CourtMarkingState) {
         let keypoints = marking.toCourtKeypoints()
-        if onDevice, let localAnalysis, let entry = rally.localVideos.get(id: entryId) {
+        if onDevice, ModelCatalog.canAnalyseOnDevice, let localAnalysis, let entry = rally.localVideos.get(id: entryId) {
             // Saved first, as Android does and as the cloud run does inside
             // `startAnalysis`: a device run never moves the stage off LOCAL, so
             // the saved court is what tells the match list this court is
@@ -390,6 +453,7 @@ struct CourtMarkingView: View {
         let edited = after.points != before.points
         marking = after
         if edited {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
             showsSavedMarks = false
             finderStatus = finderStatus.afterEdit(marking: after)
         }
@@ -445,7 +509,11 @@ struct CourtMarkingView: View {
                 finderStatus = .idle
                 return
             }
-            apply(CourtAutoMarkingKt.afterCorners(marking: marking, corners: corners, finding: finding))
+            let outcome = CourtAutoMarkingKt.afterCorners(marking: marking, corners: corners, finding: finding)
+            if outcome.edited && outcome.marking.isComplete {
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+            }
+            apply(outcome)
         }
     }
 
@@ -477,25 +545,38 @@ struct CourtMarkingView: View {
         if finderStatus.isBusy { finderStatus = .idle }
     }
 
-    private func magnifyGesture() -> some Gesture {
+    /// Clamps a topLeading-anchored zoomed pan offset so the court frame never
+    /// slides out of the viewport.
+    nonisolated static func clampedPanOffset(_ candidate: CGSize, scale: CGFloat, displaySize: CGSize) -> CGSize {
+        guard scale > 1, displaySize.width > 0, displaySize.height > 0 else { return .zero }
+        let minX = -displaySize.width * (scale - 1)
+        let minY = -displaySize.height * (scale - 1)
+        return CGSize(
+            width: min(max(candidate.width, minX), 0),
+            height: min(max(candidate.height, minY), 0)
+        )
+    }
+
+    private func magnifyGesture(displaySize: CGSize) -> some Gesture {
         MagnifyGesture()
             .onChanged { value in
                 let zoom = value.magnification / magnifyFrom
                 let newScale = min(max(scale * zoom, 1), 6)
                 let effectiveZoom = newScale / scale
                 let centroid = value.startLocation
-                offset = CGSize(
+                let candidate = CGSize(
                     width: centroid.x - (centroid.x - offset.width) * effectiveZoom,
                     height: centroid.y - (centroid.y - offset.height) * effectiveZoom
                 )
                 scale = newScale
-                if scale == 1 { offset = .zero }
+                offset = Self.clampedPanOffset(candidate, scale: newScale, displaySize: displaySize)
             }
             .updating($magnifyFrom) { value, state, _ in state = value.magnification }
     }
 
-    private var panGesture: some Gesture {
+    private func panGesture(displaySize: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 8)
+            .updating($isPanning) { _, state, _ in state = true }
             .onChanged { value in
                 guard scale > 1 else { return }
                 let delta = CGSize(
@@ -503,7 +584,8 @@ struct CourtMarkingView: View {
                     height: value.translation.height - lastPanTranslation.height
                 )
                 lastPanTranslation = value.translation
-                offset = CGSize(width: offset.width + delta.width, height: offset.height + delta.height)
+                let candidate = CGSize(width: offset.width + delta.width, height: offset.height + delta.height)
+                offset = Self.clampedPanOffset(candidate, scale: scale, displaySize: displaySize)
             }
             .onEnded { _ in
                 lastPanTranslation = .zero

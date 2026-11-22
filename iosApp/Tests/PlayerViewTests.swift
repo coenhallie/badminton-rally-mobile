@@ -138,4 +138,43 @@ final class PlayerViewTests: XCTestCase {
         XCTAssertFalse(PlayerView.gone(present: false, wasPresent: false, loaded: false))
         XCTAssertTrue(PlayerView.gone(present: false, wasPresent: false, loaded: true))
     }
+
+    // MARK: - Single-pass player summaries
+
+    func testPlayerSummariesMatchSharedPlayerSummary() {
+        let older = LocalVideoEntry(
+            id: "e-older", uri: "LocalVideos/e-older.mp4", displayName: "m1.mp4",
+            durationMs: 48_000, sizeBytes: 2, addedAtEpochMs: 1_787_940_000_000,
+            title: nil, description: nil, keypoints: nil,
+            stage: .local, failedStep: nil, failureMessage: nil, resultSeen: false,
+            scoreLogId: nil,
+            homePlayerId: "p-marco", awayPlayerId: "p-li", homePlayers: [], awayPlayers: [], nearSide: nil
+        )
+        let newer = LocalVideoEntry(
+            id: "e-newer", uri: "LocalVideos/e-newer.mp4", displayName: "m2.mp4",
+            durationMs: 48_000, sizeBytes: 2, addedAtEpochMs: 1_788_000_000_000,
+            title: nil, description: nil, keypoints: nil,
+            stage: .local, failedStep: nil, failureMessage: nil, resultSeen: false,
+            scoreLogId: nil,
+            homePlayerId: "p-marco", awayPlayerId: nil, homePlayers: [], awayPlayers: [], nearSide: nil
+        )
+        let marco = Player(id: "p-marco", ownerId: "user-self", name: "Marco", racketArm: nil, createdAt: t0, updatedAt: t0)
+        let li = Player(id: "p-li", ownerId: "user-self", name: "Li", racketArm: nil, createdAt: t0, updatedAt: t0)
+        let matchList = MatchListBuilderKt.buildMatchList(input: MatchListInput(
+            clips: [sharedClip()], currentUserId: "user-self",
+            sharerByVideoId: [:], metadataByVideoId: [:], scoreLogs: [],
+            localEntries: [older, newer],
+            cloudProgress: [:], deviceRuns: [:],
+            storedTrackIds: [], storedSkeletonIds: [],
+            deviceClipCounts: ["e-older": KotlinInt(int: 5), "e-newer": KotlinInt(int: 3)],
+            localNoteCounts: [:],
+            players: [marco, li]
+        ))
+
+        let summaries = PlayersScreen.playerSummaries(from: matchList)
+
+        XCTAssertEqual(summaries["p-marco"], PlayerMatchesKt.playerSummary(list: matchList, playerId: "p-marco"))
+        XCTAssertEqual(summaries["p-li"], PlayerMatchesKt.playerSummary(list: matchList, playerId: "p-li"))
+        XCTAssertNil(summaries["p-none"])
+    }
 }

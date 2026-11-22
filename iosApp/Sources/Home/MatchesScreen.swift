@@ -3,9 +3,11 @@ import Shared
 
 /// All matches: the match list, every match whether a player holds it or not,
 /// with its filters, sort and "Shared with me". Pushed from the Players
-/// screen, which holds the Add button and the gear; this is the list under a
-/// back bar with the background-work indicator. It draws the root toast too,
-/// as Players does, so a finished run or a failed refresh is said here.
+/// screen, which holds the gear; this is the list under a back bar with the
+/// background-work indicator, and the same Add button Players and a player's
+/// page carry: its empty state says to score, record or import, and a page
+/// that says so has to offer the way to. It draws the root toast too, as
+/// Players does, so a finished run or a failed refresh is said here.
 /// Mirrors androidApp's AllMatchesScreen.kt.
 struct MatchesScreen: View {
     let rally: RallyApp
@@ -17,6 +19,8 @@ struct MatchesScreen: View {
     let onMatchTap: (MatchRoute) -> Void
     let onCourtMarking: (CourtMarkingRoute) -> Void
     let onOverlayChange: (Bool) -> Void
+    /// The Add sheet, for a match that pre-fills nobody, as on Players.
+    let onAdd: () -> Void
     /// What the root says. Owned by HomeView, which hears the runs land.
     @Binding var toast: ToastMessage?
 
@@ -30,10 +34,8 @@ struct MatchesScreen: View {
             onMatchTap: onMatchTap, onCourtMarking: onCourtMarking,
             heroPaused: heroPaused, onOverlayChange: onOverlayChange,
             playerId: nil,
-            // The panel's gutter, as Android's list ends: no Add button floats
-            // over this list's foot, so the last row needs no more than the air
-            // every other edge of the list has.
-            bottomInset: DrawerList.sideMargin,
+            // Clear of the Add button, as a player's Matches tab is.
+            bottomInset: 88,
             filter: $filter,
             sort: $sort
         )
@@ -46,10 +48,13 @@ struct MatchesScreen: View {
             // `BackgroundWorkAction`.
             ToolbarItem(placement: .topBarTrailing) { BackgroundWorkAction() }
         }
-        // No Add button here to stand clear of: the toast sits the button's
-        // own 16pt margin off the bottom, where Players' Add button would be.
-        // HomeView ends it when the coach leaves the list screens; see
-        // `RootToasts.listsLeft`.
-        .shuttlToast($toast, bottomInset: 16, endsWhenScreenGoes: false)
+        .overlay(alignment: .bottomTrailing) {
+            AddMatchButton(action: onAdd)
+                .padding(.trailing, 16)
+                .padding(.bottom, 16)
+        }
+        // Above the Add button, as on Players. HomeView ends it when the
+        // coach leaves the list screens; see `RootToasts.listsLeft`.
+        .shuttlToast($toast, bottomInset: 88, endsWhenScreenGoes: false)
     }
 }

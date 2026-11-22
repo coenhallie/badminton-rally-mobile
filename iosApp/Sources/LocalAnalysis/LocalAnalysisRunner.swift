@@ -549,14 +549,27 @@ final class LocalAnalysisRunner {
         let windows = metrics.contains(.rallyClips) ? result.clipWindows : []
         await MainActor.run { set(.cutting(done: 0, total: windows.count), for: entryId) }
         var clips: [PlayerTrackStore.Clip] = []
-        if !windows.isEmpty {
-            let directory = try AnalysisFiles.directory("local-clips/\(entryId)")
-            clips = try ClipCutter().cut(source: source, windows: windows, into: directory) { done in
-                Task { @MainActor [weak self] in
-                    self?.set(.cutting(done: done, total: windows.count), for: entryId)
+        if metrics.contains(.rallyClips) {
+            guard AnalysisFiles.isValidEntryId(entryId) else {
+                throw AnalysisFiles.Failure.invalidEntryId(entryId)
+            }
+            if !windows.isEmpty {
+                let directory = try AnalysisFiles.directory("local-clips/\(entryId)")
+                clips = try await ClipCutter().cut(source: source, windows: windows, into: directory) { done in
+                    Task { @MainActor [weak self] in
+                        self?.set(.cutting(done: done, total: windows.count), for: entryId)
+                    }
+                }
+                let kept = Set(clips.map { $0.url.lastPathComponent })
+                Self.cleanStaleClips(in: directory, keeping: kept)
+                try tracks.saveClips(entryId: entryId, clips: clips)
+            } else if let directory = AnalysisFiles.validatedSubdirectory(in: "local-clips", entryId: entryId) {
+                Self.cleanStaleClips(in: directory, keeping: [])
+                let indexFile = directory.appendingPathComponent("clips.index")
+                if AnalysisFiles.isStrictlyInside(indexFile, base: directory) {
+                    try? FileManager.default.removeItem(at: indexFile)
                 }
             }
-            try tracks.saveClips(entryId: entryId, clips: clips)
         }
 
         let elapsed = Date().timeIntervalSince(started)
@@ -576,4 +589,14 @@ final class LocalAnalysisRunner {
     }
 
     func clear(entryId: String) { set(nil, for: entryId) }
+
+    private nonisolated static func cleanStaleClips(in directory: URL, keeping: Set<String>) {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        for name in names where name.hasPrefix("rally-") && name.hasSuffix(".mp4") && !keeping.contains(name) {
+            let target = directory.appendingPathComponent(name)
+            if AnalysisFiles.isStrictlyInside(target, base: directory) {
+                try? FileManager.default.removeItem(at: target)
+            }
+        }
+    }
 }

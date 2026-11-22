@@ -1,4 +1,5 @@
 import AVFoundation
+import os
 import Shared
 import SwiftUI
 
@@ -43,16 +44,54 @@ struct ShuttlTransportBar: View {
     /// its skip pills empty. The same measurement as `ShuttlPillTabs`.
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
+    private struct TextWidthKey: Hashable {
+        let text: String
+        let fontName: String
+        let size: CGFloat
+        let kerning: CGFloat
+        let dynamicTypeSize: DynamicTypeSize
+    }
+
+    private static let textWidthCache = OSAllocatedUnfairLock<[TextWidthKey: CGFloat]>(initialState: [:])
+    private static let readoutWidthCache = OSAllocatedUnfairLock<[DynamicTypeSize: CGFloat]>(initialState: [:])
+
     /// Measured, not guessed, so a larger text size costs the row a step rather
     /// than clipping a label. `.custom(_:size:)` scales with Dynamic Type relative
     /// to the body style, so the measurement does too, at `dynamicTypeSize`.
+    /// Cached by label, role and `dynamicTypeSize` to avoid repeated CoreText
+    /// layout calls on redraw.
     private static func textWidth(
         _ text: String, _ role: ShuttlType.Role, _ dynamicTypeSize: DynamicTypeSize
     ) -> CGFloat {
+        let key = TextWidthKey(
+            text: text,
+            fontName: role.weight.rawValue,
+            size: role.size,
+            kerning: role.kerning,
+            dynamicTypeSize: dynamicTypeSize
+        )
+        if let cached = textWidthCache.withLock({ $0[key] }) {
+            return cached
+        }
         let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
         let size = UIFontMetrics(forTextStyle: .body).scaledValue(for: role.size, compatibleWith: traits)
         let font = UIFont(name: role.weight.rawValue, size: size) ?? .systemFont(ofSize: size)
-        return ceil((text as NSString).size(withAttributes: [.font: font, .kern: role.kerning]).width)
+        let width = ceil((text as NSString).size(withAttributes: [.font: font, .kern: role.kerning]).width)
+        textWidthCache.withLock { $0[key] = width }
+        return width
+    }
+
+    private static func maxReadoutWidth(_ dynamicTypeSize: DynamicTypeSize) -> CGFloat {
+        if let cached = readoutWidthCache.withLock({ $0[dynamicTypeSize] }) {
+            return cached
+        }
+        // The widest the readout gets, not what it says now: the row must not
+        // re-space itself when the speed changes.
+        let width = PlaybackOptions.shared.speedOptions
+            .map { textWidth(PlaybackOptions.shared.formatSpeed(speed: $0.floatValue), ShuttlType.labelMedium, dynamicTypeSize) }
+            .max() ?? 0
+        readoutWidthCache.withLock { $0[dynamicTypeSize] = width }
+        return width
     }
 
     private var metrics: TransportRowMetrics {
@@ -64,11 +103,7 @@ struct ShuttlTransportBar: View {
                 dynamicTypeSize
             )
         }
-        // The widest the readout gets, not what it says now: the row must not
-        // re-space itself when the speed changes.
-        let readout = PlaybackOptions.shared.speedOptions
-            .map { Self.textWidth(PlaybackOptions.shared.formatSpeed(speed: $0.floatValue), ShuttlType.labelMedium, dynamicTypeSize) }
-            .max() ?? 0
+        let readout = Self.maxReadoutWidth(dynamicTypeSize)
         return layout.fit(
             availableWidth: Float(width),
             readoutWidth: Float(readout),
@@ -97,6 +132,7 @@ struct ShuttlTransportBar: View {
                     pauseIfPlaying()
                     step(-1)
                 },
+                onHoldActivate: { pauseIfPlaying() },
                 onHoldTick: { step(-3) }
             )
             RoundTransportButton(
@@ -161,13 +197,19 @@ struct ShuttlTransportBar: View {
 
     /// `rate` rather than `timeControlStatus`: the latter reports `.playing`
     /// while a seek settles, which would flip the glyph to a pause during frame
-    /// stepping.
+    /// stepping. Observed via KVO instead of a polling timer so updates land
+    /// immediately with zero background wakeups.
     private func trackPlaying() async {
-        playing = player.rate != 0
-        while !Task.isCancelled {
-            let now = player.rate != 0
+        let stream = AsyncStream<Bool> { continuation in
+            let observation = player.observe(\.rate, options: [.initial, .new]) { player, _ in
+                continuation.yield(player.rate != 0)
+            }
+            continuation.onTermination = { _ in
+                observation.invalidate()
+            }
+        }
+        for await now in stream {
             if now != playing { playing = now }
-            try? await Task.sleep(for: .milliseconds(100))
         }
     }
 
@@ -292,12 +334,10 @@ private struct RoundTransportButton: View {
     }
 }
 
-/// The press behaviour every transport control shares: a tap that fires on press
-/// so repeated taps stay responsive, a hold that activates once after a delay,
-/// and an optional tick that repeats afterwards.
-///
-/// Carried over from the `TransportButton` this replaced - only the surface it
-/// draws changed, not how it reads a finger.
+/// The press behaviour every transport control shares: a tap that fires on
+/// release (cancelling cleanly if the finger drifts into a scroll), a hold
+/// that activates once after a delay, and an optional tick that repeats
+/// afterwards.
 private struct TransportSurface<S: Shape, Content: View>: View {
     let shape: S
     let accent: Bool
@@ -310,40 +350,62 @@ private struct TransportSurface<S: Shape, Content: View>: View {
     @ViewBuilder var content: Content
 
     @State private var pressed = false
+    @State private var holdActivated = false
+    @State private var dragCancelled = false
     @State private var holdTask: Task<Void, Never>? = nil
+    @GestureState private var gestureActive = false
+
+    private static var dragCancelDistance: CGFloat { 12 }
 
     var body: some View {
         content
             .background(fill)
             .clipShape(shape)
             .contentShape(shape)
-            // A gesture-driven view, not a `Button`, because a tap has to fire on
-            // press and a hold has to be told apart from it - which `Button` does
-            // not offer. That costs the traits a Button would have carried, so
-            // they are added back by hand: without them VoiceOver announces these
-            // as plain images and never says "button".
+            // A gesture-driven view, not a `Button`, because a hold has to be
+            // told apart from a tap with custom activation delay and repeat
+            // ticks - which `Button` does not offer. That costs the traits a
+            // Button would have carried, so they are added back by hand: without
+            // them VoiceOver announces these as plain images and never says
+            // "button".
             .accessibilityElement(children: .ignore)
             .accessibilityAddTraits(.isButton)
-            .gesture(
+            .accessibilityAction { onTap() }
+            .simultaneousGesture(
                 DragGesture(minimumDistance: 0)
-                    .onChanged { _ in
-                        guard !pressed else { return }
-                        pressed = true
-                        onTap()
-                        holdTask = Task {
-                            try? await Task.sleep(for: holdActivationDelay)
-                            guard !Task.isCancelled else { return }
-                            onHoldActivate()
-                            guard let tick = onHoldTick else { return }
-                            while !Task.isCancelled {
-                                tick()
-                                try? await Task.sleep(for: holdTickPeriod)
+                    .updating($gestureActive) { _, active, _ in active = true }
+                    .onChanged { value in
+                        let moved = hypot(value.translation.width, value.translation.height)
+                        if !pressed {
+                            guard !dragCancelled else { return }
+                            if moved > Self.dragCancelDistance {
+                                dragCancelled = true
+                                return
                             }
+                            pressed = true
+                            holdActivated = false
+                            holdTask = Task {
+                                try? await Task.sleep(for: holdActivationDelay)
+                                guard !Task.isCancelled else { return }
+                                holdActivated = true
+                                onHoldActivate()
+                                guard let tick = onHoldTick else { return }
+                                while !Task.isCancelled {
+                                    tick()
+                                    try? await Task.sleep(for: holdTickPeriod)
+                                }
+                            }
+                        } else if !holdActivated && moved > Self.dragCancelDistance {
+                            dragCancelled = true
+                            endPress(fireTap: false)
                         }
                     }
-                    .onEnded { _ in endPress() }
+                    .onEnded { _ in endPress(fireTap: true) }
             )
-            .onDisappear { endPress() }
+            .onChange(of: gestureActive) { _, active in
+                if !active { endPress(fireTap: false) }
+            }
+            .onDisappear { endPress(fireTap: false) }
     }
 
     private var fill: Color {
@@ -351,10 +413,19 @@ private struct TransportSurface<S: Shape, Content: View>: View {
         return pressed ? Shuttl.bgTertiary : Shuttl.bgSecondary
     }
 
-    private func endPress() {
+    private func endPress(fireTap: Bool = false) {
         holdTask?.cancel()
         holdTask = nil
+        let wasCancelled = dragCancelled
+        if fireTap || !gestureActive { dragCancelled = false }
+        guard pressed else { return }
+        let wasHeld = holdActivated
         pressed = false
-        onRelease()
+        holdActivated = false
+        if wasHeld {
+            onRelease()
+        } else if fireTap && !wasCancelled {
+            onTap()
+        }
     }
 }

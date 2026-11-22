@@ -54,17 +54,20 @@ final class PoseRunner {
     /// for three models is measurable for no reason.
     private func refillPadding() {
         letterboxed.withUnsafeMutableBufferPointer { canvas in
-            memset(canvas.baseAddress, Int32(Self.pad), canvas.count)
+            guard let base = canvas.baseAddress else { return }
+            memset(base, Int32(Self.pad), canvas.count)
         }
     }
 
     func detect(frame: Int, buffer: CVPixelBuffer) throws -> PoseFrame {
         let box = Letterbox(source: buffer, size: Self.size)
         refillPadding()
-        FramePreprocessor.toRgbResizedInto(
+        guard FramePreprocessor.toRgbResizedInto(
             buffer, canvas: &letterboxed, canvasWidth: Self.size,
             offsetX: box.padX, offsetY: box.padY, fitWidth: box.fitWidth, fitHeight: box.fitHeight
-        )
+        ) else {
+            throw VideoFrameSource.Failure.decodeFailed("unsupported pixel format in pose", nil)
+        }
         FramePreprocessor.toChwTensor(letterboxed, width: Self.size, height: Self.size, into: &input)
 
         let output = try session.run(

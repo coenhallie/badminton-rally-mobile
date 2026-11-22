@@ -1,3 +1,4 @@
+import os
 import SwiftUI
 import UIKit
 
@@ -25,19 +26,53 @@ enum ShuttlType {
         let weight: Weight
         let trackingEm: CGFloat
         let lineHeightMultiple: CGFloat
+        /// Extra leading in points, which is what `.lineSpacing` takes.
+        ///
+        /// Precomputed once per role (backed by a static natural-line-height
+        /// cache) rather than calling `UIFont(name:size:)` on every
+        /// `.shuttlType(...)` body evaluation. Clamped at zero: `.lineSpacing`
+        /// adds to the font's natural line height and cannot subtract from it,
+        /// so a target tighter than Archivo's own leading is unreachable this
+        /// way. See `View.shuttlType(_:)`.
+        let lineSpacing: CGFloat
+
+        init(
+            name: String,
+            size: CGFloat,
+            weight: Weight,
+            trackingEm: CGFloat,
+            lineHeightMultiple: CGFloat
+        ) {
+            self.name = name
+            self.size = size
+            self.weight = weight
+            self.trackingEm = trackingEm
+            self.lineHeightMultiple = lineHeightMultiple
+            let natural = Self.cachedNaturalLineHeight(weight: weight, size: size)
+            self.lineSpacing = max(0, size * lineHeightMultiple - natural)
+        }
 
         /// Tracking in points, which is what `.kerning` takes.
         var kerning: CGFloat { size * trackingEm }
 
-        /// Extra leading in points, which is what `.lineSpacing` takes.
-        ///
-        /// Clamped at zero: `.lineSpacing` adds to the font's natural line
-        /// height and cannot subtract from it, so a target tighter than Archivo's
-        /// own leading is unreachable this way. See `View.shuttlType(_:)`.
-        var lineSpacing: CGFloat {
-            let natural = UIFont(name: weight.rawValue, size: size)?.lineHeight
+        private struct LineHeightKey: Hashable {
+            let weight: Weight
+            let size: CGFloat
+        }
+
+        private static let naturalLineHeightCache = OSAllocatedUnfairLock<[LineHeightKey: CGFloat]>(
+            initialState: [:]
+        )
+
+        private static func cachedNaturalLineHeight(weight: Weight, size: CGFloat) -> CGFloat {
+            let key = LineHeightKey(weight: weight, size: size)
+            if let cached = naturalLineHeightCache.withLock({ $0[key] }) {
+                return cached
+            }
+            let computed = UIFont(name: weight.rawValue, size: size)?.lineHeight
                 ?? UIFont.systemFont(ofSize: size).lineHeight
-            return max(0, size * lineHeightMultiple - natural)
+            naturalLineHeightCache.withLock { $0[key] = computed }
+            return computed
         }
 
         /// The same role at a different size, which is androidApp's

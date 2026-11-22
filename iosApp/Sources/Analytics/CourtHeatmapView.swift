@@ -23,33 +23,104 @@ struct CourtHeatmapView: View {
     var rallies: RallyFrames? = nil
     var cellSizeM: Double = CourtOccupancy.companion.DEFAULT_CELL_SIZE_M
 
-    var body: some View {
-        if track.samples.isEmpty {
-            PanelMessage(text: whyEmpty(track))
-        } else {
-            let occupancy = CourtOccupancy(cellSizeM: cellSizeM, marginM: CourtLayout.marginM)
-            let _ = occupancy.addAll(samples: track.samples, fps: fps, within: rallies)
-            if rallies != nil && occupancy.totalSeconds == 0 {
-                PanelMessage(text: HeatmapScopeKt.HEATMAP_NO_RALLY_SAMPLES)
-            } else {
-                let grid = occupancy.smoothed(sigmaM: CourtOccupancy.companion.DEFAULT_SIGMA_M)
-                    .map { $0.map { $0.doubleValue } }
-                let peak = grid.flatMap { $0 }.max() ?? 0
+    @State private var rendered: RenderedHeatmap? = nil
 
-                VStack(spacing: 0) {
-                    courtCard(grid: grid, peak: peak)
-                    scale
-                    summary(occupancy: occupancy, coverage: rallies?.coverage(track: track) ?? track.coverage)
-                    Spacer(minLength: ShuttlGutter.page)
+    private struct RenderedHeatmap: Sendable {
+        let image: CGImage?
+        let totalSeconds: Double
+        let coverage: Double
+        let hasRallies: Bool
+    }
+
+    private struct Inputs: Equatable {
+        let trackId: ObjectIdentifier
+        let sampleCount: Int
+        let framesWithPose: Int32
+        let fps: Double
+        let cellSizeM: Double
+        let hasRallies: Bool
+        let rallyFrameCount: Int32
+        let firstSampleRallyEnd: Int32?
+    }
+
+    private var inputs: Inputs {
+        Inputs(
+            trackId: ObjectIdentifier(track),
+            sampleCount: track.samples.count,
+            framesWithPose: track.framesWithPose,
+            fps: fps,
+            cellSizeM: cellSizeM,
+            hasRallies: rallies != nil,
+            rallyFrameCount: rallies?.frameCount ?? -1,
+            firstSampleRallyEnd: track.samples.first.flatMap { rallies?.endOf(frame: $0.frame)?.int32Value }
+        )
+    }
+
+    var body: some View {
+        Group {
+            if track.samples.isEmpty {
+                PanelMessage(text: whyEmpty(track))
+            } else if let rendered {
+                if rendered.hasRallies && rendered.totalSeconds == 0 {
+                    PanelMessage(text: HeatmapScopeKt.HEATMAP_NO_RALLY_SAMPLES)
+                } else {
+                    VStack(spacing: 0) {
+                        courtCard(rendered)
+                        scale
+                        summary(totalSeconds: rendered.totalSeconds, coverage: rendered.coverage)
+                        Spacer(minLength: ShuttlGutter.page)
+                    }
                 }
+            } else {
+                // One frame while occupancy binning and smoothing run off the main thread.
+                Color.clear.frame(height: 0)
             }
         }
+        .task(id: inputs) {
+            guard !track.samples.isEmpty else {
+                rendered = nil
+                return
+            }
+            let track = track
+            let fps = fps
+            let rallies = rallies
+            let cellSizeM = cellSizeM
+            let result = await Task.detached(priority: .userInitiated) {
+                CourtHeatmapView.render(track: track, fps: fps, rallies: rallies, cellSizeM: cellSizeM)
+            }.value
+            guard !Task.isCancelled else { return }
+            rendered = result
+        }
+    }
+
+    private nonisolated static func render(
+        track: PlayerTrack,
+        fps: Double,
+        rallies: RallyFrames?,
+        cellSizeM: Double
+    ) -> RenderedHeatmap {
+        let occupancy = CourtOccupancy(cellSizeM: cellSizeM, marginM: CourtLayout.marginM)
+        occupancy.addAll(samples: track.samples, fps: fps, within: rallies)
+        let coverage = rallies?.coverage(track: track) ?? track.coverage
+        if rallies != nil && occupancy.totalSeconds == 0 {
+            return RenderedHeatmap(image: nil, totalSeconds: 0, coverage: coverage, hasRallies: true)
+        }
+        let grid = occupancy.smoothed(sigmaM: CourtOccupancy.companion.DEFAULT_SIGMA_M)
+            .map { $0.map { $0.doubleValue } }
+        let peak = grid.flatMap { $0 }.max() ?? 0
+        let image = Self.heatImage(grid: grid, peak: peak)
+        return RenderedHeatmap(
+            image: image,
+            totalSeconds: occupancy.totalSeconds,
+            coverage: coverage,
+            hasRallies: rallies != nil
+        )
     }
 
     // MARK: - The court
 
     @ViewBuilder
-    private func courtCard(grid: [[Double]], peak: Double) -> some View {
+    private func courtCard(_ rendered: RenderedHeatmap) -> some View {
         CourtCard {
             // One pixel per cell, scaled up by the renderer rather than drawn as
             // rectangles.
@@ -61,7 +132,7 @@ struct CourtHeatmapView: View {
             // turned the Gaussian tail into a solid plateau with a hard
             // rectangular edge. Interpolating an image has no seams to cover and
             // lets the tail reach zero.
-            if let image = Self.heatImage(grid: grid, peak: peak) {
+            if let image = rendered.image {
                 Image(decorative: image, scale: 1)
                     .resizable()
                     .interpolation(.high)
@@ -70,6 +141,15 @@ struct CourtHeatmapView: View {
                 Self.drawCourt(context: &context, size: size, marginM: CourtLayout.marginM)
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Self.spoken(rendered))
+    }
+
+    private static func spoken(_ rendered: RenderedHeatmap) -> String {
+        let scope = rendered.hasRallies ? "during rallies" : "across the whole match"
+        let minutes = String(format: "%.1f", rendered.totalSeconds / 60)
+        let coveragePct = Int(rendered.coverage * 100)
+        return "Court position heatmap \(scope). \(minutes) minutes tracked, player found in \(coveragePct) percent of frames."
     }
 
     /// The scale, said once under the court as the mock says it: the ramp itself
@@ -96,13 +176,13 @@ struct CourtHeatmapView: View {
     /// so a frame without confident ankles contributes nothing rather than a
     /// guess, and the share of frames that produced a position is what the
     /// picture rests on.
-    private func summary(occupancy: CourtOccupancy, coverage: Double) -> some View {
+    private func summary(totalSeconds: Double, coverage: Double) -> some View {
         HStack(spacing: 8) {
             // Two lines for the caption: both of these run longer than half a
             // phone, and the shared tile's one-line default would ellipsize
             // "Frames with the player" to "Frames with the…".
             ShuttlStatTile(
-                value: String(format: "%.1f", occupancy.totalSeconds / 60),
+                value: String(format: "%.1f", totalSeconds / 60),
                 unit: " min", label: "Tracked", labelLineLimit: 2
             )
             ShuttlStatTile(
@@ -120,7 +200,7 @@ struct CourtHeatmapView: View {
     /// Alpha rises with occupancy and reaches zero where there is none, so the
     /// edge of the data is where the player stopped going rather than where the
     /// grid happens to end.
-    static func heatImage(grid: [[Double]], peak: Double) -> CGImage? {
+    nonisolated static func heatImage(grid: [[Double]], peak: Double) -> CGImage? {
         guard peak > 0, let first = grid.first, !first.isEmpty else { return nil }
         let rows = grid.count
         let columns = first.count
@@ -214,7 +294,7 @@ struct CourtHeatmapView: View {
     private static let cool = Color(red: 0x29 / 255, green: 0x62 / 255, blue: 0xFF / 255)
     private static let hot = Color(red: 0xFF / 255, green: 0x6D / 255, blue: 0x00 / 255)
 
-    private static func ramp(_ t: Double) -> (Double, Double, Double) {
+    private nonisolated static func ramp(_ t: Double) -> (Double, Double, Double) {
         (
             (0x29 + (0xFF - 0x29) * t) / 255,
             (0x62 + (0x6D - 0x62) * t) / 255,

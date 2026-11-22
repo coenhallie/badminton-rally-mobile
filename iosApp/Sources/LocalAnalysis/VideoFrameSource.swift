@@ -113,6 +113,42 @@ final class VideoFrameSource {
         return meta
     }
 
+    /// Async metadata loader for Swift Concurrency callers (e.g. `CourtFrameLoader`).
+    /// Loads AVFoundation properties with native `await` and runs the synchronous
+    /// sample count on a dedicated background queue so cooperative pool threads
+    /// are never blocked by a semaphore.
+    func loadMetadata() async throws -> Metadata {
+        if let cached = cachedMetadata { return cached }
+        let asset = AVURLAsset(url: url)
+        guard let track = try await asset.loadTracks(withMediaType: .video).first else {
+            throw Failure.noVideoTrack(name)
+        }
+        let size = try await track.load(.naturalSize)
+        let duration = try await asset.load(.duration)
+        let frames = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Int, Error>) in
+            Self.ioQueue.async {
+                do {
+                    continuation.resume(returning: try self.countSamples(asset: asset, track: track))
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+        let seconds = CMTimeGetSeconds(duration)
+        let meta = Metadata(
+            frameCount: frames,
+            width: Int(size.width.rounded()),
+            height: Int(size.height.rounded()),
+            fps: seconds > 0 ? Double(frames) / seconds : 0
+        )
+        cachedMetadata = meta
+        return meta
+    }
+
+    private static let ioQueue = DispatchQueue(
+        label: "com.badmintontracker.video-frame-source", qos: .userInitiated
+    )
+
     /// Walks the video track counting samples, decoding nothing.
     ///
     /// `outputSettings: nil` is what makes that true: the output then vends
@@ -136,11 +172,16 @@ final class VideoFrameSource {
         defer { if reader.status == .reading { reader.cancelReading() } }
 
         var count = 0
-        while let sample = output.copyNextSampleBuffer() {
-            // A sample with no duration and no data is a marker, not a frame.
-            // Counting one would shift every index after it.
-            if CMSampleBufferGetNumSamples(sample) > 0 { count += CMSampleBufferGetNumSamples(sample) }
-            CMSampleBufferInvalidate(sample)
+        while true {
+            let hasMore = autoreleasepool { () -> Bool in
+                guard let sample = output.copyNextSampleBuffer() else { return false }
+                // A sample with no duration and no data is a marker, not a frame.
+                // Counting one would shift every index after it.
+                if CMSampleBufferGetNumSamples(sample) > 0 { count += CMSampleBufferGetNumSamples(sample) }
+                CMSampleBufferInvalidate(sample)
+                return true
+            }
+            if !hasMore { break }
         }
         // A reader that stopped on an error looks exactly like one that reached
         // the end, and a short count is a plausible-looking wrong analysis
@@ -223,14 +264,19 @@ final class VideoFrameSource {
         defer { if reader.status == .reading { reader.cancelReading() } }
 
         var index = 0
-        while index < maxFrames, let sample = output.copyNextSampleBuffer() {
-            defer { CMSampleBufferInvalidate(sample) }
-            guard let buffer = CMSampleBufferGetImageBuffer(sample) else { continue }
-            let time = CMSampleBufferGetPresentationTimeStamp(sample)
-            CVPixelBufferLockBaseAddress(buffer, .readOnly)
-            defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
-            try body(Frame(index: index, seconds: CMTimeGetSeconds(time), pixelBuffer: buffer))
-            index += 1
+        while index < maxFrames {
+            let hasMore: Bool = try autoreleasepool {
+                guard let sample = output.copyNextSampleBuffer() else { return false }
+                defer { CMSampleBufferInvalidate(sample) }
+                guard let buffer = CMSampleBufferGetImageBuffer(sample) else { return true }
+                let time = CMSampleBufferGetPresentationTimeStamp(sample)
+                CVPixelBufferLockBaseAddress(buffer, .readOnly)
+                defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+                try body(Frame(index: index, seconds: CMTimeGetSeconds(time), pixelBuffer: buffer))
+                index += 1
+                return true
+            }
+            if !hasMore { break }
         }
 
         // A reader that stopped on an error looks exactly like one that reached
@@ -252,13 +298,14 @@ final class VideoFrameSource {
     /// that must finish with it before the next frame is read, and a suspension
     /// point inside that callback would let the reader recycle the buffer under
     /// it. So the two `load` calls are bridged rather than the pass being turned
-    /// inside out. The caller is already on a background queue - this is never
-    /// reached from the main actor - so blocking here blocks nothing a person
-    /// can see.
+    /// inside out. Synchronous callers run on `IosLocalInferenceEngine`'s
+    /// dedicated `DispatchQueue` (never on Swift Concurrency's cooperative pool),
+    /// and `Task.detached` avoids inheriting any caller actor that might be
+    /// blocked on the semaphore.
     private func awaitValue<T>(_ work: @escaping () async throws -> T) throws -> T {
         let semaphore = DispatchSemaphore(value: 0)
         var result: Result<T, Error>!
-        Task {
+        Task.detached(priority: .userInitiated) {
             do { result = .success(try await work()) } catch { result = .failure(error) }
             semaphore.signal()
         }

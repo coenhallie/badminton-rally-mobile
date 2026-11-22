@@ -134,6 +134,8 @@ struct LocalClipPlayerSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var player: AVPlayer? = nil
     @State private var looper: ClipLooper? = nil
+    @State private var playhead = PlaybackPlayhead()
+    @State private var isPlaying = false
 
     var body: some View {
         // No `NavigationStack`: this sheet has nowhere to push to, and an empty
@@ -161,6 +163,26 @@ struct LocalClipPlayerSheet: View {
             }
             .aspectRatio(16.0 / 9.0, contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: ShuttlRadius.large))
+
+            HStack(spacing: 12) {
+                Button(action: togglePlay) {
+                    Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                        .shuttlType(ShuttlType.titleMedium)
+                        .foregroundStyle(Shuttl.onAccent)
+                        .frame(width: ShuttlTarget.minimum, height: ShuttlTarget.minimum)
+                        .background(Shuttl.accent, in: Circle())
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .disabled(player == nil)
+                .accessibilityLabel(isPlaying ? "Pause" : "Play")
+
+                LocalClipScrubBar(
+                    playhead: playhead,
+                    onSeek: player != nil ? { seek(toFraction: $0) } : nil
+                )
+            }
+
             Spacer(minLength: 0)
         }
         .padding(ShuttlGutter.page)
@@ -180,11 +202,151 @@ struct LocalClipPlayerSheet: View {
             looper = ClipLooper(player: created)
             player = created
             created.play()
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask { @MainActor in
+                    await observeRate(of: created)
+                }
+                group.addTask { @MainActor in
+                    await observePosition(of: created)
+                }
+            }
         }
         .onDisappear {
             player?.pause()
             looper = nil
             player = nil
+        }
+    }
+
+    private func togglePlay() {
+        guard let player else { return }
+        if player.rate != 0 {
+            player.pause()
+            return
+        }
+        if let item = player.currentItem,
+           item.duration.isNumeric,
+           CMTimeGetSeconds(item.currentTime()) >= CMTimeGetSeconds(item.duration) - 0.05 {
+            player.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero)
+        }
+        player.play()
+    }
+
+    private func seek(toFraction fraction: Double) {
+        guard let player,
+              let duration = player.currentItem?.duration,
+              duration.isNumeric
+        else { return }
+        let target = CMTimeGetSeconds(duration) * min(max(fraction, 0), 1)
+        player.seek(
+            to: CMTime(seconds: target, preferredTimescale: 600),
+            toleranceBefore: .zero,
+            toleranceAfter: .zero
+        )
+    }
+
+    private func observeRate(of player: AVPlayer) async {
+        let stream = AsyncStream<Bool> { continuation in
+            let observation = player.observe(\.rate, options: [.initial, .new]) { player, _ in
+                continuation.yield(player.rate != 0)
+            }
+            continuation.onTermination = { _ in observation.invalidate() }
+        }
+        for await playing in stream {
+            if playing != isPlaying { isPlaying = playing }
+        }
+    }
+
+    private func observePosition(of player: AVPlayer) async {
+        let interval = CMTime(seconds: 1.0 / 30.0, preferredTimescale: 600)
+        let stream = AsyncStream<PlaybackPosition> { continuation in
+            let token = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { time in
+                let duration = player.currentItem?.duration
+                continuation.yield(PlaybackPosition(
+                    positionMs: time.isNumeric ? Int64(CMTimeGetSeconds(time) * 1000) : 0,
+                    durationMs: (duration?.isNumeric == true)
+                        ? Int64(CMTimeGetSeconds(duration!) * 1000)
+                        : 0
+                ))
+            }
+            continuation.onTermination = { _ in
+                Task { @MainActor in player.removeTimeObserver(token) }
+            }
+        }
+        for await next in stream {
+            if playhead.position != next { playhead.position = next }
+        }
+    }
+}
+
+/// Leaf scrub control for `LocalClipPlayerSheet` so 30 Hz position updates only
+/// redraw the bar and timecode readout.
+private struct LocalClipScrubBar: View {
+    let playhead: PlaybackPlayhead
+    let onSeek: ((Double) -> Void)?
+
+    @State private var dragging = false
+    @State private var dragFraction: Double = 0
+    @GestureState private var isDragging = false
+
+    var body: some View {
+        let position = playhead.position
+        let shown = dragging ? dragFraction : position.fraction
+        HStack(spacing: 10) {
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Color.clear.contentShape(Rectangle())
+                    Capsule()
+                        .fill(Shuttl.bgTertiary)
+                        .frame(height: 4)
+                    Capsule()
+                        .fill(Shuttl.accent)
+                        .frame(width: max(0, proxy.size.width * shown), height: 4)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .updating($isDragging) { _, state, _ in state = true }
+                        .onChanged { value in
+                            guard proxy.size.width > 0 else { return }
+                            let target = min(max(Double(value.location.x / proxy.size.width), 0), 1)
+                            let shouldSeek = !dragging || abs(target - dragFraction) >= 0.001
+                            dragging = true
+                            dragFraction = target
+                            if shouldSeek { onSeek?(target) }
+                        }
+                        .onEnded { value in
+                            guard proxy.size.width > 0 else { return }
+                            let target = min(max(Double(value.location.x / proxy.size.width), 0), 1)
+                            dragging = false
+                            onSeek?(target)
+                        }
+                )
+            }
+            .frame(height: ShuttlTarget.minimum)
+            .onChange(of: isDragging) { _, active in
+                if !active { dragging = false }
+            }
+            .allowsHitTesting(onSeek != nil)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Playback position")
+            .accessibilityValue(
+                PlaybackClockKt.playbackClock(positionMs: position.positionMs, durationMs: position.durationMs)
+            )
+            .accessibilityAdjustableAction { direction in
+                guard let onSeek else { return }
+                let step = 0.05
+                switch direction {
+                case .increment: onSeek(min(position.fraction + step, 1))
+                case .decrement: onSeek(max(position.fraction - step, 0))
+                @unknown default: break
+                }
+            }
+
+            Text(PlaybackClockKt.playbackClock(positionMs: position.positionMs, durationMs: position.durationMs))
+                .shuttlType(ShuttlType.bodySmall, monospacedDigit: true)
+                .foregroundStyle(Shuttl.textSecondary)
+                .fixedSize()
         }
     }
 }

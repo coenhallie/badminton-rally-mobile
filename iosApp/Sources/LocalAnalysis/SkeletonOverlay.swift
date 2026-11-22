@@ -49,7 +49,9 @@ func poseHighlight(for kind: MetricKind) -> PoseHighlight? {
 ///
 /// Port of androidApp's `SkeletonOverlay`.
 struct SkeletonOverlay: View {
-    let keypoints: [Point]
+    /// Pre-converted source-video pixel coordinates so `Canvas.draw` never
+    /// bridges Kotlin `Point` objects at 30 Hz.
+    let keypoints: [CGPoint]
     /// Already unwrapped from the pose's `[KotlinFloat]` by the caller: this
     /// view redraws with the playhead, and unwrapping seventeen boxed floats per
     /// redraw is work the pose only has to have done to it once.
@@ -58,6 +60,38 @@ struct SkeletonOverlay: View {
     let videoHeight: Int
     var minConfidence: Float = NearPlayerSelector.companion.MIN_KEYPOINT_CONFIDENCE
     var highlight: PoseHighlight? = nil
+
+    init(
+        keypoints: [CGPoint],
+        confidence: [Float],
+        videoWidth: Int,
+        videoHeight: Int,
+        minConfidence: Float = NearPlayerSelector.companion.MIN_KEYPOINT_CONFIDENCE,
+        highlight: PoseHighlight? = nil
+    ) {
+        self.keypoints = keypoints
+        self.confidence = confidence
+        self.videoWidth = videoWidth
+        self.videoHeight = videoHeight
+        self.minConfidence = minConfidence
+        self.highlight = highlight
+    }
+
+    init(
+        keypoints: [Point],
+        confidence: [Float],
+        videoWidth: Int,
+        videoHeight: Int,
+        minConfidence: Float = NearPlayerSelector.companion.MIN_KEYPOINT_CONFIDENCE,
+        highlight: PoseHighlight? = nil
+    ) {
+        self.keypoints = keypoints.map { CGPoint(x: $0.x, y: $0.y) }
+        self.confidence = confidence
+        self.videoWidth = videoWidth
+        self.videoHeight = videoHeight
+        self.minConfidence = minConfidence
+        self.highlight = highlight
+    }
 
     var body: some View {
         if keypoints.count >= Joints.count, videoWidth > 0, videoHeight > 0 {
@@ -75,8 +109,8 @@ struct SkeletonOverlay: View {
         let offsetY = (size.height - CGFloat(videoHeight) * scale) / 2
         func at(_ index: Int) -> CGPoint {
             CGPoint(
-                x: offsetX + CGFloat(keypoints[index].x) * scale,
-                y: offsetY + CGFloat(keypoints[index].y) * scale
+                x: offsetX + keypoints[index].x * scale,
+                y: offsetY + keypoints[index].y * scale
             )
         }
         func confident(_ index: Int) -> Bool {
@@ -89,13 +123,10 @@ struct SkeletonOverlay: View {
             context.stroke(path, with: .color(colour), style: StrokeStyle(lineWidth: width, dash: dash))
         }
 
-        // `edgeVisible` rather than a local "both ends confident": the rule is
-        // in `:analysis` so the two platforms cannot draw different limbs, and
-        // the boxed confidences it needs are built once per redraw rather than
-        // once per edge.
-        let boxed = confidence.map { KotlinFloat(float: $0) }
-        for edge in Joints.edges
-        where Skeleton.shared.edgeVisible(confidence: boxed, edge: edge.pair, minConfidence: minConfidence) {
+        // Matches `Skeleton.edgeVisible` (both endpoints within bounds and
+        // >= minConfidence) directly in Swift to avoid re-boxing `[KotlinFloat]`
+        // and bridging 16 times per frame.
+        for edge in Joints.edges where confident(edge.a) && confident(edge.b) {
             stroke(at(edge.a), at(edge.b), edge.arm ? Palette.arm : Palette.limb, width: Metrics.limb)
         }
 
@@ -187,15 +218,13 @@ struct SkeletonOverlay: View {
         static let leftAnkle = Int(Coco.shared.LEFT_ANKLE)
         static let rightAnkle = Int(Coco.shared.RIGHT_ANKLE)
 
-        /// The pair travels with the unwrapped indices so `edgeVisible` can
-        /// still be asked without rebuilding it.
-        static let edges: [(a: Int, b: Int, arm: Bool, pair: KotlinPair<KotlinInt, KotlinInt>)] = {
+        static let edges: [(a: Int, b: Int, arm: Bool)] = {
             let arms = Skeleton.shared.ARM_EDGES
             return Skeleton.shared.EDGES.compactMap { edge in
                 guard let a = (edge.first as? KotlinInt)?.intValue,
                       let b = (edge.second as? KotlinInt)?.intValue
                 else { return nil }
-                return (a: a, b: b, arm: arms.contains(edge), pair: edge)
+                return (a: a, b: b, arm: arms.contains(edge))
             }
         }()
     }

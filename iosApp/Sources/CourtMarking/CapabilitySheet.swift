@@ -12,6 +12,8 @@ import SwiftUI
 /// Two columns rather than a paragraph. The coach is standing in a sports hall
 /// deciding between two buttons, and the question is a comparison.
 struct CapabilitySheet: View {
+    @Environment(\.dismiss) private var dismiss
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -45,6 +47,11 @@ struct CapabilitySheet: View {
             .background(Shuttl.bg)
             .navigationTitle("What each run produces")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
         }
     }
 

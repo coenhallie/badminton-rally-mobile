@@ -31,6 +31,10 @@ struct MetricsStrip: View {
     /// `selected`, so a swipe to a page is not undone by the tile that stays
     /// selected on the page it came from.
     @State private var page = 0
+    /// Measured two-row tile height at the active Dynamic Type size so `TabView`
+    /// never clips scaled text while still keeping a consistent height across
+    /// pages inside a `ScrollView`.
+    @State private var measuredPageHeight: CGFloat = Metrics.minPageHeight
 
     private var kinds: [MetricKind] {
         MetricsFormatKt.visibleKinds(hasCourt: hasCourt, racketArm: racketArm)
@@ -53,11 +57,26 @@ struct MetricsStrip: View {
         return VStack(spacing: 0) {
             TabView(selection: $page) {
                 ForEach(Array(pages.enumerated()), id: \.offset) { index, kinds in
-                    tilePage(kinds).tag(index)
+                    tilePage(kinds)
+                        .frame(maxHeight: .infinity, alignment: .top)
+                        .tag(index)
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
-            .frame(height: Metrics.pageHeight)
+            .frame(minHeight: Metrics.minPageHeight, idealHeight: measuredPageHeight, maxHeight: measuredPageHeight)
+            .background {
+                if let sampleKind = kinds.first {
+                    tilePage(Array(repeating: sampleKind, count: Metrics.tilesPerPage))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .hidden()
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                        .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { height in
+                            let target = max(Metrics.minPageHeight, ceil(height))
+                            if target != measuredPageHeight { measuredPageHeight = target }
+                        }
+                }
+            }
             .padding(.horizontal, ShuttlGutter.page)
             // The dots say there is more, which the mock's single grid never had
             // to; the chevron opens the whole grid. One row for both, so the
@@ -125,7 +144,7 @@ struct MetricsStrip: View {
                         .frame(width: 44, height: 44, alignment: .trailing)
                 }
                 .buttonStyle(.borderless)
-                .accessibilityLabel("Show one row of measurements")
+                .accessibilityLabel("Show fewer measurements")
             }
             // Two to a row, each taking half, as the mock lays them out. An odd
             // last tile gets an empty partner so it keeps its half rather than
@@ -187,10 +206,9 @@ struct MetricsStrip: View {
     private enum Metrics {
         /// Tiles per page of the collapsed strip: two rows of two.
         static let tilesPerPage = 4
-        /// Two tiles and the gap between them. `TabView` will not size itself to
-        /// its pages, so the height is stated; it is the same on every page
-        /// because a short page keeps its empty slots.
-        static let pageHeight: CGFloat = 176
+        /// Floor height for two rows of tiles at default Dynamic Type before
+        /// the hidden two-row sizer reports the scaled height.
+        static let minPageHeight: CGFloat = 176
         static let racketArms: [(arm: RacketArm?, label: String)] = [
             (.left, "Left arm"), (.right, "Right arm"), (nil, "Both"),
         ]

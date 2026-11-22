@@ -318,6 +318,9 @@ committed). Both platforms, light and dark, large text; copy in `shared/*Copy.kt
   its filters, sort and "Shared with me".
 - The add (+) button stays and opens the existing Add sheet; a match added here
   has no player until the coach picks one.
+- (2026-11-18) All matches carries the same add button. Its empty state tells
+  the coach to score, record or import, and without the button the page said so
+  with no way to do it.
 - Empty state: "Add your first player" with the Add player action, and All
   matches still reachable, so a coach with history is never stranded.
 

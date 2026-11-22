@@ -88,12 +88,17 @@ struct PlayerTrackStore {
     private static let clipsDirectoryName = "local-clips"
 
     func save(entryId: String, track: PlayerTrack, fps: Double) throws {
+        guard AnalysisFiles.isValidEntryId(entryId) else { throw AnalysisFiles.Failure.invalidEntryId(entryId) }
         let directory = try AnalysisFiles.directory(TrackSource.local.trackDir)
+        let target = directory.appendingPathComponent("\(entryId).track")
+        guard AnalysisFiles.isStrictlyInside(target, base: directory) else {
+            throw AnalysisFiles.Failure.invalidEntryId(entryId)
+        }
         var text = "\(Self.version) \(fps) \(track.framesWithPose)\n"
         for sample in track.samples {
             text += "\(sample.frame),\(sample.courtPosition.x),\(sample.courtPosition.y)\n"
         }
-        try text.write(to: directory.appendingPathComponent("\(entryId).track"), atomically: true, encoding: .utf8)
+        try text.write(to: target, atomically: true, encoding: .utf8)
     }
 
     /// Every track from one analysis, in the v3 format.
@@ -111,10 +116,15 @@ struct PlayerTrackStore {
         selections: [PlayerSelection],
         fps: Double
     ) throws {
+        guard AnalysisFiles.isValidEntryId(entryId) else { throw AnalysisFiles.Failure.invalidEntryId(entryId) }
         // Nothing to draw is nothing to offer, matching save(): no file, so
         // has() stays false rather than answering true for an empty court.
         guard selections.contains(where: { !$0.track.samples.isEmpty }) else { return }
         let directory = try AnalysisFiles.directory(source.trackDir)
+        let target = directory.appendingPathComponent("\(entryId).track")
+        guard AnalysisFiles.isStrictlyInside(target, base: directory) else {
+            throw AnalysisFiles.Failure.invalidEntryId(entryId)
+        }
         var text = "\(Self.versionV3) \(fps) \(selections.count)\n"
         for selection in selections {
             text += "\(selection.side.name) \(selection.track.framesWithPose) \(selection.track.samples.count)\n"
@@ -124,10 +134,7 @@ struct PlayerTrackStore {
         }
         // .atomic: a partial write must never become visible, which is what
         // makes `has` reading the header alone sound for files this store wrote.
-        try text.write(
-            to: directory.appendingPathComponent("\(entryId).track"),
-            atomically: true, encoding: .utf8
-        )
+        try text.write(to: target, atomically: true, encoding: .utf8)
     }
 
     /// Whether a track this version of the app can draw exists for `entryId`,
@@ -144,7 +151,9 @@ struct PlayerTrackStore {
     /// positions two to three metres off, and a row offering one would offer a
     /// heatmap that is wrong rather than merely unloadable.
     func has(entryId: String, source: TrackSource = .local) -> Bool {
-        guard let handle = try? FileHandle(forReadingFrom: fileFor(entryId, source)) else { return false }
+        guard let url = fileFor(entryId, source),
+              let handle = try? FileHandle(forReadingFrom: url)
+        else { return false }
         defer { try? handle.close() }
         // The header is short; a fixed read is enough to reach the first space
         // and cannot be defeated by a huge single-line file.
@@ -156,7 +165,9 @@ struct PlayerTrackStore {
 
     /// Nil when there is nothing stored, or when what is stored cannot be read.
     func load(entryId: String, source: TrackSource = .local) -> Stored? {
-        guard let text = try? String(contentsOf: fileFor(entryId, source), encoding: .utf8) else { return nil }
+        guard let url = fileFor(entryId, source),
+              let text = try? String(contentsOf: url, encoding: .utf8)
+        else { return nil }
         var lines = text.split(separator: "\n", omittingEmptySubsequences: true)
         guard !lines.isEmpty else { return nil }
         let header = lines.removeFirst().split(separator: " ")
@@ -248,6 +259,7 @@ struct PlayerTrackStore {
     /// megabytes, and without an index they are reachable only from the
     /// in-memory state of the run that made them.
     func saveClips(entryId: String, clips: [Clip]) throws {
+        guard AnalysisFiles.isValidEntryId(entryId) else { throw AnalysisFiles.Failure.invalidEntryId(entryId) }
         guard !clips.isEmpty else { return }
         let directory = try AnalysisFiles.directory("\(Self.clipsDirectoryName)/\(entryId)")
         var text = "\(Self.version)\n"
@@ -258,7 +270,7 @@ struct PlayerTrackStore {
     }
 
     func loadClips(entryId: String) -> [Clip] {
-        let directory = clipsDirectoryFor(entryId)
+        guard let directory = clipsDirectoryFor(entryId) else { return [] }
         let index = directory.appendingPathComponent("clips.index")
         // No index: recover whatever is on disk anyway. The clips are the
         // expensive artifact - tens of megabytes and minutes of re-encoding -
@@ -275,7 +287,15 @@ struct PlayerTrackStore {
                   let index = Int(fields[0]),
                   let start = Double(fields[1]), let end = Double(fields[2])
             else { return nil }
-            let url = directory.appendingPathComponent(String(fields[3]))
+            let fileName = String(fields[3])
+            guard !fileName.isEmpty,
+                  !fileName.contains("/"),
+                  !fileName.contains("\\"),
+                  !fileName.contains(".."),
+                  fileName != "."
+            else { return nil }
+            let url = directory.appendingPathComponent(fileName)
+            guard AnalysisFiles.isStrictlyInside(url, base: directory) else { return nil }
             // A clip whose file has gone is not a clip; listing it would offer
             // a player that opens on nothing.
             guard FileManager.default.isReadableFile(atPath: url.path) else { return nil }
@@ -290,28 +310,26 @@ struct PlayerTrackStore {
     /// and the caller shows the rally number alone rather than a fabricated
     /// "0.0s - 0.0s".
     private func scanClips(entryId: String) -> [Clip] {
-        let directory = clipsDirectoryFor(entryId)
+        guard let directory = clipsDirectoryFor(entryId) else { return [] }
         let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
         return names.compactMap { name -> Clip? in
             guard name.hasPrefix("rally-"), name.hasSuffix(".mp4"),
                   let index = Int(name.dropFirst("rally-".count).dropLast(".mp4".count))
             else { return nil }
+            let url = directory.appendingPathComponent(name)
+            guard AnalysisFiles.isStrictlyInside(url, base: directory) else { return nil }
             return Clip(
-                index: index, url: directory.appendingPathComponent(name),
+                index: index, url: url,
                 startSeconds: 0, endSeconds: 0
             )
         }.sorted { $0.index < $1.index }
     }
 
-    private func fileFor(_ entryId: String, _ source: TrackSource = .local) -> URL {
-        AnalysisFiles.directory
-            .appendingPathComponent(source.trackDir, isDirectory: true)
-            .appendingPathComponent("\(entryId).track")
+    private func fileFor(_ entryId: String, _ source: TrackSource = .local) -> URL? {
+        AnalysisFiles.validatedFile(in: source.trackDir, entryId: entryId, suffix: ".track")
     }
 
-    private func clipsDirectoryFor(_ entryId: String) -> URL {
-        AnalysisFiles.directory
-            .appendingPathComponent(Self.clipsDirectoryName, isDirectory: true)
-            .appendingPathComponent(entryId, isDirectory: true)
+    private func clipsDirectoryFor(_ entryId: String) -> URL? {
+        AnalysisFiles.validatedSubdirectory(in: Self.clipsDirectoryName, entryId: entryId)
     }
 }

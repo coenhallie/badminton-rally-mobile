@@ -18,9 +18,11 @@ struct RallyRowLabel: View {
             Text(title)
                 .shuttlType(ShuttlType.titleMedium)
                 .foregroundStyle(Shuttl.text)
+            // Set as it reads, in the match list's detail style: in capitals
+            // the seconds read "15.6S". See the shared `rallyRowMeta`.
             if let meta {
-                Text(meta.uppercased())
-                    .shuttlType(ShuttlType.labelSmall)
+                Text(meta)
+                    .shuttlType(ShuttlType.bodySmall)
                     .foregroundStyle(Shuttl.textSecondary)
             }
         }

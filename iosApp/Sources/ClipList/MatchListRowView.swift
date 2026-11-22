@@ -40,66 +40,74 @@ struct MatchListRowView: View {
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: item.isRaised ? ShuttlRadius.large : ShuttlRadius.medium)
-        Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 0) {
-                    MatchThumbnail(item: item, thumbnails: thumbnails, media: media, refreshGeneration: refreshGeneration)
-                        .padding(.trailing, DrawerList.gap)
-                    VStack(alignment: .leading, spacing: 3) {
-                        rowText(item.title, primary: true)
-                        rowText(item.detail)
-                        // Absent until somebody is named: "Home vs Away" on
-                        // every row would say nothing.
-                        if let players = item.playersLine { rowText(players) }
-                        if let sharedBy = item.sharedBy { rowText(sharedBy) }
-                        if item.hasStatusLine {
-                            MatchStatusLine(item: item)
-                                .padding(.top, 1)
+        // Split layout rather than nesting `rowMenu` and the primary action
+        // button inside an outer `Button`, so SwiftUI and VoiceOver never fight
+        // over nested interactive controls.
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 0) {
+                Button(action: onTap) {
+                    HStack(spacing: 0) {
+                        MatchThumbnail(item: item, thumbnails: thumbnails, media: media, refreshGeneration: refreshGeneration)
+                            .padding(.trailing, DrawerList.gap)
+                        VStack(alignment: .leading, spacing: 3) {
+                            rowText(item.title, primary: true)
+                            rowText(item.detail)
+                            // Absent until somebody is named: "Home vs Away" on
+                            // every row would say nothing.
+                            if let players = item.playersLine { rowText(players) }
+                            if let sharedBy = item.sharedBy { rowText(sharedBy) }
+                            if item.hasStatusLine {
+                                MatchStatusLine(item: item)
+                                    .padding(.top, 1)
+                            }
                         }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    if !menu.isEmpty { rowMenu }
-                }
-                if item.statusIsError, let failure = item.statusText {
-                    Text(failure)
-                        .shuttlType(ShuttlType.bodySmall)
-                        .foregroundStyle(Shuttl.error)
-                        // Two, not one: a pipeline's reason is a sentence, and
-                        // cut to one line it loses the part that says what to do.
-                        .lineLimit(2)
-                        // Under the text column, not under the thumbnail.
-                        .padding(.leading, DrawerList.thumbWidth + DrawerList.gap)
-                        .padding(.top, 4)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    // Without this, the Button's hit area is only its children's, and
+                    // the empty stretch beside a short title would go dead and silently
+                    // stop opening the match.
+                    .contentShape(Rectangle())
                 }
-                if let label = MatchListCopy.shared.actionLabel(action: item.action) {
-                    // Its own line, not a trailing pill: beside the overflow
-                    // menu a pill left the title about four characters wide.
-                    // Full width is also how Home states its two primary
-                    // actions, so the card reads as one clear next step.
-                    Button(label, action: onAction)
-                        .shuttlType(ShuttlType.labelMedium)
-                        .foregroundStyle(Shuttl.onAccent)
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(Shuttl.accent)
-                        .clipShape(Capsule())
-                        .contentShape(Capsule())
-                        .buttonStyle(.borderless)
-                        .padding(.top, DrawerList.gap)
-                }
+                .buttonStyle(.plain)
+                if !menu.isEmpty { rowMenu }
             }
-            .padding(.horizontal, DrawerList.rowPaddingH)
-            .padding(.vertical, DrawerList.rowPaddingV)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(item.isRaised ? Shuttl.bgTertiary : Color.clear, in: shape)
-            // Without this, the Button's hit area is only its children's, and
-            // the empty stretch beside a short title would go dead and silently
-            // stop opening the match.
-            .contentShape(shape)
+            if item.statusIsError, let failure = item.statusText {
+                Text(failure)
+                    .shuttlType(ShuttlType.bodySmall)
+                    .foregroundStyle(Shuttl.error)
+                    // Two, not one: a pipeline's reason is a sentence, and
+                    // cut to one line it loses the part that says what to do.
+                    .lineLimit(2)
+                    // Under the text column, not under the thumbnail.
+                    .padding(.leading, DrawerList.thumbWidth + DrawerList.gap)
+                    .padding(.top, 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture(perform: onTap)
+            }
+            if let label = MatchListCopy.shared.actionLabel(action: item.action) {
+                // Its own line, not a trailing pill: beside the overflow
+                // menu a pill left the title about four characters wide.
+                // Full width is also how Home states its two primary
+                // actions, so the card reads as one clear next step.
+                Button(label, action: onAction)
+                    .shuttlType(ShuttlType.labelMedium)
+                    .foregroundStyle(Shuttl.onAccent)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(Shuttl.accent)
+                    .clipShape(Capsule())
+                    .contentShape(MinimumTargetShape(axes: .vertical))
+                    .buttonStyle(.borderless)
+                    .padding(.top, DrawerList.gap)
+            }
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, DrawerList.rowPaddingH)
+        .padding(.vertical, DrawerList.rowPaddingV)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(item.isRaised ? Shuttl.bgTertiary : Color.clear, in: shape)
+        .contentShape(shape)
     }
 
     private func rowText(_ text: String, primary: Bool = false) -> some View {
@@ -321,6 +329,7 @@ private struct CloudThumbnail: View {
             // Never throws in practice: a thumbnail is decorative, and the
             // repository returns nil for anything that goes wrong.
             let signed = try? await media.signedThumbnailUrl(clip: clip)
+            if Task.isCancelled { return }
             if let signed, let parsed = URL(string: signed) {
                 url = parsed
             } else {

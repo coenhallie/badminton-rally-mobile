@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -25,6 +26,22 @@ struct CameraRecorder: UIViewControllerRepresentable {
 
     static var isAvailable: Bool {
         UIImagePickerController.isSourceTypeAvailable(.camera)
+    }
+
+    /// Actionable message when the camera cannot be opened (missing hardware or
+    /// denied/restricted permission), or `nil` when recording may proceed.
+    static var unavailableMessage: String? {
+        guard isAvailable else {
+            return "Camera is not available on this device."
+        }
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .denied, .restricted:
+            return "Camera access is turned off. Enable it in Settings to record matches."
+        case .notDetermined, .authorized:
+            return nil
+        @unknown default:
+            return nil
+        }
     }
 
     /// Everything about the recording that does not need a camera to set, apart

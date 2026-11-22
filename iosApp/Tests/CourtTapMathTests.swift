@@ -17,4 +17,18 @@ final class CourtTapMathTests: XCTestCase {
         XCTAssertEqual(p.x, 200, accuracy: 0.001)
         XCTAssertEqual(p.y, 150, accuracy: 0.001)
     }
+
+    func testClampedPanOffsetKeepsCourtInsideBounds() {
+        let size = CGSize(width: 300, height: 200)
+        // Scale 1× always resets to zero.
+        XCTAssertEqual(CourtMarkingView.clampedPanOffset(CGSize(width: -40, height: 25), scale: 1, displaySize: size), .zero)
+        // Top-leading anchor: offset must stay in [-size*(scale-1), 0].
+        let positive = CourtMarkingView.clampedPanOffset(CGSize(width: 50, height: 30), scale: 2, displaySize: size)
+        XCTAssertEqual(positive.width, 0, accuracy: 0.001)
+        XCTAssertEqual(positive.height, 0, accuracy: 0.001)
+
+        let farNegative = CourtMarkingView.clampedPanOffset(CGSize(width: -999, height: -999), scale: 2, displaySize: size)
+        XCTAssertEqual(farNegative.width, -300, accuracy: 0.001)
+        XCTAssertEqual(farNegative.height, -200, accuracy: 0.001)
+    }
 }

@@ -104,6 +104,9 @@ struct MatchView: View {
     @State private var intake: LocalVideoIntake
     @State private var showImporter = false
     @State private var showRecorder = false
+    /// True from the moment the user picks a video until `LocalVideoIntake`
+    /// finishes or fails. Prevents overlapping imports and drives the overlay.
+    @State private var isImportingVideo = false
     @State private var pendingAttachTarget: MatchTarget? = nil
     /// Whether the picker or the camera this page opened is still on screen,
     /// up to the end of its dismissal: a sheet raised before then is silently
@@ -230,18 +233,20 @@ struct MatchView: View {
     // same one), the same fact the match list's shared builder reads for
     // its row's `isOwned` and so for its share button. `MatchGrouping` stays
     // for this page's `MatchSummary`; the list no longer builds one.
+    // Computed once per `body` pass and threaded down so we don't regroup clips
+    // multiple times per render.
     private var ownedVideo: MatchSummary? {
         guard let effectiveVideoId else { return nil }
+        let matchingClips = allClips.filter { $0.videoId == effectiveVideoId }
+        guard !matchingClips.isEmpty else { return nil }
         let (owned, _) = MatchGrouping.matches(
-            from: allClips.map(ClipInfo.init),
+            from: matchingClips.map(ClipInfo.init),
             currentUserId: rally.auth.currentUserId(),
             sharerByVideoId: [:],
             metadataByVideoId: metadataByVideoId
         )
         return owned.first { $0.videoId == effectiveVideoId }
     }
-
-    private var isOwned: Bool { ownedVideo != nil }
 
     /// The entry whose own sheet edits this match (`detailsSheet`'s last
     /// branch): a match the coach owns whose players can be said
@@ -255,15 +260,15 @@ struct MatchView: View {
     /// Exactly the cases `detailsSheet` draws something for, so the item never
     /// opens an empty sheet (an owned video's clips not read yet, an entry
     /// removed from the phone).
-    private var editsDetails: Bool {
-        matchModel.log != nil || isOwned || detailsEntry != nil
+    private func editsDetails(ownedVideo: MatchSummary?) -> Bool {
+        matchModel.log != nil || ownedVideo != nil || detailsEntry != nil
     }
 
     // The score log's details when there is one, the video's own otherwise: a
     // scored match that was later filmed keeps the log as its record. A video's
     // own players are the list row's, whose sides read a profile's name, for
     // the coach's matches (Ruling 11).
-    private var detailsLine: String? {
+    private func detailsLine(ownedVideo: MatchSummary?) -> String? {
         let videoLine = item?.isOwned == true ? item?.playersLine : ownedVideo?.playersLine
         return MatchDetailsKt.matchDetailsLine(
             playersLine: matchModel.log?.playersLine(players: matchModel.players) ?? videoLine,
@@ -347,6 +352,7 @@ struct MatchView: View {
     }
 
     var body: some View {
+        let currentOwnedVideo = ownedVideo
         VStack(spacing: 0) {
             if let intakeError = intake.error {
                 ErrorBanner(message: intakeError)
@@ -400,7 +406,7 @@ struct MatchView: View {
                             .padding(.horizontal, ShuttlGutter.page)
                             .padding(.top, 8)
                         }
-                        sectionContent
+                        sectionContent(ownedVideo: currentOwnedVideo)
                             // The gap under the section row (or the bar, on a
                             // page with one section), the same for every section.
                             // Points and Rallies are lists whose first row holds
@@ -427,7 +433,12 @@ struct MatchView: View {
         .shuttlNavigationBarBackground()
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { toolbarContent }
+        .toolbar { toolbarContent(ownedVideo: currentOwnedVideo) }
+        .overlay {
+            if isImportingVideo {
+                VideoImportOverlay()
+            }
+        }
         // The section first shown counts as chosen. Without this, a section
         // appearing moves the page: a video only on this phone opens on Match
         // alone, and when the run started from under its player lands, Rallies
@@ -462,7 +473,7 @@ struct MatchView: View {
         }) { sheet in
             switch sheet {
             case .details:
-                detailsSheet
+                detailsSheet(ownedVideo: currentOwnedVideo)
             case .homeEnd:
                 if let asked = homeEndAsked {
                     HomeEndPrompt(
@@ -559,15 +570,21 @@ struct MatchView: View {
             VideoPicker(
                 onPicked: { tempURL, suggestedName in
                     let target = pendingAttachTarget
+                    isImportingVideo = true
                     // No player: the match it is for already says who played.
                     Task {
+                        defer { isImportingVideo = false }
                         await intake.add(
                             tempURL: tempURL, suggestedName: suggestedName, isRecording: false,
                             forMatch: target, forPlayer: nil
                         )
                     }
                 },
-                onFailed: { intake.error = "Couldn't import the video. Please try again." }
+                onFailed: {
+                    isImportingVideo = false
+                    intake.error = "Couldn't import the video. Please try again."
+                },
+                onBeginImport: { isImportingVideo = true }
             )
         }
         .fullScreenCover(isPresented: $showRecorder, onDismiss: captureDismissed) {
@@ -656,10 +673,10 @@ struct MatchView: View {
     /// so two players never run at once. A section with nothing to draw yet
     /// (its row has not arrived) draws nothing rather than another section.
     @ViewBuilder
-    private var sectionContent: some View {
+    private func sectionContent(ownedVideo: MatchSummary?) -> some View {
         switch section {
         case .points:
-            listContent
+            listContent(ownedVideo: ownedVideo)
         case .match:
             if let entryId = item?.entryId {
                 MatchVideoSection(rally: rally, entryId: entryId, analyzeLabel: analyzeLabel) {
@@ -674,7 +691,7 @@ struct MatchView: View {
             if clipsForMatch.isEmpty, let item, item.deviceClipCount > 0, let entryId = item.entryId {
                 refreshingIfCloud(DeviceRalliesSection(localAnalysis: localAnalysis, entryId: entryId))
             } else {
-                listContent
+                listContent(ownedVideo: ownedVideo)
             }
         case .analysis:
             if let item, let id = MatchPageSectionKt.analysisId(item: item) {
@@ -716,7 +733,9 @@ struct MatchView: View {
         }
     }
 
-    private var listContent: some View { refreshingIfCloud(listBody) }
+    private func listContent(ownedVideo: MatchSummary?) -> some View {
+        refreshingIfCloud(listBody(ownedVideo: ownedVideo))
+    }
 
     // A pull gesture that spins and refreshes nothing is worse than no gesture: a
     // score-only match has no video, so there is nothing here for a refresh to
@@ -741,7 +760,7 @@ struct MatchView: View {
     /// Starts a pick for this match, from either entry point (the "Add video"
     /// menu or the board's finish prompt). Mirrors `AuthGate.kt`'s `onAddVideo`.
     private func attachVideo(_ intent: AttachIntent) {
-        guard let log = matchModel.log else { return }
+        guard !isImportingVideo, let log = matchModel.log else { return }
         // A match acquires a video only once it is closed: attaching to a log
         // still marked live would leave a bound match advertising "Resume
         // scoring" for the whole upload and clipping window.
@@ -760,11 +779,11 @@ struct MatchView: View {
             // `showRecorder` to present. Checked here rather than at each call
             // site, so both this page's own menu and the board's finish prompt
             // (which reaches this through `route.attach`) get it for free.
-            if CameraRecorder.isAvailable {
+            if let message = CameraRecorder.unavailableMessage {
+                intake.error = message
+            } else {
                 capturePresented = true
                 showRecorder = true
-            } else {
-                intake.error = "Camera is not available on this device."
             }
         }
     }
@@ -794,7 +813,7 @@ struct MatchView: View {
     /// playing at any stage and the name and description only while LOCAL.
     /// Mirrors androidApp's MatchScreen.
     @ViewBuilder
-    private var detailsSheet: some View {
+    private func detailsSheet(ownedVideo: MatchSummary?) -> some View {
         // The video, for a scored match's "Home was at the" row: the row's
         // entry and the effective video id, the ids the end is routed by.
         let endVideoId = effectiveVideoId
@@ -932,7 +951,7 @@ struct MatchView: View {
         if let intent { attachVideo(intent) }
     }
 
-    private var listBody: some View {
+    private func listBody(ownedVideo: MatchSummary?) -> some View {
         List {
             if section == .points {
                 if let log = matchModel.log {
@@ -954,7 +973,7 @@ struct MatchView: View {
                     clips: clipsForMatch,
                     summary: summary,
                     matchTitle: matchName,
-                    details: detailsLine,
+                    details: detailsLine(ownedVideo: ownedVideo),
                     description: metadata?.description_,
                     onSummaryClick: { activeSheet = .summary },
                     onClipClick: { clipRoute = ClipRoute(id: $0.id) }
@@ -968,7 +987,9 @@ struct MatchView: View {
     }
 
     @ToolbarContentBuilder
-    private var toolbarContent: some ToolbarContent {
+    private func toolbarContent(ownedVideo: MatchSummary?) -> some ToolbarContent {
+        let isOwned = ownedVideo != nil
+        let canEditDetails = editsDetails(ownedVideo: ownedVideo)
         // The chrome indicator, on every bar androidApp puts it on. See
         // `BackgroundWorkAction`.
         ToolbarItem(placement: .topBarTrailing) { BackgroundWorkAction() }
@@ -992,6 +1013,7 @@ struct MatchView: View {
                 } label: {
                     Image(systemName: "plus")
                 }
+                .disabled(isImportingVideo)
                 .accessibilityLabel("Add video")
             }
         }
@@ -1006,13 +1028,13 @@ struct MatchView: View {
         // video with no clips yet, on the phone or uploaded). A video on this
         // phone that can be analyzed again has that to offer. A shared match
         // has none of these, so it gets no menu at all.
-        if editsDetails || item?.canAnalyzeAgain == true {
+        if canEditDetails || item?.canAnalyzeAgain == true {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     // First, because it is the one a coach comes here for: the
                     // new match form asks for none of this, and a video is
                     // uploaded with a name at most.
-                    if editsDetails {
+                    if canEditDetails {
                         Button {
                             activeSheet = .details
                         } label: {
@@ -1038,6 +1060,7 @@ struct MatchView: View {
                     // only the row sees it, see `pageOffersVideoRemoval`.
                     if MatchPageSectionKt.pageOffersVideoRemoval(canRemoveVideo: matchModel.canRemoveVideo, item: item) {
                         Button("Change video") { videoAction = .change }
+                            .disabled(isImportingVideo)
                         Button("Remove video", role: .destructive) { videoAction = .remove }
                     }
                 } label: {

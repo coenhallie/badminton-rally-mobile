@@ -12,6 +12,7 @@ final class PlaceNames: NSObject, CLLocationManagerDelegate {
     private let manager = CLLocationManager()
     private var authorization: CheckedContinuation<Void, Never>?
     private var location: CheckedContinuation<CLLocation?, Never>?
+    private var inFlight = false
 
     override init() {
         super.init()
@@ -22,19 +23,45 @@ final class PlaceNames: NSObject, CLLocationManagerDelegate {
     }
 
     func current() async -> String? {
+        guard !inFlight, !Task.isCancelled else { return nil }
+        inFlight = true
+        defer { inFlight = false }
+
         if manager.authorizationStatus == .notDetermined {
-            await withCheckedContinuation { continuation in
-                authorization = continuation
-                manager.requestWhenInUseAuthorization()
+            await withTaskCancellationHandler {
+                await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                    if Task.isCancelled {
+                        continuation.resume()
+                        return
+                    }
+                    authorization = continuation
+                    manager.requestWhenInUseAuthorization()
+                }
+            } onCancel: {
+                Task { @MainActor [weak self] in
+                    self?.cancelAuthorization()
+                }
             }
         }
-        guard [.authorizedWhenInUse, .authorizedAlways].contains(manager.authorizationStatus) else { return nil }
+        guard !Task.isCancelled,
+              [.authorizedWhenInUse, .authorizedAlways].contains(manager.authorizationStatus)
+        else { return nil }
 
-        let fix = await withCheckedContinuation { (continuation: CheckedContinuation<CLLocation?, Never>) in
-            location = continuation
-            manager.requestLocation()
+        let fix = await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<CLLocation?, Never>) in
+                if Task.isCancelled {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                location = continuation
+                manager.requestLocation()
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                self?.cancelLocation()
+            }
         }
-        guard let fix else { return nil }
+        guard !Task.isCancelled, let fix else { return nil }
 
         let placemark = try? await CLGeocoder().reverseGeocodeLocation(fix).first
         // The town, falling back outwards. Never the street: a match name is synced
@@ -44,27 +71,43 @@ final class PlaceNames: NSObject, CLLocationManagerDelegate {
             .first { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
     }
 
+    private func cancelAuthorization() {
+        let pending = authorization
+        authorization = nil
+        pending?.resume()
+    }
+
+    private func cancelLocation() {
+        manager.stopUpdatingLocation()
+        let pending = location
+        location = nil
+        pending?.resume(returning: nil)
+    }
+
     nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         Task { @MainActor in
             // Fires once on creation too, while the status is still undetermined;
             // that one is not an answer.
             guard manager.authorizationStatus != .notDetermined else { return }
-            authorization?.resume()
+            let pending = authorization
             authorization = nil
+            pending?.resume()
         }
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         Task { @MainActor in
-            location?.resume(returning: locations.last)
+            let pending = location
             location = nil
+            pending?.resume(returning: locations.last)
         }
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         Task { @MainActor in
-            location?.resume(returning: nil)
+            let pending = location
             location = nil
+            pending?.resume(returning: nil)
         }
     }
 }

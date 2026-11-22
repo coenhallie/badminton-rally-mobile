@@ -34,7 +34,15 @@ struct HomeView: View {
     /// Any sheet or dialog a player's page has open, its Matches tab's
     /// included.
     @State private var playerOverlayOpen = false
+    private enum PendingAdd {
+        case record
+        case importVideo
+    }
+
     @State private var showAddSheet = false
+    /// Deferred presentation chosen inside `AddMatchSheet`, started once the
+    /// sheet has finished dismissing so SwiftUI does not drop the second modal.
+    @State private var pendingAdd: PendingAdd? = nil
     /// The player the Add sheet's match is for: the page it was opened on, or
     /// nil from Players. Set each time the sheet opens, and read by what the
     /// sheet starts (New match, the camera, the picker), none of which can be
@@ -42,6 +50,10 @@ struct HomeView: View {
     @State private var addingFor: String? = nil
     @State private var showRecorder = false
     @State private var showImporter = false
+    /// True from the moment the user selects a video in `VideoPicker` until
+    /// `LocalVideoIntake` finishes persisting it or fails. Blocks overlapping
+    /// imports and drives the importing overlay.
+    @State private var isImportingVideo = false
     @State private var intake: LocalVideoIntake
     /// One model for the whole app, made here rather than inside the screens that
     /// read it. Its `localEntries` is documented as the single source of truth
@@ -164,6 +176,7 @@ struct HomeView: View {
                 onMatchTap: { path.append(.match($0)) },
                 onCourtMarking: { path.append(.courtMarking($0)) },
                 onOverlayChange: { listOverlayOpen = $0 },
+                onAdd: { openAddSheet(for: nil) },
                 toast: toastBinding
             )
         case .player(let id):
@@ -222,23 +235,34 @@ struct HomeView: View {
     /// The Add sheet and what it opens, and the auto-opened details sheet.
     private func presentations(_ content: some View) -> some View {
         content
-        .sheet(isPresented: $showAddSheet) {
+        .sheet(isPresented: $showAddSheet, onDismiss: {
+            guard let pending = pendingAdd else { return }
+            pendingAdd = nil
+            switch pending {
+            case .record:
+                if let message = CameraRecorder.unavailableMessage {
+                    intake.error = message
+                } else {
+                    showRecorder = true
+                }
+            case .importVideo:
+                if !isImportingVideo {
+                    showImporter = true
+                }
+            }
+        }) {
             AddMatchSheet(
                 onNewMatch: {
                     showAddSheet = false
                     path.append(.newMatch(playerId: addingFor))
                 },
                 onRecord: {
+                    pendingAdd = .record
                     showAddSheet = false
-                    if CameraRecorder.isAvailable {
-                        showRecorder = true
-                    } else {
-                        intake.error = "Camera is not available on this device."
-                    }
                 },
                 onImport: {
+                    pendingAdd = .importVideo
                     showAddSheet = false
-                    showImporter = true
                 }
             )
         }
@@ -246,15 +270,26 @@ struct HomeView: View {
             VideoPicker(
                 onPicked: { tempURL, suggestedName in
                     let player = addingFor
+                    isImportingVideo = true
                     Task {
+                        defer { isImportingVideo = false }
                         await intake.add(
                             tempURL: tempURL, suggestedName: suggestedName, isRecording: false,
                             forMatch: nil, forPlayer: player
                         )
                     }
                 },
-                onFailed: { intake.error = "Couldn't import the video. Please try again." }
+                onFailed: {
+                    isImportingVideo = false
+                    intake.error = "Couldn't import the video. Please try again."
+                },
+                onBeginImport: { isImportingVideo = true }
             )
+        }
+        .overlay {
+            if isImportingVideo {
+                VideoImportOverlay()
+            }
         }
         .fullScreenCover(isPresented: $showRecorder) {
             CameraRecorder { tempURL in
@@ -448,8 +483,9 @@ struct HomeView: View {
     /// presentations, the list screens' own, and the background-work sheet on
     /// their bars.
     private var sheetOverList: Bool {
-        showAddSheet || showRecorder || showImporter || detailsTarget != nil
-            || listOverlayOpen || playersOverlayOpen || playerOverlayOpen || workSheetOpen
+        showAddSheet || pendingAdd != nil || showRecorder || showImporter || isImportingVideo
+            || detailsTarget != nil || listOverlayOpen || playersOverlayOpen || playerOverlayOpen
+            || workSheetOpen
     }
 
     /// Whether the failed-run dialog is up. See `FailedRunDialog.shows`: on a
@@ -466,7 +502,9 @@ struct HomeView: View {
     /// The Add sheet, for the match to be started for `playerId` (a player's
     /// page) or for nobody (Players).
     private func openAddSheet(for playerId: String?) {
+        guard !isImportingVideo else { return }
         addingFor = playerId
+        pendingAdd = nil
         showAddSheet = true
     }
 

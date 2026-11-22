@@ -1,4 +1,5 @@
 import SwiftUI
+import Shared
 
 /// The three ways a match starts, behind the match list's one "Add match"
 /// button.
@@ -12,30 +13,54 @@ struct AddMatchSheet: View {
     let onRecord: () -> Void
     let onImport: () -> Void
 
+    /// The rows' measured height, the sheet's detent. Seeded with the three
+    /// rows at the default text size so the first frame is not a sliver.
+    @State private var contentHeight: CGFloat = 260
+
     var body: some View {
-        VStack(spacing: 0) {
-            row("New match", systemImage: "plus.circle", action: onNewMatch)
-            Divider().overlay(Shuttl.border)
-            row("Record video", systemImage: "video", action: onRecord)
-            Divider().overlay(Shuttl.border)
-            row("Import video", systemImage: "square.and.arrow.down", action: onImport)
+        ScrollView {
+            VStack(spacing: 0) {
+                row(HomeCopy.shared.ADD_NEW_MATCH, detail: HomeCopy.shared.ADD_NEW_MATCH_DETAIL,
+                    systemImage: "plus.circle", action: onNewMatch)
+                Divider().overlay(Shuttl.border)
+                row(HomeCopy.shared.ADD_RECORD_VIDEO, detail: HomeCopy.shared.ADD_RECORD_VIDEO_DETAIL,
+                    systemImage: "video", action: onRecord)
+                Divider().overlay(Shuttl.border)
+                row(HomeCopy.shared.ADD_IMPORT_VIDEO, detail: HomeCopy.shared.ADD_IMPORT_VIDEO_DETAIL,
+                    systemImage: "square.and.arrow.down", action: onImport)
+            }
+            .padding(.vertical, 8)
+            .fixedSize(horizontal: false, vertical: true)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { new in
+                if new > 0 { contentHeight = new }
+            }
         }
-        .padding(.vertical, 8)
-        .frame(maxHeight: .infinity, alignment: .top)
+        .scrollBounceBehavior(.basedOnSize)
         .background(Shuttl.bgSecondary)
-        .presentationDetents([.height(220)])
+        .presentationBackground(Shuttl.bgSecondary)
+        // The rows' own height, measured: with a line under each title a fixed
+        // detent clipped the last row at a large text size, and scrolling keeps
+        // every row reachable at accessibility sizes.
+        .presentationDetents([.height(contentHeight)])
         .presentationDragIndicator(.visible)
     }
 
-    private func row(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
+    private func row(
+        _ title: String, detail: String, systemImage: String, action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             HStack(spacing: 14) {
                 Image(systemName: systemImage)
                     .foregroundStyle(Shuttl.accentDark)
                     .frame(width: 24)
-                Text(title)
-                    .shuttlType(ShuttlType.bodyLarge)
-                    .foregroundStyle(Shuttl.text)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .shuttlType(ShuttlType.bodyLarge)
+                        .foregroundStyle(Shuttl.text)
+                    Text(detail)
+                        .shuttlType(ShuttlType.bodySmall)
+                        .foregroundStyle(Shuttl.textSecondary)
+                }
                 Spacer()
             }
             .padding(.horizontal, 24)
@@ -43,5 +68,9 @@ struct AddMatchSheet: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        // The name alone, as before the line under it: VoiceOver reads the
+        // line as the hint, and the UI tests find the button by its name.
+        .accessibilityLabel(title)
+        .accessibilityHint(detail)
     }
 }

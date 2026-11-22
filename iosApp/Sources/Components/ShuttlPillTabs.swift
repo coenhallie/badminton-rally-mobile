@@ -75,6 +75,8 @@ struct ShuttlPillTabs: View {
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.pillLabelCeiling) private var ceiling
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var selectionIndicator
     /// The track's width, measured, since the fit depends on it. Zero until the
     /// first layout, which draws at full size rather than flashing at the floor.
     @State private var trackWidth: CGFloat = 0
@@ -111,8 +113,13 @@ struct ShuttlPillTabs: View {
                         .frame(maxWidth: .infinity)
                         .padding(.horizontal, fit.padding)
                         .padding(.vertical, secondary ? Metrics.secondaryPaddingV : Metrics.tabPaddingV)
-                        .background(selected ? Shuttl.textHeading : Shuttl.bgSecondary)
-                        .clipShape(Capsule())
+                        .background {
+                            if selected {
+                                Capsule()
+                                    .fill(Shuttl.textHeading)
+                                    .matchedGeometryEffect(id: "selectedPill", in: selectionIndicator)
+                            }
+                        }
                         // Taps land at least 44pt tall, reaching past the track
                         // above and below the pill rather than making it taller:
                         // a secondary pill draws about 25pt, a primary one 35.
@@ -132,6 +139,7 @@ struct ShuttlPillTabs: View {
                 .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
             }
         }
+        .animation(reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.85), value: selectedIndex)
         .padding(Metrics.trackPadding)
         .frame(maxWidth: .infinity)
         .background(Shuttl.bgSecondary)

@@ -26,7 +26,8 @@ struct ScoreEditSheet: View {
     /// Nil until the coach picks: the plan then keeps the serve where it is if it can.
     @State private var requestedServer: Side?
     @FocusState private var focused: Side?
-    @State private var contentHeight: CGFloat = 0
+    /// Seeded at a realistic default height so the sheet never jumps from 0pt on open.
+    @State private var contentHeight: CGFloat = 380
 
     init(
         log: ScoreLog, match: MatchState, players: [Player],
@@ -50,55 +51,56 @@ struct ScoreEditSheet: View {
         let left: Side = match.endsSwapCount % 2 == 0 ? .home : .away
         let problem = plan?.problem ?? (plan == nil ? ScoreEditKt.SCORE_EDIT_BLANK : nil)
 
-        VStack(alignment: .leading, spacing: 16) {
-            Text(match.scoreEditTitle())
-                .shuttlType(ShuttlType.headlineMedium)
-                .foregroundStyle(Shuttl.textHeading)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text(match.scoreEditTitle())
+                    .shuttlType(ShuttlType.headlineMedium)
+                    .foregroundStyle(Shuttl.textHeading)
 
-            HStack(spacing: 12) {
-                tile(left, plan)
-                tile(left == .home ? .away : .home, plan)
+                HStack(spacing: 12) {
+                    tile(left, plan)
+                    tile(left == .home ? .away : .home, plan)
+                }
+                // Equal heights, so a two-line pair of names on one side does not
+                // leave the other side's number floating higher.
+                .fixedSize(horizontal: false, vertical: true)
+
+                Text(problem ?? plan?.summary ?? "")
+                    .shuttlType(ShuttlType.bodyMedium)
+                    .foregroundStyle(problem != nil ? Shuttl.error : Shuttl.textSecondary)
+                    .multilineTextAlignment(.center)
+                    // Two lines held whatever it says, so the buttons below stay put
+                    // while the numbers change under the coach's thumb.
+                    .lineLimit(2, reservesSpace: true)
+                    .frame(maxWidth: .infinity)
+
+                HStack(spacing: 12) {
+                    Button("Cancel") { dismiss() }
+                        .buttonStyle(SecondaryPillButtonStyle())
+                    Button("Save") {
+                        guard let plan else { return }
+                        onSave(Int(plan.home), Int(plan.away), plan.server)
+                        dismiss()
+                    }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .disabled(plan?.canSave != true)
+                }
             }
-            // Equal heights, so a two-line pair of names on one side does not
-            // leave the other side's number floating higher.
+            .padding(.horizontal, 20)
+            .padding(.top, 24)
+            .padding(.bottom, 16)
             .fixedSize(horizontal: false, vertical: true)
-
-            Text(problem ?? plan?.summary ?? "")
-                .shuttlType(ShuttlType.bodyMedium)
-                .foregroundStyle(problem != nil ? Shuttl.error : Shuttl.textSecondary)
-                .multilineTextAlignment(.center)
-                // Two lines held whatever it says, so the buttons below stay put
-                // while the numbers change under the coach's thumb.
-                .lineLimit(2, reservesSpace: true)
-                .frame(maxWidth: .infinity)
-
-            HStack(spacing: 12) {
-                Button("Cancel") { dismiss() }
-                    .buttonStyle(SecondaryPillButtonStyle())
-                Button("Save") {
-                    guard let plan else { return }
-                    onSave(Int(plan.home), Int(plan.away), plan.server)
-                    dismiss()
-                }
-                .buttonStyle(PrimaryButtonStyle())
-                .disabled(plan?.canSave != true)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                if height > 0 { contentHeight = height }
             }
+            // The number pad has no return key, and a keyboard toolbar does not
+            // show in a sheet with no navigation stack: a tap anywhere off the
+            // field puts the pad away instead, as a stepper tap does.
+            .contentShape(Rectangle())
+            .onTapGesture { focused = nil }
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 24)
-        .padding(.bottom, 16)
-        .background {
-            GeometryReader { proxy in
-                Color.clear.onChange(of: proxy.size.height, initial: true) { _, height in
-                    contentHeight = height
-                }
-            }
-        }
-        // The number pad has no return key, and a keyboard toolbar does not
-        // show in a sheet with no navigation stack: a tap anywhere off the
-        // field puts the pad away instead, as a stepper tap does.
-        .contentShape(Rectangle())
-        .onTapGesture { focused = nil }
+        .scrollBounceBehavior(.basedOnSize)
+        .scrollDismissesKeyboard(.interactively)
         // Typing replaces the number rather than appending to it: a tap into a
         // field selects what is there, the way a score is corrected.
         .onReceive(NotificationCenter.default.publisher(for: UITextField.textDidBeginEditingNotification)) { note in
@@ -201,13 +203,19 @@ struct ScoreEditSheet: View {
         if mark == .available {
             Button {
                 focused = nil
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 onServe()
-            } label: { pill }
+            } label: {
+                pill
+                    .frame(minWidth: ShuttlTarget.minimum, minHeight: ShuttlTarget.minimum)
+                    .contentShape(Rectangle())
+            }
             .buttonStyle(.plain)
             .accessibilityLabel("Serve")
             .accessibilityHint("Serve next")
         } else {
             pill
+                .frame(minWidth: ShuttlTarget.minimum, minHeight: ShuttlTarget.minimum)
                 .opacity(mark == .none ? 0 : 1)
                 .accessibilityHidden(mark == .none)
                 .accessibilityLabel("Serves next")
@@ -218,6 +226,7 @@ struct ScoreEditSheet: View {
     private func stepButton(_ symbol: String, _ label: String, enabled: Bool, action: @escaping () -> Void) -> some View {
         Button {
             focused = nil
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
             action()
         } label: {
             Image(systemName: symbol)
