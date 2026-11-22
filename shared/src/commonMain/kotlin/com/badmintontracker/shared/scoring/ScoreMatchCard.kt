@@ -73,6 +73,7 @@ fun ScoreLog.isPlayable(): Boolean =
 fun buildScoreMatchCard(log: ScoreLog, players: List<Player>): ScoreMatchCard {
     val state = log.state()
     val winner = state.winner
+    val playable = log.status == ScoreLogStatus.LIVE && !state.isOver
     return ScoreMatchCard(
         scoreLogId = log.id,
         videoId = log.videoId,
@@ -82,12 +83,12 @@ fun buildScoreMatchCard(log: ScoreLog, players: List<Player>): ScoreMatchCard {
         scoreLine = scoreLine(state),
         statusLine = when {
             winner != null -> "${log.sideName(winner, players)} won"
-            log.isPlayable() -> "Scoring"
+            playable -> "Scoring"
             // Closed by hand before anyone won. The score line above already says
             // where it stopped, so this only has to say that it did.
             else -> "Ended early"
         },
-        isLive = log.isPlayable(),
+        isLive = playable,
         hasVideo = log.videoId != null,
     )
 }

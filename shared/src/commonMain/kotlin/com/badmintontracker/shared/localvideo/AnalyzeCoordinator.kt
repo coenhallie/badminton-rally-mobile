@@ -6,6 +6,7 @@ import com.badmintontracker.shared.repo.ClipsRepository
 import com.badmintontracker.shared.repo.UploadState
 import com.badmintontracker.shared.repo.VideoStatus
 import com.badmintontracker.shared.repo.VideosRepository
+import com.badmintontracker.shared.repo.userFacingMessage
 import com.badmintontracker.shared.util.SyncLock
 import com.badmintontracker.shared.util.withLock
 import io.ktor.utils.io.ByteReadChannel
@@ -223,7 +224,7 @@ class AnalyzeCoordinator(
                 current.matchPlayers, current.nearSide,
             ).exceptionOrNull()
             if (error != null && !error.isDuplicateKey()) {
-                return fail(entryId, AnalyzeStep.CREATE_ROW, error.message ?: "Couldn't register video")
+                return fail(entryId, AnalyzeStep.CREATE_ROW, error.userFacingMessage("Couldn't register video"))
             }
         }
 
@@ -234,13 +235,13 @@ class AnalyzeCoordinator(
 
         if (startFrom <= AnalyzeStep.KEYPOINTS) {
             videos.setCourtKeypoints(entry.id, keypoints).onFailure {
-                return fail(entryId, AnalyzeStep.KEYPOINTS, it.message ?: "Couldn't save court points")
+                return fail(entryId, AnalyzeStep.KEYPOINTS, it.userFacingMessage("Couldn't save court points"))
             }
         }
 
         if (startFrom <= AnalyzeStep.TRIGGER) {
             videos.startProcessing(entry.id).onFailure {
-                return fail(entryId, AnalyzeStep.TRIGGER, it.message ?: "Couldn't start analysis")
+                return fail(entryId, AnalyzeStep.TRIGGER, it.userFacingMessage("Couldn't start analysis"))
             }
         }
 

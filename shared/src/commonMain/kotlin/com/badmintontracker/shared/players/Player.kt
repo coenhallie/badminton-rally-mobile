@@ -36,12 +36,22 @@ fun playerNameProblem(name: String): String? {
 
 private val WHITESPACE = Regex("\\s+")
 
+/** Generational suffixes, compared without case or a trailing "." or ",". */
+private val NAME_SUFFIXES = setOf("jr", "junior", "sr", "senior", "ii", "iii", "iv")
+
+private fun isNameSuffix(word: String): Boolean = word.trimEnd('.', ',').lowercase() in NAME_SUFFIXES
+
 /**
  * The avatar's letters: the first word's first letter and, when there are two or
  * more words, the last word's first letter. Empty for a blank name.
+ *
+ * A trailing suffix ("Jr.", "Junior", "II") is not the surname, so it is passed
+ * over while more than two words remain: "Ken Griffey Jr." is KG. Two words are a
+ * first name and a surname whatever they are, so "Marco Junior" stays MJ.
  */
 fun initials(name: String): String {
-    val words = name.trim().split(WHITESPACE).filter { it.isNotEmpty() }
+    val words = name.trim().split(WHITESPACE).filter { it.isNotEmpty() }.toMutableList()
+    while (words.size > 2 && isNameSuffix(words.last())) words.removeAt(words.lastIndex)
     return when (words.size) {
         0 -> ""
         1 -> words.first().take(1).uppercase()

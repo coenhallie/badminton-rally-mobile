@@ -1,14 +1,19 @@
 package com.badmintontracker.shared.local
 
 import com.badmintontracker.analysis.camera.Luma
+import com.badmintontracker.analysis.shuttle.medianBackground
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.FloatVar
 import kotlinx.cinterop.allocArray
+import kotlinx.cinterop.get
 import kotlinx.cinterop.nativeHeap
 import kotlinx.cinterop.set
+import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 
 /**
  * The luma plane read in place, through a pointer, averages exactly what the
@@ -97,4 +102,82 @@ class BulkInteropTest {
 
     @Test
     fun padded_rgba_rows_read_the_same() = assertReadsRgba(bytesPerRow = 12)
+
+    @Test
+    fun medianBackgroundInto_matches_shared_across_tile_boundaries() {
+        val rng = Random(123)
+        val frameLength = 5_000 // spans > 4096 tile boundary
+        for (frameCount in listOf(1, 2, 4, 5)) {
+            val framesList = List(frameCount) { ByteArray(frameLength) { rng.nextInt(256).toByte() } }
+            val expected = medianBackground(framesList)
+            val src = nativeHeap.allocArray<ByteVar>(frameCount * frameLength)
+            val out = nativeHeap.allocArray<ByteVar>(frameLength)
+            try {
+                for (f in 0 until frameCount) {
+                    val base = f * frameLength
+                    val frame = framesList[f]
+                    for (i in 0 until frameLength) src[base + i] = frame[i]
+                }
+                BulkInterop.medianBackgroundInto(src, frameCount, frameLength, out)
+                val got = ByteArray(frameLength) { out[it] }
+                assertContentEquals(expected, got, "mismatch for frameCount=$frameCount")
+            } finally {
+                nativeHeap.free(src.rawValue)
+                nativeHeap.free(out.rawValue)
+            }
+        }
+    }
+
+    @Test
+    fun bounds_and_overflow_checks_reject_invalid_arguments() {
+        val bytes = nativeHeap.allocArray<ByteVar>(16)
+        val outBytes = nativeHeap.allocArray<ByteVar>(16)
+        val floats = nativeHeap.allocArray<FloatVar>(16)
+        try {
+            // heatmapToCoord
+            assertFailsWith<IllegalArgumentException> { BulkInterop.heatmapToCoord(floats, width = 0, height = 4) }
+            assertFailsWith<IllegalArgumentException> { BulkInterop.heatmapToCoord(floats, width = 4, height = -1) }
+            assertFailsWith<IllegalArgumentException> {
+                BulkInterop.heatmapToCoord(floats, width = Int.MAX_VALUE / 2, height = 2)
+            }
+
+            // medianBackgroundInto
+            assertFailsWith<IllegalArgumentException> {
+                BulkInterop.medianBackgroundInto(bytes, frameCount = 0, frameLength = 4, out = outBytes)
+            }
+            assertFailsWith<IllegalArgumentException> {
+                BulkInterop.medianBackgroundInto(bytes, frameCount = -1, frameLength = 4, out = outBytes)
+            }
+            assertFailsWith<IllegalArgumentException> {
+                BulkInterop.medianBackgroundInto(bytes, frameCount = 2, frameLength = -1, out = outBytes)
+            }
+            // zero frameLength is a safe no-op
+            BulkInterop.medianBackgroundInto(bytes, frameCount = 2, frameLength = 0, out = outBytes)
+
+            // lumaDownsample
+            assertFailsWith<IllegalArgumentException> { BulkInterop.lumaDownsample(bytes, 0, 4, 4, 2, 2) }
+            assertFailsWith<IllegalArgumentException> { BulkInterop.lumaDownsample(bytes, 4, -1, 4, 2, 2) }
+            assertFailsWith<IllegalArgumentException> { BulkInterop.lumaDownsample(bytes, 4, 4, 3, 2, 2) }
+            assertFailsWith<IllegalArgumentException> { BulkInterop.lumaDownsample(bytes, 4, 4, 4, 0, 2) }
+            assertFailsWith<IllegalArgumentException> { BulkInterop.lumaDownsample(bytes, 4, 4, 4, 2, -1) }
+            assertFailsWith<IllegalArgumentException> {
+                BulkInterop.lumaDownsample(bytes, 4, 4, 4, 100_000, 100_000)
+            }
+
+            // rgbImage
+            assertFailsWith<IllegalArgumentException> { BulkInterop.rgbImage(bytes, 0, 2, 8) }
+            assertFailsWith<IllegalArgumentException> { BulkInterop.rgbImage(bytes, 2, -1, 8) }
+            assertFailsWith<IllegalArgumentException> { BulkInterop.rgbImage(bytes, 2, 2, 7) }
+            assertFailsWith<IllegalArgumentException> {
+                BulkInterop.rgbImage(bytes, width = Int.MAX_VALUE / 2, height = 1, bytesPerRow = 100)
+            }
+            assertFailsWith<IllegalArgumentException> {
+                BulkInterop.rgbImage(bytes, width = 100_000, height = 100_000, bytesPerRow = 400_000)
+            }
+        } finally {
+            nativeHeap.free(bytes.rawValue)
+            nativeHeap.free(outBytes.rawValue)
+            nativeHeap.free(floats.rawValue)
+        }
+    }
 }

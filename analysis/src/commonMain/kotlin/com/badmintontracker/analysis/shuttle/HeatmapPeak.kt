@@ -38,39 +38,90 @@ fun heatmapToCoord(
     threshold: Float = HEATMAP_THRESHOLD,
     maxArea: Int = HEATMAP_MAX_AREA,
 ): HeatmapCoord {
-    require(heatmap.size >= width * height) { "heatmap smaller than ${width}x$height" }
+    require(width > 0 && height > 0) { "heatmap dimensions must be positive: ${width}x$height" }
+    val countLong = width.toLong() * height.toLong()
+    require(countLong <= Int.MAX_VALUE) { "heatmap size overflow: ${width}x$height" }
+    val count = countLong.toInt()
+    return heatmapToCoord(
+        heatmap = heatmap,
+        width = width,
+        height = height,
+        offset = 0,
+        labels = IntArray(count),
+        queue = IntArray(count),
+        threshold = threshold,
+        maxArea = maxArea,
+    )
+}
+
+/**
+ * Zero-allocation overload of [heatmapToCoord] reading [width] * [height]
+ * floats from [heatmap] starting at [offset], using caller-provided [labels]
+ * and [queue] scratch buffers (each at least `width * height` ints).
+ */
+fun heatmapToCoord(
+    heatmap: FloatArray,
+    width: Int,
+    height: Int,
+    offset: Int = 0,
+    labels: IntArray,
+    queue: IntArray,
+    threshold: Float = HEATMAP_THRESHOLD,
+    maxArea: Int = HEATMAP_MAX_AREA,
+): HeatmapCoord {
+    require(width > 0 && height > 0) { "heatmap dimensions must be positive: ${width}x$height" }
+    val countLong = width.toLong() * height.toLong()
+    require(countLong <= Int.MAX_VALUE) { "heatmap size overflow: ${width}x$height" }
+    val count = countLong.toInt()
+    require(offset >= 0 && offset.toLong() + countLong <= heatmap.size.toLong()) {
+        "heatmap smaller than ${width}x$height at offset $offset"
+    }
+    require(labels.size >= count) { "labels scratch smaller than ${width}x$height" }
+    require(queue.size >= count) { "queue scratch smaller than ${width}x$height" }
 
     // -1 unvisited, -2 below threshold, >= 0 label.
-    val labels = IntArray(width * height) { if (heatmap[it] > threshold) -1 else -2 }
-    val queue = IntArray(width * height)
+    for (i in 0 until count) {
+        labels[i] = if (heatmap[offset + i] > threshold) -1 else -2
+    }
 
-    var bestLabel = -1
     var bestArea = 0
+    var bestTotalWeight = 0.0
+    var bestSumX = 0.0
+    var bestSumY = 0.0
     var label = 0
 
-    for (seed in labels.indices) {
+    for (seed in 0 until count) {
         if (labels[seed] != -1) continue
         // Flood fill iteratively: a recursive fill overflows the stack on a
         // large activation, which is precisely the case this must survive to
-        // reject.
+        // reject. Accumulate the heatmap-weighted centroid directly during BFS
+        // to avoid a second full-image scan.
         var head = 0
         var tail = 0
         queue[tail++] = seed
         labels[seed] = label
         var area = 0
+        var totalWeight = 0.0
+        var sumX = 0.0
+        var sumY = 0.0
         while (head < tail) {
             val p = queue[head++]
             area++
             val px = p % width
             val py = p / width
+            val w = heatmap[offset + p].toDouble()
+            totalWeight += w
+            sumX += px * w
+            sumY += py * w
             for (dy in -1..1) {
                 val ny = py + dy
                 if (ny < 0 || ny >= height) continue
+                val rowOffset = ny * width
                 for (dx in -1..1) {
                     if (dx == 0 && dy == 0) continue
                     val nx = px + dx
                     if (nx < 0 || nx >= width) continue
-                    val q = ny * width + nx
+                    val q = rowOffset + nx
                     if (labels[q] == -1) {
                         labels[q] = label
                         queue[tail++] = q
@@ -82,25 +133,13 @@ fun heatmapToCoord(
         // in the source, and the boundary is load-bearing.
         if (area <= maxArea && area > bestArea) {
             bestArea = area
-            bestLabel = label
+            bestTotalWeight = totalWeight
+            bestSumX = sumX
+            bestSumY = sumY
         }
         label++
     }
 
-    if (bestLabel < 0) return HeatmapCoord.NOT_VISIBLE
-
-    // Heatmap-weighted centroid of the winning blob, which is what makes the
-    // result sub-pixel rather than a pixel index.
-    var totalWeight = 0.0
-    var sumX = 0.0
-    var sumY = 0.0
-    for (p in labels.indices) {
-        if (labels[p] != bestLabel) continue
-        val w = heatmap[p].toDouble()
-        totalWeight += w
-        sumX += (p % width) * w
-        sumY += (p / width) * w
-    }
-    if (totalWeight <= 0.0) return HeatmapCoord.NOT_VISIBLE
-    return HeatmapCoord(sumX / totalWeight, sumY / totalWeight, visible = true)
+    if (bestArea == 0 || bestTotalWeight <= 0.0) return HeatmapCoord.NOT_VISIBLE
+    return HeatmapCoord(bestSumX / bestTotalWeight, bestSumY / bestTotalWeight, visible = true)
 }

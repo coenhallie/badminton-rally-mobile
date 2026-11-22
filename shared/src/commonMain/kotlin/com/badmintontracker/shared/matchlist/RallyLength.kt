@@ -25,3 +25,17 @@ fun rallyLengthText(seconds: Double): String? {
     if (tenths == 0L) return null
     return "${tenths / 10}.${tenths % 10}s"
 }
+
+/**
+ * A rally row's second line: "15.6s · 3 notes", "15.6s" when the rally has no
+ * notes, "2 notes" when it has no length, null when it has neither. "0 notes" on
+ * every unannotated rally was noise, and the line is set as it reads, not in
+ * capitals: uppercasing it printed seconds as "15.6S".
+ *
+ * Shared so the cloud and device rally rows on both platforms say it alike.
+ */
+fun rallyRowMeta(seconds: Double, noteCount: Int): String? =
+    listOfNotNull(
+        rallyLengthText(seconds),
+        noteCount.takeIf { it > 0 }?.let { if (it == 1) "1 note" else "$it notes" },
+    ).joinToString(" · ").ifEmpty { null }

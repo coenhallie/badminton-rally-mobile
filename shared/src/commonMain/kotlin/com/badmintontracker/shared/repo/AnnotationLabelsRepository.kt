@@ -6,6 +6,7 @@ import com.badmintontracker.shared.model.LabelUsage
 import com.russhwolf.settings.Settings
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
+import io.github.jan.supabase.auth.status.SessionStatus
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.coroutines.CoroutineScope
@@ -150,8 +151,45 @@ class AnnotationLabelsRepositoryImpl internal constructor(
     internal val cacheReconciliation: Job = scope.launch {
         runCatching {
             awaitAuthReady()
-            val reconciled = loadCache()
+            val reconciled = loadCache(currentOwnerId())
             if (reconciled.isNotEmpty()) state.compareAndSet(emptyList(), reconciled)
+        }
+    }
+
+    /**
+     * Clears one user's labels from memory as soon as the session stops being
+     * theirs: on sign-out, and on switching to another account before that
+     * account's first refresh lands. Matches [com.badmintontracker.shared.players.PlayersRepositoryImpl.ownerFollower].
+     *
+     * Tracks [lastOwner] so a fresh, never-authenticated client transitioning
+     * Initializing -> NotAuthenticated never wipes in-memory state populated
+     * without a session. A restore still in progress or an offline refresh
+     * failure keeps the current owner's list intact.
+     */
+    internal val ownerFollower: Job = scope.launch {
+        var lastOwner: String? = currentOwnerId()
+        client.auth.sessionStatus.collect { status ->
+            when (status) {
+                is SessionStatus.Authenticated -> {
+                    val nextOwner = status.session.user?.id
+                    if (nextOwner != lastOwner) {
+                        if (lastOwner != null) {
+                            state.value = loadCache(nextOwner)
+                        } else {
+                            val cached = loadCache(nextOwner)
+                            if (cached.isNotEmpty()) state.compareAndSet(emptyList(), cached)
+                        }
+                        lastOwner = nextOwner
+                    }
+                }
+                is SessionStatus.NotAuthenticated -> {
+                    if (lastOwner != null) {
+                        lastOwner = null
+                        state.value = emptyList()
+                    }
+                }
+                is SessionStatus.Initializing, is SessionStatus.RefreshFailure -> Unit
+            }
         }
     }
 
@@ -261,22 +299,21 @@ class AnnotationLabelsRepositoryImpl internal constructor(
 
     private fun publish(next: List<AnnotationLabel>) {
         state.value = next
-        val envelope = CachedLabels(currentOwnerId(), next)
+        val owner = currentOwnerId() ?: return
+        val envelope = CachedLabels(owner, next)
         settings.putString(KEY_CACHE, json.encodeToString(CachedLabels.serializer(), envelope))
     }
 
     /**
-     * Only hands back a cached list when it was written by whoever is signed in
-     * right now. A missing owner on either side - a legacy cache written before
-     * this scoping existed, or nobody currently signed in - is treated the same
-     * as a mismatch: better an empty picker than one user's label names leaking
-     * into another user's app.
+     * Only hands back a cached list when it was written by [owner]. A missing
+     * owner on either side - a legacy cache written before this scoping existed,
+     * or nobody currently signed in - is treated the same as a mismatch: better
+     * an empty picker than one user's label names leaking into another user's app.
      */
-    private fun loadCache(): List<AnnotationLabel> {
+    private fun loadCache(owner: String? = currentOwnerId()): List<AnnotationLabel> {
         val cached = settings.getStringOrNull(KEY_CACHE)
             ?.let { runCatching { json.decodeFromString(CachedLabels.serializer(), it) }.getOrNull() }
             ?: return emptyList()
-        val owner = currentOwnerId()
         return if (owner != null && owner == cached.ownerId) cached.labels else emptyList()
     }
 

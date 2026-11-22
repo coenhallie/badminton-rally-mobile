@@ -68,4 +68,9 @@ class ClipsRepositoryImpl(private val client: SupabaseClient) : ClipsRepository 
     override fun pruneVideo(videoId: String) {
         _clips.value = _clips.value.filterNot { it.videoId == videoId }
     }
+
+    /** Drops all cached clips from memory (e.g. on sign-out or account switch). */
+    fun clear() {
+        _clips.value = emptyList()
+    }
 }

@@ -12,6 +12,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.math.abs
 import kotlin.test.Test
+import kotlin.test.assertFailsWith
 
 /**
  * The heatmap postprocessing against production's own `_heatmap_to_coord`.
@@ -133,5 +134,56 @@ class HeatmapPeakTest {
             listOf(byteArrayOf(5), byteArrayOf(200.toByte()), byteArrayOf(9))
         )
         (out[0].toInt() and 0xFF) shouldBe 9
+    }
+
+    @Test
+    fun reusable_scratch_overload_matches_default_with_nonzero_offset_and_dirty_buffers() {
+        val width = 16
+        val height = 12
+        val plane = width * height
+
+        val first = FloatArray(plane)
+        first[3 * width + 4] = 0.8f
+        first[3 * width + 5] = 0.9f
+        first[4 * width + 5] = 0.7f
+
+        val second = FloatArray(plane)
+        second[8 * width + 10] = 0.95f
+        second[9 * width + 11] = 0.6f // 8-connected diagonal neighbour
+
+        val prefix = 17
+        val stacked = FloatArray(prefix + plane * 2) { 1.0f }
+        first.copyInto(stacked, prefix)
+        second.copyInto(stacked, prefix + plane)
+
+        val labels = IntArray(plane + 32) { 999 }
+        val queue = IntArray(plane + 32) { 999 }
+
+        val gotFirst = heatmapToCoord(stacked, width, height, offset = prefix, labels = labels, queue = queue)
+        val wantFirst = heatmapToCoord(first, width, height)
+        gotFirst shouldBe wantFirst
+
+        val gotSecond = heatmapToCoord(stacked, width, height, offset = prefix + plane, labels = labels, queue = queue)
+        val wantSecond = heatmapToCoord(second, width, height)
+        gotSecond shouldBe wantSecond
+    }
+
+    @Test
+    fun rejects_non_positive_dimensions_and_undersized_scratch_buffers() {
+        val hm = FloatArray(16)
+        assertFailsWith<IllegalArgumentException> { heatmapToCoord(hm, width = 0, height = 4) }
+        assertFailsWith<IllegalArgumentException> { heatmapToCoord(hm, width = 4, height = -1) }
+        assertFailsWith<IllegalArgumentException> {
+            heatmapToCoord(hm, width = 4, height = 4, offset = -1, labels = IntArray(16), queue = IntArray(16))
+        }
+        assertFailsWith<IllegalArgumentException> {
+            heatmapToCoord(hm, width = 4, height = 4, offset = 1, labels = IntArray(16), queue = IntArray(16))
+        }
+        assertFailsWith<IllegalArgumentException> {
+            heatmapToCoord(hm, width = 4, height = 4, offset = 0, labels = IntArray(15), queue = IntArray(16))
+        }
+        assertFailsWith<IllegalArgumentException> {
+            heatmapToCoord(hm, width = 4, height = 4, offset = 0, labels = IntArray(16), queue = IntArray(15))
+        }
     }
 }

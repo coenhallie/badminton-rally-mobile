@@ -30,4 +30,18 @@ class RallyLengthTest {
         assertNull(rallyLengthText(Double.NaN))
         assertNull(rallyLengthText(Double.POSITIVE_INFINITY))
     }
+
+    @Test fun a_rally_row_says_its_length_and_its_notes() {
+        assertEquals("15.6s · 3 notes", rallyRowMeta(15.6, noteCount = 3))
+        assertEquals("15.6s · 1 note", rallyRowMeta(15.6, noteCount = 1))
+    }
+
+    @Test fun a_rally_row_with_no_notes_says_only_its_length() {
+        assertEquals("15.6s", rallyRowMeta(15.6, noteCount = 0))
+    }
+
+    @Test fun a_rally_row_without_a_length_says_only_its_notes() {
+        assertEquals("2 notes", rallyRowMeta(0.0, noteCount = 2))
+        assertNull(rallyRowMeta(0.0, noteCount = 0))
+    }
 }

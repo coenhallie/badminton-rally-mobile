@@ -21,6 +21,23 @@ class PlayerTest {
     }
 
     @Test
+    fun initials_skip_a_trailing_suffix() {
+        // "Junior" is not a surname: the avatar read "BJ" for this name.
+        initials("Bartholomew Montgomery-Fitzgerald Junior") shouldBe "BM"
+        initials("Ken Griffey Jr.") shouldBe "KG"
+        initials("Martin Luther King, Jr") shouldBe "MK"
+        initials("Henry Ford II") shouldBe "HF"
+        initials("Pedro Silva sr") shouldBe "PS"
+    }
+
+    @Test
+    fun a_two_word_name_keeps_its_second_word_even_when_it_reads_as_a_suffix() {
+        // Two words are a first name and a surname; "Junior" can be either.
+        initials("Marco Junior") shouldBe "MJ"
+        initials("Junior Silva") shouldBe "JS"
+    }
+
+    @Test
     fun initials_of_one_word_is_one_letter() {
         initials("Marco") shouldBe "M"
         initials("  ") shouldBe ""

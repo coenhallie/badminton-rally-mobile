@@ -5,17 +5,23 @@ import com.badmintontracker.shared.localvideo.LocalVideoRemoval
 import com.russhwolf.settings.ExperimentalSettingsImplementation
 import com.russhwolf.settings.KeychainSettings
 import com.russhwolf.settings.NSUserDefaultsSettings
+import kotlinx.cinterop.ExperimentalForeignApi
+import platform.Foundation.CFBridgingRetain
 import platform.Foundation.NSUserDefaults
+import platform.Security.kSecAttrAccessible
+import platform.Security.kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+import platform.Security.kSecAttrService
 
 /** Keychain service name for the auth session. Changing it signs every user out. */
 private const val SESSION_KEYCHAIN_SERVICE = "com.badmintontracker.ios.session"
 
 /**
  * iOS entry point. App preferences stay in NSUserDefaults; the auth session goes
- * in the Keychain - encrypted at rest, unreadable while the device is locked, and
- * out of unencrypted backups. A plaintext plist in the app container is none of those.
+ * in the Keychain - encrypted at rest, non-migrating (this device only), available
+ * after first unlock, and out of unencrypted backups. A plaintext plist in the app
+ * container is none of those.
  */
-@OptIn(ExperimentalSettingsImplementation::class)
+@OptIn(ExperimentalForeignApi::class, ExperimentalSettingsImplementation::class)
 fun createRallyApp(
     url: String,
     anonKey: String,
@@ -46,7 +52,10 @@ fun createRallyApp(
     // it. Returns prefs unchanged if the Keychain is unusable - a throw here would
     // abort the process before the first frame. See resolveSessionStore.
     val session = resolveSessionStore(
-        secure = KeychainSettings(service = SESSION_KEYCHAIN_SERVICE),
+        secure = KeychainSettings(
+            kSecAttrService to CFBridgingRetain(SESSION_KEYCHAIN_SERVICE),
+            kSecAttrAccessible to kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+        ),
         fallback = prefs,
         onFallback = { reason ->
             println("RallyApp: Keychain unavailable ($reason) - session stays in NSUserDefaults")

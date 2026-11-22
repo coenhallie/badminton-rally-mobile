@@ -36,12 +36,17 @@ import com.badmintontracker.shared.scoring.ScoreLogsRepository
 import com.russhwolf.settings.Settings
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
+import io.github.jan.supabase.auth.status.SessionStatus
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import kotlin.time.Clock
 
 class RallyApp(
@@ -66,14 +71,18 @@ class RallyApp(
     onLocalVideoRemoved: (LocalVideoEntry, LocalVideoRemoval) -> Unit = { _, _ -> },
 ) {
     val client: SupabaseClient = buildSupabaseClient(config, settings, sessionSettings, httpEngine)
+    private val clipsImpl = ClipsRepositoryImpl(client)
+    private val mediaImpl = MediaRepositoryImpl(client)
+    private val videosImpl = VideosRepositoryImpl(client)
+
     val auth:        AuthRepository        = AuthRepositoryImpl(client)
-    val clips:       ClipsRepository       = ClipsRepositoryImpl(client)
+    val clips:       ClipsRepository       = clipsImpl
     val annotations: AnnotationsRepository = AnnotationsRepositoryImpl(client)
     val labels:      AnnotationLabelsRepository = AnnotationLabelsRepositoryImpl(client, settings)
     val players:     PlayersRepository     = PlayersRepositoryImpl(client, settings)
-    val media:       MediaRepository       = MediaRepositoryImpl(client)
+    val media:       MediaRepository       = mediaImpl
     val shares:      SharesRepository      = SharesRepositoryImpl(client)
-    val videos:      VideosRepository      = VideosRepositoryImpl(client)
+    val videos:      VideosRepository      = videosImpl
     val cloudPoses:  CloudPoseRepository   = CloudPoseRepositoryImpl(client)
 
     // distinct, because several statuses now share a value: a refresh that fails
@@ -123,6 +132,42 @@ class RallyApp(
                 }
         },
     )
+
+    private val sessionScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /**
+     * Drops account-scoped in-memory caches as soon as the session signs out or
+     * switches to another user, so the next account never briefly sees the
+     * previous account's clips, match metadata, signed thumbnail URLs, or score logs.
+     */
+    internal val sessionCacheCleaner: Job = sessionScope.launch {
+        var lastOwner: String? = client.auth.currentUserOrNull()?.id
+        client.auth.sessionStatus.collect { status ->
+            when (status) {
+                is SessionStatus.Authenticated -> {
+                    val nextOwner = status.session.user?.id
+                    if (lastOwner != null && nextOwner != lastOwner) {
+                        clearAccountCaches()
+                    }
+                    lastOwner = nextOwner
+                }
+                is SessionStatus.NotAuthenticated -> {
+                    if (lastOwner != null) {
+                        lastOwner = null
+                        clearAccountCaches()
+                    }
+                }
+                is SessionStatus.Initializing, is SessionStatus.RefreshFailure -> Unit
+            }
+        }
+    }
+
+    private suspend fun clearAccountCaches() {
+        clipsImpl.clear()
+        videosImpl.clear()
+        mediaImpl.clear()
+        scoreLogs.reloadForCurrentOwner()
+    }
 
     /**
      * The cloud sibling of the on-device [LocalAnalysisCoordinator]. Built

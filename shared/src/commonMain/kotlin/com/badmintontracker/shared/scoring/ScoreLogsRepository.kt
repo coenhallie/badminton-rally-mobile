@@ -16,6 +16,8 @@ import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.datetime.Instant
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -144,6 +146,10 @@ class ScoreLogsRepository internal constructor(
     // Serializes read-modify-write cycles. The scoring surface writes from the main
     // thread and sync writes from a background dispatcher.
     private val lock = SyncLock()
+
+    // Serializes concurrent sync() calls so two overlapping pulls/pushes cannot
+    // race over pending deletes or dirty rows.
+    private val syncMutex = Mutex()
 
     fun get(id: String): ScoreLog? = state.value.firstOrNull { it.id == id }
 
@@ -373,22 +379,23 @@ class ScoreLogsRepository internal constructor(
      * writer this release does not have. L3 replaces this rule outright, and the
      * log being append-only is what will let it replay rather than reconcile.
      */
-    suspend fun sync(): Result<Unit> {
+    suspend fun sync(): Result<Unit> = syncMutex.withLock {
         // Before anything is read off `stored`, and before the early return below,
         // so a cold start recovers its matches whether or not there is any signal.
         reloadForCurrentOwner()
         val postgrest = client?.postgrest ?: return Result.failure(
             IllegalStateException("Not signed in.")
         )
-        return runCatching {
+        runCatching {
             // Deletes first, so the pull below already reflects them. One that
             // fails fails the sync: it is the same network the push needs, and the
-            // id stays pending and is filtered out of the merge either way.
-            for (id in pendingDeletes.toList()) {
-                postgrest.from(TABLE).delete { filter { eq("id", id) } }
-                settle(id)
+            // ids stay pending and are filtered out of the merge either way.
+            val pending = lock.withLock { pendingDeletes.toList() }
+            if (pending.isNotEmpty()) {
+                postgrest.from(TABLE).delete { filter { isIn("id", pending) } }
+                settleAll(pending)
             }
-            val dirty = stored.filter { it.dirty }.map { it.log }
+            val dirty = lock.withLock { stored.filter { it.dirty }.map { it.log } }
             if (dirty.isNotEmpty()) {
                 postgrest.from(TABLE).upsert(dirty)
             }
@@ -400,7 +407,7 @@ class ScoreLogsRepository internal constructor(
                 order("id", Order.ASCENDING)
             }
 
-            lock.withLock {
+            val syncedIds = lock.withLock {
                 // Compared by content, not by id. A row that is still byte for byte
                 // what we pushed is settled and takes the server's copy; a row that
                 // has changed since - the coach scored while the request was on the
@@ -421,10 +428,11 @@ class ScoreLogsRepository internal constructor(
                 // because the pull did not contain it.
                 val unacknowledged = stored.filter { it.dirty && it.log.id !in remoteIds }
                 persist(merged + unacknowledged)
+                stored.map { it.log.id }.toSet()
             }
             // After persist, never before: a consumer acting on this set must not be
             // able to observe one that this repository has not committed to yet.
-            onSynced(stored.map { it.log.id }.toSet())
+            onSynced(syncedIds)
         }
     }
 
@@ -452,6 +460,12 @@ class ScoreLogsRepository internal constructor(
     /** The server has confirmed this delete; stop remembering it. */
     private fun settle(id: String) = lock.withLock {
         pendingDeletes = pendingDeletes - id
+        persist(stored)
+    }
+
+    /** The server has confirmed these batched deletes; stop remembering them in one write. */
+    private fun settleAll(ids: Collection<String>) = lock.withLock {
+        pendingDeletes = pendingDeletes - ids.toSet()
         persist(stored)
     }
 

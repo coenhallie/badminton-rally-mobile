@@ -131,8 +131,12 @@ class CameraMotionTracker(
             droppedSamples++
             return
         }
+        val inSource = normalise(multiply3x3(toSource, multiply3x3(fit.homography, fromSource)))
+        if (inSource == null) {
+            droppedSamples++
+            return
+        }
         guess = fit.homography
-        val inSource = normalise(multiply3x3(toSource, multiply3x3(fit.homography, fromSource)))!!
         samples.add(CameraSample(timestamp, inSource))
         acceptedSamples++
     }

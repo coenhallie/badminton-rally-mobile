@@ -7,13 +7,15 @@ import com.badmintontracker.analysis.shuttle.HEATMAP_MAX_AREA
 import com.badmintontracker.analysis.shuttle.HEATMAP_THRESHOLD
 import com.badmintontracker.analysis.shuttle.HeatmapCoord
 import com.badmintontracker.analysis.shuttle.heatmapToCoord
-import com.badmintontracker.analysis.shuttle.medianBackgroundInto
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.FloatVar
+import kotlinx.cinterop.UByteVar
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.get
+import kotlinx.cinterop.reinterpret
+import kotlinx.cinterop.set
 import kotlinx.cinterop.usePinned
 import platform.posix.memcpy
 
@@ -60,9 +62,12 @@ object BulkInterop {
         threshold: Float = HEATMAP_THRESHOLD,
         maxArea: Int = HEATMAP_MAX_AREA,
     ): HeatmapCoord {
-        val count = width * height
+        require(width > 0 && height > 0) { "heatmap dimensions must be positive: ${width}x$height" }
+        val countLong = width.toLong() * height.toLong()
+        require(countLong <= Int.MAX_VALUE / 4) { "heatmap buffer size overflow: ${width}x$height" }
+        val count = countLong.toInt()
         val copy = FloatArray(count)
-        copy.usePinned { memcpy(it.addressOf(0), heatmap, (count * 4).toULong()) }
+        copy.usePinned { memcpy(it.addressOf(0), heatmap, (countLong * 4L).toULong()) }
         return heatmapToCoord(copy, width, height, threshold, maxArea)
     }
 
@@ -83,16 +88,87 @@ object BulkInterop {
         frameLength: Int,
         out: CPointer<ByteVar>,
     ) {
-        // Read through an accessor rather than copied into Kotlin ByteArrays.
-        // The list form would build a second 132MB copy of what Swift already
-        // holds, live at the same time as the first and at the same moment as
-        // three ONNX sessions - which is the memory profile Android's own
-        // decode layer records as having killed a 2GB device.
-        val median = ByteArray(frameLength)
-        medianBackgroundInto(median, frameCount, frameLength) { frame, index ->
-            frames[frame.toLong() * frameLength + index].toInt() and 0xFF
+        require(frameCount > 0) { "frameCount must be positive: $frameCount" }
+        require(frameLength >= 0) { "frameLength must be non-negative: $frameLength" }
+        if (frameLength == 0) return
+        val totalBytes = frameCount.toLong() * frameLength.toLong()
+        require(totalBytes >= 0L && totalBytes / frameCount.toLong() == frameLength.toLong()) {
+            "frames buffer size overflow: $frameCount x $frameLength"
         }
-        median.usePinned { memcpy(out, it.addressOf(0), frameLength.toULong()) }
+        if (frameCount == 1) {
+            memcpy(out, frames, frameLength.toULong())
+            return
+        }
+
+        // Read directly from the raw UByte pointer in cache-friendly tiles (no
+        // second 132MB copy and no non-inline boxing lambda across 132.7M samples),
+        // reducing each column with a 256-bucket counting histogram that matches
+        // `np.median(...).astype(np.uint8)` truncation exactly.
+        val src = frames.reinterpret<UByteVar>()
+        val dst = out.reinterpret<UByteVar>()
+        val hist = IntArray(256)
+        val half = frameCount / 2
+        val odd = (frameCount and 1) == 1
+        val stride = frameLength.toLong()
+        val tileSize = (2 * 1024 * 1024 / frameCount).coerceIn(1, 4096)
+
+        if (tileSize == 1) {
+            for (i in 0 until frameLength) {
+                hist.fill(0)
+                for (f in 0 until frameCount) {
+                    hist[src[f.toLong() * stride + i].toInt()]++
+                }
+                dst[i] = histogramMedian(hist, half, odd).toUByte()
+            }
+            return
+        }
+
+        val tileBuf = ByteArray(tileSize * frameCount)
+        var tileStart = 0
+        while (tileStart < frameLength) {
+            val len = minOf(tileSize, frameLength - tileStart)
+            for (f in 0 until frameCount) {
+                val frameBase = f.toLong() * stride + tileStart
+                var j = 0
+                while (j < len) {
+                    tileBuf[j * frameCount + f] = src[frameBase + j].toByte()
+                    j++
+                }
+            }
+            var j = 0
+            while (j < len) {
+                hist.fill(0)
+                val colBase = j * frameCount
+                var f = 0
+                while (f < frameCount) {
+                    hist[tileBuf[colBase + f].toInt() and 0xFF]++
+                    f++
+                }
+                dst[tileStart + j] = histogramMedian(hist, half, odd).toUByte()
+                j++
+            }
+            tileStart += len
+        }
+    }
+
+    private fun histogramMedian(hist: IntArray, half: Int, odd: Boolean): Int {
+        if (odd) {
+            var acc = 0
+            for (v in 0 until 256) {
+                acc += hist[v]
+                if (acc > half) return v
+            }
+            return 255
+        }
+        val lowTarget = half - 1
+        var acc = 0
+        var low = -1
+        for (v in 0 until 256) {
+            acc += hist[v]
+            if (low < 0 && acc > lowTarget) low = v
+            if (acc > half) return (low + v) ushr 1
+        }
+        return 255
     }
 
     /**
@@ -120,8 +196,15 @@ object BulkInterop {
         rowStride: Int,
         outWidth: Int,
         outHeight: Int,
-    ): GreyImage = Luma.downsampleWith(width, height, outWidth, outHeight) { x, y ->
-        plane[y.toLong() * rowStride + x].toInt() and 0xFF
+    ): GreyImage {
+        require(width > 0 && height > 0) { "source dimensions must be positive: ${width}x$height" }
+        require(outWidth > 0 && outHeight > 0) { "output dimensions must be positive: ${outWidth}x$outHeight" }
+        require(rowStride >= width) { "rowStride $rowStride smaller than width $width" }
+        val outPixels = outWidth.toLong() * outHeight.toLong()
+        require(outPixels <= Int.MAX_VALUE) { "output image size overflow: ${outWidth}x$outHeight" }
+        return Luma.downsampleWith(width, height, outWidth, outHeight) { x, y ->
+            plane[y.toLong() * rowStride + x].toInt() and 0xFF
+        }
     }
 
     /**
@@ -136,11 +219,13 @@ object BulkInterop {
      */
     @Throws(Throwable::class)
     fun rgbImage(pixels: CPointer<ByteVar>, width: Int, height: Int, bytesPerRow: Int): RgbImage {
-        require(width >= 1 && height >= 1) { "empty image $width x $height" }
-        require(bytesPerRow >= 4 * width) { "$bytesPerRow bytes per row for $width pixels" }
-        val argb = IntArray(width * height)
+        require(width > 0 && height > 0) { "empty image $width x $height" }
+        require(bytesPerRow.toLong() >= 4L * width.toLong()) { "$bytesPerRow bytes per row for $width pixels" }
+        val pixelCount = width.toLong() * height.toLong()
+        require(pixelCount <= Int.MAX_VALUE) { "image size overflow: ${width}x$height" }
+        val argb = IntArray(pixelCount.toInt())
         for (y in 0 until height) {
-            val row = y.toLong() * bytesPerRow
+            val row = y.toLong() * bytesPerRow.toLong()
             val out = y * width
             for (x in 0 until width) {
                 val at = row + 4L * x

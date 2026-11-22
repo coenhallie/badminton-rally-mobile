@@ -17,7 +17,19 @@ object HomeCopy {
      */
     const val ADD_MATCH = "Add match"
 
-    /** Under the hero on an empty match list: how matches get onto it (the Players screen's Add button). */
+    /**
+     * The Add match sheet's three ways in, each with the one line that tells
+     * them apart: "New match" alone did not say that it is the one without a
+     * video.
+     */
+    const val ADD_NEW_MATCH = "New match"
+    const val ADD_NEW_MATCH_DETAIL = "Score it courtside, point by point"
+    const val ADD_RECORD_VIDEO = "Record video"
+    const val ADD_RECORD_VIDEO_DETAIL = "Film it, then cut it into rallies"
+    const val ADD_IMPORT_VIDEO = "Import video"
+    const val ADD_IMPORT_VIDEO_DETAIL = "Use a video already on this phone"
+
+    /** Under the hero on an empty match list: how matches get onto it (the Add button on the same screen). */
     const val EMPTY_BODY =
         "Score a match courtside, or record or import a video to cut it into rallies. Your matches will show up here."
 

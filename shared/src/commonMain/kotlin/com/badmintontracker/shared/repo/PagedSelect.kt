@@ -33,7 +33,7 @@ internal suspend inline fun <reified T : Any> PostgrestQueryBuilder.selectAllPag
         val from = rows.size.toLong()
         val result = select {
             request()
-            count(Count.EXACT)
+            if (total == null) count(Count.EXACT)
             range(from, from + PAGE_SIZE - 1)
         }
         val page = result.decodeList<T>()

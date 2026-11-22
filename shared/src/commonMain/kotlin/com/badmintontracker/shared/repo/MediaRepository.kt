@@ -7,6 +7,7 @@ import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.datetime.Instant
@@ -23,15 +24,79 @@ import kotlinx.datetime.Instant
 class ThumbnailUrlCache(
     private val ttl: Duration = 50.minutes,
     private val now: () -> Instant = { Clock.System.now() },
+    private val maxEntries: Int = DEFAULT_MAX_ENTRIES,
 ) {
+    init {
+        require(maxEntries > 0) { "maxEntries must be positive: $maxEntries" }
+    }
+
     private val lock = Mutex()
-    private val entries = mutableMapOf<String, Pair<String, Instant>>()
+    private val entries = LinkedHashMap<String, Pair<String, Instant>>()
+    private val inFlight = mutableMapOf<String, CompletableDeferred<String?>>()
 
     suspend fun get(path: String, sign: suspend (String) -> String?): String? {
-        lock.withLock { entries[path]?.let { (url, at) -> if (now() - at < ttl) return url } }
-        val url = sign(path) ?: return null
-        lock.withLock { entries[path] = url to now() }
+        var ownedDeferred: CompletableDeferred<String?>? = null
+        val existingDeferred: CompletableDeferred<String?>? = lock.withLock {
+            val currentTime = now()
+            entries[path]?.let { (url, at) ->
+                if (currentTime - at < ttl) return url
+                entries.remove(path)
+            }
+            inFlight[path] ?: CompletableDeferred<String?>().also {
+                inFlight[path] = it
+                ownedDeferred = it
+            }.let { null }
+        }
+        if (existingDeferred != null) return existingDeferred.await()
+
+        val deferred = ownedDeferred!!
+        val url = try {
+            sign(path)
+        } catch (t: Throwable) {
+            lock.withLock {
+                if (inFlight[path] === deferred) inFlight.remove(path)
+            }
+            deferred.completeExceptionally(t)
+            throw t
+        }
+        lock.withLock {
+            val stillCurrent = if (inFlight[path] === deferred) {
+                inFlight.remove(path)
+                true
+            } else {
+                false
+            }
+            if (stillCurrent && url != null) {
+                putLocked(path, url, now())
+            }
+        }
+        deferred.complete(url)
         return url
+    }
+
+    /** Drops all cached signed URLs and detaches any in-flight requests (e.g. on sign-out). */
+    suspend fun clear() {
+        lock.withLock {
+            entries.clear()
+            inFlight.clear()
+        }
+    }
+
+    private fun putLocked(path: String, url: String, at: Instant) {
+        entries.remove(path)
+        if (entries.size >= maxEntries) {
+            val expired = entries.entries.filter { (_, value) -> at - value.second >= ttl }.map { it.key }
+            expired.forEach { entries.remove(it) }
+            while (entries.size >= maxEntries) {
+                val oldestKey = entries.keys.firstOrNull() ?: break
+                entries.remove(oldestKey)
+            }
+        }
+        entries[path] = url to at
+    }
+
+    companion object {
+        const val DEFAULT_MAX_ENTRIES = 500
     }
 }
 
@@ -49,6 +114,11 @@ interface MediaRepository {
 class MediaRepositoryImpl(private val client: SupabaseClient) : MediaRepository {
 
     private val thumbnails = ThumbnailUrlCache()
+
+    /** Clears cached signed thumbnail URLs (e.g. on sign-out or account switch). */
+    suspend fun clear() {
+        thumbnails.clear()
+    }
 
     override suspend fun signedClipUrl(clip: RallyClip): String =
         client.storage.from("clips").createSignedUrl(clip.clipStoragePath, 1.hours)

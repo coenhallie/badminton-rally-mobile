@@ -19,9 +19,52 @@ fun medianBackground(frames: List<ByteArray>): ByteArray {
     require(frames.isNotEmpty()) { "no frames to reduce" }
     val size = frames[0].size
     require(frames.all { it.size == size }) { "frames differ in length" }
+    if (size == 0) return ByteArray(0)
+    val frameCount = frames.size
+    if (frameCount == 1) return frames[0].copyOf()
+
     val out = ByteArray(size)
-    medianBackgroundInto(out, frames.size, size) { frame, index ->
-        frames[frame][index].toInt() and 0xFF
+    val hist = IntArray(256)
+    val half = frameCount / 2
+    val odd = (frameCount and 1) == 1
+    val tileSize = (2 * 1024 * 1024 / frameCount).coerceIn(1, 4096)
+
+    if (tileSize == 1) {
+        for (i in 0 until size) {
+            hist.fill(0)
+            for (f in 0 until frameCount) {
+                hist[frames[f][i].toInt() and 0xFF]++
+            }
+            out[i] = histogramMedian(hist, half, odd).toByte()
+        }
+        return out
+    }
+
+    val tileBuf = ByteArray(tileSize * frameCount)
+    var tileStart = 0
+    while (tileStart < size) {
+        val len = minOf(tileSize, size - tileStart)
+        for (f in 0 until frameCount) {
+            val frame = frames[f]
+            var j = 0
+            while (j < len) {
+                tileBuf[j * frameCount + f] = frame[tileStart + j]
+                j++
+            }
+        }
+        var j = 0
+        while (j < len) {
+            hist.fill(0)
+            val colBase = j * frameCount
+            var f = 0
+            while (f < frameCount) {
+                hist[tileBuf[colBase + f].toInt() and 0xFF]++
+                f++
+            }
+            out[tileStart + j] = histogramMedian(hist, half, odd).toByte()
+            j++
+        }
+        tileStart += len
     }
     return out
 }
@@ -48,19 +91,39 @@ fun medianBackgroundInto(
     sampleAt: (frame: Int, index: Int) -> Int,
 ) {
     require(frameCount > 0) { "no frames to reduce" }
+    require(frameLength >= 0) { "frameLength must be non-negative: $frameLength" }
     require(out.size >= frameLength) { "output shorter than a frame" }
 
-    val column = IntArray(frameCount)
+    val hist = IntArray(256)
+    val half = frameCount / 2
+    val odd = (frameCount and 1) == 1
     for (i in 0 until frameLength) {
-        for (f in 0 until frameCount) column[f] = sampleAt(f, i)
-        column.sort()
-        val median = if (frameCount % 2 == 1) {
-            column[frameCount / 2].toDouble()
-        } else {
-            (column[frameCount / 2 - 1] + column[frameCount / 2]) / 2.0
+        hist.fill(0)
+        for (f in 0 until frameCount) {
+            hist[sampleAt(f, i) and 0xFF]++
         }
-        out[i] = median.toInt().toByte()
+        out[i] = histogramMedian(hist, half, odd).toByte()
     }
+}
+
+private fun histogramMedian(hist: IntArray, half: Int, odd: Boolean): Int {
+    if (odd) {
+        var acc = 0
+        for (v in 0 until 256) {
+            acc += hist[v]
+            if (acc > half) return v
+        }
+        return 255
+    }
+    val lowTarget = half - 1
+    var acc = 0
+    var low = -1
+    for (v in 0 until 256) {
+        acc += hist[v]
+        if (low < 0 && acc > lowTarget) low = v
+        if (acc > half) return (low + v) ushr 1
+    }
+    return 255
 }
 
 /**

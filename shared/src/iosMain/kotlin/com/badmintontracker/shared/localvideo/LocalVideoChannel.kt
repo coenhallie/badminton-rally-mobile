@@ -8,12 +8,14 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.ObjCObjectVar
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.alloc
+import kotlinx.cinterop.autoreleasepool
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
 import kotlinx.cinterop.usePinned
 import kotlinx.cinterop.value
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.launch
 import platform.Foundation.NSData
 import platform.Foundation.NSError
@@ -31,16 +33,23 @@ private const val CHUNK_BYTES = 65_536uL
  */
 @OptIn(ExperimentalForeignApi::class)
 fun openLocalVideoChannel(absolutePath: String, offset: Long): ByteReadChannel {
+    require(offset >= 0L) { "offset must be non-negative: $offset" }
     val handle = NSFileHandle.fileHandleForReadingAtPath(absolutePath)
         ?: error("Video file is missing or access was revoked")
-    handle.seekOrThrow(offset.toULong())
+    try {
+        handle.seekOrThrow(offset.toULong())
+    } catch (t: Throwable) {
+        handle.closeAndReturnError(error = null)
+        throw t
+    }
     val channel = ByteChannel(autoFlush = true)
-    CoroutineScope(Dispatchers.Default).launch {
+    CoroutineScope(Dispatchers.IO).launch {
         try {
             while (true) {
-                val data = handle.readChunkOrThrow(CHUNK_BYTES)
-                val bytes = data?.toByteArray() ?: ByteArray(0)
-                if (bytes.isEmpty()) break
+                val bytes = autoreleasepool {
+                    handle.readChunkOrThrow(CHUNK_BYTES)?.toByteArray()
+                }
+                if (bytes == null || bytes.isEmpty()) break
                 channel.writeFully(bytes, 0, bytes.size)
             }
             channel.close(null)

@@ -98,12 +98,21 @@ object RawInferenceCodec {
         require(version in READABLE_VERSIONS) {
             "unsupported RawInference version $version, this build reads $READABLE_VERSIONS"
         }
+        val fps = r.double()
+        val totalFrames = r.int()
+        val videoWidth = r.int()
+        val videoHeight = r.int()
+        require(fps.isFinite() && fps >= 0.0) { "invalid RawInference fps: $fps" }
+        require(totalFrames >= 0) { "invalid RawInference totalFrames: $totalFrames" }
+        require(videoWidth > 0 && videoHeight > 0) {
+            "invalid RawInference video dimensions: ${videoWidth}x$videoHeight"
+        }
         val header = RawHeader(
             version = version,
-            fps = r.double(),
-            totalFrames = r.int(),
-            videoWidth = r.int(),
-            videoHeight = r.int(),
+            fps = fps,
+            totalFrames = totalFrames,
+            videoWidth = videoWidth,
+            videoHeight = videoHeight,
             modelVersion = r.string(),
         )
         val frameCount = r.count(FRAME_MIN_BYTES)
@@ -164,10 +173,16 @@ object RawInferenceCodec {
         private var size = 0
 
         private fun ensure(extra: Int) {
-            if (size + extra <= buf.size) return
-            var cap = buf.size
-            while (cap < size + extra) cap *= 2
-            buf = buf.copyOf(cap)
+            require(extra >= 0) { "negative write size: $extra" }
+            val needed = size.toLong() + extra.toLong()
+            require(needed <= Int.MAX_VALUE.toLong()) {
+                "RawInference stream exceeds maximum array size ($needed bytes)"
+            }
+            val required = needed.toInt()
+            if (required <= buf.size) return
+            var cap = buf.size.toLong()
+            while (cap < needed) cap *= 2L
+            buf = buf.copyOf(minOf(cap, Int.MAX_VALUE.toLong()).toInt())
         }
 
         fun byte(v: Int) { ensure(1); buf[size++] = v.toByte() }

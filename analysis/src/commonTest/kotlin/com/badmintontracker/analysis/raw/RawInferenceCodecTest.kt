@@ -188,6 +188,36 @@ class RawInferenceCodecTest {
     }
 
     @Test
+    fun invalid_header_values_are_rejected_on_decode() {
+        val badHeaders = listOf(
+            header.copy(totalFrames = -1),
+            header.copy(videoWidth = 0),
+            header.copy(videoWidth = -1920),
+            header.copy(videoHeight = 0),
+            header.copy(videoHeight = -1080),
+            header.copy(fps = -1.0),
+            header.copy(fps = Double.NaN),
+            header.copy(fps = Double.POSITIVE_INFINITY),
+            header.copy(fps = Double.NEGATIVE_INFINITY),
+        )
+        for (bad in badHeaders) {
+            val bytes = RawInferenceCodec.encode(sample.copy(header = bad, frames = emptyList()))
+            assertFailsWith<IllegalArgumentException>("expected header $bad to be rejected") {
+                RawInferenceCodec.decode(bytes)
+            }
+        }
+    }
+
+    @Test
+    fun zero_fps_and_zero_total_frames_round_trip() {
+        val minimal = sample.copy(
+            header = header.copy(fps = 0.0, totalFrames = 0, videoWidth = 1, videoHeight = 1),
+            frames = emptyList(),
+        )
+        RawInferenceCodec.decode(RawInferenceCodec.encode(minimal)) shouldBe minimal
+    }
+
+    @Test
     fun an_absent_shuttle_is_distinct_from_an_invisible_one() {
         // Two different facts: the model produced no output for this frame,
         // versus it produced one that resolved to no blob.

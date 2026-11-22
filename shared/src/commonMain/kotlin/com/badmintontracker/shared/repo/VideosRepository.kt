@@ -335,6 +335,11 @@ class VideosRepositoryImpl(private val client: SupabaseClient) : VideosRepositor
 
     override fun observeMatchMetadata(): Flow<Map<String, MatchMetadata>> = metadata.asStateFlow()
 
+    /** Drops all cached match metadata from memory (e.g. on sign-out or account switch). */
+    fun clear() {
+        metadata.value = emptyMap()
+    }
+
     override suspend fun createVideo(
         videoId: String,
         filename: String,

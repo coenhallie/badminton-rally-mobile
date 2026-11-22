@@ -71,19 +71,27 @@ fun basePositions(
     for (w in windows.sortedBy { it.startSeconds }) {
         if (!w.isBounded) continue
         val frames = w.frames(fps)
+        if (frames.isEmpty()) continue
         val first = frames.first
         val last = frames.last
-        val inside = sorted.filter { it.frame in frames }
-        if (inside.size < minSamples) continue
-        val rx = inside.map { it.courtPosition.x }
-        val ry = inside.map { it.courtPosition.y }
-        xs += rx
-        ys += ry
+        val from = lowerBound(sorted, first)
+        val to = upperBound(sorted, last)
+        val count = to - from
+        if (count < minSamples) continue
+        val rx = ArrayList<Double>(count)
+        val ry = ArrayList<Double>(count)
+        for (i in from until to) {
+            val pos = sorted[i].courtPosition
+            rx.add(pos.x)
+            ry.add(pos.y)
+        }
+        xs.addAll(rx)
+        ys.addAll(ry)
         rallies += RallyBase(
             index = w.index,
             position = Point(median(rx), median(ry)),
-            samples = inside.size,
-            coverage = inside.size.toDouble() / (last - first + 1),
+            samples = count,
+            coverage = count.toDouble() / (last - first + 1),
         )
     }
     val overall = if (xs.isEmpty()) null else Point(median(xs), median(ys))
@@ -92,6 +100,26 @@ fun basePositions(
 
 /** The shortest rally worth a base: a serve and one return. */
 const val MIN_RALLY_SECONDS: Double = 1.0
+
+private fun lowerBound(sorted: List<PlayerSample>, targetFrame: Int): Int {
+    var lo = 0
+    var hi = sorted.size
+    while (lo < hi) {
+        val mid = (lo + hi) ushr 1
+        if (sorted[mid].frame < targetFrame) lo = mid + 1 else hi = mid
+    }
+    return lo
+}
+
+private fun upperBound(sorted: List<PlayerSample>, targetFrame: Int): Int {
+    var lo = 0
+    var hi = sorted.size
+    while (lo < hi) {
+        val mid = (lo + hi) ushr 1
+        if (sorted[mid].frame <= targetFrame) lo = mid + 1 else hi = mid
+    }
+    return lo
+}
 
 private fun median(values: List<Double>): Double {
     val s = values.sorted()

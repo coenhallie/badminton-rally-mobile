@@ -47,4 +47,15 @@ class LocalVideoChannelTest {
             assertTrue(it.message!!.contains("missing or access was revoked"))
         }
     }
+
+    @Test
+    fun negative_offset_is_rejected() {
+        val path = writeTempFile(ByteArray(16) { it.toByte() })
+        for (badOffset in listOf(-1L, Long.MIN_VALUE)) {
+            val e = assertFailsWith<IllegalArgumentException> {
+                openLocalVideoChannel(path, offset = badOffset)
+            }
+            assertTrue(e.message!!.contains("non-negative"))
+        }
+    }
 }

@@ -100,4 +100,37 @@ class BasePositionTest {
         val samples = standing(Point(3.0, 10.0), 0, 2.0)
         assertTrue(basePositions(track(*samples.toTypedArray()), 0.0, listOf(RallyWindow(1, 0.0, 2.0))).rallies.isEmpty())
     }
+
+    @Test
+    fun duplicate_frames_at_window_boundaries_are_all_included() {
+        // Window 1.0..2.0 at 10 fps -> frames 10..20 inclusive (11 frames).
+        val samples = listOf(
+            PlayerSample(9, Point(99.0, 99.0)),
+            PlayerSample(10, Point(1.0, 2.0)),
+            PlayerSample(10, Point(1.0, 2.0)),
+            PlayerSample(10, Point(2.0, 4.0)),
+            PlayerSample(15, Point(3.0, 6.0)),
+            PlayerSample(15, Point(3.0, 6.0)),
+            PlayerSample(20, Point(4.0, 8.0)),
+            PlayerSample(20, Point(5.0, 10.0)),
+            PlayerSample(21, Point(99.0, 99.0)),
+        ).reversed() // unsorted input
+
+        val result = basePositions(
+            track = track(*samples.toTypedArray()),
+            fps = 10.0,
+            windows = listOf(
+                RallyWindow(1, 0.0, 0.5),  // before all samples
+                RallyWindow(2, 1.0, 2.0),  // hits all 7 samples in 10..20
+                RallyWindow(3, 5.0, 6.0),  // after all samples
+            ),
+            minSeconds = 0.5,
+        )
+
+        assertEquals(listOf(2), result.rallies.map { it.index })
+        assertEquals(7, result.rallies[0].samples)
+        assertEquals(Point(3.0, 6.0), result.rallies[0].position)
+        assertEquals(7.0 / 11.0, result.rallies[0].coverage, 1e-9)
+        assertEquals(Point(3.0, 6.0), result.overall)
+    }
 }
