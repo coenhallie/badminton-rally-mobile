@@ -43,6 +43,9 @@ struct PlayerView: View {
     let onOverlayChange: (Bool) -> Void
     /// What the root says. Owned by HomeView.
     @Binding var toast: ToastMessage?
+    /// Incremented by HomeView when a video is imported/recorded for this
+    /// player so the page switches to its Matches tab with the new row visible.
+    var showMatchesTrigger: Int = 0
 
     /// Profile, or Matches.
     @State private var tab = Self.profileTab
@@ -109,6 +112,11 @@ struct PlayerView: View {
             .task { await model.start() }
             .onChange(of: player, initial: true) { _, current in
                 if let current { lastPlayer = current }
+            }
+            .onChange(of: showMatchesTrigger) { _, newValue in
+                guard newValue > 0 else { return }
+                tab = Self.matchesTab
+                matchesFilter = .all
             }
             // Closed only while in front (`HomePath.closingPlayer`), so this
             // asks again whenever the page comes back into view.

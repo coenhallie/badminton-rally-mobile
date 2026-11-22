@@ -77,6 +77,9 @@ struct HomeView: View {
     /// `MatchesList`-owned target for the same sheet - the two never need to
     /// agree on one value at the same time.
     @State private var detailsTarget: MatchDetailsTarget? = nil
+    /// Monotonic signal keyed by player id telling that player's `PlayerView`
+    /// to switch to its Matches tab after a video is imported/recorded for them.
+    @State private var playerMatchesSignal: (playerId: String, tick: Int)? = nil
 
     /// Runs already seen finished, on-device or in the cloud, so each one is
     /// announced at most once. See `announceFinishedRuns`, which owns the rule
@@ -189,7 +192,8 @@ struct HomeView: View {
                 onCourtMarking: { path.append(.courtMarking($0)) },
                 onAdd: { openAddSheet(for: id) },
                 onOverlayChange: { playerOverlayOpen = $0 },
-                toast: toastBinding
+                toast: toastBinding,
+                showMatchesTrigger: playerMatchesSignal?.playerId == id ? (playerMatchesSignal?.tick ?? 0) : 0
             )
             // A fresh page per player: one switched to opens on Profile, at
             // the top, with nothing of the last player's left in its state.
@@ -339,6 +343,12 @@ struct HomeView: View {
             // insert-only, so there is nothing to ask here - MatchView owns that
             // pick and sends it straight to court marking instead.
             guard entry.scoreLogId == nil else { return }
+            // If imported/recorded from a player's page, switch that page to
+            // its Matches tab so the newly added match is right in front of the
+            // coach when MatchDetailsSheet closes.
+            if let playerId = entry.homePlayerId {
+                playerMatchesSignal = (playerId, (playerMatchesSignal?.tick ?? 0) + 1)
+            }
             detailsTarget = MatchDetailsTarget(entry: entry, autoOpened: true)
         }
     }

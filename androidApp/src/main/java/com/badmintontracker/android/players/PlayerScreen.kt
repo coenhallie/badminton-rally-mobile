@@ -157,6 +157,9 @@ fun PlayerScreen(
     snackbarHostState: SnackbarHostState,
     /** Any sheet or dialog over the page: see AuthGate's finished-run watcher. */
     onOverlayChange: (Boolean) -> Unit,
+    /** Incremented when a video is imported/recorded for this player so the
+     *  page switches to its Matches tab with the new row visible. */
+    showMatchesTrigger: Int = 0,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val listState by clipListVm.state.collectAsStateWithLifecycle()
@@ -182,6 +185,14 @@ fun PlayerScreen(
     // Hoisted so the Add button can read it, and so it keeps its scroll
     // across a trip to Profile and back.
     val matchesListState = rememberLazyListState()
+    var handledMatchesTrigger by rememberSaveable { mutableIntStateOf(showMatchesTrigger) }
+    LaunchedEffect(showMatchesTrigger) {
+        if (showMatchesTrigger > 0 && showMatchesTrigger != handledMatchesTrigger) {
+            handledMatchesTrigger = showMatchesTrigger
+            tab = TAB_MATCHES
+            matchesListState.scrollToItem(0)
+        }
+    }
     // The Matches tab leaves composition on a trip to Profile; this keeps the
     // list's own saved state (its filter and sort) for when it comes back.
     val tabStates = rememberSaveableStateHolder()

@@ -186,6 +186,9 @@ fun AuthGate(
             // an entry that already exists. Held until that sheet closes, not
             // just until it opens: see the finished-run watcher's "nothing above".
             var autoDetailsEntryId by remember { mutableStateOf<String?>(null) }
+            // Signals a player's page to switch to its Matches tab after a
+            // standalone video is imported/recorded for that player.
+            var playerMatchesSignal by remember { mutableStateOf<Pair<String, Int>?>(null) }
             // A video just added to a scored match with a profile on it, waiting
             // on "Which end was Home on?" before court marking. Saveable, so a
             // recreation under the dialog still asks, and still goes on to mark.
@@ -209,7 +212,12 @@ fun AuthGate(
                         // (AutoMatchDetailsHost), so there is nothing to
                         // select: the coach comes back from the camera or
                         // picker to whatever screen they left, and the sheet
-                        // opens over it.
+                        // opens over it. If started from a player's page,
+                        // switch that page to its Matches tab so the new match
+                        // is immediately visible once the sheet closes.
+                        entry.homePlayerId?.let { pid ->
+                            playerMatchesSignal = pid to ((playerMatchesSignal?.second ?: 0) + 1)
+                        }
                         autoDetailsEntryId = entry.id
                     } else {
                         // The coach already said he wants this video analysed;
@@ -533,6 +541,11 @@ fun AuthGate(
                         onImport = { intake.import(null, args.playerId) },
                         snackbarHostState = rootSnackbar,
                         onOverlayChange = { playerOverlayOpen = it },
+                        showMatchesTrigger = if (playerMatchesSignal?.first == args.playerId) {
+                            playerMatchesSignal?.second ?: 0
+                        } else {
+                            0
+                        },
                     )
                 }
                 composable<Route.Settings> { entry ->
@@ -680,6 +693,7 @@ fun AuthGate(
                         scoreLogId = args.scoreLogId,
                         videoId = effectiveVideoId,
                         entryId = args.entryId,
+                        entryExistsLocally = args.entryId?.let { localVideos.get(it) != null } == true,
                         initialSection = MatchPageSection.entries.firstOrNull { it.name == args.section },
                         attach = args.attach,
                         onBack = { nav.popBackStack() },

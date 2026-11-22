@@ -128,6 +128,10 @@ fun MatchScreen(
     videoId: String?,
     /** A video only on this phone has no cloud id and no score log: this is how the page finds it. */
     entryId: String?,
+    /** Direct synchronous check against LocalVideoRepository so a freshly imported match
+     *  never flashes "missing" during the single frame before ClipListViewModel's async
+     *  combine pipeline emits the new row (mirrors iOS MatchView.foundDirectly). */
+    entryExistsLocally: Boolean = false,
     /** The section to open on, from a finished run's View; null opens the default. */
     initialSection: MatchPageSection?,
     /** The intent carried by [com.badmintontracker.android.nav.Route.Match]'s `attach`
@@ -402,9 +406,12 @@ fun MatchScreen(
             // failed included) a row it lacks is not coming: the list holds
             // everything it knows about. Before that, only the lookups that
             // need no network can tell.
-            val gone = state.refreshGeneration > 0 ||
-                (scoreLogId != null && log == null && match == null) ||
-                (scoreLogId == null && videoId == null && entryId != null && state.localEntries.none { it.id == entryId })
+            val foundDirectly = (scoreLogId != null && log != null) || entryExistsLocally
+            val gone = !foundDirectly && (
+                state.refreshGeneration > 0 ||
+                    (scoreLogId != null && log == null && match == null) ||
+                    (scoreLogId == null && videoId == null && entryId != null && state.localEntries.none { it.id == entryId })
+                )
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 if (gone) Text(MatchPageCopy.MISSING)
                 else CircularProgressIndicator()
