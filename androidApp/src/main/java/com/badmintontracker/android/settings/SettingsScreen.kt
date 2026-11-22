@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -29,6 +30,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,6 +43,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.badmintontracker.android.BuildConfig
 import com.badmintontracker.android.localanalysis.BackgroundWorkAction
+import com.badmintontracker.android.ui.components.ConfirmDialog
 import com.badmintontracker.android.ui.icons.ShuttlIcons
 import com.badmintontracker.android.ui.theme.ShuttlRadius
 import com.badmintontracker.android.ui.theme.ShuttlTheme
@@ -61,6 +67,8 @@ fun SettingsScreen(
     onSignOut: () -> Unit,
     onBack: () -> Unit,
 ) {
+    var confirmSignOut by remember { mutableStateOf(false) }
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
@@ -115,7 +123,18 @@ fun SettingsScreen(
                     Icon(ShuttlIcons.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                SettingsRow(onClick = onToggleTheme) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 56.dp)
+                        .toggleable(
+                            value = themeMode == ThemeMode.DARK,
+                            role = Role.Switch,
+                            onValueChange = { onToggleTheme() },
+                        )
+                        .padding(horizontal = 18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Text(HomeCopy.SETTINGS_DARK_THEME, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground, modifier = Modifier.weight(1f))
                     Switch(
                         checked = themeMode == ThemeMode.DARK,
@@ -143,7 +162,7 @@ fun SettingsScreen(
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 }
-                SettingsRow(onClick = onSignOut) {
+                SettingsRow(onClick = { confirmSignOut = true }) {
                     Text(HomeCopy.SETTINGS_SIGN_OUT, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.error)
                 }
             }
@@ -157,6 +176,19 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth().padding(top = 18.dp),
             )
         }
+    }
+
+    if (confirmSignOut) {
+        ConfirmDialog(
+            title = "Sign out?",
+            message = "You'll need to sign in again to access your cloud matches and labels.",
+            confirmLabel = HomeCopy.SETTINGS_SIGN_OUT,
+            onConfirm = {
+                confirmSignOut = false
+                onSignOut()
+            },
+            onDismiss = { confirmSignOut = false },
+        )
     }
 }
 

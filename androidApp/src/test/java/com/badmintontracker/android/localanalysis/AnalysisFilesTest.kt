@@ -1,6 +1,7 @@
 package com.badmintontracker.android.localanalysis
 
 import com.badmintontracker.shared.localvideo.LocalVideoRemoval
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.shouldBe
 import org.junit.Rule
 import org.junit.Test
@@ -111,5 +112,20 @@ class AnalysisFilesTest {
         AnalysisFiles.deleteAll(temp.root, "e1", LocalVideoRemoval.DISCARDED)
 
         listOf(track, skeleton, source).map { it.exists() } shouldBe List(3) { false }
+    }
+
+    @Test
+    fun `rejects unsafe entry ids before touching the filesystem`() {
+        val sentinel = write("keep-me.txt")
+        val insideStore = write("player-tracks/victim.track")
+
+        for (bad in listOf("", "../foo", "..", "a/b", "a\\b", "e1.track", "a".repeat(129))) {
+            shouldThrow<IllegalArgumentException> {
+                AnalysisFiles.deleteAll(temp.root, bad, LocalVideoRemoval.DISCARDED)
+            }
+        }
+
+        sentinel.exists() shouldBe true
+        insideStore.exists() shouldBe true
     }
 }

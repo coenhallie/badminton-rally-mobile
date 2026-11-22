@@ -1,9 +1,16 @@
 package com.badmintontracker.android.scoring
 
 import android.provider.Settings
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -13,6 +20,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -66,6 +74,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -74,6 +84,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import kotlin.coroutines.EmptyCoroutineContext
@@ -144,6 +155,24 @@ fun ScoringScreen(
     var addVideoOpen by remember { mutableStateOf(false) }
     LaunchedEffect(match.isOver, log.status) {
         if (finishPrompt.shouldAsk(log.isPlayable())) addVideoOpen = true
+    }
+
+    // Subtle haptic cue when a rally pushes the match into game point, match
+    // point, or match won. Seeded with the initial key so reopening a match
+    // already at game point or already finished does not vibrate on entry.
+    val haptics = LocalHapticFeedback.current
+    val milestoneKey = when {
+        match.winner != null -> "won:${match.winner}"
+        match.matchPoint.any -> "mp:${match.matchPoint.home}:${match.matchPoint.away}:${match.currentGame.home}:${match.currentGame.away}"
+        match.gamePoint.any -> "gp:${match.gamePoint.home}:${match.gamePoint.away}:${match.currentGame.home}:${match.currentGame.away}"
+        else -> null
+    }
+    var previousMilestoneKey by remember { mutableStateOf(milestoneKey) }
+    LaunchedEffect(milestoneKey) {
+        if (milestoneKey != null && milestoneKey != previousMilestoneKey) {
+            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+        }
+        previousMilestoneKey = milestoneKey
     }
 
     // Keyed on the notice rather than its words, so a second notice with the same
@@ -229,6 +258,7 @@ fun ScoringScreen(
         val dismiss = { confirming = null }
         AlertDialog(
             onDismissRequest = dismiss,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             title = { Text(pending.title) },
             text = { Text(pending.body) },
             confirmButton = {
@@ -247,6 +277,8 @@ fun ScoringScreen(
     if (addVideoOpen) {
         AlertDialog(
             onDismissRequest = { addVideoOpen = false; onFinished(null) },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            properties = DialogProperties(dismissOnClickOutside = false),
             title = { Text("Add the video?") },
             text = {
                 Text(
@@ -358,6 +390,7 @@ private fun StatusStrip(
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val announcement = notice ?: announcementFor(log, match, players)
+    val haptics = LocalHapticFeedback.current
 
     Surface(color = MaterialTheme.colorScheme.surface) {
         Row(
@@ -383,12 +416,23 @@ private fun StatusStrip(
                     if (announcement != null) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            if (notice != null && noticeAction != null) TextButton(onClick = onNoticeAction) { Text(noticeAction) }
+            if (notice != null && noticeAction != null) {
+                TextButton(
+                    onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onNoticeAction()
+                    },
+                ) { Text(noticeAction) }
+            }
             Box {
                 IconButton(onClick = { menuOpen = true }) {
                     Icon(Icons.Default.MoreVert, contentDescription = "Match options")
                 }
-                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                DropdownMenu(
+                    expanded = menuOpen,
+                    onDismissRequest = { menuOpen = false },
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                ) {
                     // Here rather than on the bar since the score editor took its
                     // place: the editor only reaches the game being played, and a
                     // mis-tap that ends a game has already moved the board on to
@@ -396,7 +440,11 @@ private fun StatusStrip(
                     DropdownMenuItem(
                         text = { Text("Undo last rally") },
                         enabled = canUndo,
-                        onClick = { menuOpen = false; onUndo() },
+                        onClick = {
+                            menuOpen = false
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onUndo()
+                        },
                     )
                     // Only when there is one. Beside Undo last rally rather than
                     // replacing it: after Reset game the row logs moments while
@@ -404,7 +452,11 @@ private fun StatusStrip(
                     if (canRemoveMoment) {
                         DropdownMenuItem(
                             text = { Text("Remove last moment") },
-                            onClick = { menuOpen = false; onRemoveMoment() },
+                            onClick = {
+                                menuOpen = false
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onRemoveMoment()
+                            },
                         )
                     }
                     // Names and format are not asked for when the match is created,
@@ -454,7 +506,11 @@ private fun SideZone(
     BoxWithConstraints(
         modifier = modifier
             .background(background)
-            .clickable(enabled = enabled) {
+            .clickable(
+                enabled = enabled,
+                onClickLabel = "Score point for $name",
+                role = Role.Button,
+            ) {
                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                 onScore()
             },
@@ -478,7 +534,7 @@ private fun SideZone(
         ) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(
                     text = name,
@@ -497,7 +553,9 @@ private fun SideZone(
                     // Only the visible pill: the receiving side's is drawn at zero
                     // alpha to hold the layout, and must not take taps it cannot show.
                     onSwitch = onSwitchServer.takeIf { serving },
-                    modifier = Modifier.alpha(if (serving) 1f else 0f),
+                    modifier = Modifier
+                        .alpha(if (serving) 1f else 0f)
+                        .then(if (serving) Modifier else Modifier.clearAndSetSemantics {}),
                 )
 
                 if (match.rules.gamesToWin > 1) {
@@ -509,14 +567,26 @@ private fun SideZone(
             // names to the top instead of centring the whole stack keeps the numeral
             // in the same place all match, however long the names are.
             Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                Text(
-                    text = "${match.currentGame.of(side)}",
-                    color = Color.White,
-                    fontSize = numeral,
-                    lineHeight = numeral * 1.05f,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                )
+                val score = match.currentGame.of(side)
+                AnimatedContent(
+                    targetState = score,
+                    transitionSpec = {
+                        val up = targetState >= initialState
+                        (fadeIn(tween(140)) + slideInVertically(tween(140)) { if (up) it / 6 else -it / 6 })
+                            .togetherWith(fadeOut(tween(100)) + slideOutVertically(tween(100)) { if (up) -it / 6 else it / 6 })
+                            .using(SizeTransform(clip = false))
+                    },
+                    label = "score-numeral",
+                ) { value ->
+                    Text(
+                        text = "$value",
+                        color = Color.White,
+                        fontSize = numeral,
+                        lineHeight = numeral * 1.05f,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                    )
+                }
             }
         }
     }
@@ -533,34 +603,48 @@ private fun SideZone(
  */
 @Composable
 private fun ServePill(court: ServiceCourt?, onSwitch: (() -> Unit)?, modifier: Modifier = Modifier) {
-    Surface(
+    val haptics = LocalHapticFeedback.current
+    // Compact visual pill centred inside a 48dp touch hitbox so tapping Serve
+    // cannot miss and accidentally score a point on the SideZone underneath.
+    Box(
         modifier = modifier
+            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
             .then(
                 if (onSwitch == null) Modifier
-                else Modifier.clickable(onClickLabel = "Switch who serves first", onClick = onSwitch)
-            ),
-        shape = RoundedCornerShape(ShuttlRadius.extraSmall),
-        color = Color.White,
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (onSwitch != null) {
-                // Decorative: the click label on the pill already says what it does.
-                Icon(ShuttlIcons.Swap, contentDescription = null, tint = Color.Black, modifier = Modifier.size(12.dp))
-            }
-            Text(
-                text = "SERVE" + when (court) {
-                    ServiceCourt.RIGHT -> " R"
-                    ServiceCourt.LEFT -> " L"
-                    null -> ""
+                else Modifier.clickable(
+                    onClickLabel = "Switch who serves first",
+                    role = Role.Button,
+                ) {
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onSwitch()
                 },
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-                color = Color.Black,
-            )
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Surface(
+            shape = RoundedCornerShape(ShuttlRadius.extraSmall),
+            color = Color.White,
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (onSwitch != null) {
+                    // Decorative: the click label on the pill already says what it does.
+                    Icon(ShuttlIcons.Swap, contentDescription = null, tint = Color.Black, modifier = Modifier.size(12.dp))
+                }
+                Text(
+                    text = "SERVE" + when (court) {
+                        ServiceCourt.RIGHT -> " R"
+                        ServiceCourt.LEFT -> " L"
+                        null -> ""
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.Black,
+                )
+            }
         }
     }
 }
@@ -661,12 +745,10 @@ private fun ControlBar(
                                 else -> "Log a moment"
                             },
                             onClick = {
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 if (point != null) {
                                     onToggleTag(point.ordinal, label)
                                 } else {
-                                    // A quick moment changes nothing else on the board,
-                                    // so it is felt as well as seen.
-                                    if (quick) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     onMomentLabel(label)
                                 }
                             },
@@ -701,6 +783,8 @@ private fun ControlBar(
                     modifier = Modifier.fillMaxWidth().focusRequester(focus),
                     singleLine = true,
                     placeholder = { Text("Note on this rally") },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { onNote() }),
                 )
             }
 

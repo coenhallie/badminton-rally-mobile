@@ -7,6 +7,12 @@ import com.badmintontracker.shared.local.DeviceThroughputRepository
 import com.badmintontracker.android.localanalysis.LocalAnalysisRunner
 import com.badmintontracker.android.localanalysis.AnalysisTarget
 import android.net.Uri
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
@@ -292,8 +298,6 @@ fun AuthGate(
                 }
             }
 
-            val work by backgroundWork.work.collectAsStateWithLifecycle()
-
             // The activity's, not a destination's: read above the NavHost, so it
             // goes below RESUMED while the camera or the photo picker (another
             // activity) is in front of ours. Read inside the watcher below
@@ -389,12 +393,12 @@ fun AuthGate(
                     }
             }
             // Provided around the NavHost so every destination's bar can show it
-            // without the state appearing in any screen's signature.
+            // without the state appearing in any screen's signature. Providing the
+            // StateFlow itself keeps progress ticks scoped to BackgroundWorkAction.
             CompositionLocalProvider(
-                LocalBackgroundWork provides work,
+                LocalBackgroundWork provides backgroundWork.work,
                 // remembered: this local is static, so a new lambda identity
-                // would invalidate the whole NavHost subtree, and AuthGate
-                // recomposes on every progress tick because it reads `work`.
+                // would invalidate the whole NavHost subtree.
                 LocalBackgroundWorkClick provides remember(nav) {
                     {
                         // "Go to matches": the run it points at is a row on
@@ -411,7 +415,26 @@ fun AuthGate(
                     }
                 },
             ) {
-            NavHost(navController = nav, startDestination = start) {
+            NavHost(
+                navController = nav,
+                startDestination = start,
+                enterTransition = {
+                    fadeIn(animationSpec = tween(220, easing = FastOutSlowInEasing)) +
+                        slideInHorizontally(animationSpec = tween(220, easing = FastOutSlowInEasing)) { it / 12 }
+                },
+                exitTransition = {
+                    fadeOut(animationSpec = tween(180, easing = FastOutSlowInEasing)) +
+                        slideOutHorizontally(animationSpec = tween(180, easing = FastOutSlowInEasing)) { -it / 24 }
+                },
+                popEnterTransition = {
+                    fadeIn(animationSpec = tween(220, easing = FastOutSlowInEasing)) +
+                        slideInHorizontally(animationSpec = tween(220, easing = FastOutSlowInEasing)) { -it / 24 }
+                },
+                popExitTransition = {
+                    fadeOut(animationSpec = tween(180, easing = FastOutSlowInEasing)) +
+                        slideOutHorizontally(animationSpec = tween(180, easing = FastOutSlowInEasing)) { it / 12 }
+                },
+            ) {
                 composable<Route.SignIn> {
                     val signInVm: SignInViewModel = viewModel(
                         factory = viewModelFactory {
@@ -466,6 +489,9 @@ fun AuthGate(
                         onMarkCourt = { entryId -> nav.navigate(Route.CourtMarking(entryId)) },
                         onRemoveFromPhone = localVm::remove,
                         onAddPlayer = playersVm::create,
+                        onNewMatch = { nav.navigate(Route.NewMatch()) },
+                        onRecord = { intake.record(null, null) },
+                        onImport = { intake.import(null, null) },
                         snackbarHostState = rootSnackbar,
                         onOverlayChange = { allMatchesOverlayOpen = it },
                     )
@@ -724,15 +750,19 @@ fun AuthGate(
                 }
                 composable<Route.CourtMarking> { entry ->
                     val args = entry.toRoute<Route.CourtMarking>()
+                    val localVideo = remember(args.entryId) { localVideos.get(args.entryId) }
+                    if (localVideo == null) {
+                        LaunchedEffect(args.entryId) { nav.popBackStack() }
+                        return@composable
+                    }
                     val appCtx = LocalContext.current.applicationContext
                     val vm: CourtMarkingViewModel = viewModel(
                         factory = viewModelFactory {
                             initializer {
-                                val e = localVideos.get(args.entryId) ?: error("Local video not found")
                                 CourtMarkingViewModel(
                                     entryId = args.entryId,
-                                    savedKeypoints = e.keypoints,
-                                    loadFrame = { loadFirstFrame(appCtx, Uri.parse(e.uri)) },
+                                    savedKeypoints = localVideo.keypoints,
+                                    loadFrame = { loadFirstFrame(appCtx, Uri.parse(localVideo.uri)) },
                                     finder = DefaultCourtFinderPort,
                                 )
                             }

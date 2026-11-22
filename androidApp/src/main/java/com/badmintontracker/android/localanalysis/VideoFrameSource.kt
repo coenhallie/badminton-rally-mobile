@@ -197,55 +197,63 @@ class VideoFrameSource(private val file: File) {
      * no frame for 15 s ([DecodeStallWatch]), rather than polling forever.
      */
     fun forEachFrame(maxFrames: Int = Int.MAX_VALUE, body: (Int, Double, android.media.Image) -> Unit) {
-        val extractor = MediaExtractor()
-        extractor.setDataSource(file.path)
-        val track = videoTrack(extractor)
-        extractor.selectTrack(track)
-        val format = extractor.getTrackFormat(track)
-        val codec = MediaCodec.createDecoderByType(format.getString(MediaFormat.KEY_MIME)!!)
-        // Flexible YUV rather than a Surface: this pass feeds tensors, not a
-        // display, and a ByteBuffer output keeps the pixels reachable without
-        // a GPU round trip.
-        format.setInteger(
-            MediaFormat.KEY_COLOR_FORMAT,
-            MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible,
-        )
-        codec.configure(format, null, null, 0)
-        codec.start()
-
-        var frameIndex = 0
-        var sawInputEos = false
-        var sawOutputEos = false
-        val info = MediaCodec.BufferInfo()
-        val stall = DecodeStallWatch(clockMs = { System.nanoTime() / 1_000_000 })
+        var extractor: MediaExtractor? = null
+        var codec: MediaCodec? = null
+        var codecStarted = false
         try {
+            val ex = MediaExtractor().also { extractor = it }
+            ex.setDataSource(file.path)
+            val track = videoTrack(ex)
+            ex.selectTrack(track)
+            val format = ex.getTrackFormat(track)
+            val dec = MediaCodec.createDecoderByType(format.getString(MediaFormat.KEY_MIME)!!).also { codec = it }
+            // Flexible YUV rather than a Surface: this pass feeds tensors, not a
+            // display, and a ByteBuffer output keeps the pixels reachable without
+            // a GPU round trip.
+            format.setInteger(
+                MediaFormat.KEY_COLOR_FORMAT,
+                MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible,
+            )
+            dec.configure(format, null, null, 0)
+            dec.start()
+            codecStarted = true
+
+            var frameIndex = 0
+            var sawInputEos = false
+            var sawOutputEos = false
+            val info = MediaCodec.BufferInfo()
+            val stall = DecodeStallWatch(clockMs = { System.nanoTime() / 1_000_000 })
             while (!sawOutputEos) {
                 if (!sawInputEos) {
-                    val inIndex = codec.dequeueInputBuffer(10_000)
+                    val inIndex = dec.dequeueInputBuffer(10_000)
                     if (inIndex >= 0) {
-                        val buf = codec.getInputBuffer(inIndex)!!
-                        val size = extractor.readSampleData(buf, 0)
+                        val buf = dec.getInputBuffer(inIndex)!!
+                        val size = ex.readSampleData(buf, 0)
                         if (size < 0) {
-                            codec.queueInputBuffer(
+                            dec.queueInputBuffer(
                                 inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM
                             )
                             sawInputEos = true
                         } else {
-                            codec.queueInputBuffer(inIndex, 0, size, extractor.sampleTime, 0)
-                            extractor.advance()
+                            dec.queueInputBuffer(inIndex, 0, size, ex.sampleTime, 0)
+                            ex.advance()
                         }
                         stall.inputQueued()
                     }
                 }
-                val outIndex = codec.dequeueOutputBuffer(info, 10_000)
+                val outIndex = dec.dequeueOutputBuffer(info, 10_000)
                 if (outIndex >= 0) {
                     if (info.size > 0) {
-                        codec.getOutputImage(outIndex)?.let { image ->
-                            body(frameIndex, info.presentationTimeUs / 1_000_000.0, image)
-                            frameIndex++
+                        dec.getOutputImage(outIndex)?.let { image ->
+                            try {
+                                body(frameIndex, info.presentationTimeUs / 1_000_000.0, image)
+                                frameIndex++
+                            } finally {
+                                image.close()
+                            }
                         }
                     }
-                    codec.releaseOutputBuffer(outIndex, false)
+                    dec.releaseOutputBuffer(outIndex, false)
                     stall.outputReturned()
                     if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) sawOutputEos = true
                     if (frameIndex >= maxFrames) sawOutputEos = true
@@ -257,9 +265,9 @@ class VideoFrameSource(private val file: File) {
                 }
             }
         } finally {
-            codec.stop()
-            codec.release()
-            extractor.release()
+            if (codecStarted) runCatching { codec?.stop() }
+            runCatching { codec?.release() }
+            runCatching { extractor?.release() }
         }
     }
 }

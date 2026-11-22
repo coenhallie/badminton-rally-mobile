@@ -17,6 +17,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.badmintontracker.android.ui.theme.ShuttlRadius
@@ -92,6 +93,7 @@ fun ShuttlStatTile(
             style = if (compact) MaterialTheme.typography.titleLarge else ShuttlTypeExtras.statNumber,
             color = MaterialTheme.colorScheme.onBackground,
             maxLines = if (compact) Int.MAX_VALUE else 1,
+            overflow = if (compact) TextOverflow.Clip else TextOverflow.Ellipsis,
             modifier = Modifier.padding(top = if (labelAbove) 4.dp else 0.dp),
         )
         if (!labelAbove) Caption(label, maxLines = labelMaxLines, modifier = Modifier.padding(top = 4.dp))
@@ -105,6 +107,7 @@ private fun Caption(label: String, maxLines: Int, modifier: Modifier = Modifier)
         style = MaterialTheme.typography.bodySmall,
         color = ShuttlTheme.extended.textTertiary,
         maxLines = maxLines,
+        overflow = TextOverflow.Ellipsis,
         modifier = modifier,
     )
 }

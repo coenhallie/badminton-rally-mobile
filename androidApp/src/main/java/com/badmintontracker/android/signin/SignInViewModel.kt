@@ -28,8 +28,9 @@ class SignInViewModel(private val auth: AuthRepository) : ViewModel() {
     fun onPasswordChange(v: String) { state.update { it.copy(password = v, error = null) } }
 
     fun submitEmail() {
+        if (state.value.isSubmitting) return
+        state.update { it.copy(isSubmitting = true, error = null) }
         viewModelScope.launch {
-            state.update { it.copy(isSubmitting = true, error = null) }
             auth.signInEmail(state.value.email.trim(), state.value.password)
                 .onSuccess {
                     events.tryEmit(SignInEvent.SignedIn)

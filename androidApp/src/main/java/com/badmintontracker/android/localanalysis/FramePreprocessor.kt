@@ -180,9 +180,76 @@ object FramePreprocessor {
         dstH: Int,
         matrix: YuvMatrix = YuvMatrix.BT601_LIMITED,
     ) {
-        val srcW = image.width
-        val srcH = image.height
         require(dst.size >= dstW * dstH * 3) { "output buffer too small" }
+        toRgbResizedRegion(
+            image = image,
+            dst = dst,
+            dstRowStridePixels = dstW,
+            offsetX = 0,
+            offsetY = 0,
+            fitW = dstW,
+            fitH = dstH,
+            matrix = matrix,
+        )
+    }
+
+    /**
+     * As [toRgbResized], but writing a smaller image into a larger canvas at
+     * an offset and leaving the rest untouched.
+     *
+     * This is the letterbox the detector needs: Ultralytics scales to fit and
+     * pads the short axis rather than stretching to a square, because the
+     * model was trained that way and stretching moves every box.
+     */
+    fun toRgbResizedInto(
+        image: Image,
+        canvas: ByteArray,
+        canvasSize: Int,
+        offsetX: Int,
+        offsetY: Int,
+        fitW: Int,
+        fitH: Int,
+        matrix: YuvMatrix = YuvMatrix.BT601_LIMITED,
+    ) {
+        require(canvas.size >= canvasSize * canvasSize * 3) { "output buffer too small" }
+        toRgbResizedRegion(
+            image = image,
+            dst = canvas,
+            dstRowStridePixels = canvasSize,
+            offsetX = offsetX,
+            offsetY = offsetY,
+            fitW = fitW,
+            fitH = fitH,
+            matrix = matrix,
+        )
+    }
+
+    private fun toRgbResizedRegion(
+        image: Image,
+        dst: ByteArray,
+        dstRowStridePixels: Int,
+        offsetX: Int,
+        offsetY: Int,
+        fitW: Int,
+        fitH: Int,
+        matrix: YuvMatrix,
+    ) {
+        if (fitW <= 0 || fitH <= 0) return
+        require(offsetX >= 0 && offsetY >= 0 && offsetX + fitW <= dstRowStridePixels) {
+            "target region out of canvas bounds"
+        }
+        require(dst.size >= ((offsetY + fitH - 1) * dstRowStridePixels + offsetX + fitW) * 3) {
+            "output buffer too small"
+        }
+
+        val crop = image.cropRect
+        val hasCrop = crop != null && crop.width() > 0 && crop.height() > 0 &&
+            crop.left >= 0 && crop.top >= 0 &&
+            crop.right <= image.width && crop.bottom <= image.height
+        val cropLeft = if (hasCrop) crop!!.left else 0
+        val cropTop = if (hasCrop) crop!!.top else 0
+        val srcW = if (hasCrop) crop!!.width() else image.width
+        val srcH = if (hasCrop) crop!!.height() else image.height
 
         val kr = matrix.kr
         val kb = matrix.kb
@@ -209,9 +276,11 @@ object FramePreprocessor {
 
         val rgb = DoubleArray(3)
         fun sample(px: Int, py: Int, into: DoubleArray) {
-            val yy = ((yBuf.get(py * yRow + px).toInt() and 0xFF) - yOffset) * yScale
-            val uvRow = py / 2
-            val uvCol = px / 2
+            val sx = cropLeft + px
+            val sy = cropTop + py
+            val yy = ((yBuf.get(sy * yRow + sx).toInt() and 0xFF) - yOffset) * yScale
+            val uvRow = sy / 2
+            val uvCol = sx / 2
             val uu = ((uBuf.get(uvRow * uRow + uvCol * uPix).toInt() and 0xFF) - 128) * cScale
             val vv = ((vBuf.get(uvRow * vRow + uvCol * vPix).toInt() and 0xFF) - 128) * cScale
             into[0] = yy + rv * vv
@@ -219,20 +288,20 @@ object FramePreprocessor {
             into[2] = yy + bu * uu
         }
 
-        val scaleX = srcW.toDouble() / dstW
-        val scaleY = srcH.toDouble() / dstH
+        val scaleX = srcW.toDouble() / fitW
+        val scaleY = srcH.toDouble() / fitH
         val p00 = DoubleArray(3)
         val p01 = DoubleArray(3)
         val p10 = DoubleArray(3)
         val p11 = DoubleArray(3)
-        var o = 0
-        for (row in 0 until dstH) {
+        for (row in 0 until fitH) {
             // OpenCV's pixel-centre mapping, same as [resize].
             val fy = ((row + 0.5) * scaleY - 0.5).coerceAtLeast(0.0)
             val y0 = fy.toInt().coerceAtMost(srcH - 1)
             val y1 = (y0 + 1).coerceAtMost(srcH - 1)
             val wy = fy - y0
-            for (col in 0 until dstW) {
+            var o = ((offsetY + row) * dstRowStridePixels + offsetX) * 3
+            for (col in 0 until fitW) {
                 val fx = ((col + 0.5) * scaleX - 0.5).coerceAtLeast(0.0)
                 val x0 = fx.toInt().coerceAtMost(srcW - 1)
                 val x1 = (x0 + 1).coerceAtMost(srcW - 1)
@@ -250,33 +319,6 @@ object FramePreprocessor {
                 dst[o++] = clamp(rgb[1])
                 dst[o++] = clamp(rgb[2])
             }
-        }
-    }
-
-    /**
-     * As [toRgbResized], but writing a smaller image into a larger canvas at
-     * an offset and leaving the rest untouched.
-     *
-     * This is the letterbox the detector needs: Ultralytics scales to fit and
-     * pads the short axis rather than stretching to a square, because the
-     * model was trained that way and stretching moves every box.
-     */
-    fun toRgbResizedInto(
-        image: Image,
-        canvas: ByteArray,
-        canvasSize: Int,
-        offsetX: Int,
-        offsetY: Int,
-        fitW: Int,
-        fitH: Int,
-        matrix: YuvMatrix = YuvMatrix.BT601_LIMITED,
-    ) {
-        val scaled = ByteArray(fitW * fitH * 3)
-        toRgbResized(image, scaled, fitW, fitH, matrix)
-        for (row in 0 until fitH) {
-            val src = row * fitW * 3
-            val dst = ((offsetY + row) * canvasSize + offsetX) * 3
-            scaled.copyInto(canvas, dst, src, src + fitW * 3)
         }
     }
 

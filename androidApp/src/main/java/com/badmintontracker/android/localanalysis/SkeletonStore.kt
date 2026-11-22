@@ -94,10 +94,11 @@ class SkeletonStore(private val root: File) {
         videoHeight: Int,
         marks: CourtKeypoints?,
     ) {
+        val file = fileFor(entryId)
         // Nothing to draw is nothing to offer: no file, so has() stays false.
         if (poses.isEmpty()) return
         val bytes = encode(listOf(SidePoses(CourtSide.NEAR, poses)), fps, videoWidth, videoHeight, marks)
-        writeAtomically(fileFor(entryId), bytes)
+        file.writeAtomically { it.write(bytes) }
     }
 
     /**
@@ -114,11 +115,13 @@ class SkeletonStore(private val root: File) {
         videoHeight: Int,
         marks: CourtKeypoints?,
     ) {
+        val file = fileFor(entryId, source)
         val withPoses = selections.filter { it.poses.isNotEmpty() }
         // Nothing to draw is nothing to offer, matching save().
         if (withPoses.isEmpty()) return
         val tracks = withPoses.map { SidePoses(it.side, it.poses) }
-        writeAtomically(fileFor(entryId, source), encode(tracks, fps, videoWidth, videoHeight, marks))
+        val bytes = encode(tracks, fps, videoWidth, videoHeight, marks)
+        file.writeAtomically { it.write(bytes) }
     }
 
     /** The version 4 bytes for [tracks], none of them empty. */
@@ -178,21 +181,6 @@ class SkeletonStore(private val root: File) {
             "a camera is a 3x3 matrix with h22 == 1.0, not $camera"
         }
         for (r in 0 until 3) for (c in 0 until 3) if (r != 2 || c != 2) putDouble(camera[r][c])
-    }
-
-    /** Writes [bytes] to [file] atomically: a temp sibling, then a rename into place. */
-    private fun writeAtomically(file: File, bytes: ByteArray) {
-        file.parentFile?.mkdirs()
-        val tmp = File(file.parentFile, file.name + ".tmp")
-        try {
-            tmp.writeBytes(bytes)
-            if (!tmp.renameTo(file)) {
-                throw java.io.IOException("Failed to rename ${tmp.absolutePath} to ${file.absolutePath}")
-            }
-        } catch (e: Exception) {
-            tmp.delete()
-            throw e
-        }
     }
 
     /** Whether a skeleton this version can draw exists for [entryId], from the header alone. */
@@ -357,7 +345,7 @@ class SkeletonStore(private val root: File) {
      */
     fun delete(entryId: String, source: TrackSource = TrackSource.LOCAL) {
         val file = fileFor(entryId, source)
-        val tmp = File(file.parentFile, file.name + ".tmp")
+        val tmp = resolveContainedChild(File(root, source.skeletonDir), "$entryId.skel$TMP_SUFFIX")
         val fileDeleted = file.delete()
         val tmpDeleted = tmp.delete()
         if ((!fileDeleted && file.exists()) || (!tmpDeleted && tmp.exists())) {
@@ -365,8 +353,10 @@ class SkeletonStore(private val root: File) {
         }
     }
 
-    private fun fileFor(entryId: String, source: TrackSource = TrackSource.LOCAL) =
-        File(root, "${source.skeletonDir}/$entryId.skel")
+    private fun fileFor(entryId: String, source: TrackSource = TrackSource.LOCAL): File {
+        requireSafeEntryId(entryId)
+        return resolveContainedChild(File(root, source.skeletonDir), "$entryId.skel")
+    }
 
     private companion object {
         val MAGIC = "SKEL".toByteArray(Charsets.US_ASCII)

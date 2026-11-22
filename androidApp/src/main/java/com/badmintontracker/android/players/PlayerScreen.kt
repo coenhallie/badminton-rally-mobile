@@ -245,22 +245,28 @@ fun PlayerScreen(
                     // actions come and go.
                     BackgroundWorkAction()
                     if (player != null) {
-                        IconButton(onClick = { overflowOpen = true }) {
-                            Icon(Icons.Default.MoreVert, contentDescription = PlayersCopy.PLAYER_OPTIONS)
-                        }
-                        DropdownMenu(expanded = overflowOpen, onDismissRequest = { overflowOpen = false }) {
-                            DropdownMenuItem(
-                                text = { Text(PlayersCopy.MENU_RENAME) },
-                                onClick = { overflowOpen = false; renameOpen = true },
-                            )
-                            DropdownMenuItem(
-                                text = { Text(PlayersCopy.MENU_PLAYING_HAND) },
-                                onClick = { overflowOpen = false; handOpen = true },
-                            )
-                            DropdownMenuItem(
-                                text = { Text(PlayersCopy.MENU_DELETE) },
-                                onClick = { overflowOpen = false; deleteOpen = true },
-                            )
+                        Box {
+                            IconButton(onClick = { overflowOpen = true }) {
+                                Icon(Icons.Default.MoreVert, contentDescription = PlayersCopy.PLAYER_OPTIONS)
+                            }
+                            DropdownMenu(
+                                expanded = overflowOpen,
+                                onDismissRequest = { overflowOpen = false },
+                                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text(PlayersCopy.MENU_RENAME) },
+                                    onClick = { overflowOpen = false; renameOpen = true },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(PlayersCopy.MENU_PLAYING_HAND) },
+                                    onClick = { overflowOpen = false; handOpen = true },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(PlayersCopy.MENU_DELETE) },
+                                    onClick = { overflowOpen = false; deleteOpen = true },
+                                )
+                            }
                         }
                     }
                 },
@@ -459,7 +465,11 @@ private fun PlayerSwitcher(
                 modifier = Modifier.size(16.dp),
             )
         }
-        DropdownMenu(expanded = open, onDismissRequest = { onOpen(false) }) {
+        DropdownMenu(
+            expanded = open,
+            onDismissRequest = { onOpen(false) },
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        ) {
             players.forEach { player ->
                 DropdownMenuItem(
                     text = { Text(player.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },

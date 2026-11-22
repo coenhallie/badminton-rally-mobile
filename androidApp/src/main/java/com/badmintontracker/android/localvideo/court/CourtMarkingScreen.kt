@@ -4,9 +4,13 @@ import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -15,8 +19,6 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -28,10 +30,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -39,19 +43,20 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
@@ -61,13 +66,19 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.FirstBaseline
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFontFamilyResolver
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
@@ -154,9 +165,20 @@ fun CourtMarkingScreen(
         if (marking?.isComplete != true) savedStep = SetupStep.Mapping
     }
 
-    // The system back gesture unwinds the steps before it leaves the screen,
-    // which is what the bar's own back arrow does.
-    BackHandler(enabled = step == SetupStep.Options) { savedStep = SetupStep.Mapping }
+    val hasUnsavedMarks = step == SetupStep.Mapping &&
+        marking != null &&
+        marking.points.isNotEmpty() &&
+        !state.showsSavedMarks
+    var showDiscardDialog by rememberSaveable { mutableStateOf(false) }
+
+    // The system back gesture unwinds step 2 first, and asks before discarding
+    // manually placed points on step 1.
+    BackHandler(enabled = step == SetupStep.Options || hasUnsavedMarks) {
+        when {
+            step == SetupStep.Options -> savedStep = SetupStep.Mapping
+            hasUnsavedMarks -> showDiscardDialog = true
+        }
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -165,12 +187,19 @@ fun CourtMarkingScreen(
                 title = { StepTitle(step) },
                 navigationIcon = {
                     IconButton(
-                        onClick = { if (step == SetupStep.Options) savedStep = SetupStep.Mapping else onBack() },
+                        onClick = {
+                            when {
+                                step == SetupStep.Options -> savedStep = SetupStep.Mapping
+                                hasUnsavedMarks -> showDiscardDialog = true
+                                else -> onBack()
+                            }
+                        },
                     ) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = { StepDots(step) },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
         },
     ) { padding ->
@@ -184,11 +213,30 @@ fun CourtMarkingScreen(
         ) {
             val error = state.error
             when {
-                error != null -> Box(Modifier.padding(PagePadding)) { ErrorBanner(error) }
-                marking == null -> Box(
-                    Modifier.fillMaxWidth().padding(48.dp),
-                    contentAlignment = Alignment.Center,
-                ) { CircularProgressIndicator() }
+                error != null -> Column(
+                    modifier = Modifier.fillMaxWidth().padding(PagePadding),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    ErrorBanner(error)
+                    ShuttlButton(
+                        text = "Retry",
+                        onClick = vm::retry,
+                        variant = ShuttlButtonVariant.Primary,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                marking == null -> Column(
+                    modifier = Modifier.fillMaxWidth().padding(48.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    CircularProgressIndicator()
+                    Text(
+                        "Loading video frame…",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = ShuttlTheme.extended.textTertiary,
+                    )
+                }
                 step == SetupStep.Mapping -> MappingStep(
                     vm = vm,
                     marking = marking,
@@ -213,6 +261,31 @@ fun CourtMarkingScreen(
                 )
             }
         }
+    }
+
+    if (showDiscardDialog) {
+        AlertDialog(
+            onDismissRequest = { showDiscardDialog = false },
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+            title = { Text("Discard court marks?") },
+            text = {
+                Text(
+                    "You've placed ${marking?.points?.size ?: 0} of ${CourtMarkingSpec.TOTAL} court points. " +
+                        "Leaving now will discard them.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDiscardDialog = false
+                        onBack()
+                    },
+                ) { Text("Discard") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDiscardDialog = false }) { Text("Keep marking") }
+            },
+        )
     }
 }
 
@@ -275,6 +348,20 @@ private fun ColumnScope.MappingStep(
     canContinue: Boolean,
     onContinue: () -> Unit,
 ) {
+    val haptics = LocalHapticFeedback.current
+    var prevCount by remember { mutableIntStateOf(marking.points.size) }
+    var prevStatus by remember { mutableStateOf(status) }
+    LaunchedEffect(marking.points.size, status) {
+        val newCount = marking.points.size
+        when {
+            status == CourtFinderStatus.ALIGNED && prevStatus != CourtFinderStatus.ALIGNED ->
+                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            newCount == prevCount + 1 ->
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        }
+        prevCount = newCount
+        prevStatus = status
+    }
     // The frame takes the height its own aspect ratio asks for and no more,
     // capped at most of the region so a portrait video cannot squeeze the
     // guidance out; the guidance takes what is left and scrolls. Neither can
@@ -507,6 +594,11 @@ private fun PointInstruction(text: String, index: Int, modifier: Modifier = Modi
 @Composable
 private fun PlacementProgress(placed: Int) {
     val shape = RoundedCornerShape(ShuttlRadius.pill)
+    val animatedProgress by animateFloatAsState(
+        targetValue = (placed.toFloat() / CourtMarkingSpec.TOTAL).coerceIn(0f, 1f),
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "courtMarkingProgress",
+    )
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -518,7 +610,7 @@ private fun PlacementProgress(placed: Int) {
     ) {
         Box(
             Modifier
-                .fillMaxWidth(placed.toFloat() / CourtMarkingSpec.TOTAL)
+                .fillMaxWidth(animatedProgress)
                 .fillMaxHeight()
                 .clip(shape)
                 .background(MaterialTheme.colorScheme.primary),
@@ -539,6 +631,20 @@ private fun FrameWithOverlay(
     var layoutSize by remember { mutableStateOf(IntSize.Zero) }
     val textMeasurer = rememberTextMeasurer()
     val density = LocalDensity.current
+    // Wrap the decoded bitmap once per frame so pinch-zoom/pan never re-wraps it.
+    val frameBitmap = remember(frame) { frame?.asImageBitmap() }
+    val markerLabelFontFamily = MaterialTheme.typography.labelSmall.fontFamily
+    // Pre-measure every short label once outside Canvas.onDraw; drawPlacedPoints
+    // counter-scales each label by 1/zoom around its marker centre.
+    val markerLabels = remember(textMeasurer, markerLabelFontFamily) {
+        val style = TextStyle(
+            fontFamily = markerLabelFontFamily,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.Black,
+        )
+        CourtMarkingSpec.shortLabels.map { textMeasurer.measure(it, style) }
+    }
     // Once per marking, not per pinch frame: it fits a homography.
     val courtLines = remember(marking) { marking.courtLines() }
 
@@ -594,15 +700,14 @@ private fun FrameWithOverlay(
                     translationY = offset.y
                 },
         ) {
-            frame?.let { bmp ->
+            if (frameBitmap != null) {
                 Image(
-                    bitmap = bmp.asImageBitmap(),
+                    bitmap = frameBitmap,
                     contentDescription = "Video frame for court mapping",
                     contentScale = ContentScale.FillBounds,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
-            val markerLabelFontFamily = MaterialTheme.typography.labelSmall.fontFamily
             Canvas(modifier = Modifier.fillMaxSize()) {
                 drawCourtGuide()
                 // The court drawn through the twelve marks, once there are
@@ -614,7 +719,7 @@ private fun FrameWithOverlay(
                 } else {
                     drawCourtLines(courtLines, marking, scale)
                 }
-                drawPlacedPoints(marking, scale, density.density, textMeasurer, markerLabelFontFamily)
+                drawPlacedPoints(marking, scale, density.density, markerLabels)
                 drawSelection(marking, scale)
             }
         }
@@ -656,11 +761,11 @@ private fun ColumnScope.OptionsStep(
             // other needed no explanation.
             // A drawn glyph rather than an icon: the core Material set has no
             // question mark, and Info's "i" answers a different question. The
-            // 44dp box is the minimum touch target, and the ring keeps it
+            // 48dp box meets the minimum touch target, and the ring keeps it
             // reading as a control rather than as stray punctuation.
             IconButton(
                 onClick = { showCapabilities = true },
-                modifier = Modifier.size(44.dp),
+                modifier = Modifier.size(48.dp),
             ) {
                 Box(
                     modifier = Modifier
@@ -727,10 +832,12 @@ private fun ColumnScope.OptionsStep(
 
 private val GuideGreen = Color(0x3322C55E)
 private val ConnectGreen = Color(0x9922C55E)
+private val GuideDashEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 4f))
+private val CornerDashEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 4f))
+private val MarkerColors = CourtMarkingSpec.colors.map(::Color)
 
 /** Semi-transparent dashed guide: court rect at 15% margins, net, service, center lines. */
 private fun DrawScope.drawCourtGuide() {
-    val dash = PathEffect.dashPathEffect(floatArrayOf(4f, 4f))
     val w = size.width
     val h = size.height
     val margin = 0.15f
@@ -740,7 +847,7 @@ private fun DrawScope.drawCourtGuide() {
     val y2 = h * (1 - margin)
 
     fun line(a: Offset, b: Offset) =
-        drawLine(GuideGreen, a, b, strokeWidth = 1.dp.toPx(), pathEffect = dash)
+        drawLine(GuideGreen, a, b, strokeWidth = 1.dp.toPx(), pathEffect = GuideDashEffect)
 
     // Court rectangle
     line(Offset(x1, y1), Offset(x2, y1))
@@ -763,14 +870,13 @@ private fun DrawScope.drawCornerRectangle(marking: CourtMarkingState) {
     if (marking.points.size < 4) return
     val toDisplay = displayFactor(marking)
     val corners = marking.points.take(4).map { Offset(it.x * toDisplay.x, it.y * toDisplay.y) }
-    val dash = PathEffect.dashPathEffect(floatArrayOf(8f, 4f))
     for (i in corners.indices) {
         drawLine(
             ConnectGreen,
             corners[i],
             corners[(i + 1) % corners.size],
             strokeWidth = 2.dp.toPx(),
-            pathEffect = dash,
+            pathEffect = CornerDashEffect,
         )
     }
 }
@@ -816,8 +922,7 @@ private fun DrawScope.drawPlacedPoints(
     marking: CourtMarkingState,
     zoom: Float,
     density: Float,
-    textMeasurer: androidx.compose.ui.text.TextMeasurer,
-    labelFontFamily: androidx.compose.ui.text.font.FontFamily?,
+    markerLabels: List<TextLayoutResult>,
 ) {
     val toDisplay = displayFactor(marking)
     // Constant on-screen size regardless of pinch-zoom (markers are presentation only).
@@ -830,36 +935,28 @@ private fun DrawScope.drawPlacedPoints(
     val selected = marking.selected.takeIf { marking.isComplete }
     if (marking.isComplete) {
         val dot = COMPLETE_DOT_RADIUS * density / zoom
+        val dotStroke = Stroke(width = COMPLETE_DOT_RING * density / zoom)
         marking.points.forEachIndexed { i, p ->
             if (i == selected) return@forEachIndexed
             val center = Offset(p.x * toDisplay.x, p.y * toDisplay.y)
-            drawCircle(Color(CourtMarkingSpec.colors[i]), dot, center)
-            drawCircle(Color.Black, dot, center, style = Stroke(width = COMPLETE_DOT_RING * density / zoom))
+            drawCircle(MarkerColors[i], dot, center)
+            drawCircle(Color.Black, dot, center, style = dotStroke)
         }
     }
+    val markerStroke = Stroke(width = 2f * density / zoom)
+    val inverseZoom = 1f / zoom
     marking.points.forEachIndexed { i, p ->
         if (marking.isComplete && i != selected) return@forEachIndexed
         val center = Offset(p.x * toDisplay.x, p.y * toDisplay.y)
-        drawCircle(Color(CourtMarkingSpec.colors[i]), radius, center)
-        drawCircle(Color.Black, radius, center, style = Stroke(width = 2f * density / zoom))
-        val label = textMeasurer.measure(
-            CourtMarkingSpec.shortLabels[i],
-            // Only fontFamily is taken from the type scale: letterSpacing and
-            // lineHeight there are pinned to labelSmall's 11sp role, and this
-            // marker's fontSize tracks pinch-zoom, so inheriting them would pin
-            // spacing/line-height while the glyph shrinks and throw off the
-            // width/2, height/2 centering below.
-            TextStyle(
-                fontFamily = labelFontFamily,
-                fontSize = (9f / zoom).sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.Black,
-            ),
-        )
-        drawText(
-            label,
-            topLeft = Offset(center.x - label.size.width / 2f, center.y - label.size.height / 2f),
-        )
+        drawCircle(MarkerColors[i], radius, center)
+        drawCircle(Color.Black, radius, center, style = markerStroke)
+        val label = markerLabels[i]
+        scale(scale = inverseZoom, pivot = center) {
+            drawText(
+                label,
+                topLeft = Offset(center.x - label.size.width / 2f, center.y - label.size.height / 2f),
+            )
+        }
     }
 }
 

@@ -2,16 +2,22 @@ package com.badmintontracker.android.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.badmintontracker.android.ui.theme.ShuttlRadius
 import com.badmintontracker.android.ui.theme.ShuttlTheme
@@ -44,16 +50,26 @@ fun ShuttlChip(
         else -> MaterialTheme.colorScheme.onSurface
     }
     val border = if (selected) Color.Transparent else MaterialTheme.colorScheme.outline
+    val interaction = remember { MutableInteractionSource() }
     Text(
         text,
         style = MaterialTheme.typography.labelMedium,
         color = content,
         maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
         modifier = modifier
+            .selectable(
+                selected = selected,
+                interactionSource = interaction,
+                indication = null,
+                role = Role.Button,
+                onClick = onClick,
+            )
+            .minimumInteractiveComponentSize()
             .clip(shape)
             .background(container, shape)
             .border(1.dp, border, shape)
-            .selectable(selected = selected, role = Role.Button, onClick = onClick)
+            .indication(interaction, ripple())
             .padding(horizontal = 14.dp, vertical = 9.dp),
     )
 }

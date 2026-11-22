@@ -4,7 +4,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -82,7 +87,7 @@ fun PlayerNameDialog(
             // first lays out, and a request from outside can run before that
             // and throw.
             LaunchedEffect(Unit) { focus.requestFocus() }
-            Column {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 ShuttlOutlinedTextField(
                     value = name,
                     onValueChange = { name = it; edited = true },
@@ -113,7 +118,16 @@ fun PlayerNameDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = ::save, enabled = canSave) { Text(PlayersCopy.SAVE) }
+            TextButton(onClick = ::save, enabled = canSave) {
+                if (saving) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text(PlayersCopy.SAVE)
+            }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(PlayersCopy.CANCEL) } },
     )

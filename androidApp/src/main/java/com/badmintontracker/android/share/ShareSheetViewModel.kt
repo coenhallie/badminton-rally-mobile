@@ -8,11 +8,14 @@ import com.badmintontracker.shared.repo.SharesRepository
 import com.badmintontracker.shared.repo.userMessage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class ShareSheetState(
     val email: String = "",
     val recipients: List<MatchShare> = emptyList(),
+    val isLoading: Boolean = true,
+    val loadError: String? = null,
     val isBusy: Boolean = false,
     val error: String? = null,
 )
@@ -28,43 +31,65 @@ class ShareSheetViewModel(
     init { refresh() }
 
     fun onEmailChange(value: String) {
-        _state.value = _state.value.copy(email = value, error = null)
+        _state.update { it.copy(email = value, error = null) }
     }
 
     fun onShareClicked() {
+        if (_state.value.isBusy) return
         val email = _state.value.email.trim()
         if (email.isEmpty()) return
-        _state.value = _state.value.copy(isBusy = true, error = null)
+        _state.update { it.copy(isBusy = true, error = null) }
         viewModelScope.launch {
             shares.share(videoId, email)
                 .onSuccess {
-                    _state.value = _state.value.copy(email = "", isBusy = false)
+                    _state.update { it.copy(email = "", isBusy = false) }
                     refresh()
                 }
                 .onFailure { e ->
-                    _state.value = _state.value.copy(
-                        isBusy = false,
-                        error = (e as? ShareError).userMessage(),
-                    )
+                    _state.update {
+                        it.copy(
+                            isBusy = false,
+                            error = (e as? ShareError).userMessage(),
+                        )
+                    }
                 }
         }
     }
 
     fun onUnshare(userId: String) {
+        if (_state.value.isBusy) return
+        _state.update { it.copy(isBusy = true, error = null) }
         viewModelScope.launch {
             shares.unshare(videoId, userId)
-                .onSuccess { refresh() }
+                .onSuccess {
+                    _state.update { it.copy(isBusy = false) }
+                    refresh()
+                }
                 .onFailure {
-                    _state.value = _state.value.copy(error = "Couldn't remove access — please try again.")
+                    _state.update {
+                        it.copy(
+                            isBusy = false,
+                            error = "Couldn't remove access — please try again.",
+                        )
+                    }
                 }
         }
     }
 
-    private fun refresh() {
+    fun refresh() {
         viewModelScope.launch {
-            shares.listShares(videoId).onSuccess {
-                _state.value = _state.value.copy(recipients = it)
-            }
+            shares.listShares(videoId)
+                .onSuccess { list ->
+                    _state.update { it.copy(recipients = list, isLoading = false, loadError = null) }
+                }
+                .onFailure {
+                    _state.update {
+                        it.copy(
+                            isLoading = false,
+                            loadError = "Couldn't load people with access.",
+                        )
+                    }
+                }
         }
     }
 }

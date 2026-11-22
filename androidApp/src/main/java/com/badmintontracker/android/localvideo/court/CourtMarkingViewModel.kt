@@ -92,9 +92,22 @@ class CourtMarkingViewModel(
      * for an answer that is already on its way back.
      */
     private var finderJob: Job? = null
+    private var loadJob: Job? = null
 
     init {
-        viewModelScope.launch {
+        load()
+    }
+
+    /** Re-attempt frame extraction after a load failure. No-op once a frame is loaded. */
+    fun retry() {
+        if (state.value.marking != null) return
+        load()
+    }
+
+    private fun load() {
+        loadJob?.cancel()
+        state.update { it.copy(error = null) }
+        loadJob = viewModelScope.launch {
             runCatching { loadFrame() }
                 .onSuccess { f ->
                     loaded = f
@@ -105,6 +118,7 @@ class CourtMarkingViewModel(
                         it.copy(
                             frame = f.frame,
                             marking = restored,
+                            error = null,
                             fps = f.fps,
                             frameCount = f.frameCount,
                             showsSavedMarks = restored.isComplete,
@@ -116,6 +130,7 @@ class CourtMarkingViewModel(
                     if (restored.points.isEmpty()) findOnOpening()
                 }
                 .onFailure { e ->
+                    if (e is CancellationException) throw e
                     state.update { it.copy(error = e.message ?: "Couldn't load frame") }
                 }
         }

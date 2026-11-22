@@ -14,6 +14,7 @@ import coil3.video.VideoFrameDecoder
 import com.badmintontracker.android.localvideo.skipExactly
 import com.badmintontracker.shared.RallyApp
 import com.badmintontracker.shared.SupabaseConfig
+import com.badmintontracker.shared.auth.resolveSessionStore
 import com.badmintontracker.shared.localvideo.AnalyzeCoordinator
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
@@ -47,9 +48,19 @@ class RallyAndroidApp : Application(), SingletonImageLoader.Factory {
     override fun onCreate() {
         super.onCreate()
         val settings = SharedPreferencesSettings(getSharedPreferences("rally", MODE_PRIVATE))
+        val sessionSettings = resolveSessionStore(
+            secure = EncryptedSessionSettings(this),
+            fallback = settings,
+            onFallback = { reason ->
+                if (BuildConfig.DEBUG) {
+                    Log.w("RallyAndroidApp", "Encrypted session store unavailable ($reason) - falling back")
+                }
+            },
+        )
         rally       = RallyApp(
             config = SupabaseConfig(BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_ANON_KEY),
             settings = settings,
+            sessionSettings = sessionSettings,
             // The video itself is a content:// handle into the gallery and is
             // not ours to delete. What IS ours is everything the on-device
             // pipeline wrote about it, and until this was passed nothing
@@ -70,10 +81,10 @@ class RallyAndroidApp : Application(), SingletonImageLoader.Factory {
             context = this,
             scope = appScope,
             throughput = throughput,
-            log = { Log.i("LocalAnalysis", it) },
+            log = { if (BuildConfig.DEBUG) Log.i("LocalAnalysis", it) },
         )
 
-        val cloudPoses = rally.cloudPoseCoordinator(log = { Log.i("CloudPose", it) })
+        val cloudPoses = rally.cloudPoseCoordinator(log = { if (BuildConfig.DEBUG) Log.i("CloudPose", it) })
         analyzeCoordinator = rally.analyzeCoordinator(
             scope = appScope,
             openChannel = { uri, offset ->
@@ -81,10 +92,15 @@ class RallyAndroidApp : Application(), SingletonImageLoader.Factory {
                 // "file missing / permission revoked" state.
                 val stream = runCatching { contentResolver.openInputStream(Uri.parse(uri)) }.getOrNull()
                     ?: error("Video file is missing or access was revoked")
-                stream.skipExactly(offset)
+                try {
+                    stream.skipExactly(offset)
+                } catch (t: Throwable) {
+                    runCatching { stream.close() }
+                    throw t
+                }
                 stream.toByteReadChannel()
             },
-            log = { Log.i("AnalyzeCoordinator", it) },
+            log = { if (BuildConfig.DEBUG) Log.i("AnalyzeCoordinator", it) },
             installCloudPoses = { videoId, onProgress ->
                 // Off the main thread: a 30-minute stream decodes to roughly
                 // 1.8M keypoint objects, which is the same magnitude an

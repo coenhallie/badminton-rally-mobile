@@ -3,6 +3,8 @@ package com.badmintontracker.android.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,14 +16,19 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.badmintontracker.android.ui.theme.ShuttlRadius
 import com.badmintontracker.android.ui.theme.ShuttlTheme
@@ -48,14 +55,26 @@ fun ShuttlButton(
     val borderColor  = if (isPrimary) Color.Transparent else MaterialTheme.colorScheme.outline
     val effective    = enabled && !loading
     val shape        = RoundedCornerShape(ShuttlRadius.pill)
+    val interaction  = remember { MutableInteractionSource() }
 
     Row(
         modifier = modifier
+            // Clickable wraps minimumInteractiveComponentSize so compact buttons
+            // keep a 48dp touch hitbox while drawing the compact pill visually,
+            // and the ripple stays clipped inside the pill.
+            .clickable(
+                interactionSource = interaction,
+                indication        = null,
+                enabled           = effective,
+                role              = Role.Button,
+                onClick           = onClick,
+            )
+            .minimumInteractiveComponentSize()
             .alpha(if (effective) 1f else 0.5f)
             .clip(shape)
             .background(bg, shape)
             .border(width = if (isPrimary) 0.dp else 1.dp, color = borderColor, shape = shape)
-            .clickable(enabled = effective, onClick = onClick)
+            .indication(interaction, ripple())
             .padding(
                 horizontal = if (compact) 12.dp else 24.dp,
                 vertical   = if (compact) 6.dp else 12.dp,
@@ -89,7 +108,7 @@ fun ShuttlButton(
             style      = if (compact) MaterialTheme.typography.labelMedium
                          else MaterialTheme.typography.bodyLarge,
             maxLines   = 1,
-            softWrap   = false,
+            overflow   = TextOverflow.Ellipsis,
         )
     }
 }

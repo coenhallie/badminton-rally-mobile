@@ -6,45 +6,58 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import com.badmintontracker.android.ui.components.ShuttlStatTile
-import com.badmintontracker.android.ui.theme.ShuttlRadius
-import com.badmintontracker.android.ui.theme.ShuttlTheme
-import java.util.Locale
 import com.badmintontracker.analysis.geometry.Court
 import com.badmintontracker.analysis.player.CourtOccupancy
 import com.badmintontracker.analysis.player.PlayerTrack
 import com.badmintontracker.analysis.player.RallyFrames
-import com.badmintontracker.shared.analytics.HEATMAP_NO_RALLY_SAMPLES
 import com.badmintontracker.analysis.player.RejectionReason
+import com.badmintontracker.android.ui.components.ShuttlStatTile
+import com.badmintontracker.android.ui.theme.ShuttlRadius
+import com.badmintontracker.android.ui.theme.ShuttlTheme
+import com.badmintontracker.shared.analytics.HEATMAP_NO_RALLY_SAMPLES
+import java.util.Locale
 import kotlin.math.sqrt
-import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.FilterQuality
-import androidx.compose.ui.graphics.ImageBitmap
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+/** Off-thread heatmap computation result so Gaussian blur and Bitmap creation never block composition. */
+private data class HeatmapRender(
+    val totalSeconds: Double,
+    val coverage: Double,
+    val image: ImageBitmap?,
+)
 
 /**
  * Where the player spent the match, drawn on the court rather than on the video.
@@ -71,22 +84,32 @@ fun CourtHeatmapView(
     rallies: RallyFrames? = null,
     cellSizeM: Double = CourtOccupancy.DEFAULT_CELL_SIZE_M,
 ) {
-    val occupancy = remember(track, fps, rallies, cellSizeM) {
-        CourtOccupancy(cellSizeM).also { it.addAll(track.samples, fps, within = rallies) }
+    val render by produceState<HeatmapRender?>(null, track, fps, rallies, cellSizeM) {
+        if (track.samples.isEmpty()) {
+            value = null
+            return@produceState
+        }
+        value = withContext(Dispatchers.Default) {
+            val occupancy = CourtOccupancy(cellSizeM).also { it.addAll(track.samples, fps, within = rallies) }
+            val coverage = rallies?.coverage(track) ?: track.coverage
+            val grid = occupancy.smoothed()
+            val peak = grid.flatten().maxOrNull() ?: 0.0
+            // One pixel per cell, scaled up by the GPU rather than drawn as rectangles.
+            //
+            // Rectangles produced two artefacts that made a smooth field look like
+            // data it is not. Each cell was drawn a pixel oversized to avoid hairline
+            // gaps, so neighbours double-blended into a bright grid; and every cell
+            // with any value at all was floored to 15% opacity, which turned the
+            // Gaussian tail into a solid plateau with a hard rectangular edge, as if
+            // the player had stood everywhere inside it. Interpolating a bitmap has no
+            // seams to cover and lets the tail reach zero.
+            HeatmapRender(
+                totalSeconds = occupancy.totalSeconds,
+                coverage = coverage,
+                image = heatImage(grid, peak),
+            )
+        }
     }
-    val coverage = remember(track, rallies) { rallies?.coverage(track) ?: track.coverage }
-    val grid = remember(occupancy) { occupancy.smoothed() }
-    val peak = remember(grid) { grid.flatten().maxOrNull() ?: 0.0 }
-    // One pixel per cell, scaled up by the GPU rather than drawn as rectangles.
-    //
-    // Rectangles produced two artefacts that made a smooth field look like
-    // data it is not. Each cell was drawn a pixel oversized to avoid hairline
-    // gaps, so neighbours double-blended into a bright grid; and every cell
-    // with any value at all was floored to 15% opacity, which turned the
-    // Gaussian tail into a solid plateau with a hard rectangular edge, as if
-    // the player had stood everywhere inside it. Interpolating a bitmap has no
-    // seams to cover and lets the tail reach zero.
-    val image = remember(grid, peak) { heatImage(grid, peak) }
     // Read here, not in drawCourt: a DrawScope is outside composition and cannot
     // reach the theme.
     //
@@ -105,15 +128,25 @@ fun CourtHeatmapView(
             PanelMessage(whyEmpty(track))
             return@Column
         }
-        if (rallies != null && occupancy.totalSeconds == 0.0) {
+        val current = render
+        if (current == null) {
+            Box(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 64.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 2.5.dp)
+            }
+            return@Column
+        }
+        if (rallies != null && current.totalSeconds == 0.0) {
             PanelMessage(HEATMAP_NO_RALLY_SAMPLES)
             return@Column
         }
 
         CourtCard {
-            if (image != null) {
+            if (current.image != null) {
                 drawImage(
-                    image = image,
+                    image = current.image,
                     dstSize = IntSize(size.width.toInt(), size.height.toInt()),
                     // Smooth, so a quarter-metre grid reads as a field rather
                     // than as the blocks it is stored in.
@@ -134,7 +167,7 @@ fun CourtHeatmapView(
                     .weight(1f)
                     .height(3.dp)
                     .clip(RoundedCornerShape(ShuttlRadius.pill))
-                    .background(Brush.horizontalGradient(listOf(COOL.copy(alpha = 0f), COOL, HOT))),
+                    .background(HEAT_LEGEND_BRUSH),
             )
             Spacer(Modifier.width(12.dp))
             Text("Low to high", style = MaterialTheme.typography.bodySmall, color = ShuttlTheme.extended.textTertiary)
@@ -155,14 +188,14 @@ fun CourtHeatmapView(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             ShuttlStatTile(
-                value = String.format(Locale.US, "%.1f", occupancy.totalSeconds / 60.0),
+                value = String.format(Locale.US, "%.1f", current.totalSeconds / 60.0),
                 unit = " min",
                 label = "Tracked",
                 modifier = Modifier.weight(1f).fillMaxHeight(),
                 labelMaxLines = 2,
             )
             ShuttlStatTile(
-                value = (coverage * 100).toInt().toString(),
+                value = (current.coverage * 100).toInt().toString(),
                 unit = "%",
                 label = "Frames with the player",
                 modifier = Modifier.weight(1f).fillMaxHeight(),
@@ -186,7 +219,10 @@ internal val COURT_GUTTER = 24.dp
  * the baseline is drawn where they were rather than clamped onto the line.
  */
 @Composable
-internal fun CourtCard(draw: DrawScope.() -> Unit) {
+internal fun CourtCard(
+    onCanvasSizeChanged: ((IntSize) -> Unit)? = null,
+    draw: DrawScope.() -> Unit,
+) {
     val shape = RoundedCornerShape(ShuttlRadius.medium)
     Box(modifier = Modifier.fillMaxWidth().padding(horizontal = COURT_GUTTER), contentAlignment = Alignment.Center) {
         Canvas(
@@ -198,7 +234,8 @@ internal fun CourtCard(draw: DrawScope.() -> Unit) {
                 .aspectRatio((Court.WIDTH_DOUBLES + 2 * COURT_DRAW_MARGIN_M).toFloat() / (Court.LENGTH + 2 * COURT_DRAW_MARGIN_M).toFloat())
                 .clip(shape)
                 .background(MaterialTheme.colorScheme.surfaceVariant, shape)
-                .border(1.dp, MaterialTheme.colorScheme.outline, shape),
+                .border(1.dp, MaterialTheme.colorScheme.outline, shape)
+                .then(if (onCanvasSizeChanged != null) Modifier.onSizeChanged(onCanvasSizeChanged) else Modifier),
             onDraw = draw,
         )
     }
@@ -315,3 +352,4 @@ internal const val COURT_DRAW_MARGIN_M = 2.0
  */
 private val COOL = Color(0xFF2962FF)
 private val HOT = Color(0xFFFF6D00)
+private val HEAT_LEGEND_BRUSH = Brush.horizontalGradient(listOf(COOL.copy(alpha = 0f), COOL, HOT))

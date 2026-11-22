@@ -97,6 +97,7 @@ class ClipListViewModelMatchListTest {
             deviceStates = deviceStates,
             storedResults = reader,
             ioDispatcher = dispatcher,
+            computeDispatcher = dispatcher,
         )
     }
 

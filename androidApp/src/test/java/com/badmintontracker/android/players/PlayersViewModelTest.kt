@@ -251,4 +251,18 @@ class PlayersViewModelTest {
         scoreLogs.get(id).shouldNotBeNull().matchPlayers shouldBe
             MatchPlayers(null, null, listOf("Marco"), listOf("Li"))
     }
+
+    @Test
+    fun refresh_clears_isRefreshing_after_success_and_failure() = runTest {
+        val players = FakePlayersRepository()
+        val vm = newViewModel(players)
+        advanceUntilIdle()
+        vm.state.value.isRefreshing shouldBe false
+
+        players.nextError = IllegalStateException("HTTP 503")
+        vm.refresh()
+        advanceUntilIdle()
+        vm.state.value.isRefreshing shouldBe false
+        vm.state.value.loadFailed shouldBe true
+    }
 }

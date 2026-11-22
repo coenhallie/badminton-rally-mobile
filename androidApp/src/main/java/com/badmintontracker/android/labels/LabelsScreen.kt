@@ -1,11 +1,15 @@
 package com.badmintontracker.android.labels
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,11 +22,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -33,12 +40,15 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -83,8 +93,13 @@ fun LabelsScreen(vm: LabelsViewModel, onBack: () -> Unit) {
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    scrolledContainerColor = MaterialTheme.colorScheme.surface,
+                ),
                 title = {
                     Text("Labels")
                 },
@@ -107,73 +122,86 @@ fun LabelsScreen(vm: LabelsViewModel, onBack: () -> Unit) {
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize().imePadding()) {
             val creatingNew = state.expanded == LabelEditTarget.New
-            if (state.labels.isEmpty() && !creatingNew) {
-                // A failed load and a genuinely empty account both leave the list empty,
-                // and the snackbar above that reports a failure times out after a few
-                // seconds - so the empty state itself must keep telling them apart, or a
-                // failed load quietly reads as "you have no labels" once it's gone.
-                Box(
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (state.loadFailed) {
-                        ShuttlEmptyState(
-                            icon = ShuttlIcons.Tag,
-                            title = "Couldn't load your labels",
-                            body = "Check your connection and try again.",
-                            action = {
-                                ShuttlButton(
-                                    text = "Retry",
-                                    onClick = vm::refresh,
-                                    variant = ShuttlButtonVariant.Secondary,
-                                    compact = true,
-                                )
-                            },
-                        )
-                    } else {
-                        // With the in-list "add" row gone, an empty screen must teach
-                        // the action itself rather than leave a first-time user staring
-                        // at nothing but a small "+" in the corner.
-                        ShuttlEmptyState(
-                            icon = ShuttlIcons.Tag,
-                            title = "No labels yet",
-                            body = "Create a label to tag notes as you review a match.",
-                            action = {
-                                ShuttlButton(
-                                    text = "Add label",
-                                    onClick = vm::startCreating,
-                                    leadingIcon = Icons.Default.Add,
-                                    compact = true,
-                                )
-                            },
-                        )
+            PullToRefreshBox(
+                isRefreshing = state.isRefreshing,
+                onRefresh = vm::refresh,
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+            ) {
+                if (state.labels.isEmpty() && !creatingNew && state.isLoading) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator()
                     }
-                }
-            } else {
-                LazyColumn(modifier = Modifier.weight(1f)) {
-                    if (creatingNew) {
-                        item(key = "new-label-draft") {
-                            DraftLabelRow(
-                                palette = vm.palette,
-                                existingColorKeys = state.labels.map { it.colorKey },
-                                onCreate = vm::create,
+                } else if (state.labels.isEmpty() && !creatingNew) {
+                    // A failed load and a genuinely empty account both leave the list empty,
+                    // and the snackbar above that reports a failure times out after a few
+                    // seconds - so the empty state itself must keep telling them apart, or a
+                    // failed load quietly reads as "you have no labels" once it's gone.
+                    Box(
+                        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (state.loadFailed) {
+                            ShuttlEmptyState(
+                                icon = ShuttlIcons.Tag,
+                                title = "Couldn't load your labels",
+                                body = "Check your connection and try again.",
+                                action = {
+                                    ShuttlButton(
+                                        text = "Retry",
+                                        onClick = vm::refresh,
+                                        variant = ShuttlButtonVariant.Secondary,
+                                        compact = true,
+                                    )
+                                },
+                            )
+                        } else {
+                            // With the in-list "add" row gone, an empty screen must teach
+                            // the action itself rather than leave a first-time user staring
+                            // at nothing but a small "+" in the corner.
+                            ShuttlEmptyState(
+                                icon = ShuttlIcons.Tag,
+                                title = "No labels yet",
+                                body = "Create a label to tag notes as you review a match.",
+                                action = {
+                                    ShuttlButton(
+                                        text = "Add label",
+                                        onClick = vm::startCreating,
+                                        leadingIcon = Icons.Default.Add,
+                                        compact = true,
+                                    )
+                                },
                             )
                         }
                     }
-                    items(state.labels, key = { it.id }) { label ->
-                        SwipeToRemoveRow(
-                            label = "Delete",
-                            onSwiped = { deleteTarget = label; false },
-                        ) {
-                            LabelRow(
-                                label = label,
-                                expanded = state.expanded == LabelEditTarget.Existing(label.id),
-                                palette = vm.palette,
-                                onToggle = { vm.expand(label.id) },
-                                onRename = { vm.rename(label.id, it) },
-                                onRecolor = { vm.recolor(label.id, it) },
-                                onSetUsage = { vm.setUsage(label.id, it) },
-                            )
+                } else {
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        if (creatingNew) {
+                            item(key = "new-label-draft") {
+                                DraftLabelRow(
+                                    palette = vm.palette,
+                                    existingColorKeys = state.labels.map { it.colorKey },
+                                    onCreate = vm::create,
+                                )
+                            }
+                        }
+                        items(state.labels, key = { it.id }) { label ->
+                            SwipeToRemoveRow(
+                                label = "Delete",
+                                onSwiped = { deleteTarget = label; false },
+                            ) {
+                                LabelRow(
+                                    label = label,
+                                    expanded = state.expanded == LabelEditTarget.Existing(label.id),
+                                    palette = vm.palette,
+                                    onToggle = { vm.expand(label.id) },
+                                    onRename = { vm.rename(label.id, it) },
+                                    onRecolor = { vm.recolor(label.id, it) },
+                                    onSetUsage = { vm.setUsage(label.id, it) },
+                                )
+                            }
                         }
                     }
                 }
@@ -184,6 +212,7 @@ fun LabelsScreen(vm: LabelsViewModel, onBack: () -> Unit) {
     deleteTarget?.let { label ->
         AlertDialog(
             onDismissRequest = { deleteTarget = null },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             title = { Text("Delete label?") },
             text = {
                 Text(
@@ -215,7 +244,8 @@ private fun LabelRow(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.background),
+            .background(MaterialTheme.colorScheme.background)
+            .animateContentSize(),
     ) {
         Row(
             modifier = Modifier
@@ -380,12 +410,31 @@ private fun UsagePicker(selected: LabelUsage, onSelect: (LabelUsage) -> Unit) {
  * flow layout stripes 9 + 1 at common phone widths, stranding one circle alone on its
  * own row. Fixed columns keep both rows full regardless of screen width.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SwatchGrid(palette: List<LabelColor>, selectedKey: String?, onSelect: (LabelColor) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        palette.chunked(5).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                row.forEach { swatch ->
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        if (maxWidth >= 240.dp) {
+            val gap = ((maxWidth - 240.dp) / 4).coerceIn(0.dp, 12.dp)
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                palette.chunked(5).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+                        row.forEach { swatch ->
+                            ColorSwatch(
+                                color = swatch,
+                                selected = swatch.key == selectedKey,
+                                onClick = { onSelect(swatch) },
+                            )
+                        }
+                    }
+                }
+            }
+        } else {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                palette.forEach { swatch ->
                     ColorSwatch(
                         color = swatch,
                         selected = swatch.key == selectedKey,
@@ -492,16 +541,16 @@ private fun DraftLabelRow(
     existingColorKeys: List<String>,
     onCreate: suspend (String, LabelColor, LabelUsage) -> Boolean,
 ) {
-    var name by remember { mutableStateOf("") }
-    // Keyed on existingColorKeys: the row can open before the label list has
-    // finished its first load, in which case an unkeyed remember would compute
-    // the default swatch from a stale (often empty) list and never reconsider
-    // it. Keying recomputes the default whenever the list's colour keys change,
-    // which is what we want while the list is still arriving.
-    var selectedColor by remember(existingColorKeys) {
-        mutableStateOf(AnnotationLabelsRepositoryImpl.nextUnusedColor(existingColorKeys))
+    var name by rememberSaveable { mutableStateOf("") }
+    // Once the user taps a swatch, rememberSaveable locks in their choice so a
+    // refresh landing mid-edit cannot reset it; before they pick, the default
+    // still tracks the next unused colour as existing labels arrive.
+    var userPickedColorKey by rememberSaveable { mutableStateOf<String?>(null) }
+    val defaultColor = remember(existingColorKeys) {
+        AnnotationLabelsRepositoryImpl.nextUnusedColor(existingColorKeys)
     }
-    var selectedUsage by remember { mutableStateOf(LabelUsage.BOTH) }
+    val selectedColor = userPickedColorKey?.let { key -> palette.firstOrNull { it.key == key } } ?: defaultColor
+    var selectedUsage by rememberSaveable { mutableStateOf(LabelUsage.BOTH) }
     val commitGuard = remember { CommitGuard() }
     val focusRequester = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
@@ -539,7 +588,7 @@ private fun DraftLabelRow(
         focusRequester = focusRequester,
         palette = palette,
         selectedColorKey = selectedColor.key,
-        onSelectColor = { selectedColor = it },
+        onSelectColor = { userPickedColorKey = it.key },
         selectedUsage = selectedUsage,
         onSelectUsage = { selectedUsage = it },
     )

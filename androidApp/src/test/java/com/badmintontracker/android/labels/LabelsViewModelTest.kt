@@ -218,4 +218,18 @@ class LabelsViewModelTest {
 
         vm.state.value.errorMessage.shouldBeNull()
     }
+
+    @Test
+    fun initial_load_starts_loading_when_empty_and_clears_after_refresh() = runTest {
+        val repo = FakeAnnotationLabelsRepository(emptyList())
+        val vm = LabelsViewModel(repo)
+
+        vm.state.value.isLoading shouldBe true
+        vm.state.value.isRefreshing shouldBe false
+
+        advanceUntilIdle()
+
+        vm.state.value.isLoading shouldBe false
+        vm.state.value.isRefreshing shouldBe false
+    }
 }

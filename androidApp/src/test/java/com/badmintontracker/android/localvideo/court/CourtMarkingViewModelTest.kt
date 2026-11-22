@@ -164,6 +164,27 @@ class CourtMarkingViewModelTest {
         vm(loadOk = false).state.value.error shouldBe "no frame"
     }
 
+    @Test
+    fun retry_reloads_frame_after_failure() = runTest {
+        var attempts = 0
+        val vm = CourtMarkingViewModel(
+            entryId = "e1",
+            loadFrame = {
+                attempts++
+                if (attempts == 1) error("transient failure")
+                CourtFrame(frame = null, width = 1920, height = 1080)
+            },
+            log = RecordingLog(),
+        )
+        vm.state.value.error shouldBe "transient failure"
+        vm.state.value.marking shouldBe null
+
+        vm.retry()
+        vm.state.value.error shouldBe null
+        vm.state.value.marking.shouldNotBeNull().videoWidth shouldBe 1920
+        attempts shouldBe 2
+    }
+
     // --- The court finder -------------------------------------------------------
 
     private fun p(i: Int) = com.badmintontracker.analysis.geometry.Point(100.0 + i * 50, 200.0 + i * 20)

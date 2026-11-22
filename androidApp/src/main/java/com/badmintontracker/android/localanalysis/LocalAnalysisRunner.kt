@@ -21,6 +21,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 
 /**
@@ -174,6 +176,12 @@ class LocalAnalysisRunner(
      */
     private val running = java.util.Collections.synchronizedSet(mutableSetOf<String>())
 
+    /**
+     * Serializes queued device runs so multiple videos never compete for RAM,
+     * ONNX sessions, and hardware MediaCodec instances simultaneously.
+     */
+    private val runMutex = Mutex()
+
     private val tracks = PlayerTrackStore(context.filesDir)
 
     /**
@@ -247,8 +255,12 @@ class LocalAnalysisRunner(
     fun analysedSource(entryId: String, videoUri: String): String? = analysedSourceUri(
         entryUri = videoUri,
         direct = File(videoUri.removePrefix("file://")).takeIf { it.isFile && it.canRead() },
-        copy = File(context.filesDir, "local-sources/$entryId.mp4")
-            .takeIf { it.isFile && it.length() > 0 },
+        copy = if (isSafeEntryId(entryId)) {
+            resolveContainedChild(File(context.filesDir, "local-sources"), "$entryId.mp4")
+                .takeIf { it.isFile && it.length() > 0 }
+        } else {
+            null
+        },
         contentReadable = canOpenContent(videoUri),
     )
 
@@ -278,110 +290,123 @@ class LocalAnalysisRunner(
         keypoints: CourtKeypoints,
         metrics: Set<AnalysisMetric> = setOf(AnalysisMetric.RALLY_CLIPS),
     ) {
-        if (running.contains(entryId)) return
-        running.add(entryId)
+        requireSafeEntryId(entryId)
+        if (!running.add(entryId)) return
+        set(entryId, LocalAnalysisState.Preparing("Queued"))
         // Held for as long as anything is in flight, and released in a finally
         // so a crash cannot strand a wake lock until reboot.
         LocalAnalysisService.start(context, "Preparing")
         scope.launch(Dispatchers.Default) {
-            val started = System.currentTimeMillis()
             try {
-                set(entryId, LocalAnalysisState.Preparing("Copying video"))
-                // MediaExtractor and MediaMetadataRetriever both want a real
-                // path, and a gallery pick is a content:// URI whose backing
-                // file the app cannot open directly.
-                val local = materialise(videoUri, entryId)
+                runMutex.withLock {
+                    val started = System.currentTimeMillis()
+                    set(entryId, LocalAnalysisState.Preparing("Copying video"))
+                    LocalAnalysisService.updateText(context, "Preparing")
+                    // MediaExtractor and MediaMetadataRetriever both want a real
+                    // path, and a gallery pick is a content:// URI whose backing
+                    // file the app cannot open directly.
+                    val local = materialise(videoUri, entryId)
 
-                set(entryId, LocalAnalysisState.Analysing(0f))
-                LocalAnalysisService.start(context, "Analyzing")
-                val wantsPose = metrics.any { it.needsPose }
-                val inferenceStarted = System.currentTimeMillis()
-                val outcome = LocalAnalysisCoordinator(
-                    engine = AndroidLocalInferenceEngine(
-                        context = context,
-                        // Loaded only when asked for: pose roughly doubles the
-                        // run, so a user who wanted clips must not pay for it.
-                        poseModelPath = if (wantsPose) {
-                            ModelCatalog.path(context, Model.POSE)
-                        } else {
-                            null
-                        },
+                    set(entryId, LocalAnalysisState.Analysing(0f))
+                    LocalAnalysisService.updateText(context, "Analyzing")
+                    val wantsPose = metrics.any { it.needsPose }
+                    val inferenceStarted = System.currentTimeMillis()
+                    val outcome = LocalAnalysisCoordinator(
+                        engine = AndroidLocalInferenceEngine(
+                            context = context,
+                            // Loaded only when asked for: pose roughly doubles the
+                            // run, so a user who wanted clips must not pay for it.
+                            poseModelPath = if (wantsPose) {
+                                ModelCatalog.path(context, Model.POSE)
+                            } else {
+                                null
+                            },
+                            log = log,
+                        ),
                         log = log,
-                    ),
-                    log = log,
-                ).analyze(local.path, keypoints) { f ->
-                    set(entryId, LocalAnalysisState.Analysing(f))
-                }
-                val inferenceMs = (System.currentTimeMillis() - inferenceStarted).toDouble()
-                val result = outcome.getOrElse {
-                    set(entryId, LocalAnalysisState.Failed(it.message ?: "analysis failed"))
-                    return@launch
-                }
+                    ).analyze(local.path, keypoints) { f ->
+                        set(entryId, LocalAnalysisState.Analysing(f))
+                    }
+                    val inferenceMs = (System.currentTimeMillis() - inferenceStarted).toDouble()
+                    val result = outcome.getOrElse {
+                        set(entryId, LocalAnalysisState.Failed(it.message ?: "analysis failed"))
+                        return@withLock
+                    }
 
-                // What this phone actually managed, so the next estimate is
-                // its own rather than a reference device's.
-                val frames = result.result.totalFrames
-                if (frames > 0) {
-                    val perFrame = inferenceMs / frames
-                    throughput.record(
-                        // Pose and base share one decode pass, so the split is
-                        // the ratio the two models were measured at rather than
-                        // something this run can separate.
-                        baseMsPerFrame = if (wantsPose) perFrame * BASE_SHARE else perFrame,
-                        poseMsPerFrame = if (wantsPose) perFrame * (1 - BASE_SHARE) else null,
-                        cutMsPerClipSecond = null,
-                    )
-                }
-
-                // Written before the clips are cut, which is minutes of work:
-                // a track that survived the analysis should not be lost to a
-                // failure in the step after it.
-                if (result.playerTrack.samples.isNotEmpty()) {
-                    tracks.save(entryId, result.playerTrack, result.result.fps)
-                }
-
-                // Kept only for the latest run that asked for it: a run that
-                // did not ask for a skeleton, or asked but found nobody,
-                // removes the previous one, so what the detail offers always
-                // belongs to the latest run and a coach who declined it stops
-                // paying for it. Unlike the track above, which overwrites but
-                // never deletes, a skeleton this run does not want is deleted
-                // outright - see skeletonAction's KDoc for why. Written here,
-                // before the clips, for the same reason the track is. If the
-                // save throws, the outer catch turns it into Failed: a skeleton
-                // the coach asked for that could not be written is a failed
-                // run, not a silent omission.
-                val skeleton = skeletonAction(metrics, result.poses)
-                when (skeleton) {
-                    SkeletonAction.SAVE ->
-                        skeletons.save(
-                            entryId, result.poses, result.result.fps,
-                            result.videoWidth, result.videoHeight, keypoints.toAnalysis(),
+                    // What this phone actually managed, so the next estimate is
+                    // its own rather than a reference device's.
+                    val frames = result.result.totalFrames
+                    if (frames > 0) {
+                        val perFrame = inferenceMs / frames
+                        throughput.record(
+                            // Pose and base share one decode pass, so the split is
+                            // the ratio the two models were measured at rather than
+                            // something this run can separate.
+                            baseMsPerFrame = if (wantsPose) perFrame * BASE_SHARE else perFrame,
+                            poseMsPerFrame = if (wantsPose) perFrame * (1 - BASE_SHARE) else null,
+                            cutMsPerClipSecond = null,
                         )
-                    SkeletonAction.DELETE -> skeletons.delete(entryId)
+                    }
+
+                    // Written before the clips are cut, which is minutes of work:
+                    // a track that survived the analysis should not be lost to a
+                    // failure in the step after it.
+                    if (result.playerTrack.samples.isNotEmpty()) {
+                        tracks.save(entryId, result.playerTrack, result.result.fps)
+                    }
+
+                    // Kept only for the latest run that asked for it: a run that
+                    // did not ask for a skeleton, or asked but found nobody,
+                    // removes the previous one, so what the detail offers always
+                    // belongs to the latest run and a coach who declined it stops
+                    // paying for it. Unlike the track above, which overwrites but
+                    // never deletes, a skeleton this run does not want is deleted
+                    // outright - see skeletonAction's KDoc for why. Written here,
+                    // before the clips, for the same reason the track is. If the
+                    // save throws, the outer catch turns it into Failed: a skeleton
+                    // the coach asked for that could not be written is a failed
+                    // run, not a silent omission.
+                    val skeleton = skeletonAction(metrics, result.poses)
+                    when (skeleton) {
+                        SkeletonAction.SAVE ->
+                            skeletons.save(
+                                entryId, result.poses, result.result.fps,
+                                result.videoWidth, result.videoHeight, keypoints.toAnalysis(),
+                            )
+                        SkeletonAction.DELETE -> skeletons.delete(entryId)
+                    }
+
+                    val windows = if (AnalysisMetric.RALLY_CLIPS in metrics) result.clipWindows else emptyList()
+                    set(entryId, LocalAnalysisState.Cutting(0, windows.size))
+                    if (windows.isNotEmpty()) LocalAnalysisService.updateText(context, "Cutting ${windows.size} clips")
+                    val dir = resolveContainedChild(File(context.filesDir, "local-clips"), entryId).apply { mkdirs() }
+                    val clips = if (windows.isEmpty()) {
+                        emptyList()
+                    } else {
+                        // Remove stale rally-*.mp4 files from any earlier run so
+                        // fewer rallies on a re-run do not leave orphaned clips.
+                        dir.listFiles()
+                            ?.filter { it.isFile && it.name.startsWith("rally-") && it.extension == "mp4" }
+                            ?.forEach { it.delete() }
+                        ClipCutter().cut(local, windows, dir)
+                    }
+                    tracks.saveClips(entryId, clips)
+
+                    set(
+                        entryId,
+                        LocalAnalysisState.Done(
+                            rallies = result.result.rallies.size,
+                            shuttleVisible = result.result.shuttlePositions.count { it.value.visible },
+                            totalFrames = result.result.totalFrames,
+                            clips = clips,
+                            elapsedSeconds = (System.currentTimeMillis() - started) / 1000.0,
+                            playerTrack = result.playerTrack,
+                            fps = result.result.fps,
+                            skeletonSaved = skeleton == SkeletonAction.SAVE,
+                        ),
+                    )
+                    log("local analysis done: ${clips.size} clips in ${(System.currentTimeMillis() - started) / 1000}s")
                 }
-
-                val windows = if (AnalysisMetric.RALLY_CLIPS in metrics) result.clipWindows else emptyList()
-                set(entryId, LocalAnalysisState.Cutting(0, windows.size))
-                if (windows.isNotEmpty()) LocalAnalysisService.start(context, "Cutting ${windows.size} clips")
-                val dir = File(context.filesDir, "local-clips/$entryId").apply { mkdirs() }
-                val clips = if (windows.isEmpty()) emptyList() else ClipCutter().cut(local, windows, dir)
-                tracks.saveClips(entryId, clips)
-
-                set(
-                    entryId,
-                    LocalAnalysisState.Done(
-                        rallies = result.result.rallies.size,
-                        shuttleVisible = result.result.shuttlePositions.count { it.value.visible },
-                        totalFrames = result.result.totalFrames,
-                        clips = clips,
-                        elapsedSeconds = (System.currentTimeMillis() - started) / 1000.0,
-                        playerTrack = result.playerTrack,
-                        fps = result.result.fps,
-                        skeletonSaved = skeleton == SkeletonAction.SAVE,
-                    ),
-                )
-                log("local analysis done: ${clips.size} clips in ${(System.currentTimeMillis() - started) / 1000}s")
             } catch (t: Throwable) {
                 set(entryId, LocalAnalysisState.Failed(t.message ?: t::class.simpleName ?: "failed"))
                 log("local analysis failed: $t")
@@ -411,9 +436,10 @@ class LocalAnalysisRunner(
 
     /** Copy a content:// video into app storage so the media APIs can open it. */
     private fun materialise(videoUri: String, entryId: String): File {
+        requireSafeEntryId(entryId)
         val direct = File(videoUri.removePrefix("file://"))
         if (direct.isFile && direct.canRead()) return direct
-        val out = File(context.filesDir, "local-sources/$entryId.mp4")
+        val out = resolveContainedChild(File(context.filesDir, "local-sources"), "$entryId.mp4")
         // Present means whole: copyAtomicallyFrom is the only thing that creates
         // it. "Exists and is not empty" used to be the test, and a copy of a 2GB
         // match killed partway passed it, so every later run analysed the first

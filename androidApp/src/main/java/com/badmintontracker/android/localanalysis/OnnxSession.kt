@@ -16,7 +16,9 @@ import java.nio.FloatBuffer
 class OnnxSession(modelPath: String, provider: Provider = Provider.CPU) : Closeable {
 
     private val env: OrtEnvironment = OrtEnvironment.getEnvironment()
-    private val session: OrtSession = env.createSession(modelPath, options(provider))
+    private val session: OrtSession = options(provider).use { opts ->
+        env.createSession(modelPath, opts)
+    }
 
     /** Which execution provider to add, if any. */
     enum class Provider { CPU, NNAPI, XNNPACK }
@@ -40,6 +42,9 @@ class OnnxSession(modelPath: String, provider: Provider = Provider.CPU) : Closea
         fun options(provider: Provider): OrtSession.SessionOptions {
             val o = OrtSession.SessionOptions()
             o.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+            val threads = minOf(4, maxOf(1, Runtime.getRuntime().availableProcessors() / 2))
+            o.setIntraOpNumThreads(threads)
+            o.setInterOpNumThreads(1)
             // Adding a provider must never fail the session: a slow analysis
             // beats none, and both of these can legitimately decline.
             when (provider) {
@@ -72,40 +77,15 @@ class OnnxSession(modelPath: String, provider: Provider = Provider.CPU) : Closea
     fun run(input: FloatArray, shape: LongArray): FloatArray {
         OnnxTensor.createTensor(env, FloatBuffer.wrap(input), shape).use { tensor ->
             session.run(mapOf(inputName to tensor)).use { result ->
-                val out = result[0].value
-                return flatten(out)
+                val outTensor = result[0] as? OnnxTensor
+                    ?: error("unexpected ONNX output type ${result[0]?.let { it::class.simpleName }}")
+                val buf = outTensor.floatBuffer
+                    ?: error("unexpected ONNX output tensor type ${outTensor.info.type}")
+                val out = FloatArray(buf.remaining())
+                buf.get(out)
+                return out
             }
         }
-    }
-
-    /**
-     * ONNX Runtime hands back arrays nested to the tensor's rank; flatten them
-     * into one FloatArray without boxing.
-     *
-     * The obvious `flatMap { it.asIterable() }.toFloatArray()` boxes every
-     * element. TrackNet's output is 1.2M floats per sequence at batch 1, so
-     * that allocated 1.2M Float objects per inference; at batch 4 it exhausted
-     * a 256MB heap outright. Copying plane by plane into a preallocated array
-     * allocates once.
-     */
-    private fun flatten(value: Any?): FloatArray {
-        val out = FloatArray(countFloats(value))
-        var at = 0
-        fun copy(v: Any?) {
-            when (v) {
-                is FloatArray -> { v.copyInto(out, at); at += v.size }
-                is Array<*> -> v.forEach { copy(it) }
-                else -> error("unexpected ONNX output type ${v?.let { it::class.simpleName }}")
-            }
-        }
-        copy(value)
-        return out
-    }
-
-    private fun countFloats(value: Any?): Int = when (value) {
-        is FloatArray -> value.size
-        is Array<*> -> value.sumOf { countFloats(it) }
-        else -> error("unexpected ONNX output type ${value?.let { it::class.simpleName }}")
     }
 
     override fun close() {

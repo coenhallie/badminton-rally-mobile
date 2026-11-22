@@ -58,4 +58,18 @@ class SignInViewModelTest {
         vm.state.value.error shouldBe "Something went wrong. Please check your connection and try again."
         vm.state.value.isSubmitting shouldBe false
     }
+
+    @Test
+    fun submitEmail_ignores_duplicate_call_while_submitting() = runTest {
+        val auth = FakeAuthRepository().apply { nextEmailResult = Result.success(Unit) }
+        val vm = SignInViewModel(auth)
+        vm.onEmailChange("a@b.co"); vm.onPasswordChange("secret")
+
+        vm.submitEmail()
+        vm.submitEmail()
+        dispatcher.scheduler.advanceUntilIdle()
+
+        auth.emailCalls shouldBe listOf("a@b.co" to "secret")
+        vm.state.value.isSubmitting shouldBe false
+    }
 }

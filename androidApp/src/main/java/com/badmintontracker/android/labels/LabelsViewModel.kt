@@ -11,6 +11,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
@@ -35,18 +36,29 @@ data class LabelsUiState(
      * snackbar that reported the failure has already timed out.
      */
     val loadFailed: Boolean = false,
+    /** True on cold start with an empty cache before the first refresh settles. */
+    val isLoading: Boolean = false,
+    /** True during a pull-to-refresh or retry once the initial load has settled. */
+    val isRefreshing: Boolean = false,
 )
 
 class LabelsViewModel(private val labels: AnnotationLabelsRepository) : ViewModel() {
 
-    private val _state = MutableStateFlow(LabelsUiState())
+    private val _state = MutableStateFlow(LabelsUiState(isLoading = labels.labels.value.isEmpty()))
     val state: StateFlow<LabelsUiState> = _state.asStateFlow()
 
     val palette: List<LabelColor> = LabelColor.PALETTE
 
     init {
         viewModelScope.launch {
-            labels.labels.collect { rows -> _state.value = _state.value.copy(labels = rows) }
+            labels.labels.collect { rows ->
+                _state.update {
+                    it.copy(
+                        labels = rows,
+                        isLoading = if (rows.isNotEmpty()) false else it.isLoading,
+                    )
+                }
+            }
         }
         refresh()
     }
@@ -62,13 +74,20 @@ class LabelsViewModel(private val labels: AnnotationLabelsRepository) : ViewMode
      */
     fun refresh() {
         viewModelScope.launch {
+            _state.update { it.copy(isRefreshing = !it.isLoading) }
             labels.refresh()
-                .onSuccess { _state.value = _state.value.copy(loadFailed = false) }
+                .onSuccess {
+                    _state.update { it.copy(loadFailed = false, isLoading = false, isRefreshing = false) }
+                }
                 .onFailure { e ->
-                    _state.value = _state.value.copy(
-                        loadFailed = true,
-                        errorMessage = e.userFacingMessage("Couldn't load your labels"),
-                    )
+                    _state.update {
+                        it.copy(
+                            loadFailed = true,
+                            isLoading = false,
+                            isRefreshing = false,
+                            errorMessage = e.userFacingMessage("Couldn't load your labels"),
+                        )
+                    }
                 }
         }
     }
@@ -76,7 +95,7 @@ class LabelsViewModel(private val labels: AnnotationLabelsRepository) : ViewMode
     /** Tapping the already-expanded row collapses it, so a row is its own toggle. */
     fun expand(id: String) {
         val target = LabelEditTarget.Existing(id)
-        _state.value = _state.value.copy(expanded = if (_state.value.expanded == target) null else target)
+        _state.update { it.copy(expanded = if (it.expanded == target) null else target) }
     }
 
     /**
@@ -87,7 +106,7 @@ class LabelsViewModel(private val labels: AnnotationLabelsRepository) : ViewMode
      */
     fun startCreating() {
         val target = LabelEditTarget.New
-        _state.value = _state.value.copy(expanded = if (_state.value.expanded == target) null else target)
+        _state.update { it.copy(expanded = if (it.expanded == target) null else target) }
     }
 
     /**
@@ -122,12 +141,12 @@ class LabelsViewModel(private val labels: AnnotationLabelsRepository) : ViewMode
         viewModelScope.async {
             labels.create(name, color, usage)
                 .onSuccess { created ->
-                    _state.value = _state.value.copy(expanded = LabelEditTarget.Existing(created.id))
+                    _state.update { it.copy(expanded = LabelEditTarget.Existing(created.id)) }
                 }
                 .onFailure { e ->
-                    _state.value = _state.value.copy(
-                        errorMessage = e.userFacingMessage("Couldn't save the label"),
-                    )
+                    _state.update {
+                        it.copy(errorMessage = e.userFacingMessage("Couldn't save the label"))
+                    }
                 }
                 .isSuccess
         }.await()
@@ -137,7 +156,7 @@ class LabelsViewModel(private val labels: AnnotationLabelsRepository) : ViewMode
     fun setUsage(id: String, usage: LabelUsage) = run { labels.setUsage(id, usage) }
     fun delete(id: String) = run { labels.delete(id) }
 
-    fun errorShown() { _state.value = _state.value.copy(errorMessage = null) }
+    fun errorShown() { _state.update { it.copy(errorMessage = null) } }
 
     /**
      * Every failure goes through userFacingMessage, the same filter the iOS interop
@@ -148,9 +167,9 @@ class LabelsViewModel(private val labels: AnnotationLabelsRepository) : ViewMode
     private fun run(op: suspend () -> Result<*>) {
         viewModelScope.launch {
             op().onFailure { e ->
-                _state.value = _state.value.copy(
-                    errorMessage = e.userFacingMessage("Couldn't save the label"),
-                )
+                _state.update {
+                    it.copy(errorMessage = e.userFacingMessage("Couldn't save the label"))
+                }
             }
         }
     }

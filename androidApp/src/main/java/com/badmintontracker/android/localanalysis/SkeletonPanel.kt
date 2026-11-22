@@ -15,6 +15,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -27,6 +28,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -259,17 +261,22 @@ private fun SkeletonPlayer(
             player.release()
         }
     }
+    LifecycleStartEffect(player) {
+        onStopOrDispose { player.pause() }
+    }
     LaunchedEffect(source) {
         player.setMediaItem(MediaItem.fromUri(source))
         player.prepare()
         player.playWhenReady = false
     }
 
-    val position by rememberPlaybackPosition(player)
-    val positionMs = position.positionMs
-    val durationMs = position.durationMs
+    val positionState = rememberPlaybackPosition(player)
     val tolerance = remember(stored.fps) { poseToleranceS(stored.fps) }
-    val pose = remember(positionMs, poses) { nearestPose(poses, positionMs / 1000.0, tolerance) }
+    val poseState = remember(poses, tolerance, positionState) {
+        derivedStateOf {
+            nearestPose(poses, positionState.value.positionMs / 1000.0, tolerance)
+        }
+    }
 
     val hasCourt = homography != null
     // The shown player's profile hand wins over the per-video choice: it is the
@@ -288,8 +295,10 @@ private fun SkeletonPlayer(
     // no tile. Derived, not written back, so composition stays a read; the choice
     // itself is kept, so putting the arm back brings the tile back selected.
     val selected = if (chosen in visible) chosen else visible.first()
-    val metrics = remember(pose, homography) {
-        pose?.let { poseMetrics(it.keypoints, it.confidence, poseCourtFit(homography, it)) }
+    val metricsState = remember(poseState, homography) {
+        derivedStateOf {
+            poseState.value?.let { poseMetrics(it.keypoints, it.confidence, poseCourtFit(homography, it)) }
+        }
     }
     val expanded by prefs.metricsExpanded.collectAsStateWithLifecycle()
     val speed by prefs.speed.collectAsStateWithLifecycle()
@@ -307,21 +316,19 @@ private fun SkeletonPlayer(
     } else {
         VideoCard(
             player = player,
-            position = position,
+            positionProvider = positionState::value,
             onSettingsTap = { showSettings = true },
             aspectRatio = stored.videoWidth.toFloat() / stored.videoHeight.toFloat(),
-        ) {
-            if (pose != null) {
+            overlay = {
                 SkeletonOverlay(
-                    keypoints = pose.keypoints,
-                    confidence = pose.confidence,
+                    poseProvider = poseState::value,
                     videoWidth = stored.videoWidth,
                     videoHeight = stored.videoHeight,
                     modifier = Modifier.fillMaxSize(),
                     highlight = selected.highlight(),
                 )
-            }
-        }
+            },
+        )
     }
     TransportBar(
         player = player,
@@ -342,10 +349,8 @@ private fun SkeletonPlayer(
         // The frame is the one fact read per frame. The speed used to sit opposite
         // it; it is read out in the transport row now, on every player, and saying
         // it twice a few lines apart would be noise.
-        Text(
-            skeletonFooter(pose?.frame),
-            style = MaterialTheme.typography.bodySmall,
-            color = ShuttlTheme.extended.textTertiary,
+        SkeletonFooterText(
+            poseProvider = poseState::value,
             modifier = Modifier.fillMaxWidth().padding(start = GUTTER, end = GUTTER, top = 22.dp),
         )
         // With the strip rather than above it, so one row of controls does not
@@ -361,7 +366,7 @@ private fun SkeletonPlayer(
             )
         }
         MetricsStrip(
-            metrics = metrics,
+            metricsProvider = metricsState::value,
             hasCourt = hasCourt,
             racketArm = racketArm,
             onRacketArm = { arm ->
@@ -380,9 +385,12 @@ private fun SkeletonPlayer(
             series = series,
             kind = selected,
             label = metricLabel(selected, racketArm),
-            positionS = positionMs / 1000.0,
+            positionSeconds = { positionState.value.positionMs / 1000.0 },
             fps = stored.fps,
-            durationS = if (durationMs > 0) durationMs / 1000.0 else Double.POSITIVE_INFINITY,
+            durationSeconds = {
+                val durationMs = positionState.value.durationMs
+                if (durationMs > 0) durationMs / 1000.0 else Double.POSITIVE_INFINITY
+            },
             onSeek = { seconds ->
                 if (player.isPlaying) player.pause()
                 player.seekTo(
@@ -405,4 +413,18 @@ private fun SkeletonPlayer(
         }
         Spacer(Modifier.height(GUTTER))
     }
+}
+
+/** Leaf frame readout so only this line recomposes when the nearest pose changes. */
+@Composable
+private fun SkeletonFooterText(
+    poseProvider: () -> PlayerPose?,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        skeletonFooter(poseProvider()?.frame),
+        style = MaterialTheme.typography.bodySmall,
+        color = ShuttlTheme.extended.textTertiary,
+        modifier = modifier,
+    )
 }

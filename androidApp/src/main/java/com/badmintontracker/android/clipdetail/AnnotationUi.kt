@@ -11,7 +11,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -94,11 +96,14 @@ internal fun AddAnnotationSheet(
     val scope = rememberCoroutineScope()
     var body by remember { mutableStateOf("") }
     var label by remember { mutableStateOf<AnnotationLabel?>(null) }
-    val canAdd = label != null || body.isNotBlank()
+    var hiding by remember { mutableStateOf(false) }
+    val canAdd = !hiding && (label != null || body.isNotBlank())
 
     fun hideThen(action: () -> Unit) {
+        if (hiding) return
+        hiding = true
         scope.launch { sheetState.hide() }.invokeOnCompletion {
-            if (!sheetState.isVisible) action()
+            if (!sheetState.isVisible) action() else hiding = false
         }
     }
 
@@ -112,6 +117,7 @@ internal fun AddAnnotationSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 16.dp)
                 .imePadding(),

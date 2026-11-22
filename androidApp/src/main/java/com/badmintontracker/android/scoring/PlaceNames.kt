@@ -62,13 +62,22 @@ class AndroidPlaceNames(context: Context) : PlaceNames {
         val addresses: List<Address> =
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 suspendCancellableCoroutine { continuation ->
-                    geocoder.getFromLocation(
-                        location.latitude, location.longitude, 1,
-                        object : Geocoder.GeocodeListener {
-                            override fun onGeocode(results: MutableList<Address>) = continuation.resume(results)
-                            override fun onError(errorMessage: String?) = continuation.resume(emptyList())
-                        },
-                    )
+                    runCatching {
+                        geocoder.getFromLocation(
+                            location.latitude, location.longitude, 1,
+                            object : Geocoder.GeocodeListener {
+                                override fun onGeocode(results: MutableList<Address>) {
+                                    if (continuation.isActive) continuation.resume(results)
+                                }
+
+                                override fun onError(errorMessage: String?) {
+                                    if (continuation.isActive) continuation.resume(emptyList())
+                                }
+                            },
+                        )
+                    }.onFailure {
+                        if (continuation.isActive) continuation.resume(emptyList())
+                    }
                 }
             } else {
                 withContext(Dispatchers.IO) {

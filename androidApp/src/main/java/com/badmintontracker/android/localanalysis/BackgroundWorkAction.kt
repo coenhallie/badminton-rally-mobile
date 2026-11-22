@@ -12,10 +12,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -23,7 +21,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.badmintontracker.shared.localvideo.BackgroundWork
+import kotlinx.coroutines.flow.StateFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
@@ -38,7 +38,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Column
 
 /**
- * Ambient background-work state, provided once around the NavHost.
+ * Ambient background-work flow, provided once around the NavHost.
+ *
+ * Provided as a [StateFlow] via [staticCompositionLocalOf] rather than a snapshot
+ * value collected at the NavHost root, so progress ticks only recompose
+ * [BackgroundWorkAction] instead of invalidating the entire NavHost subtree.
  *
  * A composition local rather than two parameters on five screen signatures.
  * This is app chrome that any screen may show and none of them own, and
@@ -46,8 +50,8 @@ import androidx.compose.foundation.layout.Column
  * screen that happens to have a bar. [BackgroundWorkAction] keeps its explicit
  * form for tests; screens use the no-argument overload.
  */
-val LocalBackgroundWork: ProvidableCompositionLocal<BackgroundWork?> =
-    compositionLocalOf { null }
+val LocalBackgroundWork: ProvidableCompositionLocal<StateFlow<BackgroundWork?>?> =
+    staticCompositionLocalOf { null }
 
 /** Where the indicator sends you: the one screen that already lists runs in detail. */
 val LocalBackgroundWorkClick: ProvidableCompositionLocal<() -> Unit> =
@@ -63,7 +67,8 @@ val LocalBackgroundWorkClick: ProvidableCompositionLocal<() -> Unit> =
  */
 @Composable
 fun BackgroundWorkAction() {
-    val work = LocalBackgroundWork.current
+    val workFlow = LocalBackgroundWork.current ?: return
+    val work by workFlow.collectAsStateWithLifecycle()
     // Read at composition, not inside the callback: a composition local cannot
     // be read from a plain lambda.
     val goToClips = LocalBackgroundWorkClick.current
@@ -78,9 +83,10 @@ fun BackgroundWorkAction() {
     // own for the same reason.
     LaunchedEffect(work == null) { if (work == null) showDetail = false }
 
-    if (showDetail && work != null) {
+    val activeWork = work
+    if (showDetail && activeWork != null) {
         BackgroundWorkSheet(
-            work = work,
+            work = activeWork,
             onDismiss = { showDetail = false },
             onOpenClips = {
                 showDetail = false

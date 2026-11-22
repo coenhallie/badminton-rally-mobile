@@ -5,6 +5,7 @@ import android.media.MediaCodecInfo
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMuxer
+import android.view.Surface
 import com.badmintontracker.analysis.rally.ClipWindow
 import java.io.File
 import kotlin.math.roundToInt
@@ -52,126 +53,143 @@ class ClipCutter {
         val startUs = (startSeconds * 1_000_000).toLong()
         val endUs = (endSeconds * 1_000_000).toLong()
 
-        val extractor = MediaExtractor()
-        extractor.setDataSource(source.path)
-        val track = (0 until extractor.trackCount).first {
-            extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true
-        }
-        extractor.selectTrack(track)
-        val inFormat = extractor.getTrackFormat(track)
-        val width = inFormat.getInteger(MediaFormat.KEY_WIDTH)
-        val height = inFormat.getInteger(MediaFormat.KEY_HEIGHT)
-        val fps = if (inFormat.containsKey(MediaFormat.KEY_FRAME_RATE))
-            inFormat.getInteger(MediaFormat.KEY_FRAME_RATE) else 30
-
-        val outFormat = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height).apply {
-            setInteger(
-                MediaFormat.KEY_COLOR_FORMAT,
-                MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface,
-            )
-            // Generous rather than tuned: these clips are the reviewing
-            // surface for a coach looking at a shuttle a few pixels across,
-            // and re-encoding artifacts there defeat the point of the app.
-            setInteger(MediaFormat.KEY_BIT_RATE, (width * height * 8).coerceAtLeast(4_000_000))
-            setInteger(MediaFormat.KEY_FRAME_RATE, fps)
-            // Every second. A clip is seconds long and gets scrubbed, so
-            // sparse keyframes make seeking within it unpleasant.
-            setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
-        }
-
-        val encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
-        encoder.configure(outFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-        val surface = encoder.createInputSurface()
-        encoder.start()
-
-        val decoder = MediaCodec.createDecoderByType(inFormat.getString(MediaFormat.KEY_MIME)!!)
-        decoder.configure(inFormat, surface, null, 0)
-        decoder.start()
-
-        val muxer = MediaMuxer(out.path, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
-        var muxTrack = -1
+        var extractor: MediaExtractor? = null
+        var encoder: MediaCodec? = null
+        var surface: Surface? = null
+        var decoder: MediaCodec? = null
+        var muxer: MediaMuxer? = null
+        var encoderStarted = false
+        var decoderStarted = false
         var muxerStarted = false
-
-        // Seek to the sync sample at or before the start, then decode forward
-        // and discard until the window opens. Seeking to the nearest sync
-        // AFTER the start would silently drop the opening of the rally.
-        extractor.seekTo(startUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
-
-        val info = MediaCodec.BufferInfo()
-        var sawInputEos = false
-        var sawDecodeEos = false
-        var sawEncodeEos = false
         var rendered = 0
+        var succeeded = false
 
         try {
+            val ex = MediaExtractor().also { extractor = it }
+            ex.setDataSource(source.path)
+            val track = (0 until ex.trackCount).first {
+                ex.getTrackFormat(it).getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true
+            }
+            ex.selectTrack(track)
+            val inFormat = ex.getTrackFormat(track)
+            val width = inFormat.getInteger(MediaFormat.KEY_WIDTH)
+            val height = inFormat.getInteger(MediaFormat.KEY_HEIGHT)
+            val fps = if (inFormat.containsKey(MediaFormat.KEY_FRAME_RATE))
+                inFormat.getInteger(MediaFormat.KEY_FRAME_RATE) else 30
+
+            val outFormat = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height).apply {
+                setInteger(
+                    MediaFormat.KEY_COLOR_FORMAT,
+                    MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface,
+                )
+                // Generous rather than tuned: these clips are the reviewing
+                // surface for a coach looking at a shuttle a few pixels across,
+                // and re-encoding artifacts there defeat the point of the app.
+                // Capped at 16 Mbps so 4K inputs do not exceed hardware encoder limits.
+                val bitrate = (width.toLong() * height * 8L).coerceIn(4_000_000L, 16_000_000L).toInt()
+                setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
+                setInteger(MediaFormat.KEY_FRAME_RATE, fps)
+                // Every second. A clip is seconds long and gets scrubbed, so
+                // sparse keyframes make seeking within it unpleasant.
+                setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
+            }
+
+            val enc = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC).also { encoder = it }
+            enc.configure(outFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            val surf = enc.createInputSurface().also { surface = it }
+            enc.start()
+            encoderStarted = true
+
+            val dec = MediaCodec.createDecoderByType(inFormat.getString(MediaFormat.KEY_MIME)!!).also { decoder = it }
+            dec.configure(inFormat, surf, null, 0)
+            dec.start()
+            decoderStarted = true
+
+            val mux = MediaMuxer(out.path, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4).also { muxer = it }
+            var muxTrack = -1
+
+            // Seek to the sync sample at or before the start, then decode forward
+            // and discard until the window opens. Seeking to the nearest sync
+            // AFTER the start would silently drop the opening of the rally.
+            ex.seekTo(startUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+
+            val info = MediaCodec.BufferInfo()
+            var sawInputEos = false
+            var sawDecodeEos = false
+            var sawEncodeEos = false
+
             while (!sawEncodeEos) {
                 if (!sawInputEos) {
-                    val inIndex = decoder.dequeueInputBuffer(10_000)
+                    val inIndex = dec.dequeueInputBuffer(10_000)
                     if (inIndex >= 0) {
-                        val buf = decoder.getInputBuffer(inIndex)!!
-                        val size = extractor.readSampleData(buf, 0)
+                        val buf = dec.getInputBuffer(inIndex)!!
+                        val size = ex.readSampleData(buf, 0)
                         if (size < 0) {
-                            decoder.queueInputBuffer(inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                            dec.queueInputBuffer(inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
                             sawInputEos = true
                         } else {
-                            decoder.queueInputBuffer(inIndex, 0, size, extractor.sampleTime, 0)
-                            extractor.advance()
+                            dec.queueInputBuffer(inIndex, 0, size, ex.sampleTime, 0)
+                            ex.advance()
                         }
                     }
                 }
 
                 if (!sawDecodeEos) {
-                    val outIndex = decoder.dequeueOutputBuffer(info, 10_000)
+                    val outIndex = dec.dequeueOutputBuffer(info, 10_000)
                     if (outIndex >= 0) {
                         val pts = info.presentationTimeUs
                         val inWindow = pts in startUs..endUs
                         if (inWindow && info.size > 0) {
                             // Rebase to the clip's own zero, in nanoseconds.
-                            decoder.releaseOutputBuffer(outIndex, (pts - startUs) * 1000)
+                            dec.releaseOutputBuffer(outIndex, (pts - startUs) * 1000)
                             rendered++
                         } else {
-                            decoder.releaseOutputBuffer(outIndex, false)
+                            dec.releaseOutputBuffer(outIndex, false)
                         }
                         val past = pts > endUs
                         if (past || info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
                             sawDecodeEos = true
-                            encoder.signalEndOfInputStream()
+                            enc.signalEndOfInputStream()
                         }
                     }
                 }
 
-                var encIndex = encoder.dequeueOutputBuffer(info, 10_000)
+                var encIndex = enc.dequeueOutputBuffer(info, 10_000)
                 while (encIndex >= 0 || encIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
                     if (encIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-                        muxTrack = muxer.addTrack(encoder.outputFormat)
-                        muxer.start()
+                        muxTrack = mux.addTrack(enc.outputFormat)
+                        mux.start()
                         muxerStarted = true
                     } else {
-                        val buf = encoder.getOutputBuffer(encIndex)!!
+                        val buf = enc.getOutputBuffer(encIndex)!!
                         // The codec-config buffer is metadata, already carried
                         // by addTrack; muxing it as a sample corrupts the file.
                         val isConfig = info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0
                         if (!isConfig && info.size > 0 && muxerStarted) {
                             buf.position(info.offset)
                             buf.limit(info.offset + info.size)
-                            muxer.writeSampleData(muxTrack, buf, info)
+                            mux.writeSampleData(muxTrack, buf, info)
                         }
-                        encoder.releaseOutputBuffer(encIndex, false)
+                        enc.releaseOutputBuffer(encIndex, false)
                         if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
                             sawEncodeEos = true
                             break
                         }
                     }
-                    encIndex = encoder.dequeueOutputBuffer(info, 0)
+                    encIndex = enc.dequeueOutputBuffer(info, 0)
                 }
             }
+            succeeded = rendered > 0
         } finally {
-            runCatching { decoder.stop() }; decoder.release()
-            runCatching { encoder.stop() }; encoder.release()
-            surface.release()
-            if (muxerStarted) runCatching { muxer.stop() }
-            muxer.release()
-            extractor.release()
+            if (decoderStarted) runCatching { decoder?.stop() }
+            runCatching { decoder?.release() }
+            if (encoderStarted) runCatching { encoder?.stop() }
+            runCatching { encoder?.release() }
+            runCatching { surface?.release() }
+            val muxStopFailed = if (muxerStarted) runCatching { muxer?.stop() }.isFailure else false
+            runCatching { muxer?.release() }
+            runCatching { extractor?.release() }
+            if (!succeeded || muxStopFailed) runCatching { out.delete() }
         }
 
         check(rendered > 0) { emptyWindowMessage(startSeconds, endSeconds, source.name) }

@@ -58,6 +58,34 @@ fun MetricGraph(
     onSeek: (Double) -> Unit,
     modifier: Modifier = Modifier,
     windowS: Double = 2.0,
+) = MetricGraph(
+    series = series,
+    kind = kind,
+    label = label,
+    positionSeconds = { positionS },
+    fps = fps,
+    durationSeconds = { durationS },
+    onSeek = onSeek,
+    modifier = modifier,
+    windowS = windowS,
+)
+
+/**
+ * Deferred overload that reads [positionSeconds] and [durationSeconds] inside
+ * [Canvas.onDraw] and gesture callbacks so per-frame playback updates invalidate
+ * only the draw phase without recomposing the graph card or its parent.
+ */
+@Composable
+fun MetricGraph(
+    series: List<MetricSample>,
+    kind: MetricKind,
+    label: String,
+    positionSeconds: () -> Double,
+    fps: Double,
+    durationSeconds: () -> Double,
+    onSeek: (Double) -> Unit,
+    modifier: Modifier = Modifier,
+    windowS: Double = 2.0,
 ) {
     val line = MaterialTheme.colorScheme.primary
     val playhead = MaterialTheme.colorScheme.onBackground
@@ -65,17 +93,11 @@ fun MetricGraph(
 
     // Both gesture blocks are keyed on windowS alone, which never changes in
     // practice, and pointerInput keeps the lambda it launched with for as long
-    // as its keys hold. So neither block may read positionS or onSeek
-    // directly: it would read whatever they were when the graph first
-    // appeared, and a drag at 0:10 would seek from 0:00. Keying on positionS
-    // instead looks like the fix and is worse: playback moves positionS every
-    // frame, which would tear the block down and cancel a gesture under the
-    // finger. Read through a state handle and keep the blocks long-lived.
-    val currentPositionS by rememberUpdatedState(positionS)
+    // as its keys hold. Read callbacks through state handles so long-lived
+    // gesture detectors never capture stale lambdas or tear down per frame.
+    val currentPositionSeconds by rememberUpdatedState(positionSeconds)
     val currentOnSeek by rememberUpdatedState(onSeek)
-    // Read through a handle for the same reason: the duration is unknown on
-    // the first composition of a clip and arrives later.
-    val currentDurationS by rememberUpdatedState(durationS)
+    val currentDurationSeconds by rememberUpdatedState(durationSeconds)
 
     val shape = RoundedCornerShape(ShuttlRadius.large)
     Column(
@@ -106,7 +128,7 @@ fun MetricGraph(
                 .height(72.dp)
                 .pointerInput(windowS) {
                     detectTapGestures { tap ->
-                        currentOnSeek(currentPositionS + (tap.x / size.width - 0.5) * 2 * windowS)
+                        currentOnSeek(currentPositionSeconds() + (tap.x / size.width - 0.5) * 2 * windowS)
                     }
                 }
                 .pointerInput(windowS) {
@@ -114,17 +136,18 @@ fun MetricGraph(
                     // would keep accumulating past the clip's end and the drag back
                     // would spend its first centimetres undoing that instead of
                     // moving the playhead.
-                    var anchorS = currentPositionS
+                    var anchorS = 0.0
                     detectHorizontalDragGestures(
-                        onDragStart = { anchorS = currentPositionS },
+                        onDragStart = { anchorS = currentPositionSeconds() },
                         onHorizontalDrag = { change, _ ->
                             anchorS = (anchorS - (change.positionChange().x / size.width) * 2 * windowS)
-                                .coerceIn(0.0, maxOf(0.0, currentDurationS))
+                                .coerceIn(0.0, maxOf(0.0, currentDurationSeconds()))
                             currentOnSeek(anchorS)
                         },
                     )
                 },
         ) {
+            val positionS = currentPositionSeconds()
             val w = size.width
             val h = size.height
             val startS = positionS - windowS

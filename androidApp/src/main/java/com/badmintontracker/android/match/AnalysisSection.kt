@@ -8,15 +8,18 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.badmintontracker.android.localanalysis.BasePositionPanel
+import com.badmintontracker.android.localanalysis.ClipCutter
 import com.badmintontracker.android.localanalysis.HeatmapPanel
 import com.badmintontracker.android.localanalysis.LocalAnalysisRunner
 import com.badmintontracker.android.localanalysis.LocalAnalysisState
+import com.badmintontracker.android.localanalysis.PlayerTrackStore
 import com.badmintontracker.android.localanalysis.SkeletonPanel
 import com.badmintontracker.android.localanalysis.TrackSource
 import com.badmintontracker.android.ui.components.ShuttlPillTabs
@@ -31,6 +34,8 @@ import com.badmintontracker.shared.matchpage.MatchPageCopy
 import com.badmintontracker.shared.model.RallyClip
 import com.badmintontracker.shared.prefs.PlaybackPreferenceRepository
 import com.badmintontracker.shared.prefs.RacketArmPreferenceRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * The Analysis section: what one analysed match has to show, on the match
@@ -68,20 +73,30 @@ fun AnalysisSection(
     sideNames: CourtSideNames?,
     modifier: Modifier = Modifier,
 ) {
-    val hasSkeleton = remember(analysisId) { localAnalysis.hasStoredSkeleton(analysisId) }
     // A run still in memory may carry a track and clips the disk does not yet
     // hold, so both are consulted, the way HeatmapPanel resolves its track.
+    // Disk reads (track JSON, clip sidecar, skeleton stat) run off Main.
     val done = localAnalysis.stateFor(analysisId) as? LocalAnalysisState.Done
-    val storedTrack = remember(analysisId, done) { localAnalysis.storedTrack(analysisId) }
+    val stored by produceState(StoredAnalysis(), analysisId, done) {
+        value = withContext(Dispatchers.IO) {
+            StoredAnalysis(
+                track = localAnalysis.storedTrack(analysisId),
+                clips = if (done?.clips?.isNotEmpty() == true) emptyList() else localAnalysis.storedClips(analysisId),
+                hasSkeleton = localAnalysis.hasStoredSkeleton(analysisId),
+            )
+        }
+    }
+    val hasSkeleton = stored.hasSkeleton
+    val storedTrack = stored.track
     val hasTrack = done?.playerTrack?.samples?.isNotEmpty() == true || storedTrack != null
     // One source for the whole section. A median taken over one run's rally
     // boundaries and plotted from another run's track is two answers on one
     // court, so whichever run heatmapSource will draw also supplies the windows.
-    val windows = remember(analysisId, done, storedTrack, cloudClips) {
+    val windows = remember(analysisId, done, stored, cloudClips) {
         rallyWindowsFor(
             preferCloud = storedTrack?.source == TrackSource.CLOUD,
             cloud = cloudRallyWindows(cloudClips, analysisId),
-            device = (done?.clips?.takeIf { it.isNotEmpty() } ?: localAnalysis.storedClips(analysisId))
+            device = (done?.clips?.takeIf { it.isNotEmpty() } ?: stored.clips)
                 .map { RallyWindow(it.index, it.startSeconds, it.endSeconds) },
         )
     }
@@ -134,3 +149,9 @@ fun AnalysisSection(
         }
     }
 }
+
+private data class StoredAnalysis(
+    val track: PlayerTrackStore.Stored? = null,
+    val clips: List<ClipCutter.Clip> = emptyList(),
+    val hasSkeleton: Boolean = false,
+)

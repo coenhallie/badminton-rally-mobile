@@ -45,6 +45,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
@@ -165,6 +166,7 @@ class ClipListViewModel(
     private val deviceStates: StateFlow<Map<String, LocalAnalysisState>>,
     private val storedResults: StoredResultsReader,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val computeDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
     private val refreshing      = MutableStateFlow(true)
     private val errors          = MutableStateFlow<String?>(null)
@@ -298,7 +300,8 @@ class ClipListViewModel(
             players = people,
             refreshGeneration = generation,
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ClipListState())
+    }.flowOn(computeDispatcher)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ClipListState())
 
     init { refresh() }
 

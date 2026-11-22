@@ -1,10 +1,14 @@
 package com.badmintontracker.android.localanalysis
 
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -12,6 +16,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.badmintontracker.analysis.player.CourtSide
@@ -134,11 +139,15 @@ fun HeatmapPanel(
     Column(modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         val source = loaded?.source
         when {
-            // The frames between the panel appearing and the read landing.
-            // Blank, and deliberately not the line below: "no longer loaded"
-            // would flash over every single opening of a perfectly good
-            // heatmap.
-            loaded == null -> Unit
+            // The frames between the panel appearing and the read landing: show
+            // a subtle centered indicator rather than a blank screen or the
+            // "no longer loaded" message below.
+            loaded == null -> Box(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 64.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 2.5.dp)
+            }
             // A run's state lives in memory, so it is gone after a process death.
             // Said plainly rather than drawing an empty court, which would read as
             // a player who never moved.

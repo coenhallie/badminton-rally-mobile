@@ -14,14 +14,19 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -133,11 +138,21 @@ fun EditMatchDetailsDialog(
     showsEnds: Boolean = false,
     uploading: Boolean = false,
 ) {
+    val initialFormatIndex = initialFormat?.let { it.ordinal + 1 } ?: 0
     var title by rememberSaveable { mutableStateOf(initialTitle) }
     var description by rememberSaveable { mutableStateOf(initialDescription.orEmpty()) }
     // An index rather than the enum so it saves without a Saver. 0 is "not set".
-    var formatIndex by rememberSaveable { mutableStateOf(initialFormat?.let { it.ordinal + 1 } ?: 0) }
+    var formatIndex by rememberSaveable { mutableStateOf(initialFormatIndex) }
     var who by rememberSaveable(stateSaver = DetailsPlayersDraftSaver) { mutableStateOf(initialPlayers) }
+    var confirmingDiscard by remember { mutableStateOf(false) }
+
+    val isDirty = title != initialTitle ||
+        (initialDescription != null && description != initialDescription) ||
+        formatIndex != initialFormatIndex ||
+        who != initialPlayers
+    val requestDismiss = {
+        if (isDirty) confirmingDiscard = true else onDismiss()
+    }
 
     val format = MatchFormat.entries.getOrNull(formatIndex - 1)
     val pairs = playersPerSide(format) == 2
@@ -148,17 +163,22 @@ fun EditMatchDetailsDialog(
     val sides = who.sides
 
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = requestDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
         StatusBarIconsFollowTheme()
         Scaffold(
             modifier = Modifier.fillMaxSize(),
+            containerColor = MaterialTheme.colorScheme.background,
             topBar = {
                 TopAppBar(
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        scrolledContainerColor = MaterialTheme.colorScheme.surface,
+                    ),
                     title = { Text("Match details") },
                     navigationIcon = {
-                        IconButton(onClick = onDismiss) {
+                        IconButton(onClick = requestDismiss) {
                             Icon(Icons.Default.Close, contentDescription = "Close without saving")
                         }
                     },
@@ -169,113 +189,148 @@ fun EditMatchDetailsDialog(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
-                    .imePadding()
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                    .imePadding(),
             ) {
-                Spacer(Modifier.height(4.dp))
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    Spacer(Modifier.height(4.dp))
 
-                ShuttlOutlinedTextField(
-                    value = title,
-                    onValueChange = { title = it },
-                    label = "Match name",
-                    maxLength = titleCap,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
-                // Only a video carries one: it was typed at upload, and a name that
-                // can be changed beside a note that cannot would be a stuck field.
-                if (initialDescription != null) {
                     ShuttlOutlinedTextField(
-                        value = description,
-                        onValueChange = { description = it },
-                        label = "Description",
-                        singleLine = false,
-                        minLines = 3,
-                        maxLength = MAX_MATCH_DESCRIPTION_LENGTH,
+                        value = title,
+                        onValueChange = { title = it },
+                        label = "Match name",
+                        maxLength = titleCap,
                         modifier = Modifier.fillMaxWidth(),
                     )
-                }
 
-                SectionLabel("Format")
-                val formatLabels = listOf("Not set") + MatchFormat.entries.map { it.shortLabel }
-                val unavailableFormats = if (offersPairs) emptySet() else PAIRS_FORMAT_INDICES
-                val selectFormat = { index: Int ->
-                    formatIndex = index
-                    who = who.withFormat(MatchFormat.entries.getOrNull(index - 1))
-                }
-                ShuttlPillTabs(
-                    labels = formatLabels,
-                    selectedIndex = formatIndex,
-                    onSelect = selectFormat,
-                    disabledIndices = unavailableFormats,
-                    // At a large font scale four pills split "Doubles" inside
-                    // the word: the same choice as a menu there, as on iOS.
-                    tooNarrow = {
-                        FormatMenu(formatLabels, formatIndex, unavailableFormats, selectFormat)
-                    },
-                )
-                if (!offersPairs) PlayersNote(PlayersCopy.DOUBLES_NOTE)
-
-                val ends = who.ends
-                when {
-                    // Today's names, two a side: no pickers outside singles.
-                    pairs -> DoublesFields(sides) { side, index, name -> who = who.copy(sides = sides.withName(side, index, name)) }
-                    who.byEnds -> if (ends != null) {
-                        WhoIsPlayingSection(
-                            draft = ends,
-                            players = players,
-                            onChange = { who = who.copy(ends = it) },
-                            onAddPlayer = onAddPlayer,
-                            uploading = uploading,
+                    // Only a video carries one: it was typed at upload, and a name that
+                    // can be changed beside a note that cannot would be a stuck field.
+                    if (initialDescription != null) {
+                        ShuttlOutlinedTextField(
+                            value = description,
+                            onValueChange = { description = it },
+                            label = "Description",
+                            singleLine = false,
+                            minLines = 3,
+                            maxLength = MAX_MATCH_DESCRIPTION_LENGTH,
+                            modifier = Modifier.fillMaxWidth(),
                         )
                     }
-                    else -> {
-                        SideRow(Side.HOME, sides, players, onAddPlayer) { who = who.copy(sides = it) }
-                        SideRow(Side.AWAY, sides, players, onAddPlayer) { who = who.copy(sides = it) }
-                    }
-                }
 
-                if (!who.byEnds && showsEnds) {
-                    SectionLabel(PlayersCopy.HOME_WAS_AT_THE)
+                    SectionLabel("Format")
+                    val formatLabels = listOf("Not set") + MatchFormat.entries.map { it.shortLabel }
+                    val unavailableFormats = if (offersPairs) emptySet() else PAIRS_FORMAT_INDICES
+                    val selectFormat = { index: Int ->
+                        formatIndex = index
+                        who = who.withFormat(MatchFormat.entries.getOrNull(index - 1))
+                    }
                     ShuttlPillTabs(
-                        labels = END_OPTIONS.map(::endLabel),
-                        selectedIndex = END_OPTIONS.indexOf(sides.nearSide),
-                        onSelect = { who = who.copy(sides = sides.copy(nearSide = END_OPTIONS[it])) },
-                        groupLabel = PlayersCopy.HOME_WAS_AT_THE,
-                        enabled = !uploading,
+                        labels = formatLabels,
+                        selectedIndex = formatIndex,
+                        onSelect = selectFormat,
+                        disabledIndices = unavailableFormats,
+                        // At a large font scale four pills split "Doubles" inside
+                        // the word: the same choice as a menu there, as on iOS.
+                        tooNarrow = {
+                            FormatMenu(formatLabels, formatIndex, unavailableFormats, selectFormat)
+                        },
                     )
-                    if (uploading) PlayersNote(PlayersCopy.UPLOAD_IN_PROGRESS)
-                }
+                    if (!offersPairs) PlayersNote(PlayersCopy.DOUBLES_NOTE)
 
-                problem?.let {
-                    Text(
-                        text = it,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
+                    val ends = who.ends
+                    when {
+                        // Today's names, two a side: no pickers outside singles.
+                        pairs -> DoublesFields(sides) { side, index, name -> who = who.copy(sides = sides.withName(side, index, name)) }
+                        who.byEnds -> if (ends != null) {
+                            WhoIsPlayingSection(
+                                draft = ends,
+                                players = players,
+                                onChange = { who = who.copy(ends = it) },
+                                onAddPlayer = onAddPlayer,
+                                uploading = uploading,
+                            )
+                        }
+                        else -> {
+                            SideRow(Side.HOME, sides, players, onAddPlayer) { who = who.copy(sides = it) }
+                            SideRow(Side.AWAY, sides, players, onAddPlayer) { who = who.copy(sides = it) }
+                        }
+                    }
 
-                ShuttlButton(
-                    text = "Save",
-                    onClick = {
-                        onSave(
-                            MatchDetailsDraft(
-                                title = title,
-                                description = initialDescription?.let { description },
-                                format = format,
-                                players = assignment,
-                                nearSide = nearSide,
-                            ),
+                    if (!who.byEnds && showsEnds) {
+                        SectionLabel(PlayersCopy.HOME_WAS_AT_THE)
+                        ShuttlPillTabs(
+                            labels = END_OPTIONS.map(::endLabel),
+                            selectedIndex = END_OPTIONS.indexOf(sides.nearSide),
+                            onSelect = { who = who.copy(sides = sides.copy(nearSide = END_OPTIONS[it])) },
+                            groupLabel = PlayersCopy.HOME_WAS_AT_THE,
+                            enabled = !uploading,
                         )
-                    },
-                    enabled = problem == null,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(16.dp))
+                        if (uploading) PlayersNote(PlayersCopy.UPLOAD_IN_PROGRESS)
+                    }
+
+                    Spacer(Modifier.height(16.dp))
+                }
+
+                // Pinned footer outside the scroll area so Save and any validation
+                // problem stay immediately reachable even on long forms or large text.
+                Surface(color = MaterialTheme.colorScheme.background) {
+                    Column(Modifier.fillMaxWidth()) {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 24.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            problem?.let {
+                                Text(
+                                    text = it,
+                                    color = MaterialTheme.colorScheme.error,
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                            ShuttlButton(
+                                text = "Save",
+                                onClick = {
+                                    onSave(
+                                        MatchDetailsDraft(
+                                            title = title,
+                                            description = initialDescription?.let { description },
+                                            format = format,
+                                            players = assignment,
+                                            nearSide = nearSide,
+                                        ),
+                                    )
+                                },
+                                enabled = problem == null,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
+                }
             }
         }
+    }
+
+    if (confirmingDiscard) {
+        AlertDialog(
+            onDismissRequest = { confirmingDiscard = false },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            title = { Text("Discard changes?") },
+            text = { Text("Your edits to match details haven't been saved.") },
+            confirmButton = {
+                TextButton(onClick = { confirmingDiscard = false; onDismiss() }) { Text("Discard") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmingDiscard = false }) { Text("Keep editing") }
+            },
+        )
     }
 }
 

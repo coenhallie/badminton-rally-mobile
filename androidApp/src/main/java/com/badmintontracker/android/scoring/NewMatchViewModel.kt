@@ -15,6 +15,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
@@ -51,16 +52,19 @@ class NewMatchViewModel(
     /** Once the user has typed a name it is theirs, and a place arriving late must not overwrite it. */
     private var titleEdited = false
 
+    /** Guards against double-tapping Create before navigation pops this screen. */
+    private var created = false
+
     private var lookup: Job? = null
 
     fun setTitle(title: String) {
         titleEdited = true
         val problem = createMatchProblem(title)
-        internal.value = internal.value.copy(title = title, problem = problem, canCreate = problem == null)
+        internal.update { it.copy(title = title, problem = problem, canCreate = !created && problem == null) }
     }
 
-    fun setPoints(points: GamePoints) { internal.value = internal.value.copy(points = points) }
-    fun setSets(sets: MatchSets) { internal.value = internal.value.copy(sets = sets) }
+    fun setPoints(points: GamePoints) { internal.update { it.copy(points = points) } }
+    fun setSets(sets: MatchSets) { internal.update { it.copy(sets = sets) } }
 
     /**
      * Adds the place to the default name, if the phone can name one. Called once the
@@ -72,14 +76,17 @@ class NewMatchViewModel(
         lookup = viewModelScope.launch {
             val place = places.current() ?: return@launch
             if (titleEdited) return@launch
-            internal.value = internal.value.copy(title = defaultMatchTitle(openedAt, zone, place))
+            internal.update { it.copy(title = defaultMatchTitle(openedAt, zone, place)) }
         }
     }
 
-    /** The new match's id, or null when the form is not complete. */
+    /** The new match's id, or null when the form is not complete or already submitted. */
     fun create(): String? {
+        if (created) return null
         val s = internal.value
         if (!s.canCreate) return null
+        created = true
+        internal.update { it.copy(canCreate = false) }
         val id = scoreLogs.create(
             title = s.title,
             rules = ScoringRules.of(s.points, s.sets),

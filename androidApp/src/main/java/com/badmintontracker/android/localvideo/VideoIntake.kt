@@ -1,22 +1,33 @@
 package com.badmintontracker.android.localvideo
 
+import android.content.ActivityNotFoundException
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.Build
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.LocalVideoLimits
 import com.badmintontracker.shared.scoring.Side
 import java.util.UUID
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Entry points for getting a video into the app. [forMatch] is the scored match
@@ -45,82 +56,119 @@ fun rememberVideoIntake(
     onError: (String) -> Unit,
 ): VideoIntake {
     val context = LocalContext.current
+    val appContext = context.applicationContext
+    val scope = rememberCoroutineScope()
+    val currentOnAdded by rememberUpdatedState(onAdded)
+    val currentOnError by rememberUpdatedState(onError)
 
-    // Holds the match and the player a pick was launched for between launch and
-    // result, the same way pendingRecordUri holds the camera destination.
-    val pendingImportTarget = remember { arrayOfNulls<MatchTarget>(1) }
-    val pendingImportPlayer = remember { arrayOfNulls<String>(1) }
+    // Saved across process death while the external picker or camera activity is
+    // in front: plain remember loses the target match / MediaStore URI if Android
+    // kills our process while filming or browsing.
+    var pendingImportMatchId by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingImportMatchTitle by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingImportPlayer by rememberSaveable { mutableStateOf<String?>(null) }
 
     val pickLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia(),
     ) { uri ->
-        val target = pendingImportTarget[0]
-        val player = pendingImportPlayer[0]
-        pendingImportTarget[0] = null
-        pendingImportPlayer[0] = null
+        val matchId = pendingImportMatchId
+        val matchTitle = pendingImportMatchTitle
+        val target = if (matchId != null && matchTitle != null) MatchTarget(matchId, matchTitle) else null
+        val player = pendingImportPlayer
+        pendingImportMatchId = null
+        pendingImportMatchTitle = null
+        pendingImportPlayer = null
         if (uri != null) {
             // Photo-picker grants may not be persistable on all OEMs; best effort.
             runCatching {
-                context.contentResolver.takePersistableUriPermission(
+                appContext.contentResolver.takePersistableUriPermission(
                     uri, Intent.FLAG_GRANT_READ_URI_PERMISSION,
                 )
             }
-            addEntryFromUri(context, uri, target, player, onAdded, onError)
+            scope.launch {
+                addEntryFromUri(appContext, uri, target, player, currentOnAdded, currentOnError)
+            }
         }
     }
 
     // Holds the MediaStore URI we hand to the camera between launch and result.
-    val pendingRecordUri = remember { arrayOfNulls<Uri>(1) }
-    val pendingRecordTarget = remember { arrayOfNulls<MatchTarget>(1) }
-    val pendingRecordPlayer = remember { arrayOfNulls<String>(1) }
+    var pendingRecordUri by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingRecordMatchId by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingRecordMatchTitle by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingRecordPlayer by rememberSaveable { mutableStateOf<String?>(null) }
 
     val recordLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CaptureVideo(),
     ) { ok ->
-        val uri = pendingRecordUri[0]
-        val target = pendingRecordTarget[0]
-        val player = pendingRecordPlayer[0]
-        pendingRecordUri[0] = null
-        pendingRecordTarget[0] = null
-        pendingRecordPlayer[0] = null
+        val uri = pendingRecordUri?.let(Uri::parse)
+        val matchId = pendingRecordMatchId
+        val matchTitle = pendingRecordMatchTitle
+        val target = if (matchId != null && matchTitle != null) MatchTarget(matchId, matchTitle) else null
+        val player = pendingRecordPlayer
+        pendingRecordUri = null
+        pendingRecordMatchId = null
+        pendingRecordMatchTitle = null
+        pendingRecordPlayer = null
         if (ok && uri != null) {
-            addEntryFromUri(context, uri, target, player, onAdded, onError)
+            scope.launch {
+                addEntryFromUri(appContext, uri, target, player, currentOnAdded, currentOnError)
+            }
         } else {
-            uri?.let { runCatching { context.contentResolver.delete(it, null, null) } }
+            uri?.let { runCatching { appContext.contentResolver.delete(it, null, null) } }
         }
     }
 
-    return remember {
+    return remember(appContext, scope) {
         VideoIntake(
             record = { forMatch, forPlayer ->
                 val values = ContentValues().apply {
                     put(MediaStore.Video.Media.DISPLAY_NAME, "shuttl_${System.currentTimeMillis()}.mp4")
                     put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
-                    put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/Shuttl")
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/Shuttl")
+                    }
                 }
-                val uri = context.contentResolver
+                val uri = appContext.contentResolver
                     .insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
                 if (uri == null) {
-                    onError("Couldn't create a recording destination")
+                    currentOnError("Couldn't create a recording destination")
                 } else {
-                    pendingRecordUri[0] = uri
-                    pendingRecordTarget[0] = forMatch
-                    pendingRecordPlayer[0] = forPlayer
-                    recordLauncher.launch(uri)
+                    pendingRecordUri = uri.toString()
+                    pendingRecordMatchId = forMatch?.scoreLogId
+                    pendingRecordMatchTitle = forMatch?.title
+                    pendingRecordPlayer = forPlayer
+                    try {
+                        recordLauncher.launch(uri)
+                    } catch (_: ActivityNotFoundException) {
+                        pendingRecordUri = null
+                        pendingRecordMatchId = null
+                        pendingRecordMatchTitle = null
+                        pendingRecordPlayer = null
+                        runCatching { appContext.contentResolver.delete(uri, null, null) }
+                        currentOnError("No camera app found to record video")
+                    }
                 }
             },
             import = { forMatch, forPlayer ->
-                pendingImportTarget[0] = forMatch
-                pendingImportPlayer[0] = forPlayer
-                pickLauncher.launch(
-                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly),
-                )
+                pendingImportMatchId = forMatch?.scoreLogId
+                pendingImportMatchTitle = forMatch?.title
+                pendingImportPlayer = forPlayer
+                try {
+                    pickLauncher.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly),
+                    )
+                } catch (_: ActivityNotFoundException) {
+                    pendingImportMatchId = null
+                    pendingImportMatchTitle = null
+                    pendingImportPlayer = null
+                    currentOnError("No video picker available on this device")
+                }
             },
         )
     }
 }
 
-private fun addEntryFromUri(
+private suspend fun addEntryFromUri(
     context: Context,
     uri: Uri,
     target: MatchTarget?,
@@ -128,20 +176,26 @@ private fun addEntryFromUri(
     onAdded: (LocalVideoEntry) -> Unit,
     onError: (String) -> Unit,
 ) {
-    val resolver = context.contentResolver
-
-    var displayName = "video.mp4"
-    var sizeBytes = 0L
-    runCatching {
-        resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)
-            ?.use { cursor ->
+    val (displayName, sizeBytes) = withContext(Dispatchers.IO) {
+        var name = "video.mp4"
+        var size = 0L
+        runCatching {
+            context.contentResolver.query(
+                uri,
+                arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
+                null,
+                null,
+                null,
+            )?.use { cursor ->
                 if (cursor.moveToFirst()) {
                     cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                        .takeIf { it >= 0 }?.let { displayName = cursor.getString(it) ?: displayName }
+                        .takeIf { it >= 0 }?.let { name = cursor.getString(it) ?: name }
                     cursor.getColumnIndex(OpenableColumns.SIZE)
-                        .takeIf { it >= 0 }?.let { sizeBytes = cursor.getLong(it) }
+                        .takeIf { it >= 0 }?.let { size = cursor.getLong(it) }
                 }
             }
+        }
+        name to size
     }
 
     LocalVideoLimits.oversizeMessage(sizeBytes)?.let {
@@ -149,15 +203,17 @@ private fun addEntryFromUri(
         return
     }
 
-    val durationMs = runCatching {
-        val retriever = MediaMetadataRetriever()
-        try {
-            retriever.setDataSource(context, uri)
-            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLong() ?: 0L
-        } finally {
-            retriever.release()
-        }
-    }.getOrDefault(0L)
+    val durationMs = withContext(Dispatchers.IO) {
+        runCatching {
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(context, uri)
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLong() ?: 0L
+            } finally {
+                retriever.release()
+            }
+        }.getOrDefault(0L)
+    }
 
     onAdded(
         newLocalVideoEntry(

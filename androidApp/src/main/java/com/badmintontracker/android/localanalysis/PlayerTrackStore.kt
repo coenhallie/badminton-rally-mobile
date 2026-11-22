@@ -78,6 +78,7 @@ class PlayerTrackStore(private val root: File) {
         selections: List<PlayerSelection>,
         fps: Double,
     ) {
+        requireSafeEntryId(entryId)
         // Nothing to draw is nothing to offer, matching save(): no file, so
         // has() stays false rather than answering true for an empty court.
         if (selections.none { it.track.samples.isNotEmpty() }) return
@@ -198,6 +199,7 @@ class PlayerTrackStore(private val root: File) {
      * app able to open them.
      */
     fun saveClips(entryId: String, clips: List<ClipCutter.Clip>) {
+        requireSafeEntryId(entryId)
         if (clips.isEmpty()) return
         clipIndexFor(entryId).writeTextAtomically(
             buildString {
@@ -213,19 +215,23 @@ class PlayerTrackStore(private val root: File) {
     }
 
     fun loadClips(entryId: String): List<ClipCutter.Clip> {
-        val file = clipIndexFor(entryId)
+        val dir = clipsDirFor(entryId)
+        val file = resolveContainedChild(dir, "clips.index")
         // No index: recover whatever is on disk anyway. The clips are the
         // expensive artifact - tens of megabytes and minutes of re-encoding -
         // and refusing to list them because a small sidecar is missing would
         // throw away the thing worth keeping to protect the bookkeeping.
-        if (!file.isFile) return scanClips(entryId)
+        if (!file.isFile) return scanClips(dir)
         return runCatching {
             val lines = file.readLines()
             if (lines.firstOrNull() != VERSION) return emptyList()
             lines.drop(1).mapNotNull { line ->
                 if (line.isBlank()) return@mapNotNull null
                 val f = line.split(',')
-                val clip = File(file.parentFile, f[3])
+                if (f.size < 4) return@mapNotNull null
+                val name = f[3]
+                if (!isSafeClipFileName(name)) return@mapNotNull null
+                val clip = resolveContainedChild(dir, name)
                 // A clip whose file has gone is not a clip; listing it would
                 // offer a player that opens on nothing.
                 if (!clip.isFile) return@mapNotNull null
@@ -246,8 +252,8 @@ class PlayerTrackStore(private val root: File) {
      * and the caller shows the rally number alone rather than a fabricated
      * "0.0s - 0.0s".
      */
-    private fun scanClips(entryId: String): List<ClipCutter.Clip> =
-        File(root, "local-clips/$entryId").listFiles()
+    private fun scanClips(dir: File): List<ClipCutter.Clip> =
+        dir.listFiles()
             ?.filter { it.isFile && it.name.startsWith("rally-") && it.extension == "mp4" }
             ?.mapNotNull { f ->
                 val index = f.nameWithoutExtension.removePrefix("rally-").toIntOrNull()
@@ -257,10 +263,25 @@ class PlayerTrackStore(private val root: File) {
             ?.sortedBy { it.index }
             .orEmpty()
 
-    private fun clipIndexFor(entryId: String) = File(root, "local-clips/$entryId/clips.index")
+    private fun isSafeClipFileName(name: String): Boolean =
+        name.isNotBlank() &&
+            !name.contains('/') &&
+            !name.contains('\\') &&
+            !name.contains("..") &&
+            name != "."
 
-    private fun fileFor(entryId: String, source: TrackSource = TrackSource.LOCAL) =
-        File(root, "${source.trackDir}/$entryId.track")
+    private fun clipsDirFor(entryId: String): File {
+        requireSafeEntryId(entryId)
+        return resolveContainedChild(File(root, "local-clips"), entryId)
+    }
+
+    private fun clipIndexFor(entryId: String): File =
+        resolveContainedChild(clipsDirFor(entryId), "clips.index")
+
+    private fun fileFor(entryId: String, source: TrackSource = TrackSource.LOCAL): File {
+        requireSafeEntryId(entryId)
+        return resolveContainedChild(File(root, source.trackDir), "$entryId.track")
+    }
 
     /** One player's path, and which half of the court they were on. */
     data class SideTrack(val side: CourtSide, val track: PlayerTrack)

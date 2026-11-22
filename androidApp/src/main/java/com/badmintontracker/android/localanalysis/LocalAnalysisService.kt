@@ -57,7 +57,7 @@ class LocalAnalysisService : Service() {
         // ServiceCompat, not the framework call: the three-argument overload is
         // API 29 and minSdk is 26, where it is a NoSuchMethodError the moment a
         // device run starts.
-        ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(text), foregroundType())
+        ServiceCompat.startForeground(this, NOTIFICATION_ID, buildNotification(this, text), foregroundType())
 
         lockTimeoutMillis = intent?.getLongExtra(EXTRA_TIMEOUT, LOCK_TIMEOUT_MILLIS)
             ?: LOCK_TIMEOUT_MILLIS
@@ -79,11 +79,25 @@ class LocalAnalysisService : Service() {
         return START_NOT_STICKY
     }
 
+    /**
+     * Android 15+ enforces a 6-hour cumulative timeout on `dataSync` foreground
+     * services. Failing to stop within a few seconds triggers a
+     * `RemoteServiceException` crash; release the wake lock and stop cleanly.
+     */
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        releaseWakeLock()
+        stopSelf(startId)
+    }
+
     override fun onDestroy() {
+        releaseWakeLock()
+        super.onDestroy()
+    }
+
+    private fun releaseWakeLock() {
         heartbeat.removeCallbacks(refresh)
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
-        super.onDestroy()
     }
 
     /**
@@ -106,25 +120,6 @@ class LocalAnalysisService : Service() {
         } else {
             0
         }
-
-    private fun notification(text: String): Notification {
-        val manager = getSystemService(NotificationManager::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-            manager.getNotificationChannel(CHANNEL) == null
-        ) {
-            manager.createNotificationChannel(
-                NotificationChannel(CHANNEL, "On-device analysis", NotificationManager.IMPORTANCE_LOW)
-                    .apply { description = "Shown while a video is being analyzed on this phone." },
-            )
-        }
-        return NotificationCompat.Builder(this, CHANNEL)
-            .setContentTitle("Analyzing on device")
-            .setContentText(text)
-            .setSmallIcon(android.R.drawable.stat_notify_sync)
-            .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
-    }
 
     companion object {
         private const val CHANNEL = "local-analysis"
@@ -174,8 +169,37 @@ class LocalAnalysisService : Service() {
             androidx.core.content.ContextCompat.startForegroundService(context, i)
         }
 
+        /**
+         * Updates the ongoing notification text in place without re-calling
+         * `startForegroundService()` from a background coroutine mid-run.
+         */
+        fun updateText(context: Context, text: String) {
+            val manager = context.getSystemService(NotificationManager::class.java) ?: return
+            manager.notify(NOTIFICATION_ID, buildNotification(context, text))
+        }
+
         fun stop(context: Context) {
             context.stopService(Intent(context, LocalAnalysisService::class.java))
+        }
+
+        private fun buildNotification(context: Context, text: String): Notification {
+            val manager = context.getSystemService(NotificationManager::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                manager != null &&
+                manager.getNotificationChannel(CHANNEL) == null
+            ) {
+                manager.createNotificationChannel(
+                    NotificationChannel(CHANNEL, "On-device analysis", NotificationManager.IMPORTANCE_LOW)
+                        .apply { description = "Shown while a video is being analyzed on this phone." },
+                )
+            }
+            return NotificationCompat.Builder(context, CHANNEL)
+                .setContentTitle("Analyzing on device")
+                .setContentText(text)
+                .setSmallIcon(android.R.drawable.stat_notify_sync)
+                .setOngoing(true)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .build()
         }
     }
 }

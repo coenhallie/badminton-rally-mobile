@@ -45,6 +45,16 @@ object ShuttlIcons {
     val Minus: ImageVector by lazy { buildLucideSvg("ShuttlMinus", "M5 12h14") }
     val Plus: ImageVector by lazy { buildLucideSvg("ShuttlPlus", "M5 12h14", "M12 5v14") }
 
+    /** Lucide circle-plus: the Add match sheet's "New match", iOS's `plus.circle`. */
+    val CirclePlus: ImageVector by lazy {
+        buildLucideSvg("ShuttlCirclePlus", "M22 12a10 10 0 1 1-20 0a10 10 0 1 1 20 0", "M8 12h8", "M12 8v8")
+    }
+
+    /** Lucide download: the Add match sheet's "Import video", iOS's `square.and.arrow.down`. */
+    val Download: ImageVector by lazy {
+        buildLucideSvg("ShuttlDownload", "M12 15V3", "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "m7 10 5 5 5-5")
+    }
+
     // The match list's status line: where a match's video is, then what
     // analysis it has. Lucide 0.460.0's own path strings (rects, lines and
     // circles rewritten as paths), parsed by Compose rather than hand-traced:

@@ -12,15 +12,23 @@ import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 /**
  * End-to-start swipe that reveals a red delete affordance. [onSwiped] must
@@ -51,18 +59,37 @@ fun SwipeToRemoveRow(
     // the rallies and the heatmap it was by then drawing. Read through
     // rememberUpdatedState, the swipe always calls the latest callback.
     val currentOnSwiped by rememberUpdatedState(onSwiped)
+    val haptics = LocalHapticFeedback.current
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
             if (value == SwipeToDismissBoxValue.EndToStart) currentOnSwiped() else false
         },
     )
+    // Fire a subtle haptic tick once each time the swipe crosses into the
+    // delete threshold so the coach feels when releasing will trigger removal.
+    LaunchedEffect(dismissState) {
+        snapshotFlow { dismissState.targetValue == SwipeToDismissBoxValue.EndToStart }
+            .distinctUntilChanged()
+            .collect { crossed ->
+                if (crossed) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            }
+    }
     SwipeToDismissBox(
         state = dismissState,
         // After the caller's own modifier, so an inset row clips inside its
         // margin rather than rounding the margin itself. Both layers need it:
         // without it the row slides out past the margin as it is swiped, and
         // the reveal keeps square corners behind a rounded row.
-        modifier = modifier.clip(shape),
+        modifier = modifier
+            .clip(shape)
+            .semantics {
+                customActions = listOf(
+                    CustomAccessibilityAction(label = label) {
+                        currentOnSwiped()
+                        true
+                    },
+                )
+            },
         enableDismissFromStartToEnd = false,
         backgroundContent = {
             // Drawn only while a swipe is actually under way. The clip above

@@ -35,6 +35,8 @@ data class PlayersUiState(
      * invite a duplicate.
      */
     val loaded: Boolean = false,
+    /** True while a [PlayersViewModel.refresh] is in flight. */
+    val isRefreshing: Boolean = false,
 ) {
     /** An empty list that means it: loaded, or failed, and nothing cached. */
     val showsNoPlayers: Boolean get() = players.isEmpty() && loaded
@@ -81,10 +83,15 @@ class PlayersViewModel(
      */
     fun refresh() {
         viewModelScope.launch {
-            val message = refreshPlayersAndForgetVanishedOrMessage(players, scoreLogs, localVideos, currentOwnerId)
-            _state.update {
-                if (message == null) it.copy(loadFailed = false, loaded = true)
-                else it.copy(loadFailed = true, errorMessage = message, loaded = true)
+            _state.update { it.copy(isRefreshing = true) }
+            try {
+                val message = refreshPlayersAndForgetVanishedOrMessage(players, scoreLogs, localVideos, currentOwnerId)
+                _state.update {
+                    if (message == null) it.copy(loadFailed = false, loaded = true)
+                    else it.copy(loadFailed = true, errorMessage = message, loaded = true)
+                }
+            } finally {
+                _state.update { it.copy(isRefreshing = false) }
             }
         }
     }

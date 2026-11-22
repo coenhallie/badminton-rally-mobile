@@ -1,5 +1,7 @@
 package com.badmintontracker.android.cliplist
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,8 +19,10 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -35,9 +39,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import coil3.compose.LocalPlatformContext
+import coil3.request.ImageRequest
 import com.badmintontracker.android.home.MatchesEmptyState
 import com.badmintontracker.android.localvideo.MatchDetailsSheet
 import com.badmintontracker.android.players.AddPlayer
@@ -46,9 +55,11 @@ import com.badmintontracker.android.share.ShareSheet
 import com.badmintontracker.android.ui.components.ConfirmDialog
 import com.badmintontracker.android.ui.components.ShuttlEmptyState
 import com.badmintontracker.android.ui.icons.ShuttlIcons
+import com.badmintontracker.android.ui.theme.ShuttlRadius
+import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.canEditLocalVideoDetails
-import com.badmintontracker.shared.matchlist.rallyLengthText
+import com.badmintontracker.shared.matchlist.rallyRowMeta
 import com.badmintontracker.shared.matchlist.MatchAction
 import com.badmintontracker.shared.matchlist.MatchConfirmation
 import com.badmintontracker.shared.matchlist.MatchDelete
@@ -71,7 +82,6 @@ import com.badmintontracker.shared.matchlist.sortMatches
 import com.badmintontracker.shared.model.RallyClip
 import com.badmintontracker.shared.repo.MediaRepository
 import com.badmintontracker.shared.repo.SharesRepository
-import java.util.Locale
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -169,8 +179,12 @@ fun ClipListScreen(
     }
     val applied = effectiveFilter(filter, mine.size)
     val appliedSort = effectiveSort(sort, mine.size)
-    val visible = sortMatches(mine.filter { it.passes(applied) }, appliedSort)
-    val sharedVisible = sortMatches(shared, appliedSort)
+    val visible = remember(mine, applied, appliedSort) {
+        sortMatches(mine.filter { it.passes(applied) }, appliedSort)
+    }
+    val sharedVisible = remember(shared, appliedSort) {
+        sortMatches(shared, appliedSort)
+    }
 
     // The list's error message and a failed run's result dialog are not drawn
     // here: RootAnnouncementsHost shows them over whichever screen is in front.
@@ -489,10 +503,22 @@ internal fun ClipRow(
     onClick: () -> Unit,
     matchTitle: String? = null,
 ) {
-    val thumbUrl by produceState<String?>(initialValue = null, clip.id) {
+    val path = clip.thumbnailStoragePath
+    val context = LocalPlatformContext.current
+    val thumbUrl by produceState<String?>(initialValue = null, clip.id, path) {
         value = runCatching { media.signedThumbnailUrl(clip) }.getOrNull()
     }
+    val thumbRequest = remember(thumbUrl, path, context) {
+        thumbUrl?.let { url ->
+            ImageRequest.Builder(context)
+                .data(url)
+                .memoryCacheKey(path)
+                .diskCacheKey(path)
+                .build()
+        }
+    }
 
+    val thumbShape = RoundedCornerShape(ShuttlRadius.small)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -501,28 +527,47 @@ internal fun ClipRow(
             .padding(horizontal = MatchPageGutter, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        AsyncImage(
-            model = thumbUrl,
-            contentDescription = null,
-            modifier = Modifier.size(96.dp, 54.dp),
-        )
+        Box(
+            modifier = Modifier
+                .size(96.dp, 54.dp)
+                .clip(thumbShape)
+                .background(ShuttlTheme.extended.bgTertiary, thumbShape)
+                .border(1.dp, MaterialTheme.colorScheme.outline, thumbShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                ShuttlIcons.Video,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            AsyncImage(
+                model = thumbRequest,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.matchParentSize(),
+            )
+        }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
                 clipRowTitle(clip, matchTitle),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onBackground,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                // The length through the shared formatter: the stored float
-                // printed as it came ("25.1727S"). Left out, not "0.0s", when
-                // the clip has none.
-                listOfNotNull(rallyLengthText(clip.durationSeconds.toDouble()), "${clip.annotationCount} notes")
-                    .joinToString(" · ")
-                    .uppercase(Locale.ROOT),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            // "15.6s · 3 notes" through the shared line, in the match list's
+            // detail style: see rallyRowMeta.
+            rallyRowMeta(clip.durationSeconds.toDouble(), clip.annotationCount)?.let { meta ->
+                Text(
+                    meta,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }

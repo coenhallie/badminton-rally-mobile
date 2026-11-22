@@ -6,24 +6,36 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.input.ImeAction
@@ -105,9 +117,11 @@ fun ShuttlOutlinedTextField(
     }
     val keyboardActions =
         if (onDone != null) KeyboardActions(onDone = { onDone() }) else KeyboardActions.Default
+    val isPassword = type == ShuttlFieldType.Password
+    var passwordVisible by remember { mutableStateOf(false) }
     val visual: VisualTransformation =
-        if (type == ShuttlFieldType.Password) PasswordVisualTransformation()
-        else                                   VisualTransformation.None
+        if (isPassword && !passwordVisible) PasswordVisualTransformation()
+        else                                VisualTransformation.None
 
     BasicTextField(
         value                  = value,
@@ -133,19 +147,110 @@ fun ShuttlOutlinedTextField(
                     LabelWithCounter(label, "${value.length}/$maxLength")
                 }
                 Spacer(Modifier.height(6.dp))
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(shape)
-                        .background(ShuttlTheme.extended.bgInput, shape)
-                        .border(width = borderWidth, color = borderColor, shape = shape)
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                ) {
-                    innerTextField()
+                if (isPassword) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(shape)
+                            .background(ShuttlTheme.extended.bgInput, shape)
+                            .border(width = borderWidth, color = borderColor, shape = shape),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(start = 12.dp, top = 10.dp, bottom = 10.dp),
+                        ) {
+                            innerTextField()
+                        }
+                        IconButton(
+                            onClick = { passwordVisible = !passwordVisible },
+                            enabled = enabled,
+                            modifier = Modifier.size(48.dp),
+                        ) {
+                            Icon(
+                                imageVector = if (passwordVisible) PasswordEyeOffIcon else PasswordEyeIcon,
+                                contentDescription = if (passwordVisible) "Hide password" else "Show password",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(shape)
+                            .background(ShuttlTheme.extended.bgInput, shape)
+                            .border(width = borderWidth, color = borderColor, shape = shape)
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                    ) {
+                        innerTextField()
+                    }
                 }
             }
         },
     )
+}
+
+private val PasswordEyeIcon: ImageVector by lazy {
+    ImageVector.Builder(
+        name = "ShuttlPasswordEye",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f,
+    ).apply {
+        path(
+            fill = SolidColor(Color.Transparent),
+            stroke = SolidColor(Color.Black),
+            strokeLineWidth = 2f,
+            strokeLineCap = StrokeCap.Round,
+            strokeLineJoin = StrokeJoin.Round,
+        ) {
+            moveTo(2f, 12f)
+            curveTo(4.5f, 7f, 8.5f, 5f, 12f, 5f)
+            curveTo(15.5f, 5f, 19.5f, 7f, 22f, 12f)
+            curveTo(19.5f, 17f, 15.5f, 19f, 12f, 19f)
+            curveTo(8.5f, 19f, 4.5f, 17f, 2f, 12f)
+            close()
+            moveTo(9f, 12f)
+            arcTo(3f, 3f, 0f, isMoreThanHalf = false, isPositiveArc = true, x1 = 15f, y1 = 12f)
+            arcTo(3f, 3f, 0f, isMoreThanHalf = false, isPositiveArc = true, x1 = 9f, y1 = 12f)
+            close()
+        }
+    }.build()
+}
+
+private val PasswordEyeOffIcon: ImageVector by lazy {
+    ImageVector.Builder(
+        name = "ShuttlPasswordEyeOff",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f,
+    ).apply {
+        path(
+            fill = SolidColor(Color.Transparent),
+            stroke = SolidColor(Color.Black),
+            strokeLineWidth = 2f,
+            strokeLineCap = StrokeCap.Round,
+            strokeLineJoin = StrokeJoin.Round,
+        ) {
+            moveTo(10.5f, 5.2f)
+            curveTo(11f, 5.07f, 11.5f, 5f, 12f, 5f)
+            curveTo(15.5f, 5f, 19.5f, 7f, 22f, 12f)
+            curveTo(21.1f, 13.8f, 19.9f, 15.2f, 18.5f, 16.3f)
+            moveTo(14.5f, 18.5f)
+            curveTo(13.7f, 18.8f, 12.8f, 19f, 12f, 19f)
+            curveTo(8.5f, 19f, 4.5f, 17f, 2f, 12f)
+            curveTo(3.1f, 9.8f, 4.7f, 8.1f, 6.6f, 6.9f)
+            moveTo(14.1f, 14.1f)
+            arcTo(3f, 3f, 0f, isMoreThanHalf = false, isPositiveArc = true, x1 = 9.9f, y1 = 9.9f)
+            moveTo(3f, 3f)
+            lineTo(21f, 21f)
+        }
+    }.build()
 }
 
 /**

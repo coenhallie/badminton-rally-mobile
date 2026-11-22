@@ -1,25 +1,33 @@
 package com.badmintontracker.android.localanalysis
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.analysis.geometry.Court
@@ -78,7 +86,7 @@ fun BasePositionPanel(
     // during composition and the tab opened frozen. iOS says the same in
     // BasePositionPanel's `bases`.
     val done = runner.stateFor(entryId) as? LocalAnalysisState.Done
-    val measured = produceState<Measured?>(null, entryId, done) {
+    val measured = produceState<Measured?>(null, entryId, done, windows) {
         value = withContext(Dispatchers.Default) {
             val source = heatmapSource(done, runner.storedTrack(entryId))
             // Measured for every side here, off the main thread, rather than
@@ -95,10 +103,19 @@ fun BasePositionPanel(
     }.value
 
     Column(modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        // The frames between the panel appearing and the measurement landing.
-        // Blank, and deliberately not the ladder below: every rung of it would
-        // otherwise flash over an opening that is about to draw a court.
-        val (source, windows, basesBySide) = measured ?: return@Column
+        // The frames between the panel appearing and the measurement landing:
+        // show a subtle centered indicator rather than a blank screen or the
+        // empty/missing messages below.
+        if (measured == null) {
+            Box(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 64.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 2.5.dp)
+            }
+            return@Column
+        }
+        val (source, windows, basesBySide) = measured
         var side by rememberSaveable { mutableStateOf(CourtSide.NEAR) }
         val shown = source?.tracks?.firstOrNull { it.side == side } ?: source?.tracks?.firstOrNull()
         val bases = shown?.let { basesBySide[it.side] }
@@ -167,10 +184,57 @@ fun BasePositionPanel(
 private fun CourtBaseView(bases: BasePositions) {
     val courtLine = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
     val dot = MaterialTheme.colorScheme.primary
+    val dotFill = dot.copy(alpha = 0.8f)
     val label = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurface)
     val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    var canvasSize by remember { mutableStateOf(IntSize.Zero) }
 
-    CourtCard {
+    val radiusPx = with(density) { 5.dp.toPx() }
+    val ringPx = with(density) { 10.dp.toPx() }
+    val ringStrokePx = with(density) { 2.5.dp.toPx() }
+    val gapPx = with(density) { 2.dp.toPx() }
+    val ringStroke = remember(ringStrokePx) { Stroke(width = ringStrokePx) }
+
+    // Pre-measure every rally number and pre-compute label placement outside
+    // Canvas.onDraw so draw passes allocate nothing and never run text layout.
+    val texts = remember(bases.rallies, label, measurer) {
+        bases.rallies.map { measurer.measure(it.index.toString(), label) }
+    }
+    val spots = remember(bases, texts, canvasSize, radiusPx, ringPx, ringStrokePx, gapPx) {
+        if (canvasSize == IntSize.Zero) {
+            emptyList()
+        } else {
+            val totalW = Court.WIDTH_DOUBLES + 2 * COURT_DRAW_MARGIN_M
+            val totalH = Court.LENGTH + 2 * COURT_DRAW_MARGIN_M
+            val w = canvasSize.width.toFloat()
+            val h = canvasSize.height.toFloat()
+            fun atX(x: Double) = ((x + COURT_DRAW_MARGIN_M) / totalW * w).toFloat()
+            fun atY(y: Double) = ((y + COURT_DRAW_MARGIN_M) / totalH * h).toFloat()
+            val overall = bases.overall
+            placeRallyLabels(
+                marks = bases.rallies.mapIndexed { i, rally ->
+                    RallyMark(
+                        atX(rally.position.x),
+                        atY(rally.position.y),
+                        texts[i].size.width.toFloat(),
+                        texts[i].size.height.toFloat(),
+                    )
+                },
+                dotRadius = radiusPx,
+                gap = gapPx,
+                ringX = overall?.let { atX(it.x) } ?: 0f,
+                ringY = overall?.let { atY(it.y) } ?: 0f,
+                // The stroke straddles the radius, so the outer edge is half a
+                // line width past it.
+                ringReach = if (overall == null) 0f else ringPx + ringStrokePx / 2f,
+                canvasWidth = w,
+                canvasHeight = h,
+            )
+        }
+    }
+
+    CourtCard(onCanvasSizeChanged = { canvasSize = it }) {
         drawCourt(marginM = COURT_DRAW_MARGIN_M, lineColor = courtLine)
         val totalW = Court.WIDTH_DOUBLES + 2 * COURT_DRAW_MARGIN_M
         val totalH = Court.LENGTH + 2 * COURT_DRAW_MARGIN_M
@@ -178,37 +242,15 @@ private fun CourtBaseView(bases: BasePositions) {
             ((p.x + COURT_DRAW_MARGIN_M) / totalW * size.width).toFloat(),
             ((p.y + COURT_DRAW_MARGIN_M) / totalH * size.height).toFloat(),
         )
-        val radius = 5.dp.toPx()
-        val ring = 10.dp.toPx()
-        val ringStroke = 2.5.dp.toPx()
         bases.rallies.forEach { rally ->
-            drawCircle(dot.copy(alpha = 0.8f), radius = radius, center = at(rally.position))
+            drawCircle(dotFill, radius = radiusPx, center = at(rally.position))
         }
         bases.overall?.let {
-            drawCircle(dot, radius = ring, center = at(it), style = Stroke(width = ringStroke))
+            drawCircle(dot, radius = ringPx, center = at(it), style = ringStroke)
         }
         // Numbers last, each beside its own dot and clear of every other
         // number, dot and the whole-match marker, so none of them sits on the
-        // one label that says which rally a dot is. `placeRallyLabels` owns
-        // where that is, and which number to leave to the list when a dot has
-        // no room; iOS draws the same picture through the same function.
-        val overall = bases.overall?.let { at(it) }
-        val texts = bases.rallies.map { measurer.measure(it.index.toString(), label) }
-        val spots = placeRallyLabels(
-            marks = bases.rallies.mapIndexed { i, rally ->
-                val centre = at(rally.position)
-                RallyMark(centre.x, centre.y, texts[i].size.width.toFloat(), texts[i].size.height.toFloat())
-            },
-            dotRadius = radius,
-            gap = 2.dp.toPx(),
-            ringX = overall?.x ?: 0f,
-            ringY = overall?.y ?: 0f,
-            // The stroke straddles the radius, so the outer edge is half a
-            // line width past it.
-            ringReach = if (overall == null) 0f else ring + ringStroke / 2f,
-            canvasWidth = size.width,
-            canvasHeight = size.height,
-        )
+        // one label that says which rally a dot is.
         spots.forEach { spot ->
             drawText(textLayoutResult = texts[spot.mark], topLeft = Offset(spot.left, spot.top))
         }

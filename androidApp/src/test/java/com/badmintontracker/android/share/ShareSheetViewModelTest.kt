@@ -2,7 +2,9 @@ package com.badmintontracker.android.share
 
 import com.badmintontracker.android.testing.FakeSharesRepository
 import com.badmintontracker.shared.model.MatchShare
+import com.badmintontracker.shared.repo.ReceivedShare
 import com.badmintontracker.shared.repo.ShareError
+import com.badmintontracker.shared.repo.SharesRepository
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -92,5 +94,42 @@ class ShareSheetViewModelTest {
         advanceUntilIdle()
         shares.unshareCalls shouldBe listOf("v1" to "u1")
         vm.state.value.recipients shouldBe emptyList()
+    }
+
+    @Test
+    fun tracks_initial_loading_and_load_failure() = runTest {
+        val failingShares = object : SharesRepository {
+            override suspend fun share(videoId: String, email: String) = Result.success(Unit)
+            override suspend fun unshare(videoId: String, userId: String) = Result.success(Unit)
+            override suspend fun listShares(videoId: String): Result<List<MatchShare>> =
+                Result.failure(RuntimeException("offline"))
+            override suspend fun listReceived(): List<ReceivedShare> = emptyList()
+            override suspend fun leaveShare(videoId: String) = Result.success(Unit)
+        }
+        val vm = ShareSheetViewModel("v1", failingShares)
+        vm.state.value.isLoading shouldBe true
+
+        advanceUntilIdle()
+
+        vm.state.value.isLoading shouldBe false
+        vm.state.value.loadError shouldBe "Couldn't load people with access."
+    }
+
+    @Test
+    fun ignores_duplicate_share_and_unshare_while_busy() = runTest {
+        val shares = FakeSharesRepository()
+        val vm = ShareSheetViewModel("v1", shares)
+        advanceUntilIdle()
+
+        vm.onEmailChange("coach@example.com")
+        vm.onShareClicked()
+        vm.onShareClicked()
+        advanceUntilIdle()
+        shares.shareCalls shouldBe listOf("v1" to "coach@example.com")
+
+        vm.onUnshare("u1")
+        vm.onUnshare("u1")
+        advanceUntilIdle()
+        shares.unshareCalls shouldBe listOf("v1" to "u1")
     }
 }

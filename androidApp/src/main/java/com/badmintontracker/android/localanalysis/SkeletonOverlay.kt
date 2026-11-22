@@ -7,11 +7,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import com.badmintontracker.analysis.geometry.Point
 import com.badmintontracker.analysis.player.Coco
 import com.badmintontracker.analysis.player.MetricKind
 import com.badmintontracker.analysis.player.NearPlayerSelector
+import com.badmintontracker.analysis.player.PlayerPose
 import com.badmintontracker.analysis.player.Skeleton
 import kotlin.math.atan2
 
@@ -66,106 +68,167 @@ fun SkeletonOverlay(
     if (keypoints.size < Coco.COUNT || videoWidth <= 0 || videoHeight <= 0) return
 
     Canvas(modifier = modifier) {
-        // The video is fitted inside this box, so the same letterboxing the
-        // player applies has to be applied here or the skeleton drifts off the
-        // body at any aspect ratio but the exact one.
-        val scale = minOf(size.width / videoWidth, size.height / videoHeight)
-        val offsetX = (size.width - videoWidth * scale) / 2f
-        val offsetY = (size.height - videoHeight * scale) / 2f
-        fun at(index: Int) = Offset(
-            offsetX + (keypoints[index].x * scale).toFloat(),
-            offsetY + (keypoints[index].y * scale).toFloat(),
+        drawSkeleton(
+            keypoints = keypoints,
+            confidence = confidence,
+            videoWidth = videoWidth,
+            videoHeight = videoHeight,
+            minConfidence = minConfidence,
+            highlight = highlight,
         )
-
-        Skeleton.EDGES.forEach { edge ->
-            if (!Skeleton.edgeVisible(confidence, edge, minConfidence)) return@forEach
-            drawLine(
-                color = if (edge in Skeleton.ARM_EDGES) ARM else LIMB,
-                start = at(edge.first),
-                end = at(edge.second),
-                strokeWidth = LIMB_WIDTH,
-            )
-        }
-
-        for (k in 0 until Coco.COUNT) {
-            if (confidence.getOrElse(k) { 0f } < minConfidence) continue
-            // The ankles are marked apart because they are the measurement: the
-            // heatmap is built from their midpoint, so seeing them land on the
-            // feet is how the projection is checked by eye.
-            val ankle = k == Coco.LEFT_ANKLE || k == Coco.RIGHT_ANKLE
-            drawCircle(
-                color = if (ankle) ANKLE else JOINT,
-                radius = if (ankle) ANKLE_RADIUS else JOINT_RADIUS,
-                center = at(k),
-            )
-        }
-
-        when (highlight) {
-            is PoseHighlight.Angle -> {
-                val (a, v, c) = highlight
-                val visible = listOf(a, v, c).all { confidence.getOrElse(it) { 0f } >= minConfidence }
-                if (visible) {
-                    val centre = at(v)
-                    val ua = at(a) - centre
-                    val uc = at(c) - centre
-                    if (ua.getDistance() > 0f && uc.getDistance() > 0f) {
-                        val startDeg = Math.toDegrees(atan2(ua.y.toDouble(), ua.x.toDouble())).toFloat()
-                        val endDeg = Math.toDegrees(atan2(uc.y.toDouble(), uc.x.toDouble())).toFloat()
-                        // The short way round: the interior angle, never its reflex.
-                        var sweep = endDeg - startDeg
-                        while (sweep > 180f) sweep -= 360f
-                        while (sweep < -180f) sweep += 360f
-                        drawArc(
-                            color = HIGHLIGHT,
-                            startAngle = startDeg,
-                            sweepAngle = sweep,
-                            useCenter = false,
-                            topLeft = Offset(centre.x - ARC_RADIUS, centre.y - ARC_RADIUS),
-                            size = Size(ARC_RADIUS * 2, ARC_RADIUS * 2),
-                            style = Stroke(width = HIGHLIGHT_WIDTH),
-                        )
-                    }
-                }
-            }
-            PoseHighlight.Stance -> {
-                if (confidence.getOrElse(Coco.LEFT_ANKLE) { 0f } >= minConfidence &&
-                    confidence.getOrElse(Coco.RIGHT_ANKLE) { 0f } >= minConfidence
-                ) {
-                    drawLine(HIGHLIGHT, at(Coco.LEFT_ANKLE), at(Coco.RIGHT_ANKLE), strokeWidth = HIGHLIGHT_WIDTH)
-                }
-            }
-            is PoseHighlight.Tilt -> {
-                val (l, r) = highlight
-                if (confidence.getOrElse(l) { 0f } >= minConfidence && confidence.getOrElse(r) { 0f } >= minConfidence) {
-                    val a = at(l)
-                    val b = at(r)
-                    // The horizontal the tilt is measured from, dashed and as
-                    // long as the line, so the angle between the two is the
-                    // number on the tile.
-                    val half = (b - a).getDistance() / 2f
-                    val mid = Offset((a.x + b.x) / 2f, (a.y + b.y) / 2f)
-                    drawLine(
-                        HIGHLIGHT.copy(alpha = 0.6f),
-                        Offset(mid.x - half, mid.y),
-                        Offset(mid.x + half, mid.y),
-                        strokeWidth = HIGHLIGHT_WIDTH * 0.6f,
-                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f)),
-                    )
-                    drawLine(HIGHLIGHT, a, b, strokeWidth = HIGHLIGHT_WIDTH)
-                }
-            }
-            null -> Unit
-        }
     }
 }
+
+/**
+ * Deferred overload that reads [poseProvider] inside [Canvas.onDraw], so
+ * playback frame advances invalidate only the draw phase without recomposing
+ * the surrounding video card or player screen.
+ */
+@Composable
+fun SkeletonOverlay(
+    poseProvider: () -> PlayerPose?,
+    videoWidth: Int,
+    videoHeight: Int,
+    modifier: Modifier = Modifier,
+    minConfidence: Float = NearPlayerSelector.MIN_KEYPOINT_CONFIDENCE,
+    highlight: PoseHighlight? = null,
+) {
+    if (videoWidth <= 0 || videoHeight <= 0) return
+
+    Canvas(modifier = modifier) {
+        val pose = poseProvider() ?: return@Canvas
+        if (pose.keypoints.size < Coco.COUNT) return@Canvas
+        drawSkeleton(
+            keypoints = pose.keypoints,
+            confidence = pose.confidence,
+            videoWidth = videoWidth,
+            videoHeight = videoHeight,
+            minConfidence = minConfidence,
+            highlight = highlight,
+        )
+    }
+}
+
+private fun DrawScope.drawSkeleton(
+    keypoints: List<Point>,
+    confidence: List<Float>,
+    videoWidth: Int,
+    videoHeight: Int,
+    minConfidence: Float,
+    highlight: PoseHighlight?,
+) {
+    // The video is fitted inside this box, so the same letterboxing the
+    // player applies has to be applied here or the skeleton drifts off the
+    // body at any aspect ratio but the exact one.
+    val scale = minOf(size.width / videoWidth, size.height / videoHeight)
+    val offsetX = (size.width - videoWidth * scale) / 2f
+    val offsetY = (size.height - videoHeight * scale) / 2f
+    fun at(index: Int) = Offset(
+        offsetX + (keypoints[index].x * scale).toFloat(),
+        offsetY + (keypoints[index].y * scale).toFloat(),
+    )
+
+    for (i in SKELETON_BONES.indices) {
+        val bone = SKELETON_BONES[i]
+        if (!Skeleton.edgeVisible(confidence, bone.edge, minConfidence)) continue
+        drawLine(
+            color = bone.color,
+            start = at(bone.edge.first),
+            end = at(bone.edge.second),
+            strokeWidth = LIMB_WIDTH,
+        )
+    }
+
+    for (k in 0 until Coco.COUNT) {
+        if (confidence.getOrElse(k) { 0f } < minConfidence) continue
+        // The ankles are marked apart because they are the measurement: the
+        // heatmap is built from their midpoint, so seeing them land on the
+        // feet is how the projection is checked by eye.
+        val ankle = k == Coco.LEFT_ANKLE || k == Coco.RIGHT_ANKLE
+        drawCircle(
+            color = if (ankle) ANKLE else JOINT,
+            radius = if (ankle) ANKLE_RADIUS else JOINT_RADIUS,
+            center = at(k),
+        )
+    }
+
+    when (highlight) {
+        is PoseHighlight.Angle -> {
+            val (a, v, c) = highlight
+            val visible = confidence.getOrElse(a) { 0f } >= minConfidence &&
+                confidence.getOrElse(v) { 0f } >= minConfidence &&
+                confidence.getOrElse(c) { 0f } >= minConfidence
+            if (visible) {
+                val centre = at(v)
+                val ua = at(a) - centre
+                val uc = at(c) - centre
+                if (ua.getDistance() > 0f && uc.getDistance() > 0f) {
+                    val startDeg = Math.toDegrees(atan2(ua.y.toDouble(), ua.x.toDouble())).toFloat()
+                    val endDeg = Math.toDegrees(atan2(uc.y.toDouble(), uc.x.toDouble())).toFloat()
+                    // The short way round: the interior angle, never its reflex.
+                    var sweep = endDeg - startDeg
+                    while (sweep > 180f) sweep -= 360f
+                    while (sweep < -180f) sweep += 360f
+                    drawArc(
+                        color = HIGHLIGHT,
+                        startAngle = startDeg,
+                        sweepAngle = sweep,
+                        useCenter = false,
+                        topLeft = Offset(centre.x - ARC_RADIUS, centre.y - ARC_RADIUS),
+                        size = ARC_SIZE,
+                        style = HIGHLIGHT_STROKE,
+                    )
+                }
+            }
+        }
+        PoseHighlight.Stance -> {
+            if (confidence.getOrElse(Coco.LEFT_ANKLE) { 0f } >= minConfidence &&
+                confidence.getOrElse(Coco.RIGHT_ANKLE) { 0f } >= minConfidence
+            ) {
+                drawLine(HIGHLIGHT, at(Coco.LEFT_ANKLE), at(Coco.RIGHT_ANKLE), strokeWidth = HIGHLIGHT_WIDTH)
+            }
+        }
+        is PoseHighlight.Tilt -> {
+            val (l, r) = highlight
+            if (confidence.getOrElse(l) { 0f } >= minConfidence && confidence.getOrElse(r) { 0f } >= minConfidence) {
+                val a = at(l)
+                val b = at(r)
+                // The horizontal the tilt is measured from, dashed and as
+                // long as the line, so the angle between the two is the
+                // number on the tile.
+                val half = (b - a).getDistance() / 2f
+                val mid = Offset((a.x + b.x) / 2f, (a.y + b.y) / 2f)
+                drawLine(
+                    HIGHLIGHT_DASH_COLOR,
+                    Offset(mid.x - half, mid.y),
+                    Offset(mid.x + half, mid.y),
+                    strokeWidth = HIGHLIGHT_DASH_WIDTH,
+                    pathEffect = TILT_DASH_EFFECT,
+                )
+                drawLine(HIGHLIGHT, a, b, strokeWidth = HIGHLIGHT_WIDTH)
+            }
+        }
+        null -> Unit
+    }
+}
+
+private data class SkeletonBone(val edge: Pair<Int, Int>, val color: Color)
 
 private const val LIMB_WIDTH = 4f
 private const val JOINT_RADIUS = 4f
 private const val ANKLE_RADIUS = 7f
 private const val ARC_RADIUS = 22f
 private const val HIGHLIGHT_WIDTH = 3f
+private const val HIGHLIGHT_DASH_WIDTH = HIGHLIGHT_WIDTH * 0.6f
 private val LIMB = Color(0xFF00E5FF)
 private val ARM = Color(0xFFFFD600)
 private val JOINT = Color(0xFFFFFFFF)
 private val ANKLE = Color(0xFFFF3D00)
 private val HIGHLIGHT = Color(0xFFE040FB)
+private val HIGHLIGHT_DASH_COLOR = HIGHLIGHT.copy(alpha = 0.6f)
+private val ARC_SIZE = Size(ARC_RADIUS * 2, ARC_RADIUS * 2)
+private val HIGHLIGHT_STROKE = Stroke(width = HIGHLIGHT_WIDTH)
+private val TILT_DASH_EFFECT = PathEffect.dashPathEffect(floatArrayOf(8f, 6f))
+private val SKELETON_BONES: List<SkeletonBone> = Skeleton.EDGES.map { edge ->
+    SkeletonBone(edge, if (edge in Skeleton.ARM_EDGES) ARM else LIMB)
+}

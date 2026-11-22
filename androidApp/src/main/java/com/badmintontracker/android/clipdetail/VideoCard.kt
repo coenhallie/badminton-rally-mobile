@@ -1,18 +1,26 @@
 package com.badmintontracker.android.clipdetail
 
 import android.view.LayoutInflater
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.VectorConverter
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -32,6 +40,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
@@ -40,12 +49,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -55,11 +70,13 @@ import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.badmintontracker.android.R
-import com.badmintontracker.android.localvideo.formatDuration
 import com.badmintontracker.android.match.MatchPageGutter
 import com.badmintontracker.android.ui.icons.ShuttlIcons
 import com.badmintontracker.android.ui.theme.ShuttlRadius
 import com.badmintontracker.android.ui.theme.ShuttlVideoOverlay
+import com.badmintontracker.shared.playback.playbackClock
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.launch
 
 /** How far a pinch can take the frame. Enough to fill the card with one player at the far baseline. */
 private const val MAX_ZOOM = 5f
@@ -116,11 +133,36 @@ fun rememberPlaybackPosition(player: ExoPlayer): State<PlaybackPosition> {
  * square card and sit pillarboxed in it rather than a card taller than the
  * screen.
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun VideoCard(
     player: ExoPlayer,
     position: PlaybackPosition,
+    onSettingsTap: () -> Unit,
+    modifier: Modifier = Modifier,
+    aspectRatio: Float? = null,
+    maxHeight: Dp? = null,
+    fullscreen: Boolean = false,
+    onFullscreenToggle: (() -> Unit)? = null,
+    overlay: @Composable BoxScope.() -> Unit = {},
+    error: (@Composable BoxScope.() -> Unit)? = null,
+) = VideoCard(
+    player = player,
+    positionProvider = { position },
+    onSettingsTap = onSettingsTap,
+    modifier = modifier,
+    aspectRatio = aspectRatio,
+    maxHeight = maxHeight,
+    fullscreen = fullscreen,
+    onFullscreenToggle = onFullscreenToggle,
+    overlay = overlay,
+    error = error,
+)
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun VideoCard(
+    player: ExoPlayer,
+    positionProvider: () -> PlaybackPosition,
     onSettingsTap: () -> Unit,
     modifier: Modifier = Modifier,
     aspectRatio: Float? = null,
@@ -166,13 +208,14 @@ fun VideoCard(
     }
 
     // Pinch to zoom, drag to pan once zoomed, double-tap to zoom in on a
-    // spot or back out. The frame and whatever is drawn over it scale
-    // together, so a skeleton stays on its joints; the chips and the bar
-    // stay put. Offsets are in pixels about the centre, clamped so the
-    // frame's edge never comes inside the card's. Reset when the card
-    // changes size, since an offset for one size is nonsense at another.
-    var scale by remember(player) { mutableFloatStateOf(1f) }
-    var offset by remember(player) { mutableStateOf(Offset.Zero) }
+    // spot or back out smoothly with a spring. The frame and whatever is drawn
+    // over it scale together, so a skeleton stays on its joints; the chips and
+    // the bar stay put. Offsets are in pixels about the centre, clamped so the
+    // frame's edge never comes inside the card's. Reset when entering/leaving
+    // fullscreen, since an offset for one size is nonsense at another.
+    val scaleAnim = remember(player) { Animatable(1f) }
+    val offsetAnim = remember(player) { Animatable(Offset.Zero, Offset.VectorConverter) }
+    val scope = rememberCoroutineScope()
     var contentSize by remember { mutableStateOf(IntSize.Zero) }
     fun clamped(candidate: Offset, atScale: Float): Offset {
         val maxX = contentSize.width * (atScale - 1f) / 2f
@@ -180,13 +223,17 @@ fun VideoCard(
         return Offset(candidate.x.coerceIn(-maxX, maxX), candidate.y.coerceIn(-maxY, maxY))
     }
     val transform = rememberTransformableState { zoomChange, panChange, _ ->
-        val next = (scale * zoomChange).coerceIn(1f, MAX_ZOOM)
-        offset = clamped(offset * (next / scale) + panChange, next)
-        scale = next
+        val currentScale = scaleAnim.value
+        val next = (currentScale * zoomChange).coerceIn(1f, MAX_ZOOM)
+        val nextOffset = clamped(offsetAnim.value * (next / currentScale) + panChange, next)
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            scaleAnim.snapTo(next)
+            offsetAnim.snapTo(nextOffset)
+        }
     }
     LaunchedEffect(fullscreen) {
-        scale = 1f
-        offset = Offset.Zero
+        scaleAnim.snapTo(1f)
+        offsetAnim.snapTo(Offset.Zero)
     }
 
     Box(modifier = frame.background(Color.Black)) {
@@ -197,20 +244,23 @@ fun VideoCard(
                 .onSizeChanged { contentSize = it }
                 // A one-finger drag pans only once zoomed; at 1x it stays a
                 // scroll of the page the card sits in.
-                .transformable(transform, canPan = { scale > 1f }, lockRotationOnZoomPan = true)
+                .transformable(transform, canPan = { scaleAnim.value > 1f }, lockRotationOnZoomPan = true)
                 .pointerInput(Unit) {
                     detectTapGestures(
                         onDoubleTap = { tap ->
-                            if (scale > 1f) {
-                                scale = 1f
-                                offset = Offset.Zero
+                            val scaleSpec = spring<Float>(stiffness = Spring.StiffnessMediumLow)
+                            val offsetSpec = spring<Offset>(stiffness = Spring.StiffnessMediumLow)
+                            if (scaleAnim.value > 1f) {
+                                scope.launch { scaleAnim.animateTo(1f, scaleSpec) }
+                                scope.launch { offsetAnim.animateTo(Offset.Zero, offsetSpec) }
                             } else {
                                 // The tapped spot stays under the finger:
                                 // a point t from the centre lands at
                                 // t * s + offset, so offset = t * (1 - s).
                                 val fromCentre = tap - Offset(size.width / 2f, size.height / 2f)
-                                scale = DOUBLE_TAP_ZOOM
-                                offset = clamped(fromCentre * (1f - DOUBLE_TAP_ZOOM), DOUBLE_TAP_ZOOM)
+                                val targetOffset = clamped(fromCentre * (1f - DOUBLE_TAP_ZOOM), DOUBLE_TAP_ZOOM)
+                                scope.launch { scaleAnim.animateTo(DOUBLE_TAP_ZOOM, scaleSpec) }
+                                scope.launch { offsetAnim.animateTo(targetOffset, offsetSpec) }
                             }
                         },
                     )
@@ -220,10 +270,12 @@ fun VideoCard(
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer {
-                        scaleX = scale
-                        scaleY = scale
-                        translationX = offset.x
-                        translationY = offset.y
+                        val s = scaleAnim.value
+                        val o = offsetAnim.value
+                        scaleX = s
+                        scaleY = s
+                        translationX = o.x
+                        translationY = o.y
                     },
             ) {
                 AndroidView(
@@ -238,17 +290,19 @@ fun VideoCard(
                             useController = false
                         }
                     },
+                    onRelease = { it.player = null },
                     modifier = Modifier.fillMaxSize(),
                 )
                 overlay()
             }
         }
-        OverlayChip(
-            text = formatDuration(position.positionMs),
-            color = ShuttlVideoOverlay.text,
+        TimecodeChip(
+            positionProvider = positionProvider,
             modifier = Modifier.align(Alignment.TopStart).padding(12.dp),
         )
-        Row(modifier = Modifier.align(Alignment.TopEnd).padding(12.dp)) {
+        // Interactive overlay chips expand their touch target to 48dp while keeping
+        // the visual pill aligned 12dp from the top and end edges.
+        Row(modifier = Modifier.align(Alignment.TopEnd).padding(end = 4.dp)) {
             OverlayChip(
                 icon = ShuttlIcons.Settings,
                 contentDescription = "Playback settings",
@@ -259,11 +313,10 @@ fun VideoCard(
                     icon = if (fullscreen) ShuttlIcons.Minimize else ShuttlIcons.Maximize,
                     contentDescription = if (fullscreen) "Exit fullscreen" else "Fullscreen",
                     onClick = onFullscreenToggle,
-                    modifier = Modifier.padding(start = 6.dp),
                 )
             }
         }
-        ScrubBar(position = position, onSeek = { fraction ->
+        ScrubBar(positionProvider = positionProvider, onSeek = { fraction ->
             val duration = player.duration.takeIf { it > 0 } ?: return@ScrubBar
             player.seekTo((fraction * duration).toLong().coerceIn(0L, duration))
         }, modifier = Modifier.align(Alignment.BottomStart))
@@ -271,21 +324,54 @@ fun VideoCard(
     }
 }
 
+/** Leaf timecode readout so per-frame position ticks recompose only this pill. */
+@Composable
+private fun TimecodeChip(
+    positionProvider: () -> PlaybackPosition,
+    modifier: Modifier = Modifier,
+) {
+    val pos = positionProvider()
+    OverlayChip(
+        text = playbackClock(pos.positionMs, pos.durationMs),
+        color = ShuttlVideoOverlay.text,
+        modifier = modifier,
+    )
+}
+
 /**
- * The three-pixel progress bar, with a touch strip eight times taller so it
- * can be scrubbed. While a finger is down the bar follows the finger and the
- * seek lands on release; a tap seeks straight away.
+ * The three-pixel progress bar, with a 48 dp touch strip so it can be scrubbed
+ * comfortably. While a finger is down the bar follows the finger and the seek
+ * lands on release; a tap seeks straight away. Reading [positionProvider] inside
+ * the Canvas draw block avoids recomposing the bar every display frame.
  */
 @Composable
-private fun ScrubBar(position: PlaybackPosition, onSeek: (Float) -> Unit, modifier: Modifier = Modifier) {
+private fun ScrubBar(
+    positionProvider: () -> PlaybackPosition,
+    onSeek: (Float) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     var dragging by remember { mutableStateOf(false) }
     var dragFraction by remember { mutableFloatStateOf(0f) }
     val seek by rememberUpdatedState(onSeek)
-    val fraction = if (dragging) dragFraction else position.fraction
+    val readPosition by rememberUpdatedState(positionProvider)
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(24.dp)
+            .height(48.dp)
+            .semantics {
+                val pos = readPosition()
+                val fraction = if (dragging) dragFraction else pos.fraction
+                contentDescription = "Playback position"
+                progressBarRangeInfo = ProgressBarRangeInfo(fraction, 0f..1f)
+                setProgress { target ->
+                    if (readPosition().durationMs <= 0L) {
+                        false
+                    } else {
+                        seek(target.coerceIn(0f, 1f))
+                        true
+                    }
+                }
+            }
             .pointerInput(Unit) {
                 detectTapGestures { tap -> seek((tap.x / size.width).coerceIn(0f, 1f)) }
             }
@@ -307,8 +393,15 @@ private fun ScrubBar(position: PlaybackPosition, onSeek: (Float) -> Unit, modifi
             },
         contentAlignment = Alignment.BottomStart,
     ) {
-        Box(Modifier.fillMaxWidth().height(3.dp).background(ShuttlVideoOverlay.track)) {
-            Box(Modifier.fillMaxHeight().fillMaxWidth(fraction).background(ShuttlVideoOverlay.progress))
+        Canvas(Modifier.fillMaxWidth().height(3.dp)) {
+            val fraction = (if (dragging) dragFraction else readPosition().fraction).coerceIn(0f, 1f)
+            drawRect(color = ShuttlVideoOverlay.track)
+            if (fraction > 0f) {
+                drawRect(
+                    color = ShuttlVideoOverlay.progress,
+                    size = Size(size.width * fraction, size.height),
+                )
+            }
         }
     }
 }
@@ -324,20 +417,51 @@ private fun OverlayChip(
     onClick: (() -> Unit)? = null,
 ) {
     val shape = RoundedCornerShape(ShuttlRadius.pill)
-    Box(
-        modifier = modifier
-            .clip(shape)
-            .background(ShuttlVideoOverlay.scrim, shape)
-            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
-            .padding(horizontal = 9.dp, vertical = 5.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (text != null) {
-            Text(text, style = MaterialTheme.typography.labelSmall, color = color)
+    if (onClick != null) {
+        val interactionSource = remember { MutableInteractionSource() }
+        Box(
+            modifier = modifier
+                .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = null,
+                    role = Role.Button,
+                    onClick = onClick,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                modifier = Modifier
+                    .clip(shape)
+                    .background(ShuttlVideoOverlay.scrim, shape)
+                    .indication(interactionSource, LocalIndication.current)
+                    .padding(horizontal = 9.dp, vertical = 5.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (text != null) {
+                    Text(text, style = MaterialTheme.typography.labelSmall, color = color)
+                }
+                if (icon != null) {
+                    // Sized to the label's cap height, so the two chips sit at one height.
+                    Icon(icon, contentDescription = contentDescription, tint = color, modifier = Modifier.size(14.dp))
+                }
+            }
         }
-        if (icon != null) {
-            // Sized to the label's cap height, so the two chips sit at one height.
-            Icon(icon, contentDescription = contentDescription, tint = color, modifier = Modifier.size(14.dp))
+    } else {
+        Box(
+            modifier = modifier
+                .clip(shape)
+                .background(ShuttlVideoOverlay.scrim, shape)
+                .padding(horizontal = 9.dp, vertical = 5.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (text != null) {
+                Text(text, style = MaterialTheme.typography.labelSmall, color = color)
+            }
+            if (icon != null) {
+                // Sized to the label's cap height, so the two chips sit at one height.
+                Icon(icon, contentDescription = contentDescription, tint = color, modifier = Modifier.size(14.dp))
+            }
         }
     }
 }

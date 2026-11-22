@@ -515,6 +515,20 @@ class SkeletonStoreTest {
             sharedV4Fixture.toList()
     }
 
+    @Test
+    fun rejects_unsafe_entry_ids_across_all_operations() {
+        val s = store()
+        for (bad in listOf("", "../foo", "..", "a/b", "a\\b")) {
+            shouldThrow<IllegalArgumentException> { s.save(bad, emptyList(), 30.0, 1920, 1080, null) }
+            shouldThrow<IllegalArgumentException> {
+                s.saveAll(bad, TrackSource.CLOUD, emptyList(), 30.0, 1920, 1080, null)
+            }
+            shouldThrow<IllegalArgumentException> { s.has(bad) }
+            shouldThrow<IllegalArgumentException> { s.load(bad) }
+            shouldThrow<IllegalArgumentException> { s.delete(bad) }
+        }
+    }
+
     /**
      * A file in an older layout, written by hand so a writer that stopped
      * emitting it cannot make a compatibility test pass. v1 and v2 hold one

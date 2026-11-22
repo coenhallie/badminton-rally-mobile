@@ -1,9 +1,12 @@
 package com.badmintontracker.android.clipdetail
 
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -13,6 +16,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -40,10 +44,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -72,25 +78,44 @@ import kotlin.math.roundToInt
  */
 @Composable
 private fun QuickTagChip(label: AnnotationLabel, compact: Boolean = false, onClick: () -> Unit) {
+    val haptics = LocalHapticFeedback.current
     val swatch = LabelColor.from(label.colorKey)
     val container = swatch?.let { Color(it.background.toInt()) } ?: MaterialTheme.colorScheme.surfaceVariant
     val onContainer = swatch?.let { Color(it.foreground.toInt()) } ?: MaterialTheme.colorScheme.onSurfaceVariant
-    Surface(
-        shape = RoundedCornerShape(50),
-        color = container,
+    val interactionSource = remember { MutableInteractionSource() }
+    val pillShape = RoundedCornerShape(50)
+    Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(50))
-            .clickable(role = Role.Button, onClickLabel = "Tag this moment", onClick = onClick),
+            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                role = Role.Button,
+                onClickLabel = "Tag this moment",
+                onClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onClick()
+                },
+            ),
+        contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = label.name,
-            // Smaller in the floating window: every pixel of it is a pixel of court
-            // the coach cannot see.
-            style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge,
-            color = onContainer,
-            modifier = Modifier.padding(horizontal = if (compact) 10.dp else 12.dp, vertical = if (compact) 6.dp else 8.dp),
-            maxLines = 1,
-        )
+        Surface(
+            shape = pillShape,
+            color = container,
+            modifier = Modifier
+                .clip(pillShape)
+                .indication(interactionSource, LocalIndication.current),
+        ) {
+            Text(
+                text = label.name,
+                // Smaller in the floating window: every pixel of it is a pixel of court
+                // the coach cannot see.
+                style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge,
+                color = onContainer,
+                modifier = Modifier.padding(horizontal = if (compact) 10.dp else 12.dp, vertical = if (compact) 6.dp else 8.dp),
+                maxLines = 1,
+            )
+        }
     }
 }
 
@@ -123,7 +148,7 @@ fun ReplayLabelRow(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
-            modifier = Modifier.padding(top = 8.dp, start = 24.dp, end = 24.dp),
+            modifier = Modifier.padding(top = 2.dp, start = 24.dp, end = 24.dp),
         )
     }
 }
@@ -162,10 +187,12 @@ private fun LabelLanesStrip(
             val laneHeight = placeables.maxOf { it.height }
             val width = maxOf(stripWidth, availablePx)
             val lead = (width - stripWidth) / 2
-            layout(width, fit.lanes * laneHeight + (fit.lanes - 1) * gapPx) {
+            // Each chip already carries a 48dp touch strip around its visual pill, so
+            // lanes sit flush vertically without inflating the visual gap between rows.
+            layout(width, fit.lanes * laneHeight) {
                 placeables.forEachIndexed { index, placeable ->
                     val at = fit.placements[index]
-                    placeable.place(lead + at.x.roundToInt(), at.lane * (laneHeight + gapPx))
+                    placeable.place(lead + at.x.roundToInt(), at.lane * laneHeight)
                 }
             }
         }
@@ -330,19 +357,23 @@ fun FloatingLabelPanel(
                 color = ShuttlVideoOverlay.text,
                 modifier = Modifier.weight(1f).padding(start = 8.dp),
             )
-            Icon(
-                if (collapsed) ShuttlIcons.ChevronDown else ShuttlIcons.ChevronUp,
-                contentDescription = if (collapsed) "Show labels" else "Hide labels",
-                tint = ShuttlVideoOverlay.text,
+            Box(
                 modifier = Modifier
+                    .size(48.dp)
                     .clip(RoundedCornerShape(ShuttlRadius.pill))
                     .clickable(role = Role.Button) {
                         held = position
                         collapsed = !collapsed
-                    }
-                    .padding(12.dp)
-                    .size(14.dp),
-            )
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    if (collapsed) ShuttlIcons.ChevronDown else ShuttlIcons.ChevronUp,
+                    contentDescription = if (collapsed) "Show labels" else "Hide labels",
+                    tint = ShuttlVideoOverlay.text,
+                    modifier = Modifier.size(14.dp),
+                )
+            }
         }
         if (!collapsed) {
             // Capped and scrollable, so a long palette cannot grow the window past
@@ -352,11 +383,11 @@ fun FloatingLabelPanel(
                 // whole rows and nothing else.
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 12.dp, end = 12.dp, bottom = 12.dp)
+                    .padding(start = 12.dp, end = 12.dp, bottom = 8.dp)
                     .heightIn(max = PANEL_MAX_CHIPS_HEIGHT)
                     .verticalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(0.dp),
             ) {
                 labels.forEach { label -> QuickTagChip(label, compact = true, onClick = { onTag(label) }) }
             }
@@ -402,12 +433,11 @@ class QuickTagMessage {
     }
 }
 
-// The video card's chips: their 12 dp inset, their height, and 8 dp of air.
-private val CHIP_CLEARANCE = 44.dp
+// The video card's chips: their 48 dp touch strip at the top edge.
+private val CHIP_CLEARANCE = 48.dp
 // The fullscreen transport: its 24 dp bottom inset, the 60 dp play circle, and 12 dp of air.
 private val TRANSPORT_CLEARANCE = 96.dp
 private val PANEL_WIDTH = 236.dp
-// Four rows of compact chips (26 dp each) and the three 6 dp gaps between them, so
-// the cut falls between rows rather than through one.
-private val PANEL_MAX_CHIPS_HEIGHT = 122.dp
+// Three rows of 48 dp touch-target chips, so the cut falls between rows rather than through one.
+private val PANEL_MAX_CHIPS_HEIGHT = 144.dp
 private const val QUICK_TAG_MESSAGE_MS = 2_500L

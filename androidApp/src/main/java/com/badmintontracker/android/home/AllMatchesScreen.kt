@@ -26,6 +26,13 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.badmintontracker.android.players.AddPlayer
 import com.badmintontracker.android.cliplist.ClipListScreen
@@ -40,7 +47,9 @@ import com.badmintontracker.shared.repo.SharesRepository
 /**
  * All matches: the match list, every match whether a player holds it or not,
  * with its filters, sort and "Shared with me". Pushed from the Players screen,
- * which holds the Add button and the gear; this is the list under a back bar.
+ * which holds the gear; this is the list under a back bar, with the same Add
+ * button Players and a player's page carry. Its empty state says to score,
+ * record or import, and a page that says so has to offer the way to.
  * It draws the app's one root snackbar host ([snackbarHostState]), as Players
  * does, so a finished run or a failed refresh is said here too.
  *
@@ -60,12 +69,20 @@ fun AllMatchesScreen(
     onRemoveFromPhone: (entryId: String) -> Unit,
     /** "Add player" in the row's details sheet: PlayersViewModel.create. */
     onAddPlayer: AddPlayer,
+    /** The Add match sheet's three ways in, as on Players: none of them pre-fills a player. */
+    onNewMatch: () -> Unit,
+    onRecord: () -> Unit,
+    onImport: () -> Unit,
     /** AuthGate's one root host: see RootAnnouncementsHost. */
     snackbarHostState: SnackbarHostState,
     /** Any sheet or dialog the list has open: see AuthGate's finished-run watcher. */
     onOverlayChange: (Boolean) -> Unit,
 ) {
     val listState = rememberLazyListState()
+    var addSheetOpen by rememberSaveable { mutableStateOf(false) }
+    var listOverlayOpen by remember { mutableStateOf(false) }
+    val overlayOpen = addSheetOpen || listOverlayOpen
+    LaunchedEffect(overlayOpen) { onOverlayChange(overlayOpen) }
     // Leaving the screen takes its overlays with it, whatever was last said.
     DisposableEffect(Unit) { onDispose { onOverlayChange(false) } }
 
@@ -95,6 +112,15 @@ fun AllMatchesScreen(
                 ),
             )
         },
+        floatingActionButton = {
+            // Labelled at the top of the list, folded to "+" once it scrolls, as on Players.
+            val expanded by remember { derivedStateOf { addButtonExpanded(listState.firstVisibleItemIndex) } }
+            AddMatchButton(
+                expanded = expanded,
+                onClick = { addSheetOpen = true },
+                modifier = Modifier.windowInsetsPadding(HorizontalSafeDrawing),
+            )
+        },
         // The shape set here, not left to the theme's extraSmall (8dp): the
         // iOS toast is ShuttlRadius.medium, and the two are one message.
         snackbarHost = {
@@ -117,9 +143,19 @@ fun AllMatchesScreen(
                 onRemoveFromPhone = onRemoveFromPhone,
                 onAddPlayer = onAddPlayer,
                 listState = listState,
-                onOverlayChange = onOverlayChange,
-                contentPadding = PaddingValues(bottom = padding.calculateBottomPadding()),
+                onOverlayChange = { listOverlayOpen = it },
+                // The last row and its menu scroll clear of the Add button too.
+                contentPadding = PaddingValues(bottom = padding.calculateBottomPadding() + ADD_BUTTON_CLEARANCE),
             )
         }
+    }
+
+    if (addSheetOpen) {
+        AddMatchSheet(
+            onNewMatch = { addSheetOpen = false; onNewMatch() },
+            onRecord = { addSheetOpen = false; onRecord() },
+            onImport = { addSheetOpen = false; onImport() },
+            onDismiss = { addSheetOpen = false },
+        )
     }
 }

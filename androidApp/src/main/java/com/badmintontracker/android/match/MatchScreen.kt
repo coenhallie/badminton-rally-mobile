@@ -35,6 +35,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -214,15 +215,21 @@ fun MatchScreen(
         }
     }
 
-    val match = (state.ownedMatches + state.sharedMatches).firstOrNull { it.videoId == videoId }
-    val clipsForMatch = sortClips(state.clips.filter { it.videoId == videoId }, sort)
+    val match = remember(state.ownedMatches, state.sharedMatches, videoId) {
+        (state.ownedMatches + state.sharedMatches).firstOrNull { it.videoId == videoId }
+    }
+    val clipsForMatch = remember(state.clips, videoId, sort) {
+        sortClips(state.clips.filter { it.videoId == videoId }, sort)
+    }
     val log = matchState.log
 
     // The row this page is for, from the same list the Matches screen draws,
     // and the sections it has by the one shared rule: the chips on that row
     // are the toggles here. See matchPageSections.
-    val matchItem = state.matchList.matchPageItem(scoreLogId, videoId, entryId)
-    val sections = matchItem?.let(::matchPageSections).orEmpty()
+    val matchItem = remember(state.matchList, scoreLogId, videoId, entryId) {
+        state.matchList.matchPageItem(scoreLogId, videoId, entryId)
+    }
+    val sections = remember(matchItem) { matchItem?.let(::matchPageSections).orEmpty() }
     // Saveable, held for the life of this page and never cleared: a section
     // can go while on screen (the file removed from the phone, a re-analysis
     // clearing the clips),
@@ -254,9 +261,14 @@ fun MatchScreen(
         ?.let(MatchListCopy::actionLabel)
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             // Fullscreen video owns the whole screen: see MatchVideoSection.
             if (!fullscreen) TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    scrolledContainerColor = MaterialTheme.colorScheme.surface,
+                ),
                 title = {
                     when {
                         // The list's own name for this match, so the page and
@@ -271,7 +283,7 @@ fun MatchScreen(
                             overflow = TextOverflow.Ellipsis,
                         )
                         // Score-only: same title as the screen this page replaced.
-                        log != null -> Text(log.title, maxLines = 1)
+                        log != null -> Text(log.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         // Nothing to name: a match that is gone, or the frame
                         // before its row arrives. The body says which.
                         else -> Unit
@@ -292,21 +304,24 @@ fun MatchScreen(
                         }
                     }
                     if (matchState.canAddVideo) {
-                        IconButton(onClick = { addVideoMenuOpen = true }) {
-                            Icon(Icons.Default.Add, contentDescription = "Add video")
-                        }
-                        DropdownMenu(
-                            expanded = addVideoMenuOpen,
-                            onDismissRequest = { addVideoMenuOpen = false },
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("Import video") },
-                                onClick = { addVideoMenuOpen = false; onAddVideo(AttachIntent.Import) },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Record video") },
-                                onClick = { addVideoMenuOpen = false; onAddVideo(AttachIntent.Record) },
-                            )
+                        Box {
+                            IconButton(onClick = { addVideoMenuOpen = true }) {
+                                Icon(Icons.Default.Add, contentDescription = "Add video")
+                            }
+                            DropdownMenu(
+                                expanded = addVideoMenuOpen,
+                                onDismissRequest = { addVideoMenuOpen = false },
+                                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Import video") },
+                                    onClick = { addVideoMenuOpen = false; onAddVideo(AttachIntent.Import) },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Record video") },
+                                    onClick = { addVideoMenuOpen = false; onAddVideo(AttachIntent.Record) },
+                                )
+                            }
                         }
                     }
                     // A scored match, or a filmed one that is the coach's own: both
@@ -318,53 +333,59 @@ fun MatchScreen(
                     // of these, so it gets no menu at all.
                     val editsDetails = log != null || match?.isOwned == true || matchItem?.canEditPlayers == true
                     if (editsDetails || matchItem?.canAnalyzeAgain == true) {
-                        IconButton(onClick = { overflowOpen = true }) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "Match options")
-                        }
-                        DropdownMenu(expanded = overflowOpen, onDismissRequest = { overflowOpen = false }) {
-                            // First, because it is the one a coach comes here for:
-                            // the new match form asks for none of this, and a video
-                            // is uploaded with a name at most.
-                            if (editsDetails) {
-                                DropdownMenuItem(
-                                    text = { Text("Edit details") },
-                                    onClick = { overflowOpen = false; editingDetails = true },
-                                )
+                        Box {
+                            IconButton(onClick = { overflowOpen = true }) {
+                                Icon(Icons.Default.MoreVert, contentDescription = "Match options")
                             }
-                            if (log != null) {
-                                DropdownMenuItem(
-                                    text = { Text("Export as text") },
-                                    onClick = {
-                                        overflowOpen = false
-                                        shareText(context, log.title, exportMatchText(log, matchState.players))
-                                    },
-                                )
-                            }
-                            // The row's own menu item, here too: the same entry,
-                            // through the same resume-or-mark-court decision.
-                            matchItem?.takeIf { it.canAnalyzeAgain }?.entryId?.let { id ->
-                                DropdownMenuItem(
-                                    text = { Text(MatchListCopy.MENU_ANALYZE_AGAIN) },
-                                    onClick = { overflowOpen = false; onAnalyzeEntry(id) },
-                                )
-                            }
-                            // Offered whenever this match has a video and nothing
-                            // is in flight for it - not only when the analysis
-                            // disappointed. A video that found no rallies is the
-                            // likeliest reason to want another one, but gating on
-                            // that would leave the "Finishing up…" dead end with
-                            // no action on it at all. See the 2026-08-29 design.
-                            // An on-device run counts as in flight: only the row
-                            // sees it, see pageOffersVideoRemoval.
-                            if (pageOffersVideoRemoval(matchState.canRemoveVideo, matchItem)) {
-                                DropdownMenuItem(
-                                    text = { Text("Change video") },
-                                    onClick = { overflowOpen = false; videoAction = MatchVideoAction.CHANGE },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Remove video") },
-                                    onClick = { overflowOpen = false; videoAction = MatchVideoAction.REMOVE },
-                                )
+                            DropdownMenu(
+                                expanded = overflowOpen,
+                                onDismissRequest = { overflowOpen = false },
+                                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                            ) {
+                                // First, because it is the one a coach comes here for:
+                                // the new match form asks for none of this, and a video
+                                // is uploaded with a name at most.
+                                if (editsDetails) {
+                                    DropdownMenuItem(
+                                        text = { Text("Edit details") },
+                                        onClick = { overflowOpen = false; editingDetails = true },
+                                    )
+                                }
+                                if (log != null) {
+                                    DropdownMenuItem(
+                                        text = { Text("Export as text") },
+                                        onClick = {
+                                            overflowOpen = false
+                                            shareText(context, log.title, exportMatchText(log, matchState.players))
+                                        },
+                                    )
+                                }
+                                // The row's own menu item, here too: the same entry,
+                                // through the same resume-or-mark-court decision.
+                                matchItem?.takeIf { it.canAnalyzeAgain }?.entryId?.let { id ->
+                                    DropdownMenuItem(
+                                        text = { Text(MatchListCopy.MENU_ANALYZE_AGAIN) },
+                                        onClick = { overflowOpen = false; onAnalyzeEntry(id) },
+                                    )
+                                }
+                                // Offered whenever this match has a video and nothing
+                                // is in flight for it - not only when the analysis
+                                // disappointed. A video that found no rallies is the
+                                // likeliest reason to want another one, but gating on
+                                // that would leave the "Finishing up…" dead end with
+                                // no action on it at all. See the 2026-08-29 design.
+                                // An on-device run counts as in flight: only the row
+                                // sees it, see pageOffersVideoRemoval.
+                                if (pageOffersVideoRemoval(matchState.canRemoveVideo, matchItem)) {
+                                    DropdownMenuItem(
+                                        text = { Text("Change video") },
+                                        onClick = { overflowOpen = false; videoAction = MatchVideoAction.CHANGE },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Remove video") },
+                                        onClick = { overflowOpen = false; videoAction = MatchVideoAction.REMOVE },
+                                    )
+                                }
                             }
                         }
                     }
@@ -386,6 +407,7 @@ fun MatchScreen(
                 (scoreLogId == null && videoId == null && entryId != null && state.localEntries.none { it.id == entryId })
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 if (gone) Text(MatchPageCopy.MISSING)
+                else CircularProgressIndicator()
             }
             return@Scaffold
         }
@@ -687,6 +709,7 @@ private fun MatchVideoDialog(
     val prompt = matchVideoPrompt(action, hasServerVideo)
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         title = { Text(prompt.title) },
         text = { Text(prompt.body) },
         confirmButton = {

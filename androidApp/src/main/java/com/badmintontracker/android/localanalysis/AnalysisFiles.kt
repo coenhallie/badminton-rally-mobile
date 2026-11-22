@@ -3,6 +3,34 @@ package com.badmintontracker.android.localanalysis
 import com.badmintontracker.shared.localvideo.LocalVideoRemoval
 import java.io.File
 
+private val SAFE_ENTRY_ID = Regex("^[A-Za-z0-9_-]{1,128}$")
+
+internal fun isSafeEntryId(entryId: String): Boolean = SAFE_ENTRY_ID.matches(entryId)
+
+/**
+ * Guards every on-disk store path derived from an entry ID against path
+ * traversal (`..`, path separators, empty or overly long names).
+ */
+internal fun requireSafeEntryId(entryId: String): String {
+    require(isSafeEntryId(entryId)) { "invalid entry id" }
+    return entryId
+}
+
+/**
+ * Resolves [relativeName] under [base] and verifies the canonical path stays
+ * strictly inside [base].
+ */
+internal fun resolveContainedChild(base: File, relativeName: String): File {
+    val baseCanonical = base.canonicalFile
+    val target = File(baseCanonical, relativeName).canonicalFile
+    val basePath = baseCanonical.path
+    val expectedPrefix = if (basePath.endsWith(File.separator)) basePath else basePath + File.separator
+    require(target.path.startsWith(expectedPrefix)) {
+        "resolved path escapes base directory"
+    }
+    return target
+}
+
 /**
  * What an analysis leaves on disk, and how it is thrown away.
  *
@@ -61,18 +89,19 @@ object AnalysisFiles {
 
     /** Removes what this video left on disk, as much of it as [reason] allows. */
     fun deleteAll(filesDir: File, entryId: String, reason: LocalVideoRemoval) {
+        requireSafeEntryId(entryId)
         val stores = when (reason) {
             LocalVideoRemoval.DISCARDED -> VIDEO_STORES + TRACK_STORES
             LocalVideoRemoval.VIDEO_ONLY -> VIDEO_STORES
         }
         for (store in stores) {
             val base = File(filesDir, store)
-            File(base, entryId).deleteRecursively()
+            resolveContainedChild(base, entryId).deleteRecursively()
             for (suffix in SUFFIXES) {
-                File(base, entryId + suffix).delete()
+                resolveContainedChild(base, entryId + suffix).delete()
                 // What writeAtomically leaves when the process dies between the
                 // write and the rename.
-                File(base, entryId + suffix + TMP_SUFFIX).delete()
+                resolveContainedChild(base, entryId + suffix + TMP_SUFFIX).delete()
             }
         }
     }

@@ -59,7 +59,6 @@ private val RACKET_ARMS = listOf(RacketArm.LEFT to "Left arm", RacketArm.RIGHT t
  * tap selects it for the graph and the overlay; absent is a dash so the
  * layout never jumps and a stale number is never left on screen.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun MetricsStrip(
     metrics: PoseMetrics?,
@@ -78,20 +77,40 @@ fun MetricsStrip(
     onExpanded: (Boolean) -> Unit,
     detail: String,
     modifier: Modifier = Modifier,
+) = MetricsStrip(
+    metricsProvider = { metrics },
+    hasCourt = hasCourt,
+    racketArm = racketArm,
+    onRacketArm = onRacketArm,
+    racketArmFromProfile = racketArmFromProfile,
+    selected = selected,
+    onSelect = onSelect,
+    expanded = expanded,
+    onExpanded = onExpanded,
+    detail = detail,
+    modifier = modifier,
+)
+
+/**
+ * Deferred overload that reads [metricsProvider] only inside each leaf stat
+ * tile, so per-frame metric updates do not recompose the pager, dots, or header.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun MetricsStrip(
+    metricsProvider: () -> PoseMetrics?,
+    hasCourt: Boolean,
+    racketArm: RacketArm?,
+    onRacketArm: (RacketArm?) -> Unit,
+    racketArmFromProfile: Boolean,
+    selected: MetricKind,
+    onSelect: (MetricKind) -> Unit,
+    expanded: Boolean,
+    onExpanded: (Boolean) -> Unit,
+    detail: String,
+    modifier: Modifier = Modifier,
 ) {
     val kinds = visibleKinds(hasCourt, racketArm)
-    fun tile(kind: MetricKind, tileModifier: Modifier) = @Composable {
-        val text = metricText(kind, metrics?.let { kind.of(it) })
-        ShuttlStatTile(
-            value = text.value,
-            unit = text.unit,
-            label = metricLabel(kind, racketArm),
-            labelAbove = true,
-            selected = kind == selected,
-            onClick = { onSelect(kind) },
-            modifier = tileModifier,
-        )
-    }
 
     if (!expanded) {
         val pages = kinds.chunked(TILES_PER_PAGE)
@@ -116,7 +135,16 @@ fun MetricsStrip(
                 pageSpacing = 8.dp,
                 key = { page -> pages[page].first().name },
             ) { page ->
-                TilePage(pages[page]) { kind, tileModifier -> tile(kind, tileModifier)() }
+                TilePage(pages[page]) { kind, tileModifier ->
+                    MetricTile(
+                        kind = kind,
+                        metricsProvider = metricsProvider,
+                        racketArm = racketArm,
+                        selected = kind == selected,
+                        onSelect = onSelect,
+                        modifier = tileModifier,
+                    )
+                }
             }
             // The dots say there is more, which the mock's single grid never
             // had to; the chevron opens the whole grid. One row for both, so
@@ -128,7 +156,7 @@ fun MetricsStrip(
                 Spacer(Modifier.weight(1f))
                 if (pages.size > 1) PageDots(count = pages.size, current = pagerState.currentPage)
                 Spacer(Modifier.weight(1f))
-                IconButton(onClick = { onExpanded(true) }, modifier = Modifier.size(40.dp)) {
+                IconButton(onClick = { onExpanded(true) }, modifier = Modifier.size(48.dp)) {
                     Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Show all measurements")
                 }
             }
@@ -144,7 +172,7 @@ fun MetricsStrip(
                 color = ShuttlTheme.extended.textTertiary,
                 modifier = Modifier.weight(1f),
             )
-            IconButton(onClick = { onExpanded(false) }) {
+            IconButton(onClick = { onExpanded(false) }, modifier = Modifier.size(48.dp)) {
                 Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "Show one row of measurements")
             }
         }
@@ -158,7 +186,16 @@ fun MetricsStrip(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             maxItemsInEachRow = 2,
         ) {
-            kinds.forEach { tile(it, Modifier.weight(1f))() }
+            kinds.forEach { kind ->
+                MetricTile(
+                    kind = kind,
+                    metricsProvider = metricsProvider,
+                    racketArm = racketArm,
+                    selected = kind == selected,
+                    onSelect = onSelect,
+                    modifier = Modifier.weight(1f),
+                )
+            }
             if (kinds.size % 2 == 1) Spacer(Modifier.weight(1f))
         }
         // The caption and the control get a row each. Side by side they fit a
@@ -185,6 +222,28 @@ fun MetricsStrip(
             modifier = Modifier.padding(top = 12.dp),
         )
     }
+}
+
+/** Leaf stat tile that scopes [metricsProvider] reads to just this card. */
+@Composable
+private fun MetricTile(
+    kind: MetricKind,
+    metricsProvider: () -> PoseMetrics?,
+    racketArm: RacketArm?,
+    selected: Boolean,
+    onSelect: (MetricKind) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val text = metricText(kind, metricsProvider()?.let { kind.of(it) })
+    ShuttlStatTile(
+        value = text.value,
+        unit = text.unit,
+        label = metricLabel(kind, racketArm),
+        labelAbove = true,
+        selected = selected,
+        onClick = { onSelect(kind) },
+        modifier = modifier,
+    )
 }
 
 /**

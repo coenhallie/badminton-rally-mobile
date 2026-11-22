@@ -13,6 +13,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -26,9 +27,10 @@ import com.badmintontracker.android.localanalysis.LocalClipPlayerDialog
 import com.badmintontracker.android.localanalysis.PanelMessage
 import com.badmintontracker.shared.matchlist.rallyLengthText
 import com.badmintontracker.shared.matchpage.MatchPageCopy
-import java.util.Locale
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 
 /**
  * The rallies an on-device run cut, as the Rallies section shows them until
@@ -54,12 +56,15 @@ fun DeviceRalliesSection(entryId: String, localAnalysis: LocalAnalysisRunner, mo
     val done by remember(entryId, localAnalysis) {
         localAnalysis.state.map { it[entryId] as? LocalAnalysisState.Done }.distinctUntilChanged()
     }.collectAsStateWithLifecycle(localAnalysis.stateFor(entryId) as? LocalAnalysisState.Done)
-    val clips = remember(entryId, done) { localAnalysis.storedClips(entryId) }
+    val clips by produceState<List<ClipCutter.Clip>?>(null, entryId, done) {
+        value = withContext(Dispatchers.IO) { localAnalysis.storedClips(entryId) }
+    }
     var playing by remember { mutableStateOf<ClipCutter.Clip?>(null) }
     playing?.let { LocalClipPlayerDialog(clip = it, title = deviceClipLabel(it), onDismiss = { playing = null }) }
+    val loadedClips = clips
     LazyColumn(modifier.fillMaxSize()) {
-        if (clips.isEmpty()) item(key = "empty") { PanelMessage(MatchPageCopy.DEVICE_CLIPS_EMPTY) }
-        items(clips, key = { it.index }) { clip ->
+        if (loadedClips != null && loadedClips.isEmpty()) item(key = "empty") { PanelMessage(MatchPageCopy.DEVICE_CLIPS_EMPTY) }
+        items(loadedClips.orEmpty(), key = { it.index }) { clip ->
             Column(
                 Modifier
                     .fillMaxWidth()
@@ -72,9 +77,10 @@ fun DeviceRalliesSection(entryId: String, localAnalysis: LocalAnalysisRunner, mo
                     color = MaterialTheme.colorScheme.onBackground,
                 )
                 deviceClipLength(clip)?.let { length ->
+                    // Set as it reads, as the cloud rally row's line is: see rallyRowMeta.
                     Text(
-                        length.uppercase(Locale.ROOT),
-                        style = MaterialTheme.typography.labelSmall,
+                        length,
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }

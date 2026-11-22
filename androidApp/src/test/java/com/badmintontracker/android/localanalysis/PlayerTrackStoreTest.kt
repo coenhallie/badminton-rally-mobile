@@ -5,6 +5,7 @@ import com.badmintontracker.analysis.player.CourtSide
 import com.badmintontracker.analysis.player.PlayerSample
 import com.badmintontracker.analysis.player.PlayerSelection
 import com.badmintontracker.analysis.player.PlayerTrack
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.shouldBe
 import org.junit.Rule
 import org.junit.Test
@@ -187,5 +188,37 @@ class PlayerTrackStoreTest {
         stored.tracks.size shouldBe 2
         stored.tracks[1].track.samples shouldBe emptyList()
         stored.tracks[1].track.framesWithPose shouldBe 10
+    }
+
+    @Test
+    fun `rejects unsafe entry ids across all operations`() {
+        val s = store()
+        for (bad in listOf("", "../foo", "..", "a/b", "a\\b")) {
+            shouldThrow<IllegalArgumentException> { s.save(bad, track, 30.0) }
+            shouldThrow<IllegalArgumentException> { s.saveAll(bad, TrackSource.CLOUD, emptyList(), 30.0) }
+            shouldThrow<IllegalArgumentException> { s.has(bad) }
+            shouldThrow<IllegalArgumentException> { s.load(bad) }
+            shouldThrow<IllegalArgumentException> { s.saveClips(bad, emptyList()) }
+            shouldThrow<IllegalArgumentException> { s.loadClips(bad) }
+        }
+    }
+
+    @Test
+    fun `loadClips ignores clip filenames with path traversal or separators`() {
+        val s = store()
+        val clipsDir = File(temp.root, "local-clips/e1").apply { mkdirs() }
+        val escaped = File(temp.root, "local-clips/escape.mp4").apply { writeText("nope") }
+        val nested = File(clipsDir, "sub/rally-2.mp4").apply { parentFile!!.mkdirs(); writeText("nope") }
+        val legit = File(clipsDir, "rally-1.mp4").apply { writeText("ok") }
+        File(clipsDir, "clips.index").writeText(
+            "v2\n" +
+                "1,0.0,3.0,${legit.name}\n" +
+                "2,3.0,6.0,../${escaped.name}\n" +
+                "3,6.0,9.0,sub/${nested.name}\n",
+        )
+
+        val loaded = s.loadClips("e1")
+        loaded.map { it.index } shouldBe listOf(1)
+        loaded.single().file.canonicalFile shouldBe legit.canonicalFile
     }
 }

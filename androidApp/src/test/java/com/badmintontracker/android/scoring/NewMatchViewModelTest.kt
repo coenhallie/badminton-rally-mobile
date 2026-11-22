@@ -142,4 +142,13 @@ class NewMatchViewModelTest {
         val log = repo.get(vm(playerId = null).create().shouldNotBeNull()).shouldNotBeNull()
         log.matchPlayers shouldBe MatchPlayers.NONE
     }
+
+    @Test
+    fun creating_twice_ignores_the_second_submission() {
+        val vm = vm()
+        vm.create().shouldNotBeNull()
+        vm.create() shouldBe null
+        vm.state.value.canCreate shouldBe false
+        repo.logs.value.size shouldBe 1
+    }
 }

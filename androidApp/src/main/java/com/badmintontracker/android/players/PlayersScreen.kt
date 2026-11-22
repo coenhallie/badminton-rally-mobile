@@ -27,6 +27,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -35,6 +37,7 @@ import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -96,6 +99,7 @@ import kotlinx.coroutines.launch
  *
  * Mirrors iosApp's PlayersScreen.swift.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlayersScreen(
     vm: PlayersViewModel,
@@ -191,17 +195,25 @@ fun PlayersScreen(
             }
             // weight(1f), not fillMaxSize: measured alongside the title bar,
             // fillMaxSize would claim the bar's height too.
-            Box(Modifier.weight(1f).fillMaxWidth()) {
+            PullToRefreshBox(
+                isRefreshing = state.isRefreshing && (state.loaded || state.players.isNotEmpty()),
+                onRefresh = { vm.refresh(); clipListVm.refresh() },
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+            ) {
                 if (state.players.isEmpty()) {
-                    // Nothing at all until the first refresh settles: see
-                    // PlayersUiState.loaded.
-                    if (state.showsNoPlayers) NoPlayers(
-                        loadFailed = state.loadFailed,
-                        onRetry = vm::refresh,
-                        onAddPlayer = { addPlayerOpen = true },
-                        onAllMatches = onAllMatches,
-                        bottom = bottom,
-                    )
+                    if (!state.loaded) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator()
+                        }
+                    } else if (state.showsNoPlayers) {
+                        NoPlayers(
+                            loadFailed = state.loadFailed,
+                            onRetry = vm::refresh,
+                            onAddPlayer = { addPlayerOpen = true },
+                            onAllMatches = onAllMatches,
+                            bottom = bottom,
+                        )
+                    }
                 } else {
                     LazyColumn(
                         state = lazyState,

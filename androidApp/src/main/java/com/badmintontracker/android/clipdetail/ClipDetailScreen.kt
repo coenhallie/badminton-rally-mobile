@@ -5,8 +5,10 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -27,6 +29,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -40,7 +43,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -90,6 +95,10 @@ fun ClipDetailScreen(
         }
     }
 
+    LifecycleStartEffect(player) {
+        onStopOrDispose { player.pause() }
+    }
+
     LaunchedEffect(state.signedClipUrl) {
         val url = state.signedClipUrl ?: return@LaunchedEffect
         player.setMediaItem(MediaItem.fromUri(url))
@@ -111,7 +120,7 @@ fun ClipDetailScreen(
         vm.clearActionError()
     }
 
-    val position by rememberPlaybackPosition(player)
+    val positionState = rememberPlaybackPosition(player)
     val speed by playbackPrefs.speed.collectAsStateWithLifecycle()
     val skipSeconds by playbackPrefs.skipSeconds.collectAsStateWithLifecycle()
     var showSettings by remember { mutableStateOf(false) }
@@ -126,11 +135,12 @@ fun ClipDetailScreen(
         tagMessage.show(quickTagConfirmation(label, positionMs))
     }
 
-    val video: @Composable (Boolean) -> Unit = { fullscreen ->
+    val video: @Composable (Boolean, Dp?) -> Unit = { fullscreen, maxHeight ->
         VideoCard(
             player = player,
-            position = position,
+            positionProvider = positionState::value,
             onSettingsTap = { showSettings = true },
+            maxHeight = maxHeight,
             fullscreen = fullscreen,
             onFullscreenToggle = { isFullscreen = !isFullscreen },
             error = state.error?.let { message ->
@@ -142,6 +152,7 @@ fun ClipDetailScreen(
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             if (!isFullscreen) {
                 TopAppBar(
@@ -154,52 +165,69 @@ fun ClipDetailScreen(
                     // Only on the non-fullscreen bar: fullscreen playback is
                     // deliberately chrome-free.
                     actions = { BackgroundWorkAction() },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                 )
             }
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
-        Column(modifier = Modifier.padding(padding).fillMaxSize()) {
-            if (!isFullscreen) {
-                video(false)
-                TransportBar(
-                    player = player,
-                    prefs = playbackPrefs,
-                    onSettings = { showSettings = true },
-                    modifier = Modifier.padding(top = 16.dp),
-                )
-                ReplayLabelRow(
-                    labels = tagLabels,
-                    message = tagMessage.text,
-                    onTag = tag,
-                    modifier = Modifier.padding(top = 16.dp),
-                )
-                NotesHeader(caption = "Notes", onAdd = addNote, modifier = Modifier.padding(top = 22.dp, bottom = 8.dp))
-            }
-
-            if (state.isLoading) {
-                Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
+        BoxWithConstraints(modifier = Modifier.padding(padding).fillMaxSize()) {
+            val portraitMaxVideoHeight = (maxHeight * 0.40f).coerceAtLeast(140.dp)
+            Column(modifier = Modifier.fillMaxSize()) {
+                if (!isFullscreen) {
+                    video(false, portraitMaxVideoHeight)
+                    TransportBar(
+                        player = player,
+                        prefs = playbackPrefs,
+                        onSettings = { showSettings = true },
+                        modifier = Modifier.padding(top = 16.dp),
+                    )
                 }
-            } else if (state.annotations.isEmpty()) {
-                Text(
-                    "No notes on this clip.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-                )
-            } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(state.annotations, key = { it.id }) { a ->
-                        AnnotationRow(
-                            timestampSeconds = a.timestampSeconds,
-                            body = a.body,
-                            labelName = a.labelName,
-                            labelColor = a.labelColor,
-                            onClick = { vm.onAnnotationTap(a) },
-                            onDelete = if (state.isOwner) ({ pendingDelete = a }) else null,
-                        )
-                        HorizontalDivider(modifier = Modifier.padding(horizontal = 24.dp))
+
+                LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    if (!isFullscreen) {
+                        item(key = "labels") {
+                            ReplayLabelRow(
+                                labels = tagLabels,
+                                message = tagMessage.text,
+                                onTag = tag,
+                                modifier = Modifier.padding(top = 16.dp),
+                            )
+                        }
+                        item(key = "notes_header") {
+                            NotesHeader(
+                                caption = "Notes",
+                                onAdd = addNote,
+                                modifier = Modifier.padding(top = 22.dp, bottom = 8.dp),
+                            )
+                        }
+                    }
+
+                    when {
+                        state.isLoading -> item(key = "loading") {
+                            Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator()
+                            }
+                        }
+                        state.annotations.isEmpty() -> item(key = "empty") {
+                            Text(
+                                "No notes on this clip.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                            )
+                        }
+                        else -> items(state.annotations, key = { it.id }) { a ->
+                            AnnotationRow(
+                                timestampSeconds = a.timestampSeconds,
+                                body = a.body,
+                                labelName = a.labelName,
+                                labelColor = a.labelColor,
+                                onClick = { vm.onAnnotationTap(a) },
+                                onDelete = if (state.isOwner) ({ pendingDelete = a }) else null,
+                            )
+                            HorizontalDivider(modifier = Modifier.padding(horizontal = 24.dp))
+                        }
                     }
                 }
             }
@@ -208,7 +236,7 @@ fun ClipDetailScreen(
 
     if (isFullscreen) {
         Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-            video(true)
+            video(true, null)
             TransportBar(
                 player = player,
                 prefs = playbackPrefs,
@@ -244,8 +272,14 @@ fun ClipDetailScreen(
     pendingDelete?.let { a ->
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
             title = { Text("Delete note?") },
-            text = { Text(if (a.body.isNotBlank()) "\"${a.body}\"" else a.labelName.orEmpty()) },
+            text = {
+                Text(
+                    if (a.body.isNotBlank()) "\"${a.body}\""
+                    else a.labelName?.takeIf { it.isNotBlank() } ?: "This note",
+                )
+            },
             confirmButton = {
                 TextButton(onClick = {
                     vm.deleteAnnotation(a.id)

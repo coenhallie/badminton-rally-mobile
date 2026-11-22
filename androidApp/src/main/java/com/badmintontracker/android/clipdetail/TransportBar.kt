@@ -32,9 +32,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -112,17 +116,22 @@ fun TransportBar(
     val measurer = rememberTextMeasurer()
     val pillStyle = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium)
     val readoutStyle = MaterialTheme.typography.labelMedium
-    fun widthOf(text: String) = with(density) { measurer.measure(text, pillStyle).size.width.toDp().value }
-    val pillLabelWidth = widthOf(TransportRowLayout.pillLabel(skipSeconds, forward = true, showPillIcons = true))
-    val signedPillLabelWidth = maxOf(
-        widthOf(TransportRowLayout.pillLabel(skipSeconds, forward = true, showPillIcons = false)),
-        widthOf(TransportRowLayout.pillLabel(skipSeconds, forward = false, showPillIcons = false)),
-    )
-    // The widest the readout gets, not what it says now: the row must not re-space
-    // itself when the speed changes.
-    val readoutWidth = with(density) {
-        PlaybackOptions.speedOptions.maxOf { measurer.measure(PlaybackOptions.formatSpeed(it), readoutStyle).size.width }
-            .toDp().value
+    val (pillLabelWidth, signedPillLabelWidth, readoutWidth) = remember(
+        measurer, density, skipSeconds, pillStyle, readoutStyle,
+    ) {
+        fun widthOf(text: String) = with(density) { measurer.measure(text, pillStyle).size.width.toDp().value }
+        val pill = widthOf(TransportRowLayout.pillLabel(skipSeconds, forward = true, showPillIcons = true))
+        val signedPill = maxOf(
+            widthOf(TransportRowLayout.pillLabel(skipSeconds, forward = true, showPillIcons = false)),
+            widthOf(TransportRowLayout.pillLabel(skipSeconds, forward = false, showPillIcons = false)),
+        )
+        // The widest the readout gets, not what it says now: the row must not re-space
+        // itself when the speed changes.
+        val readout = with(density) {
+            PlaybackOptions.speedOptions.maxOf { measurer.measure(PlaybackOptions.formatSpeed(it), readoutStyle).size.width }
+                .toDp().value
+        }
+        Triple(pill, signedPill, readout)
     }
 
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
@@ -178,64 +187,77 @@ private fun RowScope.TransportControls(
     skip: (Int) -> Unit,
     onSettings: () -> Unit,
 ) {
-        SkipPill(
-            icon = ShuttlIcons.ChevronsLeft,
-            label = TransportRowLayout.pillLabel(skipSeconds, forward = false, showPillIcons = metrics.showPillIcons),
-            metrics = metrics,
-            iconFirst = true,
-            contentDescription = "Skip back $skipSeconds seconds",
-            onTap = { skip(-1) },
-            onHoldActivate = onSettings,
-            modifier = Modifier.weight(1f, fill = false),
-        )
-        RoundButton(
-            icon = ShuttlIcons.StepBack,
-            contentDescription = "Previous frame",
-            onTap = {
-                if (player.isPlaying) player.pause()
-                player.seekFrames(-1)
-            },
-            onHoldTick = { player.seekFrames(-3) },
-            holdTickPeriodMs = 100L,
-        )
-        RoundButton(
-            icon = if (playing) ShuttlIcons.Pause else ShuttlIcons.Play,
-            contentDescription = if (playing) "Pause" else "Play",
-            accent = true,
-            size = 60.dp,
-            onTap = {
-                when {
-                    player.isPlaying -> player.pause()
-                    // At the end, play means from the start; otherwise play()
-                    // sits on the last frame and does nothing.
-                    player.playbackState == Player.STATE_ENDED -> {
-                        player.seekTo(0L)
-                        player.play()
-                    }
-                    else -> player.play()
+    val haptics = LocalHapticFeedback.current
+    SkipPill(
+        icon = ShuttlIcons.ChevronsLeft,
+        label = TransportRowLayout.pillLabel(skipSeconds, forward = false, showPillIcons = metrics.showPillIcons),
+        metrics = metrics,
+        iconFirst = true,
+        contentDescription = "Skip back $skipSeconds seconds",
+        onTap = { skip(-1) },
+        onHoldActivate = {
+            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            onSettings()
+        },
+        modifier = Modifier.weight(1f, fill = false),
+    )
+    RoundButton(
+        icon = ShuttlIcons.StepBack,
+        contentDescription = "Previous frame",
+        onTap = {
+            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            if (player.isPlaying) player.pause()
+            player.seekFrames(-1)
+        },
+        onHoldActivate = { haptics.performHapticFeedback(HapticFeedbackType.LongPress) },
+        onHoldTick = { player.seekFrames(-3) },
+        holdTickPeriodMs = 100L,
+    )
+    RoundButton(
+        icon = if (playing) ShuttlIcons.Pause else ShuttlIcons.Play,
+        contentDescription = if (playing) "Pause" else "Play",
+        accent = true,
+        size = 60.dp,
+        onTap = {
+            when {
+                player.isPlaying -> player.pause()
+                // At the end, play means from the start; otherwise play()
+                // sits on the last frame and does nothing.
+                player.playbackState == Player.STATE_ENDED -> {
+                    player.seekTo(0L)
+                    player.play()
                 }
-            },
-        )
-        RoundButton(
-            icon = ShuttlIcons.StepForward,
-            contentDescription = "Next frame",
-            onTap = {
-                if (player.isPlaying) player.pause()
-                player.seekFrames(1)
-            },
-            onHoldActivate = { player.play() },
-            onRelease = { if (player.isPlaying) player.pause() },
-        )
-        SkipPill(
-            icon = ShuttlIcons.ChevronsRight,
-            label = TransportRowLayout.pillLabel(skipSeconds, forward = true, showPillIcons = metrics.showPillIcons),
-            metrics = metrics,
-            iconFirst = false,
-            contentDescription = "Skip forward $skipSeconds seconds",
-            onTap = { skip(1) },
-            onHoldActivate = onSettings,
-            modifier = Modifier.weight(1f, fill = false),
-        )
+                else -> player.play()
+            }
+        },
+    )
+    RoundButton(
+        icon = ShuttlIcons.StepForward,
+        contentDescription = "Next frame",
+        onTap = {
+            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            if (player.isPlaying) player.pause()
+            player.seekFrames(1)
+        },
+        onHoldActivate = {
+            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            player.play()
+        },
+        onRelease = { if (player.isPlaying) player.pause() },
+    )
+    SkipPill(
+        icon = ShuttlIcons.ChevronsRight,
+        label = TransportRowLayout.pillLabel(skipSeconds, forward = true, showPillIcons = metrics.showPillIcons),
+        metrics = metrics,
+        iconFirst = false,
+        contentDescription = "Skip forward $skipSeconds seconds",
+        onTap = { skip(1) },
+        onHoldActivate = {
+            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            onSettings()
+        },
+        modifier = Modifier.weight(1f, fill = false),
+    )
 }
 
 /**
@@ -261,7 +283,12 @@ private fun SkipPill(
             .height(48.dp)
             .transportSurface(RoundedCornerShape(ShuttlRadius.pill), pressed, accent = false)
             .then(pressAndHold(onPressedChange = { pressed = it }, onTap = onTap, onHoldActivate = onHoldActivate))
-            .semantics { this.contentDescription = contentDescription; role = Role.Button }
+            .semantics {
+                this.contentDescription = contentDescription
+                role = Role.Button
+                onClick(label = null) { onTap(); true }
+                onLongClick(label = "Playback settings") { onHoldActivate(); true }
+            }
             .padding(horizontal = metrics.pillPadding.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
@@ -314,7 +341,11 @@ private fun RoundButton(
                     onRelease = onRelease,
                 ),
             )
-            .semantics { this.contentDescription = contentDescription; role = Role.Button },
+            .semantics {
+                this.contentDescription = contentDescription
+                role = Role.Button
+                onClick(label = null) { onTap(); true }
+            },
         contentAlignment = Alignment.Center,
     ) {
         Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(if (accent) 18.dp else 14.dp))

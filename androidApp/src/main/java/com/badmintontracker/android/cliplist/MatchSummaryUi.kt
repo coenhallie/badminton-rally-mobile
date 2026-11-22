@@ -126,7 +126,7 @@ fun MatchSummarySheet(
         Column(
             Modifier
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = 24.dp)
                 .padding(bottom = 24.dp)
         ) {
             Text(
@@ -184,7 +184,7 @@ private fun LabelShareRow(label: LabelCount) {
                 .fillMaxWidth()
                 .height(6.dp)
                 .clip(RoundedCornerShape(3.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .background(MaterialTheme.colorScheme.outlineVariant)
         ) {
             Box(
                 Modifier

@@ -9,12 +9,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -22,6 +24,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.foundation.text.selection.TextSelectionColors
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -31,6 +34,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,8 +47,11 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
@@ -114,6 +121,7 @@ internal fun ScoreEditSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 24.dp)
                 // Keeps the summary and Save above the number pad, as MatchDetailsSheet does.
@@ -210,7 +218,9 @@ private fun ScoreTile(
     // The selection is held here rather than rebuilt from [text] each time, so a
     // tap into the field can select the whole number for typing straight over.
     var field by remember { mutableStateOf(TextFieldValue(text)) }
-    if (field.text != text) field = TextFieldValue(text, selection = TextRange(text.length))
+    LaunchedEffect(text) {
+        if (field.text != text) field = TextFieldValue(text, selection = TextRange(text.length))
+    }
 
     Surface(modifier = modifier, shape = RoundedCornerShape(ShuttlRadius.medium), color = colour) {
         Column(
@@ -297,37 +307,53 @@ private fun ScoreTile(
 @Composable
 private fun ServeToggle(mark: ServeMark, onServe: () -> Unit) {
     val serving = mark == ServeMark.Serving
-    Surface(
+    val haptics = LocalHapticFeedback.current
+    Box(
         modifier = Modifier
+            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
             .alpha(if (mark == ServeMark.None) 0f else 1f)
             .then(
-                if (mark == ServeMark.Available) {
-                    Modifier.clickable(onClickLabel = "Serve next", role = Role.Button, onClick = onServe)
-                } else if (mark == ServeMark.Serving) {
-                    Modifier.semantics { contentDescription = "Serves next" }
-                } else Modifier,
+                when (mark) {
+                    ServeMark.Available ->
+                        Modifier.clickable(onClickLabel = "Serve next", role = Role.Button) {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onServe()
+                        }
+                    ServeMark.Serving ->
+                        Modifier.semantics { contentDescription = "Serves next" }
+                    ServeMark.None ->
+                        Modifier.clearAndSetSemantics {}
+                },
             ),
-        shape = RoundedCornerShape(ShuttlRadius.extraSmall),
-        color = if (serving) Color.White else Color.Transparent,
-        border = if (serving) null else BorderStroke(1.dp, Color.White.copy(alpha = 0.6f)),
+        contentAlignment = Alignment.Center,
     ) {
-        // The board's own word, so the pill reads the same in both places.
-        // "Serves next" did not fit a tile on one line at the largest font.
-        Text(
-            text = "SERVE",
-            maxLines = 1,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.Bold,
-            color = if (serving) Color.Black else Color.White.copy(alpha = 0.85f),
-        )
+        Surface(
+            shape = RoundedCornerShape(ShuttlRadius.extraSmall),
+            color = if (serving) Color.White else Color.Transparent,
+            border = if (serving) null else BorderStroke(1.dp, Color.White.copy(alpha = 0.6f)),
+        ) {
+            // The board's own word, so the pill reads the same in both places.
+            // "Serves next" did not fit a tile on one line at the largest font.
+            Text(
+                text = "SERVE",
+                maxLines = 1,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = if (serving) Color.Black else Color.White.copy(alpha = 0.85f),
+            )
+        }
     }
 }
 
 @Composable
 private fun StepButton(icon: ImageVector, label: String, onClick: (() -> Unit)?) {
+    val haptics = LocalHapticFeedback.current
     Surface(
-        onClick = { onClick?.invoke() },
+        onClick = {
+            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            onClick?.invoke()
+        },
         enabled = onClick != null,
         shape = CircleShape,
         color = Color.White.copy(alpha = 0.16f),

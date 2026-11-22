@@ -1,6 +1,9 @@
 package com.badmintontracker.android.ui.components
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
@@ -28,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -199,17 +203,25 @@ fun ShuttlPillTabs(
             labels.forEachIndexed { index, label ->
                 val selected = index == selectedIndex
                 val pillEnabled = enabled && index !in disabledIndices
+                val pillBg by animateColorAsState(
+                    targetValue = if (selected) MaterialTheme.colorScheme.onBackground else Color.Transparent,
+                    animationSpec = tween(180),
+                    label = "pill-bg",
+                )
+                val pillFg by animateColorAsState(
+                    targetValue = if (selected) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.onSurfaceVariant,
+                    animationSpec = tween(180),
+                    label = "pill-fg",
+                )
                 Box(
                     modifier = Modifier
                         .weight(1f)
+                        .heightIn(min = 48.dp)
                         // The whole pill, fill included, so a chosen pill in a
                         // read-only row dims with it, as a disabled field does.
                         .alpha(if (pillEnabled) 1f else DISABLED_PILL_ALPHA)
                         .clip(shape)
-                        .background(
-                            if (selected) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.surfaceVariant,
-                            shape,
-                        )
+                        .background(pillBg, shape)
                         .selectable(
                             selected = selected,
                             enabled = pillEnabled,
@@ -222,7 +234,7 @@ fun ShuttlPillTabs(
                     Text(
                         label,
                         style = style,
-                        color = if (selected) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = pillFg,
                         textAlign = TextAlign.Center,
                         maxLines = if (singleLine) 1 else Int.MAX_VALUE,
                         overflow = if (singleLine) TextOverflow.Ellipsis else TextOverflow.Clip,

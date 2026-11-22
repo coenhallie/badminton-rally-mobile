@@ -73,6 +73,7 @@ class ClipListViewModelDeleteTest {
             deviceStates = MutableStateFlow(emptyMap()),
             storedResults = { StoredResults() },
             ioDispatcher = dispatcher,
+            computeDispatcher = dispatcher,
         )
     }
 

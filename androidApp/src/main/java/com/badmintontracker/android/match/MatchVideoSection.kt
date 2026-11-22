@@ -32,6 +32,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -108,16 +109,19 @@ fun MatchVideoSection(
     var playbackError by remember { mutableStateOf<String?>(null) }
 
     // The snackbar host is the caller's, passed in so this section can show a
-    // playback error through it. Fullscreen draws the video, the transport
-    // bar and FullscreenLabels' tag row over a black background; the
-    // LaunchedEffect below withholds the message while fullscreen and
-    // re-checks it once fullscreen exits.
+    // playback error through it. In fullscreen the snackbar host sits underneath
+    // the opaque black box, so errors surface in the floating label window
+    // (when labels are visible) or once fullscreen exits.
     val tagMessage = rememberQuickTagMessage()
 
-    LaunchedEffect(labelErrorMessage, fullscreen) {
-        if (fullscreen) return@LaunchedEffect
+    LaunchedEffect(labelErrorMessage, fullscreen, labelOptions.isEmpty()) {
         val msg = labelErrorMessage ?: return@LaunchedEffect
-        snackbar.showSnackbar(msg)
+        if (fullscreen) {
+            if (labelOptions.isEmpty()) return@LaunchedEffect
+            tagMessage.show(msg)
+        } else {
+            snackbar.showSnackbar(msg)
+        }
         vm.errorShown()
     }
 
@@ -144,6 +148,10 @@ fun MatchVideoSection(
         }
     }
 
+    LifecycleStartEffect(player) {
+        onStopOrDispose { player.pause() }
+    }
+
     LaunchedEffect(entry.uri) {
         player.setMediaItem(MediaItem.fromUri(entry.uri))
         player.prepare()
@@ -154,7 +162,7 @@ fun MatchVideoSection(
         vm.seekTo.collect { ms -> player.seekTo(ms) }
     }
 
-    val position by rememberPlaybackPosition(player)
+    val positionState = rememberPlaybackPosition(player)
     val speed by playbackPrefs.speed.collectAsStateWithLifecycle()
     val skipSeconds by playbackPrefs.skipSeconds.collectAsStateWithLifecycle()
     var showSettings by remember { mutableStateOf(false) }
@@ -168,7 +176,7 @@ fun MatchVideoSection(
     val video: @Composable (Boolean, Dp?) -> Unit = { isFullscreenVideo, maxHeight ->
         VideoCard(
             player = player,
-            position = position,
+            positionProvider = positionState::value,
             onSettingsTap = { showSettings = true },
             maxHeight = maxHeight,
             fullscreen = isFullscreenVideo,
@@ -273,15 +281,21 @@ fun MatchVideoSection(
                 notes()
             }
         }
-        // Portrait: the card and its controls stay put and the notes scroll
-        // under them, so a note tapped to seek is watched as it plays.
-        else -> Column(modifier.fillMaxSize()) {
-            video(false, null)
-            transport()
-            analyzeButton()
-            labelRow()
-            details()
-            LazyColumn(modifier = Modifier.fillMaxSize()) { notes() }
+        // Portrait: pin the video (capped so portrait videos or compact phones
+        // never squeeze notes out) and transport bar, and scroll everything
+        // underneath in one LazyColumn so tapping a note seeks the visible video.
+        else -> BoxWithConstraints(modifier.fillMaxSize()) {
+            val maxVideoHeight = (maxHeight * 0.40f).coerceAtLeast(LANDSCAPE_MIN_CARD)
+            Column(Modifier.fillMaxSize()) {
+                video(false, maxVideoHeight)
+                transport()
+                LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    item(key = "analyze") { analyzeButton() }
+                    item(key = "labels") { labelRow() }
+                    item(key = "details") { details() }
+                    notes()
+                }
+            }
         }
     }
 
@@ -309,8 +323,14 @@ fun MatchVideoSection(
     pendingDelete?.let { a ->
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
             title = { Text("Delete note?") },
-            text = { Text(if (a.body.isNotBlank()) "\"${a.body}\"" else "This note") },
+            text = {
+                Text(
+                    if (a.body.isNotBlank()) "\"${a.body}\""
+                    else a.labelName?.takeIf { it.isNotBlank() } ?: "This note",
+                )
+            },
             confirmButton = {
                 TextButton(onClick = {
                     vm.deleteAnnotation(a.id)

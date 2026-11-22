@@ -157,8 +157,12 @@ object ShuttlVideoOverlay {
     val scrim: Color = ShuttlPalette.bg.darkColor.copy(alpha = 0.7f)
     val text: Color = ShuttlPalette.text.darkColor
     val accentText: Color = ShuttlPalette.accentDark.darkColor
-    /** The unfilled part of the progress bar: the mock's `rgba(255,255,255,.12)`. */
-    val track: Color = Color.White.copy(alpha = 0.12f)
+    /**
+     * The unfilled part of the progress bar: the chips' own scrim. The mock's
+     * `rgba(255,255,255,.12)` vanished on a bright frame (a lit court floor),
+     * which left the bar's length, and so the scrub target, unseen.
+     */
+    val track: Color = scrim
     val progress: Color = ShuttlPalette.accent.darkColor
 }
 

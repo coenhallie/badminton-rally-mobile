@@ -154,11 +154,14 @@ class TrackNetRunner(
      * bitmap once `transform` returns, so there is no recycle call here.
      */
     private fun computeBackground(): FloatArray {
+        var rgb = ByteArray(0)
+        var pixels = IntArray(0)
         val frames = source.sampleFramesForBackground { bitmap ->
-            val rgb = ByteArray(bitmap.width * bitmap.height * 3)
-            val pixels = IntArray(bitmap.width * bitmap.height)
+            val count = bitmap.width * bitmap.height
+            if (pixels.size < count) pixels = IntArray(count)
+            if (rgb.size < count * 3) rgb = ByteArray(count * 3)
             bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
-            for (i in pixels.indices) {
+            for (i in 0 until count) {
                 val p = pixels[i]
                 rgb[i * 3] = ((p shr 16) and 0xFF).toByte()
                 rgb[i * 3 + 1] = ((p shr 8) and 0xFF).toByte()
