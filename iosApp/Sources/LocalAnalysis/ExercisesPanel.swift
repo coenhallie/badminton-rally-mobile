@@ -1,7 +1,8 @@
 import Shared
 import SwiftUI
 
-/// Suggested drills and exercises derived from a completed video analysis.
+/// Suggested drills and exercises derived from a completed video analysis,
+/// followed by a collapsible, filterable library of all curated drills.
 /// Port of androidApp's `ExercisesPanel`, following `BasePositionPanel`'s
 /// threading, side-toggle placement, and empty-message ladder.
 struct ExercisesPanel: View {
@@ -74,6 +75,8 @@ struct ExercisesPanel: View {
 
     @ViewBuilder
     private func content(_ report: ExerciseReport) -> some View {
+        let activeSide = shownSide
+        let activeArm = CourtSideNamesKt.profileArm(side: activeSide, names: sideNames)
         VStack(alignment: .leading, spacing: 0) {
             if let summary = report.summary {
                 summaryBlock(summary)
@@ -82,8 +85,6 @@ struct ExercisesPanel: View {
             case .insufficientData, .balanced:
                 PanelMessage(text: report.message ?? ExercisesCopy.shared.NO_COUNTED_RALLIES)
             case .suggestions:
-                let activeSide = shownSide
-                let activeArm = CourtSideNamesKt.profileArm(side: activeSide, names: sideNames)
                 let expandedIds = expandedBySide[activeSide] ?? []
                 Shuttl.sectionLabel(ExercisesCopy.shared.SUGGESTIONS_HEADING)
                     .padding(.horizontal, ShuttlGutter.page)
@@ -94,7 +95,9 @@ struct ExercisesPanel: View {
                         let id = suggestion.exercise.id
                         let expanded = expandedIds.contains(id)
                         ExerciseCard(
-                            suggestion: suggestion,
+                            exercise: suggestion.exercise,
+                            kicker: suggestion.exercise.category.label.uppercased(),
+                            subtitle: suggestion.evidence,
                             racketArm: activeArm,
                             expanded: expanded,
                             onToggle: {
@@ -111,6 +114,9 @@ struct ExercisesPanel: View {
                 }
                 .padding(.horizontal, ShuttlGutter.page)
             }
+
+            DrillLibrarySection(racketArm: activeArm)
+
             if report.status != .insufficientData {
                 Text(ExercisesCopy.shared.HONESTY_CAPTION)
                     .shuttlType(ShuttlType.bodySmall)
@@ -240,26 +246,148 @@ func exercisesMessage(
     return nil
 }
 
+private struct DrillLibrarySection: View {
+    let racketArm: RacketArm?
+
+    @State private var libraryOpen = false
+    @State private var selectedFilter: DrillLibraryFilter = .all
+    @State private var expandedIds: Set<String> = []
+
+    var body: some View {
+        let all = ExerciseCatalog.shared.all
+        let onCourtCount = Int32(all.filter { $0.category == .onCourt }.count)
+        let offCourtCount = Int32(all.filter { $0.category == .offCourt }.count)
+        let visible = ExerciseCatalog.shared.filtered(filter: selectedFilter)
+
+        VStack(alignment: .leading, spacing: 0) {
+            Shuttl.sectionLabel(ExercisesCopy.shared.LIBRARY_HEADING)
+                .padding(.horizontal, ShuttlGutter.page)
+                .padding(.top, 24)
+                .padding(.bottom, 10)
+
+            Button {
+                libraryOpen.toggle()
+            } label: {
+                HStack(alignment: .center, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(
+                            ExercisesCopy.shared.browseLibraryLabel(
+                                totalCount: Int32(all.count),
+                                expanded: libraryOpen
+                            )
+                        )
+                        .shuttlType(ShuttlType.titleMedium)
+                        .foregroundStyle(Shuttl.textHeading)
+                        Text(
+                            ExercisesCopy.shared.librarySubtitle(
+                                onCourtCount: onCourtCount,
+                                offCourtCount: offCourtCount
+                            )
+                        )
+                        .shuttlType(ShuttlType.bodySmall)
+                        .foregroundStyle(Shuttl.textSecondary)
+                    }
+                    Spacer(minLength: 8)
+                    Image(systemName: libraryOpen ? "chevron.up" : "chevron.down")
+                        .imageScale(.small)
+                        .foregroundStyle(Shuttl.textSecondary)
+                        .accessibilityHidden(true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(16)
+                .background(Shuttl.bgSecondary, in: RoundedRectangle(cornerRadius: ShuttlRadius.large))
+                .overlay(
+                    RoundedRectangle(cornerRadius: ShuttlRadius.large)
+                        .stroke(Shuttl.border, lineWidth: 1)
+                )
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityValue(libraryOpen ? "Expanded" : "Collapsed")
+            .padding(.horizontal, ShuttlGutter.page)
+
+            if libraryOpen {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(ExerciseCatalog.shared.allFilters, id: \.self) { filter in
+                            let isSelected = filter == selectedFilter
+                            let count = ExerciseCatalog.shared.filtered(filter: filter).count
+                            Button {
+                                selectedFilter = filter
+                            } label: {
+                                Text("\(filter.label) (\(count))")
+                                    .shuttlType(ShuttlType.labelSmall)
+                                    .foregroundStyle(isSelected ? Shuttl.onAccent : Shuttl.textSecondary)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 7)
+                                    .background(
+                                        isSelected ? Shuttl.accent : Shuttl.bgSecondary,
+                                        in: Capsule()
+                                    )
+                                    .overlay(
+                                        Capsule()
+                                            .stroke(isSelected ? Shuttl.accent : Shuttl.border, lineWidth: 1)
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityAddTraits(isSelected ? .isSelected : [])
+                        }
+                    }
+                    .padding(.horizontal, ShuttlGutter.page)
+                }
+                .padding(.top, 12)
+
+                VStack(spacing: 10) {
+                    ForEach(visible, id: \.id) { exercise in
+                        let expanded = expandedIds.contains(exercise.id)
+                        ExerciseCard(
+                            exercise: exercise,
+                            kicker: "\(exercise.category.label) · \(exercise.focus.label)".uppercased(),
+                            subtitle: nil,
+                            racketArm: racketArm,
+                            expanded: expanded,
+                            onToggle: {
+                                if expanded {
+                                    expandedIds.remove(exercise.id)
+                                } else {
+                                    expandedIds.insert(exercise.id)
+                                }
+                            }
+                        )
+                    }
+                }
+                .padding(.horizontal, ShuttlGutter.page)
+                .padding(.top, 12)
+            }
+        }
+    }
+}
+
 private struct ExerciseCard: View {
-    let suggestion: ExerciseSuggestion
+    let exercise: Exercise
+    let kicker: String
+    let subtitle: String?
     let racketArm: RacketArm?
     let expanded: Bool
     let onToggle: () -> Void
 
     var body: some View {
-        let exercise = suggestion.exercise
         VStack(alignment: .leading, spacing: 0) {
             Button(action: onToggle) {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(alignment: .center, spacing: 8) {
-                        Text(exercise.category.label.uppercased())
+                        Text(kicker)
                             .shuttlType(ShuttlType.labelSmall)
                             .foregroundStyle(Shuttl.accentDark)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
                         Spacer(minLength: 8)
                         Text(exercise.prescription)
                             .shuttlType(ShuttlType.bodySmall)
                             .foregroundStyle(Shuttl.textTertiary)
                             .multilineTextAlignment(.trailing)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
                         Image(systemName: expanded ? "chevron.up" : "chevron.down")
                             .imageScale(.small)
                             .foregroundStyle(Shuttl.textSecondary)
@@ -269,17 +397,22 @@ private struct ExerciseCard: View {
                         .shuttlType(ShuttlType.titleMedium)
                         .foregroundStyle(Shuttl.textHeading)
                         .multilineTextAlignment(.leading)
-                    Text(suggestion.evidence)
-                        .shuttlType(ShuttlType.bodySmall)
-                        .foregroundStyle(Shuttl.textSecondary)
-                        .multilineTextAlignment(.leading)
+                    if let subtitle {
+                        Text(subtitle)
+                            .shuttlType(ShuttlType.bodySmall)
+                            .foregroundStyle(Shuttl.textSecondary)
+                            .multilineTextAlignment(.leading)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(16)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("\(exercise.title), \(exercise.category.label), \(exercise.prescription). \(suggestion.evidence)")
+            .accessibilityLabel(
+                subtitle.map { "\(exercise.title), \(exercise.category.label), \(exercise.prescription). \($0)" }
+                    ?? "\(exercise.title), \(exercise.category.label), \(exercise.prescription)"
+            )
             .accessibilityValue(expanded ? "Expanded" : "Collapsed")
 
             if expanded {

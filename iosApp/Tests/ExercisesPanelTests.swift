@@ -167,4 +167,17 @@ final class ExercisesPanelTests: XCTestCase {
         XCTAssertNil(offCourt.courtPath)
         XCTAssertNil(ExerciseVisualsKt.samplePose(sequence: offCourt.pose, phase01: 0.5, mirrorX: false).figure.racketTip)
     }
+
+    func testDrillLibraryFiltersCoverEveryCatalogExerciseFromSwift() {
+        let all = ExerciseCatalog.shared.all
+        XCTAssertEqual(all.count, 38)
+        XCTAssertEqual(ExerciseCatalog.shared.filtered(filter: .all).count, all.count)
+        let subFilters = ExerciseCatalog.shared.allFilters.filter { $0 != .all }
+        let combinedIds = subFilters.flatMap { ExerciseCatalog.shared.filtered(filter: $0).map(\.id) }
+        XCTAssertEqual(combinedIds.count, all.count)
+        XCTAssertEqual(Set(combinedIds).count, all.count)
+        for exercise in all {
+            XCTAssertEqual(ExerciseVisualsKt.visualFor(exerciseId: exercise.id).exerciseId, exercise.id)
+        }
+    }
 }
