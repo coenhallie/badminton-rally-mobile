@@ -78,17 +78,30 @@ fun BasePositionPanel(
     /** Who stands at each end, for the Near | Far toggle; null while the match does not say. */
     sideNames: CourtSideNames?,
     modifier: Modifier = Modifier,
+    /** When true, reuse [preloadedTrack] parsed by AnalysisSection instead of re-reading disk. */
+    usePreloadedTrack: Boolean = false,
+    preloadedTrackLoaded: Boolean = false,
+    preloadedTrack: PlayerTrackStore.Stored? = null,
 ) {
-    // Read and measured off the thread drawing the frame. Both halves need it:
-    // the track is a megabyte of JSON to parse, and `basePositions` sorts every
-    // sample in the match and then scans that sort once per rally, which is a
-    // couple of million comparisons on a long one. In `remember` that all ran
-    // during composition and the tab opened frozen. iOS says the same in
-    // BasePositionPanel's `bases`.
+    // Measured off the thread drawing the frame, reusing AnalysisSection's
+    // already-parsed track JSON when supplied so tab switches stay instant.
     val done = runner.stateFor(entryId) as? LocalAnalysisState.Done
-    val measured = produceState<Measured?>(null, entryId, done, windows) {
+    val measured = produceState<Measured?>(
+        initialValue = null,
+        entryId,
+        done,
+        windows,
+        usePreloadedTrack,
+        preloadedTrackLoaded,
+        preloadedTrack,
+    ) {
+        if (usePreloadedTrack && !preloadedTrackLoaded) {
+            value = null
+            return@produceState
+        }
         value = withContext(Dispatchers.Default) {
-            val source = heatmapSource(done, runner.storedTrack(entryId))
+            val stored = if (usePreloadedTrack) preloadedTrack else runner.storedTrack(entryId)
+            val source = heatmapSource(done, stored)
             // Measured for every side here, off the main thread, rather than
             // recomputed when the toggle moves: the medians are cheap next to
             // the parse above, and doing it on selection would put them on the

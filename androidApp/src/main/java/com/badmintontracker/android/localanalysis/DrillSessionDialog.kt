@@ -80,7 +80,7 @@ import com.badmintontracker.shared.exercises.adjustPlanSets
 import com.badmintontracker.shared.exercises.adjustPlanWork
 import com.badmintontracker.shared.exercises.allDrillEfforts
 import com.badmintontracker.shared.exercises.completeCurrentSet
-import com.badmintontracker.shared.exercises.createDrillSession
+import com.badmintontracker.shared.exercises.createDrillSessionWithPlan
 import com.badmintontracker.shared.exercises.extendRest
 import com.badmintontracker.shared.exercises.finishSessionEarly
 import com.badmintontracker.shared.exercises.formatClockSeconds
@@ -108,7 +108,11 @@ fun DrillSessionDialog(
     drillProgress: DrillProgressRepository,
     onDismiss: () -> Unit,
 ) {
-    var state by remember(exercise.id) { mutableStateOf(createDrillSession(exercise)) }
+    var state by remember(exercise.id) {
+        mutableStateOf(
+            createDrillSessionWithPlan(exercise, drillProgress.planForExercise(exercise)),
+        )
+    }
     var soundEnabled by remember { mutableStateOf(true) }
     var confirmExit by remember { mutableStateOf(false) }
     var selectedEffort by remember(exercise.id) { mutableStateOf(DrillEffort.SOLID) }
@@ -246,6 +250,7 @@ fun DrillSessionDialog(
                         onAdjustWork = { state = adjustPlanWork(state, it) },
                         onAdjustRest = { state = adjustPlanRest(state, it) },
                         onStart = {
+                            drillProgress.savePlan(exercise.id, state.plan)
                             val next = startDrillSession(state)
                             state = next.state
                             playCue(next.cue)

@@ -19,6 +19,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -53,6 +54,7 @@ import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.shared.exercises.CourtDrillPath
 import com.badmintontracker.shared.exercises.ExercisesCopy
 import com.badmintontracker.shared.exercises.POSE_GROUND_Y
+import com.badmintontracker.shared.exercises.PoseSequence
 import com.badmintontracker.shared.exercises.PoseShuttle
 import com.badmintontracker.shared.exercises.SampledCourtState
 import com.badmintontracker.shared.exercises.SampledPose
@@ -61,6 +63,7 @@ import com.badmintontracker.shared.exercises.mirroredCourtPoint
 import com.badmintontracker.shared.exercises.mirroredCourtPoints
 import com.badmintontracker.shared.exercises.sampleCourtState
 import com.badmintontracker.shared.exercises.samplePose
+import com.badmintontracker.shared.exercises.samplePoseMeta
 import com.badmintontracker.shared.exercises.visualFor
 import com.badmintontracker.shared.prefs.RacketArm
 import kotlin.math.PI
@@ -128,26 +131,36 @@ fun ExerciseVisualView(
 
     val courtPath = visual.courtPath
     val poseCycle = visual.pose.cycleSeconds.toFloat().coerceAtLeast(0.4f)
-    val posePhase = if (reduceMotion) {
-        (stepIndex.toFloat() + 0.08f) / frameCount.toFloat()
-    } else {
-        (elapsedSec / poseCycle) % 1f
+    val courtCycle = courtPath?.cycleSeconds?.toFloat()?.coerceAtLeast(0.4f) ?: 1f
+
+    // Deferred phase readers: Canvas reads elapsedSec in the draw phase so 60-120 Hz
+    // frames never trigger Compose recomposition of captions, pills, or semantics.
+    val posePhaseProvider: () -> Float = {
+        if (reduceMotion) {
+            (stepIndex.toFloat() + 0.08f) / frameCount.toFloat()
+        } else {
+            (elapsedSec / poseCycle) % 1f
+        }
     }
-    val courtPhase = if (courtPath == null) {
-        0f
-    } else if (reduceMotion) {
-        val segments = (courtPath.waypoints.size - 1).coerceAtLeast(1)
-        (stepIndex % segments).toFloat() / segments.toFloat()
-    } else {
-        (elapsedSec / courtPath.cycleSeconds.toFloat().coerceAtLeast(0.4f)) % 1f
+    val courtPhaseProvider: () -> Float = {
+        if (courtPath == null) {
+            0f
+        } else if (reduceMotion) {
+            val segments = (courtPath.waypoints.size - 1).coerceAtLeast(1)
+            (stepIndex % segments).toFloat() / segments.toFloat()
+        } else {
+            (elapsedSec / courtCycle) % 1f
+        }
     }
 
-    val sampledPose = samplePose(visual.pose, posePhase, mirrorX)
-    val courtState = courtPath?.let { sampleCourtState(it, courtPhase, mirrorX) }
+    // Recompose captions and scrubber dots only when the active keyframe milestone changes (~2-4x/sec).
+    val poseMeta by remember(exerciseId, frameCount, reduceMotion, visual.pose) {
+        derivedStateOf { samplePoseMeta(visual.pose, posePhaseProvider()) }
+    }
     val accessibilitySummary = if (courtPath != null) {
-        "${ExercisesCopy.COURT_VISUAL_CAPTION} and ${ExercisesCopy.poseCaption(sampledPose.label)}"
+        "${ExercisesCopy.COURT_VISUAL_CAPTION} and ${ExercisesCopy.poseCaption(poseMeta.label)}"
     } else {
-        ExercisesCopy.poseCaption(sampledPose.label)
+        ExercisesCopy.poseCaption(poseMeta.label)
     }
 
     val onCanvasTap = {
@@ -167,7 +180,7 @@ fun ExerciseVisualView(
             .semantics(mergeDescendants = true) { contentDescription = accessibilitySummary }
             .clickable(role = Role.Button, onClick = onCanvasTap)
 
-        if (courtPath != null && courtState != null) {
+        if (courtPath != null) {
             Row(
                 modifier = stageModifier,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -180,32 +193,36 @@ fun ExerciseVisualView(
                 ) {
                     HalfCourtCanvas(
                         path = courtPath,
-                        state = courtState,
+                        courtPhaseProvider = courtPhaseProvider,
                         mirrorX = mirrorX,
                         modifier = Modifier.fillMaxWidth().height(152.dp),
                     )
                 }
                 VisualTile(
-                    caption = ExercisesCopy.poseCaption(sampledPose.label),
+                    caption = ExercisesCopy.poseCaption(poseMeta.label),
                     captionColor = ShuttlTheme.extended.accentDark,
                     tileHeight = 152.dp,
                     modifier = Modifier.weight(1f),
                 ) {
                     PoseFigureCanvas(
-                        sampled = sampledPose,
+                        sequence = visual.pose,
+                        posePhaseProvider = posePhaseProvider,
+                        mirrorX = mirrorX,
                         modifier = Modifier.fillMaxWidth().height(152.dp),
                     )
                 }
             }
         } else {
             VisualTile(
-                caption = ExercisesCopy.poseCaption(sampledPose.label),
+                caption = ExercisesCopy.poseCaption(poseMeta.label),
                 captionColor = ShuttlTheme.extended.accentDark,
                 tileHeight = 164.dp,
                 modifier = stageModifier,
             ) {
                 PoseFigureCanvas(
-                    sampled = sampledPose,
+                    sequence = visual.pose,
+                    posePhaseProvider = posePhaseProvider,
+                    mirrorX = mirrorX,
                     modifier = Modifier.fillMaxWidth().height(164.dp),
                 )
             }
@@ -221,8 +238,8 @@ fun ExerciseVisualView(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                for (i in 0 until sampledPose.keyframeCount) {
-                    val active = i == sampledPose.keyframeIndex
+                for (i in 0 until poseMeta.keyframeCount) {
+                    val active = i == poseMeta.keyframeIndex
                     val dotShape = RoundedCornerShape(ShuttlRadius.pill)
                     Box(
                         modifier = Modifier
@@ -340,7 +357,7 @@ private fun VisualTile(
 @Composable
 private fun HalfCourtCanvas(
     path: CourtDrillPath,
-    state: SampledCourtState,
+    courtPhaseProvider: () -> Float,
     mirrorX: Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -354,6 +371,7 @@ private fun HalfCourtCanvas(
     val baseMarker = remember(path, mirrorX) { mirroredCourtPoint(path.baseMarker, mirrorX) }
 
     Canvas(modifier = modifier) {
+        val state = sampleCourtState(path, courtPhaseProvider(), mirrorX)
         val courtW = Court.WIDTH_DOUBLES.toFloat()
         val courtH = (Court.LENGTH / 2.0).toFloat()
         val singlesInset = ((Court.WIDTH_DOUBLES - Court.WIDTH_SINGLES) / 2.0).toFloat()
@@ -528,10 +546,11 @@ private fun HalfCourtCanvas(
 
 @Composable
 private fun PoseFigureCanvas(
-    sampled: SampledPose,
+    sequence: PoseSequence,
+    posePhaseProvider: () -> Float,
+    mirrorX: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val figure = sampled.figure
     val headingColor = MaterialTheme.colorScheme.onBackground
     val frontLimbColor = headingColor.copy(alpha = 0.90f)
     val backLimbColor = headingColor.copy(alpha = 0.42f)
@@ -543,6 +562,8 @@ private fun PoseFigureCanvas(
     val accentColor = MaterialTheme.colorScheme.primary
 
     Canvas(modifier = modifier) {
+        val sampled = samplePose(sequence, posePhaseProvider(), mirrorX)
+        val figure = sampled.figure
         val pad = 8.dp.toPx()
         val side = min(size.width - pad * 2f, size.height - pad * 2f).coerceAtLeast(1f)
         val originX = (size.width - side) / 2f

@@ -111,26 +111,28 @@ fun HeatmapPanel(
     /** Who stands at each end, for the Near | Far toggle; null while the match does not say. */
     sideNames: CourtSideNames?,
     modifier: Modifier = Modifier,
+    /** When true, reuse [preloadedTrack] parsed by AnalysisSection instead of re-reading disk. */
+    usePreloadedTrack: Boolean = false,
+    preloadedTrackLoaded: Boolean = false,
+    preloadedTrack: PlayerTrackStore.Stored? = null,
 ) {
-    // In memory if the run is still loaded, from disk otherwise. A pose run costs
-    // half an hour, so losing its result to a process death and asking for another
-    // one is not an option.
-    //
-    // The disk is read once per entry even when a run is in memory, because that
-    // run may be a pose-less one whose empty track must fall through. This is
-    // the match page's Analysis section, reached by an explicit tap, so it is
-    // one parse per opening, not a per-row cost on the list.
-    //
-    // One parse, and not on the thread drawing the frame: `remember` runs its
-    // block during composition, so the megabyte of track this reads was parsed
-    // on the main thread and the section opened frozen for as long as it took.
-    // iOS reads it the same way, in AnalysisSection.reload.
+    // In memory if the run is still loaded, from AnalysisSection's cached disk
+    // read when provided, or off disk otherwise. Avoids re-parsing ~1 MB of
+    // track JSON whenever switching between Heatmap, Base, and Drills.
     val done = runner.stateFor(entryId) as? LocalAnalysisState.Done
-    val loaded = produceState<Loaded?>(null, entryId, done) {
-        value = withContext(Dispatchers.Default) {
-            Loaded(heatmapSource(done, runner.storedTrack(entryId)))
+    val loaded = if (usePreloadedTrack) {
+        if (preloadedTrackLoaded) {
+            remember(done, preloadedTrack) { Loaded(heatmapSource(done, preloadedTrack)) }
+        } else {
+            null
         }
-    }.value
+    } else {
+        produceState<Loaded?>(null, entryId, done) {
+            value = withContext(Dispatchers.Default) {
+                Loaded(heatmapSource(done, runner.storedTrack(entryId)))
+            }
+        }.value
+    }
 
     // Scrolls because the court is 1.7x taller than it is wide: in landscape, or
     // portrait at a large font scale, it overflows and takes the summary line -

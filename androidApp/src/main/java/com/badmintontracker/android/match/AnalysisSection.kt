@@ -83,6 +83,7 @@ fun AnalysisSection(
     val stored by produceState(StoredAnalysis(), analysisId, done) {
         value = withContext(Dispatchers.IO) {
             StoredAnalysis(
+                loaded = true,
                 track = localAnalysis.storedTrack(analysisId),
                 clips = if (done?.clips?.isNotEmpty() == true) emptyList() else localAnalysis.storedClips(analysisId),
                 hasSkeleton = localAnalysis.hasStoredSkeleton(analysisId),
@@ -137,10 +138,24 @@ fun AnalysisSection(
             )
         }
         when (panel) {
-            AnalyticsPanel.Heatmap ->
-                HeatmapPanel(entryId = analysisId, runner = localAnalysis, windows = windows, sideNames = sideNames)
-            AnalyticsPanel.Base ->
-                BasePositionPanel(entryId = analysisId, runner = localAnalysis, windows = windows, sideNames = sideNames)
+            AnalyticsPanel.Heatmap -> HeatmapPanel(
+                entryId = analysisId,
+                runner = localAnalysis,
+                windows = windows,
+                sideNames = sideNames,
+                usePreloadedTrack = true,
+                preloadedTrackLoaded = stored.loaded,
+                preloadedTrack = storedTrack,
+            )
+            AnalyticsPanel.Base -> BasePositionPanel(
+                entryId = analysisId,
+                runner = localAnalysis,
+                windows = windows,
+                sideNames = sideNames,
+                usePreloadedTrack = true,
+                preloadedTrackLoaded = stored.loaded,
+                preloadedTrack = storedTrack,
+            )
             AnalyticsPanel.Skeleton -> SkeletonPanel(
                 entryId = analysisId,
                 videoUri = videoUri,
@@ -155,12 +170,16 @@ fun AnalysisSection(
                 windows = windows,
                 sideNames = sideNames,
                 drillProgress = drillProgress,
+                usePreloadedTrack = true,
+                preloadedTrackLoaded = stored.loaded,
+                preloadedTrack = storedTrack,
             )
         }
     }
 }
 
 private data class StoredAnalysis(
+    val loaded: Boolean = false,
     val track: PlayerTrackStore.Stored? = null,
     val clips: List<ClipCutter.Clip> = emptyList(),
     val hasSkeleton: Boolean = false,
