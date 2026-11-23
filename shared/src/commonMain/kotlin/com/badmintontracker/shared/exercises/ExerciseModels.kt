@@ -13,6 +13,21 @@ enum class FocusArea(val label: String) {
     LATERAL_BALANCE("Lateral balance"),
     ENDURANCE("Endurance"),
     EXPLOSIVE_SPEED("Explosive speed"),
+    ATTACK("Attack"),
+    DEFENCE("Defence"),
+    NET_PLAY("Net play"),
+    SERVE_RETURN("Serve & return"),
+    STRENGTH_MOBILITY("Strength & mobility"),
+}
+
+/** Category filter pills for browsing the full drill library. */
+enum class DrillLibraryFilter(val label: String) {
+    ALL("All"),
+    FOOTWORK("Footwork"),
+    ATTACK("Attack"),
+    DEFENCE("Defence"),
+    NET_AND_SERVE("Net & serve"),
+    OFF_COURT("Off-court"),
 }
 
 /** Measured positioning or movement finding that triggered a suggestion. */

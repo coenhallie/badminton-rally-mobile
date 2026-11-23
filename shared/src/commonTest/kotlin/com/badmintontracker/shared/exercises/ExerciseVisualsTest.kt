@@ -7,6 +7,7 @@ import io.kotest.matchers.ints.shouldBeGreaterThanOrEqual
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
+import kotlin.math.hypot
 import kotlin.test.Test
 
 class ExerciseVisualsTest {
@@ -46,6 +47,8 @@ class ExerciseVisualsTest {
                     val t = tip.shouldNotBeNull()
                     t.x.shouldBeBetween(0f, 1f, 1e-4f)
                     t.y.shouldBeBetween(0f, 1f, 1e-4f)
+                    val len = hypot(t.x - kf.figure.wristR.x, t.y - kf.figure.wristR.y)
+                    len.shouldBeBetween(0.12f, 0.28f, 1e-3f)
                 }
             }
             visual.courtPath?.let { path ->
@@ -54,6 +57,14 @@ class ExerciseVisualsTest {
                 path.waypoints.forEach { pt ->
                     pt.x.shouldBeBetween(0f, width, 1e-3f)
                     pt.y.shouldBeBetween(0f, halfLength, 1e-3f)
+                }
+                path.shuttleStart?.let { s ->
+                    s.x.shouldBeBetween(0f, width, 1e-3f)
+                    s.y.shouldBeBetween(0f, halfLength, 1e-3f)
+                }
+                path.shuttleEnd?.let { e ->
+                    e.x.shouldBeBetween(0f, width, 1e-3f)
+                    e.y.shouldBeBetween(0f, halfLength, 1e-3f)
                 }
             }
         }

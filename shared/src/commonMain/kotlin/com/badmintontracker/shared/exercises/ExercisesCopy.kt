@@ -4,12 +4,19 @@ package com.badmintontracker.shared.exercises
 object ExercisesCopy {
     const val SUMMARY_HEADING = "MOVEMENT SUMMARY"
     const val SUGGESTIONS_HEADING = "SUGGESTED EXERCISES"
+    const val LIBRARY_HEADING = "DRILL LIBRARY"
     const val PEAK_SPEED_LABEL = "Peak speed (0.5 s)"
     const val SETUP_LABEL = "Setup"
     const val CUE_LABEL = "Cue"
     const val COURT_VISUAL_CAPTION = "Court pattern"
 
     fun poseCaption(phaseLabel: String): String = "Pose: $phaseLabel"
+
+    fun browseLibraryLabel(totalCount: Int, expanded: Boolean): String =
+        if (expanded) "Hide drill library" else "Browse all $totalCount drills"
+
+    fun librarySubtitle(onCourtCount: Int, offCourtCount: Int): String =
+        "$onCourtCount on-court · $offCourtCount off-court with animated guides"
 
     const val HONESTY_CAPTION =
         "Based on singles rally movement from this video. Doubles play and isolated feeding drills may skew positioning."

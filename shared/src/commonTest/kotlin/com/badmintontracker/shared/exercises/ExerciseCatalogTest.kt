@@ -7,7 +7,7 @@ import kotlin.test.Test
 
 class ExerciseCatalogTest {
 
-    private val expectedIds = listOf(
+    private val coreAdvisorIds = listOf(
         "base-mark-6-corner-shadow",
         "clear-to-base-multi-shuttle",
         "net-to-rear-recovery",
@@ -24,14 +24,26 @@ class ExerciseCatalogTest {
     )
 
     @Test
-    fun catalog_contains_all_thirteen_unique_exercises() {
-        ExerciseCatalog.all shouldHaveSize 13
-        ExerciseCatalog.all.map { it.id }.distinct() shouldHaveSize 13
-        ExerciseCatalog.all.count { it.category == ExerciseCategory.ON_COURT } shouldBe 11
-        ExerciseCatalog.all.count { it.category == ExerciseCategory.OFF_COURT } shouldBe 2
-        expectedIds.forEach { id ->
+    fun catalog_contains_all_thirty_eight_unique_exercises() {
+        ExerciseCatalog.all shouldHaveSize 38
+        ExerciseCatalog.all.map { it.id }.distinct() shouldHaveSize 38
+        ExerciseCatalog.all.count { it.category == ExerciseCategory.ON_COURT } shouldBe 28
+        ExerciseCatalog.all.count { it.category == ExerciseCategory.OFF_COURT } shouldBe 10
+        coreAdvisorIds.forEach { id ->
             ExerciseCatalog.byId(id).id shouldBe id
         }
+    }
+
+    @Test
+    fun library_filters_partition_the_catalog_without_gaps_or_overlap() {
+        ExerciseCatalog.filtered(DrillLibraryFilter.ALL) shouldHaveSize ExerciseCatalog.all.size
+        val buckets = DrillLibraryFilter.entries.filter { it != DrillLibraryFilter.ALL }
+        buckets.forEach { filter ->
+            ExerciseCatalog.filtered(filter).isNotEmpty() shouldBe true
+        }
+        val combined = buckets.flatMap { ExerciseCatalog.filtered(it) }.map { it.id }
+        combined shouldHaveSize ExerciseCatalog.all.size
+        combined.distinct() shouldHaveSize ExerciseCatalog.all.size
     }
 
     @Test
@@ -57,13 +69,19 @@ class ExerciseCatalogTest {
                 add(ex.coachingCue)
                 addAll(ex.steps)
             }
+            FocusArea.entries.forEach { add(it.label) }
+            DrillLibraryFilter.entries.forEach { add(it.label) }
             add(ExercisesCopy.SUMMARY_HEADING)
             add(ExercisesCopy.SUGGESTIONS_HEADING)
+            add(ExercisesCopy.LIBRARY_HEADING)
             add(ExercisesCopy.PEAK_SPEED_LABEL)
             add(ExercisesCopy.SETUP_LABEL)
             add(ExercisesCopy.CUE_LABEL)
             add(ExercisesCopy.COURT_VISUAL_CAPTION)
             add(ExercisesCopy.poseCaption("Split-step"))
+            add(ExercisesCopy.browseLibraryLabel(38, false))
+            add(ExercisesCopy.browseLibraryLabel(38, true))
+            add(ExercisesCopy.librarySubtitle(28, 10))
             add(ExercisesCopy.HONESTY_CAPTION)
             add(ExercisesCopy.NOT_LOADED)
             add(ExercisesCopy.NO_BOUNDED_WINDOWS)
