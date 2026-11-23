@@ -83,6 +83,7 @@ struct ExercisesPanel: View {
                 PanelMessage(text: report.message ?? ExercisesCopy.shared.NO_COUNTED_RALLIES)
             case .suggestions:
                 let activeSide = shownSide
+                let activeArm = CourtSideNamesKt.profileArm(side: activeSide, names: sideNames)
                 let expandedIds = expandedBySide[activeSide] ?? []
                 Shuttl.sectionLabel(ExercisesCopy.shared.SUGGESTIONS_HEADING)
                     .padding(.horizontal, ShuttlGutter.page)
@@ -94,6 +95,7 @@ struct ExercisesPanel: View {
                         let expanded = expandedIds.contains(id)
                         ExerciseCard(
                             suggestion: suggestion,
+                            racketArm: activeArm,
                             expanded: expanded,
                             onToggle: {
                                 var next = expandedBySide[activeSide] ?? []
@@ -240,6 +242,7 @@ func exercisesMessage(
 
 private struct ExerciseCard: View {
     let suggestion: ExerciseSuggestion
+    let racketArm: RacketArm?
     let expanded: Bool
     let onToggle: () -> Void
 
@@ -283,7 +286,8 @@ private struct ExerciseCard: View {
                 Rectangle()
                     .fill(Shuttl.border)
                     .frame(height: 1)
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 10) {
+                    ExerciseVisualView(exerciseId: exercise.id, racketArm: racketArm)
                     Text("\(ExercisesCopy.shared.SETUP_LABEL): \(exercise.setup)")
                         .shuttlType(ShuttlType.bodySmall)
                         .foregroundStyle(Shuttl.text)

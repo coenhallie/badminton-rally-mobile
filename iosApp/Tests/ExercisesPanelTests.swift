@@ -144,4 +144,27 @@ final class ExercisesPanelTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(reports[.near]?.suggestions.first?.evidence).contains("forehand side"))
         XCTAssertTrue(try XCTUnwrap(reports[.far]?.suggestions.first?.evidence).contains("backhand side"))
     }
+
+    func testExerciseVisualsBridgeSupportsSamplingAndLeftHandMirroring() throws {
+        let onCourt = ExerciseVisualsKt.visualFor(exerciseId: "forecourt-lunge-net-kill")
+        let path = try XCTUnwrap(onCourt.courtPath)
+
+        let rightPose = ExerciseVisualsKt.samplePose(sequence: onCourt.pose, phase01: 0.35, mirrorX: false)
+        let leftPose = ExerciseVisualsKt.samplePose(sequence: onCourt.pose, phase01: 0.35, mirrorX: true)
+        XCTAssertEqual(leftPose.label, rightPose.label)
+        XCTAssertEqual(leftPose.figure.head.x, 1.0 - rightPose.figure.head.x, accuracy: 0.001)
+        let rightTip = try XCTUnwrap(rightPose.figure.racketTip)
+        let leftTip = try XCTUnwrap(leftPose.figure.racketTip)
+        XCTAssertEqual(leftTip.x, 1.0 - rightTip.x, accuracy: 0.001)
+
+        let rightCourt = ExerciseVisualsKt.sampleCourtPoint(path: path, phase01: 0.25, mirrorX: false)
+        let leftCourt = ExerciseVisualsKt.sampleCourtPoint(path: path, phase01: 0.25, mirrorX: true)
+        let width = Float(Court.shared.WIDTH_DOUBLES)
+        XCTAssertEqual(leftCourt.x, width - rightCourt.x, accuracy: 0.002)
+        XCTAssertEqual(leftCourt.y, rightCourt.y, accuracy: 0.002)
+
+        let offCourt = ExerciseVisualsKt.visualFor(exerciseId: "split-squat-endurance")
+        XCTAssertNil(offCourt.courtPath)
+        XCTAssertNil(ExerciseVisualsKt.samplePose(sequence: offCourt.pose, phase01: 0.5, mirrorX: false).figure.racketTip)
+    }
 }
