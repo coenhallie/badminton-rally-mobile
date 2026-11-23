@@ -2,8 +2,8 @@ import Shared
 import SwiftUI
 
 /// Suggested drills and exercises derived from a completed video analysis,
-/// followed by a collapsible, filterable library of all curated drills and
-/// guided session tracking.
+/// followed by a collapsible, searchable, lazy-rendered library of all curated
+/// drills and player-linked guided session tracking.
 /// Port of androidApp's `ExercisesPanel`, following `BasePositionPanel`'s
 /// threading, side-toggle placement, and empty-message ladder.
 struct ExercisesPanel: View {
@@ -74,7 +74,7 @@ struct ExercisesPanel: View {
             DrillSessionSheet(
                 exercise: launch.exercise,
                 racketArm: launch.racketArm,
-                playerId: nil,
+                playerId: launch.playerId,
                 matchId: matchId,
                 drillProgress: drillProgress
             )
@@ -98,17 +98,29 @@ struct ExercisesPanel: View {
     private func content(_ report: ExerciseReport) -> some View {
         let activeSide = shownSide
         let activeArm = CourtSideNamesKt.profileArm(side: activeSide, names: sideNames)
+        let activePlayerId = CourtSideNamesKt.profilePlayerId(side: activeSide, names: sideNames)
+        let scopedLogs = DrillProgressRepositoryKt.filterDrillLogs(logs: logs, playerId: activePlayerId)
         let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
+        let badges = DrillProgressRepositoryKt.badgeMapByExercise(logs: scopedLogs, nowEpochMs: nowMs)
+
+        let launchDrill: (Exercise) -> Void = { exercise in
+            activeSession = ActiveDrillSession(
+                exercise: exercise,
+                racketArm: activeArm,
+                playerId: activePlayerId
+            )
+        }
 
         VStack(alignment: .leading, spacing: 0) {
             if let summary = report.summary {
                 summaryBlock(summary)
             }
-            if !logs.isEmpty {
+            if !scopedLogs.isEmpty {
                 TrainingProgressStrip(
-                    logs: logs,
+                    logs: scopedLogs,
                     nowMs: nowMs,
                     onDeleteLog: { drillProgress.deleteSession(logId: $0) },
+                    onRepeatDrill: launchDrill,
                     topPadding: 18
                 )
             }
@@ -121,23 +133,15 @@ struct ExercisesPanel: View {
                     .padding(.horizontal, ShuttlGutter.page)
                     .padding(.top, 20)
                     .padding(.bottom, 10)
-                VStack(spacing: 12) {
+                LazyVStack(spacing: 12) {
                     ForEach(report.suggestions, id: \.exercise.id) { suggestion in
                         let id = suggestion.exercise.id
                         let expanded = expandedIds.contains(id)
-                        let badge = DrillProgressRepositoryKt.exerciseProgressBadge(
-                            summary: DrillProgressRepositoryKt.progressForExercise(
-                                logs: logs,
-                                exerciseId: id,
-                                nowEpochMs: nowMs
-                            ),
-                            nowEpochMs: nowMs
-                        )
                         ExerciseCard(
                             exercise: suggestion.exercise,
                             kicker: suggestion.exercise.category.label.uppercased(),
                             subtitle: suggestion.evidence,
-                            progressBadge: badge,
+                            progressBadge: badges[id],
                             racketArm: activeArm,
                             expanded: expanded,
                             onToggle: {
@@ -149,12 +153,7 @@ struct ExercisesPanel: View {
                                 }
                                 expandedBySide[activeSide] = next
                             },
-                            onStartDrill: {
-                                activeSession = ActiveDrillSession(
-                                    exercise: suggestion.exercise,
-                                    racketArm: activeArm
-                                )
-                            }
+                            onStartDrill: { launchDrill(suggestion.exercise) }
                         )
                     }
                 }
@@ -163,12 +162,10 @@ struct ExercisesPanel: View {
 
             DrillLibrarySection(
                 racketArm: activeArm,
-                logs: logs,
-                nowMs: nowMs,
+                logs: scopedLogs,
+                badges: badges,
                 initiallyOpen: false,
-                onStartDrill: { exercise in
-                    activeSession = ActiveDrillSession(exercise: exercise, racketArm: activeArm)
-                }
+                onStartDrill: launchDrill
             )
 
             if report.status != .insufficientData {
@@ -259,8 +256,8 @@ struct ExercisesPanel: View {
 }
 
 /// Standalone Drills tab shown directly on a player's profile page so a player
-/// or coach can launch any drill, mirror animations to that player's hand, and
-/// review per-player training history anytime. Port of androidApp's `PlayerDrillsTab`.
+/// or coach can search, launch, and track any drill mirrored to that player's
+/// hand without opening a match first. Port of androidApp's `PlayerDrillsTab`.
 struct PlayerDrillsTab: View {
     let playerId: String
     let racketArm: RacketArm?
@@ -272,14 +269,24 @@ struct PlayerDrillsTab: View {
     var body: some View {
         let playerLogs = DrillProgressRepositoryKt.filterDrillLogs(logs: allLogs, playerId: playerId)
         let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
+        let badges = DrillProgressRepositoryKt.badgeMapByExercise(logs: playerLogs, nowEpochMs: nowMs)
+
+        let launchDrill: (Exercise) -> Void = { exercise in
+            activeSession = ActiveDrillSession(
+                exercise: exercise,
+                racketArm: racketArm,
+                playerId: playerId
+            )
+        }
 
         ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
+            LazyVStack(alignment: .leading, spacing: 0) {
                 if !playerLogs.isEmpty {
                     TrainingProgressStrip(
                         logs: playerLogs,
                         nowMs: nowMs,
                         onDeleteLog: { drillProgress.deleteSession(logId: $0) },
+                        onRepeatDrill: launchDrill,
                         topPadding: 16
                     )
                 } else {
@@ -293,11 +300,9 @@ struct PlayerDrillsTab: View {
                 DrillLibrarySection(
                     racketArm: racketArm,
                     logs: playerLogs,
-                    nowMs: nowMs,
+                    badges: badges,
                     initiallyOpen: true,
-                    onStartDrill: { exercise in
-                        activeSession = ActiveDrillSession(exercise: exercise, racketArm: racketArm)
-                    }
+                    onStartDrill: launchDrill
                 )
 
                 Spacer(minLength: 32)
@@ -316,7 +321,7 @@ struct PlayerDrillsTab: View {
             DrillSessionSheet(
                 exercise: launch.exercise,
                 racketArm: launch.racketArm,
-                playerId: playerId,
+                playerId: launch.playerId,
                 matchId: nil,
                 drillProgress: drillProgress
             )
@@ -328,6 +333,7 @@ private struct ActiveDrillSession: Identifiable {
     let id = UUID()
     let exercise: Exercise
     let racketArm: RacketArm?
+    let playerId: String?
 }
 
 /// Evaluates every side in `source` off the main actor with its own profile arm,
@@ -376,6 +382,7 @@ private struct TrainingProgressStrip: View {
     let logs: [DrillSessionLog]
     let nowMs: Int64
     let onDeleteLog: (String) -> Void
+    let onRepeatDrill: (Exercise) -> Void
     let topPadding: CGFloat
 
     @State private var historyOpen = false
@@ -418,7 +425,8 @@ private struct TrainingProgressStrip: View {
                     Rectangle().fill(Shuttl.border).frame(height: 1)
                     VStack(alignment: .leading, spacing: 8) {
                         ForEach(Array(logs.prefix(8)), id: \.id) { log in
-                            let title = ExerciseCatalog.shared.all.first { $0.id == log.exerciseId }?.title ?? log.exerciseId
+                            let exercise = ExerciseCatalog.shared.byIdOrNull(id: log.exerciseId)
+                            let title = exercise?.title ?? log.exerciseId
                             let ago = DrillProgressRepositoryKt.relativeDaysLabel(
                                 timestampEpochMs: log.completedAtEpochMs,
                                 nowEpochMs: nowMs
@@ -426,7 +434,7 @@ private struct TrainingProgressStrip: View {
                             let clock = DrillSessionKt.formatClockSeconds(seconds: log.durationSeconds)
                             let baseDetail = "\(ago) · \(log.setsCompleted)/\(log.setsTarget) sets · \(clock) · \(log.effort.label)"
                             let detail = log.note.isEmpty ? baseDetail : "\(baseDetail) · \(log.note)"
-                            HStack(alignment: .center, spacing: 8) {
+                            HStack(alignment: .center, spacing: 6) {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(title)
                                         .shuttlType(ShuttlType.bodyMedium)
@@ -438,6 +446,21 @@ private struct TrainingProgressStrip: View {
                                         .lineLimit(2)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
+
+                                if let exercise {
+                                    Button {
+                                        onRepeatDrill(exercise)
+                                    } label: {
+                                        Image(systemName: "play.fill")
+                                            .imageScale(.small)
+                                            .foregroundStyle(Shuttl.accentDark)
+                                            .frame(width: 28, height: 28)
+                                            .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel("\(ExercisesCopy.shared.REPEAT_DRILL_LABEL): \(title)")
+                                }
+
                                 Button {
                                     onDeleteLog(log.id)
                                 } label: {
@@ -469,34 +492,37 @@ private struct TrainingProgressStrip: View {
 private struct DrillLibrarySection: View {
     let racketArm: RacketArm?
     let logs: [DrillSessionLog]
-    let nowMs: Int64
+    let badges: [String: String]
     let initiallyOpen: Bool
     let onStartDrill: (Exercise) -> Void
 
     @State private var libraryOpen: Bool
     @State private var selectedFilter: DrillLibraryFilter = .all
+    @State private var recentOnly = false
+    @State private var searchQuery = ""
     @State private var expandedIds: Set<String> = []
 
     init(
         racketArm: RacketArm?,
         logs: [DrillSessionLog],
-        nowMs: Int64,
+        badges: [String: String],
         initiallyOpen: Bool,
         onStartDrill: @escaping (Exercise) -> Void
     ) {
         self.racketArm = racketArm
         self.logs = logs
-        self.nowMs = nowMs
+        self.badges = badges
         self.initiallyOpen = initiallyOpen
         self.onStartDrill = onStartDrill
         _libraryOpen = State(initialValue: initiallyOpen)
     }
 
     var body: some View {
-        let all = ExerciseCatalog.shared.all
-        let onCourtCount = Int32(all.filter { $0.category == .onCourt }.count)
-        let offCourtCount = Int32(all.filter { $0.category == .offCourt }.count)
-        let visible = ExerciseCatalog.shared.filtered(filter: selectedFilter)
+        let catalog = ExerciseCatalog.shared
+        let recent = catalog.recentExercises(logs: logs)
+        let effectiveRecentOnly = recentOnly && !recent.isEmpty
+        let baseList = effectiveRecentOnly ? recent : catalog.filtered(filter: selectedFilter)
+        let visible = catalog.search(exercises: baseList, query: searchQuery)
 
         VStack(alignment: .leading, spacing: 0) {
             Shuttl.sectionLabel(ExercisesCopy.shared.LIBRARY_HEADING)
@@ -512,7 +538,7 @@ private struct DrillLibrarySection: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(
                                 ExercisesCopy.shared.browseLibraryLabel(
-                                    totalCount: Int32(all.count),
+                                    totalCount: Int32(catalog.all.count),
                                     expanded: libraryOpen
                                 )
                             )
@@ -520,8 +546,8 @@ private struct DrillLibrarySection: View {
                             .foregroundStyle(Shuttl.textHeading)
                             Text(
                                 ExercisesCopy.shared.librarySubtitle(
-                                    onCourtCount: onCourtCount,
-                                    offCourtCount: offCourtCount
+                                    onCourtCount: catalog.onCourtCount,
+                                    offCourtCount: catalog.offCourtCount
                                 )
                             )
                             .shuttlType(ShuttlType.bodySmall)
@@ -548,69 +574,132 @@ private struct DrillLibrarySection: View {
             }
 
             if libraryOpen {
+                // Compact search field above filter pills.
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .imageScale(.small)
+                        .foregroundStyle(Shuttl.textSecondary)
+                        .accessibilityHidden(true)
+                    TextField(ExercisesCopy.shared.SEARCH_PLACEHOLDER, text: $searchQuery)
+                        .shuttlType(ShuttlType.bodySmall)
+                        .foregroundStyle(Shuttl.textHeading)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled(true)
+                    if !searchQuery.isEmpty {
+                        Button {
+                            searchQuery = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .imageScale(.small)
+                                .foregroundStyle(Shuttl.textTertiary)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(ExercisesCopy.shared.CLEAR_SEARCH)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(Shuttl.bgSecondary, in: RoundedRectangle(cornerRadius: ShuttlRadius.medium))
+                .overlay(
+                    RoundedRectangle(cornerRadius: ShuttlRadius.medium)
+                        .stroke(Shuttl.border, lineWidth: 1)
+                )
+                .padding(.horizontal, ShuttlGutter.page)
+                .padding(.top, initiallyOpen ? 0 : 12)
+
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        ForEach(ExerciseCatalog.shared.allFilters, id: \.self) { filter in
-                            let isSelected = filter == selectedFilter
-                            let count = ExerciseCatalog.shared.filtered(filter: filter).count
-                            Button {
-                                selectedFilter = filter
-                            } label: {
-                                Text("\(filter.label) (\(count))")
-                                    .shuttlType(ShuttlType.labelSmall)
-                                    .foregroundStyle(isSelected ? Shuttl.onAccent : Shuttl.textSecondary)
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 7)
-                                    .background(
-                                        isSelected ? Shuttl.accent : Shuttl.bgSecondary,
-                                        in: Capsule()
-                                    )
-                                    .overlay(
-                                        Capsule()
-                                            .stroke(isSelected ? Shuttl.accent : Shuttl.border, lineWidth: 1)
-                                    )
+                        if !recent.isEmpty {
+                            FilterChipPill(
+                                label: "\(ExercisesCopy.shared.FILTER_RECENT) (\(recent.count))",
+                                isSelected: effectiveRecentOnly
+                            ) {
+                                recentOnly = true
                             }
-                            .buttonStyle(.plain)
-                            .accessibilityAddTraits(isSelected ? .isSelected : [])
+                        }
+                        ForEach(catalog.allFilters, id: \.self) { filter in
+                            let isSelected = !effectiveRecentOnly && filter == selectedFilter
+                            let count = catalog.filterCount(filter: filter)
+                            FilterChipPill(
+                                label: "\(filter.label) (\(count))",
+                                isSelected: isSelected
+                            ) {
+                                recentOnly = false
+                                selectedFilter = filter
+                            }
                         }
                     }
                     .padding(.horizontal, ShuttlGutter.page)
                 }
-                .padding(.top, initiallyOpen ? 0 : 12)
+                .padding(.top, 10)
 
-                VStack(spacing: 10) {
-                    ForEach(visible, id: \.id) { exercise in
-                        let expanded = expandedIds.contains(exercise.id)
-                        let badge = DrillProgressRepositoryKt.exerciseProgressBadge(
-                            summary: DrillProgressRepositoryKt.progressForExercise(
-                                logs: logs,
-                                exerciseId: exercise.id,
-                                nowEpochMs: nowMs
-                            ),
-                            nowEpochMs: nowMs
-                        )
-                        ExerciseCard(
-                            exercise: exercise,
-                            kicker: "\(exercise.category.label) · \(exercise.focus.label)".uppercased(),
-                            subtitle: nil,
-                            progressBadge: badge,
-                            racketArm: racketArm,
-                            expanded: expanded,
-                            onToggle: {
-                                if expanded {
-                                    expandedIds.remove(exercise.id)
-                                } else {
-                                    expandedIds.insert(exercise.id)
-                                }
-                            },
-                            onStartDrill: { onStartDrill(exercise) }
-                        )
+                if visible.isEmpty {
+                    VStack(spacing: 8) {
+                        Text(ExercisesCopy.shared.NO_SEARCH_MATCHES)
+                            .shuttlType(ShuttlType.bodySmall)
+                            .foregroundStyle(Shuttl.textSecondary)
+                        if !searchQuery.isEmpty {
+                            Button(ExercisesCopy.shared.CLEAR_SEARCH) {
+                                searchQuery = ""
+                            }
+                            .shuttlType(ShuttlType.labelMedium)
+                            .foregroundStyle(Shuttl.accentDark)
+                            .buttonStyle(.plain)
+                        }
                     }
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, ShuttlGutter.page)
+                    .padding(.vertical, 24)
+                } else {
+                    LazyVStack(spacing: 10) {
+                        ForEach(visible, id: \.id) { exercise in
+                            let expanded = expandedIds.contains(exercise.id)
+                            ExerciseCard(
+                                exercise: exercise,
+                                kicker: "\(exercise.category.label) · \(exercise.focus.label)".uppercased(),
+                                subtitle: nil,
+                                progressBadge: badges[exercise.id],
+                                racketArm: racketArm,
+                                expanded: expanded,
+                                onToggle: {
+                                    if expanded {
+                                        expandedIds.remove(exercise.id)
+                                    } else {
+                                        expandedIds.insert(exercise.id)
+                                    }
+                                },
+                                onStartDrill: { onStartDrill(exercise) }
+                            )
+                        }
+                    }
+                    .padding(.horizontal, ShuttlGutter.page)
+                    .padding(.top, 12)
                 }
-                .padding(.horizontal, ShuttlGutter.page)
-                .padding(.top, 12)
             }
         }
+    }
+}
+
+private struct FilterChipPill: View {
+    let label: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(label)
+                .shuttlType(ShuttlType.labelSmall)
+                .foregroundStyle(isSelected ? Shuttl.onAccent : Shuttl.textSecondary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(isSelected ? Shuttl.accent : Shuttl.bgSecondary, in: Capsule())
+                .overlay(
+                    Capsule()
+                        .stroke(isSelected ? Shuttl.accent : Shuttl.border, lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
@@ -626,59 +715,79 @@ private struct ExerciseCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Button(action: onToggle) {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(alignment: .center, spacing: 8) {
-                        Text(kicker)
-                            .shuttlType(ShuttlType.labelSmall)
-                            .foregroundStyle(Shuttl.accentDark)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                        Spacer(minLength: 8)
-                        Text(exercise.prescription)
-                            .shuttlType(ShuttlType.bodySmall)
-                            .foregroundStyle(Shuttl.textTertiary)
-                            .multilineTextAlignment(.trailing)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                        Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                            .imageScale(.small)
-                            .foregroundStyle(Shuttl.textSecondary)
-                            .accessibilityHidden(true)
-                    }
-                    HStack(alignment: .center, spacing: 8) {
-                        Text(exercise.title)
-                            .shuttlType(ShuttlType.titleMedium)
-                            .foregroundStyle(Shuttl.textHeading)
-                            .multilineTextAlignment(.leading)
-                        Spacer(minLength: 4)
-                        if let progressBadge {
-                            Text(progressBadge)
+            HStack(alignment: .center, spacing: 8) {
+                Button(action: onToggle) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack(alignment: .center, spacing: 8) {
+                            Text(kicker)
                                 .shuttlType(ShuttlType.labelSmall)
-                                .foregroundStyle(Shuttl.analysisGlyph)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 2)
-                                .background(Shuttl.analysisChip, in: Capsule())
+                                .foregroundStyle(Shuttl.accentDark)
                                 .lineLimit(1)
+                                .truncationMode(.tail)
+                            Spacer(minLength: 8)
+                            Text(exercise.prescription)
+                                .shuttlType(ShuttlType.bodySmall)
+                                .foregroundStyle(Shuttl.textTertiary)
+                                .multilineTextAlignment(.trailing)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                        }
+                        HStack(alignment: .center, spacing: 8) {
+                            Text(exercise.title)
+                                .shuttlType(ShuttlType.titleMedium)
+                                .foregroundStyle(Shuttl.textHeading)
+                                .multilineTextAlignment(.leading)
+                            if let progressBadge {
+                                Text(progressBadge)
+                                    .shuttlType(ShuttlType.labelSmall)
+                                    .foregroundStyle(Shuttl.analysisGlyph)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 2)
+                                    .background(Shuttl.analysisChip, in: Capsule())
+                                    .lineLimit(1)
+                            }
+                        }
+                        if let subtitle {
+                            Text(subtitle)
+                                .shuttlType(ShuttlType.bodySmall)
+                                .foregroundStyle(Shuttl.textSecondary)
+                                .multilineTextAlignment(.leading)
                         }
                     }
-                    if let subtitle {
-                        Text(subtitle)
-                            .shuttlType(ShuttlType.bodySmall)
-                            .foregroundStyle(Shuttl.textSecondary)
-                            .multilineTextAlignment(.leading)
-                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(16)
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+                .accessibilityLabel(
+                    subtitle.map { "\(exercise.title), \(exercise.category.label), \(exercise.prescription). \($0)" }
+                        ?? "\(exercise.title), \(exercise.category.label), \(exercise.prescription)"
+                )
+                .accessibilityValue(expanded ? "Expanded" : "Collapsed")
+
+                // 1-tap quick launch button directly from the card header.
+                Button(action: onStartDrill) {
+                    Image(systemName: "play.fill")
+                        .imageScale(.small)
+                        .foregroundStyle(Shuttl.accentDark)
+                        .frame(width: 34, height: 34)
+                        .background(Shuttl.analysisChip, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(ExercisesCopy.shared.QUICK_START_LABEL) \(exercise.title)")
+
+                Button(action: onToggle) {
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                        .imageScale(.small)
+                        .foregroundStyle(Shuttl.textSecondary)
+                        .frame(width: 22, height: 34)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHidden(true)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(
-                subtitle.map { "\(exercise.title), \(exercise.category.label), \(exercise.prescription). \($0)" }
-                    ?? "\(exercise.title), \(exercise.category.label), \(exercise.prescription)"
-            )
-            .accessibilityValue(expanded ? "Expanded" : "Collapsed")
+            .padding(.leading, 16)
+            .padding(.trailing, 10)
+            .padding(.vertical, 14)
 
             if expanded {
                 Rectangle()

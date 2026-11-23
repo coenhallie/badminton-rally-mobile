@@ -232,9 +232,34 @@ final class ExercisesPanelTests: XCTestCase {
         )
         XCTAssertEqual(summary.totalSessions, 1)
         XCTAssertTrue(summary.completedToday)
-        XCTAssertEqual(
-            DrillProgressRepositoryKt.exerciseProgressBadge(summary: summary, nowEpochMs: nowMs),
-            "Done today"
+        let badgeMap = DrillProgressRepositoryKt.badgeMapByExercise(logs: [sampleLog], nowEpochMs: nowMs)
+        XCTAssertEqual(badgeMap[timed.id], "Done today")
+        XCTAssertNil(badgeMap["split-squat-endurance"])
+
+        let sideWithIds = CourtSideNames(
+            near: "Marco",
+            far: "Jip",
+            nearArm: .right,
+            farArm: .left,
+            nearPlayerId: "p-marco",
+            farPlayerId: "p-jip"
         )
+        XCTAssertEqual(CourtSideNamesKt.profilePlayerId(side: .near, names: sideWithIds), "p-marco")
+        XCTAssertEqual(CourtSideNamesKt.profilePlayerId(side: .far, names: sideWithIds), "p-jip")
+
+        let searchMatches = ExerciseCatalog.shared.search(exercises: ExerciseCatalog.shared.all, query: "6-corner")
+        XCTAssertTrue(searchMatches.contains { $0.id == timed.id })
+        XCTAssertEqual(ExerciseCatalog.shared.byIdOrNull(id: timed.id)?.id, timed.id)
+        XCTAssertNil(ExerciseCatalog.shared.byIdOrNull(id: "unknown-drill"))
+        XCTAssertEqual(
+            Int(ExerciseCatalog.shared.filterCount(filter: .all)),
+            ExerciseCatalog.shared.all.count
+        )
+        let recent = ExerciseCatalog.shared.recentExercises(logs: [sampleLog])
+        XCTAssertEqual(recent.map(\.id), [timed.id])
+
+        let customPlan = DrillSessionKt.defaultPlanFor(exercise: timed)
+        let seeded = DrillSessionKt.createDrillSessionWithPlan(exercise: timed, plan: customPlan)
+        XCTAssertEqual(seeded.plan.sets, customPlan.sets)
     }
 }

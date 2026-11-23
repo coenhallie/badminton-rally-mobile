@@ -36,7 +36,8 @@ struct DrillSessionSheet: View {
         self.playerId = playerId
         self.matchId = matchId
         self.drillProgress = drillProgress
-        _state = State(initialValue: DrillSessionKt.createDrillSession(exercise: exercise))
+        let initialPlan = drillProgress.planForExercise(exercise: exercise)
+        _state = State(initialValue: DrillSessionKt.createDrillSessionWithPlan(exercise: exercise, plan: initialPlan))
     }
 
     private var activeRunning: Bool {
@@ -202,6 +203,7 @@ struct DrillSessionSheet: View {
             }
 
             Button(ExercisesCopy.shared.START_SESSION) {
+                drillProgress.savePlan(exerciseId: exercise.id, plan: state.plan)
                 let next = DrillSessionKt.startDrillSession(state: state)
                 state = next.state
                 playCue(next.cue)
