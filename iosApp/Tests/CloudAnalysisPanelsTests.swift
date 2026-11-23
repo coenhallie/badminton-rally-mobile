@@ -103,7 +103,7 @@ final class CloudAnalysisPanelsTests: XCTestCase {
 
         XCTAssertEqual(
             panelsFor(store, cloudClips: [clip(1, 4, 21.5), clip(2, 30, 44)]),
-            [.heatmap, .base]
+            [.heatmap, .base, .drills]
         )
     }
 
@@ -148,11 +148,11 @@ final class CloudAnalysisPanelsTests: XCTestCase {
 
         XCTAssertEqual(
             panelsFor(store, cloudClips: clips, hasSkeleton: true, hasVideo: false),
-            [.heatmap, .base]
+            [.heatmap, .base, .drills]
         )
         XCTAssertEqual(
             panelsFor(store, cloudClips: clips, hasSkeleton: true, hasVideo: true),
-            [.heatmap, .base, .skeleton]
+            [.heatmap, .base, .skeleton, .drills]
         )
     }
 

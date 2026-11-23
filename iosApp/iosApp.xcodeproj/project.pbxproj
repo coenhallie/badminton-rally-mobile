@@ -141,6 +141,7 @@
 		AC0F89C460D667EB7A222466 /* ScoreEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C6192E2EAE7DFA83B47A90A /* ScoreEditSheet.swift */; };
 		ADB1A8FA16544D50471033AA /* ClipSort.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DBB4CC1CACCD0256476D9DE /* ClipSort.swift */; };
 		B068D22B02B14DAA77376E48 /* PoseRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = E67BD8A82174D4DA74ABDDB3 /* PoseRunner.swift */; };
+		B398503E425A2ED544386E80 /* ExercisesPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F5CEB3315707485860D9767 /* ExercisesPanel.swift */; };
 		B5B1EA467916705BDEFC3105 /* TestVideo.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDB45733DE4B47AB71347191 /* TestVideo.swift */; };
 		BDFDF48A8D5F923F5890A7D7 /* ShuttlGutter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 036BB7DF4026EDD84A447F30 /* ShuttlGutter.swift */; };
 		BEBE9F0F59B385E1AFB86863 /* MetricsStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = C23817895BB7CF088646D4BB /* MetricsStrip.swift */; };
@@ -194,6 +195,7 @@
 		FAB79A300959A2B5080B2DFF /* CourtCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AFBCE65971EDF3A28170ED3 /* CourtCard.swift */; };
 		FBD81E3F8DC5B517AE143AA3 /* KeepAwakeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A64093BD01220E5A47C287B1 /* KeepAwakeTests.swift */; };
 		FEB1B904E92819730266F380 /* OnnxSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFA34C0702D7C4F873579DEF /* OnnxSession.swift */; };
+		FF0B4F814BDDB4D226908D7F /* ExercisesPanelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B73CA1FE4E565320C2F9144 /* ExercisesPanelTests.swift */; };
 		FF3FC6EAC5E93C6EB7DE7DF5 /* BackgroundWorkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF6B2377AD2BB1E457F4608A /* BackgroundWorkTests.swift */; };
 /* End PBXBuildFile section */
 
@@ -259,6 +261,7 @@
 		374F7ADDCA02DFBA8D628BFB /* SystemImageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemImageTests.swift; sourceTree = "<group>"; };
 		3A34A957F901EA635D1BAA96 /* LocalVideoFiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalVideoFiles.swift; sourceTree = "<group>"; };
 		3A9896412F77DC2290D32532 /* MatchModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchModelTests.swift; sourceTree = "<group>"; };
+		3B73CA1FE4E565320C2F9144 /* ExercisesPanelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExercisesPanelTests.swift; sourceTree = "<group>"; };
 		3CEBABF3818F4829339E77D7 /* ShareSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareSheetView.swift; sourceTree = "<group>"; };
 		3DCB567F4053F69F6CEA0D8B /* CourtFinderBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CourtFinderBridge.swift; sourceTree = "<group>"; };
 		3FA21129D859F17CC0DF1D93 /* ScoringEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoringEngineTests.swift; sourceTree = "<group>"; };
@@ -343,6 +346,7 @@
 		9B13CBB38AE526A3C355DE8B /* LabelsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabelsModel.swift; sourceTree = "<group>"; };
 		9D624F5633DF1C622984C898 /* CourtHeatmapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CourtHeatmapView.swift; sourceTree = "<group>"; };
 		9DBB4CC1CACCD0256476D9DE /* ClipSort.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipSort.swift; sourceTree = "<group>"; };
+		9F5CEB3315707485860D9767 /* ExercisesPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExercisesPanel.swift; sourceTree = "<group>"; };
 		A02D8B89ABF94AD30304E3A5 /* FrameStepMathTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameStepMathTests.swift; sourceTree = "<group>"; };
 		A5288512ECBD5A695FD1E4E0 /* HomeRouteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeRouteTests.swift; sourceTree = "<group>"; };
 		A5828909CBE2B20598B0AAB8 /* PlaybackBridgingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackBridgingTests.swift; sourceTree = "<group>"; };
@@ -546,6 +550,7 @@
 				7F3FB619BC2DFED2E13C3209 /* CourtTapMathTests.swift */,
 				327CF7F26B706A73DCE67AB7 /* DeviceRalliesTests.swift */,
 				494E223F94F8690D469C7F44 /* DeviceRunOutputTests.swift */,
+				3B73CA1FE4E565320C2F9144 /* ExercisesPanelTests.swift */,
 				5026EBA3635DDA8388C31BB6 /* FramePreprocessorTests.swift */,
 				A02D8B89ABF94AD30304E3A5 /* FrameStepMathTests.swift */,
 				A5288512ECBD5A695FD1E4E0 /* HomeRouteTests.swift */,
@@ -717,6 +722,7 @@
 				FCC53A8C7A4C1183BC9582CB /* BasePositionPanel.swift */,
 				7102866CDAE872422ABCAFA0 /* ClipCutter.swift */,
 				95B96E99BED4A10A8FDA5011 /* DetectorRunner.swift */,
+				9F5CEB3315707485860D9767 /* ExercisesPanel.swift */,
 				7FDAAA15B0E6D9178584AAA9 /* FramePreprocessor.swift */,
 				7F09AE3FEADD4D23B45A2009 /* IosLocalInferenceEngine.swift */,
 				8467FBF49DD4EC2EDA5EECEC /* LocalAnalysisRunner.swift */,
@@ -997,6 +1003,7 @@
 				463AA1D446BAF218F9A84D50 /* DrawerList.swift in Sources */,
 				8BEBF4BB83AD47A157AF3E48 /* EditMatchDetailsSheet.swift in Sources */,
 				EE7A9B1A1CC005EC4BCF015B /* ErrorBanner.swift in Sources */,
+				B398503E425A2ED544386E80 /* ExercisesPanel.swift in Sources */,
 				34CAF7EBABBE17BD0D9F7633 /* FramePreprocessor.swift in Sources */,
 				2E71C6E8CEB45C9A1AF67518 /* FrameStepMath.swift in Sources */,
 				4DBE757463239161048DA780 /* HeroTickerView.swift in Sources */,
@@ -1110,6 +1117,7 @@
 				EC56A892E716930456F75F35 /* CourtTapMathTests.swift in Sources */,
 				AB45CF295A0B52BD824A44E2 /* DeviceRalliesTests.swift in Sources */,
 				33A67B016D08FBC81C82DF80 /* DeviceRunOutputTests.swift in Sources */,
+				FF0B4F814BDDB4D226908D7F /* ExercisesPanelTests.swift in Sources */,
 				708E420E7D68695C33009DC9 /* FramePreprocessorTests.swift in Sources */,
 				240133B2EF631DC8B1C2979F /* FrameStepMathTests.swift in Sources */,
 				0C64CD9D1F04AC0F45519816 /* HomeRouteTests.swift in Sources */,
