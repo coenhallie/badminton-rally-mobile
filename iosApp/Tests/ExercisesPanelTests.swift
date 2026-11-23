@@ -157,15 +157,25 @@ final class ExercisesPanelTests: XCTestCase {
         let leftTip = try XCTUnwrap(leftPose.figure.racketTip)
         XCTAssertEqual(leftTip.x, 1.0 - rightTip.x, accuracy: 0.001)
 
-        let rightCourt = ExerciseVisualsKt.sampleCourtPoint(path: path, phase01: 0.25, mirrorX: false)
-        let leftCourt = ExerciseVisualsKt.sampleCourtPoint(path: path, phase01: 0.25, mirrorX: true)
+        let rightCourt = ExerciseVisualsKt.sampleCourtState(path: path, phase01: 0.25, mirrorX: false)
+        let leftCourt = ExerciseVisualsKt.sampleCourtState(path: path, phase01: 0.25, mirrorX: true)
         let width = Float(Court.shared.WIDTH_DOUBLES)
-        XCTAssertEqual(leftCourt.x, width - rightCourt.x, accuracy: 0.002)
-        XCTAssertEqual(leftCourt.y, rightCourt.y, accuracy: 0.002)
+        XCTAssertEqual(leftCourt.playerPosition.x, width - rightCourt.playerPosition.x, accuracy: 0.002)
+        XCTAssertEqual(leftCourt.playerPosition.y, rightCourt.playerPosition.y, accuracy: 0.002)
+        XCTAssertEqual(rightCourt.playerTrail.count, 6)
+        XCTAssertNotNil(rightCourt.shuttlePosition)
+        XCTAssertFalse(rightCourt.smoothRoute.isEmpty)
+
+        let smash = ExerciseVisualsKt.visualFor(exerciseId: "jump-smash-and-follow")
+        let impactPose = ExerciseVisualsKt.samplePose(sequence: smash.pose, phase01: 0.38, mirrorX: false)
+        XCTAssertNotNil(impactPose.shuttle)
+        XCTAssertGreaterThan(impactPose.keyframeCount, 1)
 
         let offCourt = ExerciseVisualsKt.visualFor(exerciseId: "split-squat-endurance")
         XCTAssertNil(offCourt.courtPath)
-        XCTAssertNil(ExerciseVisualsKt.samplePose(sequence: offCourt.pose, phase01: 0.5, mirrorX: false).figure.racketTip)
+        let squatPose = ExerciseVisualsKt.samplePose(sequence: offCourt.pose, phase01: 0.5, mirrorX: false)
+        XCTAssertNil(squatPose.figure.racketTip)
+        XCTAssertNil(squatPose.shuttle)
     }
 
     func testDrillLibraryFiltersCoverEveryCatalogExerciseFromSwift() {
