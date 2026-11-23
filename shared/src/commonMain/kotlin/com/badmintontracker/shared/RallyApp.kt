@@ -1,5 +1,6 @@
 package com.badmintontracker.shared
 
+import com.badmintontracker.shared.exercises.DrillProgressRepository
 import com.badmintontracker.shared.localvideo.AnalyzeCoordinator
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.local.DeviceThroughputRepository
@@ -96,6 +97,9 @@ class RallyApp(
     val themePrefs:       ThemePreferenceRepository    = ThemePreferenceRepository(settings)
     val playbackPrefs:    PlaybackPreferenceRepository = PlaybackPreferenceRepository(settings)
     val racketArmPrefs:   RacketArmPreferenceRepository = RacketArmPreferenceRepository(settings)
+    val drillProgress:    DrillProgressRepository      = DrillProgressRepository(settings) {
+        Clock.System.now().toEpochMilliseconds()
+    }
 
     /**
      * What this phone has learned about how fast it analyses.

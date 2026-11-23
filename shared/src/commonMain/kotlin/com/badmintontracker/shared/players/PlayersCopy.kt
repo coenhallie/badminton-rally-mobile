@@ -42,6 +42,7 @@ object PlayersCopy {
     // Player page
     const val TAB_PROFILE = "Profile"
     const val TAB_MATCHES = "Matches"
+    const val TAB_DRILLS = "Drills"
     const val TILE_MATCHES = "Matches"
     const val TILE_RALLIES = "Rallies"
     const val TILE_LAST_MATCH = "Last match"
