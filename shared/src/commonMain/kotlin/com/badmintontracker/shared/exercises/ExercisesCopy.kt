@@ -1,0 +1,46 @@
+package com.badmintontracker.shared.exercises
+
+/** Every user-facing heading, status line, and caveat rendered by the Drills panel. */
+object ExercisesCopy {
+    const val SUMMARY_HEADING = "MOVEMENT SUMMARY"
+    const val SUGGESTIONS_HEADING = "SUGGESTED EXERCISES"
+    const val PEAK_SPEED_LABEL = "Peak speed (0.5 s)"
+    const val SETUP_LABEL = "Setup"
+    const val CUE_LABEL = "Cue"
+
+    const val HONESTY_CAPTION =
+        "Based on singles rally movement from this video. Doubles play and isolated feeding drills may skew positioning."
+
+    const val NOT_LOADED =
+        "This analysis is no longer loaded. Run it again to see suggested exercises."
+
+    const val NO_BOUNDED_WINDOWS =
+        "The rally windows for this analysis were not kept, so there is nothing to measure per rally. Run the analysis again."
+
+    const val NO_COUNTED_RALLIES =
+        "Not enough tracked rally movement in this video to suggest exercises."
+
+    fun ralliesUnit(countedRallies: Int): String = if (countedRallies == 1) " rally" else " rallies"
+
+    fun ralliesCaption(coveragePercent: Int): String = "$coveragePercent% tracked"
+
+    fun zoneBreakdown(frontPercent: Int, midPercent: Int, rearPercent: Int): String =
+        "Front $frontPercent% · Mid $midPercent% · Rear $rearPercent%"
+
+    fun insufficientData(
+        rallies: Int,
+        coveragePercent: Int,
+        minRallies: Int,
+        minCoveragePercent: Int,
+    ): String {
+        val rallyWord = if (rallies == 1) "rally" else "rallies"
+        return "Need at least $minRallies tracked rallies with $minCoveragePercent% coverage to suggest exercises. " +
+            "This video had $rallies $rallyWord ($coveragePercent% coverage)."
+    }
+
+    fun balanced(rallies: Int): String {
+        val rallyWord = if (rallies == 1) "rally" else "rallies"
+        return "Positioning and movement looked balanced across $rallies $rallyWord. " +
+            "Nothing here calls for a corrective drill."
+    }
+}

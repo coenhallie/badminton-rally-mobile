@@ -1,0 +1,205 @@
+package com.badmintontracker.shared.exercises
+
+/**
+ * Curated catalog of original singles badminton drills and targeted off-court
+ * conditioning exercises, keyed by stable slug IDs.
+ */
+object ExerciseCatalog {
+    val all: List<Exercise> = listOf(
+        Exercise(
+            id = "base-mark-6-corner-shadow",
+            title = "Base-Mark 6-Corner Shadow",
+            category = ExerciseCategory.ON_COURT,
+            focus = FocusArea.BASE_RECOVERY,
+            prescription = "4 x 45 s · 20 s rest",
+            setup = "Solo on half court. Place one flat floor marker 1.4 m behind the short service line on the centre line.",
+            steps = listOf(
+                "Start balanced in a ready stance straddling the floor marker.",
+                "Split-step and move to one of the six singles corners with a controlled shadow swing.",
+                "Push off out of the corner and land both feet back across the marker before starting the next corner.",
+                "Cycle all six corners at a steady rhythm, prioritizing an active mid-court base over rushing.",
+            ),
+            coachingCue = "Land balanced over the floor marker before committing to the next corner.",
+        ),
+        Exercise(
+            id = "clear-to-base-multi-shuttle",
+            title = "Clear-to-Base Multi-Shuttle",
+            category = ExerciseCategory.ON_COURT,
+            focus = FocusArea.BASE_RECOVERY,
+            prescription = "3 x 15 shuttles",
+            setup = "Feeder at the opposite service line with a tube of shuttles; one flat marker at the mid-court base.",
+            steps = listOf(
+                "Receive a high feed to either rear singles corner and play a deep clear or fast drop.",
+                "Use the landing leg to drive forward immediately back onto the mid-court marker.",
+                "Take a small split-step on the marker as the feeder prepares the next shuttle.",
+            ),
+            coachingCue = "Recover forward immediately after contact instead of watching the shuttle from the backcourt.",
+        ),
+        Exercise(
+            id = "net-to-rear-recovery",
+            title = "Net-to-Rear Recovery Drill",
+            category = ExerciseCategory.ON_COURT,
+            focus = FocusArea.COURT_COVERAGE,
+            prescription = "3 x 12 reps",
+            setup = "Feeder near the net with shuttles. Alternate tight net feeds with high lifts to the rear corners.",
+            steps = listOf(
+                "Lunge forward to play a controlled net shot from the forecourt.",
+                "Push back sharply off the lunging leg past the service line into a balanced mid-court base.",
+                "React to the high lift, chasse into the rear corner, and play a balanced overhead clear.",
+                "Reset to mid-court depth behind the service line before the next net feed.",
+            ),
+            coachingCue = "Clear the service line on recovery so the rear corners stay reachable in two steps.",
+        ),
+        Exercise(
+            id = "front-back-2-corner-feed",
+            title = "Front-Back 2-Corner Feeding",
+            category = ExerciseCategory.ON_COURT,
+            focus = FocusArea.COURT_COVERAGE,
+            prescription = "4 x 12 shuttles",
+            setup = "Feeder on the opposite half alternating low net feeds and deep backcourt feeds down one channel.",
+            steps = listOf(
+                "Take a tight net shot at the front and immediately push back past the service line.",
+                "Pause for a brief split-step in mid-court before moving back for the deep overhead feed.",
+                "Play a straight drop or clear from the rear and recover to the same mid-court depth.",
+                "Switch channels (forehand side to backhand side) after every set.",
+            ),
+            coachingCue = "Keep the base behind the service line rather than lingering near the net after front-court shots.",
+        ),
+        Exercise(
+            id = "opposite-side-corner-recovery",
+            title = "Wide-Corner Balance Feeding",
+            category = ExerciseCategory.ON_COURT,
+            focus = FocusArea.LATERAL_BALANCE,
+            prescription = "3 x 16 shuttles",
+            setup = "Feeder sends two feeds to the dominant side followed by a wide surprise feed to the opposite side.",
+            steps = listOf(
+                "Handle two consecutive feeds to the crowded side while resetting feet squarely over the centre line.",
+                "Read the wide cross-court change of direction on the third feed without crossing feet prematurely.",
+                "Play a high defensive clear or tight block from the wide corner and recover cleanly to the centre line.",
+            ),
+            coachingCue = "Finish every recovery straddling the centre line so neither sideline is left open.",
+        ),
+        Exercise(
+            id = "centre-line-split-reset",
+            title = "Centre-Line Split-Step Reset",
+            category = ExerciseCategory.ON_COURT,
+            focus = FocusArea.LATERAL_BALANCE,
+            prescription = "4 x 40 s · 20 s rest",
+            setup = "Solo or with a caller on half court. Use the painted centre line as the reset reference.",
+            steps = listOf(
+                "Begin with one foot on each side of the centre line, knees softly bent.",
+                "Move laterally to the left or right sideline with a crisp lunge and simulated drive or block.",
+                "Chasse back until the centre line sits cleanly between both shoes, then hit a quick split-step.",
+                "Alternate left and right sidelines with unpredictable calls on the final two sets.",
+            ),
+            coachingCue = "Check foot placement on the centre line on every reset instead of drifting toward the favoured side.",
+        ),
+        Exercise(
+            id = "fatigue-6-corner-shadow",
+            title = "Fatigue-State 6-Corner Shadow",
+            category = ExerciseCategory.ON_COURT,
+            focus = FocusArea.ENDURANCE,
+            prescription = "5 x 45 s · 15 s rest",
+            setup = "Solo on half court with a flat marker placed at mid-court base depth.",
+            steps = listOf(
+                "Move at match tempo across random six-corner shadow sequences for 45 seconds.",
+                "Hold the exact same recovery depth onto the floor marker during the final 15 seconds of each set.",
+                "Keep rest strictly to 15 seconds to simulate late-game cardiovascular load.",
+                "Track whether the recovery step reaches the marker cleanly on sets four and five.",
+            ),
+            coachingCue = "Refuse to drop deeper behind the marker as legs tire in the last two sets.",
+        ),
+        Exercise(
+            id = "split-squat-endurance",
+            title = "Split-Squat Endurance Sets",
+            category = ExerciseCategory.OFF_COURT,
+            focus = FocusArea.ENDURANCE,
+            prescription = "3 x 12 / leg · 45 s rest",
+            setup = "Off court with bodyweight or light dumbbells. Use flat stable shoes on a non-slip floor.",
+            steps = listOf(
+                "Take a long split stance with the torso upright and weight centered over the front mid-foot.",
+                "Lower the back knee steadily under control over two seconds until the front thigh nears parallel.",
+                "Drive smoothly back up through the front foot without locking the knee at the top.",
+                "Complete all 12 reps on one side, then switch immediately to the other leg.",
+            ),
+            coachingCue = "Keep the front knee tracking over the toes and avoid rounding the lower back as fatigue builds.",
+        ),
+        Exercise(
+            id = "cone-touch-base-discipline",
+            title = "Cone-Touch Base Discipline",
+            category = ExerciseCategory.ON_COURT,
+            focus = FocusArea.BASE_RECOVERY,
+            prescription = "3 x 15 shuttles",
+            setup = "Feeder with shuttles; place a flat non-slip cone at the singles centre base.",
+            steps = listOf(
+                "Play each random corner feed back over the net with height and margin.",
+                "Immediately return to the flat cone and lightly tap or step over the spot before the next feed.",
+                "Hold a brief balanced pause over the cone rather than running straight from corner to corner.",
+            ),
+            coachingCue = "Treat the base cone as a mandatory checkpoint on every single rally shot.",
+        ),
+        Exercise(
+            id = "drop-and-follow-net-attack",
+            title = "Drop-and-Follow Net Attack",
+            category = ExerciseCategory.ON_COURT,
+            focus = FocusArea.COURT_COVERAGE,
+            prescription = "3 x 12 pairs",
+            setup = "Feeder sends a high clear followed immediately by a loose short return near the net.",
+            steps = listOf(
+                "Move cleanly behind the high feed and strike a sharp, controlled drop shot.",
+                "Follow the drop forward in one fluid stride toward the service line instead of retreating.",
+                "Intercept the short return early above tape height with a crisp net kill or tight spin.",
+                "Reset to mid-court base before the next pair begins.",
+            ),
+            coachingCue = "Follow every quality drop forward to take time away from the opponent at the net.",
+        ),
+        Exercise(
+            id = "forecourt-lunge-net-kill",
+            title = "Forecourt Lunge & Net-Kill Feed",
+            category = ExerciseCategory.ON_COURT,
+            focus = FocusArea.COURT_COVERAGE,
+            prescription = "3 x 14 shuttles",
+            setup = "Feeder stands close to the opposite net with rapid short feeds to both forecourt corners.",
+            steps = listOf(
+                "Start just behind the short service line with the racket head held high in front.",
+                "Push forward into a balanced heel-first lunge to meet the shuttle early near tape level.",
+                "Play either a tight tumbling net shot or a compact net tap, keeping the back foot anchored for balance.",
+                "Rebound cleanly behind the service line before the next feed.",
+            ),
+            coachingCue = "Lead with the racket high and land heel-first to keep the forecourt lunge stable.",
+        ),
+        Exercise(
+            id = "repeat-burst-multi-shuttle",
+            title = "Repeat-Burst Multi-Shuttle",
+            category = ExerciseCategory.ON_COURT,
+            focus = FocusArea.EXPLOSIVE_SPEED,
+            prescription = "6 x 10 shuttles · 30 s rest",
+            setup = "Feeder with 10 shuttles per set feeding rapidly to random corners at near-maximum pace.",
+            steps = listOf(
+                "Explode out of a sharp split-step to reach each feed as early as possible.",
+                "Prioritize maximum first-step acceleration out of base across all 10 shuttles in the set.",
+                "Take a full 30-second walk recovery between sets so burst speed stays high on sets five and six.",
+            ),
+            coachingCue = "Keep the first step out of the split-step explosive from the first shuttle to the last.",
+        ),
+        Exercise(
+            id = "lateral-bounds-split-jumps",
+            title = "Lateral Bounds & Split-Jumps",
+            category = ExerciseCategory.OFF_COURT,
+            focus = FocusArea.EXPLOSIVE_SPEED,
+            prescription = "4 x 8 bounds + 6 split-jumps",
+            setup = "Off court on a sprung hall floor or gym mat with 3 metres of lateral space.",
+            steps = listOf(
+                "Push explosively off the outside foot to bound laterally, sticking the landing on the opposite leg for one beat.",
+                "Complete 8 alternating lateral bounds, staying low through the hips on each landing.",
+                "Transition straight into 6 quick-contact plyometric split-jumps, landing softly in a wide ready stance.",
+                "Rest 60 seconds between rounds to preserve elastic power quality.",
+            ),
+            coachingCue = "Land quietly through the ball of the foot and rebound quickly without letting the knees collapse inward.",
+        ),
+    )
+
+    private val index: Map<String, Exercise> = all.associateBy { it.id }
+
+    fun byId(id: String): Exercise = requireNotNull(index[id]) { "Unknown exercise id: $id" }
+}
