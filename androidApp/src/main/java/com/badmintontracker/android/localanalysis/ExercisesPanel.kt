@@ -55,6 +55,7 @@ import com.badmintontracker.shared.exercises.ExercisesCopy
 import com.badmintontracker.shared.exercises.MovementSummary
 import com.badmintontracker.shared.exercises.adviseExercisesForTrack
 import com.badmintontracker.shared.local.ABSENT_METRIC
+import com.badmintontracker.shared.prefs.RacketArm
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -139,6 +140,7 @@ fun ExercisesPanel(
             }
             ExerciseReportStatus.SUGGESTIONS -> {
                 val shownSide = shown.side
+                val shownArm = profileArm(shownSide, sideNames)
                 var expandedIds by remember(shownSide, report) {
                     mutableStateOf(setOfNotNull(report.suggestions.firstOrNull()?.exercise?.id))
                 }
@@ -162,6 +164,7 @@ fun ExercisesPanel(
                         val expanded = id in expandedIds
                         ExerciseCard(
                             suggestion = suggestion,
+                            racketArm = shownArm,
                             expanded = expanded,
                             onToggle = {
                                 expandedIds = if (expanded) expandedIds - id else expandedIds + id
@@ -253,6 +256,7 @@ private fun MovementSummaryBlock(summary: MovementSummary) {
 @Composable
 private fun ExerciseCard(
     suggestion: ExerciseSuggestion,
+    racketArm: RacketArm?,
     expanded: Boolean,
     onToggle: () -> Unit,
 ) {
@@ -321,8 +325,12 @@ private fun ExerciseCard(
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Column(
                 modifier = Modifier.fillMaxWidth().padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                ExerciseVisualView(
+                    exerciseId = exercise.id,
+                    racketArm = racketArm,
+                )
                 Text(
                     "${ExercisesCopy.SETUP_LABEL}: ${exercise.setup}",
                     style = MaterialTheme.typography.bodySmall,
