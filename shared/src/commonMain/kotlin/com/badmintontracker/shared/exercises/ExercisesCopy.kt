@@ -9,6 +9,8 @@ object ExercisesCopy {
     const val SETUP_LABEL = "Setup"
     const val CUE_LABEL = "Cue"
     const val COURT_VISUAL_CAPTION = "Court pattern"
+    const val SPEED_NORMAL = "1x"
+    const val SPEED_SLOW = "0.5x"
 
     fun poseCaption(phaseLabel: String): String = "Pose: $phaseLabel"
 

@@ -1,7 +1,14 @@
 package com.badmintontracker.shared.exercises
 
 import com.badmintontracker.analysis.geometry.Court
+import kotlin.math.PI
+import kotlin.math.atan2
+import kotlin.math.cos
 import kotlin.math.floor
+import kotlin.math.hypot
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.sin
 
 /** Ground baseline inside the normalized [0, 1] pose canvas. */
 const val POSE_GROUND_Y: Float = 0.88f
@@ -48,16 +55,55 @@ data class PoseKeyframe(
     val figure: PoseFigure,
 )
 
+/** Shuttle flight trajectory drawn inside the pose tile for shuttle-fed drills. */
+enum class ShuttleArc {
+    NONE,
+    OVERHEAD_CLEAR,
+    SMASH,
+    DROP_NET,
+    FLAT_DRIVE,
+    DEFENCE_LIFT,
+    SERVE,
+}
+
 /** Looping pose animation defined by 2 to 4 keyframes over [cycleSeconds]. */
 data class PoseSequence(
     val keyframes: List<PoseKeyframe>,
     val cycleSeconds: Double,
+    val shuttleArc: ShuttleArc = ShuttleArc.NONE,
 )
 
-/** Interpolated pose ready for direct Canvas drawing on Android and iOS. */
+/** Live shuttlecock position and travel orientation inside normalized [0, 1] pose space. */
+data class PoseShuttle(
+    val position: VisualPoint,
+    val velocityAngleRad: Float,
+    val alpha: Float,
+    /** Non-zero flash intensity (0..1) right at racket contact. */
+    val impactFlash: Float,
+)
+
+/** Subtle expanding floor ring triggered at split-step or lunge landing moments. */
+data class FloorRipple(
+    val centerX: Float,
+    val progress01: Float,
+)
+
+/** Enriched interpolated pose ready for stylized Canvas rendering on Android and iOS. */
 data class SampledPose(
     val label: String,
     val figure: PoseFigure,
+    val keyframeIndex: Int,
+    val keyframeCount: Int,
+    /** Recent racket-head positions (oldest to newest) for motion-trail swooshes. */
+    val racketTrail: List<VisualPoint>,
+    /** Animated incoming/rebounding shuttlecock for shuttle-fed drills, null otherwise. */
+    val shuttle: PoseShuttle?,
+    /** Expanding ground contact ripple at landing moments, null when steady. */
+    val floorRipple: FloorRipple?,
+    /** 0 when planted on the floor up to 1 at peak jump height (scales ground shadow). */
+    val airborneFactor: Float,
+    /** Horizontal facing cue (+1 right, -1 left) used for head profile and shoes. */
+    val facingSign: Float,
 )
 
 /**
@@ -72,6 +118,17 @@ data class CourtDrillPath(
     val cycleSeconds: Double,
 )
 
+/** Rich frame state for the half-court diagram (curved path, trail, synced shuttle, pulses). */
+data class SampledCourtState(
+    val playerPosition: VisualPoint,
+    val playerTrail: List<VisualPoint>,
+    val shuttlePosition: VisualPoint?,
+    val basePulse01: Float,
+    val cornerPulsePoint: VisualPoint?,
+    val cornerPulse01: Float,
+    val smoothRoute: List<VisualPoint>,
+)
+
 /** Complete visual definition for one exercise in [ExerciseCatalog]. */
 data class ExerciseVisual(
     val exerciseId: String,
@@ -84,29 +141,40 @@ fun visualFor(exerciseId: String): ExerciseVisual =
     requireNotNull(visualIndex[exerciseId]) { "Unknown exercise visual id: $exerciseId" }
 
 /**
- * Samples [sequence] at cyclic phase [phase01] (wrapped into `[0, 1)`),
- * smoothly interpolating between consecutive keyframes and mirroring across
- * `x = 0.5` when [mirrorX] is true (left-handed player).
+ * Samples [sequence] at cyclic phase [phase01] (wrapped into `[0, 1)`), using
+ * bone-length-preserving forward-kinematics rotation between keyframes, plus
+ * racket motion trail, shuttle flight, landing ripples, and left-hand mirroring.
  */
 fun samplePose(sequence: PoseSequence, phase01: Float, mirrorX: Boolean): SampledPose {
     val frames = sequence.keyframes
     require(frames.isNotEmpty()) { "PoseSequence must contain at least one keyframe" }
-    if (frames.size == 1) {
-        val fig = if (mirrorX) mirrorFigure(frames[0].figure) else frames[0].figure
-        return SampledPose(frames[0].label, fig)
-    }
     val wrapped = wrapPhase(phase01)
-    val scaled = wrapped * frames.size
-    val idx = floor(scaled).toInt().coerceIn(0, frames.size - 1)
-    val nextIdx = (idx + 1) % frames.size
-    val localT = scaled - idx
-    // Brief hold at the keyframe (first 25%) before easing cleanly to the next pose.
-    val moveT = if (localT <= 0.25f) 0f else smoothstep((localT - 0.25f) / 0.75f)
-    val blended = lerpFigure(frames[idx].figure, frames[nextIdx].figure, moveT)
-    val label = if (localT < 0.70f) frames[idx].label else frames[nextIdx].label
+    val baseSample = sampleRawPose(frames, wrapped)
+    val figure = if (mirrorX) mirrorFigure(baseSample.figure) else baseSample.figure
+
+    // Build racket-head swoosh trail when the racket moves briskly across recent micro-phases.
+    val trail = buildRacketTrail(frames, wrapped, mirrorX)
+
+    // Compute live shuttlecock trajectory synced to contact frame (index 1) for shuttle drills.
+    val shuttle = samplePoseShuttle(sequence, wrapped, mirrorX)
+
+    // Trigger expanding ground ripple when feet plant cleanly onto POSE_GROUND_Y.
+    val ripple = sampleFloorRipple(frames, wrapped, mirrorX)
+
+    val lowestFootY = max(figure.ankleL.y, figure.ankleR.y)
+    val airborneFactor = ((POSE_GROUND_Y - lowestFootY) / 0.14f).coerceIn(0f, 1f)
+    val facingSign = computeFacingSign(figure, mirrorX)
+
     return SampledPose(
-        label = label,
-        figure = if (mirrorX) mirrorFigure(blended) else blended,
+        label = baseSample.label,
+        figure = figure,
+        keyframeIndex = baseSample.activeIndex,
+        keyframeCount = frames.size,
+        racketTrail = trail,
+        shuttle = shuttle,
+        floorRipple = ripple,
+        airborneFactor = airborneFactor,
+        facingSign = facingSign,
     )
 }
 
@@ -114,17 +182,153 @@ fun samplePose(sequence: PoseSequence, phase01: Float, mirrorX: Boolean): Sample
  * Samples the moving player dot along [path]'s closed waypoint loop at cyclic
  * phase [phase01], mirroring across the centre line when [mirrorX] is true.
  */
-fun sampleCourtPoint(path: CourtDrillPath, phase01: Float, mirrorX: Boolean): VisualPoint {
+fun sampleCourtPoint(path: CourtDrillPath, phase01: Float, mirrorX: Boolean): VisualPoint =
+    sampleCourtState(path, phase01, mirrorX).playerPosition
+
+/**
+ * Samples the full synchronized half-court frame: distance-weighted curved player
+ * movement, fading motion trail, live shuttle feed, and base/corner arrival pulses.
+ */
+fun sampleCourtState(path: CourtDrillPath, phase01: Float, mirrorX: Boolean): SampledCourtState {
     val pts = path.waypoints
     require(pts.isNotEmpty()) { "CourtDrillPath must contain at least one waypoint" }
-    if (pts.size == 1) return maybeMirrorCourt(pts[0], mirrorX)
     val wrapped = wrapPhase(phase01)
-    val segments = pts.size - 1
-    val scaled = wrapped * segments
-    val idx = floor(scaled).toInt().coerceIn(0, segments - 1)
-    val t = smoothstep(scaled - idx)
-    val raw = lerpPoint(pts[idx], pts[idx + 1], t)
-    return maybeMirrorCourt(raw, mirrorX)
+    val baseRaw = path.baseMarker
+
+    if (pts.size == 1) {
+        val single = maybeMirrorCourt(pts[0], mirrorX)
+        return SampledCourtState(
+            playerPosition = single,
+            playerTrail = emptyList(),
+            shuttlePosition = null,
+            basePulse01 = 0f,
+            cornerPulsePoint = null,
+            cornerPulse01 = 0f,
+            smoothRoute = listOf(single),
+        )
+    }
+
+    val segmentLengths = FloatArray(pts.size - 1) { i ->
+        hypot(
+            pts[i + 1].x - pts[i].x,
+            pts[i + 1].y - pts[i].y,
+        ).coerceAtLeast(0.45f)
+    }
+    val totalLength = segmentLengths.sum().coerceAtLeast(1e-3f)
+
+    fun evalCurvedSegment(segIdx: Int, localT: Float): VisualPoint {
+        val a = pts[segIdx]
+        val b = pts[segIdx + 1]
+        val dx = b.x - a.x
+        val dy = b.y - a.y
+        val len = hypot(dx, dy)
+        if (len < 1e-3f) return a
+        // Subtle lateral bow separates outbound and recovery paths cleanly like a coaching diagram.
+        val bow = min(0.32f, len * 0.085f)
+        val nx = -dy / len
+        val ny = dx / len
+        val ctrl = VisualPoint(
+            ((a.x + b.x) * 0.5f + nx * bow).coerceIn(0.15f, Court.WIDTH_DOUBLES.toFloat() - 0.15f),
+            ((a.y + b.y) * 0.5f + ny * bow).coerceIn(0.15f, (Court.LENGTH / 2.0).toFloat() - 0.15f),
+        )
+        return quadBezier(a, ctrl, b, localT)
+    }
+
+    fun pointAtPhase(p01: Float): Triple<VisualPoint, Int, Float> {
+        val targetDist = wrapPhase(p01) * totalLength
+        var acc = 0f
+        for (i in segmentLengths.indices) {
+            val segLen = segmentLengths[i]
+            if (targetDist <= acc + segLen || i == segmentLengths.lastIndex) {
+                val rawT = ((targetDist - acc) / segLen).coerceIn(0f, 1f)
+                // Brief deceleration hold at each corner/base milestone for crisp footwork feel.
+                val easedT = if (rawT < 0.08f) {
+                    0f
+                } else {
+                    smoothstep((rawT - 0.08f) / 0.92f)
+                }
+                return Triple(evalCurvedSegment(i, easedT), i, rawT)
+            }
+            acc += segLen
+        }
+        return Triple(pts.first(), 0, 0f)
+    }
+
+    val (pos, activeSeg, rawSegT) = pointAtPhase(wrapped)
+
+    // Fading motion trail sampled across the preceding 6% of the loop.
+    val trailSteps = 6
+    val trail = ArrayList<VisualPoint>(trailSteps)
+    for (k in trailSteps downTo 1) {
+        val (tp, _, _) = pointAtPhase(wrapped - k * 0.011f)
+        trail += tp
+    }
+
+    // Smooth curved route polyline for Canvas path rendering.
+    val smoothRoute = ArrayList<VisualPoint>((pts.size - 1) * 6 + 1)
+    for (i in segmentLengths.indices) {
+        val steps = 6
+        for (s in 0 until steps) {
+            smoothRoute += evalCurvedSegment(i, s.toFloat() / steps.toFloat())
+        }
+    }
+    smoothRoute += pts.last()
+
+    // Base & corner arrival pulses right as the player reaches each waypoint.
+    val arrivalStart = pts[activeSeg]
+    val arrivalEnd = pts[activeSeg + 1]
+    var basePulse = 0f
+    var cornerPulsePoint: VisualPoint? = null
+    var cornerPulse = 0f
+
+    fun isNearBase(p: VisualPoint): Boolean = hypot(p.x - baseRaw.x, p.y - baseRaw.y) <= 0.35f
+
+    if (rawSegT < 0.28f) {
+        val pulse = 1f - (rawSegT / 0.28f)
+        if (isNearBase(arrivalStart)) {
+            basePulse = pulse
+        } else {
+            cornerPulsePoint = arrivalStart
+            cornerPulse = pulse
+        }
+    } else if (rawSegT > 0.85f) {
+        val pulse = (rawSegT - 0.85f) / 0.15f * 0.45f
+        if (isNearBase(arrivalEnd)) {
+            basePulse = max(basePulse, pulse)
+        } else {
+            cornerPulsePoint = arrivalEnd
+            cornerPulse = pulse
+        }
+    }
+
+    // Synchronized live shuttle flying from feeder to the target corner when the player moves out.
+    val shuttlePos = if (path.shuttleStart != null) {
+        val feeder = path.shuttleStart
+        if (!isNearBase(arrivalEnd)) {
+            val flightT = smoothstep(rawSegT.coerceIn(0f, 1f))
+            lerpPoint(feeder, arrivalEnd, flightT)
+        } else if (!isNearBase(arrivalStart)) {
+            val returnT = smoothstep((rawSegT * 1.4f).coerceIn(0f, 1f))
+            val targetNet = VisualPoint((arrivalStart.x * 0.4f + feeder.x * 0.6f), 0.15f)
+            lerpPoint(arrivalStart, targetNet, returnT)
+        } else {
+            path.shuttleEnd?.let { target ->
+                lerpPoint(feeder, target, smoothstep(rawSegT))
+            }
+        }
+    } else {
+        null
+    }
+
+    return SampledCourtState(
+        playerPosition = maybeMirrorCourt(pos, mirrorX),
+        playerTrail = trail.map { maybeMirrorCourt(it, mirrorX) },
+        shuttlePosition = shuttlePos?.let { maybeMirrorCourt(it, mirrorX) },
+        basePulse01 = basePulse.coerceIn(0f, 1f),
+        cornerPulsePoint = cornerPulsePoint?.let { maybeMirrorCourt(it, mirrorX) },
+        cornerPulse01 = cornerPulse.coerceIn(0f, 1f),
+        smoothRoute = smoothRoute.map { maybeMirrorCourt(it, mirrorX) },
+    )
 }
 
 /** Mirrors a list of half-court points across the centre line when [mirrorX] is true. */
@@ -134,6 +338,206 @@ fun mirroredCourtPoints(points: List<VisualPoint>, mirrorX: Boolean): List<Visua
 /** Mirrors a single half-court point across the centre line when [mirrorX] is true. */
 fun mirroredCourtPoint(point: VisualPoint, mirrorX: Boolean): VisualPoint =
     maybeMirrorCourt(point, mirrorX)
+
+private data class RawPoseSample(
+    val label: String,
+    val figure: PoseFigure,
+    val activeIndex: Int,
+)
+
+private fun sampleRawPose(frames: List<PoseKeyframe>, wrappedPhase: Float): RawPoseSample {
+    if (frames.size == 1) {
+        return RawPoseSample(frames[0].label, frames[0].figure, 0)
+    }
+    val scaled = wrappedPhase * frames.size
+    val idx = floor(scaled).toInt().coerceIn(0, frames.size - 1)
+    val nextIdx = (idx + 1) % frames.size
+    val localT = scaled - idx
+    // Brief poised hold at the keyframe (first 22%) before accelerating cleanly into the next pose.
+    val moveT = if (localT <= 0.22f) 0f else smoothstep((localT - 0.22f) / 0.78f)
+    val blended = lerpFigureFk(frames[idx].figure, frames[nextIdx].figure, moveT)
+    val labelIdx = if (localT < 0.70f) idx else nextIdx
+    return RawPoseSample(
+        label = frames[labelIdx].label,
+        figure = blended,
+        activeIndex = labelIdx,
+    )
+}
+
+private fun buildRacketTrail(
+    frames: List<PoseKeyframe>,
+    wrappedPhase: Float,
+    mirrorX: Boolean,
+): List<VisualPoint> {
+    if (frames.first().figure.racketTip == null || frames.size < 2) return emptyList()
+    val count = 6
+    val points = ArrayList<VisualPoint>(count)
+    for (k in (count - 1) downTo 0) {
+        val raw = sampleRawPose(frames, wrapPhase(wrappedPhase - k * 0.014f)).figure
+        val fig = if (mirrorX) mirrorFigure(raw) else raw
+        val tip = fig.racketTip ?: return emptyList()
+        // Track center of racket oval (78% along wrist->tip) for an authentic swoosh arc.
+        points += lerpPoint(fig.wristR, tip, 0.78f)
+    }
+    val totalArc = (1 until points.size).fold(0f) { acc, i ->
+        acc + hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y)
+    }
+    // Hide trail during stationary holds so it only flares on brisk swings.
+    return if (totalArc < 0.045f) emptyList() else points
+}
+
+private fun samplePoseShuttle(
+    sequence: PoseSequence,
+    wrappedPhase: Float,
+    mirrorX: Boolean,
+): PoseShuttle? {
+    val arc = sequence.shuttleArc
+    if (arc == ShuttleArc.NONE || sequence.keyframes.size < 2) return null
+    val contactIdx = 1.coerceAtMost(sequence.keyframes.lastIndex)
+    val contactFig = sequence.keyframes[contactIdx].figure
+    val contactTip = contactFig.racketTip ?: return null
+    val contactPt = lerpPoint(contactFig.wristR, contactTip, 0.78f)
+    val contactPhase = (contactIdx.toFloat() + 0.10f) / sequence.keyframes.size.toFloat()
+    val rel = wrapPhase(wrappedPhase - contactPhase)
+
+    // Approach window: rel in [0.64, 1.0), Outgoing window: rel in [0.0, 0.36].
+    val (rawPos, rawVel, rawAlpha, flash) = when {
+        rel >= 0.64f -> {
+            val s = ((rel - 0.64f) / 0.36f).coerceIn(0f, 1f)
+            val (start, ctrl) = incomingArc(arc, contactPt)
+            val pos = quadBezier(start, ctrl, contactPt, s)
+            val tan = quadBezierTangent(start, ctrl, contactPt, s)
+            val alpha = min(1f, s / 0.18f)
+            QuadShuttle(pos, atan2(tan.y, tan.x), alpha, 0f)
+        }
+        rel <= 0.36f -> {
+            val s = (rel / 0.36f).coerceIn(0f, 1f)
+            val (ctrl, end) = outgoingArc(arc, contactPt)
+            val pos = quadBezier(contactPt, ctrl, end, s)
+            val tan = quadBezierTangent(contactPt, ctrl, end, s)
+            val alpha = min(1f, (1f - s) / 0.22f)
+            val impact = if (s < 0.25f) 1f - (s / 0.25f) else 0f
+            QuadShuttle(pos, atan2(tan.y, tan.x), alpha, impact)
+        }
+        else -> return null
+    }
+
+    val pos = if (mirrorX) mirrorPoint01(rawPos) else rawPos
+    val velAngle = if (mirrorX) (PI.toFloat() - rawVel) else rawVel
+    return PoseShuttle(
+        position = pos,
+        velocityAngleRad = velAngle,
+        alpha = rawAlpha.coerceIn(0f, 1f),
+        impactFlash = flash.coerceIn(0f, 1f),
+    )
+}
+
+private data class QuadShuttle(
+    val pos: VisualPoint,
+    val angleRad: Float,
+    val alpha: Float,
+    val impactFlash: Float,
+)
+
+private fun incomingArc(arc: ShuttleArc, contact: VisualPoint): Pair<VisualPoint, VisualPoint> = when (arc) {
+    ShuttleArc.OVERHEAD_CLEAR, ShuttleArc.SMASH -> Pair(
+        VisualPoint(0.96f, 0.14f),
+        VisualPoint((contact.x + 0.96f) * 0.5f, min(contact.y, 0.06f)),
+    )
+    ShuttleArc.DROP_NET -> Pair(
+        VisualPoint(0.96f, 0.26f),
+        VisualPoint((contact.x + 0.96f) * 0.5f, (contact.y + 0.16f) * 0.5f),
+    )
+    ShuttleArc.FLAT_DRIVE -> Pair(
+        VisualPoint(0.97f, (contact.y + 0.04f).coerceIn(0.10f, 0.80f)),
+        VisualPoint((contact.x + 0.97f) * 0.5f, contact.y),
+    )
+    ShuttleArc.DEFENCE_LIFT -> Pair(
+        VisualPoint(0.95f, 0.08f),
+        VisualPoint((contact.x + 0.95f) * 0.5f, (contact.y + 0.12f) * 0.5f),
+    )
+    ShuttleArc.SERVE -> Pair(
+        VisualPoint((contact.x - 0.05f).coerceIn(0.1f, 0.9f), (contact.y - 0.12f).coerceIn(0.1f, 0.8f)),
+        VisualPoint(contact.x, (contact.y - 0.05f).coerceIn(0.1f, 0.8f)),
+    )
+    ShuttleArc.NONE -> Pair(contact, contact)
+}
+
+private fun outgoingArc(arc: ShuttleArc, contact: VisualPoint): Pair<VisualPoint, VisualPoint> = when (arc) {
+    ShuttleArc.OVERHEAD_CLEAR, ShuttleArc.DEFENCE_LIFT -> Pair(
+        VisualPoint((contact.x + 0.96f) * 0.5f, 0.05f),
+        VisualPoint(0.97f, 0.12f),
+    )
+    ShuttleArc.SMASH -> Pair(
+        VisualPoint((contact.x + 0.96f) * 0.5f, (contact.y + 0.62f) * 0.45f),
+        VisualPoint(0.97f, 0.72f),
+    )
+    ShuttleArc.DROP_NET -> Pair(
+        VisualPoint((contact.x + 0.96f) * 0.52f, (contact.y - 0.05f).coerceAtLeast(0.08f)),
+        VisualPoint(0.97f, (contact.y + 0.22f).coerceAtMost(0.80f)),
+    )
+    ShuttleArc.FLAT_DRIVE -> Pair(
+        VisualPoint((contact.x + 0.97f) * 0.5f, (contact.y - 0.02f).coerceAtLeast(0.08f)),
+        VisualPoint(0.98f, contact.y),
+    )
+    ShuttleArc.SERVE -> Pair(
+        VisualPoint((contact.x + 0.96f) * 0.5f, 0.16f),
+        VisualPoint(0.97f, 0.24f),
+    )
+    ShuttleArc.NONE -> Pair(contact, contact)
+}
+
+private fun sampleFloorRipple(
+    frames: List<PoseKeyframe>,
+    wrappedPhase: Float,
+    mirrorX: Boolean,
+): FloorRipple? {
+    if (frames.size < 2) return null
+    val scaled = wrappedPhase * frames.size
+    val idx = floor(scaled).toInt().coerceIn(0, frames.size - 1)
+    val prevIdx = (idx - 1 + frames.size) % frames.size
+    val localT = scaled - idx
+    if (localT > 0.45f) return null
+
+    val cur = frames[idx].figure
+    val prev = frames[prevIdx].figure
+    val curGrounded = max(cur.ankleL.y, cur.ankleR.y) >= POSE_GROUND_Y - 0.015f
+    if (!curGrounded) return null
+
+    val prevAirborne = max(prev.ankleL.y, prev.ankleR.y) < POSE_GROUND_Y - 0.03f
+    val ankleShift = max(
+        hypot(cur.ankleL.x - prev.ankleL.x, cur.ankleL.y - prev.ankleL.y),
+        hypot(cur.ankleR.x - prev.ankleR.x, cur.ankleR.y - prev.ankleR.y),
+    )
+    if (!prevAirborne && ankleShift < 0.08f) return null
+
+    // Center ripple under the lead landing foot (whichever moved further or landed on ground).
+    val shiftL = hypot(cur.ankleL.x - prev.ankleL.x, cur.ankleL.y - prev.ankleL.y)
+    val shiftR = hypot(cur.ankleR.x - prev.ankleR.x, cur.ankleR.y - prev.ankleR.y)
+    val rawCenterX = when {
+        prevAirborne -> (cur.ankleL.x + cur.ankleR.x) * 0.5f
+        shiftR >= shiftL -> cur.ankleR.x
+        else -> cur.ankleL.x
+    }
+    return FloorRipple(
+        centerX = if (mirrorX) 1f - rawCenterX else rawCenterX,
+        progress01 = (localT / 0.45f).coerceIn(0f, 1f),
+    )
+}
+
+private fun computeFacingSign(figure: PoseFigure, mirrorX: Boolean): Float {
+    val tip = figure.racketTip
+    val midAnkleX = (figure.ankleL.x + figure.ankleR.x) * 0.5f
+    if (tip != null) {
+        val dx = tip.x - figure.head.x
+        if (dx > 0.06f) return 1f
+        if (dx < -0.06f) return -1f
+    }
+    val lean = figure.head.x - midAnkleX
+    if (lean > 0.03f) return 1f
+    if (lean < -0.03f) return -1f
+    return if (mirrorX) -1f else 1f
+}
 
 private fun wrapPhase(phase: Float): Float {
     if (!phase.isFinite()) return 0f
@@ -149,22 +553,163 @@ private fun smoothstep(t: Float): Float {
 private fun lerpPoint(a: VisualPoint, b: VisualPoint, t: Float): VisualPoint =
     VisualPoint(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)
 
-private fun lerpFigure(a: PoseFigure, b: PoseFigure, t: Float): PoseFigure = PoseFigure(
-    head = lerpPoint(a.head, b.head, t),
-    neck = lerpPoint(a.neck, b.neck, t),
-    shoulderL = lerpPoint(a.shoulderL, b.shoulderL, t),
-    shoulderR = lerpPoint(a.shoulderR, b.shoulderR, t),
-    elbowL = lerpPoint(a.elbowL, b.elbowL, t),
-    elbowR = lerpPoint(a.elbowR, b.elbowR, t),
-    wristL = lerpPoint(a.wristL, b.wristL, t),
-    wristR = lerpPoint(a.wristR, b.wristR, t),
-    hipL = lerpPoint(a.hipL, b.hipL, t),
-    hipR = lerpPoint(a.hipR, b.hipR, t),
-    kneeL = lerpPoint(a.kneeL, b.kneeL, t),
-    kneeR = lerpPoint(a.kneeR, b.kneeR, t),
-    ankleL = lerpPoint(a.ankleL, b.ankleL, t),
-    ankleR = lerpPoint(a.ankleR, b.ankleR, t),
-    racketTip = if (a.racketTip != null && b.racketTip != null) lerpPoint(a.racketTip, b.racketTip, t) else a.racketTip,
+private fun midpoint(a: VisualPoint, b: VisualPoint): VisualPoint =
+    VisualPoint((a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f)
+
+private fun quadBezier(p0: VisualPoint, p1: VisualPoint, p2: VisualPoint, t: Float): VisualPoint {
+    val inv = 1f - t
+    return VisualPoint(
+        x = inv * inv * p0.x + 2f * inv * t * p1.x + t * t * p2.x,
+        y = inv * inv * p0.y + 2f * inv * t * p1.y + t * t * p2.y,
+    )
+}
+
+private fun quadBezierTangent(p0: VisualPoint, p1: VisualPoint, p2: VisualPoint, t: Float): VisualPoint =
+    VisualPoint(
+        x = 2f * (1f - t) * (p1.x - p0.x) + 2f * t * (p2.x - p1.x),
+        y = 2f * (1f - t) * (p1.y - p0.y) + 2f * t * (p2.y - p1.y),
+    )
+
+private fun wrapAnglePi(radians: Float): Float {
+    var a = radians
+    val twoPi = (2.0 * PI).toFloat()
+    while (a > PI.toFloat()) a -= twoPi
+    while (a <= -PI.toFloat()) a += twoPi
+    return a
+}
+
+/**
+ * Interpolates a single limb/bone segment in polar coordinates (angle + length)
+ * anchored at [origin] so swings and strides sweep in true circular arcs without
+ * collapsing bone lengths mid-motion.
+ */
+private fun lerpBone(
+    origin: VisualPoint,
+    fromA: VisualPoint,
+    toA: VisualPoint,
+    fromB: VisualPoint,
+    toB: VisualPoint,
+    t: Float,
+): VisualPoint {
+    val dxA = toA.x - fromA.x
+    val dyA = toA.y - fromA.y
+    val dxB = toB.x - fromB.x
+    val dyB = toB.y - fromB.y
+    val lenA = hypot(dxA, dyA)
+    val lenB = hypot(dxB, dyB)
+    if (lenA < 1e-4f || lenB < 1e-4f) {
+        return VisualPoint(
+            origin.x + dxA + (dxB - dxA) * t,
+            origin.y + dyA + (dyB - dyA) * t,
+        )
+    }
+    val angA = atan2(dyA, dxA)
+    val angB = atan2(dyB, dxB)
+    val ang = angA + wrapAnglePi(angB - angA) * t
+    val len = lenA + (lenB - lenA) * t
+    return VisualPoint(
+        x = origin.x + cos(ang) * len,
+        y = origin.y + sin(ang) * len,
+    )
+}
+
+/**
+ * Forward-kinematics hierarchical interpolation from pelvis root out to hands,
+ * feet, and racket tip, with gentle floor-penetration clamping so grounded feet
+ * never dip underneath [POSE_GROUND_Y] during rotational arcs.
+ */
+private fun lerpFigureFk(a: PoseFigure, b: PoseFigure, t: Float): PoseFigure {
+    if (t <= 0f) return a
+    if (t >= 1f) return b
+    val midHipA = midpoint(a.hipL, a.hipR)
+    val midHipB = midpoint(b.hipL, b.hipR)
+    val midHip = lerpPoint(midHipA, midHipB, t)
+
+    val hipL = lerpBone(midHip, midHipA, a.hipL, midHipB, b.hipL, t)
+    val hipR = lerpBone(midHip, midHipA, a.hipR, midHipB, b.hipR, t)
+    val neck = lerpBone(midHip, midHipA, a.neck, midHipB, b.neck, t)
+    val head = lerpBone(neck, a.neck, a.head, b.neck, b.head, t)
+    val shoulderL = lerpBone(neck, a.neck, a.shoulderL, b.neck, b.shoulderL, t)
+    val shoulderR = lerpBone(neck, a.neck, a.shoulderR, b.neck, b.shoulderR, t)
+
+    val elbowL = lerpBone(shoulderL, a.shoulderL, a.elbowL, b.shoulderL, b.elbowL, t)
+    val wristL = lerpBone(elbowL, a.elbowL, a.wristL, b.elbowL, b.wristL, t)
+    val elbowR = lerpBone(shoulderR, a.shoulderR, a.elbowR, b.shoulderR, b.elbowR, t)
+    val wristR = lerpBone(elbowR, a.elbowR, a.wristR, b.elbowR, b.wristR, t)
+
+    val kneeL = lerpBone(hipL, a.hipL, a.kneeL, b.hipL, b.kneeL, t)
+    val ankleL = lerpBone(kneeL, a.kneeL, a.ankleL, b.kneeL, b.ankleL, t)
+    val kneeR = lerpBone(hipR, a.hipR, a.kneeR, b.hipR, b.kneeR, t)
+    val ankleR = lerpBone(kneeR, a.kneeR, a.ankleR, b.kneeR, b.ankleR, t)
+
+    val racketTip = if (a.racketTip != null && b.racketTip != null) {
+        lerpBone(wristR, a.wristR, a.racketTip, b.wristR, b.racketTip, t)
+    } else {
+        a.racketTip
+    }
+
+    val raw = PoseFigure(
+        head = head,
+        neck = neck,
+        shoulderL = shoulderL,
+        shoulderR = shoulderR,
+        elbowL = elbowL,
+        elbowR = elbowR,
+        wristL = wristL,
+        wristR = wristR,
+        hipL = hipL,
+        hipR = hipR,
+        kneeL = kneeL,
+        kneeR = kneeR,
+        ankleL = ankleL,
+        ankleR = ankleR,
+        racketTip = racketTip,
+    )
+
+    // Keep feet from sinking below POSE_GROUND_Y and keep extreme arcs inside [0.01, 0.99].
+    val maxFootY = max(raw.ankleL.y, raw.ankleR.y)
+    var dy = if (maxFootY > POSE_GROUND_Y) POSE_GROUND_Y - maxFootY else 0f
+    val minY = minOf(
+        raw.allBodyPoints().minOf { it.y },
+        raw.racketTip?.y ?: 1f,
+    ) + dy
+    if (minY < 0.015f) {
+        dy += (0.015f - minY)
+    }
+    var dx = 0f
+    val minX = minOf(
+        raw.allBodyPoints().minOf { it.x },
+        raw.racketTip?.x ?: 1f,
+    )
+    val maxX = maxOf(
+        raw.allBodyPoints().maxOf { it.x },
+        raw.racketTip?.x ?: 0f,
+    )
+    if (minX < 0.015f) dx = 0.015f - minX
+    else if (maxX > 0.985f) dx = 0.985f - maxX
+
+    return if (dx == 0f && dy == 0f) raw else shiftFigure(raw, dx, dy)
+}
+
+private fun shiftPoint(p: VisualPoint, dx: Float, dy: Float): VisualPoint =
+    VisualPoint((p.x + dx).coerceIn(0f, 1f), (p.y + dy).coerceIn(0f, 1f))
+
+private fun shiftFigure(f: PoseFigure, dx: Float, dy: Float): PoseFigure = PoseFigure(
+    head = shiftPoint(f.head, dx, dy),
+    neck = shiftPoint(f.neck, dx, dy),
+    shoulderL = shiftPoint(f.shoulderL, dx, dy),
+    shoulderR = shiftPoint(f.shoulderR, dx, dy),
+    elbowL = shiftPoint(f.elbowL, dx, dy),
+    elbowR = shiftPoint(f.elbowR, dx, dy),
+    wristL = shiftPoint(f.wristL, dx, dy),
+    wristR = shiftPoint(f.wristR, dx, dy),
+    hipL = shiftPoint(f.hipL, dx, dy),
+    hipR = shiftPoint(f.hipR, dx, dy),
+    kneeL = shiftPoint(f.kneeL, dx, dy),
+    kneeR = shiftPoint(f.kneeR, dx, dy),
+    ankleL = shiftPoint(f.ankleL, dx, dy),
+    ankleR = shiftPoint(f.ankleR, dx, dy),
+    racketTip = f.racketTip?.let { shiftPoint(it, dx, dy) },
 )
 
 private fun mirrorPoint01(p: VisualPoint): VisualPoint = VisualPoint(1f - p.x, p.y)
@@ -850,7 +1395,7 @@ private val shoulderPrehabOpen = PoseFigure(
     ankleR = VisualPoint(0.58f, POSE_GROUND_Y),
 )
 
-// --- Pose sequences ---
+// --- Pose sequences with shuttle storytelling ---
 
 private val baseRecoveryPose = PoseSequence(
     keyframes = listOf(
@@ -859,6 +1404,17 @@ private val baseRecoveryPose = PoseSequence(
         PoseKeyframe("Corner lunge", forecourtLunge),
     ),
     cycleSeconds = 3.2,
+    shuttleArc = ShuttleArc.NONE,
+)
+
+private val multiShuttleRecoveryPose = PoseSequence(
+    keyframes = listOf(
+        PoseKeyframe("Base ready", readyStance),
+        PoseKeyframe("Corner strike", forecourtLunge),
+        PoseKeyframe("Split-step reset", splitStepHop),
+    ),
+    cycleSeconds = 3.0,
+    shuttleArc = ShuttleArc.DROP_NET,
 )
 
 private val overheadRecoveryPose = PoseSequence(
@@ -868,15 +1424,27 @@ private val overheadRecoveryPose = PoseSequence(
         PoseKeyframe("Drive to base", readyStance),
     ),
     cycleSeconds = 3.2,
+    shuttleArc = ShuttleArc.OVERHEAD_CLEAR,
+)
+
+private val stickSmashPose = PoseSequence(
+    keyframes = listOf(
+        PoseKeyframe("Load high", overheadLoad),
+        PoseKeyframe("Steep stick smash", overheadStrike),
+        PoseKeyframe("Step forward", readyStance),
+    ),
+    cycleSeconds = 2.8,
+    shuttleArc = ShuttleArc.SMASH,
 )
 
 private val netToRearPose = PoseSequence(
     keyframes = listOf(
-        PoseKeyframe("Net lunge", forecourtLunge),
         PoseKeyframe("Reset base", readyStance),
+        PoseKeyframe("Net lunge", forecourtLunge),
         PoseKeyframe("Rear clear", overheadStrike),
     ),
     cycleSeconds = 3.4,
+    shuttleArc = ShuttleArc.DROP_NET,
 )
 
 private val lateralBalancePose = PoseSequence(
@@ -886,6 +1454,17 @@ private val lateralBalancePose = PoseSequence(
         PoseKeyframe("Centre reset", readyStance),
     ),
     cycleSeconds = 3.0,
+    shuttleArc = ShuttleArc.FLAT_DRIVE,
+)
+
+private val lateralShadowPose = PoseSequence(
+    keyframes = listOf(
+        PoseKeyframe("Centre split", splitStepHop),
+        PoseKeyframe("Wide lunge", wideSidelineLunge),
+        PoseKeyframe("Centre reset", readyStance),
+    ),
+    cycleSeconds = 3.0,
+    shuttleArc = ShuttleArc.NONE,
 )
 
 private val forecourtNetKillPose = PoseSequence(
@@ -895,6 +1474,7 @@ private val forecourtNetKillPose = PoseSequence(
         PoseKeyframe("Rebound", splitStepHop),
     ),
     cycleSeconds = 2.8,
+    shuttleArc = ShuttleArc.DROP_NET,
 )
 
 private val chinaJumpPose = PoseSequence(
@@ -904,6 +1484,7 @@ private val chinaJumpPose = PoseSequence(
         PoseKeyframe("Sideline land", wideSidelineLunge),
     ),
     cycleSeconds = 2.8,
+    shuttleArc = ShuttleArc.SMASH,
 )
 
 private val reactiveSplitPose = PoseSequence(
@@ -913,6 +1494,7 @@ private val reactiveSplitPose = PoseSequence(
         PoseKeyframe("First-step drive", wideSidelineLunge),
     ),
     cycleSeconds = 2.8,
+    shuttleArc = ShuttleArc.NONE,
 )
 
 private val scissorKickPose = PoseSequence(
@@ -922,6 +1504,7 @@ private val scissorKickPose = PoseSequence(
         PoseKeyframe("Drive forward", readyStance),
     ),
     cycleSeconds = 3.0,
+    shuttleArc = ShuttleArc.OVERHEAD_CLEAR,
 )
 
 private val jumpSmashPose = PoseSequence(
@@ -931,6 +1514,7 @@ private val jumpSmashPose = PoseSequence(
         PoseKeyframe("Follow to net", forecourtLunge),
     ),
     cycleSeconds = 3.0,
+    shuttleArc = ShuttleArc.SMASH,
 )
 
 private val disguisedSlicePose = PoseSequence(
@@ -940,6 +1524,7 @@ private val disguisedSlicePose = PoseSequence(
         PoseKeyframe("Reset base", readyStance),
     ),
     cycleSeconds = 3.0,
+    shuttleArc = ShuttleArc.DROP_NET,
 )
 
 private val backhandEscapePose = PoseSequence(
@@ -949,6 +1534,7 @@ private val backhandEscapePose = PoseSequence(
         PoseKeyframe("Turn to base", readyStance),
     ),
     cycleSeconds = 3.2,
+    shuttleArc = ShuttleArc.OVERHEAD_CLEAR,
 )
 
 private val lowDefencePose = PoseSequence(
@@ -957,6 +1543,7 @@ private val lowDefencePose = PoseSequence(
         PoseKeyframe("Deep lift", lowDefenceLift),
     ),
     cycleSeconds = 2.4,
+    shuttleArc = ShuttleArc.DEFENCE_LIFT,
 )
 
 private val flatDrivePose = PoseSequence(
@@ -966,6 +1553,7 @@ private val flatDrivePose = PoseSequence(
         PoseKeyframe("Backhand block", bodyDeflectBackhand),
     ),
     cycleSeconds = 2.6,
+    shuttleArc = ShuttleArc.FLAT_DRIVE,
 )
 
 private val bodyDeflectPose = PoseSequence(
@@ -975,6 +1563,7 @@ private val bodyDeflectPose = PoseSequence(
         PoseKeyframe("Step in", readyStance),
     ),
     cycleSeconds = 2.8,
+    shuttleArc = ShuttleArc.DEFENCE_LIFT,
 )
 
 private val wideReachPose = PoseSequence(
@@ -984,14 +1573,16 @@ private val wideReachPose = PoseSequence(
         PoseKeyframe("Recover base", readyStance),
     ),
     cycleSeconds = 3.0,
+    shuttleArc = ShuttleArc.DEFENCE_LIFT,
 )
 
 private val netSpinPose = PoseSequence(
     keyframes = listOf(
-        PoseKeyframe("Early reach", netSpinTouch),
         PoseKeyframe("Compact reset", readyStance),
+        PoseKeyframe("Early net brush", netSpinTouch),
     ),
     cycleSeconds = 2.4,
+    shuttleArc = ShuttleArc.DROP_NET,
 )
 
 private val serveThirdShotPose = PoseSequence(
@@ -1001,6 +1592,7 @@ private val serveThirdShotPose = PoseSequence(
         PoseKeyframe("Racket up", readyStance),
     ),
     cycleSeconds = 3.0,
+    shuttleArc = ShuttleArc.SERVE,
 )
 
 private val receiveRushPose = PoseSequence(
@@ -1010,6 +1602,7 @@ private val receiveRushPose = PoseSequence(
         PoseKeyframe("Base reset", readyStance),
     ),
     cycleSeconds = 2.8,
+    shuttleArc = ShuttleArc.FLAT_DRIVE,
 )
 
 private val splitSquatPose = PoseSequence(
@@ -1181,7 +1774,7 @@ private val allVisuals: List<ExerciseVisual> = listOf(
             shuttleEnd = null,
             cycleSeconds = 3.8,
         ),
-        pose = lateralBalancePose,
+        pose = lateralShadowPose,
     ),
     ExerciseVisual(
         exerciseId = "fatigue-6-corner-shadow",
@@ -1206,7 +1799,7 @@ private val allVisuals: List<ExerciseVisual> = listOf(
             shuttleEnd = rearLeft,
             cycleSeconds = 5.6,
         ),
-        pose = baseRecoveryPose,
+        pose = multiShuttleRecoveryPose,
     ),
     ExerciseVisual(
         exerciseId = "drop-and-follow-net-attack",
@@ -1239,7 +1832,7 @@ private val allVisuals: List<ExerciseVisual> = listOf(
             shuttleEnd = frontLeft,
             cycleSeconds = 3.8,
         ),
-        pose = baseRecoveryPose,
+        pose = multiShuttleRecoveryPose,
     ),
     ExerciseVisual(
         exerciseId = "figure-8-chasse-shadow",
@@ -1323,7 +1916,7 @@ private val allVisuals: List<ExerciseVisual> = listOf(
             shuttleEnd = midRearRight,
             cycleSeconds = 3.6,
         ),
-        pose = overheadRecoveryPose,
+        pose = stickSmashPose,
     ),
     ExerciseVisual(
         exerciseId = "backhand-rear-corner-clear",
