@@ -180,7 +180,7 @@ final class ExercisesPanelTests: XCTestCase {
 
     func testDrillLibraryFiltersCoverEveryCatalogExerciseFromSwift() {
         let all = ExerciseCatalog.shared.all
-        XCTAssertEqual(all.count, 38)
+        XCTAssertEqual(all.count, 61)
         XCTAssertEqual(ExerciseCatalog.shared.filtered(filter: .all).count, all.count)
         let subFilters = ExerciseCatalog.shared.allFilters.filter { $0 != .all }
         let combinedIds = subFilters.flatMap { ExerciseCatalog.shared.filtered(filter: $0).map(\.id) }

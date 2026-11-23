@@ -24,11 +24,11 @@ class ExerciseCatalogTest {
     )
 
     @Test
-    fun catalog_contains_all_thirty_eight_unique_exercises() {
-        ExerciseCatalog.all shouldHaveSize 38
-        ExerciseCatalog.all.map { it.id }.distinct() shouldHaveSize 38
+    fun catalog_contains_all_sixty_one_unique_exercises() {
+        ExerciseCatalog.all shouldHaveSize 61
+        ExerciseCatalog.all.map { it.id }.distinct() shouldHaveSize 61
         ExerciseCatalog.all.count { it.category == ExerciseCategory.ON_COURT } shouldBe 28
-        ExerciseCatalog.all.count { it.category == ExerciseCategory.OFF_COURT } shouldBe 10
+        ExerciseCatalog.all.count { it.category == ExerciseCategory.OFF_COURT } shouldBe 33
         coreAdvisorIds.forEach { id ->
             ExerciseCatalog.byId(id).id shouldBe id
         }

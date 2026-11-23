@@ -43,13 +43,16 @@ class ExerciseVisualsTest {
                     pt.y.shouldBeBetween(0f, 1f, 1e-4f)
                 }
                 val tip = kf.figure.racketTip
-                if (exercise.category == ExerciseCategory.OFF_COURT) {
-                    tip.shouldBeNull()
-                } else {
+                if (exercise.category == ExerciseCategory.ON_COURT) {
                     val t = tip.shouldNotBeNull()
                     t.x.shouldBeBetween(0f, 1f, 1e-4f)
                     t.y.shouldBeBetween(0f, 1f, 1e-4f)
                     val len = hypot(t.x - kf.figure.wristR.x, t.y - kf.figure.wristR.y)
+                    len.shouldBeBetween(0.12f, 0.28f, 1e-3f)
+                } else if (tip != null) {
+                    tip.x.shouldBeBetween(0f, 1f, 1e-4f)
+                    tip.y.shouldBeBetween(0f, 1f, 1e-4f)
+                    val len = hypot(tip.x - kf.figure.wristR.x, tip.y - kf.figure.wristR.y)
                     len.shouldBeBetween(0.12f, 0.28f, 1e-3f)
                 }
             }

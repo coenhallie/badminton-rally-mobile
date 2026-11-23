@@ -1395,6 +1395,709 @@ private val shoulderPrehabOpen = PoseFigure(
     ankleR = VisualPoint(0.58f, POSE_GROUND_Y),
 )
 
+private val forearmSupinate = PoseFigure(
+    head = VisualPoint(0.48f, 0.18f),
+    neck = VisualPoint(0.48f, 0.25f),
+    shoulderL = VisualPoint(0.41f, 0.29f),
+    shoulderR = VisualPoint(0.55f, 0.29f),
+    elbowL = VisualPoint(0.37f, 0.43f),
+    elbowR = VisualPoint(0.57f, 0.43f),
+    wristL = VisualPoint(0.42f, 0.47f),
+    wristR = VisualPoint(0.70f, 0.42f),
+    hipL = VisualPoint(0.44f, 0.53f),
+    hipR = VisualPoint(0.53f, 0.53f),
+    kneeL = VisualPoint(0.42f, 0.71f),
+    kneeR = VisualPoint(0.55f, 0.71f),
+    ankleL = VisualPoint(0.40f, POSE_GROUND_Y),
+    ankleR = VisualPoint(0.57f, POSE_GROUND_Y),
+)
+
+private val forearmPronate = PoseFigure(
+    head = VisualPoint(0.48f, 0.18f),
+    neck = VisualPoint(0.48f, 0.25f),
+    shoulderL = VisualPoint(0.41f, 0.29f),
+    shoulderR = VisualPoint(0.55f, 0.29f),
+    elbowL = VisualPoint(0.37f, 0.43f),
+    elbowR = VisualPoint(0.57f, 0.43f),
+    wristL = VisualPoint(0.42f, 0.47f),
+    wristR = VisualPoint(0.68f, 0.34f),
+    hipL = VisualPoint(0.44f, 0.53f),
+    hipR = VisualPoint(0.53f, 0.53f),
+    kneeL = VisualPoint(0.42f, 0.71f),
+    kneeR = VisualPoint(0.55f, 0.71f),
+    ankleL = VisualPoint(0.40f, POSE_GROUND_Y),
+    ankleR = VisualPoint(0.57f, POSE_GROUND_Y),
+)
+
+private val gripTwistA = PoseFigure(
+    head = VisualPoint(0.50f, 0.18f),
+    neck = VisualPoint(0.50f, 0.25f),
+    shoulderL = VisualPoint(0.42f, 0.29f),
+    shoulderR = VisualPoint(0.58f, 0.29f),
+    elbowL = VisualPoint(0.34f, 0.41f),
+    elbowR = VisualPoint(0.66f, 0.41f),
+    wristL = VisualPoint(0.44f, 0.35f),
+    wristR = VisualPoint(0.56f, 0.43f),
+    hipL = VisualPoint(0.45f, 0.53f),
+    hipR = VisualPoint(0.55f, 0.53f),
+    kneeL = VisualPoint(0.43f, 0.71f),
+    kneeR = VisualPoint(0.57f, 0.71f),
+    ankleL = VisualPoint(0.41f, POSE_GROUND_Y),
+    ankleR = VisualPoint(0.59f, POSE_GROUND_Y),
+)
+
+private val gripTwistB = mirrorFigure(gripTwistA)
+
+private val wristExtUp = PoseFigure(
+    head = VisualPoint(0.46f, 0.18f),
+    neck = VisualPoint(0.46f, 0.25f),
+    shoulderL = VisualPoint(0.40f, 0.29f),
+    shoulderR = VisualPoint(0.52f, 0.29f),
+    elbowL = VisualPoint(0.54f, 0.35f),
+    elbowR = VisualPoint(0.65f, 0.35f),
+    wristL = VisualPoint(0.66f, 0.31f),
+    wristR = VisualPoint(0.77f, 0.30f),
+    hipL = VisualPoint(0.43f, 0.53f),
+    hipR = VisualPoint(0.51f, 0.53f),
+    kneeL = VisualPoint(0.42f, 0.71f),
+    kneeR = VisualPoint(0.53f, 0.71f),
+    ankleL = VisualPoint(0.40f, POSE_GROUND_Y),
+    ankleR = VisualPoint(0.55f, POSE_GROUND_Y),
+)
+
+private val wristExtDown = PoseFigure(
+    head = VisualPoint(0.46f, 0.18f),
+    neck = VisualPoint(0.46f, 0.25f),
+    shoulderL = VisualPoint(0.40f, 0.29f),
+    shoulderR = VisualPoint(0.52f, 0.29f),
+    elbowL = VisualPoint(0.54f, 0.36f),
+    elbowR = VisualPoint(0.65f, 0.36f),
+    wristL = VisualPoint(0.66f, 0.42f),
+    wristR = VisualPoint(0.77f, 0.43f),
+    hipL = VisualPoint(0.43f, 0.53f),
+    hipR = VisualPoint(0.51f, 0.53f),
+    kneeL = VisualPoint(0.42f, 0.71f),
+    kneeR = VisualPoint(0.53f, 0.71f),
+    ankleL = VisualPoint(0.40f, POSE_GROUND_Y),
+    ankleR = VisualPoint(0.55f, POSE_GROUND_Y),
+)
+
+private val spanishSquatHold = PoseFigure(
+    head = VisualPoint(0.40f, 0.32f),
+    neck = VisualPoint(0.40f, 0.39f),
+    shoulderL = VisualPoint(0.36f, 0.43f),
+    shoulderR = VisualPoint(0.44f, 0.43f),
+    elbowL = VisualPoint(0.48f, 0.47f),
+    elbowR = VisualPoint(0.54f, 0.47f),
+    wristL = VisualPoint(0.58f, 0.45f),
+    wristR = VisualPoint(0.64f, 0.45f),
+    hipL = VisualPoint(0.38f, 0.66f),
+    hipR = VisualPoint(0.44f, 0.66f),
+    kneeL = VisualPoint(0.57f, 0.67f),
+    kneeR = VisualPoint(0.62f, 0.67f),
+    ankleL = VisualPoint(0.58f, POSE_GROUND_Y),
+    ankleR = VisualPoint(0.63f, POSE_GROUND_Y),
+)
+
+private val bulgarianTop = PoseFigure(
+    head = VisualPoint(0.55f, 0.18f),
+    neck = VisualPoint(0.55f, 0.25f),
+    shoulderL = VisualPoint(0.50f, 0.29f),
+    shoulderR = VisualPoint(0.59f, 0.29f),
+    elbowL = VisualPoint(0.47f, 0.42f),
+    elbowR = VisualPoint(0.62f, 0.42f),
+    wristL = VisualPoint(0.48f, 0.54f),
+    wristR = VisualPoint(0.61f, 0.54f),
+    hipL = VisualPoint(0.51f, 0.51f),
+    hipR = VisualPoint(0.58f, 0.51f),
+    kneeL = VisualPoint(0.40f, 0.66f),
+    kneeR = VisualPoint(0.63f, 0.69f),
+    ankleL = VisualPoint(0.24f, 0.68f),
+    ankleR = VisualPoint(0.66f, POSE_GROUND_Y),
+)
+
+private val bulgarianBottom = PoseFigure(
+    head = VisualPoint(0.57f, 0.31f),
+    neck = VisualPoint(0.56f, 0.38f),
+    shoulderL = VisualPoint(0.51f, 0.42f),
+    shoulderR = VisualPoint(0.60f, 0.42f),
+    elbowL = VisualPoint(0.48f, 0.55f),
+    elbowR = VisualPoint(0.62f, 0.55f),
+    wristL = VisualPoint(0.49f, 0.66f),
+    wristR = VisualPoint(0.62f, 0.66f),
+    hipL = VisualPoint(0.49f, 0.63f),
+    hipR = VisualPoint(0.56f, 0.63f),
+    kneeL = VisualPoint(0.39f, 0.80f),
+    kneeR = VisualPoint(0.68f, 0.66f),
+    ankleL = VisualPoint(0.23f, 0.69f),
+    ankleR = VisualPoint(0.68f, POSE_GROUND_Y),
+)
+
+private val gluteBridgeLow = PoseFigure(
+    head = VisualPoint(0.18f, 0.81f),
+    neck = VisualPoint(0.25f, 0.82f),
+    shoulderL = VisualPoint(0.29f, 0.82f),
+    shoulderR = VisualPoint(0.29f, 0.85f),
+    elbowL = VisualPoint(0.40f, 0.85f),
+    elbowR = VisualPoint(0.40f, 0.87f),
+    wristL = VisualPoint(0.52f, POSE_GROUND_Y),
+    wristR = VisualPoint(0.52f, POSE_GROUND_Y),
+    hipL = VisualPoint(0.52f, 0.83f),
+    hipR = VisualPoint(0.52f, 0.85f),
+    kneeL = VisualPoint(0.67f, 0.69f),
+    kneeR = VisualPoint(0.66f, 0.69f),
+    ankleL = VisualPoint(0.83f, 0.64f),
+    ankleR = VisualPoint(0.74f, POSE_GROUND_Y),
+)
+
+private val gluteBridgeHigh = PoseFigure(
+    head = VisualPoint(0.18f, 0.81f),
+    neck = VisualPoint(0.25f, 0.81f),
+    shoulderL = VisualPoint(0.29f, 0.81f),
+    shoulderR = VisualPoint(0.29f, 0.84f),
+    elbowL = VisualPoint(0.40f, 0.85f),
+    elbowR = VisualPoint(0.40f, 0.87f),
+    wristL = VisualPoint(0.52f, POSE_GROUND_Y),
+    wristR = VisualPoint(0.52f, POSE_GROUND_Y),
+    hipL = VisualPoint(0.52f, 0.68f),
+    hipR = VisualPoint(0.52f, 0.70f),
+    kneeL = VisualPoint(0.69f, 0.56f),
+    kneeR = VisualPoint(0.68f, 0.64f),
+    ankleL = VisualPoint(0.85f, 0.45f),
+    ankleR = VisualPoint(0.75f, POSE_GROUND_Y),
+)
+
+private val clockReachFront = PoseFigure(
+    head = VisualPoint(0.46f, 0.22f),
+    neck = VisualPoint(0.46f, 0.29f),
+    shoulderL = VisualPoint(0.40f, 0.33f),
+    shoulderR = VisualPoint(0.52f, 0.33f),
+    elbowL = VisualPoint(0.35f, 0.45f),
+    elbowR = VisualPoint(0.57f, 0.45f),
+    wristL = VisualPoint(0.42f, 0.52f),
+    wristR = VisualPoint(0.51f, 0.52f),
+    hipL = VisualPoint(0.43f, 0.56f),
+    hipR = VisualPoint(0.51f, 0.56f),
+    kneeL = VisualPoint(0.44f, 0.72f),
+    kneeR = VisualPoint(0.64f, 0.72f),
+    ankleL = VisualPoint(0.44f, POSE_GROUND_Y),
+    ankleR = VisualPoint(0.77f, 0.85f),
+)
+
+private val clockReachSide = PoseFigure(
+    head = VisualPoint(0.50f, 0.24f),
+    neck = VisualPoint(0.50f, 0.31f),
+    shoulderL = VisualPoint(0.43f, 0.35f),
+    shoulderR = VisualPoint(0.57f, 0.35f),
+    elbowL = VisualPoint(0.37f, 0.46f),
+    elbowR = VisualPoint(0.63f, 0.46f),
+    wristL = VisualPoint(0.44f, 0.53f),
+    wristR = VisualPoint(0.56f, 0.53f),
+    hipL = VisualPoint(0.46f, 0.57f),
+    hipR = VisualPoint(0.54f, 0.57f),
+    kneeL = VisualPoint(0.47f, 0.73f),
+    kneeR = VisualPoint(0.67f, 0.75f),
+    ankleL = VisualPoint(0.47f, POSE_GROUND_Y),
+    ankleR = VisualPoint(0.82f, 0.86f),
+)
+
+private val clockReachBack = PoseFigure(
+    head = VisualPoint(0.55f, 0.24f),
+    neck = VisualPoint(0.54f, 0.31f),
+    shoulderL = VisualPoint(0.48f, 0.35f),
+    shoulderR = VisualPoint(0.60f, 0.35f),
+    elbowL = VisualPoint(0.43f, 0.46f),
+    elbowR = VisualPoint(0.65f, 0.46f),
+    wristL = VisualPoint(0.50f, 0.53f),
+    wristR = VisualPoint(0.58f, 0.53f),
+    hipL = VisualPoint(0.49f, 0.57f),
+    hipR = VisualPoint(0.57f, 0.57f),
+    kneeL = VisualPoint(0.52f, 0.73f),
+    kneeR = VisualPoint(0.34f, 0.73f),
+    ankleL = VisualPoint(0.52f, POSE_GROUND_Y),
+    ankleR = VisualPoint(0.20f, 0.85f),
+)
+
+private val jumpRopeLand = PoseFigure(
+    head = VisualPoint(0.50f, 0.19f),
+    neck = VisualPoint(0.50f, 0.26f),
+    shoulderL = VisualPoint(0.43f, 0.29f),
+    shoulderR = VisualPoint(0.57f, 0.29f),
+    elbowL = VisualPoint(0.38f, 0.44f),
+    elbowR = VisualPoint(0.62f, 0.44f),
+    wristL = VisualPoint(0.31f, 0.47f),
+    wristR = VisualPoint(0.69f, 0.47f),
+    hipL = VisualPoint(0.45f, 0.53f),
+    hipR = VisualPoint(0.55f, 0.53f),
+    kneeL = VisualPoint(0.44f, 0.71f),
+    kneeR = VisualPoint(0.56f, 0.71f),
+    ankleL = VisualPoint(0.45f, POSE_GROUND_Y),
+    ankleR = VisualPoint(0.55f, POSE_GROUND_Y),
+)
+
+private val jumpRopeAir = PoseFigure(
+    head = VisualPoint(0.50f, 0.10f),
+    neck = VisualPoint(0.50f, 0.17f),
+    shoulderL = VisualPoint(0.43f, 0.20f),
+    shoulderR = VisualPoint(0.57f, 0.20f),
+    elbowL = VisualPoint(0.38f, 0.35f),
+    elbowR = VisualPoint(0.62f, 0.35f),
+    wristL = VisualPoint(0.29f, 0.36f),
+    wristR = VisualPoint(0.71f, 0.36f),
+    hipL = VisualPoint(0.45f, 0.44f),
+    hipR = VisualPoint(0.55f, 0.44f),
+    kneeL = VisualPoint(0.44f, 0.61f),
+    kneeR = VisualPoint(0.56f, 0.61f),
+    ankleL = VisualPoint(0.45f, 0.76f),
+    ankleR = VisualPoint(0.55f, 0.76f),
+)
+
+private val slamHigh = PoseFigure(
+    head = VisualPoint(0.50f, 0.18f),
+    neck = VisualPoint(0.50f, 0.25f),
+    shoulderL = VisualPoint(0.44f, 0.28f),
+    shoulderR = VisualPoint(0.56f, 0.28f),
+    elbowL = VisualPoint(0.43f, 0.15f),
+    elbowR = VisualPoint(0.57f, 0.15f),
+    wristL = VisualPoint(0.47f, 0.04f),
+    wristR = VisualPoint(0.53f, 0.04f),
+    hipL = VisualPoint(0.46f, 0.50f),
+    hipR = VisualPoint(0.54f, 0.50f),
+    kneeL = VisualPoint(0.45f, 0.67f),
+    kneeR = VisualPoint(0.55f, 0.67f),
+    ankleL = VisualPoint(0.45f, 0.83f),
+    ankleR = VisualPoint(0.55f, 0.83f),
+)
+
+private val slamDown = PoseFigure(
+    head = VisualPoint(0.55f, 0.38f),
+    neck = VisualPoint(0.53f, 0.45f),
+    shoulderL = VisualPoint(0.47f, 0.48f),
+    shoulderR = VisualPoint(0.57f, 0.48f),
+    elbowL = VisualPoint(0.54f, 0.62f),
+    elbowR = VisualPoint(0.61f, 0.62f),
+    wristL = VisualPoint(0.60f, 0.76f),
+    wristR = VisualPoint(0.64f, 0.76f),
+    hipL = VisualPoint(0.39f, 0.64f),
+    hipR = VisualPoint(0.47f, 0.64f),
+    kneeL = VisualPoint(0.46f, 0.76f),
+    kneeR = VisualPoint(0.54f, 0.76f),
+    ankleL = VisualPoint(0.44f, POSE_GROUND_Y),
+    ankleR = VisualPoint(0.53f, POSE_GROUND_Y),
+)
+
+private val depthDropStart = PoseFigure(
+    head = VisualPoint(0.36f, 0.10f),
+    neck = VisualPoint(0.36f, 0.17f),
+    shoulderL = VisualPoint(0.30f, 0.20f),
+    shoulderR = VisualPoint(0.42f, 0.20f),
+    elbowL = VisualPoint(0.25f, 0.33f),
+    elbowR = VisualPoint(0.47f, 0.33f),
+    wristL = VisualPoint(0.27f, 0.43f),
+    wristR = VisualPoint(0.45f, 0.43f),
+    hipL = VisualPoint(0.32f, 0.44f),
+    hipR = VisualPoint(0.40f, 0.44f),
+    kneeL = VisualPoint(0.32f, 0.61f),
+    kneeR = VisualPoint(0.42f, 0.61f),
+    ankleL = VisualPoint(0.32f, 0.75f),
+    ankleR = VisualPoint(0.42f, 0.75f),
+)
+
+private val airScissorSwap = PoseFigure(
+    head = VisualPoint(0.50f, 0.14f),
+    neck = VisualPoint(0.50f, 0.21f),
+    shoulderL = VisualPoint(0.44f, 0.24f),
+    shoulderR = VisualPoint(0.56f, 0.24f),
+    elbowL = VisualPoint(0.36f, 0.34f),
+    elbowR = VisualPoint(0.64f, 0.32f),
+    wristL = VisualPoint(0.32f, 0.42f),
+    wristR = VisualPoint(0.69f, 0.25f),
+    hipL = VisualPoint(0.46f, 0.46f),
+    hipR = VisualPoint(0.54f, 0.46f),
+    kneeL = VisualPoint(0.56f, 0.62f),
+    kneeR = VisualPoint(0.44f, 0.62f),
+    ankleL = VisualPoint(0.62f, 0.76f),
+    ankleR = VisualPoint(0.38f, 0.76f),
+)
+
+private val hingeY = PoseFigure(
+    head = VisualPoint(0.50f, 0.30f),
+    neck = VisualPoint(0.50f, 0.36f),
+    shoulderL = VisualPoint(0.42f, 0.39f),
+    shoulderR = VisualPoint(0.58f, 0.39f),
+    elbowL = VisualPoint(0.33f, 0.26f),
+    elbowR = VisualPoint(0.67f, 0.26f),
+    wristL = VisualPoint(0.26f, 0.14f),
+    wristR = VisualPoint(0.74f, 0.14f),
+    hipL = VisualPoint(0.45f, 0.58f),
+    hipR = VisualPoint(0.55f, 0.58f),
+    kneeL = VisualPoint(0.44f, 0.74f),
+    kneeR = VisualPoint(0.56f, 0.74f),
+    ankleL = VisualPoint(0.43f, POSE_GROUND_Y),
+    ankleR = VisualPoint(0.57f, POSE_GROUND_Y),
+)
+
+private val hingeT = PoseFigure(
+    head = VisualPoint(0.50f, 0.30f),
+    neck = VisualPoint(0.50f, 0.36f),
+    shoulderL = VisualPoint(0.42f, 0.39f),
+    shoulderR = VisualPoint(0.58f, 0.39f),
+    elbowL = VisualPoint(0.28f, 0.39f),
+    elbowR = VisualPoint(0.72f, 0.39f),
+    wristL = VisualPoint(0.15f, 0.38f),
+    wristR = VisualPoint(0.85f, 0.38f),
+    hipL = VisualPoint(0.45f, 0.58f),
+    hipR = VisualPoint(0.55f, 0.58f),
+    kneeL = VisualPoint(0.44f, 0.74f),
+    kneeR = VisualPoint(0.56f, 0.74f),
+    ankleL = VisualPoint(0.43f, POSE_GROUND_Y),
+    ankleR = VisualPoint(0.57f, POSE_GROUND_Y),
+)
+
+private val hingeW = PoseFigure(
+    head = VisualPoint(0.50f, 0.30f),
+    neck = VisualPoint(0.50f, 0.36f),
+    shoulderL = VisualPoint(0.42f, 0.39f),
+    shoulderR = VisualPoint(0.58f, 0.39f),
+    elbowL = VisualPoint(0.32f, 0.48f),
+    elbowR = VisualPoint(0.68f, 0.48f),
+    wristL = VisualPoint(0.24f, 0.35f),
+    wristR = VisualPoint(0.76f, 0.35f),
+    hipL = VisualPoint(0.45f, 0.58f),
+    hipR = VisualPoint(0.55f, 0.58f),
+    kneeL = VisualPoint(0.44f, 0.74f),
+    kneeR = VisualPoint(0.56f, 0.74f),
+    ankleL = VisualPoint(0.43f, POSE_GROUND_Y),
+    ankleR = VisualPoint(0.57f, POSE_GROUND_Y),
+)
+
+private val rowReach = PoseFigure(
+    head = VisualPoint(0.47f, 0.21f),
+    neck = VisualPoint(0.47f, 0.28f),
+    shoulderL = VisualPoint(0.41f, 0.31f),
+    shoulderR = VisualPoint(0.53f, 0.32f),
+    elbowL = VisualPoint(0.35f, 0.43f),
+    elbowR = VisualPoint(0.67f, 0.34f),
+    wristL = VisualPoint(0.39f, 0.51f),
+    wristR = VisualPoint(0.81f, 0.35f),
+    hipL = VisualPoint(0.43f, 0.54f),
+    hipR = VisualPoint(0.51f, 0.54f),
+    kneeL = VisualPoint(0.36f, 0.71f),
+    kneeR = VisualPoint(0.58f, 0.71f),
+    ankleL = VisualPoint(0.30f, POSE_GROUND_Y),
+    ankleR = VisualPoint(0.62f, POSE_GROUND_Y),
+)
+
+private val rowPull = PoseFigure(
+    head = VisualPoint(0.45f, 0.21f),
+    neck = VisualPoint(0.45f, 0.28f),
+    shoulderL = VisualPoint(0.39f, 0.31f),
+    shoulderR = VisualPoint(0.51f, 0.32f),
+    elbowL = VisualPoint(0.34f, 0.43f),
+    elbowR = VisualPoint(0.36f, 0.43f),
+    wristL = VisualPoint(0.38f, 0.51f),
+    wristR = VisualPoint(0.51f, 0.44f),
+    hipL = VisualPoint(0.42f, 0.54f),
+    hipR = VisualPoint(0.50f, 0.54f),
+    kneeL = VisualPoint(0.36f, 0.71f),
+    kneeR = VisualPoint(0.58f, 0.71f),
+    ankleL = VisualPoint(0.30f, POSE_GROUND_Y),
+    ankleR = VisualPoint(0.62f, POSE_GROUND_Y),
+)
+
+private val halfKneelRack = PoseFigure(
+    head = VisualPoint(0.50f, 0.30f),
+    neck = VisualPoint(0.50f, 0.37f),
+    shoulderL = VisualPoint(0.44f, 0.40f),
+    shoulderR = VisualPoint(0.56f, 0.40f),
+    elbowL = VisualPoint(0.36f, 0.50f),
+    elbowR = VisualPoint(0.62f, 0.50f),
+    wristL = VisualPoint(0.38f, 0.58f),
+    wristR = VisualPoint(0.60f, 0.39f),
+    hipL = VisualPoint(0.46f, 0.64f),
+    hipR = VisualPoint(0.54f, 0.64f),
+    kneeL = VisualPoint(0.44f, POSE_GROUND_Y),
+    kneeR = VisualPoint(0.68f, 0.67f),
+    ankleL = VisualPoint(0.28f, POSE_GROUND_Y),
+    ankleR = VisualPoint(0.69f, POSE_GROUND_Y),
+)
+
+private val halfKneelPress = PoseFigure(
+    head = VisualPoint(0.50f, 0.30f),
+    neck = VisualPoint(0.50f, 0.37f),
+    shoulderL = VisualPoint(0.44f, 0.40f),
+    shoulderR = VisualPoint(0.56f, 0.40f),
+    elbowL = VisualPoint(0.36f, 0.50f),
+    elbowR = VisualPoint(0.61f, 0.25f),
+    wristL = VisualPoint(0.38f, 0.58f),
+    wristR = VisualPoint(0.63f, 0.11f),
+    hipL = VisualPoint(0.46f, 0.64f),
+    hipR = VisualPoint(0.54f, 0.64f),
+    kneeL = VisualPoint(0.44f, POSE_GROUND_Y),
+    kneeR = VisualPoint(0.68f, 0.67f),
+    ankleL = VisualPoint(0.28f, POSE_GROUND_Y),
+    ankleR = VisualPoint(0.69f, POSE_GROUND_Y),
+)
+
+private val pushupLow = PoseFigure(
+    head = VisualPoint(0.80f, 0.72f),
+    neck = VisualPoint(0.73f, 0.73f),
+    shoulderL = VisualPoint(0.69f, 0.75f),
+    shoulderR = VisualPoint(0.69f, 0.77f),
+    elbowL = VisualPoint(0.58f, 0.77f),
+    elbowR = VisualPoint(0.57f, 0.78f),
+    wristL = VisualPoint(0.70f, POSE_GROUND_Y),
+    wristR = VisualPoint(0.68f, POSE_GROUND_Y),
+    hipL = VisualPoint(0.46f, 0.78f),
+    hipR = VisualPoint(0.46f, 0.80f),
+    kneeL = VisualPoint(0.30f, 0.82f),
+    kneeR = VisualPoint(0.30f, 0.84f),
+    ankleL = VisualPoint(0.14f, POSE_GROUND_Y),
+    ankleR = VisualPoint(0.16f, POSE_GROUND_Y),
+)
+
+private val pushupExplode = PoseFigure(
+    head = VisualPoint(0.77f, 0.42f),
+    neck = VisualPoint(0.71f, 0.45f),
+    shoulderL = VisualPoint(0.67f, 0.48f),
+    shoulderR = VisualPoint(0.67f, 0.50f),
+    elbowL = VisualPoint(0.68f, 0.62f),
+    elbowR = VisualPoint(0.66f, 0.64f),
+    wristL = VisualPoint(0.69f, 0.75f),
+    wristR = VisualPoint(0.67f, 0.76f),
+    hipL = VisualPoint(0.45f, 0.61f),
+    hipR = VisualPoint(0.45f, 0.63f),
+    kneeL = VisualPoint(0.29f, 0.74f),
+    kneeR = VisualPoint(0.29f, 0.76f),
+    ankleL = VisualPoint(0.14f, POSE_GROUND_Y),
+    ankleR = VisualPoint(0.16f, POSE_GROUND_Y),
+)
+
+private val pallofIn = PoseFigure(
+    head = VisualPoint(0.48f, 0.21f),
+    neck = VisualPoint(0.48f, 0.28f),
+    shoulderL = VisualPoint(0.42f, 0.31f),
+    shoulderR = VisualPoint(0.54f, 0.31f),
+    elbowL = VisualPoint(0.40f, 0.44f),
+    elbowR = VisualPoint(0.56f, 0.44f),
+    wristL = VisualPoint(0.50f, 0.41f),
+    wristR = VisualPoint(0.54f, 0.41f),
+    hipL = VisualPoint(0.44f, 0.55f),
+    hipR = VisualPoint(0.52f, 0.55f),
+    kneeL = VisualPoint(0.41f, 0.72f),
+    kneeR = VisualPoint(0.55f, 0.72f),
+    ankleL = VisualPoint(0.39f, POSE_GROUND_Y),
+    ankleR = VisualPoint(0.57f, POSE_GROUND_Y),
+)
+
+private val pallofOut = PoseFigure(
+    head = VisualPoint(0.48f, 0.21f),
+    neck = VisualPoint(0.48f, 0.28f),
+    shoulderL = VisualPoint(0.42f, 0.31f),
+    shoulderR = VisualPoint(0.54f, 0.31f),
+    elbowL = VisualPoint(0.56f, 0.37f),
+    elbowR = VisualPoint(0.66f, 0.37f),
+    wristL = VisualPoint(0.71f, 0.37f),
+    wristR = VisualPoint(0.75f, 0.37f),
+    hipL = VisualPoint(0.44f, 0.55f),
+    hipR = VisualPoint(0.52f, 0.55f),
+    kneeL = VisualPoint(0.41f, 0.72f),
+    kneeR = VisualPoint(0.55f, 0.72f),
+    ankleL = VisualPoint(0.39f, POSE_GROUND_Y),
+    ankleR = VisualPoint(0.57f, POSE_GROUND_Y),
+)
+
+private val sidePlankOpen = PoseFigure(
+    head = VisualPoint(0.77f, 0.53f),
+    neck = VisualPoint(0.71f, 0.56f),
+    shoulderL = VisualPoint(0.67f, 0.65f),
+    shoulderR = VisualPoint(0.66f, 0.55f),
+    elbowL = VisualPoint(0.68f, POSE_GROUND_Y),
+    elbowR = VisualPoint(0.66f, 0.41f),
+    wristL = VisualPoint(0.77f, POSE_GROUND_Y),
+    wristR = VisualPoint(0.66f, 0.27f),
+    hipL = VisualPoint(0.45f, 0.70f),
+    hipR = VisualPoint(0.45f, 0.64f),
+    kneeL = VisualPoint(0.30f, 0.78f),
+    kneeR = VisualPoint(0.30f, 0.75f),
+    ankleL = VisualPoint(0.15f, POSE_GROUND_Y),
+    ankleR = VisualPoint(0.16f, 0.85f),
+)
+
+private val sidePlankThread = PoseFigure(
+    head = VisualPoint(0.77f, 0.55f),
+    neck = VisualPoint(0.71f, 0.58f),
+    shoulderL = VisualPoint(0.67f, 0.66f),
+    shoulderR = VisualPoint(0.65f, 0.59f),
+    elbowL = VisualPoint(0.68f, POSE_GROUND_Y),
+    elbowR = VisualPoint(0.57f, 0.70f),
+    wristL = VisualPoint(0.77f, POSE_GROUND_Y),
+    wristR = VisualPoint(0.49f, 0.79f),
+    hipL = VisualPoint(0.45f, 0.71f),
+    hipR = VisualPoint(0.45f, 0.66f),
+    kneeL = VisualPoint(0.30f, 0.79f),
+    kneeR = VisualPoint(0.30f, 0.76f),
+    ankleL = VisualPoint(0.15f, POSE_GROUND_Y),
+    ankleR = VisualPoint(0.16f, 0.85f),
+)
+
+private val deadBugCenter = PoseFigure(
+    head = VisualPoint(0.19f, 0.81f),
+    neck = VisualPoint(0.26f, 0.82f),
+    shoulderL = VisualPoint(0.31f, 0.82f),
+    shoulderR = VisualPoint(0.31f, 0.85f),
+    elbowL = VisualPoint(0.32f, 0.69f),
+    elbowR = VisualPoint(0.34f, 0.69f),
+    wristL = VisualPoint(0.32f, 0.56f),
+    wristR = VisualPoint(0.35f, 0.56f),
+    hipL = VisualPoint(0.55f, 0.82f),
+    hipR = VisualPoint(0.55f, 0.85f),
+    kneeL = VisualPoint(0.57f, 0.66f),
+    kneeR = VisualPoint(0.59f, 0.67f),
+    ankleL = VisualPoint(0.72f, 0.66f),
+    ankleR = VisualPoint(0.74f, 0.67f),
+)
+
+private val deadBugExtendA = PoseFigure(
+    head = VisualPoint(0.19f, 0.81f),
+    neck = VisualPoint(0.26f, 0.82f),
+    shoulderL = VisualPoint(0.31f, 0.82f),
+    shoulderR = VisualPoint(0.31f, 0.85f),
+    elbowL = VisualPoint(0.18f, 0.78f),
+    elbowR = VisualPoint(0.34f, 0.69f),
+    wristL = VisualPoint(0.06f, 0.76f),
+    wristR = VisualPoint(0.35f, 0.56f),
+    hipL = VisualPoint(0.55f, 0.82f),
+    hipR = VisualPoint(0.55f, 0.85f),
+    kneeL = VisualPoint(0.57f, 0.66f),
+    kneeR = VisualPoint(0.72f, 0.82f),
+    ankleL = VisualPoint(0.72f, 0.66f),
+    ankleR = VisualPoint(0.89f, 0.81f),
+)
+
+private val deadBugExtendB = PoseFigure(
+    head = VisualPoint(0.19f, 0.81f),
+    neck = VisualPoint(0.26f, 0.82f),
+    shoulderL = VisualPoint(0.31f, 0.82f),
+    shoulderR = VisualPoint(0.31f, 0.85f),
+    elbowL = VisualPoint(0.32f, 0.69f),
+    elbowR = VisualPoint(0.18f, 0.79f),
+    wristL = VisualPoint(0.32f, 0.56f),
+    wristR = VisualPoint(0.06f, 0.77f),
+    hipL = VisualPoint(0.55f, 0.82f),
+    hipR = VisualPoint(0.55f, 0.85f),
+    kneeL = VisualPoint(0.72f, 0.80f),
+    kneeR = VisualPoint(0.59f, 0.67f),
+    ankleL = VisualPoint(0.89f, 0.79f),
+    ankleR = VisualPoint(0.74f, 0.67f),
+)
+
+private val quadrupedThread = PoseFigure(
+    head = VisualPoint(0.73f, 0.64f),
+    neck = VisualPoint(0.66f, 0.64f),
+    shoulderL = VisualPoint(0.62f, 0.65f),
+    shoulderR = VisualPoint(0.61f, 0.70f),
+    elbowL = VisualPoint(0.63f, 0.77f),
+    elbowR = VisualPoint(0.49f, 0.77f),
+    wristL = VisualPoint(0.64f, POSE_GROUND_Y),
+    wristR = VisualPoint(0.37f, 0.83f),
+    hipL = VisualPoint(0.39f, 0.63f),
+    hipR = VisualPoint(0.39f, 0.66f),
+    kneeL = VisualPoint(0.38f, POSE_GROUND_Y),
+    kneeR = VisualPoint(0.40f, POSE_GROUND_Y),
+    ankleL = VisualPoint(0.21f, POSE_GROUND_Y),
+    ankleR = VisualPoint(0.23f, POSE_GROUND_Y),
+)
+
+private val quadrupedOpen = PoseFigure(
+    head = VisualPoint(0.71f, 0.54f),
+    neck = VisualPoint(0.65f, 0.57f),
+    shoulderL = VisualPoint(0.62f, 0.63f),
+    shoulderR = VisualPoint(0.60f, 0.55f),
+    elbowL = VisualPoint(0.63f, 0.76f),
+    elbowR = VisualPoint(0.61f, 0.41f),
+    wristL = VisualPoint(0.64f, POSE_GROUND_Y),
+    wristR = VisualPoint(0.63f, 0.27f),
+    hipL = VisualPoint(0.39f, 0.63f),
+    hipR = VisualPoint(0.39f, 0.66f),
+    kneeL = VisualPoint(0.38f, POSE_GROUND_Y),
+    kneeR = VisualPoint(0.40f, POSE_GROUND_Y),
+    ankleL = VisualPoint(0.21f, POSE_GROUND_Y),
+    ankleR = VisualPoint(0.23f, POSE_GROUND_Y),
+)
+
+private val deepLungeHandsDown = PoseFigure(
+    head = VisualPoint(0.63f, 0.47f),
+    neck = VisualPoint(0.58f, 0.51f),
+    shoulderL = VisualPoint(0.54f, 0.55f),
+    shoulderR = VisualPoint(0.58f, 0.56f),
+    elbowL = VisualPoint(0.55f, 0.72f),
+    elbowR = VisualPoint(0.60f, 0.72f),
+    wristL = VisualPoint(0.56f, POSE_GROUND_Y),
+    wristR = VisualPoint(0.61f, POSE_GROUND_Y),
+    hipL = VisualPoint(0.41f, 0.65f),
+    hipR = VisualPoint(0.47f, 0.65f),
+    kneeL = VisualPoint(0.27f, 0.77f),
+    kneeR = VisualPoint(0.68f, 0.67f),
+    ankleL = VisualPoint(0.14f, POSE_GROUND_Y),
+    ankleR = VisualPoint(0.70f, POSE_GROUND_Y),
+)
+
+private val deepLungeTwistOpen = PoseFigure(
+    head = VisualPoint(0.61f, 0.43f),
+    neck = VisualPoint(0.57f, 0.48f),
+    shoulderL = VisualPoint(0.54f, 0.54f),
+    shoulderR = VisualPoint(0.57f, 0.46f),
+    elbowL = VisualPoint(0.55f, 0.71f),
+    elbowR = VisualPoint(0.60f, 0.32f),
+    wristL = VisualPoint(0.56f, POSE_GROUND_Y),
+    wristR = VisualPoint(0.62f, 0.18f),
+    hipL = VisualPoint(0.41f, 0.65f),
+    hipR = VisualPoint(0.47f, 0.65f),
+    kneeL = VisualPoint(0.27f, 0.77f),
+    kneeR = VisualPoint(0.68f, 0.67f),
+    ankleL = VisualPoint(0.14f, POSE_GROUND_Y),
+    ankleR = VisualPoint(0.70f, POSE_GROUND_Y),
+)
+
+private val tossCatchRight = PoseFigure(
+    head = VisualPoint(0.52f, 0.25f),
+    neck = VisualPoint(0.52f, 0.32f),
+    shoulderL = VisualPoint(0.44f, 0.35f),
+    shoulderR = VisualPoint(0.60f, 0.35f),
+    elbowL = VisualPoint(0.37f, 0.46f),
+    elbowR = VisualPoint(0.70f, 0.39f),
+    wristL = VisualPoint(0.43f, 0.45f),
+    wristR = VisualPoint(0.79f, 0.31f),
+    hipL = VisualPoint(0.45f, 0.56f),
+    hipR = VisualPoint(0.57f, 0.56f),
+    kneeL = VisualPoint(0.40f, 0.72f),
+    kneeR = VisualPoint(0.63f, 0.72f),
+    ankleL = VisualPoint(0.36f, POSE_GROUND_Y),
+    ankleR = VisualPoint(0.66f, POSE_GROUND_Y),
+)
+
+private val tossCatchLeft = mirrorFigure(tossCatchRight)
+
+private val coneSprintRight = PoseFigure(
+    head = VisualPoint(0.64f, 0.26f),
+    neck = VisualPoint(0.61f, 0.33f),
+    shoulderL = VisualPoint(0.54f, 0.36f),
+    shoulderR = VisualPoint(0.66f, 0.37f),
+    elbowL = VisualPoint(0.44f, 0.45f),
+    elbowR = VisualPoint(0.75f, 0.42f),
+    wristL = VisualPoint(0.38f, 0.40f),
+    wristR = VisualPoint(0.81f, 0.34f),
+    hipL = VisualPoint(0.51f, 0.57f),
+    hipR = VisualPoint(0.60f, 0.57f),
+    kneeL = VisualPoint(0.40f, 0.72f),
+    kneeR = VisualPoint(0.71f, 0.70f),
+    ankleL = VisualPoint(0.28f, POSE_GROUND_Y),
+    ankleR = VisualPoint(0.75f, POSE_GROUND_Y),
+)
+
+private val coneSprintLeft = mirrorFigure(coneSprintRight)
+
 // --- Pose sequences with shuttle storytelling ---
 
 private val baseRecoveryPose = PoseSequence(
@@ -1683,6 +2386,201 @@ private val shoulderPrehabPose = PoseSequence(
     keyframes = listOf(
         PoseKeyframe("90-deg start", shoulderPrehabStart),
         PoseKeyframe("External rotate", shoulderPrehabOpen),
+    ),
+    cycleSeconds = 2.8,
+)
+
+private val forearmRotationPose = PoseSequence(
+    keyframes = listOf(
+        PoseKeyframe("Supinate out", forearmSupinate),
+        PoseKeyframe("Pronate snap", forearmPronate),
+    ),
+    cycleSeconds = 2.2,
+)
+
+private val towelWringerPose = PoseSequence(
+    keyframes = listOf(
+        PoseKeyframe("Twist right", gripTwistA),
+        PoseKeyframe("Twist left", gripTwistB),
+    ),
+    cycleSeconds = 2.4,
+)
+
+private val wristPrehabPose = PoseSequence(
+    keyframes = listOf(
+        PoseKeyframe("Extend & spread", wristExtUp),
+        PoseKeyframe("Slow lower", wristExtDown),
+    ),
+    cycleSeconds = 2.8,
+)
+
+private val spanishSquatPose = PoseSequence(
+    keyframes = listOf(
+        PoseKeyframe("Vertical shins", standingTall),
+        PoseKeyframe("Isometric hold", spanishSquatHold),
+    ),
+    cycleSeconds = 3.2,
+)
+
+private val bulgarianSquatPose = PoseSequence(
+    keyframes = listOf(
+        PoseKeyframe("Rear foot raised", bulgarianTop),
+        PoseKeyframe("Deep single-leg", bulgarianBottom),
+    ),
+    cycleSeconds = 2.8,
+)
+
+private val gluteBridgePose = PoseSequence(
+    keyframes = listOf(
+        PoseKeyframe("Slow lower", gluteBridgeLow),
+        PoseKeyframe("Single-leg bridge", gluteBridgeHigh),
+    ),
+    cycleSeconds = 2.8,
+)
+
+private val clockReachesPose = PoseSequence(
+    keyframes = listOf(
+        PoseKeyframe("Front reach", clockReachFront),
+        PoseKeyframe("Side reach", clockReachSide),
+        PoseKeyframe("Back reach", clockReachBack),
+    ),
+    cycleSeconds = 3.6,
+)
+
+private val jumpRopePose = PoseSequence(
+    keyframes = listOf(
+        PoseKeyframe("Forefoot land", jumpRopeLand),
+        PoseKeyframe("Spring rebound", jumpRopeAir),
+    ),
+    cycleSeconds = 1.6,
+)
+
+private val medBallSlamPose = PoseSequence(
+    keyframes = listOf(
+        PoseKeyframe("Tall overhead", slamHigh),
+        PoseKeyframe("Explosive slam", slamDown),
+        PoseKeyframe("Reset stance", standingTall),
+    ),
+    cycleSeconds = 2.6,
+)
+
+private val depthDropExitPose = PoseSequence(
+    keyframes = listOf(
+        PoseKeyframe("Step off box", depthDropStart),
+        PoseKeyframe("Split absorb", plyoSplitJump),
+        PoseKeyframe("Lateral cut", boundRight),
+    ),
+    cycleSeconds = 2.8,
+)
+
+private val scissorSplitJumpPose = PoseSequence(
+    keyframes = listOf(
+        PoseKeyframe("Split load", dropLungeBrake),
+        PoseKeyframe("Mid-air swap", airScissorSwap),
+        PoseKeyframe("Opposite land", mirrorFigure(dropLungeBrake)),
+    ),
+    cycleSeconds = 2.8,
+)
+
+private val ytwScapularPose = PoseSequence(
+    keyframes = listOf(
+        PoseKeyframe("High Y raise", hingeY),
+        PoseKeyframe("Wide T squeeze", hingeT),
+        PoseKeyframe("Tucked W pull", hingeW),
+    ),
+    cycleSeconds = 3.6,
+)
+
+private val bandRowPose = PoseSequence(
+    keyframes = listOf(
+        PoseKeyframe("Reach forward", rowReach),
+        PoseKeyframe("Elbow back", rowPull),
+    ),
+    cycleSeconds = 2.6,
+)
+
+private val halfKneelPressPose = PoseSequence(
+    keyframes = listOf(
+        PoseKeyframe("Rack & brace", halfKneelRack),
+        PoseKeyframe("Press overhead", halfKneelPress),
+    ),
+    cycleSeconds = 2.6,
+)
+
+private val plyoPushupPose = PoseSequence(
+    keyframes = listOf(
+        PoseKeyframe("Lower chest", pushupLow),
+        PoseKeyframe("Explosive drive", pushupExplode),
+        PoseKeyframe("Soft catch", plankBase),
+    ),
+    cycleSeconds = 2.8,
+)
+
+private val pallofPressPose = PoseSequence(
+    keyframes = listOf(
+        PoseKeyframe("Hands at chest", pallofIn),
+        PoseKeyframe("Press & resist", pallofOut),
+    ),
+    cycleSeconds = 2.8,
+)
+
+private val sidePlankReachPose = PoseSequence(
+    keyframes = listOf(
+        PoseKeyframe("Open reach", sidePlankOpen),
+        PoseKeyframe("Thread under", sidePlankThread),
+    ),
+    cycleSeconds = 3.0,
+)
+
+private val deadBugPose = PoseSequence(
+    keyframes = listOf(
+        PoseKeyframe("Braced 90-90", deadBugCenter),
+        PoseKeyframe("Extend left/right", deadBugExtendA),
+        PoseKeyframe("Switch sides", deadBugExtendB),
+    ),
+    cycleSeconds = 3.6,
+)
+
+private val thoracicThreadPose = PoseSequence(
+    keyframes = listOf(
+        PoseKeyframe("Thread under", quadrupedThread),
+        PoseKeyframe("Open skyward", quadrupedOpen),
+    ),
+    cycleSeconds = 3.0,
+)
+
+private val lungeTwistPose = PoseSequence(
+    keyframes = listOf(
+        PoseKeyframe("Long lunge", deepLungeHandsDown),
+        PoseKeyframe("Thoracic open", deepLungeTwistOpen),
+    ),
+    cycleSeconds = 3.0,
+)
+
+private val wallShuttleRallyPose = PoseSequence(
+    keyframes = listOf(
+        PoseKeyframe("Racket up", readyStance),
+        PoseKeyframe("Forehand wall tap", flatDrivePunch),
+        PoseKeyframe("Backhand tap", bodyDeflectBackhand),
+    ),
+    cycleSeconds = 2.2,
+    shuttleArc = ShuttleArc.FLAT_DRIVE,
+)
+
+private val wallBallReactionPose = PoseSequence(
+    keyframes = listOf(
+        PoseKeyframe("Catch right", tossCatchRight),
+        PoseKeyframe("Ready split", plyoSplitJump),
+        PoseKeyframe("Catch left", tossCatchLeft),
+    ),
+    cycleSeconds = 2.6,
+)
+
+private val coneBoxIntervalsPose = PoseSequence(
+    keyframes = listOf(
+        PoseKeyframe("Drive right", coneSprintRight),
+        PoseKeyframe("Brake low", plyoSplitJump),
+        PoseKeyframe("Cut left", coneSprintLeft),
     ),
     cycleSeconds = 2.8,
 )
@@ -2101,6 +2999,121 @@ private val allVisuals: List<ExerciseVisual> = listOf(
         exerciseId = "shoulder-external-rotation-prehab",
         courtPath = null,
         pose = shoulderPrehabPose,
+    ),
+    ExerciseVisual(
+        exerciseId = "forearm-pronation-supination",
+        courtPath = null,
+        pose = forearmRotationPose,
+    ),
+    ExerciseVisual(
+        exerciseId = "towel-wringers-pinch-grip",
+        courtPath = null,
+        pose = towelWringerPose,
+    ),
+    ExerciseVisual(
+        exerciseId = "finger-extension-wrist-prehab",
+        courtPath = null,
+        pose = wristPrehabPose,
+    ),
+    ExerciseVisual(
+        exerciseId = "spanish-squat-patellar-hold",
+        courtPath = null,
+        pose = spanishSquatPose,
+    ),
+    ExerciseVisual(
+        exerciseId = "bulgarian-split-squat",
+        courtPath = null,
+        pose = bulgarianSquatPose,
+    ),
+    ExerciseVisual(
+        exerciseId = "nordic-hamstring-glute-bridge",
+        courtPath = null,
+        pose = gluteBridgePose,
+    ),
+    ExerciseVisual(
+        exerciseId = "single-leg-clock-reaches",
+        courtPath = null,
+        pose = clockReachesPose,
+    ),
+    ExerciseVisual(
+        exerciseId = "jump-rope-intervals",
+        courtPath = null,
+        pose = jumpRopePose,
+    ),
+    ExerciseVisual(
+        exerciseId = "med-ball-overhead-slam",
+        courtPath = null,
+        pose = medBallSlamPose,
+    ),
+    ExerciseVisual(
+        exerciseId = "depth-drop-lateral-exit",
+        courtPath = null,
+        pose = depthDropExitPose,
+    ),
+    ExerciseVisual(
+        exerciseId = "scissor-split-jumps",
+        courtPath = null,
+        pose = scissorSplitJumpPose,
+    ),
+    ExerciseVisual(
+        exerciseId = "prone-ytw-scapular-raises",
+        courtPath = null,
+        pose = ytwScapularPose,
+    ),
+    ExerciseVisual(
+        exerciseId = "single-arm-band-row",
+        courtPath = null,
+        pose = bandRowPose,
+    ),
+    ExerciseVisual(
+        exerciseId = "half-kneeling-overhead-press",
+        courtPath = null,
+        pose = halfKneelPressPose,
+    ),
+    ExerciseVisual(
+        exerciseId = "plyo-incline-pushups",
+        courtPath = null,
+        pose = plyoPushupPose,
+    ),
+    ExerciseVisual(
+        exerciseId = "pallof-press-anti-rotation",
+        courtPath = null,
+        pose = pallofPressPose,
+    ),
+    ExerciseVisual(
+        exerciseId = "side-plank-reach-through",
+        courtPath = null,
+        pose = sidePlankReachPose,
+    ),
+    ExerciseVisual(
+        exerciseId = "dead-bug-core-control",
+        courtPath = null,
+        pose = deadBugPose,
+    ),
+    ExerciseVisual(
+        exerciseId = "quadruped-thoracic-rotation",
+        courtPath = null,
+        pose = thoracicThreadPose,
+    ),
+    ExerciseVisual(
+        exerciseId = "walking-lunge-thoracic-twist",
+        courtPath = null,
+        pose = lungeTwistPose,
+    ),
+    ExerciseVisual(
+        exerciseId = "wall-shuttle-drive-rally",
+        courtPath = null,
+        pose = wallShuttleRallyPose,
+    ),
+    ExerciseVisual(
+        exerciseId = "tennis-ball-wall-reaction",
+        courtPath = null,
+        pose = wallBallReactionPose,
+    ),
+    ExerciseVisual(
+        exerciseId = "cone-box-alactic-intervals",
+        courtPath = null,
+        pose = coneBoxIntervalsPose,
     ),
 )
 

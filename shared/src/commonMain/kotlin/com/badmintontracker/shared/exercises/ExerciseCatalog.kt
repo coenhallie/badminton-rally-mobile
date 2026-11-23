@@ -429,7 +429,7 @@ object ExerciseCatalog {
             coachingCue = "Hold the racket high in front and attack flat into open space without over-committing past the flick.",
         ),
 
-        // --- Off-Court Strength, Power, Endurance & Prehab (10 off-court exercises) ---
+        // --- Off-Court Strength, Power, Prehab, Mobility & Conditioning (33 exercises) ---
         Exercise(
             id = "split-squat-endurance",
             title = "Split-Squat Endurance Sets",
@@ -509,7 +509,7 @@ object ExerciseCatalog {
             id = "copenhagen-adductor-hold",
             title = "Lateral Side-Lunge Mobility",
             category = ExerciseCategory.OFF_COURT,
-            focus = FocusArea.STRENGTH_MOBILITY,
+            focus = FocusArea.MOBILITY_PREHAB,
             prescription = "3 x 10 / side · 40 s rest",
             setup = "Off court on a clear floor space; bodyweight or holding a light weight at chest height.",
             steps = listOf(
@@ -524,7 +524,7 @@ object ExerciseCatalog {
             id = "rotational-core-chop",
             title = "Rotational Core Whip",
             category = ExerciseCategory.OFF_COURT,
-            focus = FocusArea.STRENGTH_MOBILITY,
+            focus = FocusArea.CORE,
             prescription = "3 x 10 / side · 45 s rest",
             setup = "Off court with a light resistance band anchored at shoulder height or a 2 to 3 kg medicine ball.",
             steps = listOf(
@@ -539,7 +539,7 @@ object ExerciseCatalog {
             id = "plank-shoulder-taps",
             title = "Anti-Rotation Plank Shoulder Taps",
             category = ExerciseCategory.OFF_COURT,
-            focus = FocusArea.ENDURANCE,
+            focus = FocusArea.CORE,
             prescription = "3 x 20 slow taps · 35 s rest",
             setup = "Off court on a gym mat with feet set slightly wider than hip width for stability.",
             steps = listOf(
@@ -554,7 +554,7 @@ object ExerciseCatalog {
             id = "eccentric-calf-ankle-control",
             title = "Single-Leg Calf Raise & Slow Lower",
             category = ExerciseCategory.OFF_COURT,
-            focus = FocusArea.STRENGTH_MOBILITY,
+            focus = FocusArea.MOBILITY_PREHAB,
             prescription = "3 x 12 / leg · 35 s rest",
             setup = "Off court beside a wall or sturdy step for light fingertip balance.",
             steps = listOf(
@@ -569,7 +569,7 @@ object ExerciseCatalog {
             id = "shoulder-external-rotation-prehab",
             title = "Overhead Shoulder External Rotation",
             category = ExerciseCategory.OFF_COURT,
-            focus = FocusArea.STRENGTH_MOBILITY,
+            focus = FocusArea.MOBILITY_PREHAB,
             prescription = "3 x 15 reps · 30 s rest",
             setup = "Off court with a light resistance band anchored at waist or chest height.",
             steps = listOf(
@@ -579,6 +579,351 @@ object ExerciseCatalog {
                 "Lower the forearms slowly back to horizontal over two seconds.",
             ),
             coachingCue = "Keep the ribs down and shoulder blades steady - use light resistance with strict control.",
+        ),
+        Exercise(
+            id = "forearm-pronation-supination",
+            title = "Forearm Pronation & Supination",
+            category = ExerciseCategory.OFF_COURT,
+            focus = FocusArea.WRIST_GRIP,
+            prescription = "3 x 16 / arm · 30 s rest",
+            setup = "Hold a light 1 to 2 kg dumbbell near one end (or a racket with head cover on), elbow tucked at 90 degrees.",
+            steps = listOf(
+                "Hold the lever straight up in front of the torso with the elbow steady beside the ribs.",
+                "Rotate the forearm slowly outward (supination) until the palm faces up with full control.",
+                "Reverse smoothly into full inward rotation (pronation) mimicking the smash and overhead clear twist.",
+                "Keep the shoulder still so every degree of motion comes cleanly from the forearm.",
+            ),
+            coachingCue = "Use light load and crisp full range - forearm twist speed, not heavy weight, builds smash snap.",
+        ),
+        Exercise(
+            id = "towel-wringers-pinch-grip",
+            title = "Towel Wringers & Finger Pinch",
+            category = ExerciseCategory.OFF_COURT,
+            focus = FocusArea.WRIST_GRIP,
+            prescription = "3 x 30 s · 30 s rest",
+            setup = "Off court holding a rolled hand towel at chest height with elbows comfortably bent.",
+            steps = listOf(
+                "Grip the rolled towel firmly with both hands spaced about a fist apart.",
+                "Twist the hands strongly in opposite directions as if wringing water out, squeezing with thumb and index finger.",
+                "Hold peak tension for two seconds, then reverse the twist direction smoothly.",
+                "Alternate directions continuously for 30 seconds without shrugging the shoulders.",
+            ),
+            coachingCue = "Focus on crisp finger squeeze rather than bending the wrists excessively.",
+        ),
+        Exercise(
+            id = "finger-extension-wrist-prehab",
+            title = "Finger Extensions & Wrist Lowers",
+            category = ExerciseCategory.OFF_COURT,
+            focus = FocusArea.MOBILITY_PREHAB,
+            prescription = "3 x 15 / hand · 25 s rest",
+            setup = "Loop a thick rubber band around the fingertips, or hold a light 1 kg dumbbell palm-down for eccentric lowers.",
+            steps = listOf(
+                "Extend the forearm out in front with the wrist neutral and shoulders relaxed.",
+                "Spread all five fingers wide against the rubber band, holding the open position for one beat.",
+                "Finish with 10 slow three-second palm-down wrist lowers to load the forearm extensor tendons.",
+                "Repeat evenly on both hands after court sessions to guard against tennis elbow.",
+            ),
+            coachingCue = "Move slowly and smoothly - strengthening the opening muscles balances repetitive racket gripping.",
+        ),
+        Exercise(
+            id = "spanish-squat-patellar-hold",
+            title = "Spanish Squat Patellar Hold",
+            category = ExerciseCategory.OFF_COURT,
+            focus = FocusArea.MOBILITY_PREHAB,
+            prescription = "4 x 35 s hold · 45 s rest",
+            setup = "Anchor a heavy resistance band or strap behind a sturdy post and loop it cleanly behind both knees.",
+            steps = listOf(
+                "Step back until the band is taut, feet shoulder-width apart and shins completely vertical.",
+                "Sit straight back into a 70 to 90 degree squat while keeping the torso tall and chest open.",
+                "Hold steadily against the band tension for 35 seconds with weight evenly spread across both feet.",
+                "Stand up smoothly without snapping the knees back into hyperextension.",
+            ),
+            coachingCue = "Keep the shins vertical and weight through mid-foot to build resilient patellar tendons for deep lunges.",
+        ),
+        Exercise(
+            id = "bulgarian-split-squat",
+            title = "Bulgarian Split Squats",
+            category = ExerciseCategory.OFF_COURT,
+            focus = FocusArea.STRENGTH_MOBILITY,
+            prescription = "3 x 10 / leg · 60 s rest",
+            setup = "Place the top of the back foot on a knee-height bench or sturdy box; bodyweight or dumbbells in each hand.",
+            steps = listOf(
+                "Hop the front foot forward far enough that the front shin stays near vertical at the bottom.",
+                "Lower smoothly over two seconds with a slight athletic forward lean over the front hip.",
+                "Drive powerfully through the whole front foot to stand tall without locking the knee harshly.",
+                "Match reps evenly on both legs to erase dominant lunge-leg imbalances.",
+            ),
+            coachingCue = "Push the floor away through the front mid-foot and keep the front knee aligned over the middle toes.",
+        ),
+        Exercise(
+            id = "nordic-hamstring-glute-bridge",
+            title = "Single-Leg Glute Bridge & Lower",
+            category = ExerciseCategory.OFF_COURT,
+            focus = FocusArea.STRENGTH_MOBILITY,
+            prescription = "3 x 10 / leg · 40 s rest",
+            setup = "Lie face up on a mat with one foot planted flat near the hip and the opposite leg lifted straight.",
+            steps = listOf(
+                "Brace the ribs down and press through the planted heel to lift the hips into a straight shoulder-to-knee line.",
+                "Pause for one full second at the top without arching the lower back.",
+                "Lower the hips back to the mat over three controlled seconds to build eccentric hamstring control.",
+                "Complete 10 clean reps per side to support high-speed lunge braking.",
+            ),
+            coachingCue = "Keep both hip bones level at the top and drive through the heel rather than pushing through the lower back.",
+        ),
+        Exercise(
+            id = "single-leg-clock-reaches",
+            title = "Single-Leg Clock Reaches",
+            category = ExerciseCategory.OFF_COURT,
+            focus = FocusArea.MOBILITY_PREHAB,
+            prescription = "3 x 6 clocks / leg · 30 s rest",
+            setup = "Off court barefoot or in flat court shoes on a smooth surface with room to reach in all directions.",
+            steps = listOf(
+                "Stand balanced on one softly bent knee with hands on hips and gaze steady ahead.",
+                "Reach the free foot lightly forward (12 o'clock), out to the side (3/9 o'clock), and diagonally behind (6 o'clock).",
+                "Tap the toe gently without shifting weight onto the reaching foot, keeping the standing knee over the toes.",
+                "Complete 6 full clock sweeps on each ankle to build proprioceptive sprain protection.",
+            ),
+            coachingCue = "Keep the standing arch active and knee tracking cleanly straight ahead on every reach.",
+        ),
+        Exercise(
+            id = "jump-rope-intervals",
+            title = "Jump Rope Intervals & Double-Unders",
+            category = ExerciseCategory.OFF_COURT,
+            focus = FocusArea.EXPLOSIVE_SPEED,
+            prescription = "5 x 45 s · 15 s rest",
+            setup = "Speed jump rope on a wooden hall floor or sprung mat wearing supportive court shoes.",
+            steps = listOf(
+                "Hold elbows lightly tucked near the ribs and turn the rope using compact wrist circles.",
+                "Bounce lightly on the balls of the feet with quiet, springy ankle rebounds.",
+                "Mix 30 seconds of fast single skips with 15 seconds of crisp high-cadence skips or double-unders.",
+                "Keep rest strictly to 15 seconds to mirror rally-to-rally calf stamina.",
+            ),
+            coachingCue = "Stay tall with soft knees and whisper-quiet landings on the forefeet.",
+        ),
+        Exercise(
+            id = "med-ball-overhead-slam",
+            title = "Medicine Ball Overhead Slams",
+            category = ExerciseCategory.OFF_COURT,
+            focus = FocusArea.UPPER_BODY,
+            prescription = "4 x 8 explosive reps · 45 s rest",
+            setup = "Non-bounce 3 to 5 kg slam ball on a gym floor with clear overhead space.",
+            steps = listOf(
+                "Rise tall onto the balls of the feet extending the ball straight overhead like a jump-smash load.",
+                "Snap the hips back and drive the lats and core downward to slam the ball forcefully in front of the feet.",
+                "Drop cleanly into an athletic half-squat to absorb the finish and pick up the ball with a flat back.",
+                "Reset fully between reps so every slam fires at maximum speed.",
+            ),
+            coachingCue = "Whip the whole body together from toes through core and lats instead of pushing only with the arms.",
+        ),
+        Exercise(
+            id = "depth-drop-lateral-exit",
+            title = "Depth Drop to Lateral Exit",
+            category = ExerciseCategory.OFF_COURT,
+            focus = FocusArea.EXPLOSIVE_SPEED,
+            prescription = "4 x 6 / side · 50 s rest",
+            setup = "Low 20 to 30 cm sturdy box or step with 3 metres of clear floor space to each side.",
+            steps = listOf(
+                "Step off the low box (do not jump upward) and land softly on both forefeet in a loaded split-step.",
+                "Spend minimal time on the floor, immediately pushing off the outside foot into an explosive two-step lateral cut.",
+                "Brake cleanly on the outside leg and hold a balanced athletic finish for one second.",
+                "Alternate left and right exits evenly across all four sets.",
+            ),
+            coachingCue = "Hit the floor like a coiled spring and explode sideways the instant both feet touch down.",
+        ),
+        Exercise(
+            id = "scissor-split-jumps",
+            title = "Alternating Scissor Split-Jumps",
+            category = ExerciseCategory.OFF_COURT,
+            focus = FocusArea.EXPLOSIVE_SPEED,
+            prescription = "4 x 8 jumps · 50 s rest",
+            setup = "Sprung hall floor or flat gym mat with feet set in an athletic split lunge stance.",
+            steps = listOf(
+                "Drop into a controlled half-lunge with the torso upright and arms swinging cleanly.",
+                "Drive straight up off both feet and crisply swap the front and back legs in mid-air like a rear-court scissor kick.",
+                "Land quietly into the opposite split stance with knees tracking straight ahead.",
+                "Reset briefly for half a beat or rebound rhythmically while keeping landing alignment sharp.",
+            ),
+            coachingCue = "Swap the legs cleanly underneath the hips and stick every landing quietly without knee wobble.",
+        ),
+        Exercise(
+            id = "prone-ytw-scapular-raises",
+            title = "Hinged Y-T-W Scapular Raises",
+            category = ExerciseCategory.OFF_COURT,
+            focus = FocusArea.MOBILITY_PREHAB,
+            prescription = "3 x 8 cycles · 35 s rest",
+            setup = "Off court standing in a 45-degree hip hinge (or prone on an incline bench) with bodyweight or 1 kg plates.",
+            steps = listOf(
+                "Hinge smoothly at the hips with a flat back and thumbs pointing upward.",
+                "Lift both arms into a high Y above the head, pause one second, and lower with control.",
+                "Raise straight out to a wide T squeezing the shoulder blades together, then pull elbows into a crisp W.",
+                "Complete 8 slow Y-T-W cycles to stabilize the shoulder blade for smash deceleration.",
+            ),
+            coachingCue = "Keep the neck long and move from the shoulder blades rather than shrugging toward the ears.",
+        ),
+        Exercise(
+            id = "single-arm-band-row",
+            title = "Single-Arm Band Row",
+            category = ExerciseCategory.OFF_COURT,
+            focus = FocusArea.UPPER_BODY,
+            prescription = "3 x 12 / arm · 40 s rest",
+            setup = "Anchor a medium resistance band at chest height and step back into a balanced split stance.",
+            steps = listOf(
+                "Extend the working arm forward with the shoulder blade gliding cleanly without twisting the hips.",
+                "Pull the elbow smoothly back beside the ribs, squeezing the shoulder blade down and inward.",
+                "Hold the finish for one steady beat while keeping the torso square.",
+                "Return over two controlled seconds and complete both sides evenly.",
+            ),
+            coachingCue = "Lead the pull with the elbow and keep the chest still so the upper back does the work.",
+        ),
+        Exercise(
+            id = "half-kneeling-overhead-press",
+            title = "Half-Kneeling Overhead Press",
+            category = ExerciseCategory.OFF_COURT,
+            focus = FocusArea.UPPER_BODY,
+            prescription = "3 x 10 / arm · 45 s rest",
+            setup = "Kneel on a mat with one knee down and opposite foot flat; hold a dumbbell or landmine bar on the kneeling-leg side.",
+            steps = listOf(
+                "Brace the glute of the back leg and keep the ribcage stacked cleanly over the pelvis.",
+                "Press the weight smoothly upward and slightly forward into a tall overhead finish.",
+                "Pause briefly at the top with the bicep beside the ear and shoulder packed down.",
+                "Lower smoothly back to shoulder height over two seconds and switch sides.",
+            ),
+            coachingCue = "Keep the ribs tucked down as the arm extends overhead - never arch the lower back for height.",
+        ),
+        Exercise(
+            id = "plyo-incline-pushups",
+            title = "Explosive Incline Push-Ups",
+            category = ExerciseCategory.OFF_COURT,
+            focus = FocusArea.UPPER_BODY,
+            prescription = "4 x 6 explosive reps · 45 s rest",
+            setup = "Place hands shoulder-width apart on a sturdy bench, low box, or clean floor in a rigid plank line.",
+            steps = listOf(
+                "Lower the chest smoothly toward the edge with elbows angled roughly 45 degrees from the ribs.",
+                "Drive away explosively so the hands lift lightly off the support for a fraction of a second.",
+                "Catch softly with slightly bent elbows and immediate core bracing.",
+                "Keep sets short at 6 crisp reps so every push stays fast and snappy.",
+            ),
+            coachingCue = "Keep head, hips, and heels locked in one straight line through takeoff and landing.",
+        ),
+        Exercise(
+            id = "pallof-press-anti-rotation",
+            title = "Pallof Press Anti-Rotation",
+            category = ExerciseCategory.OFF_COURT,
+            focus = FocusArea.CORE,
+            prescription = "3 x 10 / side · 35 s rest",
+            setup = "Anchor a medium resistance band at sternum height and stand side-on in an athletic quarter-squat.",
+            steps = listOf(
+                "Hold the band handle tightly at the centre of the chest with steady sideways tension.",
+                "Press both hands straight forward until the arms lock out cleanly in front of the sternum.",
+                "Resist the band's pull for two full seconds without letting the shoulders or hips rotate.",
+                "Draw hands back to the chest under control and switch sides after 10 reps.",
+            ),
+            coachingCue = "Stay rooted through both feet and keep the hands moving strictly straight out from the breastbone.",
+        ),
+        Exercise(
+            id = "side-plank-reach-through",
+            title = "Side Plank with Reach-Through",
+            category = ExerciseCategory.OFF_COURT,
+            focus = FocusArea.CORE,
+            prescription = "3 x 8 / side · 35 s rest",
+            setup = "Lie side-on on a gym mat propped on the lower forearm with feet stacked or staggered.",
+            steps = listOf(
+                "Lift the hips into a crisp straight-line side plank and extend the top arm straight toward the ceiling.",
+                "Rotate the upper torso smoothly to thread the top hand underneath the ribcage.",
+                "Unwind under control all the way back to the tall open reach without letting the bottom hip sag.",
+                "Finish 8 slow reps on each side to protect the lower back during arched overhead shots.",
+            ),
+            coachingCue = "Keep the hips pushed high throughout the twist so the obliques stay fully loaded.",
+        ),
+        Exercise(
+            id = "dead-bug-core-control",
+            title = "Dead Bug Mid-Air Core Control",
+            category = ExerciseCategory.OFF_COURT,
+            focus = FocusArea.CORE,
+            prescription = "3 x 12 alternating reps · 35 s rest",
+            setup = "Lie flat on a gym mat with arms pointing straight up and hips and knees bent to 90 degrees.",
+            steps = listOf(
+                "Press the lower back gently flat against the mat and exhale to set the ribcage.",
+                "Slowly extend one leg and the opposite arm straight out toward the floor without losing back contact.",
+                "Pause for one full beat just above the mat while keeping the stationary limb steady.",
+                "Return smoothly to centre and alternate sides with calm, controlled breathing.",
+            ),
+            coachingCue = "If the lower back lifts off the floor, shorten the leg reach and keep the ribs anchored down.",
+        ),
+        Exercise(
+            id = "quadruped-thoracic-rotation",
+            title = "Thread-the-Needle Thoracic Rotation",
+            category = ExerciseCategory.OFF_COURT,
+            focus = FocusArea.MOBILITY_PREHAB,
+            prescription = "2 x 8 / side (warm-up)",
+            setup = "Start on hands and knees on a gym mat with wrists under shoulders and knees under hips.",
+            steps = listOf(
+                "Slide one arm smoothly underneath the chest palm-up until the shoulder nears the mat.",
+                "Exhale and unwind upward, rotating the ribcage to reach that same arm high toward the ceiling.",
+                "Follow the moving hand with the eyes while keeping the hips square over the knees.",
+                "Move fluidly through 8 reps per side before court play to free up overhead shoulder rotation.",
+            ),
+            coachingCue = "Rotate cleanly through the mid-back while keeping the pelvis steady and level.",
+        ),
+        Exercise(
+            id = "walking-lunge-thoracic-twist",
+            title = "Walking Lunge with Thoracic Twist",
+            category = ExerciseCategory.OFF_COURT,
+            focus = FocusArea.MOBILITY_PREHAB,
+            prescription = "2 x 8 / side (warm-up)",
+            setup = "Clear 8-metre lane along the sideline or gym floor as part of a pre-court warm-up.",
+            steps = listOf(
+                "Step forward into a long lunge keeping the back knee straight and hip flexor lengthened.",
+                "Plant the opposite hand lightly beside the front foot for balance.",
+                "Open the inside arm smoothly toward the ceiling, rotating the chest toward the front knee.",
+                "Step smoothly forward into the next lunge and alternate sides.",
+            ),
+            coachingCue = "Keep the front heel planted flat and breathe out smoothly at the top of each rotation.",
+        ),
+        Exercise(
+            id = "wall-shuttle-drive-rally",
+            title = "Racket-to-Wall Shuttle Rally",
+            category = ExerciseCategory.OFF_COURT,
+            focus = FocusArea.REFLEX_AGILITY,
+            prescription = "4 x 45 s · 20 s rest",
+            setup = "Stand 1.5 to 2 metres from a flat solid wall holding a badminton racket and a fast shuttle.",
+            steps = listOf(
+                "Keep the racket head up at chest height in a ready split stance facing the wall.",
+                "Strike continuous crisp flat drives against the wall alternating between forehand and backhand faces.",
+                "Use short forearm and finger taps with almost no backswing so the racket resets instantly.",
+                "Step half a pace closer on sets three and four to challenge reflex speed.",
+            ),
+            coachingCue = "Keep eyes locked onto the cork right through contact and rebound the racket back to centre immediately.",
+        ),
+        Exercise(
+            id = "tennis-ball-wall-reaction",
+            title = "Tennis-Ball Wall Toss & Drop",
+            category = ExerciseCategory.OFF_COURT,
+            focus = FocusArea.REFLEX_AGILITY,
+            prescription = "3 x 45 s · 20 s rest",
+            setup = "Stand 1.5 to 2 metres from a flat wall with one or two tennis balls.",
+            steps = listOf(
+                "Hold a low athletic ready stance and toss the ball briskly off the wall with the right hand, catching cleanly with the left.",
+                "Return immediately with the left hand and catch with the right, keeping catches out in front of the body.",
+                "Add quick shoulder-height drop-and-catch bursts where the hand snaps down to grab the ball before the second bounce.",
+                "Keep posture light on the forefeet as if anticipating a fast net drive.",
+            ),
+            coachingCue = "Track the ball all the way into the fingertips - avoid looking away before securing the catch.",
+        ),
+        Exercise(
+            id = "cone-box-alactic-intervals",
+            title = "4-Corner Cone & T-Drill Intervals",
+            category = ExerciseCategory.OFF_COURT,
+            focus = FocusArea.ENDURANCE,
+            prescription = "8 x 8 s max burst · 40 s rest",
+            setup = "Place 4 cones in a 4 x 4 m square (or T shape) on a flat non-slip floor or outdoor turf.",
+            steps = listOf(
+                "Sprint forward from the base cone, drop the hips to brake sharply, and shuffle sideways to the corner cone.",
+                "Plant strongly on the outside leg without crossing the feet and drive back diagonally across the box.",
+                "Maintain maximum crisp movement speed for 8 seconds (mimicking a high-tempo rally burst).",
+                "Walk calmly for 40 full seconds between reps so every interval trains explosive badminton alactic speed.",
+            ),
+            coachingCue = "Drop the hips early before each cone so the cut is sharp and balanced rather than drifting wide.",
         ),
     )
 
@@ -605,7 +950,15 @@ object ExerciseCatalog {
             it.category == ExerciseCategory.ON_COURT &&
                 (it.focus == FocusArea.NET_PLAY || it.focus == FocusArea.SERVE_RETURN)
         }
-        DrillLibraryFilter.OFF_COURT -> all.filter { it.category == ExerciseCategory.OFF_COURT }
+        DrillLibraryFilter.STRENGTH_POWER -> all.filter {
+            it.category == ExerciseCategory.OFF_COURT && it.focus in STRENGTH_POWER_FOCUSES
+        }
+        DrillLibraryFilter.MOBILITY_PREHAB -> all.filter {
+            it.category == ExerciseCategory.OFF_COURT && it.focus == FocusArea.MOBILITY_PREHAB
+        }
+        DrillLibraryFilter.REFLEX_CONDITIONING -> all.filter {
+            it.category == ExerciseCategory.OFF_COURT && it.focus in REFLEX_CONDITIONING_FOCUSES
+        }
     }
 
     private val FOOTWORK_FOCUSES = setOf(
@@ -614,5 +967,18 @@ object ExerciseCatalog {
         FocusArea.LATERAL_BALANCE,
         FocusArea.ENDURANCE,
         FocusArea.EXPLOSIVE_SPEED,
+    )
+
+    private val STRENGTH_POWER_FOCUSES = setOf(
+        FocusArea.STRENGTH_MOBILITY,
+        FocusArea.WRIST_GRIP,
+        FocusArea.UPPER_BODY,
+        FocusArea.CORE,
+    )
+
+    private val REFLEX_CONDITIONING_FOCUSES = setOf(
+        FocusArea.ENDURANCE,
+        FocusArea.EXPLOSIVE_SPEED,
+        FocusArea.REFLEX_AGILITY,
     )
 }
