@@ -112,4 +112,36 @@ final class ExercisesPanelTests: XCTestCase {
         XCTAssertEqual(farReport.suggestions.first?.finding, .lateralBias)
         XCTAssertTrue(try XCTUnwrap(farReport.suggestions.first?.evidence).contains("backhand side"))
     }
+
+    func testEvaluateReportsBySidePrecomputesAllSidesWithRespectiveArms() throws {
+        let windows = (0..<4).map { r in
+            RallyWindow(index: Int32(r + 1), startSeconds: Double(r) * 3.0, endSeconds: Double(r) * 3.0 + 2.0)
+        }
+        let nearSamples = (0..<4).flatMap { r in
+            (0..<40).map { f in PlayerSample(frame: Int32(r * 60 + f), courtPosition: Point(x: 3.65, y: 10.0)) }
+        }
+        let farSamples = (0..<4).flatMap { r in
+            (0..<40).map { f in PlayerSample(frame: Int32(r * 60 + f), courtPosition: Point(x: 2.45, y: 3.4)) }
+        }
+        let source = HeatmapSource(
+            tracks: [
+                PlayerTrackStore.SideTrack(
+                    side: .near,
+                    track: PlayerTrack(samples: nearSamples, framesWithPose: Int32(nearSamples.count), rejections: [:])
+                ),
+                PlayerTrackStore.SideTrack(
+                    side: .far,
+                    track: PlayerTrack(samples: farSamples, framesWithPose: Int32(farSamples.count), rejections: [:])
+                ),
+            ],
+            fps: 20.0
+        )
+        let names = CourtSideNames(near: "Marco", far: "Jip", nearArm: .right, farArm: .left)
+
+        let reports = evaluateReportsBySide(source: source, windows: windows, sideNames: names)
+
+        XCTAssertEqual(Set(reports.keys), Set([CourtSide.near, CourtSide.far]))
+        XCTAssertTrue(try XCTUnwrap(reports[.near]?.suggestions.first?.evidence).contains("forehand side"))
+        XCTAssertTrue(try XCTUnwrap(reports[.far]?.suggestions.first?.evidence).contains("backhand side"))
+    }
 }

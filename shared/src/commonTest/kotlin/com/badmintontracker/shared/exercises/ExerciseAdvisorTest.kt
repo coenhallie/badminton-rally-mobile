@@ -288,4 +288,19 @@ class ExerciseAdvisorTest {
         val badFps = adviseExercisesForTrack(track, 0.0, windows, CourtSide.NEAR, null)
         badFps.status shouldBe ExerciseReportStatus.INSUFFICIENT_DATA
     }
+
+    @Test
+    fun coverage_just_below_gate_never_prints_fifty_percent_contradiction() {
+        val borderline = adviseExercises(balancedProfile(countedRallies = 6, rallyCoverage = 0.496), null)
+        borderline.status shouldBe ExerciseReportStatus.INSUFFICIENT_DATA
+        borderline.summary.shouldNotBeNull().coveragePercent shouldBe 49
+        borderline.message.shouldNotBeNull().shouldContain("49% coverage")
+    }
+
+    @Test
+    fun zone_percentages_always_sum_to_hundred_even_on_double_half_rounding() {
+        val report = adviseExercises(balancedProfile(front = 0.505, mid = 0.0, rear = 0.495), null)
+        val summary = report.summary.shouldNotBeNull()
+        (summary.frontPercent + summary.midPercent + summary.rearPercent) shouldBe 100
+    }
 }

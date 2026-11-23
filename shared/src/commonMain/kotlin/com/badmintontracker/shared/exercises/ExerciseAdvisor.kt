@@ -44,8 +44,8 @@ private data class TriggeredFinding(
  * returns an [ExerciseReport] with quality gating, ranking, and deduplication.
  */
 fun adviseExercises(profile: MovementProfile, racketArm: RacketArm?): ExerciseReport {
-    val summary = if (profile.countedRallies > 0) buildSummary(profile) else null
-    val coveragePercent = (profile.rallyCoverage * 100.0).roundToInt()
+    val coveragePercent = displayCoveragePercent(profile.rallyCoverage)
+    val summary = if (profile.countedRallies > 0) buildSummary(profile, coveragePercent) else null
 
     if (profile.countedRallies < ExerciseThresholds.MIN_RALLIES ||
         profile.rallyCoverage < ExerciseThresholds.MIN_COVERAGE
@@ -259,18 +259,45 @@ fun adviseExercisesForTrack(
     return adviseExercises(profile, racketArm)
 }
 
-private fun buildSummary(profile: MovementProfile): MovementSummary {
-    val frontPct = (profile.frontShare * 100.0).roundToInt()
-    val rearPct = (profile.rearShare * 100.0).roundToInt()
-    val midPct = (100 - frontPct - rearPct).coerceAtLeast(0)
+private fun displayCoveragePercent(coverage: Double): Int {
+    val rounded = (coverage * 100.0).roundToInt().coerceIn(0, 100)
+    val minPct = (ExerciseThresholds.MIN_COVERAGE * 100.0).roundToInt()
+    return if (coverage < ExerciseThresholds.MIN_COVERAGE) minOf(rounded, minPct - 1) else rounded
+}
+
+private fun buildSummary(profile: MovementProfile, coveragePercent: Int): MovementSummary {
+    val (frontPct, midPct, rearPct) = roundedZonePercents(
+        profile.frontShare,
+        profile.midShare,
+        profile.rearShare,
+    )
     return MovementSummary(
         countedRallies = profile.countedRallies,
-        coveragePercent = (profile.rallyCoverage * 100.0).roundToInt(),
+        coveragePercent = coveragePercent,
         peakSpeedText = profile.medianPeakSpeedMps?.let(::oneDecimal),
         frontPercent = frontPct,
         midPercent = midPct,
         rearPercent = rearPct,
     )
+}
+
+/**
+ * Largest-remainder rounding of the three zone shares so displayed percentages
+ * always sum to 100 (or 0 when all shares are zero) without double half-up drift.
+ */
+private fun roundedZonePercents(front: Double, mid: Double, rear: Double): Triple<Int, Int, Int> {
+    val total = front + mid + rear
+    if (total <= 0.0) return Triple(0, 0, 0)
+    val scaled = doubleArrayOf(front / total * 100.0, mid / total * 100.0, rear / total * 100.0)
+    val floors = IntArray(3) { scaled[it].toInt().coerceIn(0, 100) }
+    var remainder = 100 - (floors[0] + floors[1] + floors[2])
+    val order = listOf(0, 1, 2).sortedByDescending { scaled[it] - floors[it] }
+    for (idx in order) {
+        if (remainder <= 0) break
+        floors[idx] += 1
+        remainder -= 1
+    }
+    return Triple(floors[0], floors[1], floors[2])
 }
 
 private fun lateralEvidence(

@@ -9,10 +9,12 @@ struct ExercisesPanel: View {
     let windows: [RallyWindow]
     let sideNames: CourtSideNames?
 
-    @State private var report: ExerciseReport? = nil
+    /// Precomputed reports for every tracked side so switching `SideToggle` is
+    /// instantaneous and never races or shows the previous side's exercises.
+    @State private var reportsBySide: [CourtSide: ExerciseReport] = [:]
     @State private var resolved = false
     @State private var side: CourtSide = .near
-    @State private var expandedIds: Set<String> = []
+    @State private var expandedBySide: [CourtSide: Set<String>] = [:]
 
     var body: some View {
         Group {
@@ -33,26 +35,26 @@ struct ExercisesPanel: View {
             }
         }
         .task(id: inputs) {
-            let chosen = shown?.track
-            let rate = source?.fps ?? 0
+            resolved = false
+            reportsBySide = [:]
+            expandedBySide = [:]
+            let currentSource = source
             let rallies = windows
-            let currentSide = shownSide
-            let arm = shownArm
+            let names = sideNames
             let measured = await Task.detached(priority: .userInitiated) {
-                ExercisesPanel.evaluate(
-                    track: chosen,
-                    fps: rate,
-                    windows: rallies,
-                    side: currentSide,
-                    racketArm: arm
-                )
+                evaluateReportsBySide(source: currentSource, windows: rallies, sideNames: names)
             }.value
-            report = measured
-            if let firstId = measured?.suggestions.first?.exercise.id {
-                expandedIds = [firstId]
-            } else {
-                expandedIds = []
+            guard !Task.isCancelled else { return }
+            reportsBySide = measured
+            var initialExpanded: [CourtSide: Set<String>] = [:]
+            for (courtSide, sideReport) in measured {
+                if let firstId = sideReport.suggestions.first?.exercise.id {
+                    initialExpanded[courtSide] = [firstId]
+                } else {
+                    initialExpanded[courtSide] = []
+                }
             }
+            expandedBySide = initialExpanded
             resolved = true
         }
     }
@@ -62,7 +64,7 @@ struct ExercisesPanel: View {
         Group {
             if let message {
                 PanelMessage(text: message)
-            } else if let report {
+            } else if let report = currentReport {
                 content(report)
             } else {
                 Color.clear.frame(height: 0)
@@ -80,6 +82,8 @@ struct ExercisesPanel: View {
             case .insufficientData, .balanced:
                 PanelMessage(text: report.message ?? ExercisesCopy.shared.NO_COUNTED_RALLIES)
             case .suggestions:
+                let activeSide = shownSide
+                let expandedIds = expandedBySide[activeSide] ?? []
                 Shuttl.sectionLabel(ExercisesCopy.shared.SUGGESTIONS_HEADING)
                     .padding(.horizontal, ShuttlGutter.page)
                     .padding(.top, 20)
@@ -92,11 +96,13 @@ struct ExercisesPanel: View {
                             suggestion: suggestion,
                             expanded: expanded,
                             onToggle: {
+                                var next = expandedBySide[activeSide] ?? []
                                 if expanded {
-                                    expandedIds.remove(id)
+                                    next.remove(id)
                                 } else {
-                                    expandedIds.insert(id)
+                                    next.insert(id)
                                 }
+                                expandedBySide[activeSide] = next
                             }
                         )
                     }
@@ -153,55 +159,62 @@ struct ExercisesPanel: View {
         exercisesMessage(
             track: shown?.track,
             windows: windows,
-            report: resolved ? report : nil,
+            report: resolved ? currentReport : nil,
             measured: resolved
         )
     }
 
+    private var currentReport: ExerciseReport? {
+        shown.flatMap { reportsBySide[$0.side] }
+    }
+
     private struct Inputs: Equatable {
-        let samples: Int
-        let side: CourtSide
+        let sideSamples: [Int]
         let fps: Double
         let bounds: [Double]
-        let racketArm: RacketArm?
+        let nearArm: RacketArm?
+        let farArm: RacketArm?
     }
 
     private var shownSide: CourtSide { shown?.side ?? .near }
-
-    private var shownArm: RacketArm? {
-        CourtSideNamesKt.profileArm(side: shownSide, names: sideNames)
-    }
 
     private var shown: PlayerTrackStore.SideTrack? {
         source.map { $0.tracks.first { $0.side == side } ?? $0.tracks[0] }
     }
 
     private var inputs: Inputs {
-        Inputs(
-            samples: shown?.track.samples.count ?? 0,
-            side: shownSide,
+        let counts = source?.tracks.flatMap {
+            [$0.side == .near ? 0 : 1, $0.track.samples.count]
+        } ?? []
+        return Inputs(
+            sideSamples: counts,
             fps: source?.fps ?? 0,
             bounds: windows.flatMap { [Double($0.index), $0.startSeconds, $0.endSeconds] },
-            racketArm: shownArm
+            nearArm: sideNames?.nearArm,
+            farArm: sideNames?.farArm
         )
     }
+}
 
-    private nonisolated static func evaluate(
-        track: PlayerTrack?,
-        fps: Double,
-        windows: [RallyWindow],
-        side: CourtSide,
-        racketArm: RacketArm?
-    ) -> ExerciseReport? {
-        guard let track else { return nil }
-        return ExerciseAdvisorKt.adviseExercisesForTrack(
-            track: track,
-            fps: fps,
+/// Evaluates every side in `source` off the main actor with its own profile arm,
+/// mirroring androidApp's `produceState` precomputation in `ExercisesPanel.kt`.
+nonisolated func evaluateReportsBySide(
+    source: HeatmapSource?,
+    windows: [RallyWindow],
+    sideNames: CourtSideNames?
+) -> [CourtSide: ExerciseReport] {
+    guard let source else { return [:] }
+    var out: [CourtSide: ExerciseReport] = [:]
+    for sideTrack in source.tracks {
+        out[sideTrack.side] = ExerciseAdvisorKt.adviseExercisesForTrack(
+            track: sideTrack.track,
+            fps: source.fps,
             windows: windows,
-            side: side,
-            racketArm: racketArm
+            side: sideTrack.side,
+            racketArm: CourtSideNamesKt.profileArm(side: sideTrack.side, names: sideNames)
         )
     }
+    return out
 }
 
 /// Why the Drills panel has nothing to render yet, or nil when `report` is ready
@@ -243,6 +256,7 @@ private struct ExerciseCard: View {
                         Text(exercise.prescription)
                             .shuttlType(ShuttlType.bodySmall)
                             .foregroundStyle(Shuttl.textTertiary)
+                            .multilineTextAlignment(.trailing)
                         Image(systemName: expanded ? "chevron.up" : "chevron.down")
                             .imageScale(.small)
                             .foregroundStyle(Shuttl.textSecondary)
