@@ -190,4 +190,51 @@ final class ExercisesPanelTests: XCTestCase {
             XCTAssertEqual(ExerciseVisualsKt.visualFor(exerciseId: exercise.id).exerciseId, exercise.id)
         }
     }
+
+    func testDrillSessionAndProgressBridgeFromSwift() {
+        let timed = ExerciseCatalog.shared.byId(id: "base-mark-6-corner-shadow")
+        var session = DrillSessionKt.createDrillSession(exercise: timed)
+        XCTAssertEqual(session.phase, .setup)
+        session = DrillSessionKt.adjustPlanSets(state: session, delta: -2)
+        XCTAssertEqual(session.plan.sets, 2)
+
+        let started = DrillSessionKt.startDrillSession(state: session)
+        XCTAssertEqual(started.state.phase, .getReady)
+        let working = DrillSessionKt.skipGetReady(state: started.state)
+        XCTAssertEqual(working.state.phase, .work)
+        let resting = DrillSessionKt.completeCurrentSet(state: working.state)
+        XCTAssertEqual(resting.state.phase, .rest)
+        let extended = DrillSessionKt.extendRest(state: resting.state, extraSeconds: 15)
+        XCTAssertEqual(extended.remainingSeconds, resting.state.remainingSeconds + 15)
+        let nextSet = DrillSessionKt.skipRest(state: extended)
+        XCTAssertEqual(nextSet.state.currentSet, 2)
+        let done = DrillSessionKt.completeCurrentSet(state: nextSet.state)
+        XCTAssertEqual(done.state.phase, .summary)
+        XCTAssertEqual(done.cue, .sessionComplete)
+
+        let nowMs: Int64 = 1_750_000_000_000
+        let sampleLog = DrillSessionLog(
+            id: "log-1",
+            exerciseId: timed.id,
+            playerId: "player-1",
+            matchId: nil,
+            completedAtEpochMs: nowMs,
+            setsCompleted: 2,
+            setsTarget: 2,
+            durationSeconds: 180,
+            effort: .solid,
+            note: "Sharp base"
+        )
+        let summary = DrillProgressRepositoryKt.progressForExercise(
+            logs: [sampleLog],
+            exerciseId: timed.id,
+            nowEpochMs: nowMs
+        )
+        XCTAssertEqual(summary.totalSessions, 1)
+        XCTAssertTrue(summary.completedToday)
+        XCTAssertEqual(
+            DrillProgressRepositoryKt.exerciseProgressBadge(summary: summary, nowEpochMs: nowMs),
+            "Done today"
+        )
+    }
 }

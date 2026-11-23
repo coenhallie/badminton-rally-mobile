@@ -132,6 +132,7 @@
 		A0ADFDCD05D66329852A507E /* BackgroundWorkModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D2961711BF7990332B0F37C /* BackgroundWorkModel.swift */; };
 		A0D4B364A2C644E52BE9AD50 /* CourtMarkingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82A81ED0D3F2E7DDEE4F2A41 /* CourtMarkingView.swift */; };
 		A2D4DCB5726EFCF40DF814AB /* Archivo-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 99C07A121F12C581870E83CC /* Archivo-Bold.ttf */; };
+		A3AD8CD5417F1DCD5D3CE395 /* DrillSessionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EA3AEEE9185F11C91C596E8 /* DrillSessionSheet.swift */; };
 		A3E7CE695279E31B5DE51490 /* ClipDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89FA84FB777601A064F7BD1C /* ClipDetailView.swift */; };
 		A741B7BC5D36DFC639AEA9FE /* RunToastUpdateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D250166604400690A47635F2 /* RunToastUpdateTests.swift */; };
 		A7F76CE03E6A6D6ECA3A84B0 /* LabelsLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2773B3FC4873D44B5C253B68 /* LabelsLogicTests.swift */; };
@@ -347,6 +348,7 @@
 		9B13CBB38AE526A3C355DE8B /* LabelsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabelsModel.swift; sourceTree = "<group>"; };
 		9D624F5633DF1C622984C898 /* CourtHeatmapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CourtHeatmapView.swift; sourceTree = "<group>"; };
 		9DBB4CC1CACCD0256476D9DE /* ClipSort.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipSort.swift; sourceTree = "<group>"; };
+		9EA3AEEE9185F11C91C596E8 /* DrillSessionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrillSessionSheet.swift; sourceTree = "<group>"; };
 		9F5CEB3315707485860D9767 /* ExercisesPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExercisesPanel.swift; sourceTree = "<group>"; };
 		A02D8B89ABF94AD30304E3A5 /* FrameStepMathTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameStepMathTests.swift; sourceTree = "<group>"; };
 		A5288512ECBD5A695FD1E4E0 /* HomeRouteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeRouteTests.swift; sourceTree = "<group>"; };
@@ -724,6 +726,7 @@
 				FCC53A8C7A4C1183BC9582CB /* BasePositionPanel.swift */,
 				7102866CDAE872422ABCAFA0 /* ClipCutter.swift */,
 				95B96E99BED4A10A8FDA5011 /* DetectorRunner.swift */,
+				9EA3AEEE9185F11C91C596E8 /* DrillSessionSheet.swift */,
 				9F5CEB3315707485860D9767 /* ExercisesPanel.swift */,
 				FFC337129A45F15C5520B764 /* ExerciseVisualView.swift */,
 				7FDAAA15B0E6D9178584AAA9 /* FramePreprocessor.swift */,
@@ -1004,6 +1007,7 @@
 				117445DC856780CB80574F1E /* DetectorRunner.swift in Sources */,
 				DF09B618121F7D7925557AFB /* DeviceRalliesSection.swift in Sources */,
 				463AA1D446BAF218F9A84D50 /* DrawerList.swift in Sources */,
+				A3AD8CD5417F1DCD5D3CE395 /* DrillSessionSheet.swift in Sources */,
 				8BEBF4BB83AD47A157AF3E48 /* EditMatchDetailsSheet.swift in Sources */,
 				EE7A9B1A1CC005EC4BCF015B /* ErrorBanner.swift in Sources */,
 				98FF7F504D9033AC00152DAC /* ExerciseVisualView.swift in Sources */,

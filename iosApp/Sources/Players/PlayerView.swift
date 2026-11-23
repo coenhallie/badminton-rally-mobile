@@ -64,6 +64,7 @@ struct PlayerView: View {
 
     private static let profileTab = 0
     private static let matchesTab = 1
+    private static let drillsTab = 2
 
     /// Whether the player this page is for has gone: deleted here (the shared
     /// delete drops them from the list once the server has), or on another
@@ -96,7 +97,7 @@ struct PlayerView: View {
             .shuttlNavigationBarBackground()
             .toolbar { toolbarContent(matchCount: Int(summary.matchCount)) }
             .overlay(alignment: .bottomTrailing) {
-                if player != nil {
+                if player != nil && tab != Self.drillsTab {
                     AddMatchButton(action: onAdd)
                         .padding(.trailing, 16)
                         .padding(.bottom, 16)
@@ -154,7 +155,7 @@ struct PlayerView: View {
                 )
                 .padding(.horizontal, ShuttlGutter.page)
                 ShuttlPillTabs(
-                    labels: [PlayersCopy.shared.TAB_PROFILE, PlayersCopy.shared.TAB_MATCHES],
+                    labels: [PlayersCopy.shared.TAB_PROFILE, PlayersCopy.shared.TAB_MATCHES, PlayersCopy.shared.TAB_DRILLS],
                     selectedIndex: tab,
                     onSelect: { tab = $0 },
                     accessibilityLabel: PlayersCopy.shared.PAGE_SECTIONS,
@@ -162,13 +163,8 @@ struct PlayerView: View {
                 )
                 .padding(.horizontal, ShuttlGutter.page)
                 .padding(.top, 8)
-                // Both tabs stay mounted so `MatchesList` keeps its scroll
-                // position across tab switches. The inactive tab is hidden from
-                // hit testing and from the accessibility tree so VoiceOver
-                // never reads rows under Profile (or tiles under Matches).
-                // `MatchesList` runs `listModel.start()` for the page's
-                // lifetime, so Profile reads the same live match list without
-                // spawning a duplicate set of observation loops.
+                // Profile and Matches stay mounted so `MatchesList` keeps its scroll
+                // position across tab switches; Drills mounts when active.
                 ZStack {
                     ProfileTab(player: shown, summary: summary)
                         .opacity(tab == Self.profileTab ? 1 : 0)
@@ -193,6 +189,14 @@ struct PlayerView: View {
                     .zIndex(tab == Self.matchesTab ? 1 : 0)
                     .allowsHitTesting(tab == Self.matchesTab)
                     .accessibilityHidden(tab != Self.matchesTab)
+                    if tab == Self.drillsTab {
+                        PlayerDrillsTab(
+                            playerId: playerId,
+                            racketArm: shown.racketArm,
+                            drillProgress: rally.drillProgress
+                        )
+                        .zIndex(2)
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }

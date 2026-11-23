@@ -132,7 +132,13 @@ struct AnalysisSection: View {
                 case .base:
                     BasePositionPanel(source: source, windows: windows, sideNames: sideNames)
                 case .drills:
-                    ExercisesPanel(source: source, windows: windows, sideNames: sideNames)
+                    ExercisesPanel(
+                        source: source,
+                        windows: windows,
+                        sideNames: sideNames,
+                        drillProgress: rally.drillProgress,
+                        matchId: analysisId
+                    )
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
