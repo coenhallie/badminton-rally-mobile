@@ -5,7 +5,7 @@ object MatchPageCopy {
     /** The section toggle row, to a screen reader. */
     const val SECTIONS = "Match sections"
 
-    /** The Analysis section's panel row (Heatmap | Base | Skeleton), to a screen reader. */
+    /** The Analysis section's panel row (Heatmap | Base | Skeleton | Drills), to a screen reader. */
     const val ANALYSIS_PANELS = "Analysis panels"
 
     /**

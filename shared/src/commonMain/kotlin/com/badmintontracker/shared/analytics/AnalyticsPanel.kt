@@ -5,6 +5,7 @@ enum class AnalyticsPanel(val label: String) {
     Heatmap("Heatmap"),
     Base("Base"),
     Skeleton("Skeleton"),
+    Drills("Drills"),
 }
 
 /**
@@ -36,4 +37,5 @@ fun availablePanels(
     add(AnalyticsPanel.Heatmap)
     if (hasTrack && hasBoundedClips) add(AnalyticsPanel.Base)
     if (hasSkeleton && hasVideo) add(AnalyticsPanel.Skeleton)
+    if (hasTrack && hasBoundedClips) add(AnalyticsPanel.Drills)
 }

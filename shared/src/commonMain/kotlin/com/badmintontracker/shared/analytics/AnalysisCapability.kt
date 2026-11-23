@@ -51,6 +51,11 @@ val panelCapabilities: List<PanelCapability> = listOf(
         cloud = "Both players",
         device = "The near player",
     ),
+    PanelCapability(
+        panel = AnalyticsPanel.Drills,
+        cloud = "Both players",
+        device = "The near player",
+    ),
 )
 
 /**

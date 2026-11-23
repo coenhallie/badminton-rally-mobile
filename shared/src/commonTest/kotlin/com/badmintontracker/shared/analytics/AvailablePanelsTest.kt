@@ -12,21 +12,21 @@ class AvailablePanelsTest {
     }
 
     @Test
-    fun base_needs_both_a_track_and_rally_windows_with_bounds() {
+    fun base_and_drills_need_both_a_track_and_rally_windows_with_bounds() {
         // Clips recovered from disk without their index have zero bounds, and a
-        // rallies-only run has no track: neither can put a dot on the court.
+        // rallies-only run has no track: neither can measure per-rally movement.
         availablePanels(hasTrack = true, hasBoundedClips = false, hasSkeleton = false, hasVideo = true) shouldBe
             listOf(AnalyticsPanel.Heatmap)
         availablePanels(hasTrack = false, hasBoundedClips = true, hasSkeleton = false, hasVideo = true) shouldBe
             listOf(AnalyticsPanel.Heatmap)
         availablePanels(hasTrack = true, hasBoundedClips = true, hasSkeleton = false, hasVideo = true) shouldBe
-            listOf(AnalyticsPanel.Heatmap, AnalyticsPanel.Base)
+            listOf(AnalyticsPanel.Heatmap, AnalyticsPanel.Base, AnalyticsPanel.Drills)
     }
 
     @Test
-    fun all_three_keep_the_order_heatmap_base_skeleton() {
+    fun all_four_keep_the_order_heatmap_base_skeleton_drills() {
         availablePanels(hasTrack = true, hasBoundedClips = true, hasSkeleton = true, hasVideo = true) shouldBe
-            listOf(AnalyticsPanel.Heatmap, AnalyticsPanel.Base, AnalyticsPanel.Skeleton)
+            listOf(AnalyticsPanel.Heatmap, AnalyticsPanel.Base, AnalyticsPanel.Skeleton, AnalyticsPanel.Drills)
     }
 
     @Test
@@ -38,25 +38,24 @@ class AvailablePanelsTest {
     @Test
     fun the_skeleton_needs_a_video_to_draw_over() {
         // A cloud-analysed match reaches a phone that never held the file: it
-        // was uploaded from another of this coach's phones. The heatmap is a
-        // court and a track and needs neither the video nor a player; the
-        // skeleton is an overlay, and offering a tab that can only ever say
-        // "no video" is worse than not offering it.
+        // was uploaded from another of this coach's phones. The heatmap, base,
+        // and drills read only the stored track and rally windows; the skeleton
+        // overlays playback.
         availablePanels(hasTrack = true, hasBoundedClips = true, hasSkeleton = true, hasVideo = false) shouldBe
-            listOf(AnalyticsPanel.Heatmap, AnalyticsPanel.Base)
+            listOf(AnalyticsPanel.Heatmap, AnalyticsPanel.Base, AnalyticsPanel.Drills)
     }
 
     @Test
     fun with_a_video_every_panel_with_content_is_offered() {
         availablePanels(hasTrack = true, hasBoundedClips = true, hasSkeleton = true, hasVideo = true) shouldBe
-            listOf(AnalyticsPanel.Heatmap, AnalyticsPanel.Base, AnalyticsPanel.Skeleton)
+            listOf(AnalyticsPanel.Heatmap, AnalyticsPanel.Base, AnalyticsPanel.Skeleton, AnalyticsPanel.Drills)
     }
 
     @Test
-    fun the_base_position_does_not_need_a_video() {
-        // It is measured from the track and the rally windows, both of which
-        // are stored. Nothing in it reads a frame.
+    fun drills_follows_the_same_inputs_as_base_and_needs_no_video() {
+        // Both are measured from the track and the rally windows, both of which
+        // are stored. Nothing in either reads a video frame.
         availablePanels(hasTrack = true, hasBoundedClips = true, hasSkeleton = false, hasVideo = false) shouldBe
-            listOf(AnalyticsPanel.Heatmap, AnalyticsPanel.Base)
+            listOf(AnalyticsPanel.Heatmap, AnalyticsPanel.Base, AnalyticsPanel.Drills)
     }
 }
