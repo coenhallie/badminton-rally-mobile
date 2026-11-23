@@ -116,7 +116,87 @@ data class CourtDrillPath(
     val shuttleStart: VisualPoint?,
     val shuttleEnd: VisualPoint?,
     val cycleSeconds: Double,
+) {
+    /**
+     * Static Bezier control points, segment lengths, and tessellated routes
+     * precomputed once per path instead of re-allocated on every 60-120 Hz frame.
+     */
+    internal val geometry: CachedCourtGeometry by lazy { buildCourtGeometry(waypoints) }
+}
+
+internal class CachedCourtGeometry(
+    val segmentLengths: FloatArray,
+    val totalLength: Float,
+    val controlPoints: Array<VisualPoint>,
+    val smoothRouteUnmirrored: List<VisualPoint>,
+    val smoothRouteMirrored: List<VisualPoint>,
 )
+
+private fun buildCourtGeometry(pts: List<VisualPoint>): CachedCourtGeometry {
+    if (pts.size <= 1) {
+        val single = pts.firstOrNull()
+        val unmirrored = if (single != null) listOf(single) else emptyList()
+        val mirrored = if (single != null) listOf(maybeMirrorCourt(single, mirrorX = true)) else emptyList()
+        return CachedCourtGeometry(
+            segmentLengths = FloatArray(0),
+            totalLength = 1e-3f,
+            controlPoints = emptyArray(),
+            smoothRouteUnmirrored = unmirrored,
+            smoothRouteMirrored = mirrored,
+        )
+    }
+
+    val segCount = pts.size - 1
+    val segmentLengths = FloatArray(segCount) { i ->
+        hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y).coerceAtLeast(0.45f)
+    }
+    var sum = 0f
+    for (len in segmentLengths) sum += len
+    val totalLength = sum.coerceAtLeast(1e-3f)
+
+    val maxX = Court.WIDTH_DOUBLES.toFloat() - 0.15f
+    val maxY = (Court.LENGTH / 2.0).toFloat() - 0.15f
+    val controlPoints = Array(segCount) { i ->
+        val a = pts[i]
+        val b = pts[i + 1]
+        val dx = b.x - a.x
+        val dy = b.y - a.y
+        val len = hypot(dx, dy)
+        if (len < 1e-3f) {
+            a
+        } else {
+            // Subtle lateral bow separates outbound and recovery paths cleanly like a coaching diagram.
+            val bow = min(0.32f, len * 0.085f)
+            val nx = -dy / len
+            val ny = dx / len
+            VisualPoint(
+                ((a.x + b.x) * 0.5f + nx * bow).coerceIn(0.15f, maxX),
+                ((a.y + b.y) * 0.5f + ny * bow).coerceIn(0.15f, maxY),
+            )
+        }
+    }
+
+    val steps = 6
+    val unmirrored = ArrayList<VisualPoint>(segCount * steps + 1)
+    for (i in 0 until segCount) {
+        val a = pts[i]
+        val ctrl = controlPoints[i]
+        val b = pts[i + 1]
+        for (s in 0 until steps) {
+            unmirrored += quadBezier(a, ctrl, b, s.toFloat() / steps.toFloat())
+        }
+    }
+    unmirrored += pts.last()
+    val mirrored = unmirrored.map { maybeMirrorCourt(it, mirrorX = true) }
+
+    return CachedCourtGeometry(
+        segmentLengths = segmentLengths,
+        totalLength = totalLength,
+        controlPoints = controlPoints,
+        smoothRouteUnmirrored = unmirrored,
+        smoothRouteMirrored = mirrored,
+    )
+}
 
 /** Rich frame state for the half-court diagram (curved path, trail, synced shuttle, pulses). */
 data class SampledCourtState(
@@ -185,6 +265,33 @@ fun samplePose(sequence: PoseSequence, phase01: Float, mirrorX: Boolean): Sample
 fun sampleCourtPoint(path: CourtDrillPath, phase01: Float, mirrorX: Boolean): VisualPoint =
     sampleCourtState(path, phase01, mirrorX).playerPosition
 
+/** Lightweight keyframe index and label lookup for Compose/Swift caption updates without full FK sampling. */
+data class PosePhaseMeta(
+    val keyframeIndex: Int,
+    val keyframeCount: Int,
+    val label: String,
+)
+
+/** Computes the active pose keyframe index and label at [phase01] in O(1) with zero bone math. */
+fun samplePoseMeta(sequence: PoseSequence, phase01: Float): PosePhaseMeta {
+    val frames = sequence.keyframes
+    require(frames.isNotEmpty()) { "PoseSequence must contain at least one keyframe" }
+    if (frames.size == 1) {
+        return PosePhaseMeta(keyframeIndex = 0, keyframeCount = 1, label = frames[0].label)
+    }
+    val wrapped = wrapPhase(phase01)
+    val scaled = wrapped * frames.size
+    val idx = floor(scaled).toInt().coerceIn(0, frames.size - 1)
+    val nextIdx = (idx + 1) % frames.size
+    val localT = scaled - idx
+    val labelIdx = if (localT < 0.70f) idx else nextIdx
+    return PosePhaseMeta(
+        keyframeIndex = labelIdx,
+        keyframeCount = frames.size,
+        label = frames[labelIdx].label,
+    )
+}
+
 /**
  * Samples the full synchronized half-court frame: distance-weighted curved player
  * movement, fading motion trail, live shuttle feed, and base/corner arrival pulses.
@@ -194,6 +301,7 @@ fun sampleCourtState(path: CourtDrillPath, phase01: Float, mirrorX: Boolean): Sa
     require(pts.isNotEmpty()) { "CourtDrillPath must contain at least one waypoint" }
     val wrapped = wrapPhase(phase01)
     val baseRaw = path.baseMarker
+    val geom = path.geometry
 
     if (pts.size == 1) {
         val single = maybeMirrorCourt(pts[0], mirrorX)
@@ -204,35 +312,16 @@ fun sampleCourtState(path: CourtDrillPath, phase01: Float, mirrorX: Boolean): Sa
             basePulse01 = 0f,
             cornerPulsePoint = null,
             cornerPulse01 = 0f,
-            smoothRoute = listOf(single),
+            smoothRoute = if (mirrorX) geom.smoothRouteMirrored else geom.smoothRouteUnmirrored,
         )
     }
 
-    val segmentLengths = FloatArray(pts.size - 1) { i ->
-        hypot(
-            pts[i + 1].x - pts[i].x,
-            pts[i + 1].y - pts[i].y,
-        ).coerceAtLeast(0.45f)
-    }
-    val totalLength = segmentLengths.sum().coerceAtLeast(1e-3f)
+    val segmentLengths = geom.segmentLengths
+    val totalLength = geom.totalLength
+    val controlPoints = geom.controlPoints
 
-    fun evalCurvedSegment(segIdx: Int, localT: Float): VisualPoint {
-        val a = pts[segIdx]
-        val b = pts[segIdx + 1]
-        val dx = b.x - a.x
-        val dy = b.y - a.y
-        val len = hypot(dx, dy)
-        if (len < 1e-3f) return a
-        // Subtle lateral bow separates outbound and recovery paths cleanly like a coaching diagram.
-        val bow = min(0.32f, len * 0.085f)
-        val nx = -dy / len
-        val ny = dx / len
-        val ctrl = VisualPoint(
-            ((a.x + b.x) * 0.5f + nx * bow).coerceIn(0.15f, Court.WIDTH_DOUBLES.toFloat() - 0.15f),
-            ((a.y + b.y) * 0.5f + ny * bow).coerceIn(0.15f, (Court.LENGTH / 2.0).toFloat() - 0.15f),
-        )
-        return quadBezier(a, ctrl, b, localT)
-    }
+    fun evalCurvedSegment(segIdx: Int, localT: Float): VisualPoint =
+        quadBezier(pts[segIdx], controlPoints[segIdx], pts[segIdx + 1], localT)
 
     fun pointAtPhase(p01: Float): Triple<VisualPoint, Int, Float> {
         val targetDist = wrapPhase(p01) * totalLength
@@ -261,18 +350,8 @@ fun sampleCourtState(path: CourtDrillPath, phase01: Float, mirrorX: Boolean): Sa
     val trail = ArrayList<VisualPoint>(trailSteps)
     for (k in trailSteps downTo 1) {
         val (tp, _, _) = pointAtPhase(wrapped - k * 0.011f)
-        trail += tp
+        trail += maybeMirrorCourt(tp, mirrorX)
     }
-
-    // Smooth curved route polyline for Canvas path rendering.
-    val smoothRoute = ArrayList<VisualPoint>((pts.size - 1) * 6 + 1)
-    for (i in segmentLengths.indices) {
-        val steps = 6
-        for (s in 0 until steps) {
-            smoothRoute += evalCurvedSegment(i, s.toFloat() / steps.toFloat())
-        }
-    }
-    smoothRoute += pts.last()
 
     // Base & corner arrival pulses right as the player reaches each waypoint.
     val arrivalStart = pts[activeSeg]
@@ -322,12 +401,12 @@ fun sampleCourtState(path: CourtDrillPath, phase01: Float, mirrorX: Boolean): Sa
 
     return SampledCourtState(
         playerPosition = maybeMirrorCourt(pos, mirrorX),
-        playerTrail = trail.map { maybeMirrorCourt(it, mirrorX) },
+        playerTrail = trail,
         shuttlePosition = shuttlePos?.let { maybeMirrorCourt(it, mirrorX) },
         basePulse01 = basePulse.coerceIn(0f, 1f),
         cornerPulsePoint = cornerPulsePoint?.let { maybeMirrorCourt(it, mirrorX) },
         cornerPulse01 = cornerPulse.coerceIn(0f, 1f),
-        smoothRoute = smoothRoute.map { maybeMirrorCourt(it, mirrorX) },
+        smoothRoute = if (mirrorX) geom.smoothRouteMirrored else geom.smoothRouteUnmirrored,
     )
 }
 

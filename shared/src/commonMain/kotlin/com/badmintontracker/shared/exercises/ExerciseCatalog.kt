@@ -931,35 +931,11 @@ object ExerciseCatalog {
 
     fun byId(id: String): Exercise = requireNotNull(index[id]) { "Unknown exercise id: $id" }
 
+    /** O(1) lookup returning null when [id] is unknown (e.g. a retired slug in stored history). */
+    fun byIdOrNull(id: String): Exercise? = index[id]
+
     /** Ordered library filter pills exposed as a plain list for Swift and Compose. */
     val allFilters: List<DrillLibraryFilter> = DrillLibraryFilter.entries
-
-    /** Returns every catalog exercise matching [filter] in catalog order. */
-    fun filtered(filter: DrillLibraryFilter): List<Exercise> = when (filter) {
-        DrillLibraryFilter.ALL -> all
-        DrillLibraryFilter.FOOTWORK -> all.filter {
-            it.category == ExerciseCategory.ON_COURT && it.focus in FOOTWORK_FOCUSES
-        }
-        DrillLibraryFilter.ATTACK -> all.filter {
-            it.category == ExerciseCategory.ON_COURT && it.focus == FocusArea.ATTACK
-        }
-        DrillLibraryFilter.DEFENCE -> all.filter {
-            it.category == ExerciseCategory.ON_COURT && it.focus == FocusArea.DEFENCE
-        }
-        DrillLibraryFilter.NET_AND_SERVE -> all.filter {
-            it.category == ExerciseCategory.ON_COURT &&
-                (it.focus == FocusArea.NET_PLAY || it.focus == FocusArea.SERVE_RETURN)
-        }
-        DrillLibraryFilter.STRENGTH_POWER -> all.filter {
-            it.category == ExerciseCategory.OFF_COURT && it.focus in STRENGTH_POWER_FOCUSES
-        }
-        DrillLibraryFilter.MOBILITY_PREHAB -> all.filter {
-            it.category == ExerciseCategory.OFF_COURT && it.focus == FocusArea.MOBILITY_PREHAB
-        }
-        DrillLibraryFilter.REFLEX_CONDITIONING -> all.filter {
-            it.category == ExerciseCategory.OFF_COURT && it.focus in REFLEX_CONDITIONING_FOCUSES
-        }
-    }
 
     private val FOOTWORK_FOCUSES = setOf(
         FocusArea.BASE_RECOVERY,
@@ -981,4 +957,66 @@ object ExerciseCatalog {
         FocusArea.EXPLOSIVE_SPEED,
         FocusArea.REFLEX_AGILITY,
     )
+
+    /** Precomputed filter slices so tab selection and badge counts run in O(1). */
+    private val filteredCache: Map<DrillLibraryFilter, List<Exercise>> =
+        DrillLibraryFilter.entries.associateWith { filter ->
+            when (filter) {
+                DrillLibraryFilter.ALL -> all
+                DrillLibraryFilter.FOOTWORK -> all.filter {
+                    it.category == ExerciseCategory.ON_COURT && it.focus in FOOTWORK_FOCUSES
+                }
+                DrillLibraryFilter.ATTACK -> all.filter {
+                    it.category == ExerciseCategory.ON_COURT && it.focus == FocusArea.ATTACK
+                }
+                DrillLibraryFilter.DEFENCE -> all.filter {
+                    it.category == ExerciseCategory.ON_COURT && it.focus == FocusArea.DEFENCE
+                }
+                DrillLibraryFilter.NET_AND_SERVE -> all.filter {
+                    it.category == ExerciseCategory.ON_COURT &&
+                        (it.focus == FocusArea.NET_PLAY || it.focus == FocusArea.SERVE_RETURN)
+                }
+                DrillLibraryFilter.STRENGTH_POWER -> all.filter {
+                    it.category == ExerciseCategory.OFF_COURT && it.focus in STRENGTH_POWER_FOCUSES
+                }
+                DrillLibraryFilter.MOBILITY_PREHAB -> all.filter {
+                    it.category == ExerciseCategory.OFF_COURT && it.focus == FocusArea.MOBILITY_PREHAB
+                }
+                DrillLibraryFilter.REFLEX_CONDITIONING -> all.filter {
+                    it.category == ExerciseCategory.OFF_COURT && it.focus in REFLEX_CONDITIONING_FOCUSES
+                }
+            }
+        }
+
+    val onCourtCount: Int = all.count { it.category == ExerciseCategory.ON_COURT }
+    val offCourtCount: Int = all.count { it.category == ExerciseCategory.OFF_COURT }
+
+    /** Returns every catalog exercise matching [filter] in catalog order (O(1) cached). */
+    fun filtered(filter: DrillLibraryFilter): List<Exercise> = filteredCache[filter].orEmpty()
+
+    /** Returns the number of catalog exercises in [filter] (O(1) cached). */
+    fun filterCount(filter: DrillLibraryFilter): Int = filtered(filter).size
+
+    /** Resolves logged recent exercises in most-recent-first order without duplicates. */
+    fun recentExercises(logs: List<DrillSessionLog>): List<Exercise> =
+        recentExerciseIds(logs).mapNotNull { index[it] }
+
+    /**
+     * Token-based case-insensitive search over [exercises] matching title, focus,
+     * category, setup, or coaching cue. Blank queries return [exercises] unchanged.
+     */
+    fun search(exercises: List<Exercise>, query: String): List<Exercise> {
+        val tokens = query.trim().lowercase().split(Regex("\\s+")).filter { it.isNotEmpty() }
+        if (tokens.isEmpty()) return exercises
+        return exercises.filter { ex ->
+            val haystack = buildString {
+                append(ex.title).append(' ')
+                append(ex.focus.label).append(' ')
+                append(ex.category.label).append(' ')
+                append(ex.setup).append(' ')
+                append(ex.coachingCue)
+            }.lowercase()
+            tokens.all { token -> haystack.contains(token) }
+        }
+    }
 }

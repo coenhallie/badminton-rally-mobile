@@ -11,12 +11,14 @@ enum class DrillEffort(val label: String) {
 }
 
 /** Whether each set runs on an automatic countdown timer or a self-paced rep/shuttle target. */
+@Serializable
 enum class DrillWorkMode {
     TIMED,
     REPS,
 }
 
 /** Structured volume and interval plan derived from an [Exercise] and customizable before start. */
+@Serializable
 data class DrillPlan(
     val sets: Int,
     val mode: DrillWorkMode,
@@ -163,10 +165,9 @@ fun defaultPlanFor(exercise: Exercise): DrillPlan {
     )
 }
 
-/** Creates a fresh guided session sitting on the [DrillPhase.SETUP] confirmation screen. */
-fun createDrillSession(exercise: Exercise): DrillSessionState {
-    val plan = defaultPlanFor(exercise)
-    return DrillSessionState(
+/** Creates a fresh guided session sitting on the [DrillPhase.SETUP] screen with [plan]. */
+fun createDrillSessionWithPlan(exercise: Exercise, plan: DrillPlan): DrillSessionState =
+    DrillSessionState(
         exerciseId = exercise.id,
         plan = plan,
         phase = DrillPhase.SETUP,
@@ -177,7 +178,10 @@ fun createDrillSession(exercise: Exercise): DrillSessionState {
         elapsedSeconds = 0,
         paused = false,
     )
-}
+
+/** Creates a fresh guided session sitting on the [DrillPhase.SETUP] confirmation screen. */
+fun createDrillSession(exercise: Exercise): DrillSessionState =
+    createDrillSessionWithPlan(exercise, defaultPlanFor(exercise))
 
 /** Adjusts target set count on the SETUP screen. */
 fun adjustPlanSets(state: DrillSessionState, delta: Int): DrillSessionState {

@@ -28,6 +28,12 @@ object ExercisesCopy {
     const val REST_LABEL = "REST"
     const val RECENT_SESSIONS_LABEL = "Recent sessions"
     const val NO_SESSIONS_YET = "Pick any drill below to start a guided session and track progress."
+    const val SEARCH_PLACEHOLDER = "Search drills by name or focus"
+    const val FILTER_RECENT = "Recent"
+    const val NO_SEARCH_MATCHES = "No drills match that search."
+    const val CLEAR_SEARCH = "Clear search"
+    const val QUICK_START_LABEL = "Quick start"
+    const val REPEAT_DRILL_LABEL = "Repeat drill"
 
     fun poseCaption(phaseLabel: String): String = "Pose: $phaseLabel"
 

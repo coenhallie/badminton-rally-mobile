@@ -151,10 +151,12 @@ class CourtSideNamesTest {
             listOf(ana, marco),
         )
 
-        // Home (Marco, left-handed) is far; Ana has no hand set.
-        names shouldBe CourtSideNames("Ana", "Marco", null, RacketArm.LEFT)
+        // Home (Marco, left-handed) is far; Ana has no hand set. Both profile IDs are preserved.
+        names shouldBe CourtSideNames("Ana", "Marco", null, RacketArm.LEFT, "p-ana", "p-marco")
         profileArm(CourtSide.FAR, names) shouldBe RacketArm.LEFT
         profileArm(CourtSide.NEAR, names).shouldBeNull()
+        profilePlayerId(CourtSide.NEAR, names) shouldBe "p-ana"
+        profilePlayerId(CourtSide.FAR, names) shouldBe "p-marco"
     }
 
     @Test
@@ -168,6 +170,8 @@ class CourtSideNamesTest {
         names shouldBe CourtSideNames("Marco", "Li", null, null)
         profileArm(CourtSide.NEAR, names).shouldBeNull()
         profileArm(CourtSide.FAR, names).shouldBeNull()
+        profilePlayerId(CourtSide.NEAR, names).shouldBeNull()
+        profilePlayerId(CourtSide.FAR, names).shouldBeNull()
     }
 
     @Test
@@ -186,7 +190,7 @@ class CourtSideNamesTest {
         val names = courtSideNames(list.mine.single(), listOf(marco))
 
         // Away is Marco, and Away was at the near end.
-        names shouldBe CourtSideNames("Marco", "Li", RacketArm.LEFT, null)
+        names shouldBe CourtSideNames("Marco", "Li", RacketArm.LEFT, null, "p-marco", null)
     }
 
     @Test
@@ -202,6 +206,6 @@ class CourtSideNamesTest {
 
         val names = courtSideNames(list.mine.single(), listOf(marco))
 
-        names shouldBe CourtSideNames("Jip", "Marco", null, RacketArm.LEFT)
+        names shouldBe CourtSideNames("Jip", "Marco", null, RacketArm.LEFT, null, "p-marco")
     }
 }
