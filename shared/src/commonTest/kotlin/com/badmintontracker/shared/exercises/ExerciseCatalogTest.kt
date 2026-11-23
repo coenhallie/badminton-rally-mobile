@@ -62,6 +62,8 @@ class ExerciseCatalogTest {
             add(ExercisesCopy.PEAK_SPEED_LABEL)
             add(ExercisesCopy.SETUP_LABEL)
             add(ExercisesCopy.CUE_LABEL)
+            add(ExercisesCopy.COURT_VISUAL_CAPTION)
+            add(ExercisesCopy.poseCaption("Split-step"))
             add(ExercisesCopy.HONESTY_CAPTION)
             add(ExercisesCopy.NOT_LOADED)
             add(ExercisesCopy.NO_BOUNDED_WINDOWS)

@@ -7,6 +7,9 @@ object ExercisesCopy {
     const val PEAK_SPEED_LABEL = "Peak speed (0.5 s)"
     const val SETUP_LABEL = "Setup"
     const val CUE_LABEL = "Cue"
+    const val COURT_VISUAL_CAPTION = "Court pattern"
+
+    fun poseCaption(phaseLabel: String): String = "Pose: $phaseLabel"
 
     const val HONESTY_CAPTION =
         "Based on singles rally movement from this video. Doubles play and isolated feeding drills may skew positioning."
