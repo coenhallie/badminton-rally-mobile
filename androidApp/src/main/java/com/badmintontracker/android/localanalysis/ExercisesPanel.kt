@@ -3,6 +3,7 @@ package com.badmintontracker.android.localanalysis
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,9 +36,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.badmintontracker.analysis.player.CourtSide
 import com.badmintontracker.analysis.player.PlayerTrack
@@ -48,9 +51,12 @@ import com.badmintontracker.android.ui.theme.ShuttlRadius
 import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.shared.analytics.CourtSideNames
 import com.badmintontracker.shared.analytics.profileArm
+import com.badmintontracker.shared.exercises.DrillLibraryFilter
+import com.badmintontracker.shared.exercises.Exercise
+import com.badmintontracker.shared.exercises.ExerciseCatalog
+import com.badmintontracker.shared.exercises.ExerciseCategory
 import com.badmintontracker.shared.exercises.ExerciseReport
 import com.badmintontracker.shared.exercises.ExerciseReportStatus
-import com.badmintontracker.shared.exercises.ExerciseSuggestion
 import com.badmintontracker.shared.exercises.ExercisesCopy
 import com.badmintontracker.shared.exercises.MovementSummary
 import com.badmintontracker.shared.exercises.adviseExercisesForTrack
@@ -60,7 +66,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Suggested drills and exercises derived from a completed video analysis.
+ * Suggested drills and exercises derived from a completed video analysis,
+ * followed by a collapsible, filterable library of all curated drills.
  *
  * Follows [BasePositionPanel]'s threading, side-toggle placement, and track
  * resolution so all Analysis panels read the exact same run and rally windows.
@@ -127,6 +134,8 @@ fun ExercisesPanel(
             return@Column
         }
         requireNotNull(report)
+        val shownSide = shown.side
+        val shownArm = profileArm(shownSide, sideNames)
 
         report.summary?.let { summary ->
             MovementSummaryBlock(summary)
@@ -139,8 +148,6 @@ fun ExercisesPanel(
                 PanelMessage(report.message ?: ExercisesCopy.NO_COUNTED_RALLIES)
             }
             ExerciseReportStatus.SUGGESTIONS -> {
-                val shownSide = shown.side
-                val shownArm = profileArm(shownSide, sideNames)
                 var expandedIds by remember(shownSide, report) {
                     mutableStateOf(setOfNotNull(report.suggestions.firstOrNull()?.exercise?.id))
                 }
@@ -163,7 +170,9 @@ fun ExercisesPanel(
                         val id = suggestion.exercise.id
                         val expanded = id in expandedIds
                         ExerciseCard(
-                            suggestion = suggestion,
+                            exercise = suggestion.exercise,
+                            kicker = suggestion.exercise.category.label.uppercase(),
+                            subtitle = suggestion.evidence,
                             racketArm = shownArm,
                             expanded = expanded,
                             onToggle = {
@@ -174,6 +183,8 @@ fun ExercisesPanel(
                 }
             }
         }
+
+        DrillLibrarySection(racketArm = shownArm)
 
         if (report.status != ExerciseReportStatus.INSUFFICIENT_DATA) {
             Text(
@@ -254,13 +265,134 @@ private fun MovementSummaryBlock(summary: MovementSummary) {
 }
 
 @Composable
+private fun DrillLibrarySection(racketArm: RacketArm?) {
+    var libraryOpen by rememberSaveable { mutableStateOf(false) }
+    var selectedFilter by rememberSaveable { mutableStateOf(DrillLibraryFilter.ALL) }
+    var expandedIds by remember { mutableStateOf(emptySet<String>()) }
+
+    val onCourtCount = remember { ExerciseCatalog.all.count { it.category == ExerciseCategory.ON_COURT } }
+    val offCourtCount = remember { ExerciseCatalog.all.count { it.category == ExerciseCategory.OFF_COURT } }
+    val visibleExercises = remember(selectedFilter) { ExerciseCatalog.filtered(selectedFilter) }
+
+    Text(
+        ExercisesCopy.LIBRARY_HEADING,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(
+            start = COURT_GUTTER,
+            end = COURT_GUTTER,
+            top = 24.dp,
+            bottom = 10.dp,
+        ),
+    )
+
+    val toggleShape = RoundedCornerShape(ShuttlRadius.large)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = COURT_GUTTER)
+            .clip(toggleShape)
+            .background(MaterialTheme.colorScheme.surfaceVariant, toggleShape)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, toggleShape)
+            .semantics { stateDescription = if (libraryOpen) "Expanded" else "Collapsed" }
+            .clickable(role = Role.Button, onClick = { libraryOpen = !libraryOpen })
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                ExercisesCopy.browseLibraryLabel(ExerciseCatalog.all.size, libraryOpen),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                ExercisesCopy.librarySubtitle(onCourtCount, offCourtCount),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Icon(
+            imageVector = if (libraryOpen) ShuttlIcons.ChevronUp else ShuttlIcons.ChevronDown,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(18.dp),
+        )
+    }
+
+    if (libraryOpen) {
+        Spacer(Modifier.height(12.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = COURT_GUTTER),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            ExerciseCatalog.allFilters.forEach { filter ->
+                val isSelected = filter == selectedFilter
+                val count = remember(filter) { ExerciseCatalog.filtered(filter).size }
+                val pillShape = RoundedCornerShape(ShuttlRadius.pill)
+                Box(
+                    modifier = Modifier
+                        .clip(pillShape)
+                        .background(
+                            if (isSelected) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.surfaceVariant,
+                            pillShape,
+                        )
+                        .border(
+                            width = 1.dp,
+                            color = if (isSelected) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.outlineVariant,
+                            shape = pillShape,
+                        )
+                        .semantics { selected = isSelected }
+                        .clickable(role = Role.Tab, onClick = { selectedFilter = filter })
+                        .padding(horizontal = 12.dp, vertical = 7.dp),
+                ) {
+                    Text(
+                        text = "${filter.label} ($count)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isSelected) MaterialTheme.colorScheme.onPrimary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        Column(
+            modifier = Modifier.padding(horizontal = COURT_GUTTER),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            visibleExercises.forEach { exercise ->
+                val expanded = exercise.id in expandedIds
+                ExerciseCard(
+                    exercise = exercise,
+                    kicker = "${exercise.category.label} · ${exercise.focus.label}".uppercase(),
+                    subtitle = null,
+                    racketArm = racketArm,
+                    expanded = expanded,
+                    onToggle = {
+                        expandedIds = if (expanded) expandedIds - exercise.id else expandedIds + exercise.id
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun ExerciseCard(
-    suggestion: ExerciseSuggestion,
+    exercise: Exercise,
+    kicker: String,
+    subtitle: String?,
     racketArm: RacketArm?,
     expanded: Boolean,
     onToggle: () -> Unit,
 ) {
-    val exercise = suggestion.exercise
     val shape = RoundedCornerShape(ShuttlRadius.large)
     Column(
         modifier = Modifier
@@ -281,13 +413,15 @@ private fun ExerciseCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    exercise.category.label.uppercase(),
+                    kicker,
                     style = MaterialTheme.typography.labelSmall,
                     color = ShuttlTheme.extended.accentDark,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
                 )
                 Spacer(Modifier.width(8.dp))
                 Row(
-                    modifier = Modifier.weight(1f),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.End,
                 ) {
@@ -296,7 +430,8 @@ private fun ExerciseCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = ShuttlTheme.extended.textTertiary,
                         textAlign = TextAlign.End,
-                        modifier = Modifier.weight(1f, fill = false),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                     Spacer(Modifier.width(6.dp))
                     Icon(
@@ -313,12 +448,14 @@ private fun ExerciseCard(
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onBackground,
             )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                suggestion.evidence,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (subtitle != null) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
 
         if (expanded) {
