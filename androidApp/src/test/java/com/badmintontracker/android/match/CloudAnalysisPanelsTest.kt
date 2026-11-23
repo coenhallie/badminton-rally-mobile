@@ -99,7 +99,7 @@ class CloudAnalysisPanelsTest {
         val store = installCloudAnalysis()
 
         panelsFor(store, cloudClips = listOf(clip(1, 4f, 21.5f), clip(2, 30f, 44f))) shouldBe
-            listOf(AnalyticsPanel.Heatmap, AnalyticsPanel.Base)
+            listOf(AnalyticsPanel.Heatmap, AnalyticsPanel.Base, AnalyticsPanel.Drills)
     }
 
     @Test
@@ -144,8 +144,8 @@ class CloudAnalysisPanelsTest {
         val clips = listOf(clip(1, 4f, 21.5f))
 
         panelsFor(store, clips, hasSkeleton = true, hasVideo = false) shouldBe
-            listOf(AnalyticsPanel.Heatmap, AnalyticsPanel.Base)
+            listOf(AnalyticsPanel.Heatmap, AnalyticsPanel.Base, AnalyticsPanel.Drills)
         panelsFor(store, clips, hasSkeleton = true, hasVideo = true) shouldBe
-            listOf(AnalyticsPanel.Heatmap, AnalyticsPanel.Base, AnalyticsPanel.Skeleton)
+            listOf(AnalyticsPanel.Heatmap, AnalyticsPanel.Base, AnalyticsPanel.Skeleton, AnalyticsPanel.Drills)
     }
 }

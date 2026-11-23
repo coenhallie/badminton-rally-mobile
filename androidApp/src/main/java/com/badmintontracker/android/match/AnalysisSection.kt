@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.badmintontracker.android.localanalysis.BasePositionPanel
 import com.badmintontracker.android.localanalysis.ClipCutter
+import com.badmintontracker.android.localanalysis.ExercisesPanel
 import com.badmintontracker.android.localanalysis.HeatmapPanel
 import com.badmintontracker.android.localanalysis.LocalAnalysisRunner
 import com.badmintontracker.android.localanalysis.LocalAnalysisState
@@ -144,6 +145,12 @@ fun AnalysisSection(
                 runner = localAnalysis,
                 prefs = playbackPrefs,
                 racketArmPrefs = racketArmPrefs,
+                sideNames = sideNames,
+            )
+            AnalyticsPanel.Drills -> ExercisesPanel(
+                entryId = analysisId,
+                runner = localAnalysis,
+                windows = windows,
                 sideNames = sideNames,
             )
         }
