@@ -523,6 +523,7 @@ fun AuthGate(
                         clipListVm = clipListVm,
                         shares = rally.shares,
                         media = rally.media,
+                        drillProgress = rally.drillProgress,
                         onBack = { nav.popBackStack() },
                         // Replaces this page rather than stacking on it, so
                         // Back from any player goes to Players. By type: the
@@ -739,6 +740,7 @@ fun AuthGate(
                             AnalysisSection(
                                 analysisId = id, localAnalysis = localAnalysis, localVideos = localVideos,
                                 playbackPrefs = rally.playbackPrefs, racketArmPrefs = rally.racketArmPrefs,
+                                drillProgress = rally.drillProgress,
                                 cloudClips = cloudClips, sideNames = sideNames,
                             )
                         },

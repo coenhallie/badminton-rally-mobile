@@ -20,9 +20,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,10 +44,13 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.badmintontracker.analysis.player.CourtSide
 import com.badmintontracker.analysis.player.PlayerTrack
 import com.badmintontracker.analysis.player.RallyWindow
+import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlStatTile
 import com.badmintontracker.android.ui.icons.ShuttlIcons
 import com.badmintontracker.android.ui.theme.ShuttlRadius
@@ -52,6 +58,8 @@ import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.shared.analytics.CourtSideNames
 import com.badmintontracker.shared.analytics.profileArm
 import com.badmintontracker.shared.exercises.DrillLibraryFilter
+import com.badmintontracker.shared.exercises.DrillProgressRepository
+import com.badmintontracker.shared.exercises.DrillSessionLog
 import com.badmintontracker.shared.exercises.Exercise
 import com.badmintontracker.shared.exercises.ExerciseCatalog
 import com.badmintontracker.shared.exercises.ExerciseCategory
@@ -60,6 +68,13 @@ import com.badmintontracker.shared.exercises.ExerciseReportStatus
 import com.badmintontracker.shared.exercises.ExercisesCopy
 import com.badmintontracker.shared.exercises.MovementSummary
 import com.badmintontracker.shared.exercises.adviseExercisesForTrack
+import com.badmintontracker.shared.exercises.exerciseProgressBadge
+import com.badmintontracker.shared.exercises.filterDrillLogs
+import com.badmintontracker.shared.exercises.formatClockSeconds
+import com.badmintontracker.shared.exercises.progressForExercise
+import com.badmintontracker.shared.exercises.relativeDaysLabel
+import com.badmintontracker.shared.exercises.trainingOverview
+import com.badmintontracker.shared.exercises.trainingOverviewHeadline
 import com.badmintontracker.shared.local.ABSENT_METRIC
 import com.badmintontracker.shared.prefs.RacketArm
 import kotlinx.coroutines.Dispatchers
@@ -67,7 +82,8 @@ import kotlinx.coroutines.withContext
 
 /**
  * Suggested drills and exercises derived from a completed video analysis,
- * followed by a collapsible, filterable library of all curated drills.
+ * followed by a collapsible, filterable library of all curated drills and
+ * guided session tracking.
  *
  * Follows [BasePositionPanel]'s threading, side-toggle placement, and track
  * resolution so all Analysis panels read the exact same run and rally windows.
@@ -78,8 +94,14 @@ fun ExercisesPanel(
     runner: LocalAnalysisRunner,
     windows: List<RallyWindow>,
     sideNames: CourtSideNames?,
+    drillProgress: DrillProgressRepository,
     modifier: Modifier = Modifier,
 ) {
+    val allLogs by drillProgress.logs.collectAsStateWithLifecycle()
+    val nowMs = System.currentTimeMillis()
+    var activeDrill by remember { mutableStateOf<Exercise?>(null) }
+    var activeArmForSession by remember { mutableStateOf<RacketArm?>(null) }
+
     val done = runner.stateFor(entryId) as? LocalAnalysisState.Done
     val measured = produceState<MeasuredExercises?>(null, entryId, done, windows, sideNames) {
         value = withContext(Dispatchers.Default) {
@@ -141,6 +163,15 @@ fun ExercisesPanel(
             MovementSummaryBlock(summary)
         }
 
+        if (allLogs.isNotEmpty()) {
+            TrainingProgressStrip(
+                logs = allLogs,
+                nowMs = nowMs,
+                onDeleteLog = drillProgress::deleteSession,
+                topPadding = 18.dp,
+            )
+        }
+
         when (report.status) {
             ExerciseReportStatus.INSUFFICIENT_DATA,
             ExerciseReportStatus.BALANCED,
@@ -169,14 +200,23 @@ fun ExercisesPanel(
                     report.suggestions.forEach { suggestion ->
                         val id = suggestion.exercise.id
                         val expanded = id in expandedIds
+                        val badge = exerciseProgressBadge(
+                            progressForExercise(allLogs, id, nowMs),
+                            nowMs,
+                        )
                         ExerciseCard(
                             exercise = suggestion.exercise,
                             kicker = suggestion.exercise.category.label.uppercase(),
                             subtitle = suggestion.evidence,
+                            progressBadge = badge,
                             racketArm = shownArm,
                             expanded = expanded,
                             onToggle = {
                                 expandedIds = if (expanded) expandedIds - id else expandedIds + id
+                            },
+                            onStartDrill = {
+                                activeArmForSession = shownArm
+                                activeDrill = suggestion.exercise
                             },
                         )
                     }
@@ -184,7 +224,16 @@ fun ExercisesPanel(
             }
         }
 
-        DrillLibrarySection(racketArm = shownArm)
+        DrillLibrarySection(
+            racketArm = shownArm,
+            logs = allLogs,
+            nowMs = nowMs,
+            initiallyOpen = false,
+            onStartDrill = { ex ->
+                activeArmForSession = shownArm
+                activeDrill = ex
+            },
+        )
 
         if (report.status != ExerciseReportStatus.INSUFFICIENT_DATA) {
             Text(
@@ -199,6 +248,83 @@ fun ExercisesPanel(
             )
         }
         Spacer(Modifier.height(COURT_GUTTER))
+    }
+
+    activeDrill?.let { ex ->
+        DrillSessionDialog(
+            exercise = ex,
+            racketArm = activeArmForSession,
+            playerId = null,
+            matchId = entryId,
+            drillProgress = drillProgress,
+            onDismiss = { activeDrill = null },
+        )
+    }
+}
+
+/**
+ * Standalone Drills tab shown directly on a player's profile page so a player
+ * or coach can launch any drill, mirror animations to that player's hand, and
+ * review their per-player training log anytime without opening a match first.
+ */
+@Composable
+fun PlayerDrillsTab(
+    playerId: String,
+    racketArm: RacketArm?,
+    drillProgress: DrillProgressRepository,
+    bottomPadding: Dp,
+    modifier: Modifier = Modifier,
+) {
+    val allLogs by drillProgress.logs.collectAsStateWithLifecycle()
+    val playerLogs = remember(allLogs, playerId) { filterDrillLogs(allLogs, playerId) }
+    val nowMs = System.currentTimeMillis()
+    var activeDrill by remember { mutableStateOf<Exercise?>(null) }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+    ) {
+        if (playerLogs.isNotEmpty()) {
+            TrainingProgressStrip(
+                logs = playerLogs,
+                nowMs = nowMs,
+                onDeleteLog = drillProgress::deleteSession,
+                topPadding = 16.dp,
+            )
+        } else {
+            Text(
+                text = ExercisesCopy.NO_SESSIONS_YET,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(
+                    start = COURT_GUTTER,
+                    end = COURT_GUTTER,
+                    top = 16.dp,
+                ),
+            )
+        }
+
+        DrillLibrarySection(
+            racketArm = racketArm,
+            logs = playerLogs,
+            nowMs = nowMs,
+            initiallyOpen = true,
+            onStartDrill = { activeDrill = it },
+        )
+
+        Spacer(Modifier.height(bottomPadding))
+    }
+
+    activeDrill?.let { ex ->
+        DrillSessionDialog(
+            exercise = ex,
+            racketArm = racketArm,
+            playerId = playerId,
+            matchId = null,
+            drillProgress = drillProgress,
+            onDismiss = { activeDrill = null },
+        )
     }
 }
 
@@ -219,6 +345,119 @@ internal fun exercisesMessage(
     !measured -> null
     report == null -> ExercisesCopy.NO_COUNTED_RALLIES
     else -> null
+}
+
+@Composable
+private fun TrainingProgressStrip(
+    logs: List<DrillSessionLog>,
+    nowMs: Long,
+    onDeleteLog: (String) -> Unit,
+    topPadding: Dp,
+) {
+    val overview = remember(logs, nowMs) { trainingOverview(logs, nowMs) }
+    var historyOpen by rememberSaveable { mutableStateOf(false) }
+
+    Text(
+        ExercisesCopy.TRAINING_LOG_HEADING,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(
+            start = COURT_GUTTER,
+            end = COURT_GUTTER,
+            top = topPadding,
+            bottom = 10.dp,
+        ),
+    )
+
+    val shape = RoundedCornerShape(ShuttlRadius.large)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = COURT_GUTTER)
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceVariant, shape)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(role = Role.Button) { historyOpen = !historyOpen }
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = trainingOverviewHeadline(overview),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = "${overview.uniqueDrillsTried} ${if (overview.uniqueDrillsTried == 1) "drill" else "drills"} practiced · tap for log",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Icon(
+                imageVector = if (historyOpen) ShuttlIcons.ChevronUp else ShuttlIcons.ChevronDown,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(16.dp),
+            )
+        }
+
+        if (historyOpen) {
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                logs.take(8).forEach { log ->
+                    val title = remember(log.exerciseId) {
+                        runCatching { ExerciseCatalog.byId(log.exerciseId).title }.getOrDefault(log.exerciseId)
+                    }
+                    val ago = relativeDaysLabel(log.completedAtEpochMs, nowMs)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = title,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onBackground,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            val detail = buildString {
+                                append("$ago · ${log.setsCompleted}/${log.setsTarget} sets · ${formatClockSeconds(log.durationSeconds)} · ${log.effort.label}")
+                                if (log.note.isNotBlank()) append(" · ${log.note}")
+                            }
+                            Text(
+                                text = detail,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        IconButton(
+                            onClick = { onDeleteLog(log.id) },
+                            modifier = Modifier.size(32.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Delete session",
+                                tint = ShuttlTheme.extended.textTertiary,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -265,8 +504,14 @@ private fun MovementSummaryBlock(summary: MovementSummary) {
 }
 
 @Composable
-private fun DrillLibrarySection(racketArm: RacketArm?) {
-    var libraryOpen by rememberSaveable { mutableStateOf(false) }
+private fun DrillLibrarySection(
+    racketArm: RacketArm?,
+    logs: List<DrillSessionLog>,
+    nowMs: Long,
+    initiallyOpen: Boolean,
+    onStartDrill: (Exercise) -> Unit,
+) {
+    var libraryOpen by rememberSaveable(initiallyOpen) { mutableStateOf(initiallyOpen) }
     var selectedFilter by rememberSaveable { mutableStateOf(DrillLibraryFilter.ALL) }
     var expandedIds by remember { mutableStateOf(emptySet<String>()) }
 
@@ -281,48 +526,50 @@ private fun DrillLibrarySection(racketArm: RacketArm?) {
         modifier = Modifier.padding(
             start = COURT_GUTTER,
             end = COURT_GUTTER,
-            top = 24.dp,
+            top = 20.dp,
             bottom = 10.dp,
         ),
     )
 
-    val toggleShape = RoundedCornerShape(ShuttlRadius.large)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = COURT_GUTTER)
-            .clip(toggleShape)
-            .background(MaterialTheme.colorScheme.surfaceVariant, toggleShape)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, toggleShape)
-            .semantics { stateDescription = if (libraryOpen) "Expanded" else "Collapsed" }
-            .clickable(role = Role.Button, onClick = { libraryOpen = !libraryOpen })
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                ExercisesCopy.browseLibraryLabel(ExerciseCatalog.all.size, libraryOpen),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                ExercisesCopy.librarySubtitle(onCourtCount, offCourtCount),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+    if (!initiallyOpen) {
+        val toggleShape = RoundedCornerShape(ShuttlRadius.large)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = COURT_GUTTER)
+                .clip(toggleShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant, toggleShape)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, toggleShape)
+                .semantics { stateDescription = if (libraryOpen) "Expanded" else "Collapsed" }
+                .clickable(role = Role.Button, onClick = { libraryOpen = !libraryOpen })
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    ExercisesCopy.browseLibraryLabel(ExerciseCatalog.all.size, libraryOpen),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    ExercisesCopy.librarySubtitle(onCourtCount, offCourtCount),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Icon(
+                imageVector = if (libraryOpen) ShuttlIcons.ChevronUp else ShuttlIcons.ChevronDown,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
             )
         }
-        Spacer(Modifier.width(8.dp))
-        Icon(
-            imageVector = if (libraryOpen) ShuttlIcons.ChevronUp else ShuttlIcons.ChevronDown,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(18.dp),
-        )
     }
 
     if (libraryOpen) {
-        Spacer(Modifier.height(12.dp))
+        if (!initiallyOpen) Spacer(Modifier.height(12.dp))
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -355,7 +602,7 @@ private fun DrillLibrarySection(racketArm: RacketArm?) {
                     Text(
                         text = "${filter.label} ($count)",
                         style = MaterialTheme.typography.labelSmall,
-                        color = if (isSelected) MaterialTheme.colorScheme.onPrimary
+                        color = if (isSelected) ShuttlTheme.extended.onAccent
                         else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -369,15 +616,21 @@ private fun DrillLibrarySection(racketArm: RacketArm?) {
         ) {
             visibleExercises.forEach { exercise ->
                 val expanded = exercise.id in expandedIds
+                val badge = exerciseProgressBadge(
+                    progressForExercise(logs, exercise.id, nowMs),
+                    nowMs,
+                )
                 ExerciseCard(
                     exercise = exercise,
                     kicker = "${exercise.category.label} · ${exercise.focus.label}".uppercase(),
                     subtitle = null,
+                    progressBadge = badge,
                     racketArm = racketArm,
                     expanded = expanded,
                     onToggle = {
                         expandedIds = if (expanded) expandedIds - exercise.id else expandedIds + exercise.id
                     },
+                    onStartDrill = { onStartDrill(exercise) },
                 )
             }
         }
@@ -389,9 +642,11 @@ private fun ExerciseCard(
     exercise: Exercise,
     kicker: String,
     subtitle: String?,
+    progressBadge: String?,
     racketArm: RacketArm?,
     expanded: Boolean,
     onToggle: () -> Unit,
+    onStartDrill: () -> Unit,
 ) {
     val shape = RoundedCornerShape(ShuttlRadius.large)
     Column(
@@ -443,11 +698,34 @@ private fun ExerciseCard(
                 }
             }
             Spacer(Modifier.height(6.dp))
-            Text(
-                exercise.title,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    exercise.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (progressBadge != null) {
+                    val badgeShape = RoundedCornerShape(ShuttlRadius.pill)
+                    Box(
+                        modifier = Modifier
+                            .clip(badgeShape)
+                            .background(ShuttlTheme.extended.analysisChip, badgeShape)
+                            .padding(horizontal = 8.dp, vertical = 2.dp),
+                    ) {
+                        Text(
+                            text = progressBadge,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = ShuttlTheme.extended.analysisGlyph,
+                            maxLines = 1,
+                        )
+                    }
+                }
+            }
             if (subtitle != null) {
                 Spacer(Modifier.height(4.dp))
                 Text(
@@ -486,6 +764,12 @@ private fun ExerciseCard(
                     "${ExercisesCopy.CUE_LABEL}: ${exercise.coachingCue}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onBackground,
+                )
+                Spacer(Modifier.height(2.dp))
+                ShuttlButton(
+                    text = ExercisesCopy.START_DRILL,
+                    onClick = onStartDrill,
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
         }

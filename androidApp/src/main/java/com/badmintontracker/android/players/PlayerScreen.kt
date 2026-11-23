@@ -79,6 +79,7 @@ import com.badmintontracker.android.home.AddMatchSheet
 import com.badmintontracker.android.home.HorizontalSafeDrawing
 import com.badmintontracker.android.home.addButtonExpanded
 import com.badmintontracker.android.localanalysis.BackgroundWorkAction
+import com.badmintontracker.android.localanalysis.PlayerDrillsTab
 import com.badmintontracker.android.match.MatchPageGutter
 import com.badmintontracker.android.match.MatchSectionGap
 import com.badmintontracker.android.ui.components.ConfirmDialog
@@ -86,6 +87,7 @@ import com.badmintontracker.android.ui.components.ShuttlPillTabs
 import com.badmintontracker.android.ui.components.ShuttlStatTile
 import com.badmintontracker.android.ui.icons.ShuttlIcons
 import com.badmintontracker.android.ui.theme.ShuttlRadius
+import com.badmintontracker.shared.exercises.DrillProgressRepository
 import com.badmintontracker.shared.matchlist.MatchListItem
 import com.badmintontracker.shared.players.Player
 import com.badmintontracker.shared.players.PlayerSummary
@@ -97,9 +99,10 @@ import com.badmintontracker.shared.repo.SharesRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
-/** The page's two sections, in the order the pills draw them. */
+/** The page's three sections, in the order the pills draw them. */
 private const val TAB_PROFILE = 0
 private const val TAB_MATCHES = 1
+private const val TAB_DRILLS = 2
 
 /** The switcher's avatar: the mock's small disc beside the name. */
 private val SwitcherAvatarSize = 26.dp
@@ -141,6 +144,7 @@ fun PlayerScreen(
     clipListVm: ClipListViewModel,
     shares: SharesRepository,
     media: MediaRepository,
+    drillProgress: DrillProgressRepository,
     onBack: () -> Unit,
     /** Another player picked in the title's menu: their page replaces this one. */
     onSwitchPlayer: (playerId: String) -> Unit,
@@ -293,7 +297,7 @@ fun PlayerScreen(
             )
         },
         floatingActionButton = {
-            if (player != null) {
+            if (player != null && tab != TAB_DRILLS) {
                 // Labelled on Profile, which does not scroll far; on Matches it
                 // folds to "+" once the list is scrolled, as on Players.
                 val expanded by remember {
@@ -325,7 +329,7 @@ fun PlayerScreen(
                 .windowInsetsPadding(HorizontalSafeDrawing),
         ) {
             ShuttlPillTabs(
-                labels = listOf(PlayersCopy.TAB_PROFILE, PlayersCopy.TAB_MATCHES),
+                labels = listOf(PlayersCopy.TAB_PROFILE, PlayersCopy.TAB_MATCHES, PlayersCopy.TAB_DRILLS),
                 selectedIndex = tab,
                 onSelect = { tab = it },
                 modifier = Modifier.padding(start = MatchPageGutter, end = MatchPageGutter, top = 8.dp),
@@ -334,6 +338,14 @@ fun PlayerScreen(
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when (tab) {
                     TAB_PROFILE -> ProfileTab(player = p, summary = summary, bottom = bottom)
+                    TAB_DRILLS -> tabStates.SaveableStateProvider(TAB_DRILLS) {
+                        PlayerDrillsTab(
+                            playerId = playerId,
+                            racketArm = p.racketArm,
+                            drillProgress = drillProgress,
+                            bottomPadding = padding.calculateBottomPadding() + 24.dp,
+                        )
+                    }
                     else -> tabStates.SaveableStateProvider(TAB_MATCHES) {
                         MatchesTab(
                             playerId = playerId,

@@ -30,6 +30,7 @@ import com.badmintontracker.shared.analytics.CourtSideNames
 import com.badmintontracker.shared.analytics.availablePanels
 import com.badmintontracker.shared.analytics.cloudRallyWindows
 import com.badmintontracker.shared.analytics.rallyWindowsFor
+import com.badmintontracker.shared.exercises.DrillProgressRepository
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.matchpage.MatchPageCopy
 import com.badmintontracker.shared.model.RallyClip
@@ -69,6 +70,7 @@ fun AnalysisSection(
     localVideos: LocalVideoRepository,
     playbackPrefs: PlaybackPreferenceRepository,
     racketArmPrefs: RacketArmPreferenceRepository,
+    drillProgress: DrillProgressRepository,
     cloudClips: List<RallyClip>,
     /** Who stands at each end (`courtSideNames`); null while the match does not say which end Home was at. */
     sideNames: CourtSideNames?,
@@ -152,6 +154,7 @@ fun AnalysisSection(
                 runner = localAnalysis,
                 windows = windows,
                 sideNames = sideNames,
+                drillProgress = drillProgress,
             )
         }
     }
