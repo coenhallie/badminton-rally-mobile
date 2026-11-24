@@ -97,6 +97,23 @@ class LocalVideoRepository(
 
     fun get(id: String): LocalVideoEntry? = state.value.firstOrNull { it.id == id }
 
+    /**
+     * Every local video URI referenced by ANY account stored on this device
+     * (including pre-upgrade legacy entries). Used by iOS startup orphan
+     * sweeping so launching signed-out or under a second account on a shared
+     * phone never deletes another account's recorded videos.
+     */
+    fun allPersistedUris(): List<String> = lock.withLock {
+        val uris = LinkedHashSet<String>()
+        state.value.forEach { uris += it.uri }
+        for (k in settings.keys) {
+            if (k == KEY || k.startsWith(KEY_PREFIX)) {
+                loadRaw(k).forEach { uris += it.uri }
+            }
+        }
+        uris.toList()
+    }
+
     /** Reloads per-account local entries when the signed-in account changes. */
     fun reloadForCurrentOwner() = lock.withLock {
         val scope = currentScope()

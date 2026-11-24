@@ -145,4 +145,40 @@ class DrillSyncAndIsolationTest {
         notes.annotationsFor("v-legacy") shouldHaveSize 1
         arm.racketArm("v-legacy") shouldBe RacketArm.LEFT
     }
+
+    @Test
+    fun allPersistedUris_unions_all_accounts_so_orphan_sweep_never_deletes_other_accounts_videos() {
+        val settings = MapSettings()
+        var activeUser: String? = "coach-1"
+        val videos = LocalVideoRepository(settings, ownerId = { activeUser })
+        videos.add(
+            LocalVideoEntry(
+                id = "v-coach",
+                uri = "LocalVideos/coach.mp4",
+                displayName = "coach.mp4",
+                durationMs = 10_000,
+                sizeBytes = 500,
+                addedAtEpochMs = 1000L,
+            )
+        )
+
+        activeUser = "player-1"
+        videos.reloadForCurrentOwner()
+        videos.add(
+            LocalVideoEntry(
+                id = "v-player",
+                uri = "LocalVideos/player.mp4",
+                displayName = "player.mp4",
+                durationMs = 10_000,
+                sizeBytes = 500,
+                addedAtEpochMs = 2000L,
+            )
+        )
+
+        // Signed-out startup must still report every account's persisted URIs.
+        activeUser = null
+        videos.reloadForCurrentOwner()
+        videos.entries.value.shouldBeEmpty()
+        videos.allPersistedUris().toSet() shouldBe setOf("LocalVideos/coach.mp4", "LocalVideos/player.mp4")
+    }
 }

@@ -1,5 +1,14 @@
 package com.badmintontracker.shared.testing
 
+import com.badmintontracker.shared.invites.CreatedInvite
+import com.badmintontracker.shared.invites.InviteErrorKind
+import com.badmintontracker.shared.invites.InviteException
+import com.badmintontracker.shared.invites.InvitePreview
+import com.badmintontracker.shared.invites.LinkedPlayerProfile
+import com.badmintontracker.shared.invites.PlayerAccessRepository
+import com.badmintontracker.shared.invites.PlayerAccessState
+import com.badmintontracker.shared.invites.PlayerAccessStatus
+import com.badmintontracker.shared.invites.RedeemedInvite
 import com.badmintontracker.shared.localvideo.AnalyzeCoordinator
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
@@ -16,6 +25,8 @@ import com.badmintontracker.shared.repo.SharesRepository
 import com.badmintontracker.shared.repo.UploadState
 import com.badmintontracker.shared.repo.VideosRepository
 import com.badmintontracker.shared.scoring.MatchFormat
+import com.badmintontracker.shared.scoring.ScoreLog
+import com.badmintontracker.shared.scoring.ScoreLogsRepository
 import com.badmintontracker.shared.scoring.Side
 import com.russhwolf.settings.NSUserDefaultsSettings
 import io.ktor.utils.io.ByteReadChannel
@@ -26,6 +37,10 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.datetime.Instant
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import platform.Foundation.NSUserDefaults
 
 /**
@@ -235,3 +250,105 @@ fun testAnalyzeCoordinator(localVideos: LocalVideoRepository, clips: ClipsReposi
 private const val TEST_LOCAL_VIDEOS_SUITE = "com.badmintontracker.ios.tests.localvideos"
 private const val TEST_LOCAL_ANNOTATIONS_SUITE = "com.badmintontracker.ios.tests.localannotations"
 private const val TEST_RACKET_ARM_SUITE = "com.badmintontracker.ios.tests.racketarm"
+private const val TEST_LINKED_LOGS_SUITE = "com.badmintontracker.ios.tests.linkedscorelogs"
+
+/** In-memory [PlayerAccessRepository] double for iOS XCTests. */
+class InMemoryPlayerAccessRepository internal constructor(
+    initialAccess: Map<String, PlayerAccessState> = emptyMap(),
+    initialLinked: List<LinkedPlayerProfile> = emptyList(),
+    initialLoaded: Boolean = false,
+) : PlayerAccessRepository {
+    override val accessByPlayerId = MutableStateFlow(initialAccess)
+    override val linkedProfiles = MutableStateFlow(initialLinked)
+    override val linkedProfilesLoaded = MutableStateFlow(initialLoaded)
+
+    var previewResponse: InvitePreview? = null
+    var previewFailureKind: InviteErrorKind? = null
+    var redeemFailureKind: InviteErrorKind? = null
+    var createCode: String = "K7M4QP9R"
+    var createExpiresAt: Instant = Instant.parse("2026-12-01T00:00:00Z")
+
+    override suspend fun refreshAccessStates(): Result<Unit> = Result.success(Unit)
+
+    override suspend fun createInvite(playerId: String): Result<CreatedInvite> {
+        val created = CreatedInvite("inv-1", createCode, createExpiresAt)
+        accessByPlayerId.value = accessByPlayerId.value + (
+            playerId to PlayerAccessState(
+                playerId = playerId,
+                status = PlayerAccessStatus.PENDING,
+                pendingCode = created.code,
+                pendingExpiresAt = created.expiresAt,
+            )
+        )
+        return Result.success(created)
+    }
+
+    override suspend fun revokeInvite(playerId: String): Result<Unit> {
+        accessByPlayerId.value = accessByPlayerId.value + (
+            playerId to PlayerAccessState(playerId = playerId, status = PlayerAccessStatus.UNINVITED)
+        )
+        return Result.success(Unit)
+    }
+
+    override suspend fun unlinkPlayer(playerId: String): Result<Unit> {
+        accessByPlayerId.value = accessByPlayerId.value + (
+            playerId to PlayerAccessState(playerId = playerId, status = PlayerAccessStatus.UNINVITED)
+        )
+        return Result.success(Unit)
+    }
+
+    override suspend fun refreshLinkedProfiles(): Result<Unit> {
+        linkedProfilesLoaded.value = true
+        return Result.success(Unit)
+    }
+
+    override suspend fun previewInvite(code: String): Result<InvitePreview> {
+        previewFailureKind?.let { return Result.failure(InviteException(it)) }
+        return previewResponse?.let { Result.success(it) }
+            ?: Result.failure(InviteException(InviteErrorKind.INVALID_OR_EXPIRED))
+    }
+
+    override suspend fun redeemInviteNewAccount(code: String, email: String, password: String): Result<RedeemedInvite> {
+        redeemFailureKind?.let { return Result.failure(InviteException(it)) }
+        return Result.success(RedeemedInvite("p-1", previewResponse?.playerName ?: "Player", previewResponse?.coachEmail ?: ""))
+    }
+
+    override suspend fun redeemInviteExistingAccount(code: String): Result<RedeemedInvite> {
+        redeemFailureKind?.let { return Result.failure(InviteException(it)) }
+        return Result.success(RedeemedInvite("p-1", previewResponse?.playerName ?: "Player", previewResponse?.coachEmail ?: ""))
+    }
+
+    override fun clear() {
+        accessByPlayerId.value = emptyMap()
+        linkedProfiles.value = emptyList()
+        linkedProfilesLoaded.value = false
+    }
+}
+
+fun testPlayerAccessRepository(
+    initialAccess: Map<String, PlayerAccessState> = emptyMap(),
+    initialLinked: List<LinkedPlayerProfile> = emptyList(),
+    initialLoaded: Boolean = false,
+): InMemoryPlayerAccessRepository = InMemoryPlayerAccessRepository(initialAccess, initialLinked, initialLoaded)
+
+@Serializable
+private data class LinkedCacheEnvelope(
+    @SerialName("owner_id") val ownerId: String?,
+    val logs: List<ScoreLog>,
+)
+
+/** Builds a [ScoreLogsRepository] seeded with read-only linked score logs for iOS XCTests. */
+fun testScoreLogsRepositoryWithLinked(
+    now: Instant,
+    ownerId: String,
+    linkedLogs: List<ScoreLog>,
+): ScoreLogsRepository {
+    val settings = NSUserDefaultsSettings(NSUserDefaults(suiteName = TEST_LINKED_LOGS_SUITE))
+    settings.clear()
+    val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+    settings.putString(
+        ScoreLogsRepository.KEY_LINKED_CACHE,
+        json.encodeToString(LinkedCacheEnvelope.serializer(), LinkedCacheEnvelope(ownerId, linkedLogs)),
+    )
+    return ScoreLogsRepository(settings, { now }, { ownerId })
+}

@@ -1,11 +1,13 @@
 package com.badmintontracker.shared.localvideo
 
 import com.badmintontracker.shared.RallyApp
+import com.badmintontracker.shared.invites.PlayerInviteCopy
 import com.badmintontracker.shared.local.CloudPoseOutcome
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.withContext
 import platform.Foundation.NSString
 import platform.Foundation.create
 import platform.Foundation.stringByStandardizingPath
@@ -61,3 +63,21 @@ fun createIosAnalyzeCoordinator(
                 .getOrThrow()
         },
     )
+
+/**
+ * On-demand cloud pose downloader for iOS `AnalysisSection` (linked players and
+ * second phones): downloads & decodes off the main thread, invokes [saveCloudAnalysis],
+ * and returns a user-facing error message or null on success.
+ */
+suspend fun installCloudPoseOrMessage(
+    rally: RallyApp,
+    videoId: String,
+    onProgress: (Float) -> Unit,
+    saveCloudAnalysis: (entryId: String, outcome: CloudPoseOutcome) -> Unit,
+): String? {
+    val result = withContext(Dispatchers.Default) {
+        rally.cloudPoseCoordinator(log = { println("CloudPose: $it") })
+            .install(videoId, onProgress) { outcome -> saveCloudAnalysis(videoId, outcome) }
+    }
+    return result.exceptionOrNull()?.let { PlayerInviteCopy.ANALYSIS_DOWNLOAD_FAILED }
+}
