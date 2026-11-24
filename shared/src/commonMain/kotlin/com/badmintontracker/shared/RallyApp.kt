@@ -165,13 +165,25 @@ class RallyApp(
                         lastOwner = nextOwner
                     }
                 }
+                is SessionStatus.RefreshFailure -> {
+                    // Offline cold start: cached session restored without emitting Authenticated.
+                    val nextOwner = client.auth.currentUserOrNull()?.id
+                    if (nextOwner != null && nextOwner != lastOwner) {
+                        if (lastOwner != null) {
+                            clearAccountCaches()
+                        } else {
+                            reloadLocalStoresForOwner()
+                        }
+                        lastOwner = nextOwner
+                    }
+                }
                 is SessionStatus.NotAuthenticated -> {
                     if (lastOwner != null) {
                         lastOwner = null
                         clearAccountCaches()
                     }
                 }
-                is SessionStatus.Initializing, is SessionStatus.RefreshFailure -> Unit
+                is SessionStatus.Initializing -> Unit
             }
         }
     }
@@ -180,11 +192,11 @@ class RallyApp(
         clipsImpl.clear()
         videosImpl.clear()
         mediaImpl.clear()
-        playerAccessImpl.clear()
         reloadLocalStoresForOwner()
     }
 
     private fun reloadLocalStoresForOwner() {
+        playerAccessImpl.reloadForCurrentOwner()
         scoreLogs.reloadForCurrentOwner()
         localVideos.reloadForCurrentOwner()
         localAnnotations.reloadForCurrentOwner()

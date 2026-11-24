@@ -106,12 +106,13 @@ class LocalAnnotationsRepository(
         if (existing != null) return decodeNotes(existing)
         if (settings.getStringOrNull(KEY_LEGACY_MIGRATED) == null) {
             val legacy = loadRaw(KEY)
-            settings.putString(KEY_LEGACY_MIGRATED, scope)
             if (legacy.isNotEmpty()) {
                 settings.putString(scopedKey, json.encodeToString(serializer, legacy))
+                settings.putString(KEY_LEGACY_MIGRATED, scope)
                 settings.remove(KEY)
                 return legacy
             }
+            settings.putString(KEY_LEGACY_MIGRATED, scope)
         }
         return emptyMap()
     }

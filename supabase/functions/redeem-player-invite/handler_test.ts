@@ -188,3 +188,18 @@ Deno.test("redeem returns 409 already_linked if player already linked before use
   assertEquals(await res.json(), { error: "already_linked" });
   assertEquals(createdUsers.length, 0);
 });
+
+Deno.test("redeem rolls back newly created auth user when completeRedemption throws", async () => {
+  const { deps, deletedUsers } = makeDeps({
+    completeRedemption: async () => {
+      throw new Error("db timeout");
+    },
+  });
+  const res = await handleInviteRequest(
+    postJson({ action: "redeem", code: "K7M4-QP9R", email: "marco@example.com", password: "strongpassword1" }),
+    deps,
+  );
+  assertEquals(res.status, 500);
+  assertEquals(await res.json(), { error: "redemption_failed" });
+  assertEquals(deletedUsers, ["new-user-1"]);
+});

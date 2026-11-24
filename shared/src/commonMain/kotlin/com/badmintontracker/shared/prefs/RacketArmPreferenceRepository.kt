@@ -53,11 +53,16 @@ class RacketArmPreferenceRepository(
 
     fun setRacketArm(entryId: String, arm: RacketArm?) {
         val scope = currentScope() ?: return
-        val k = if (scope == LOCAL_SCOPE) legacyKey(entryId) else {
-            claimLegacyOwner(scope)
-            scopedKey(scope, entryId)
+        if (scope == LOCAL_SCOPE) {
+            val k = legacyKey(entryId)
+            if (arm == null) settings.remove(k) else settings.putString(k, arm.name)
+            return
         }
+        val legacyOwner = claimLegacyOwner(scope)
+        val k = scopedKey(scope, entryId)
         if (arm == null) settings.remove(k) else settings.putString(k, arm.name)
+        // Drop any un-migrated pre-upgrade key for this entry so setting null cannot resurrect it.
+        if (legacyOwner == scope) settings.remove(legacyKey(entryId))
     }
 
     private fun currentScope(): String? = if (ownerId == null) LOCAL_SCOPE else ownerId.invoke()

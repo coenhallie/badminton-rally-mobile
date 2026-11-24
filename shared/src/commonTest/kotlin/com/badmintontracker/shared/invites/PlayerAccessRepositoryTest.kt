@@ -19,6 +19,8 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.TextContent
 import io.ktor.http.headersOf
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 
@@ -213,5 +215,48 @@ class PlayerAccessRepositoryTest {
         repo1.clear()
         repo1.linkedProfiles.value.shouldBeEmpty()
         repo1.accessByPlayerId.value.shouldBeEmpty()
+    }
+
+    @Test
+    fun stale_refreshLinkedProfiles_completing_after_sign_out_is_discarded() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val settings = MapSettings()
+        val client = signedIn("player1", "player", settings) { req ->
+            if (req.url.encodedPath.endsWith("/rpc/list_my_player_profiles")) {
+                gate.await()
+                jsonResponse(
+                    """[{"player_id":"p1","coach_id":"c1","coach_email":"coach@club.nl","name":"Marco","racket_arm":null,"linked_at":"2026-11-23T12:00:00Z"}]"""
+                )
+            } else {
+                jsonResponse("[]")
+            }
+        }
+        val repo = PlayerAccessRepositoryImpl(client, settings)
+
+        val inFlight = async { repo.refreshLinkedProfiles() }
+        testScheduler.runCurrent()
+
+        client.auth.signOut()
+        repo.reloadForCurrentOwner()
+        gate.complete(Unit)
+        inFlight.await().isSuccess shouldBe true
+
+        repo.linkedProfiles.value.shouldBeEmpty()
+        repo.linkedProfilesLoaded.value shouldBe false
+    }
+
+    @Test
+    fun cached_empty_linked_profiles_sets_linkedProfilesLoaded_true_offline() = runTest {
+        val settings = MapSettings()
+        val client = signedIn("player1", "player", settings) { jsonResponse("[]") }
+        val repo1 = PlayerAccessRepositoryImpl(client, settings)
+        repo1.refreshLinkedProfiles().isSuccess shouldBe true
+        repo1.linkedProfiles.value.shouldBeEmpty()
+        repo1.linkedProfilesLoaded.value shouldBe true
+
+        // Cold restart offline: cached empty list must still report loaded = true.
+        val repo2 = PlayerAccessRepositoryImpl(client, settings)
+        repo2.linkedProfiles.value.shouldBeEmpty()
+        repo2.linkedProfilesLoaded.value shouldBe true
     }
 }

@@ -590,6 +590,13 @@ final class LocalAnalysisRunner {
 
     func clear(entryId: String) { set(nil, for: entryId) }
 
+    /// Drops settled (done/failed) in-memory states on sign-out so a later account never sees them.
+    func clearSettled() {
+        for (entryId, state) in states where !isDeviceRunInFlight(state) {
+            set(nil, for: entryId)
+        }
+    }
+
     private nonisolated static func cleanStaleClips(in directory: URL, keeping: Set<String>) {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
         for name in names where name.hasPrefix("rally-") && name.hasSuffix(".mp4") && !keeping.contains(name) {

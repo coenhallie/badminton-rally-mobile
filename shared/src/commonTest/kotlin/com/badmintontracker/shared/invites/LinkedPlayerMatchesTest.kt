@@ -31,7 +31,11 @@ import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
+import io.ktor.http.HttpMethod
 import io.ktor.http.content.TextContent
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
@@ -252,5 +256,91 @@ class LinkedPlayerMatchesTest {
         val summary = playerSummary(list, marcoProfileId)
         summary.matchCount shouldBe 3
         summary.rallyCount shouldBe 3
+    }
+
+    @Test
+    fun scoreLogsRepository_sync_strips_owner_id_from_mixed_batch_for_homogeneous_upsert() = runTest {
+        val upsertBodies = mutableListOf<String>()
+        val settings = MapSettings()
+        val serverRowJson = """[{
+          "id":"sl-existing","owner_id":"$coachUid","video_id":null,"title":"Synced Match",
+          "home_players":["A"],"away_players":["B"],
+          "home_player_id":null,"away_player_id":null,
+          "format":"singles",
+          "rules":{"points_to_win":21,"win_by":2,"cap":30,"games_to_win":2},
+          "setup":{"first_server":"home"},
+          "events":[],
+          "status":"unbound",
+          "created_at":"2026-11-20T10:00:00Z","updated_at":"2026-11-20T10:00:00Z"
+        }]"""
+        val client = TestSupabase.client(settings) { req ->
+            val path = req.url.encodedPath
+            when {
+                path.endsWith("/score_logs") && req.method == HttpMethod.Post -> {
+                    upsertBodies += (req.body as? TextContent)?.text.orEmpty()
+                    jsonResponse("[]")
+                }
+                path.endsWith("/score_logs") && req.method == HttpMethod.Get -> jsonResponse(serverRowJson)
+                else -> jsonResponse("[]")
+            }
+        }
+        val repo = ScoreLogsRepository(client, settings, { t0 }, ownerId = { coachUid })
+
+        // First sync pulls a server row that carries ownerId = coachUid.
+        repo.sync().isSuccess shouldBe true
+        repo.get("sl-existing")!!.ownerId shouldBe coachUid
+
+        // Edit the pulled row (ownerId != null) AND create a brand-new local row (ownerId == null).
+        repo.replaceEvents("sl-existing", listOf(ScoreEvent.PointTo(Side.HOME)))
+        val localNew = repo.create("Brand New", ScoringRules.BWF_21, MatchSetup(firstServer = Side.HOME))
+
+        repo.sync().isSuccess shouldBe true
+        upsertBodies.size shouldBe 1
+        val payload = upsertBodies.single()
+        payload.shouldContain("sl-existing")
+        payload.shouldContain(localNew.id)
+        payload.shouldNotContain("owner_id")
+    }
+
+    @Test
+    fun scoreLogsRepository_refreshLinkedLogs_discards_stale_response_after_owner_change() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val settings = MapSettings()
+        var activeOwner: String? = playerUid
+        val client = TestSupabase.client(settings) { req ->
+            if (req.url.encodedPath.endsWith("/rpc/list_linked_score_logs")) {
+                gate.await()
+                jsonResponse(
+                    """[{
+                      "id":"sl-stale","owner_id":"$coachUid","video_id":null,"title":"Stale Match",
+                      "home_players":[],"away_players":["Tom"],
+                      "home_player_id":"$marcoProfileId","away_player_id":null,
+                      "format":"singles",
+                      "rules":{"points_to_win":21,"win_by":2,"cap":30,"games_to_win":2},
+                      "setup":{"first_server":"home"},
+                      "events":[],
+                      "status":"unbound",
+                      "created_at":"2026-11-20T10:00:00Z","updated_at":"2026-11-20T10:00:00Z"
+                    }]"""
+                )
+            } else {
+                jsonResponse("[]")
+            }
+        }
+        val repo = ScoreLogsRepository(client, settings, { t0 }, ownerId = { activeOwner })
+
+        val inFlight = async { repo.refreshLinkedLogs() }
+        testScheduler.runCurrent()
+
+        // Switch account while the RPC is in flight.
+        activeOwner = "other-user-2"
+        repo.reloadForCurrentOwner()
+        gate.complete(Unit)
+        inFlight.await().isSuccess shouldBe true
+
+        // Stale player-1 rows must neither populate memory nor poison other-user-2's cache.
+        repo.linkedLogs.value.shouldBeEmpty()
+        val fresh = ScoreLogsRepository(client, settings, { t0 }, ownerId = { "other-user-2" })
+        fresh.linkedLogs.value.shouldBeEmpty()
     }
 }

@@ -36,6 +36,7 @@ final class PlayersModel {
     private let repo: PlayersRepository
     private let scoreLogs: ScoreLogsRepository
     private let localVideos: LocalVideoRepository
+    private let drillProgress: DrillProgressRepository
     /// Who is signed in, for the refresh's forget guard (see
     /// `refreshPlayersAndForgetVanishedOrMessage`). Not isolated to the main
     /// actor: shared code asks it again after the request, on whatever thread
@@ -50,11 +51,13 @@ final class PlayersModel {
         players: PlayersRepository? = nil,
         scoreLogs: ScoreLogsRepository? = nil,
         localVideos: LocalVideoRepository? = nil,
+        drillProgress: DrillProgressRepository? = nil,
         currentUserId: (@Sendable () -> String?)? = nil
     ) {
         self.repo = players ?? rally.players
         self.scoreLogs = scoreLogs ?? rally.scoreLogs
         self.localVideos = localVideos ?? rally.localVideos
+        self.drillProgress = drillProgress ?? rally.drillProgress
         let auth = rally.auth
         self.currentUserId = currentUserId ?? { auth.currentUserId() }
     }
@@ -95,7 +98,7 @@ final class PlayersModel {
         do {
             message = try await DeletePlayerKt.refreshPlayersAndForgetVanishedOrMessage(
                 players: repo, scoreLogs: scoreLogs, localVideos: localVideos,
-                currentOwnerId: currentUserId
+                drillProgress: drillProgress, currentOwnerId: currentUserId
             )
         } catch {
             message = PlayersCopy.shared.LOAD_FAILED
@@ -156,7 +159,8 @@ final class PlayersModel {
     func delete(_ player: Player) async -> Bool {
         do {
             if let message = try await DeletePlayerKt.deletePlayerOrMessage(
-                players: repo, scoreLogs: scoreLogs, localVideos: localVideos, player: player
+                players: repo, scoreLogs: scoreLogs, localVideos: localVideos,
+                player: player, drillProgress: drillProgress
             ) {
                 errorMessage = message
                 return false

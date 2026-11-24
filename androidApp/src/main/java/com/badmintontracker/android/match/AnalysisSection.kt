@@ -125,17 +125,19 @@ fun AnalysisSection(
     // fetches poses.raw once and caches it inside the current account's store.
     var downloadAttempt by remember(analysisId) { mutableIntStateOf(0) }
     var downloading by remember(analysisId) { mutableStateOf(false) }
+    var downloadCompleted by remember(analysisId) { mutableStateOf(false) }
     var downloadProgress by remember(analysisId) { mutableFloatStateOf(0f) }
     var downloadError by remember(analysisId) { mutableStateOf<String?>(null) }
 
     LaunchedEffect(analysisId, stored.loaded, hasTrack, hasCloudPose, downloadAttempt) {
         if (!stored.loaded || hasTrack || !hasCloudPose || installCloudPose == null) return@LaunchedEffect
-        if (downloadError != null) return@LaunchedEffect
+        if (downloadError != null || downloadCompleted) return@LaunchedEffect
         downloading = true
         downloadProgress = 0f
         try {
             installCloudPose(analysisId) { p -> downloadProgress = p.coerceIn(0f, 1f) }
             downloading = false
+            downloadCompleted = true
             reloadTick++
             onCloudPoseInstalled()
         } catch (ce: CancellationException) {
@@ -147,7 +149,13 @@ fun AnalysisSection(
         }
     }
 
-    if (downloading) {
+    val awaitingCloudDownload = hasCloudPose &&
+        installCloudPose != null &&
+        !hasTrack &&
+        downloadError == null &&
+        !downloadCompleted
+
+    if (downloading || awaitingCloudDownload) {
         Box(modifier.fillMaxSize().padding(horizontal = MatchPageGutter), contentAlignment = Alignment.Center) {
             Column(
                 modifier = Modifier.widthIn(max = 280.dp).fillMaxWidth(),
@@ -191,12 +199,25 @@ fun AnalysisSection(
                     text = PlayerInviteCopy.ANALYSIS_RETRY,
                     onClick = {
                         downloadError = null
+                        downloadCompleted = false
                         downloadAttempt++
                     },
                     variant = ShuttlButtonVariant.Secondary,
                     compact = true,
                 )
             }
+        }
+        return
+    }
+
+    if (stored.loaded && !hasTrack && downloadCompleted) {
+        Box(modifier.fillMaxSize().padding(horizontal = MatchPageGutter), contentAlignment = Alignment.Center) {
+            Text(
+                text = "No pose data was found for this match.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
         }
         return
     }

@@ -443,6 +443,9 @@ class LocalAnalysisRunner(
 
     fun clear(entryId: String) = states.update { it - entryId }
 
+    /** Drops settled (done/failed) in-memory states on sign-out so a later account never sees them. */
+    fun clearSettled() = states.update { map -> map.filterValues(::isDeviceRunInFlight) }
+
     private companion object {
         /**
          * Base's share of a combined run, from the measured 235ms against

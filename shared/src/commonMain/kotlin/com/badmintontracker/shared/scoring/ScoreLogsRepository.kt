@@ -351,6 +351,7 @@ class ScoreLogsRepository internal constructor(
         loadedOwner = owner
         stored = loaded.logs
         pendingDeletes = loaded.pendingDeletes
+        linkedState.value = loadLinked(owner)
     }
 
     private fun load(owner: String?): Loaded {
@@ -393,28 +394,30 @@ class ScoreLogsRepository internal constructor(
         val postgrest = client?.postgrest ?: return Result.failure(
             IllegalStateException("Not signed in.")
         )
+        val requestOwner = currentOwnerId() ?: return Result.failure(
+            IllegalStateException("Not signed in.")
+        )
         return runCatching {
             val rows = postgrest.rpc("list_linked_score_logs")
                 .decodeList<ScoreLog>()
                 .sortedByDescending { it.createdAt }
-            val owner = currentOwnerId()
-            linkedState.value = rows
-            if (owner != null) {
+            lock.withLock {
+                if (currentOwnerId() != requestOwner) return@withLock
+                linkedState.value = rows
                 settings.putString(
                     KEY_LINKED_CACHE,
-                    json.encodeToString(CachedLinkedLogs.serializer(), CachedLinkedLogs(owner, rows)),
+                    json.encodeToString(CachedLinkedLogs.serializer(), CachedLinkedLogs(requestOwner, rows)),
                 )
             }
         }
     }
 
     fun reloadForCurrentOwner() {
-        val owner = currentOwnerId()
-        if (owner == loadedOwner) return
         lock.withLock {
+            val owner = currentOwnerId()
+            if (owner == loadedOwner) return@withLock
             adopt(owner)
             state.value = stored.map { it.log }
-            linkedState.value = loadLinked(owner)
         }
     }
 
@@ -446,7 +449,9 @@ class ScoreLogsRepository internal constructor(
             }
             val dirty = lock.withLock { stored.filter { it.dirty }.map { it.log } }
             if (dirty.isNotEmpty()) {
-                postgrest.from(TABLE).upsert(dirty)
+                // Strip owner_id so newly created logs (ownerId == null) and edited synced
+                // logs (ownerId != null) serialize with identical JSON keys (PostgREST PGRST102).
+                postgrest.from(TABLE).upsert(dirty.map { it.copy(ownerId = null) })
             }
             // Paged, because everything below reads "not in this list" as "deleted
             // elsewhere": a pull PostgREST had cut off at max_rows would remove the

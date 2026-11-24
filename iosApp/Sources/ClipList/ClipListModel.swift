@@ -257,7 +257,7 @@ final class ClipListModel {
         if isCoach {
             _ = try? await DeletePlayerKt.refreshPlayersAndForgetVanishedOrMessage(
                 players: playersRepo, scoreLogs: scoreLogsRepo, localVideos: localVideos,
-                currentOwnerId: currentUserId
+                drillProgress: drillProgressRepo, currentOwnerId: currentUserId
             )
             _ = try? await scoreLogsRepo.syncScoreLogsOrMessage()
             _ = try? await SwiftInteropKt.refreshAccessStatesOrMessage(playerAccessRepo)

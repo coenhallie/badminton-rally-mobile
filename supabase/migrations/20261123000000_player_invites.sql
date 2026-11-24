@@ -17,7 +17,7 @@ as $$
     select coalesce(auth.jwt() -> 'app_metadata' ->> 'account_role', '') <> 'player';
 $$;
 
-revoke all    on function public.is_coach_account() from public;
+revoke all    on function public.is_coach_account() from public, anon;
 grant execute on function public.is_coach_account() to authenticated;
 
 ------------------------------------------------------------------
@@ -50,7 +50,7 @@ as $$
     );
 $$;
 
-revoke all    on function public.owns_player(uuid) from public;
+revoke all    on function public.owns_player(uuid) from public, anon;
 grant execute on function public.owns_player(uuid) to authenticated;
 
 create or replace function public.is_linked_to_player(p_player_id uuid)
@@ -66,7 +66,7 @@ as $$
     );
 $$;
 
-revoke all    on function public.is_linked_to_player(uuid) from public;
+revoke all    on function public.is_linked_to_player(uuid) from public, anon;
 grant execute on function public.is_linked_to_player(uuid) to authenticated;
 
 drop policy if exists player_logins_select_own_or_coach on public.player_logins;
@@ -141,6 +141,14 @@ declare
     v_now   timestamptz := now();
     v_count int;
 begin
+    if coalesce(btrim(p_bucket_key), '') = '' or p_max_attempts <= 0 or p_window_seconds <= 0 then
+        raise exception 'invalid_rate_limit_args' using errcode = '22023';
+    end if;
+
+    -- Keep the small rate-limit table bounded by pruning stale buckets.
+    delete from public.invite_rate_limits
+     where window_start < v_now - interval '1 day';
+
     insert into public.invite_rate_limits (bucket_key, window_start, attempt_count)
     values (p_bucket_key, v_now, 1)
     on conflict (bucket_key) do update
@@ -162,7 +170,7 @@ begin
 end;
 $$;
 
-revoke all    on function public.check_invite_rate_limit(text, int, int) from public;
+revoke all    on function public.check_invite_rate_limit(text, int, int) from public, anon, authenticated;
 grant execute on function public.check_invite_rate_limit(text, int, int) to service_role;
 
 ------------------------------------------------------------------
@@ -185,7 +193,7 @@ as $$
     );
 $$;
 
-revoke all    on function public.can_access_player(uuid) from public;
+revoke all    on function public.can_access_player(uuid) from public, anon;
 grant execute on function public.can_access_player(uuid) to authenticated;
 
 -- True when the caller is a linked player on the authoritative record for
@@ -224,7 +232,7 @@ begin
       from public.score_logs s
      where s.video_id = p_video_id
        and s.owner_id = v_owner_id
-     order by s.created_at
+     order by s.created_at, s.id
      limit 1;
 
     if v_has_log then
@@ -244,7 +252,7 @@ begin
 end;
 $$;
 
-revoke all    on function public.is_linked_player_on_video(uuid) from public;
+revoke all    on function public.is_linked_player_on_video(uuid) from public, anon;
 grant execute on function public.is_linked_player_on_video(uuid) to authenticated;
 
 -- Single authority for reading a video's clips, annotations, thumbnails, and metadata:
@@ -272,7 +280,7 @@ as $$
     );
 $$;
 
-revoke all    on function public.can_read_video(uuid) from public;
+revoke all    on function public.can_read_video(uuid) from public, anon;
 grant execute on function public.can_read_video(uuid) to authenticated;
 
 ------------------------------------------------------------------
@@ -381,8 +389,12 @@ as $$
     );
 $$;
 
-revoke all    on function public.can_read_clip_object(text, text) from public;
+revoke all    on function public.can_read_clip_object(text, text) from public, anon;
 grant execute on function public.can_read_clip_object(text, text) to authenticated;
+
+create index if not exists videos_poses_artifact_path_idx
+    on public.videos ((results_meta ->> 'poses_artifact_path'))
+    where results_meta ->> 'poses_artifact_path' is not null;
 
 create or replace function public.can_read_result_object(p_object_name text)
 returns boolean
@@ -400,7 +412,7 @@ as $$
     );
 $$;
 
-revoke all    on function public.can_read_result_object(text) from public;
+revoke all    on function public.can_read_result_object(text) from public, anon;
 grant execute on function public.can_read_result_object(text) to authenticated;
 
 -- Storage: clips & thumbnails readable by shared viewers AND linked players,
@@ -472,8 +484,8 @@ drop policy if exists drill_logs_delete_own_or_coach on public.drill_session_log
 create policy drill_logs_delete_own_or_coach on public.drill_session_logs
     for delete to authenticated
     using (
-        logged_by_user_id = auth.uid()
-        or public.owns_player(player_id)
+        public.owns_player(player_id)
+        or (logged_by_user_id = auth.uid() and public.is_linked_to_player(player_id))
     );
 
 ------------------------------------------------------------------
@@ -586,13 +598,13 @@ as $$
             left join public.players sa on sa.id = s.away_player_id
            where s.video_id = v.id
              and s.owner_id = v.owner_id
-           order by s.created_at
+           order by s.created_at, s.id
            limit 1
       ) sl on true
      where public.can_read_video(v.id);
 $$;
 
-revoke all    on function public.list_match_metadata() from public;
+revoke all    on function public.list_match_metadata() from public, anon;
 grant execute on function public.list_match_metadata() to authenticated;
 
 -- Narrow read RPC for cloud pose artifacts: keeps raw public.videos SELECT owner-only
@@ -617,7 +629,7 @@ as $$
        and v.manual_court_keypoints is not null;
 $$;
 
-revoke all    on function public.get_cloud_pose_artifact(uuid) from public;
+revoke all    on function public.get_cloud_pose_artifact(uuid) from public, anon;
 grant execute on function public.get_cloud_pose_artifact(uuid) to authenticated;
 
 -- Narrow read RPC for linked players' score logs: resolves any opponent profile to
@@ -679,7 +691,7 @@ as $$
      order by s.created_at desc, s.id asc;
 $$;
 
-revoke all    on function public.list_linked_score_logs() from public;
+revoke all    on function public.list_linked_score_logs() from public, anon;
 grant execute on function public.list_linked_score_logs() to authenticated;
 
 ------------------------------------------------------------------
@@ -705,6 +717,8 @@ begin
         v_bytes := decode(replace(gen_random_uuid()::text, '-', ''), 'hex');
         for v_idx in 0..15 loop
             exit when char_length(v_code) >= 8;
+            -- Skip RFC 4122 UUIDv4 fixed version (byte 6) and variant (byte 8) nibbles.
+            continue when v_idx in (6, 8);
             v_byte := get_byte(v_bytes, v_idx);
             -- Reject >= 248 (= 8 * 31) to keep modulo 31 uniform.
             if v_byte < 248 then
@@ -716,7 +730,7 @@ begin
 end;
 $$;
 
-revoke all on function public.generate_invite_code() from public;
+revoke all on function public.generate_invite_code() from public, anon, authenticated;
 
 create or replace function public.create_player_invite(p_player_id uuid)
 returns table (
@@ -740,10 +754,11 @@ begin
     if not public.is_coach_account() then
         raise exception 'not_owner' using errcode = 'P0002';
     end if;
-    if not exists (
-        select 1 from public.players p
-         where p.id = p_player_id and p.owner_id = auth.uid()
-    ) then
+    -- Lock the player row so concurrent create_player_invite calls serialize cleanly.
+    perform 1 from public.players p
+      where p.id = p_player_id and p.owner_id = auth.uid()
+      for update;
+    if not found then
         raise exception 'not_owner' using errcode = 'P0002';
     end if;
     if exists (
@@ -780,7 +795,7 @@ begin
 end;
 $$;
 
-revoke all    on function public.create_player_invite(uuid) from public;
+revoke all    on function public.create_player_invite(uuid) from public, anon;
 grant execute on function public.create_player_invite(uuid) to authenticated;
 
 create or replace function public.revoke_player_invite(p_player_id uuid)
@@ -809,7 +824,7 @@ begin
 end;
 $$;
 
-revoke all    on function public.revoke_player_invite(uuid) from public;
+revoke all    on function public.revoke_player_invite(uuid) from public, anon;
 grant execute on function public.revoke_player_invite(uuid) to authenticated;
 
 create or replace function public.unlink_player_login(p_player_id uuid)
@@ -840,7 +855,7 @@ begin
 end;
 $$;
 
-revoke all    on function public.unlink_player_login(uuid) from public;
+revoke all    on function public.unlink_player_login(uuid) from public, anon;
 grant execute on function public.unlink_player_login(uuid) to authenticated;
 
 create or replace function public.list_player_access_states()
@@ -877,7 +892,7 @@ as $$
      order by lower(p.name), p.id;
 $$;
 
-revoke all    on function public.list_player_access_states() from public;
+revoke all    on function public.list_player_access_states() from public, anon;
 grant execute on function public.list_player_access_states() to authenticated;
 
 create or replace function public.list_my_player_profiles()
@@ -906,7 +921,7 @@ as $$
      order by pl.linked_at asc, p.id asc;
 $$;
 
-revoke all    on function public.list_my_player_profiles() from public;
+revoke all    on function public.list_my_player_profiles() from public, anon;
 grant execute on function public.list_my_player_profiles() to authenticated;
 
 -- Redeems a code for an ALREADY signed-in user (joining a 2nd coach or linking
@@ -930,6 +945,10 @@ declare
 begin
     if auth.uid() is null then
         raise exception 'unauthenticated' using errcode = 'P0001';
+    end if;
+
+    if not public.check_invite_rate_limit('uid:' || auth.uid()::text, 20, 900) then
+        raise exception 'rate_limited' using errcode = 'P0007';
     end if;
 
     v_norm := upper(regexp_replace(coalesce(p_code, ''), '[^A-Za-z0-9]', '', 'g'));
@@ -980,7 +999,7 @@ begin
 end;
 $$;
 
-revoke all    on function public.redeem_player_invite_authenticated(text) from public;
+revoke all    on function public.redeem_player_invite_authenticated(text) from public, anon;
 grant execute on function public.redeem_player_invite_authenticated(text) to authenticated;
 
 -- Service-role atomic claim used by the redeem-player-invite Edge Function after
@@ -1004,6 +1023,10 @@ declare
     v_player record;
     v_coach  text;
 begin
+    if coalesce(current_setting('request.jwt.claim.role', true), '') in ('anon', 'authenticated') then
+        raise exception 'forbidden' using errcode = '42501';
+    end if;
+
     select pi.*
       into v_invite
       from public.player_invites pi
@@ -1047,5 +1070,5 @@ begin
 end;
 $$;
 
-revoke all    on function public.complete_player_invite_redemption(uuid, uuid) from public;
+revoke all    on function public.complete_player_invite_redemption(uuid, uuid) from public, anon, authenticated;
 grant execute on function public.complete_player_invite_redemption(uuid, uuid) to service_role;

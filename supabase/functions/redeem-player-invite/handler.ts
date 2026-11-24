@@ -3,7 +3,7 @@ const QR_PREFIX = "shuttl-invite:";
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_PASSWORD_LENGTH = 8;
 
-const CORS_HEADERS: Record<string, string> = {
+export const CORS_HEADERS: Record<string, string> = {
   "access-control-allow-origin": "*",
   "access-control-allow-headers": "authorization, x-client-info, apikey, content-type",
   "access-control-allow-methods": "POST, OPTIONS",
@@ -70,8 +70,13 @@ async function sha256Hex(input: string): Promise<string> {
 function clientIp(req: Request): string {
   const cf = req.headers.get("cf-connecting-ip");
   if (cf && cf.trim().length > 0) return cf.trim();
+  const realIp = req.headers.get("x-real-ip");
+  if (realIp && realIp.trim().length > 0) return realIp.trim();
   const xff = req.headers.get("x-forwarded-for");
-  if (xff && xff.trim().length > 0) return xff.split(",")[0].trim();
+  if (xff && xff.trim().length > 0) {
+    const parts = xff.split(",").map((s) => s.trim()).filter(Boolean);
+    if (parts.length > 0) return parts[parts.length - 1];
+  }
   return "unknown";
 }
 
@@ -148,13 +153,25 @@ export async function handleInviteRequest(req: Request, deps: InviteDeps): Promi
     return jsonResponse(500, { error: "user_creation_failed" });
   }
 
-  const claimed = await deps.completeRedemption(invite.id, created.userId);
+  let claimed: CompleteRedemptionResult;
+  try {
+    claimed = await deps.completeRedemption(invite.id, created.userId);
+  } catch (err) {
+    console.error("completeRedemption threw:", err);
+    try {
+      await deps.deleteUser(created.userId);
+    } catch (cleanupErr) {
+      console.error("rollback deleteUser failed:", cleanupErr);
+    }
+    return jsonResponse(500, { error: "redemption_failed" });
+  }
+
   if (!claimed.ok) {
     // Roll back newly created auth user so no orphan account is left behind.
     try {
       await deps.deleteUser(created.userId);
-    } catch {
-      // Best-effort cleanup; surface the redemption error to the caller.
+    } catch (cleanupErr) {
+      console.error("rollback deleteUser failed:", cleanupErr);
     }
     const status = claimed.error === "already_linked" ? 409 : 400;
     return jsonResponse(status, { error: claimed.error });

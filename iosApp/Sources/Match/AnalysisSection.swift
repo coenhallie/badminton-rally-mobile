@@ -62,6 +62,7 @@ struct AnalysisSection: View {
     @State private var cloudClips: [RallyClip] = []
     @State private var diskLoaded = false
     @State private var downloading = false
+    @State private var downloadCompleted = false
     @State private var downloadProgress: Float = 0
     @State private var downloadError: String? = nil
     @State private var downloadAttempt = 0
@@ -177,6 +178,7 @@ struct AnalysisSection: View {
         // clip cache so cloud runs landing after open bring in the Base panel.
         .task(id: analysisId) {
             diskLoaded = false
+            downloadCompleted = false
             downloadError = nil
             await reload()
             diskLoaded = true
@@ -193,7 +195,7 @@ struct AnalysisSection: View {
             hasSource: source != nil,
             attempt: downloadAttempt
         )) {
-            guard diskLoaded, source == nil, hasCloudPose, !downloading, downloadError == nil else { return }
+            guard diskLoaded, source == nil, hasCloudPose, !downloading, !downloadCompleted, downloadError == nil else { return }
             downloading = true
             downloadProgress = 0
             let runner = localAnalysis
@@ -217,6 +219,7 @@ struct AnalysisSection: View {
                 if let err {
                     downloadError = err
                 } else {
+                    downloadCompleted = true
                     await reload()
                     onCloudPoseInstalled?()
                 }
@@ -324,7 +327,7 @@ struct AnalysisSection: View {
                         : nil
                 )
             }
-        } else if downloading || (hasCloudPose && !diskLoaded) {
+        } else if downloading || (hasCloudPose && !downloadCompleted && downloadError == nil) {
             VStack(spacing: 12) {
                 Text(PlayerInviteCopy.shared.ANALYSIS_DOWNLOADING)
                     .shuttlType(ShuttlType.bodyMedium)
@@ -348,6 +351,7 @@ struct AnalysisSection: View {
                     .multilineTextAlignment(.center)
                 Button(PlayerInviteCopy.shared.ANALYSIS_RETRY) {
                     self.downloadError = nil
+                    self.downloadCompleted = false
                     downloadAttempt += 1
                 }
                 .buttonStyle(CompactPillButtonStyle(secondary: true, fullTarget: true))
@@ -355,6 +359,8 @@ struct AnalysisSection: View {
             .frame(maxWidth: .infinity)
             .padding(.horizontal, ShuttlGutter.page)
             .padding(.vertical, 32)
+        } else if downloadCompleted {
+            PanelMessage(text: "No pose data was found for this match.")
         } else {
             // A run's state lives in memory, so it is gone after a termination.
             // Said plainly rather than drawing an empty court, which would read

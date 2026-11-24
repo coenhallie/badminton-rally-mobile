@@ -155,12 +155,13 @@ class LocalVideoRepository(
         // One-time migration of pre-upgrade un-scoped entries to the first signed-in user.
         if (settings.getStringOrNull(KEY_LEGACY_MIGRATED) == null) {
             val legacy = loadRaw(KEY)
-            settings.putString(KEY_LEGACY_MIGRATED, scope)
             if (legacy.isNotEmpty()) {
                 settings.putString(scopedKey, json.encodeToString(serializer, legacy))
+                settings.putString(KEY_LEGACY_MIGRATED, scope)
                 settings.remove(KEY)
                 return legacy
             }
+            settings.putString(KEY_LEGACY_MIGRATED, scope)
         }
         return emptyList()
     }

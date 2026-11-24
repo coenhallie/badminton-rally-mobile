@@ -4,7 +4,6 @@ import com.russhwolf.settings.Settings
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.builtin.Email
-import io.github.jan.supabase.auth.status.SessionStatus
 import io.github.jan.supabase.exceptions.HttpRequestException
 import io.github.jan.supabase.exceptions.RestException
 import io.github.jan.supabase.functions.functions
@@ -15,6 +14,7 @@ import io.ktor.http.ContentType
 import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 import io.ktor.http.isSuccess
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -65,11 +65,11 @@ class PlayerAccessRepositoryImpl internal constructor(
     private val accessState = MutableStateFlow(loadAccessCache(currentUserId()))
     override val accessByPlayerId: StateFlow<Map<String, PlayerAccessState>> = accessState.asStateFlow()
 
-    private val initialProfiles = loadProfilesCache(currentUserId())
-    private val profilesState = MutableStateFlow(initialProfiles)
+    private val initialProfiles: List<LinkedPlayerProfile>? = loadProfilesCache(currentUserId())
+    private val profilesState = MutableStateFlow(initialProfiles.orEmpty())
     override val linkedProfiles: StateFlow<List<LinkedPlayerProfile>> = profilesState.asStateFlow()
 
-    private val loadedState = MutableStateFlow(initialProfiles.isNotEmpty())
+    private val loadedState = MutableStateFlow(initialProfiles != null)
     override val linkedProfilesLoaded: StateFlow<Boolean> = loadedState.asStateFlow()
 
     internal val cacheReconciliation: Job = scope.launch {
@@ -79,37 +79,31 @@ class PlayerAccessRepositoryImpl internal constructor(
             val cachedAccess = loadAccessCache(owner)
             if (cachedAccess.isNotEmpty()) accessState.compareAndSet(emptyMap(), cachedAccess)
             val cachedProfiles = loadProfilesCache(owner)
-            if (cachedProfiles.isNotEmpty()) {
-                if (profilesState.compareAndSet(emptyList(), cachedProfiles)) {
+            if (cachedProfiles != null) {
+                if (profilesState.compareAndSet(emptyList(), cachedProfiles) ||
+                    (cachedProfiles.isEmpty() && profilesState.value.isEmpty())
+                ) {
                     loadedState.value = true
                 }
             }
         }
     }
 
-    internal val ownerFollower: Job = scope.launch {
-        var lastOwner: String? = currentUserId()
-        client.auth.sessionStatus.collect { status ->
-            when (status) {
-                is SessionStatus.Authenticated -> {
-                    val next = status.session.user?.id
-                    if (next != lastOwner) {
-                        lastOwner = next
-                        accessState.value = loadAccessCache(next)
-                        val cached = loadProfilesCache(next)
-                        profilesState.value = cached
-                        loadedState.value = cached.isNotEmpty()
-                    }
-                }
-                is SessionStatus.NotAuthenticated -> {
-                    if (lastOwner != null) {
-                        lastOwner = null
-                        clear()
-                    }
-                }
-                is SessionStatus.Initializing, is SessionStatus.RefreshFailure -> Unit
-            }
+    /**
+     * Reloads cached access/linked state for the currently signed-in owner, or clears
+     * when signed out. Driven by [com.badmintontracker.shared.RallyApp.sessionCacheCleaner]
+     * so there is one owner-transition authority across all repositories.
+     */
+    internal fun reloadForCurrentOwner() {
+        val owner = currentUserId()
+        if (owner == null) {
+            clear()
+            return
         }
+        accessState.value = loadAccessCache(owner)
+        val cachedProfiles = loadProfilesCache(owner)
+        profilesState.value = cachedProfiles.orEmpty()
+        loadedState.value = cachedProfiles != null
     }
 
     @Serializable private data class PlayerIdArg(@SerialName("p_player_id") val playerId: String)
@@ -138,46 +132,59 @@ class PlayerAccessRepositoryImpl internal constructor(
     )
 
     override suspend fun refreshAccessStates(): Result<Unit> = runCatching {
+        val requestOwner = currentUserId() ?: throw IllegalStateException("Not signed in.")
         val rows = client.postgrest.rpc("list_player_access_states").decodeList<PlayerAccessState>()
-        publishAccess(rows.associateBy { it.playerId })
+        publishAccess(rows.associateBy { it.playerId }, requestOwner)
+        Unit
     }.recoverCatching { throw it.toInviteException() }
 
     override suspend fun createInvite(playerId: String): Result<CreatedInvite> = runCatching {
+        val requestOwner = currentUserId() ?: throw IllegalStateException("Not signed in.")
         val rows = client.postgrest.rpc("create_player_invite", PlayerIdArg(playerId))
             .decodeList<CreatedInvite>()
         val created = rows.firstOrNull() ?: throw InviteException(InviteErrorKind.UNKNOWN)
-        val updated = accessState.value + (
-            playerId to PlayerAccessState(
-                playerId = playerId,
-                status = PlayerAccessStatus.PENDING,
-                pendingCode = created.code,
-                pendingExpiresAt = created.expiresAt,
+        if (currentUserId() == requestOwner) {
+            val updated = accessState.value + (
+                playerId to PlayerAccessState(
+                    playerId = playerId,
+                    status = PlayerAccessStatus.PENDING,
+                    pendingCode = created.code,
+                    pendingExpiresAt = created.expiresAt,
+                )
             )
-        )
-        publishAccess(updated)
+            publishAccess(updated, requestOwner)
+        }
         created
     }.recoverCatching { throw it.toInviteException() }
 
     override suspend fun revokeInvite(playerId: String): Result<Unit> = runCatching {
+        val requestOwner = currentUserId() ?: throw IllegalStateException("Not signed in.")
         client.postgrest.rpc("revoke_player_invite", PlayerIdArg(playerId))
-        val updated = accessState.value + (
-            playerId to PlayerAccessState(playerId = playerId, status = PlayerAccessStatus.UNINVITED)
-        )
-        publishAccess(updated)
+        if (currentUserId() == requestOwner) {
+            val updated = accessState.value + (
+                playerId to PlayerAccessState(playerId = playerId, status = PlayerAccessStatus.UNINVITED)
+            )
+            publishAccess(updated, requestOwner)
+        }
     }.recoverCatching { throw it.toInviteException() }
 
     override suspend fun unlinkPlayer(playerId: String): Result<Unit> = runCatching {
+        val requestOwner = currentUserId() ?: throw IllegalStateException("Not signed in.")
         client.postgrest.rpc("unlink_player_login", PlayerIdArg(playerId))
-        val updated = accessState.value + (
-            playerId to PlayerAccessState(playerId = playerId, status = PlayerAccessStatus.UNINVITED)
-        )
-        publishAccess(updated)
+        if (currentUserId() == requestOwner) {
+            val updated = accessState.value + (
+                playerId to PlayerAccessState(playerId = playerId, status = PlayerAccessStatus.UNINVITED)
+            )
+            publishAccess(updated, requestOwner)
+        }
     }.recoverCatching { throw it.toInviteException() }
 
     override suspend fun refreshLinkedProfiles(): Result<Unit> = runCatching {
+        val requestOwner = currentUserId() ?: throw IllegalStateException("Not signed in.")
         val rows = client.postgrest.rpc("list_my_player_profiles").decodeList<LinkedPlayerProfile>()
-        publishProfiles(rows)
-        loadedState.value = true
+        if (publishProfiles(rows, requestOwner)) {
+            loadedState.value = true
+        }
     }.recoverCatching { throw it.toInviteException() }
 
     override suspend fun previewInvite(code: String): Result<InvitePreview> = runCatching {
@@ -228,12 +235,15 @@ class PlayerAccessRepositoryImpl internal constructor(
     }.recoverCatching { throw it.toInviteException() }
 
     override suspend fun redeemInviteExistingAccount(code: String): Result<RedeemedInvite> = runCatching {
+        val requestOwner = currentUserId() ?: throw IllegalStateException("Not signed in.")
         val normalized = normalizeInviteCode(code)
             ?: throw InviteException(InviteErrorKind.INVALID_OR_EXPIRED)
         val rows = client.postgrest.rpc("redeem_player_invite_authenticated", CodeArg(normalized))
             .decodeList<AuthRedeemRow>()
         val row = rows.firstOrNull() ?: throw InviteException(InviteErrorKind.INVALID_OR_EXPIRED)
-        runCatching { refreshLinkedProfiles() }
+        if (currentUserId() == requestOwner) {
+            runCatching { refreshLinkedProfiles() }
+        }
         RedeemedInvite(playerId = row.playerId, playerName = row.playerName, coachEmail = row.coachEmail)
     }.recoverCatching { throw it.toInviteException() }
 
@@ -247,20 +257,20 @@ class PlayerAccessRepositoryImpl internal constructor(
         append(HttpHeaders.ContentType, ContentType.Application.Json.toString())
     }
 
-    private fun publishAccess(next: Map<String, PlayerAccessState>) {
-        val owner = currentUserId()
+    private fun publishAccess(next: Map<String, PlayerAccessState>, expectedOwner: String): Boolean {
+        if (currentUserId() != expectedOwner) return false
         accessState.value = next
-        if (owner == null) return
-        val envelope = CachedAccess(owner, next.values.toList())
+        val envelope = CachedAccess(expectedOwner, next.values.toList())
         settings.putString(KEY_ACCESS_CACHE, json.encodeToString(CachedAccess.serializer(), envelope))
+        return true
     }
 
-    private fun publishProfiles(next: List<LinkedPlayerProfile>) {
-        val owner = currentUserId()
+    private fun publishProfiles(next: List<LinkedPlayerProfile>, expectedOwner: String): Boolean {
+        if (currentUserId() != expectedOwner) return false
         profilesState.value = next
-        if (owner == null) return
-        val envelope = CachedProfiles(owner, next)
+        val envelope = CachedProfiles(expectedOwner, next)
         settings.putString(KEY_PROFILES_CACHE, json.encodeToString(CachedProfiles.serializer(), envelope))
+        return true
     }
 
     private fun loadAccessCache(owner: String?): Map<String, PlayerAccessState> {
@@ -271,12 +281,12 @@ class PlayerAccessRepositoryImpl internal constructor(
         return if (cached.ownerId == owner) cached.states.associateBy { it.playerId } else emptyMap()
     }
 
-    private fun loadProfilesCache(owner: String?): List<LinkedPlayerProfile> {
-        if (owner == null) return emptyList()
+    private fun loadProfilesCache(owner: String?): List<LinkedPlayerProfile>? {
+        if (owner == null) return null
         val cached = settings.getStringOrNull(KEY_PROFILES_CACHE)
             ?.let { runCatching { json.decodeFromString(CachedProfiles.serializer(), it) }.getOrNull() }
-            ?: return emptyList()
-        return if (cached.ownerId == owner) cached.profiles else emptyList()
+            ?: return null
+        return if (cached.ownerId == owner) cached.profiles else null
     }
 
     private fun currentUserId(): String? = client.auth.currentUserOrNull()?.id
@@ -288,6 +298,7 @@ class PlayerAccessRepositoryImpl internal constructor(
     }
 
     private fun Throwable.toInviteException(): InviteException {
+        if (this is CancellationException) throw this
         if (this is InviteException) return this
         if (this is HttpRequestException) return InviteException(InviteErrorKind.NETWORK, cause = this)
         if (this is RestException) {

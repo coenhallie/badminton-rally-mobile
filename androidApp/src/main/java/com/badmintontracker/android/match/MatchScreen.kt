@@ -415,7 +415,7 @@ fun MatchScreen(
                 // StatusBanner. Without this the page was blind about an attach
                 // in progress while simultaneously still offering "Add video",
                 // because canAddVideo used to close only on a videoId.
-                if (showsStatusBanner(matchItem)) {
+                if (matchItem.isOwned && showsStatusBanner(matchItem)) {
                     StatusBanner(
                         item = matchItem,
                         // By the row's own entry, as the row's buttons go: the

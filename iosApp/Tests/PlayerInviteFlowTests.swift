@@ -143,4 +143,27 @@ final class PlayerInviteFlowTests: XCTestCase {
     func testLinkedProfileRouteIsNotAListScreen() {
         XCTAssertFalse(HomePath.listInFront([.linkedProfile(id: "p-1")]))
     }
+
+    func testLocalAnalysisRunnerClearSettledDropsFailedState() {
+        let runner = LocalAnalysisRunner()
+        // Without staged models, start() settles immediately to .failed.
+        runner.start(
+            entryId: "entry-signout-1",
+            videoPath: "/nonexistent.mp4",
+            keypoints: CourtKeypoints(
+                topLeft: [0, 0], topRight: [1, 0], bottomRight: [1, 1], bottomLeft: [0, 1],
+                netLeft: [0, 0.5], netRight: [1, 0.5],
+                serviceLineNearLeft: [0, 0.7], serviceLineNearRight: [1, 0.7],
+                serviceLineFarLeft: [0, 0.3], serviceLineFarRight: [1, 0.3],
+                centerNear: [0.5, 0.7], centerFar: [0.5, 0.3],
+                markedAtSeconds: nil
+            )
+        )
+        if !ModelCatalog.canAnalyseOnDevice {
+            XCTAssertTrue(runner.settledRuns.contains("entry-signout-1"))
+            runner.clearSettled()
+            XCTAssertEqual(runner.state(for: "entry-signout-1"), .idle)
+            XCTAssertFalse(runner.settledRuns.contains("entry-signout-1"))
+        }
+    }
 }

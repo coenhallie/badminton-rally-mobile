@@ -4,10 +4,14 @@ import {
   type CompleteRedemptionResult,
   type CreateUserResult,
   type InviteDeps,
+  CORS_HEADERS,
   handleInviteRequest,
 } from "./handler.ts";
 
-function buildDeps(): InviteDeps {
+let cachedDeps: InviteDeps | null = null;
+
+function getDeps(): InviteDeps {
+  if (cachedDeps) return cachedDeps;
   const url = Deno.env.get("SUPABASE_URL");
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!url || !serviceKey) {
@@ -18,7 +22,7 @@ function buildDeps(): InviteDeps {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  return {
+  cachedDeps = {
     async checkRateLimit(bucketKey, maxAttempts, windowSeconds) {
       const { data, error } = await admin.rpc("check_invite_rate_limit", {
         p_bucket_key: bucketKey,
@@ -74,7 +78,13 @@ function buildDeps(): InviteDeps {
       if (error || !data.user) {
         const msg = (error?.message ?? "").toLowerCase();
         const code = (error?.code ?? "").toLowerCase();
-        if (code === "email_exists" || msg.includes("already been registered") || msg.includes("already exists")) {
+        if (
+          code === "email_exists" ||
+          code === "user_already_exists" ||
+          msg.includes("already been registered") ||
+          msg.includes("already registered") ||
+          msg.includes("already exists")
+        ) {
           return { ok: false, error: "email_exists" };
         }
         if (msg.includes("password")) {
@@ -101,7 +111,10 @@ function buildDeps(): InviteDeps {
         if (msg.includes("cannot_invite_self") || error.code === "P0004") {
           return { ok: false, error: "cannot_invite_self" };
         }
-        return { ok: false, error: "invalid_or_expired" };
+        if (msg.includes("invalid_or_expired") || error.code === "P0006") {
+          return { ok: false, error: "invalid_or_expired" };
+        }
+        throw new Error(`complete_player_invite_redemption failed: ${error.code ?? ""} ${error.message}`);
       }
       const row = Array.isArray(data) ? data[0] : data;
       if (!row) return { ok: false, error: "invalid_or_expired" };
@@ -114,9 +127,26 @@ function buildDeps(): InviteDeps {
     },
 
     async deleteUser(userId) {
-      await admin.auth.admin.deleteUser(userId);
+      const { error } = await admin.auth.admin.deleteUser(userId);
+      if (error) {
+        console.error(`failed to roll back orphan auth user ${userId}:`, error.message);
+      }
     },
   };
+  return cachedDeps;
 }
 
-Deno.serve((req) => handleInviteRequest(req, buildDeps()));
+Deno.serve(async (req) => {
+  try {
+    return await handleInviteRequest(req, getDeps());
+  } catch (err) {
+    console.error("unhandled redeem-player-invite error:", err);
+    return new Response(JSON.stringify({ error: "internal_error" }), {
+      status: 500,
+      headers: {
+        ...CORS_HEADERS,
+        "content-type": "application/json; charset=utf-8",
+      },
+    });
+  }
+});

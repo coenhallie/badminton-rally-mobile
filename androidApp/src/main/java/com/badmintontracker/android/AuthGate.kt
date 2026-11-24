@@ -160,6 +160,9 @@ fun AuthGate(
             val rootSnackbar = remember { SnackbarHostState() }
 
             LaunchedEffect(auth) {
+                if (auth == AuthState.UNAUTHENTICATED) {
+                    localAnalysis.clearSettled()
+                }
                 val onSignIn = nav.currentDestination?.hasRoute<Route.SignIn>() == true
                 val onJoinInvite = nav.currentDestination?.hasRoute<Route.JoinInvite>() == true
                 // Keep JoinInvite in control of its own post-link navigation so
@@ -270,7 +273,10 @@ fun AuthGate(
             val playersVmFactory = remember {
                 viewModelFactory {
                     initializer {
-                        PlayersViewModel(rally.players, rally.scoreLogs, localVideos, rally.auth::currentUserId)
+                        PlayersViewModel(
+                            rally.players, rally.scoreLogs, localVideos,
+                            rally.auth::currentUserId, rally.drillProgress,
+                        )
                     }
                 }
             }
@@ -358,7 +364,9 @@ fun AuthGate(
             // with that; the recomposition happens before the effect is
             // consulted. Mapping to the finished set and dropping duplicates
             // upstream means the body below runs twice per run instead.
-            LaunchedEffect(localAnalysis, coordinator, nav) {
+            val isCoach = auth == AuthState.AUTHENTICATED && rally.auth.accountRole() == AccountRole.COACH
+            LaunchedEffect(isCoach, localAnalysis, coordinator, nav) {
+                if (!isCoach) return@LaunchedEffect
                 var seen = emptySet<String>()
                 // Both pipelines, not just the device one. A cloud run keeps its
                 // entry, and its end showed on the list only as the row's status
@@ -407,28 +415,31 @@ fun AuthGate(
                         update.announced?.let { announced = it }
                     }
             }
-            // Provided around the NavHost so every destination's bar can show it
-            // without the state appearing in any screen's signature. Providing the
-            // StateFlow itself keeps progress ticks scoped to BackgroundWorkAction.
+            // Provided around the NavHost for coaches so every destination's bar can show
+            // background work without the state appearing in any screen's signature.
+            // Player-role accounts get null so BackgroundWorkAction never surfaces coach
+            // jobs or navigates to Route.AllMatches/Route.Players.
+            val coachBackgroundWorkClick: () -> Unit = remember(nav) {
+                {
+                    // "Go to matches": the run it points at is a row on
+                    // All matches, over Players. Back to the All matches
+                    // already on the stack when there is one, so its filter,
+                    // sort and scroll survive; a fresh one over Players
+                    // otherwise. Never a second one: the indicator is
+                    // reachable from any screen.
+                    val onAllMatches =
+                        nav.currentBackStackEntry?.destination?.hasRoute<Route.AllMatches>() == true
+                    if (!onAllMatches && !nav.popBackStack<Route.AllMatches>(inclusive = false)) {
+                        nav.navigate(Route.AllMatches) { popUpTo<Route.Players>() }
+                    }
+                }
+            }
+            val noopBackgroundWorkClick: () -> Unit = remember { {} }
             CompositionLocalProvider(
-                LocalBackgroundWork provides backgroundWork.work,
+                LocalBackgroundWork provides if (isCoach) backgroundWork.work else null,
                 // remembered: this local is static, so a new lambda identity
                 // would invalidate the whole NavHost subtree.
-                LocalBackgroundWorkClick provides remember(nav) {
-                    {
-                        // "Go to matches": the run it points at is a row on
-                        // All matches, over Players. Back to the All matches
-                        // already on the stack when there is one, so its filter,
-                        // sort and scroll survive; a fresh one over Players
-                        // otherwise. Never a second one: the indicator is
-                        // reachable from any screen.
-                        val onAllMatches =
-                            nav.currentBackStackEntry?.destination?.hasRoute<Route.AllMatches>() == true
-                        if (!onAllMatches && !nav.popBackStack<Route.AllMatches>(inclusive = false)) {
-                            nav.navigate(Route.AllMatches) { popUpTo<Route.Players>() }
-                        }
-                    }
-                },
+                LocalBackgroundWorkClick provides if (isCoach) coachBackgroundWorkClick else noopBackgroundWorkClick,
             ) {
             NavHost(
                 navController = nav,
@@ -490,7 +501,20 @@ fun AuthGate(
                                 popUpTo(nav.graph.id) { inclusive = true }
                             }
                         },
-                        onBack = { nav.popBackStack() },
+                        onBack = {
+                            if (rally.auth.currentUserId() != null) {
+                                val dest = if (rally.auth.accountRole() == AccountRole.PLAYER) {
+                                    Route.PlayerHome
+                                } else {
+                                    Route.Players
+                                }
+                                nav.navigate(dest) {
+                                    popUpTo(nav.graph.id) { inclusive = true }
+                                }
+                            } else {
+                                nav.popBackStack()
+                            }
+                        },
                     )
                 }
                 composable<Route.PlayerHome> {
@@ -927,47 +951,49 @@ fun AuthGate(
                     )
                 }
             }
-            // Above the NavHost: the sheet opens over whichever screen the coach
-            // took the video from and comes back to.
-            AutoMatchDetailsHost(
-                entryId = autoDetailsEntryId,
-                localVideos = localVideos,
-                nav = nav,
-                playersVmFactory = playersVmFactory,
-                // Its sentence, if any, on the root snackbar with the intake's own.
-                onSave = { id, title, description, players, nearSide ->
-                    rootScope.launch {
-                        saveEntryMatchDetailsOrMessage(
-                            rally.scoreLogs, rally.videos, localVideos, id, title, description, players, nearSide,
-                        )?.let { intakeError = it }
+            if (isCoach) {
+                // Above the NavHost: the sheet opens over whichever screen the coach
+                // took the video from and comes back to.
+                AutoMatchDetailsHost(
+                    entryId = autoDetailsEntryId,
+                    localVideos = localVideos,
+                    nav = nav,
+                    playersVmFactory = playersVmFactory,
+                    // Its sentence, if any, on the root snackbar with the intake's own.
+                    onSave = { id, title, description, players, nearSide ->
+                        rootScope.launch {
+                            saveEntryMatchDetailsOrMessage(
+                                rally.scoreLogs, rally.videos, localVideos, id, title, description, players, nearSide,
+                            )?.let { intakeError = it }
+                        }
+                    },
+                    onClose = { autoDetailsEntryId = null },
+                )
+                homeEndEntryId?.let { id ->
+                    val entry = localVideos.get(id)
+                    val log = entry?.scoreLogId?.let(rally.scoreLogs::get)
+                    // Near is Home at the near end; Far is Home at the far end, so
+                    // Away is nearest the camera. Any answer, Skip included, goes
+                    // on to court marking.
+                    fun answer(nearSide: Side?) {
+                        homeEndEntryId = null
+                        if (nearSide != null) localVideos.setMatchPlayers(id, MatchPlayers.NONE, nearSide)
+                        if (entry != null) nav.navigate(Route.CourtMarking(id))
                     }
-                },
-                onClose = { autoDetailsEntryId = null },
-            )
-            homeEndEntryId?.let { id ->
-                val entry = localVideos.get(id)
-                val log = entry?.scoreLogId?.let(rally.scoreLogs::get)
-                // Near is Home at the near end; Far is Home at the far end, so
-                // Away is nearest the camera. Any answer, Skip included, goes
-                // on to court marking.
-                fun answer(nearSide: Side?) {
-                    homeEndEntryId = null
-                    if (nearSide != null) localVideos.setMatchPlayers(id, MatchPlayers.NONE, nearSide)
-                    if (entry != null) nav.navigate(Route.CourtMarking(id))
-                }
-                if (log == null) {
-                    // The video or its match went before the question was
-                    // answered: nothing to ask about.
-                    LaunchedEffect(id) { answer(null) }
-                } else {
-                    // Collected, so a roster still loading names Home once it lands.
-                    val roster by rally.players.players.collectAsStateWithLifecycle()
-                    HomeEndDialog(
-                        title = homeEndTitle(log, roster),
-                        onNear = { answer(Side.HOME) },
-                        onFar = { answer(Side.AWAY) },
-                        onSkip = { answer(null) },
-                    )
+                    if (log == null) {
+                        // The video or its match went before the question was
+                        // answered: nothing to ask about.
+                        LaunchedEffect(id) { answer(null) }
+                    } else {
+                        // Collected, so a roster still loading names Home once it lands.
+                        val roster by rally.players.players.collectAsStateWithLifecycle()
+                        HomeEndDialog(
+                            title = homeEndTitle(log, roster),
+                            onNear = { answer(Side.HOME) },
+                            onFar = { answer(Side.AWAY) },
+                            onSkip = { answer(null) },
+                        )
+                    }
                 }
             }
             RootAnnouncementsHost(

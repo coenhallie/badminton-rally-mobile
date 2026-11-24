@@ -1,5 +1,6 @@
 package com.badmintontracker.shared.players
 
+import com.badmintontracker.shared.exercises.DrillProgressRepository
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.localvideo.forgetPlayer
 import com.badmintontracker.shared.scoring.ScoreLogsRepository
@@ -21,11 +22,20 @@ suspend fun deletePlayerOrMessage(
     scoreLogs: ScoreLogsRepository,
     localVideos: LocalVideoRepository,
     player: Player,
+): String? = deletePlayerOrMessage(players, scoreLogs, localVideos, player, drillProgress = null)
+
+suspend fun deletePlayerOrMessage(
+    players: PlayersRepository,
+    scoreLogs: ScoreLogsRepository,
+    localVideos: LocalVideoRepository,
+    player: Player,
+    drillProgress: DrillProgressRepository?,
 ): String? {
     val deleted = players.delete(player.id)
     deleted.exceptionOrNull()?.let { return PlayersCopy.failureMessage(it, PlayersCopy.DELETE_FAILED) }
     scoreLogs.forgetPlayer(player.id, player.name)
     localVideos.forgetPlayer(player.id, player.name)
+    drillProgress?.forgetPlayer(player.id)
     return null
 }
 
@@ -70,12 +80,14 @@ internal fun forgetVanishedPlayers(
     after: List<Player>,
     scoreLogs: ScoreLogsRepository,
     localVideos: LocalVideoRepository,
+    drillProgress: DrillProgressRepository? = null,
 ) {
     val remaining = after.map { it.id }.toSet()
     val names = before.associate { it.id to it.name }
     for (gone in (names.keys + referenced) - remaining) {
         scoreLogs.forgetPlayer(gone, names[gone])
         localVideos.forgetPlayer(gone, names[gone])
+        drillProgress?.forgetPlayer(gone)
     }
 }
 
@@ -95,6 +107,20 @@ suspend fun refreshPlayersAndForgetVanishedOrMessage(
     scoreLogs: ScoreLogsRepository,
     localVideos: LocalVideoRepository,
     currentOwnerId: () -> String?,
+): String? = refreshPlayersAndForgetVanishedOrMessage(
+    players = players,
+    scoreLogs = scoreLogs,
+    localVideos = localVideos,
+    drillProgress = null,
+    currentOwnerId = currentOwnerId,
+)
+
+suspend fun refreshPlayersAndForgetVanishedOrMessage(
+    players: PlayersRepository,
+    scoreLogs: ScoreLogsRepository,
+    localVideos: LocalVideoRepository,
+    drillProgress: DrillProgressRepository?,
+    currentOwnerId: () -> String?,
 ): String? {
     val owner = currentOwnerId()
     // Both before the request, never after: see forgetVanishedPlayers.
@@ -103,7 +129,7 @@ suspend fun refreshPlayersAndForgetVanishedOrMessage(
     val refreshed = players.refresh()
     refreshed.exceptionOrNull()?.let { return PlayersCopy.failureMessage(it, PlayersCopy.LOAD_FAILED) }
     if (owner != null && currentOwnerId() == owner) {
-        forgetVanishedPlayers(before, referenced, players.players.value, scoreLogs, localVideos)
+        forgetVanishedPlayers(before, referenced, players.players.value, scoreLogs, localVideos, drillProgress)
     }
     return null
 }

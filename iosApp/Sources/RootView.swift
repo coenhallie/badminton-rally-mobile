@@ -71,6 +71,7 @@ struct RootView: View {
                         AnalysisFiles.setActiveOwner(rally.auth.currentUserId())
                     } else if state == .unauthenticated {
                         AnalysisFiles.setActiveOwner(nil)
+                        localAnalysis.clearSettled()
                     }
                 }
                 authState = state

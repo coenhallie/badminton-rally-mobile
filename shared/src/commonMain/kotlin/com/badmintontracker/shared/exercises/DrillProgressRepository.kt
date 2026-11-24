@@ -7,8 +7,10 @@ import com.badmintontracker.shared.util.withLock
 import com.russhwolf.settings.Settings
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
+import io.github.jan.supabase.exceptions.RestException
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Order
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -194,11 +196,29 @@ class DrillProgressRepository internal constructor(
     /** Deletes one logged session by [logId]. Queues a server delete when cloud-backed. */
     fun deleteSession(logId: String) = lock.withLock {
         ensureScopeCurrentLocked()
+        val target = storedLogs.firstOrNull { it.log.id == logId } ?: return@withLock
         val updated = storedLogs.filterNot { it.log.id == logId }
-        val nextDeletes = if (client != null && UUID_RE.matches(logId)) pendingDeletes + logId else pendingDeletes
-        if (updated.size != storedLogs.size || nextDeletes != pendingDeletes) {
-            persistLocked(updated, nextDeletes, savedPlans)
-        }
+        val isCloudBacked = client != null &&
+            UUID_RE.matches(logId) &&
+            target.log.playerId != null &&
+            UUID_RE.matches(target.log.playerId)
+        val nextDeletes = if (isCloudBacked) pendingDeletes + logId else pendingDeletes
+        persistLocked(updated, nextDeletes, savedPlans)
+    }
+
+    /**
+     * Drops locally cached and dirty drill logs for a deleted player (and cancels any
+     * pending deletes for them) so future [sync] batches do not push dead player IDs.
+     */
+    fun forgetPlayer(playerId: String) = lock.withLock {
+        ensureScopeCurrentLocked()
+        val removedIds = storedLogs.filter { it.log.playerId == playerId }.map { it.log.id }.toSet()
+        if (removedIds.isEmpty()) return@withLock
+        persistLocked(
+            nextLogs = storedLogs.filterNot { it.log.playerId == playerId },
+            nextDeletes = pendingDeletes - removedIds,
+            nextPlans = savedPlans,
+        )
     }
 
     /** Returns the previously customized [DrillPlan] for [exerciseId], or null if never customized. */
@@ -252,6 +272,7 @@ class DrillProgressRepository internal constructor(
             if (deletes.isNotEmpty()) {
                 postgrest.from(TABLE).delete { filter { isIn("id", deletes) } }
                 lock.withLock {
+                    if (ownerId?.invoke() != activeOwner) return@withLock
                     persistLocked(storedLogs, pendingDeletes - deletes.toSet(), savedPlans)
                 }
             }
@@ -260,6 +281,8 @@ class DrillProgressRepository internal constructor(
                 storedLogs.filter { it.dirty && it.log.playerId != null && UUID_RE.matches(it.log.playerId) }
                     .map { it.log }
             }
+            val pushedIds = mutableSetOf<String>()
+            val rejectedIds = mutableSetOf<String>()
             if (dirtyRows.isNotEmpty()) {
                 val payload = dirtyRows.map { log ->
                     UpsertDrillRow(
@@ -275,7 +298,48 @@ class DrillProgressRepository internal constructor(
                         note = log.note.take(500),
                     )
                 }
-                postgrest.from(TABLE).upsert(payload)
+                try {
+                    try {
+                        // ignoreDuplicates -> ON CONFLICT DO NOTHING so retries never hit
+                        // DO UPDATE (drill_session_logs intentionally has no UPDATE policy).
+                        postgrest.from(TABLE).upsert(payload) { ignoreDuplicates = true }
+                        pushedIds += dirtyRows.map { it.id }
+                    } catch (ce: CancellationException) {
+                        throw ce
+                    } catch (e: Throwable) {
+                        if (!e.isPermanentDrillRejection()) throw e
+                        if (payload.size == 1) {
+                            rejectedIds += payload.single().id
+                        } else {
+                            for (row in payload) {
+                                try {
+                                    postgrest.from(TABLE).upsert(listOf(row)) { ignoreDuplicates = true }
+                                    pushedIds += row.id
+                                } catch (ce: CancellationException) {
+                                    throw ce
+                                } catch (rowErr: Throwable) {
+                                    if (rowErr.isPermanentDrillRejection()) {
+                                        rejectedIds += row.id
+                                    } else {
+                                        throw rowErr
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } finally {
+                    val settled = pushedIds + rejectedIds
+                    if (settled.isNotEmpty()) {
+                        lock.withLock {
+                            if (ownerId?.invoke() == activeOwner) {
+                                val marked = storedLogs.map { item ->
+                                    if (item.log.id in settled && item.dirty) item.copy(dirty = false) else item
+                                }
+                                persistLocked(marked, pendingDeletes, savedPlans)
+                            }
+                        }
+                    }
+                }
             }
 
             val remote = postgrest.from(TABLE).selectAllPages<RemoteDrillRow> {
@@ -285,7 +349,6 @@ class DrillProgressRepository internal constructor(
 
             lock.withLock {
                 if (ownerId?.invoke() != activeOwner) return@withLock
-                val pushedIds = dirtyRows.map { it.id }.toSet()
                 val remoteLogs = remote
                     .filterNot { it.id in pendingDeletes }
                     .map { row ->
@@ -318,6 +381,20 @@ class DrillProgressRepository internal constructor(
                 persistLocked(merged, pendingDeletes, savedPlans)
             }
         }
+    }
+
+    private fun Throwable.isPermanentDrillRejection(): Boolean {
+        val text = buildString {
+            append(message.orEmpty())
+            if (this@isPermanentDrillRejection is RestException) {
+                append(' ').append(error)
+                append(' ').append(description.orEmpty())
+            }
+        }.lowercase()
+        return text.contains("42501") ||
+            text.contains("23503") ||
+            text.contains("row-level security") ||
+            text.contains("foreign key")
     }
 
     private fun currentScope(): String? = if (ownerId == null) LOCAL_SCOPE else ownerId.invoke()

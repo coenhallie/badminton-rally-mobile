@@ -372,7 +372,9 @@ class ClipListViewModel(
                         // forgotten in the cached logs (see forgetVanishedPlayers)
                         // before the sync pushes them: a log still naming the deleted
                         // id would be refused and fail the whole batch.
-                        refreshPlayersAndForgetVanishedOrMessage(players, scoreLogs, localVideos, auth::currentUserId)
+                        refreshPlayersAndForgetVanishedOrMessage(
+                            players, scoreLogs, localVideos, drillProgress, auth::currentUserId,
+                        )
                         scoreLogs.sync()
                     }
                     scoreLogs.refreshLinkedLogs()

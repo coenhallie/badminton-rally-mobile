@@ -2,6 +2,7 @@ package com.badmintontracker.android.players
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.badmintontracker.shared.exercises.DrillProgressRepository
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
 import com.badmintontracker.shared.players.Player
 import com.badmintontracker.shared.players.PlayersCopy
@@ -62,6 +63,7 @@ class PlayersViewModel(
     private val scoreLogs: ScoreLogsRepository,
     private val localVideos: LocalVideoRepository,
     private val currentOwnerId: () -> String?,
+    private val drillProgress: DrillProgressRepository? = null,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(PlayersUiState())
@@ -85,7 +87,9 @@ class PlayersViewModel(
         viewModelScope.launch {
             _state.update { it.copy(isRefreshing = true) }
             try {
-                val message = refreshPlayersAndForgetVanishedOrMessage(players, scoreLogs, localVideos, currentOwnerId)
+                val message = refreshPlayersAndForgetVanishedOrMessage(
+                    players, scoreLogs, localVideos, drillProgress, currentOwnerId,
+                )
                 _state.update {
                     if (message == null) it.copy(loadFailed = false, loaded = true)
                     else it.copy(loadFailed = true, errorMessage = message, loaded = true)
@@ -129,7 +133,7 @@ class PlayersViewModel(
     /** The one delete path: the matches keep the name and lose the id, here and on the server. */
     fun delete(player: Player) {
         viewModelScope.launch {
-            deletePlayerOrMessage(players, scoreLogs, localVideos, player)?.let(::fail)
+            deletePlayerOrMessage(players, scoreLogs, localVideos, player, drillProgress)?.let(::fail)
         }
     }
 

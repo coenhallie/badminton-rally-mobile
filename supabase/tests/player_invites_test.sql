@@ -366,6 +366,48 @@ begin
     end if;
 end $$;
 
+-- Player logs a fresh session that must survive after the coach removes access.
+insert into public.drill_session_logs (
+    id, player_id, exercise_id, completed_at, sets_completed, sets_target, duration_seconds, effort, note
+) values (
+    '66666666-0000-0000-0000-000000000003',
+    'bbbbbbbb-0000-0000-0000-000000000001',
+    'base-mark-6-corner-shadow',
+    now(), 3, 3, 180, 'easy', 'Pre-unlink session'
+);
+
+-- Service-role-only / internal RPCs must reject direct authenticated & anon calls.
+select pg_temp.expect_sqlstate(
+    'authenticated cannot call complete_player_invite_redemption',
+    $$select * from public.complete_player_invite_redemption('00000000-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000003')$$,
+    '42501'
+);
+select pg_temp.expect_sqlstate(
+    'authenticated cannot call check_invite_rate_limit',
+    $$select public.check_invite_rate_limit('ip:test', 20, 0)$$,
+    '42501'
+);
+select pg_temp.expect_sqlstate(
+    'authenticated cannot call generate_invite_code',
+    $$select public.generate_invite_code()$$,
+    '42501'
+);
+
+reset role;
+set local role anon;
+select pg_temp.expect_sqlstate(
+    'anon cannot call complete_player_invite_redemption',
+    $$select * from public.complete_player_invite_redemption('00000000-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000003')$$,
+    '42501'
+);
+select pg_temp.expect_sqlstate(
+    'anon cannot call check_invite_rate_limit',
+    $$select public.check_invite_rate_limit('ip:test', 20, 0)$$,
+    '42501'
+);
+reset role;
+set local role authenticated;
+
 ------------------------------------------------------------------
 -- 6. Unlinking revokes all access immediately without deleting data
 ------------------------------------------------------------------
@@ -375,6 +417,7 @@ select public.unlink_player_login('bbbbbbbb-0000-0000-0000-000000000001');
 
 select pg_temp.act_as('aaaaaaaa-0000-0000-0000-000000000003', 'player');
 do $$
+declare n int;
 begin
     if exists (select 1 from public.list_my_player_profiles()) then
         raise exception 'unlinked player still has profile';
@@ -387,6 +430,24 @@ begin
     end if;
     if exists (select 1 from public.drill_session_logs) then
         raise exception 'unlinked player still sees drill logs';
+    end if;
+    -- Unlinked player must NOT be able to delete their past drill logs from the coach's player.
+    delete from public.drill_session_logs;
+    get diagnostics n = row_count;
+    if n <> 0 then
+        raise exception 'unlinked player deleted % historical drill logs', n;
+    end if;
+end $$;
+
+-- Verify coach still has both surviving drill logs (coach's + Marco's pre-unlink log).
+select pg_temp.act_as('aaaaaaaa-0000-0000-0000-000000000001');
+do $$
+declare cnt int;
+begin
+    select count(*) into cnt from public.drill_session_logs
+     where player_id = 'bbbbbbbb-0000-0000-0000-000000000001';
+    if cnt <> 2 then
+        raise exception 'coach lost drill history after unlink, saw %', cnt;
     end if;
 end $$;
 

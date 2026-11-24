@@ -152,7 +152,7 @@ internal fun buildMatchList(input: MatchListInput, timeZone: TimeZone): MatchLis
             (meta.homePlayerId in linkedPlayerIds || meta.awayPlayerId in linkedPlayerIds)
         when {
             clips.first().isOwnedBy(input.currentUserId) -> mine += videoItem(null, clips, input, timeZone)
-            isCoachedVideo -> coached += coachedVideoItem(clips, meta!!, input, timeZone)
+            isCoachedVideo && meta != null -> coached += coachedVideoItem(clips, meta, input, timeZone)
             else -> shared += videoItem(null, clips, input, timeZone, sharer = input.sharerByVideoId[videoId])
         }
     }
