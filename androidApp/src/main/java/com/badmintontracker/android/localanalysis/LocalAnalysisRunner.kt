@@ -165,6 +165,8 @@ class LocalAnalysisRunner(
     private val scope: CoroutineScope,
     private val throughput: DeviceThroughputRepository,
     private val log: (String) -> Unit = {},
+    /** Signed-in account ID for shared-phone isolation; null in legacy/test wiring uses `filesDir` directly. */
+    private val ownerId: (() -> String?)? = null,
 ) {
     /**
      * Which analyses are in flight.
@@ -182,7 +184,12 @@ class LocalAnalysisRunner(
      */
     private val runMutex = Mutex()
 
-    private val tracks = PlayerTrackStore(context.filesDir)
+    private fun currentRoot(): File? =
+        if (ownerId == null) context.filesDir
+        else AnalysisFiles.accountRoot(context.filesDir, ownerId.invoke())
+
+    private fun tracksStore(): PlayerTrackStore? = currentRoot()?.let(::PlayerTrackStore)
+    private fun skeletonsStore(): SkeletonStore? = currentRoot()?.let(::SkeletonStore)
 
     /**
      * The track to draw for this entry: the cloud's if there is one, else this
@@ -193,23 +200,30 @@ class LocalAnalysisRunner(
      * between the two would be a third selector on a screen that already has
      * panel tabs and a player toggle. See the design's 3 and 10.
      */
-    fun storedTrack(entryId: String): PlayerTrackStore.Stored? =
-        tracks.load(entryId, TrackSource.CLOUD) ?: tracks.load(entryId, TrackSource.LOCAL)
+    fun storedTrack(entryId: String): PlayerTrackStore.Stored? {
+        val tracks = tracksStore() ?: return null
+        return tracks.load(entryId, TrackSource.CLOUD) ?: tracks.load(entryId, TrackSource.LOCAL)
+    }
 
-    fun hasStoredTrack(entryId: String): Boolean =
-        tracks.has(entryId, TrackSource.CLOUD) || tracks.has(entryId, TrackSource.LOCAL)
+    fun hasStoredTrack(entryId: String): Boolean {
+        val tracks = tracksStore() ?: return false
+        return tracks.has(entryId, TrackSource.CLOUD) || tracks.has(entryId, TrackSource.LOCAL)
+    }
 
     /** The clips from an earlier run, for the same reason. */
-    fun storedClips(entryId: String): List<ClipCutter.Clip> = tracks.loadClips(entryId)
-
-    private val skeletons = SkeletonStore(context.filesDir)
+    fun storedClips(entryId: String): List<ClipCutter.Clip> =
+        tracksStore()?.loadClips(entryId).orEmpty()
 
     /** The cloud's skeleton if there is one, else this phone's. See [storedTrack]. */
-    fun storedSkeleton(entryId: String): SkeletonStore.Stored? =
-        skeletons.load(entryId, TrackSource.CLOUD) ?: skeletons.load(entryId, TrackSource.LOCAL)
+    fun storedSkeleton(entryId: String): SkeletonStore.Stored? {
+        val skeletons = skeletonsStore() ?: return null
+        return skeletons.load(entryId, TrackSource.CLOUD) ?: skeletons.load(entryId, TrackSource.LOCAL)
+    }
 
-    fun hasStoredSkeleton(entryId: String): Boolean =
-        skeletons.has(entryId, TrackSource.CLOUD) || skeletons.has(entryId, TrackSource.LOCAL)
+    fun hasStoredSkeleton(entryId: String): Boolean {
+        val skeletons = skeletonsStore() ?: return false
+        return skeletons.has(entryId, TrackSource.CLOUD) || skeletons.has(entryId, TrackSource.LOCAL)
+    }
 
     /**
      * Store what a cloud analysis produced for this entry.
@@ -222,8 +236,9 @@ class LocalAnalysisRunner(
      * two file writes.
      */
     fun saveCloudAnalysis(entryId: String, outcome: CloudPoseOutcome) {
-        tracks.saveAll(entryId, TrackSource.CLOUD, outcome.selections, outcome.fps)
-        skeletons.saveAll(
+        val root = currentRoot() ?: return
+        PlayerTrackStore(root).saveAll(entryId, TrackSource.CLOUD, outcome.selections, outcome.fps)
+        SkeletonStore(root).saveAll(
             entryId = entryId,
             source = TrackSource.CLOUD,
             selections = outcome.selections,
@@ -256,8 +271,10 @@ class LocalAnalysisRunner(
         entryUri = videoUri,
         direct = File(videoUri.removePrefix("file://")).takeIf { it.isFile && it.canRead() },
         copy = if (isSafeEntryId(entryId)) {
-            resolveContainedChild(File(context.filesDir, "local-sources"), "$entryId.mp4")
-                .takeIf { it.isFile && it.length() > 0 }
+            currentRoot()?.let { root ->
+                resolveContainedChild(File(root, "local-sources"), "$entryId.mp4")
+                    .takeIf { it.isFile && it.length() > 0 }
+            }
         } else {
             null
         },
@@ -299,13 +316,17 @@ class LocalAnalysisRunner(
         scope.launch(Dispatchers.Default) {
             try {
                 runMutex.withLock {
+                    val runRoot = currentRoot() ?: context.filesDir
+                    val tracks = PlayerTrackStore(runRoot)
+                    val skeletons = SkeletonStore(runRoot)
+
                     val started = System.currentTimeMillis()
                     set(entryId, LocalAnalysisState.Preparing("Copying video"))
                     LocalAnalysisService.updateText(context, "Preparing")
                     // MediaExtractor and MediaMetadataRetriever both want a real
                     // path, and a gallery pick is a content:// URI whose backing
                     // file the app cannot open directly.
-                    val local = materialise(videoUri, entryId)
+                    val local = materialise(videoUri, entryId, runRoot)
 
                     set(entryId, LocalAnalysisState.Analysing(0f))
                     LocalAnalysisService.updateText(context, "Analyzing")
@@ -379,7 +400,7 @@ class LocalAnalysisRunner(
                     val windows = if (AnalysisMetric.RALLY_CLIPS in metrics) result.clipWindows else emptyList()
                     set(entryId, LocalAnalysisState.Cutting(0, windows.size))
                     if (windows.isNotEmpty()) LocalAnalysisService.updateText(context, "Cutting ${windows.size} clips")
-                    val dir = resolveContainedChild(File(context.filesDir, "local-clips"), entryId).apply { mkdirs() }
+                    val dir = resolveContainedChild(File(runRoot, "local-clips"), entryId).apply { mkdirs() }
                     val clips = if (windows.isEmpty()) {
                         emptyList()
                     } else {
@@ -435,11 +456,11 @@ class LocalAnalysisRunner(
         states.update { it + (entryId to s) }
 
     /** Copy a content:// video into app storage so the media APIs can open it. */
-    private fun materialise(videoUri: String, entryId: String): File {
+    private fun materialise(videoUri: String, entryId: String, root: File): File {
         requireSafeEntryId(entryId)
         val direct = File(videoUri.removePrefix("file://"))
         if (direct.isFile && direct.canRead()) return direct
-        val out = resolveContainedChild(File(context.filesDir, "local-sources"), "$entryId.mp4")
+        val out = resolveContainedChild(File(root, "local-sources"), "$entryId.mp4")
         // Present means whole: copyAtomicallyFrom is the only thing that creates
         // it. "Exists and is not empty" used to be the test, and a copy of a 2GB
         // match killed partway passed it, so every later run analysed the first

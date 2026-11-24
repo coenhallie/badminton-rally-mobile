@@ -78,6 +78,9 @@ import com.badmintontracker.android.home.AddMatchButton
 import com.badmintontracker.android.home.AddMatchSheet
 import com.badmintontracker.android.home.HorizontalSafeDrawing
 import com.badmintontracker.android.home.addButtonExpanded
+import com.badmintontracker.android.invites.PlayerAccessCard
+import com.badmintontracker.android.invites.PlayerAccessViewModel
+import com.badmintontracker.android.invites.PlayerInviteSheet
 import com.badmintontracker.android.localanalysis.BackgroundWorkAction
 import com.badmintontracker.android.localanalysis.PlayerDrillsTab
 import com.badmintontracker.android.match.MatchPageGutter
@@ -88,10 +91,15 @@ import com.badmintontracker.android.ui.components.ShuttlStatTile
 import com.badmintontracker.android.ui.icons.ShuttlIcons
 import com.badmintontracker.android.ui.theme.ShuttlRadius
 import com.badmintontracker.shared.exercises.DrillProgressRepository
+import com.badmintontracker.shared.invites.PlayerAccessState
+import com.badmintontracker.shared.invites.PlayerAccessStatus
+import com.badmintontracker.shared.invites.PlayerInviteCopy
 import com.badmintontracker.shared.matchlist.MatchListItem
+import com.badmintontracker.shared.matchlist.MatchWhere
 import com.badmintontracker.shared.players.Player
 import com.badmintontracker.shared.players.PlayerSummary
 import com.badmintontracker.shared.players.PlayersCopy
+import com.badmintontracker.shared.players.forPlayer
 import com.badmintontracker.shared.players.lastMatchTile
 import com.badmintontracker.shared.players.playerSummary
 import com.badmintontracker.shared.repo.MediaRepository
@@ -164,9 +172,14 @@ fun PlayerScreen(
     /** Incremented when a video is imported/recorded for this player so the
      *  page switches to its Matches tab with the new row visible. */
     showMatchesTrigger: Int = 0,
+    accessVm: PlayerAccessViewModel? = null,
+    currentUserId: String? = null,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val listState by clipListVm.state.collectAsStateWithLifecycle()
+    val accessUi = accessVm?.state?.collectAsStateWithLifecycle()?.value
+    val playerAccessState = accessUi?.accessByPlayerId?.get(playerId)
+    val accessBusy = accessUi?.busyPlayerId == playerId
     val player = state.players.firstOrNull { it.id == playerId }
     // The player as last seen, so a page closing after a delete keeps its
     // name on screen while it animates away rather than going blank.
@@ -184,6 +197,9 @@ fun PlayerScreen(
 
     // Remembered against the list: it is rebuilt on each analysis progress tick.
     val summary = remember(listState.matchList, playerId) { playerSummary(listState.matchList, playerId) }
+    val phoneOnlyMatchCount = remember(listState.matchList, playerId) {
+        listState.matchList.forPlayer(playerId).count { it.where == MatchWhere.PHONE }
+    }
 
     var tab by rememberSaveable { mutableIntStateOf(TAB_PROFILE) }
     // Hoisted so the Add button can read it, and so it keeps its scroll
@@ -208,6 +224,7 @@ fun PlayerScreen(
     var handOpen by rememberSaveable { mutableStateOf(false) }
     var deleteOpen by rememberSaveable { mutableStateOf(false) }
     var addSheetOpen by rememberSaveable { mutableStateOf(false) }
+    var inviteSheetOpen by rememberSaveable { mutableStateOf(false) }
     var listOverlayOpen by remember { mutableStateOf(false) }
     // The rename's save, as PlayersScreen holds the add's: in flight, or failed
     // with this sentence, and the wait cancelled when the dialog closes.
@@ -216,7 +233,7 @@ fun PlayerScreen(
     var renameWait by remember { mutableStateOf<Job?>(null) }
     val scope = rememberCoroutineScope()
 
-    val overlayOpen = renameOpen || handOpen || deleteOpen || addSheetOpen || listOverlayOpen
+    val overlayOpen = renameOpen || handOpen || deleteOpen || addSheetOpen || inviteSheetOpen || listOverlayOpen
     LaunchedEffect(overlayOpen) { onOverlayChange(overlayOpen) }
     // Leaving the screen takes its overlays with it, whatever was last said.
     DisposableEffect(Unit) { onDispose { onOverlayChange(false) } }
@@ -226,6 +243,12 @@ fun PlayerScreen(
     LaunchedEffect(state.errorMessage) {
         val err = state.errorMessage ?: return@LaunchedEffect
         vm.errorShown()
+        scope.launch { snackbarHostState.showSnackbar(err) }
+    }
+
+    LaunchedEffect(accessUi?.errorMessage) {
+        val err = accessUi?.errorMessage ?: return@LaunchedEffect
+        accessVm.dismissError()
         scope.launch { snackbarHostState.showSnackbar(err) }
     }
 
@@ -337,13 +360,47 @@ fun PlayerScreen(
             )
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when (tab) {
-                    TAB_PROFILE -> ProfileTab(player = p, summary = summary, bottom = bottom)
+                    TAB_PROFILE -> ProfileTab(
+                        player = p,
+                        summary = summary,
+                        bottom = bottom,
+                        accessState = playerAccessState,
+                        showAccessCard = accessVm != null,
+                        accessBusy = accessBusy,
+                        onOpenInvite = {
+                            val vmAccess = accessVm ?: return@ProfileTab
+                            if (playerAccessState?.status == PlayerAccessStatus.PENDING &&
+                                !playerAccessState.pendingCode.isNullOrBlank()
+                            ) {
+                                inviteSheetOpen = true
+                            } else {
+                                inviteSheetOpen = true
+                                scope.launch {
+                                    if (vmAccess.createInvite(playerId).isFailure) {
+                                        inviteSheetOpen = false
+                                    }
+                                }
+                            }
+                        },
+                        onCancelInvite = {
+                            val vmAccess = accessVm ?: return@ProfileTab
+                            scope.launch { vmAccess.revokeInvite(playerId) }
+                        },
+                        onRemoveAccess = {
+                            val vmAccess = accessVm ?: return@ProfileTab
+                            scope.launch { vmAccess.unlinkPlayer(playerId) }
+                        },
+                    )
                     TAB_DRILLS -> tabStates.SaveableStateProvider(TAB_DRILLS) {
                         PlayerDrillsTab(
                             playerId = playerId,
                             racketArm = p.racketArm,
                             drillProgress = drillProgress,
                             bottomPadding = padding.calculateBottomPadding() + 24.dp,
+                            currentUserId = currentUserId,
+                            otherPartyLabel = p.name,
+                            isCoach = true,
+                            onSyncDrills = clipListVm::syncDrills,
                         )
                     }
                     else -> tabStates.SaveableStateProvider(TAB_MATCHES) {
@@ -435,6 +492,30 @@ fun PlayerScreen(
             onDismiss = { deleteOpen = false },
         )
     }
+
+    if (inviteSheetOpen && player != null && accessVm != null) {
+        PlayerInviteSheet(
+            playerName = player.name,
+            code = playerAccessState?.pendingCode,
+            expiresAt = playerAccessState?.pendingExpiresAt,
+            phoneOnlyMatchCount = phoneOnlyMatchCount,
+            loading = accessBusy,
+            onCopyCode = {
+                scope.launch { snackbarHostState.showSnackbar(PlayerInviteCopy.CODE_COPIED) }
+            },
+            onGenerateNewCode = {
+                scope.launch { accessVm.createInvite(player.id) }
+            },
+            onCancelInvite = {
+                scope.launch {
+                    if (accessVm.revokeInvite(player.id).isSuccess) {
+                        inviteSheetOpen = false
+                    }
+                }
+            },
+            onDismiss = { inviteSheetOpen = false },
+        )
+    }
 }
 
 /**
@@ -515,7 +596,17 @@ private fun PlayerSwitcher(
  * large font scale never pushes the tiles out of reach.
  */
 @Composable
-private fun ProfileTab(player: Player, summary: PlayerSummary, bottom: Dp) {
+private fun ProfileTab(
+    player: Player,
+    summary: PlayerSummary,
+    bottom: Dp,
+    accessState: PlayerAccessState? = null,
+    showAccessCard: Boolean = false,
+    accessBusy: Boolean = false,
+    onOpenInvite: () -> Unit = {},
+    onCancelInvite: () -> Unit = {},
+    onRemoveAccess: () -> Unit = {},
+) {
     Column(
         Modifier
             .fillMaxSize()
@@ -565,6 +656,17 @@ private fun ProfileTab(player: Player, summary: PlayerSummary, bottom: Dp) {
             ShuttlStatTile(
                 value = lastMatchTile(summary), unit = "", label = PlayersCopy.TILE_LAST_MATCH,
                 modifier = tile, compact = true,
+            )
+        }
+        if (showAccessCard) {
+            Spacer(Modifier.height(24.dp))
+            PlayerAccessCard(
+                playerName = player.name,
+                accessState = accessState,
+                busy = accessBusy,
+                onOpenInvite = onOpenInvite,
+                onCancelInvite = onCancelInvite,
+                onRemoveAccess = onRemoveAccess,
             )
         }
     }

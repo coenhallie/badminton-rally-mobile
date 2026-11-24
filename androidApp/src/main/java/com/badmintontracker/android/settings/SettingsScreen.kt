@@ -48,8 +48,10 @@ import com.badmintontracker.android.ui.icons.ShuttlIcons
 import com.badmintontracker.android.ui.theme.ShuttlRadius
 import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.shared.home.HomeCopy
+import com.badmintontracker.shared.invites.PlayerInviteCopy
 import com.badmintontracker.shared.matchpage.MatchPageCopy
 import com.badmintontracker.shared.prefs.ThemeMode
+import com.badmintontracker.shared.repo.AccountRole
 
 /**
  * Everything the drawer's footer and Home's overflow once held, now behind the
@@ -66,6 +68,8 @@ fun SettingsScreen(
     onLabels: () -> Unit,
     onSignOut: () -> Unit,
     onBack: () -> Unit,
+    accountRole: AccountRole = AccountRole.COACH,
+    onJoinCoach: (() -> Unit)? = null,
 ) {
     var confirmSignOut by remember { mutableStateOf(false) }
 
@@ -79,7 +83,7 @@ fun SettingsScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
-                actions = { BackgroundWorkAction() },
+                actions = { if (accountRole == AccountRole.COACH) BackgroundWorkAction() },
                 // Pinned to what the other pushed screens' bars draw by
                 // default (Material's surface / onSurface, and surface is the
                 // page's bg in both themes), so this bar cannot drift from
@@ -115,14 +119,26 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             SettingsCard {
-                SettingsRow(onClick = onLabels) {
-                    Column(Modifier.weight(1f)) {
-                        Text(HomeCopy.SETTINGS_LABELS, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
-                        Text(HomeCopy.SETTINGS_LABELS_DETAIL, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (accountRole == AccountRole.COACH) {
+                    SettingsRow(onClick = onLabels) {
+                        Column(Modifier.weight(1f)) {
+                            Text(HomeCopy.SETTINGS_LABELS, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
+                            Text(HomeCopy.SETTINGS_LABELS_DETAIL, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Icon(ShuttlIcons.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Icon(ShuttlIcons.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 }
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                if (onJoinCoach != null) {
+                    SettingsRow(onClick = onJoinCoach) {
+                        Column(Modifier.weight(1f)) {
+                            Text(PlayerInviteCopy.JOIN_ANOTHER_COACH, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
+                            Text(PlayerInviteCopy.JOIN_ANOTHER_COACH_DETAIL, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Icon(ShuttlIcons.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                }
                 Row(
                     Modifier
                         .fillMaxWidth()

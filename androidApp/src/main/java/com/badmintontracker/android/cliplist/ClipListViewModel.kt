@@ -5,6 +5,9 @@ import androidx.lifecycle.viewModelScope
 import com.badmintontracker.android.localanalysis.LocalAnalysisState
 import com.badmintontracker.android.localanalysis.isDeviceRunInFlight
 import com.badmintontracker.android.localanalysis.toDeviceRun
+import com.badmintontracker.shared.exercises.DrillProgressRepository
+import com.badmintontracker.shared.invites.LinkedPlayerProfile
+import com.badmintontracker.shared.invites.PlayerAccessRepository
 import com.badmintontracker.shared.localvideo.AnalyzeCoordinator
 import com.badmintontracker.shared.localvideo.AnalyzeProgress
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
@@ -24,6 +27,7 @@ import com.badmintontracker.shared.players.Player
 import com.badmintontracker.shared.players.PlayersRepository
 import com.badmintontracker.shared.players.saveEntryMatchDetailsOrMessage
 import com.badmintontracker.shared.players.refreshPlayersAndForgetVanishedOrMessage
+import com.badmintontracker.shared.repo.AccountRole
 import com.badmintontracker.shared.repo.AuthRepository
 import com.badmintontracker.shared.repo.ClipsRepository
 import com.badmintontracker.shared.repo.SharesRepository
@@ -165,6 +169,8 @@ class ClipListViewModel(
      */
     private val deviceStates: StateFlow<Map<String, LocalAnalysisState>>,
     private val storedResults: StoredResultsReader,
+    private val playerAccess: PlayerAccessRepository? = null,
+    private val drillProgress: DrillProgressRepository? = null,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val computeDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
@@ -178,6 +184,7 @@ class ClipListViewModel(
      */
     val error: StateFlow<String?> = errors.asStateFlow()
     private val refreshGeneration = MutableStateFlow(0)
+    private val storedResultsRefresh = MutableStateFlow(0)
     private val sharerByVideoId = MutableStateFlow<Map<String, String>>(emptyMap())
     // The repository's own cache rather than a map of this view model's: this
     // class is built once per screen that lists matches, and a rename made on
@@ -214,7 +221,8 @@ class ClipListViewModel(
             states.filterValues { it is LocalAnalysisState.Done || it is LocalAnalysisState.Failed }.keys
         },
         localVideos.entries.map { entries -> entries.map { it.id to it.stage } },
-    ) { settled, stages -> settled to stages }
+        storedResultsRefresh,
+    ) { settled, stages, tick -> Triple(settled, stages, tick) }
 
     /**
      * What earlier runs left on disk, read once for the whole list and off the
@@ -243,6 +251,22 @@ class ClipListViewModel(
         val stored: StoredResults,
     )
 
+    private data class LinkedSnapshot(
+        val linkedProfiles: List<LinkedPlayerProfile>,
+        val linkedScoreLogs: List<ScoreLog>,
+        val players: List<Player>,
+    )
+
+    private val linkedProfilesFlow: StateFlow<List<LinkedPlayerProfile>> =
+        playerAccess?.linkedProfiles ?: MutableStateFlow(emptyList())
+
+    private val linked = combine(
+        linkedProfilesFlow,
+        scoreLogs.linkedLogs,
+        players.players,
+        ::LinkedSnapshot,
+    )
+
     private val cloud = combine(
         clips.observeClips(),
         sharerByVideoId,
@@ -268,7 +292,7 @@ class ClipListViewModel(
         .map { localNoteCounts(it) }
         .distinctUntilChanged()
 
-    val state = combine(cloud, phone, refreshGeneration, localNoteCounts, players.players) { c, p, generation, notes, people ->
+    val state = combine(cloud, phone, refreshGeneration, localNoteCounts, linked) { c, p, generation, notes, link ->
         val userId = auth.currentUserId()
         val matches = c.clips.toMatches(userId, c.sharerByVideoId, c.metadataByVideoId)
         val (owned, shared) = matches.partition { it.isOwned }
@@ -292,12 +316,14 @@ class ClipListViewModel(
                     storedSkeletonIds = p.stored.skeletonIds,
                     deviceClipCounts = p.stored.clipCounts,
                     localNoteCounts = notes,
-                    players = people,
+                    players = link.players,
+                    linkedProfiles = link.linkedProfiles,
+                    linkedScoreLogs = link.linkedScoreLogs,
                 ),
             ),
             storedResults = p.stored,
             localEntries = p.entries,
-            players = people,
+            players = link.players,
             refreshGeneration = generation,
         )
     }.flowOn(computeDispatcher)
@@ -305,9 +331,20 @@ class ClipListViewModel(
 
     init { refresh() }
 
+    /** Re-reads on-disk tracks/skeletons (e.g. after on-demand cloud pose download). */
+    fun refreshStoredResults() {
+        storedResultsRefresh.update { it + 1 }
+    }
+
+    /** Fire-and-forget sync for workout drill sessions after recording or deleting a log. */
+    fun syncDrills() {
+        viewModelScope.launch { drillProgress?.sync() }
+    }
+
     fun refresh() {
         viewModelScope.launch {
             refreshing.value = true
+            val isCoach = auth.accountRole() == AccountRole.COACH
             coroutineScope {
                 val clipsJob = async {
                     runCatching { clips.refresh() }
@@ -330,32 +367,31 @@ class ClipListViewModel(
                     videos.listMatchMetadata()
                 }
                 val scoreLogsJob = async {
-                    // The players first, so a player deleted on another device is
-                    // forgotten in the cached logs (see forgetVanishedPlayers)
-                    // before the sync pushes them: a log still naming the deleted
-                    // id would be refused and fail the whole batch. The forget is
-                    // guarded inside on a successful refresh for an unchanged
-                    // signed-in owner.
-                    //
-                    // Both soft failures, same contract as the shares and metadata
-                    // reads: the players stay cached and the matches are all still
-                    // on this phone, so there is nothing for the user to do about
-                    // a failure and nothing to say.
-                    refreshPlayersAndForgetVanishedOrMessage(players, scoreLogs, localVideos, auth::currentUserId)
-                    scoreLogs.sync()
+                    if (isCoach) {
+                        // The players first, so a player deleted on another device is
+                        // forgotten in the cached logs (see forgetVanishedPlayers)
+                        // before the sync pushes them: a log still naming the deleted
+                        // id would be refused and fail the whole batch.
+                        refreshPlayersAndForgetVanishedOrMessage(players, scoreLogs, localVideos, auth::currentUserId)
+                        scoreLogs.sync()
+                    }
+                    scoreLogs.refreshLinkedLogs()
+                }
+                val accessJob = async {
+                    if (isCoach) playerAccess?.refreshAccessStates()
+                    playerAccess?.refreshLinkedProfiles()
+                }
+                val drillsJob = async {
+                    drillProgress?.sync()
                 }
                 clipsJob.await()
                 sharesJob.await()
                 metadataJob.await()
                 scoreLogsJob.await()
+                accessJob.await()
+                drillsJob.await()
             }
-            // After all of them, and unconditionally, as iOS does: each of them
-            // fails softly on its own, so "the refresh failed" is no single
-            // outcome to gate this on, and a cover's own fetch is another,
-            // independent request that can work when the clip list's did not.
-            // A retry that finds nothing new costs one signed-URL fetch; one
-            // refused would leave the coach looking at a placeholder tile the
-            // pull was meant to fix. See refreshGeneration.
+            storedResultsRefresh.update { it + 1 }
             refreshGeneration.update { it + 1 }
             refreshing.value = false
         }

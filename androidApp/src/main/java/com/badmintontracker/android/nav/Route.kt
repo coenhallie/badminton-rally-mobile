@@ -4,8 +4,14 @@ import kotlinx.serialization.Serializable
 
 sealed interface Route {
     @Serializable data object SignIn : Route
-    /** The start destination: the coach's players, and the way to All matches. */
+    /** Signed-out invite onboarding: enter or scan a coach's invite code. */
+    @Serializable data object JoinInvite : Route
+    /** The start destination for coaches: the coach's players, and the way to All matches. */
     @Serializable data object Players : Route
+    /** The start destination for invited players (`AccountRole.PLAYER`). */
+    @Serializable data object PlayerHome : Route
+    /** Dual-role coach viewing one of their own linked profiles from another coach. */
+    @Serializable data class LinkedProfile(val playerId: String) : Route
     /** One player's page. */
     @Serializable data class Player(val playerId: String) : Route
     /** Every match, assigned to a player or not: the match list, pushed from Players. */

@@ -1,5 +1,6 @@
 package com.badmintontracker.android.testing
 
+import com.badmintontracker.shared.repo.AccountRole
 import com.badmintontracker.shared.repo.AuthRepository
 import io.github.jan.supabase.auth.status.SessionStatus
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -9,6 +10,7 @@ class FakeAuthRepository : AuthRepository {
     override val sessionFlow = session
     var currentUserIdValue: String? = "user-self"
     var currentUserEmailValue: String? = null
+    var accountRoleValue: AccountRole = AccountRole.COACH
     var nextEmailResult: Result<Unit> = Result.success(Unit)
     val emailCalls = mutableListOf<Pair<String, String>>()
     val signOutCalls = mutableListOf<Unit>()
@@ -16,6 +18,8 @@ class FakeAuthRepository : AuthRepository {
     override fun currentUserId(): String? = currentUserIdValue
 
     override fun currentUserEmail(): String? = currentUserEmailValue
+
+    override fun accountRole(): AccountRole = accountRoleValue
 
     override suspend fun signInEmail(email: String, password: String): Result<Unit> {
         emailCalls += email to password

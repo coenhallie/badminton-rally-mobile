@@ -107,6 +107,7 @@ fun DrillSessionDialog(
     matchId: String?,
     drillProgress: DrillProgressRepository,
     onDismiss: () -> Unit,
+    onSessionSaved: () -> Unit = {},
 ) {
     var state by remember(exercise.id) {
         mutableStateOf(
@@ -305,6 +306,7 @@ fun DrillSessionDialog(
                                 effort = selectedEffort,
                                 note = noteText,
                             )
+                            onSessionSaved()
                             onDismiss()
                         },
                         onDiscard = onDismiss,

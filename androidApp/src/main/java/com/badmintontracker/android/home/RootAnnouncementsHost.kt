@@ -81,10 +81,11 @@ fun RootAnnouncementsHost(
     val scope = rememberCoroutineScope()
     val current by nav.currentBackStackEntryAsState()
     val destination = current?.destination
-    // The list's one view model, while there is a Players entry to hold it:
-    // that is, while someone is signed in. Looked up again as the stack moves.
+    // The list's one view model, while there is a root entry to hold it
+    // (Route.Players for coaches, Route.PlayerHome for players).
     val playersEntry = remember(current) {
         runCatching { nav.getBackStackEntry<Route.Players>() }.getOrNull()
+            ?: runCatching { nav.getBackStackEntry<Route.PlayerHome>() }.getOrNull()
     }
     // An entry's view models are out of reach until its lifecycle reaches
     // CREATED, which on a cold start can be after this host's first frame.

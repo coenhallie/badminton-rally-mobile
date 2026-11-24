@@ -1,8 +1,11 @@
 package com.badmintontracker.android.match
 
 import com.badmintontracker.android.testing.FakeClipsRepository
+import com.badmintontracker.android.testing.FakePlayerAccessRepository
 import com.badmintontracker.android.testing.FakePlayersRepository
 import com.badmintontracker.android.testing.FakeVideosRepository
+import com.badmintontracker.shared.invites.LinkedPlayerProfile
+import com.badmintontracker.shared.prefs.RacketArm
 import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
@@ -443,5 +446,61 @@ class MatchViewModelTest {
         dispatcher.scheduler.advanceUntilIdle()
         vm.state.value.log shouldBe null
         vm.state.value.canAddVideo shouldBe false
+    }
+
+    @Test
+    fun a_linked_player_score_log_is_strictly_read_only() = runTest(dispatcher) {
+        val settings = MapSettings()
+        val linkedLog = com.badmintontracker.shared.scoring.ScoreLog(
+            id = "log-coached",
+            ownerId = "coach-1",
+            title = "Club ladder",
+            rules = ScoringRules.BWF_21,
+            setup = MatchSetup(firstServer = Side.HOME),
+            events = List(42) { com.badmintontracker.shared.scoring.ScoreEvent.PointTo(Side.HOME) },
+            status = com.badmintontracker.shared.scoring.ScoreLogStatus.BOUND,
+            videoId = "vid-coached",
+            homePlayerId = "p-marco",
+            awayPlayers = listOf("Tom"),
+            createdAt = t0,
+            updatedAt = t0,
+        )
+        // Seed linked_score_logs_cache under the player's own owner scope.
+        val envelope = """{"owner_id":"player-1","logs":[${kotlinx.serialization.json.Json.encodeToString(com.badmintontracker.shared.scoring.ScoreLog.serializer(), linkedLog)}]}"""
+        settings.putString("linked_score_logs_cache_v1", envelope)
+        val store = ScoreLogsRepository(settings, { t0 }, { "player-1" })
+        val access = FakePlayerAccessRepository(
+            initialLinked = listOf(
+                LinkedPlayerProfile(
+                    playerId = "p-marco",
+                    coachId = "coach-1",
+                    coachEmail = "coach@example.com",
+                    name = "Marco",
+                    racketArm = RacketArm.RIGHT,
+                    linkedAt = t0,
+                ),
+            ),
+            initialLoaded = true,
+        )
+        val videos = FakeVideosRepository()
+        val vm = MatchViewModel(
+            store, localVideos(), clips(), videos, LocalAnnotationsRepository(MapSettings()),
+            FakePlayersRepository(), scoreLogId = "log-coached", playerAccess = access,
+        )
+        advanceUntilIdle()
+
+        vm.state.value.log?.id shouldBe "log-coached"
+        vm.state.value.isOwnedLog shouldBe false
+        vm.state.value.canAddVideo shouldBe false
+        vm.state.value.canRemoveVideo shouldBe false
+        vm.state.value.card?.playersLine shouldBe "Marco vs Tom"
+        vm.state.value.card?.statusLine shouldBe "Marco won"
+
+        // Mutating calls are silently ignored for non-owned logs.
+        vm.removeVideo()
+        vm.updateDetails("Hacked", null, MatchPlayers.NONE)
+        advanceUntilIdle()
+        videos.deleteMatchCalls shouldBe emptyList()
+        vm.state.value.log?.title shouldBe "Club ladder"
     }
 }

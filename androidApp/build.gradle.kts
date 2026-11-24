@@ -149,6 +149,8 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
     implementation(libs.coil.video)
+    implementation(libs.zxing.core)
+    implementation(libs.play.services.code.scanner)
 
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.ext.junit)

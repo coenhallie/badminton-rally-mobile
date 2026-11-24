@@ -68,9 +68,17 @@ import com.badmintontracker.android.home.AllMatchesScreen
 import com.badmintontracker.android.home.RootAnnouncementsHost
 import com.badmintontracker.android.home.finishedRuns
 import com.badmintontracker.android.home.runSnackbarUpdate
+import com.badmintontracker.android.invites.JoinInviteScreen
+import com.badmintontracker.android.invites.JoinInviteViewModel
+import com.badmintontracker.android.invites.LinkedProfileScreen
+import com.badmintontracker.android.invites.PlayerAccessViewModel
+import com.badmintontracker.android.invites.PlayerHomeScreen
+import com.badmintontracker.android.invites.RedeemInviteSheet
 import com.badmintontracker.android.settings.SettingsScreen
 import com.badmintontracker.android.match.MatchScreen
 import com.badmintontracker.android.match.MatchViewModel
+import com.badmintontracker.shared.invites.PlayerInviteCopy
+import com.badmintontracker.shared.invites.toPlayer
 import com.badmintontracker.shared.prefs.ThemePreferenceRepository
 import com.badmintontracker.android.localvideo.AutoMatchDetailsHost
 import com.badmintontracker.android.localvideo.LocalPlayerViewModel
@@ -83,10 +91,13 @@ import com.badmintontracker.android.localvideo.court.loadFirstFrame
 import com.badmintontracker.android.localvideo.rememberVideoIntake
 import com.badmintontracker.android.labels.LabelsScreen
 import com.badmintontracker.android.labels.LabelsViewModel
+import com.badmintontracker.android.players.PlayerCreation
 import com.badmintontracker.android.players.PlayerScreen
 import com.badmintontracker.android.players.HomeEndDialog
 import com.badmintontracker.android.players.PlayersScreen
 import com.badmintontracker.android.players.PlayersViewModel
+import com.badmintontracker.shared.players.PlayersCopy
+import com.badmintontracker.shared.repo.AccountRole
 import com.badmintontracker.android.nav.AuthRedirect
 import com.badmintontracker.android.nav.Route
 import com.badmintontracker.android.nav.authRedirect
@@ -131,51 +142,38 @@ fun AuthGate(
     backgroundWork: BackgroundWorkMonitor,
     throughput: DeviceThroughputRepository,
     localAnnotations: LocalAnnotationsRepository,
+    installCloudPose: (suspend (String, (Float) -> Unit) -> Unit)? = null,
 ) {
-    // The shared projection rather than the raw SessionStatus, so both phones
-    // agree on what counts as signed in. Reading the status here used to file
-    // Initializing and RefreshFailure under "signed out": SignIn flashed on every
-    // cold start, and a token refresh with no signal replaced a live scoring
-    // board with the sign-in screen.
     val auth by rally.authState.collectAsStateWithLifecycle(initialValue = AuthState.LOADING)
 
     when (auth) {
         AuthState.LOADING -> Splash()
         else -> {
             val nav = rememberNavController()
-            // Remembered: see authStartDestination. Later changes of session are
-            // navigations, below, never a new graph.
-            val start: Route = remember { authStartDestination(auth) }
+            val start: Route = remember { authStartDestination(auth, rally.auth.accountRole()) }
 
-            // Any sheet or dialog over the Players screen, All matches or a
-            // player's page, each reported by its screen, and the root host's
-            // result dialog. Part of "nothing above": see the finished-run
-            // watcher below. One per screen, so one leaving cannot clear what
-            // another just said.
             var playersOverlayOpen by remember { mutableStateOf(false) }
             var allMatchesOverlayOpen by remember { mutableStateOf(false) }
             var playerOverlayOpen by remember { mutableStateOf(false) }
             var resultDialogOpen by remember { mutableStateOf(false) }
-            // Runs the watcher below has just announced, for RootAnnouncementsHost
-            // to say on the snackbar; it clears them once it has read them.
             var announced by remember { mutableStateOf(emptySet<String>()) }
-            // The app's one root snackbar host: Players, All matches and a
-            // player's page draw it; RootAnnouncementsHost and the two player
-            // screens post to it.
             val rootSnackbar = remember { SnackbarHostState() }
 
             LaunchedEffect(auth) {
                 val onSignIn = nav.currentDestination?.hasRoute<Route.SignIn>() == true
-                when (authRedirect(auth, onSignIn)) {
-                    // Session ended anywhere in the app (sign-out, token revocation):
-                    // clear the whole back stack and land on SignIn.
+                val onJoinInvite = nav.currentDestination?.hasRoute<Route.JoinInvite>() == true
+                // Keep JoinInvite in control of its own post-link navigation so
+                // "Sign in & link" can finish redeeming after auth flips AUTHENTICATED.
+                val onAuthScreen = if (auth == AuthState.UNAUTHENTICATED) onSignIn || onJoinInvite else onSignIn
+                when (authRedirect(auth, onAuthScreen, rally.auth.accountRole())) {
                     AuthRedirect.TO_SIGN_IN -> nav.navigate(Route.SignIn) {
                         popUpTo(nav.graph.id) { inclusive = true }
                     }
-                    // Session arrived while on SignIn (e.g. a session restored via
-                    // deep link, so SignInViewModel never sees the completed sign-in).
                     AuthRedirect.TO_HOME -> nav.navigate(Route.Players) {
-                        popUpTo(Route.SignIn) { inclusive = true }
+                        popUpTo(nav.graph.id) { inclusive = true }
+                    }
+                    AuthRedirect.TO_PLAYER_HOME -> nav.navigate(Route.PlayerHome) {
+                        popUpTo(nav.graph.id) { inclusive = true }
                     }
                     null -> Unit
                 }
@@ -253,8 +251,17 @@ fun AuthGate(
                             localVideos, coordinator, localAnnotations, rally.players,
                             deviceStates = localAnalysis.state,
                             storedResults = storedResults,
+                            playerAccess = rally.playerAccess,
+                            drillProgress = rally.drillProgress,
                         )
                     }
+                }
+            }
+
+            // Scoped to the root entry (Route.Players or Route.PlayerHome).
+            val playerAccessVmFactory = remember {
+                viewModelFactory {
+                    initializer { PlayerAccessViewModel(rally.playerAccess) }
                 }
             }
 
@@ -453,10 +460,69 @@ fun AuthGate(
                         vm = signInVm,
                         themePrefs = themePrefs,
                         onSignedIn = {
-                            nav.navigate(Route.Players) {
-                                popUpTo(Route.SignIn) { inclusive = true }
+                            val dest = if (rally.auth.accountRole() == AccountRole.PLAYER) {
+                                Route.PlayerHome
+                            } else {
+                                Route.Players
+                            }
+                            nav.navigate(dest) {
+                                popUpTo(nav.graph.id) { inclusive = true }
                             }
                         },
+                        onJoinInvite = { nav.navigate(Route.JoinInvite) },
+                    )
+                }
+                composable<Route.JoinInvite> {
+                    val joinVm: JoinInviteViewModel = viewModel(
+                        factory = viewModelFactory {
+                            initializer { JoinInviteViewModel(rally.playerAccess, rally.auth) }
+                        }
+                    )
+                    JoinInviteScreen(
+                        vm = joinVm,
+                        onCompleted = {
+                            val dest = if (rally.auth.accountRole() == AccountRole.PLAYER) {
+                                Route.PlayerHome
+                            } else {
+                                Route.Players
+                            }
+                            nav.navigate(dest) {
+                                popUpTo(nav.graph.id) { inclusive = true }
+                            }
+                        },
+                        onBack = { nav.popBackStack() },
+                    )
+                }
+                composable<Route.PlayerHome> {
+                    val clipListVm: ClipListViewModel = viewModel(factory = clipListVmFactory)
+                    val accessVm: PlayerAccessViewModel = viewModel(factory = playerAccessVmFactory)
+                    PlayerHomeScreen(
+                        accessVm = accessVm,
+                        clipListVm = clipListVm,
+                        shares = rally.shares,
+                        media = rally.media,
+                        drillProgress = rally.drillProgress,
+                        currentUserId = rally.auth.currentUserId(),
+                        onOpenMatch = { openMatch(it, null) },
+                        onSettings = { nav.navigate(Route.Settings) },
+                        snackbarHostState = rootSnackbar,
+                    )
+                }
+                composable<Route.LinkedProfile> { entry ->
+                    val args = entry.toRoute<Route.LinkedProfile>()
+                    val playersEntry = remember(entry) { nav.getBackStackEntry<Route.Players>() }
+                    val clipListVm: ClipListViewModel = viewModel(playersEntry, factory = clipListVmFactory)
+                    val accessVm: PlayerAccessViewModel = viewModel(playersEntry, factory = playerAccessVmFactory)
+                    LinkedProfileScreen(
+                        initialPlayerId = args.playerId,
+                        accessVm = accessVm,
+                        clipListVm = clipListVm,
+                        shares = rally.shares,
+                        media = rally.media,
+                        drillProgress = rally.drillProgress,
+                        currentUserId = rally.auth.currentUserId(),
+                        onOpenMatch = { openMatch(it, null) },
+                        onBack = { nav.popBackStack() },
                     )
                 }
                 composable<Route.Players> {
@@ -464,6 +530,7 @@ fun AuthGate(
                     // reads either one fetches this entry's instance.
                     val clipListVm: ClipListViewModel = viewModel(factory = clipListVmFactory)
                     val playersVm: PlayersViewModel = viewModel(factory = playersVmFactory)
+                    val accessVm: PlayerAccessViewModel = viewModel(factory = playerAccessVmFactory)
                     PlayersScreen(
                         vm = playersVm,
                         clipListVm = clipListVm,
@@ -475,6 +542,8 @@ fun AuthGate(
                         onRecord = { intake.record(null, null) },
                         onImport = { intake.import(null, null) },
                         snackbarHostState = rootSnackbar,
+                        accessVm = accessVm,
+                        onOpenLinkedProfile = { id -> nav.navigate(Route.LinkedProfile(id)) },
                     )
                 }
                 composable<Route.AllMatches> { entry ->
@@ -512,6 +581,7 @@ fun AuthGate(
                     val playersEntry = remember(entry) { nav.getBackStackEntry<Route.Players>() }
                     val clipListVm: ClipListViewModel = viewModel(playersEntry, factory = clipListVmFactory)
                     val playersVm: PlayersViewModel = viewModel(playersEntry, factory = playersVmFactory)
+                    val accessVm: PlayerAccessViewModel = viewModel(playersEntry, factory = playerAccessVmFactory)
                     val localVm: LocalVideoListViewModel = viewModel(
                         factory = viewModelFactory {
                             initializer { LocalVideoListViewModel(localVideos, coordinator, localAnnotations) }
@@ -547,16 +617,19 @@ fun AuthGate(
                         } else {
                             0
                         },
+                        accessVm = accessVm,
+                        currentUserId = rally.auth.currentUserId(),
                     )
                 }
                 composable<Route.Settings> { entry ->
-                    // Sign out goes through the list's view model (vm::signOut),
-                    // as it always has, rather than a view model of this page's
-                    // own for one call: the Players entry's instance, fetched the
-                    // way the match page fetches it.
-                    val playersEntry = remember(entry) { nav.getBackStackEntry<Route.Players>() }
-                    val homeVm: ClipListViewModel = viewModel(playersEntry, factory = clipListVmFactory)
+                    val homeEntry = remember(entry) {
+                        runCatching { nav.getBackStackEntry<Route.Players>() }.getOrNull()
+                            ?: nav.getBackStackEntry<Route.PlayerHome>()
+                    }
+                    val homeVm: ClipListViewModel = viewModel(homeEntry, factory = clipListVmFactory)
+                    val accessVm: PlayerAccessViewModel = viewModel(homeEntry, factory = playerAccessVmFactory)
                     val themeMode by themePrefs.mode.collectAsStateWithLifecycle()
+                    var joinCoachOpen by rememberSaveable { mutableStateOf(false) }
                     SettingsScreen(
                         themeMode = themeMode,
                         onToggleTheme = themePrefs::toggle,
@@ -564,7 +637,23 @@ fun AuthGate(
                         onLabels = { nav.navigate(Route.Labels) },
                         onSignOut = homeVm::signOut,
                         onBack = { nav.popBackStack() },
+                        accountRole = rally.auth.accountRole(),
+                        onJoinCoach = { joinCoachOpen = true },
                     )
+                    if (joinCoachOpen) {
+                        RedeemInviteSheet(
+                            onRedeem = accessVm::redeemExistingCode,
+                            onLinked = { redeemed ->
+                                joinCoachOpen = false
+                                homeVm.refresh()
+                                nav.popBackStack()
+                                rootScope.launch {
+                                    rootSnackbar.showSnackbar(PlayerInviteCopy.linkedSuccessToast(redeemed.playerName))
+                                }
+                            },
+                            onDismiss = { joinCoachOpen = false },
+                        )
+                    }
                 }
                 composable<Route.NewMatch> { entry ->
                     val args = entry.toRoute<Route.NewMatch>()
@@ -638,15 +727,20 @@ fun AuthGate(
                 }
                 composable<Route.Match> { entry ->
                     val args = entry.toRoute<Route.Match>()
-                    // Route.Players is always under a match page (the start
-                    // destination, and every push is over it), so its entry is
-                    // there to scope the shared list view model to.
-                    val playersEntry = remember(entry) { nav.getBackStackEntry<Route.Players>() }
-                    val clipListVm: ClipListViewModel = viewModel(playersEntry, factory = clipListVmFactory)
-                    val matchPlayersVm: PlayersViewModel = viewModel(playersEntry, factory = playersVmFactory)
+                    // Root entry is Route.Players for coaches and Route.PlayerHome for players.
+                    val playersBackStackEntry = remember(entry) {
+                        runCatching { nav.getBackStackEntry<Route.Players>() }.getOrNull()
+                    }
+                    val homeEntry = remember(entry) {
+                        playersBackStackEntry ?: nav.getBackStackEntry<Route.PlayerHome>()
+                    }
+                    val clipListVm: ClipListViewModel = viewModel(homeEntry, factory = clipListVmFactory)
+                    val matchPlayersVm: PlayersViewModel? =
+                        playersBackStackEntry?.let { viewModel(it, factory = playersVmFactory) }
                     val listState by clipListVm.state.collectAsStateWithLifecycle()
                     val logs by rally.scoreLogs.logs.collectAsStateWithLifecycle()
-                    val logVideoId = logs.firstOrNull { it.id == args.scoreLogId }?.videoId
+                    val linkedLogs by rally.scoreLogs.linkedLogs.collectAsStateWithLifecycle()
+                    val logVideoId = (logs + linkedLogs).firstOrNull { it.id == args.scoreLogId }?.videoId
                     val item = listState.matchList.matchPageItem(args.scoreLogId, args.videoId ?: logVideoId, args.entryId)
                     // The row's video first: a video only on this phone gains
                     // one when a cloud run creates it, and the page must start
@@ -668,6 +762,7 @@ fun AuthGate(
                                 MatchViewModel(
                                     rally.scoreLogs, localVideos, rally.clips,
                                     rally.videos, localAnnotations, rally.players, args.scoreLogId,
+                                    playerAccess = rally.playerAccess,
                                 )
                             }
                         }
@@ -675,16 +770,17 @@ fun AuthGate(
                     // rally_clips, for the Analysis section's rally windows: the
                     // rally truth for a cloud-analysed video, and the only source
                     // of rally bounds on a phone that cut no clips itself.
-                    // Remembered: observeClips returns a new wrapper per call,
-                    // and this destination recomposes whenever the list does,
-                    // so an unremembered flow restarted its collector each time.
                     val cloudClipsFlow = remember(rally) { rally.clips.observeClips() }
                     val cloudClips by cloudClipsFlow.collectAsStateWithLifecycle(emptyList())
                     // Who stands at each end, for the Analysis toggle and a
-                    // profile's hand. The roster is collected so a list still
-                    // loading names the players once it lands.
+                    // profile's hand. Combines coach players and linked profiles.
                     val roster by rally.players.players.collectAsStateWithLifecycle()
-                    val sideNames = remember(item, roster) { item?.let { courtSideNames(it, roster) } }
+                    val linkedProfiles by rally.playerAccess.linkedProfiles.collectAsStateWithLifecycle()
+                    val sideNames = remember(item, roster, linkedProfiles) {
+                        val seen = roster.mapTo(mutableSetOf()) { it.id }
+                        val combined = roster + linkedProfiles.filter { it.playerId !in seen }.map { it.toPlayer() }
+                        item?.let { courtSideNames(it, combined) }
+                    }
                     MatchScreen(
                         vm = clipListVm,
                         matchVm = matchVm,
@@ -705,23 +801,18 @@ fun AuthGate(
                         onAddVideo = { intent ->
                             val log = rally.scoreLogs.get(args.scoreLogId ?: return@MatchScreen)
                                 ?: return@MatchScreen
-                            // A match acquires a video only once it is closed:
-                            // attaching to a log still marked live would leave a
-                            // bound match advertising "Resume scoring".
                             if (log.status == ScoreLogStatus.LIVE) rally.scoreLogs.finish(log.id)
                             val target = MatchTarget(log.id, log.title)
                             when (intent) {
-                                // For the match, not a player: its log says who played.
                                 AttachIntent.Import -> intake.import(target, null)
                                 AttachIntent.Record -> intake.record(target, null)
                             }
                         },
-                        // By the row's own entry, the page's status banner being
-                        // the row's: see MatchScreen's StatusBanner. Its Retry and
-                        // Analyze go through analyzeEntry below.
                         onMarkCourt = { entryId -> nav.navigate(Route.CourtMarking(entryId)) },
                         onAnalyzeEntry = analyzeEntry,
-                        onAddPlayer = matchPlayersVm::create,
+                        onAddPlayer = { name, arm ->
+                            matchPlayersVm?.create(name, arm) ?: PlayerCreation.Failed(PlayersCopy.SAVE_FAILED)
+                        },
                         matchSection = { e, fullscreen, onFullscreenChange, snackbar, analyzeLabel ->
                             val playerVm: LocalPlayerViewModel = viewModel(
                                 key = "player-${e.id}",
@@ -737,11 +828,19 @@ fun AuthGate(
                             )
                         },
                         analysisSection = { id ->
+                            val isOwnedAnalysis = item?.isOwned != false
                             AnalysisSection(
                                 analysisId = id, localAnalysis = localAnalysis, localVideos = localVideos,
                                 playbackPrefs = rally.playbackPrefs, racketArmPrefs = rally.racketArmPrefs,
                                 drillProgress = rally.drillProgress,
                                 cloudClips = cloudClips, sideNames = sideNames,
+                                hasCloudPose = item?.hasCloudPose == true,
+                                installCloudPose = installCloudPose,
+                                onCloudPoseInstalled = clipListVm::refreshStoredResults,
+                                currentUserId = rally.auth.currentUserId(),
+                                otherPartyLabel = if (isOwnedAnalysis) null else "Coach",
+                                isCoach = isOwnedAnalysis,
+                                onSyncDrills = clipListVm::syncDrills,
                             )
                         },
                         deviceRalliesSection = { id -> DeviceRalliesSection(entryId = id, localAnalysis = localAnalysis) },

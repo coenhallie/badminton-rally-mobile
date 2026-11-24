@@ -128,4 +128,17 @@ class AnalysisFilesTest {
         sentinel.exists() shouldBe true
         insideStore.exists() shouldBe true
     }
+
+    @Test
+    fun `accountRoot gives legacy root to first account and isolates second account`() {
+        val coachRoot = AnalysisFiles.accountRoot(temp.root, "coach-1")
+        val playerRoot = AnalysisFiles.accountRoot(temp.root, "player-1")
+        val coachAgain = AnalysisFiles.accountRoot(temp.root, "coach-1")
+        val signedOut = AnalysisFiles.accountRoot(temp.root, null)
+
+        coachRoot shouldBe temp.root
+        coachAgain shouldBe temp.root
+        playerRoot shouldBe File(temp.root.canonicalFile, "users/player-1")
+        signedOut shouldBe null
+    }
 }

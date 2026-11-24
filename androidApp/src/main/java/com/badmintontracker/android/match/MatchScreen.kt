@@ -299,15 +299,16 @@ fun MatchScreen(
                     }
                 },
                 actions = {
+                    val isOwned = matchItem?.isOwned ?: (matchState.isOwnedLog || match?.isOwned == true)
                     // First in the bar so it keeps its place as each screen's own
                     // actions come and go.
-                    BackgroundWorkAction()
-                    if (match?.isOwned == true) {
+                    if (isOwned) BackgroundWorkAction()
+                    if (isOwned && match?.isOwned == true) {
                         IconButton(onClick = { sheetOpen = true }) {
                             Icon(Icons.Default.Share, contentDescription = "Share match")
                         }
                     }
-                    if (matchState.canAddVideo) {
+                    if (isOwned && matchState.canAddVideo) {
                         Box {
                             IconButton(onClick = { addVideoMenuOpen = true }) {
                                 Icon(Icons.Default.Add, contentDescription = "Add video")
@@ -328,15 +329,11 @@ fun MatchScreen(
                             }
                         }
                     }
-                    // A scored match, or a filmed one that is the coach's own: both
-                    // have details to edit, and so does every other match the
-                    // coach owns, whose players can be said wherever its record
-                    // lives (canEditPlayers: a video with no clips yet, on the
-                    // phone or uploaded). A video only on this phone that can be
-                    // analyzed again has that to offer. A shared match has none
-                    // of these, so it gets no menu at all.
-                    val editsDetails = log != null || match?.isOwned == true || matchItem?.canEditPlayers == true
-                    if (editsDetails || matchItem?.canAnalyzeAgain == true) {
+                    // Every write affordance is gated on ownership so linked players
+                    // and shared viewers never see Edit details, Export, Re-analyze, or video actions.
+                    val editsDetails = isOwned && (matchState.isOwnedLog || match?.isOwned == true || matchItem?.canEditPlayers == true)
+                    val canAnalyzeAgain = isOwned && matchItem?.canAnalyzeAgain == true
+                    if (editsDetails || canAnalyzeAgain) {
                         Box {
                             IconButton(onClick = { overflowOpen = true }) {
                                 Icon(Icons.Default.MoreVert, contentDescription = "Match options")
@@ -355,7 +352,7 @@ fun MatchScreen(
                                         onClick = { overflowOpen = false; editingDetails = true },
                                     )
                                 }
-                                if (log != null) {
+                                if (matchState.isOwnedLog && log != null) {
                                     DropdownMenuItem(
                                         text = { Text("Export as text") },
                                         onClick = {
@@ -366,21 +363,15 @@ fun MatchScreen(
                                 }
                                 // The row's own menu item, here too: the same entry,
                                 // through the same resume-or-mark-court decision.
-                                matchItem?.takeIf { it.canAnalyzeAgain }?.entryId?.let { id ->
-                                    DropdownMenuItem(
-                                        text = { Text(MatchListCopy.MENU_ANALYZE_AGAIN) },
-                                        onClick = { overflowOpen = false; onAnalyzeEntry(id) },
-                                    )
+                                if (canAnalyzeAgain) {
+                                    matchItem.entryId?.let { id ->
+                                        DropdownMenuItem(
+                                            text = { Text(MatchListCopy.MENU_ANALYZE_AGAIN) },
+                                            onClick = { overflowOpen = false; onAnalyzeEntry(id) },
+                                        )
+                                    }
                                 }
-                                // Offered whenever this match has a video and nothing
-                                // is in flight for it - not only when the analysis
-                                // disappointed. A video that found no rallies is the
-                                // likeliest reason to want another one, but gating on
-                                // that would leave the "Finishing up…" dead end with
-                                // no action on it at all. See the 2026-08-29 design.
-                                // An on-device run counts as in flight: only the row
-                                // sees it, see pageOffersVideoRemoval.
-                                if (pageOffersVideoRemoval(matchState.canRemoveVideo, matchItem)) {
+                                if (isOwned && pageOffersVideoRemoval(matchState.canRemoveVideo, matchItem)) {
                                     DropdownMenuItem(
                                         text = { Text("Change video") },
                                         onClick = { overflowOpen = false; videoAction = MatchVideoAction.CHANGE },
@@ -482,7 +473,7 @@ fun MatchScreen(
                 CompositionLocalProvider(LocalPillLabelCeiling provides pillCeiling) {
                     SectionBody(
                         section = section,
-                        refreshable = videoId != null,
+                        refreshable = videoId != null || scoreLogId != null,
                         isRefreshing = state.isRefreshing,
                         onRefresh = { vm.refresh(); summaryVm?.refresh() },
                     ) {
@@ -492,6 +483,7 @@ fun MatchScreen(
                                     log = log, players = matchState.players, card = matchState.card, tally = matchState.tally,
                                     timeline = matchState.match?.let(::matchTimeline).orEmpty(), match = matchState.match,
                                     onScore = onScore,
+                                    canScore = matchItem.isOwned && matchState.isOwnedLog,
                                 )
                             }
                             MatchPageSection.MATCH -> entry?.let {
@@ -517,12 +509,9 @@ fun MatchScreen(
                                             // video's own otherwise: a scored match that was later
                                             // filmed keeps the log as its record.
                                             details = matchDetailsLine(
-                                                // A video's own: the list row's, whose
-                                                // sides read a profile's name, for the
-                                                // coach's matches; a shared match keeps
-                                                // the names its metadata carries.
                                                 playersLine = log?.playersLine(matchState.players)
-                                                    ?: if (matchItem.isOwned) matchItem.playersLine else match?.playersLine,
+                                                    ?: matchItem.playersLine
+                                                    ?: match?.playersLine,
                                                 format = log?.format ?: match?.format,
                                             ),
                                             description = match?.description,

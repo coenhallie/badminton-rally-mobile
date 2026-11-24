@@ -71,6 +71,7 @@ import com.badmintontracker.android.home.AddMatchSheet
 import com.badmintontracker.android.home.HomeTopBar
 import com.badmintontracker.android.home.HorizontalSafeDrawing
 import com.badmintontracker.android.home.addButtonExpanded
+import com.badmintontracker.android.invites.PlayerAccessViewModel
 import com.badmintontracker.android.localanalysis.BackgroundWorkAction
 import com.badmintontracker.android.ui.components.ShuttlButton
 import com.badmintontracker.android.ui.components.ShuttlButtonVariant
@@ -78,6 +79,9 @@ import com.badmintontracker.android.ui.components.ShuttlEmptyState
 import com.badmintontracker.android.ui.icons.ShuttlIcons
 import com.badmintontracker.android.ui.theme.ShuttlRadius
 import com.badmintontracker.android.ui.theme.ShuttlTheme
+import com.badmintontracker.shared.invites.LinkedPlayerProfile
+import com.badmintontracker.shared.invites.PlayerAccessStatus
+import com.badmintontracker.shared.invites.PlayerInviteCopy
 import com.badmintontracker.shared.matchpage.MatchPageCopy
 import com.badmintontracker.shared.players.Player
 import com.badmintontracker.shared.players.PlayersCopy
@@ -114,9 +118,14 @@ fun PlayersScreen(
     onImport: () -> Unit,
     /** AuthGate's one root host: see RootAnnouncementsHost. */
     snackbarHostState: SnackbarHostState,
+    accessVm: PlayerAccessViewModel? = null,
+    onOpenLinkedProfile: (playerId: String) -> Unit = {},
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val listState by clipListVm.state.collectAsStateWithLifecycle()
+    val accessState = accessVm?.state?.collectAsStateWithLifecycle()?.value
+    val accessByPlayerId = accessState?.accessByPlayerId.orEmpty()
+    val linkedProfiles = accessState?.linkedProfiles.orEmpty()
     val matchList = listState.matchList
     // Both saved, so a recreation brings back whichever was open.
     var addSheetOpen by rememberSaveable { mutableStateOf(false) }
@@ -197,7 +206,12 @@ fun PlayersScreen(
             // fillMaxSize would claim the bar's height too.
             PullToRefreshBox(
                 isRefreshing = state.isRefreshing && (state.loaded || state.players.isNotEmpty()),
-                onRefresh = { vm.refresh(); clipListVm.refresh() },
+                onRefresh = {
+                    vm.refresh()
+                    clipListVm.refresh()
+                    accessVm?.refreshAccessStates()
+                    accessVm?.refreshLinkedProfiles()
+                },
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             ) {
                 if (state.players.isEmpty()) {
@@ -211,6 +225,8 @@ fun PlayersScreen(
                             onRetry = vm::refresh,
                             onAddPlayer = { addPlayerOpen = true },
                             onAllMatches = onAllMatches,
+                            linkedProfile = linkedProfiles.firstOrNull(),
+                            onOpenLinkedProfile = onOpenLinkedProfile,
                             bottom = bottom,
                         )
                     }
@@ -224,10 +240,20 @@ fun PlayersScreen(
                         ),
                         verticalArrangement = Arrangement.spacedBy(DrawerList.rowGap),
                     ) {
+                        linkedProfiles.firstOrNull()?.let { linked ->
+                            item(key = "my-linked-profile") {
+                                MyLinkedProfileCard(
+                                    profile = linked,
+                                    profileCount = linkedProfiles.size,
+                                    onClick = { onOpenLinkedProfile(linked.playerId) },
+                                )
+                            }
+                        }
                         items(state.players, key = { it.id }) { player ->
                             PlayerRow(
                                 player = player,
                                 detail = details[player.id].orEmpty(),
+                                accessStatus = accessByPlayerId[player.id]?.status,
                                 onClick = { onOpenPlayer(player.id) },
                             )
                         }
@@ -308,15 +334,27 @@ private fun NoPlayers(
     onRetry: () -> Unit,
     onAddPlayer: () -> Unit,
     onAllMatches: () -> Unit,
+    linkedProfile: LinkedPlayerProfile?,
+    onOpenLinkedProfile: (playerId: String) -> Unit,
     bottom: Dp,
 ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(top = 48.dp, bottom = bottom),
+            .padding(top = 16.dp, bottom = bottom),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        if (linkedProfile != null) {
+            MyLinkedProfileCard(
+                profile = linkedProfile,
+                profileCount = 1,
+                onClick = { onOpenLinkedProfile(linkedProfile.playerId) },
+            )
+            Spacer(Modifier.height(16.dp))
+        } else {
+            Spacer(Modifier.height(32.dp))
+        }
         if (loadFailed) {
             ShuttlEmptyState(
                 icon = ShuttlIcons.PersonStanding,
@@ -361,9 +399,64 @@ private fun AllMatchesButton(onClick: () -> Unit, modifier: Modifier = Modifier)
     )
 }
 
-/** One player: avatar, name, "12 matches · last Oct 28", and a chevron to their page. */
+/** Dual-role coach card: opens this account's own linked player profile from another coach. */
 @Composable
-private fun PlayerRow(player: Player, detail: String, onClick: () -> Unit) {
+private fun MyLinkedProfileCard(
+    profile: LinkedPlayerProfile,
+    profileCount: Int,
+    onClick: () -> Unit,
+) {
+    DrawerRowContainer(
+        shape = RoundedCornerShape(ShuttlRadius.medium),
+        fill = MaterialTheme.colorScheme.surfaceVariant,
+    ) {
+        RowLayout(onClick = onClick) {
+            PlayerAvatar(profile.name, PlayerAvatarRowSize)
+            Spacer(Modifier.width(DrawerList.gap))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = PlayerInviteCopy.MY_PROFILE_SECTION,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = ShuttlTheme.extended.accentDark,
+                )
+                Text(
+                    text = profile.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                val subtitle = if (profileCount > 1) {
+                    "${PlayerInviteCopy.coachedBy(profile.coachEmail)} · +${profileCount - 1} more"
+                } else {
+                    PlayerInviteCopy.coachedBy(profile.coachEmail)
+                }
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Spacer(Modifier.width(DrawerList.gap))
+            Icon(
+                ShuttlIcons.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/** One player: avatar, name, "12 matches · last Oct 28", optional access dot, and chevron. */
+@Composable
+private fun PlayerRow(
+    player: Player,
+    detail: String,
+    accessStatus: PlayerAccessStatus?,
+    onClick: () -> Unit,
+) {
     DrawerRowContainer(
         shape = RoundedCornerShape(ShuttlRadius.medium),
         fill = ShuttlTheme.extended.bgTertiary,
@@ -385,6 +478,19 @@ private fun PlayerRow(player: Player, detail: String, onClick: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                )
+            }
+            val statusDotColor = when (accessStatus) {
+                PlayerAccessStatus.LINKED -> MaterialTheme.colorScheme.primary
+                PlayerAccessStatus.PENDING -> ShuttlTheme.extended.warning
+                PlayerAccessStatus.UNINVITED, null -> null
+            }
+            if (statusDotColor != null) {
+                Spacer(Modifier.width(8.dp))
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .background(statusDotColor, CircleShape),
                 )
             }
             Spacer(Modifier.width(DrawerList.gap))

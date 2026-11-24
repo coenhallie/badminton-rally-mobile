@@ -57,6 +57,7 @@ fun LazyListScope.pointsFacet(
     timeline: List<TimelineEntry>,
     match: MatchState?,
     onScore: () -> Unit,
+    canScore: Boolean = true,
 ) {
     item(key = "points-header") {
         Column(
@@ -79,9 +80,8 @@ fun LazyListScope.pointsFacet(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            // Absent rather than disabled on a finished match: there is nothing
-            // left to score, and undo lives on the board itself.
-            if (log.status == ScoreLogStatus.LIVE) {
+            // Absent rather than disabled on a finished match or a read-only linked match.
+            if (canScore && log.status == ScoreLogStatus.LIVE) {
                 Button(onClick = onScore, modifier = Modifier.padding(top = 8.dp)) {
                     Text(match?.let(::scoreButtonLabel) ?: "Score")
                 }

@@ -1,7 +1,9 @@
 package com.badmintontracker.android.signin
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -33,12 +36,14 @@ import com.badmintontracker.android.BuildConfig
 import com.badmintontracker.android.home.HomeTopBar
 import com.badmintontracker.android.ui.components.ErrorBanner
 import com.badmintontracker.android.ui.components.ShuttlButton
+import com.badmintontracker.android.ui.components.ShuttlButtonVariant
 import com.badmintontracker.android.ui.components.ShuttlFieldType
 import com.badmintontracker.android.ui.components.ShuttlOutlinedTextField
 import com.badmintontracker.android.ui.components.ThemeToggleButton
 import com.badmintontracker.android.ui.theme.ShuttlTheme
 import com.badmintontracker.android.ui.theme.ShuttlTypeExtras
 import com.badmintontracker.shared.home.HomeCopy
+import com.badmintontracker.shared.invites.PlayerInviteCopy
 import com.badmintontracker.shared.prefs.ThemePreferenceRepository
 import com.badmintontracker.shared.signin.SignInCopy
 
@@ -57,6 +62,7 @@ fun SignInScreen(
     vm:          SignInViewModel,
     themePrefs:  ThemePreferenceRepository,
     onSignedIn:  () -> Unit,
+    onJoinInvite: () -> Unit = {},
 ) {
     val state        by vm.state.collectAsStateWithLifecycle()
     val themeMode    by themePrefs.mode.collectAsStateWithLifecycle()
@@ -165,8 +171,36 @@ fun SignInScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(24.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    HorizontalDivider(
+                        modifier = Modifier.weight(1f),
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                    )
+                    Text(
+                        text = PlayerInviteCopy.SIGN_IN_INVITE_DIVIDER,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = ShuttlTheme.extended.textTertiary,
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier.weight(1f),
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                    )
+                }
+                Spacer(Modifier.height(16.dp))
+                ShuttlButton(
+                    text     = PlayerInviteCopy.SIGN_IN_HAVE_CODE,
+                    onClick  = onJoinInvite,
+                    variant  = ShuttlButtonVariant.Secondary,
+                    enabled  = !state.isSubmitting,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(24.dp))
                 Text(
-                    text      = SignInCopy.FOOTNOTE,
+                    text      = PlayerInviteCopy.SIGN_IN_FOOTNOTE_INVITE_ONLY,
                     color     = ShuttlTheme.extended.textTertiary,
                     style     = MaterialTheme.typography.bodySmall,
                     textAlign = TextAlign.Center,

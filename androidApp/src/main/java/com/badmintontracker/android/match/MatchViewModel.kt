@@ -2,6 +2,9 @@ package com.badmintontracker.android.match
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.badmintontracker.shared.invites.LinkedPlayerProfile
+import com.badmintontracker.shared.invites.PlayerAccessRepository
+import com.badmintontracker.shared.invites.toPlayer
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.LocalVideoRepository
@@ -41,17 +44,16 @@ import kotlinx.coroutines.launch
 data class MatchPageState(
     /** Null for a video-first or shared match, and for one deleted while open. */
     val log: ScoreLog? = null,
+    /** True only when [log] is owned by the signed-in account (never true for coached linked logs). */
+    val isOwnedLog: Boolean = false,
     val match: MatchState? = null,
-    /** The coach's players: a side a profile holds is named from these. See [ScoreLog.sideName]. */
+    /** The coach's players (plus any linked player profiles): a side a profile holds is named from these. */
     val players: List<Player> = emptyList(),
     val card: ScoreMatchCard? = null,
     val tally: ScoreTagSummary = ScoreTagSummary.EMPTY,
-    /** A finished match with no video, and no video already picked for it. The
-     *  one condition "Add video" is offered on. */
+    /** A finished owned match with no video, and no video already picked for it. */
     val canAddVideo: Boolean = false,
-    /** This match has a video and nothing is in flight for it: the one condition
-     *  "Change video" and "Remove video" are offered on, see
-     *  [scoreLogCanRemoveVideo]. Mutually exclusive with [canAddVideo]. */
+    /** This owned match has a video and nothing is in flight for it. */
     val canRemoveVideo: Boolean = false,
     /** Whether a videos row exists, which decides what the confirm says is about
      *  to be lost - an entry that never reached CREATE_ROW has no rallies and no
@@ -76,45 +78,49 @@ class MatchViewModel(
     private val localAnnotations: LocalAnnotationsRepository,
     players: PlayersRepository,
     private val scoreLogId: String?,
+    playerAccess: PlayerAccessRepository? = null,
 ) : ViewModel() {
 
     private val errors = MutableStateFlow<String?>(null)
+    private val linkedProfilesFlow = playerAccess?.linkedProfiles ?: MutableStateFlow(emptyList())
+
+    private val allPlayers = combine(players.players, linkedProfilesFlow) { roster, linked ->
+        val seen = roster.mapTo(mutableSetOf()) { it.id }
+        roster + linked.filter { it.playerId !in seen }.map { it.toPlayer() }
+    }
 
     // What the match's video is doing is not read here: the page's status
     // banner draws the match list's own row (see MatchScreen's StatusBanner),
     // the one place that also sees an on-device run.
     val state = combine(
         scoreLogs.logs,
+        scoreLogs.linkedLogs,
         localVideos.entries,
-        players.players,
+        allPlayers,
         errors,
-    ) { logs, entries, roster, error ->
-        build(logs, entries, roster, error)
+    ) { logs, linkedLogs, entries, roster, error ->
+        build(logs, linkedLogs, entries, roster, error)
     }
-        // Eagerly, not WhileSubscribed: state.value is read directly in tests and
-        // by the navigation callbacks, both without a collector attached. The
-        // initial value is built from each store's current value rather than left
-        // blank, for the same reason ScoringViewModel's is: a blank one would say
-        // the match is not on this phone for the one frame before the first
-        // collection lands, and a test reading state.value synchronously right
-        // after construction would see that blank frame instead of the real one.
         .stateIn(
             viewModelScope,
             SharingStarted.Eagerly,
-            build(scoreLogs.logs.value, localVideos.entries.value, players.players.value, errors.value),
+            build(
+                logs = scoreLogs.logs.value,
+                linkedLogs = scoreLogs.linkedLogs.value,
+                entries = localVideos.entries.value,
+                roster = mergePlayers(players.players.value, linkedProfilesFlow.value),
+                error = errors.value,
+            ),
         )
 
-    /**
-     * Takes the video off this match and leaves the match: the ordering, and the
-     * message on failure, are [removeMatchVideoOrMessage]'s.
-     *
-     * [onRemoved] is what makes "Change video" one gesture rather than two. Once
-     * removal lands, this match has no video in either sense, so `canAddVideo`
-     * flips true on its own and the caller can go straight to the picker the
-     * page already owns - no second attach path. See the 2026-08-29 design, §4.
-     */
+    private fun mergePlayers(roster: List<Player>, linked: List<LinkedPlayerProfile>): List<Player> {
+        val seen = roster.mapTo(mutableSetOf()) { it.id }
+        return roster + linked.filter { it.playerId !in seen }.map { it.toPlayer() }
+    }
+
     fun removeVideo(onRemoved: () -> Unit = {}) {
         val id = scoreLogId ?: return
+        if (scoreLogs.get(id) == null) return
         viewModelScope.launch {
             val message = removeMatchVideoOrMessage(
                 scoreLogId = id,
@@ -206,26 +212,26 @@ class MatchViewModel(
 
     private fun build(
         logs: List<ScoreLog>,
+        linkedLogs: List<ScoreLog>,
         entries: List<LocalVideoEntry>,
         roster: List<Player>,
         error: String?,
     ): MatchPageState {
-        val log = logs.firstOrNull { it.id == scoreLogId } ?: return MatchPageState(players = roster, error = error)
+        val ownedLog = logs.firstOrNull { it.id == scoreLogId }
+        val log = ownedLog ?: linkedLogs.firstOrNull { it.id == scoreLogId }
+            ?: return MatchPageState(players = roster, error = error)
+        val isOwnedLog = ownedLog != null
         val match = log.state()
-        // An entry can exist for a while before the pipeline gives the match a
-        // videoId (LOCAL, UPLOADING, PROCESSING); gating on videoId alone would
-        // let "Add video" reopen the picker mid-attach.
-        val entry = entries.firstOrNull { it.scoreLogId == scoreLogId }
+        val entry = if (isOwnedLog) entries.firstOrNull { it.scoreLogId == scoreLogId } else null
         return MatchPageState(
             log = log,
+            isOwnedLog = isOwnedLog,
             match = match,
             players = roster,
             card = buildScoreMatchCard(log, roster),
             tally = buildScoreTagSummary(match),
-            // isPlayable, not `status != LIVE`: the board's Done button leaves a
-            // won match at LIVE on purpose, so undo stays reachable.
-            canAddVideo = !log.isPlayable() && log.videoId == null && entry == null,
-            canRemoveVideo = scoreLogCanRemoveVideo(log, entries),
+            canAddVideo = isOwnedLog && !log.isPlayable() && log.videoId == null && entry == null,
+            canRemoveVideo = isOwnedLog && scoreLogCanRemoveVideo(log, entries),
             hasServerVideo = log.videoId != null,
             error = error,
         )

@@ -65,6 +65,7 @@ class MainActivity : ComponentActivity() {
                             backgroundWork = app.backgroundWork,
                             throughput = app.throughput,
                             localAnnotations = app.localAnnotations,
+                            installCloudPose = app.installCloudPose,
                         )
                     }
                 }

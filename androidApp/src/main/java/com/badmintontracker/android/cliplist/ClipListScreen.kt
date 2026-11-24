@@ -122,6 +122,8 @@ fun ClipListScreen(
     contentPadding: PaddingValues = PaddingValues(),
     /** The player whose matches these are, or null for All matches. */
     playerId: String? = null,
+    /** Empty-state body copy when [playerId] is set and has no matches yet. */
+    emptyBody: String = PlayersCopy.MATCHES_EMPTY_BODY,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     var sheetVideoId by remember { mutableStateOf<String?>(null) }
@@ -288,7 +290,7 @@ fun ClipListScreen(
                         ShuttlEmptyState(
                             icon = ShuttlIcons.Trophy,
                             title = PlayersCopy.NO_MATCHES_YET,
-                            body = PlayersCopy.MATCHES_EMPTY_BODY,
+                            body = emptyBody,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(top = 48.dp, bottom = contentPadding.calculateBottomPadding()),

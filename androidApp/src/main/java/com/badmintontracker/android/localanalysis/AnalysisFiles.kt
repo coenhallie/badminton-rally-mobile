@@ -87,6 +87,35 @@ object AnalysisFiles {
      */
     private val SUFFIXES = listOf(".track", ".skel", ".mp4")
 
+    private const val LEGACY_OWNER_MARKER = ".analysis-legacy-owner"
+    private val accountRootLock = Any()
+
+    /**
+     * Resolves the on-disk root directory for [ownerId] so multiple accounts
+     * signing in on a shared phone cannot see each other's cached tracks,
+     * skeletons, or clips. The first signed-in account claims [baseDir] so
+     * pre-upgrade coach files keep working without migration; subsequent
+     * accounts live under `baseDir/users/<ownerId>`. Returns null while signed out.
+     */
+    fun accountRoot(baseDir: File, ownerId: String?): File? {
+        val uid = ownerId?.takeIf { isSafeEntryId(it) } ?: return null
+        synchronized(accountRootLock) {
+            val marker = File(baseDir, LEGACY_OWNER_MARKER)
+            val legacyOwner = runCatching { marker.takeIf { it.isFile }?.readText()?.trim() }
+                .getOrNull()
+                ?.takeIf { it.isNotEmpty() }
+            if (legacyOwner == null) {
+                runCatching {
+                    baseDir.mkdirs()
+                    marker.writeTextAtomically(uid)
+                }
+                return baseDir
+            }
+            if (legacyOwner == uid) return baseDir
+            return resolveContainedChild(File(baseDir, "users"), uid)
+        }
+    }
+
     /** Removes what this video left on disk, as much of it as [reason] allows. */
     fun deleteAll(filesDir: File, entryId: String, reason: LocalVideoRemoval) {
         requireSafeEntryId(entryId)

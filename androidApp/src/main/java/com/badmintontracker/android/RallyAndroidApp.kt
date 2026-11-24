@@ -42,6 +42,7 @@ class RallyAndroidApp : Application(), SingletonImageLoader.Factory {
     lateinit var localAnalysis:      LocalAnalysisRunner        private set
     lateinit var backgroundWork:     BackgroundWorkMonitor      private set
     lateinit var throughput:         DeviceThroughputRepository private set
+    lateinit var installCloudPose:   suspend (String, (Float) -> Unit) -> Unit private set
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -65,7 +66,10 @@ class RallyAndroidApp : Application(), SingletonImageLoader.Factory {
             // not ours to delete. What IS ours is everything the on-device
             // pipeline wrote about it, and until this was passed nothing
             // deleted that.
-            onLocalVideoRemoved = { entry, reason -> AnalysisFiles.deleteAll(filesDir, entry.id, reason) },
+            onLocalVideoRemoved = { entry, reason ->
+                val root = AnalysisFiles.accountRoot(filesDir, rally.auth.currentUserId()) ?: filesDir
+                AnalysisFiles.deleteAll(root, entry.id, reason)
+            },
         )
         themePrefs  = rally.themePrefs
         localVideos = rally.localVideos
@@ -82,9 +86,21 @@ class RallyAndroidApp : Application(), SingletonImageLoader.Factory {
             scope = appScope,
             throughput = throughput,
             log = { if (BuildConfig.DEBUG) Log.i("LocalAnalysis", it) },
+            ownerId = { rally.auth.currentUserId() },
         )
 
         val cloudPoses = rally.cloudPoseCoordinator(log = { if (BuildConfig.DEBUG) Log.i("CloudPose", it) })
+        installCloudPose = { videoId, onProgress ->
+            // Off the main thread: a 30-minute stream decodes to roughly
+            // 1.8M keypoint objects, which is the same magnitude an
+            // on-device run already holds but is not something to do on
+            // the thread drawing a frame.
+            withContext(Dispatchers.Default) {
+                cloudPoses.install(videoId, onProgress) { outcome ->
+                    localAnalysis.saveCloudAnalysis(videoId, outcome)
+                }.getOrThrow()
+            }
+        }
         analyzeCoordinator = rally.analyzeCoordinator(
             scope = appScope,
             openChannel = { uri, offset ->
@@ -101,17 +117,7 @@ class RallyAndroidApp : Application(), SingletonImageLoader.Factory {
                 stream.toByteReadChannel()
             },
             log = { if (BuildConfig.DEBUG) Log.i("AnalyzeCoordinator", it) },
-            installCloudPoses = { videoId, onProgress ->
-                // Off the main thread: a 30-minute stream decodes to roughly
-                // 1.8M keypoint objects, which is the same magnitude an
-                // on-device run already holds but is not something to do on
-                // the thread drawing a frame.
-                withContext(Dispatchers.Default) {
-                    cloudPoses.install(videoId, onProgress) { outcome ->
-                        localAnalysis.saveCloudAnalysis(videoId, outcome)
-                    }.getOrThrow()
-                }
-            },
+            installCloudPoses = installCloudPose,
         )
         analyzeCoordinator.reattachToProcessing()
 

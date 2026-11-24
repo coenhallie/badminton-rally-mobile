@@ -104,6 +104,10 @@ fun ExercisesPanel(
     usePreloadedTrack: Boolean = false,
     preloadedTrackLoaded: Boolean = false,
     preloadedTrack: PlayerTrackStore.Stored? = null,
+    currentUserId: String? = null,
+    otherPartyLabel: String? = null,
+    isCoach: Boolean = true,
+    onSyncDrills: () -> Unit = {},
 ) {
     val allLogs by drillProgress.logs.collectAsStateWithLifecycle()
     val nowMs = remember(allLogs) { System.currentTimeMillis() }
@@ -235,7 +239,13 @@ fun ExercisesPanel(
                 TrainingProgressStrip(
                     logs = scopedLogs,
                     nowMs = nowMs,
-                    onDeleteLog = drillProgress::deleteSession,
+                    currentUserId = currentUserId,
+                    otherPartyLabel = otherPartyLabel,
+                    isCoach = isCoach,
+                    onDeleteLog = { id ->
+                        drillProgress.deleteSession(id)
+                        onSyncDrills()
+                    },
                     onRepeatDrill = launchDrill,
                     topPadding = 18.dp,
                 )
@@ -343,6 +353,7 @@ fun ExercisesPanel(
             matchId = launch.matchId,
             drillProgress = drillProgress,
             onDismiss = { activeLaunch = null },
+            onSessionSaved = onSyncDrills,
         )
     }
 }
@@ -359,6 +370,10 @@ fun PlayerDrillsTab(
     drillProgress: DrillProgressRepository,
     bottomPadding: Dp,
     modifier: Modifier = Modifier,
+    currentUserId: String? = null,
+    otherPartyLabel: String? = null,
+    isCoach: Boolean = true,
+    onSyncDrills: () -> Unit = {},
 ) {
     val allLogs by drillProgress.logs.collectAsStateWithLifecycle()
     val playerLogs = remember(allLogs, playerId) { filterDrillLogs(allLogs, playerId) }
@@ -387,7 +402,13 @@ fun PlayerDrillsTab(
                 TrainingProgressStrip(
                     logs = playerLogs,
                     nowMs = nowMs,
-                    onDeleteLog = drillProgress::deleteSession,
+                    currentUserId = currentUserId,
+                    otherPartyLabel = otherPartyLabel,
+                    isCoach = isCoach,
+                    onDeleteLog = { id ->
+                        drillProgress.deleteSession(id)
+                        onSyncDrills()
+                    },
                     onRepeatDrill = { activeDrill = it },
                     topPadding = 16.dp,
                 )
@@ -440,6 +461,7 @@ fun PlayerDrillsTab(
             matchId = null,
             drillProgress = drillProgress,
             onDismiss = { activeDrill = null },
+            onSessionSaved = onSyncDrills,
         )
     }
 }
@@ -467,6 +489,9 @@ internal fun exercisesMessage(
 private fun TrainingProgressStrip(
     logs: List<DrillSessionLog>,
     nowMs: Long,
+    currentUserId: String?,
+    otherPartyLabel: String?,
+    isCoach: Boolean,
     onDeleteLog: (String) -> Unit,
     onRepeatDrill: (Exercise) -> Unit,
     topPadding: Dp,
@@ -548,6 +573,10 @@ private fun TrainingProgressStrip(
                             )
                             val detail = buildString {
                                 append("$ago · ${log.setsCompleted}/${log.setsTarget} sets · ${formatClockSeconds(log.durationSeconds)} · ${log.effort.label}")
+                                if (currentUserId != null && otherPartyLabel != null && log.loggedByUserId != null) {
+                                    val who = if (log.loggedByUserId == currentUserId) "you" else otherPartyLabel
+                                    append(" · Logged by $who")
+                                }
                                 if (log.note.isNotBlank()) append(" · ${log.note}")
                             }
                             Text(
@@ -571,16 +600,19 @@ private fun TrainingProgressStrip(
                                 )
                             }
                         }
-                        IconButton(
-                            onClick = { onDeleteLog(log.id) },
-                            modifier = Modifier.size(32.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Delete session",
-                                tint = ShuttlTheme.extended.textTertiary,
-                                modifier = Modifier.size(16.dp),
-                            )
+                        val canDelete = isCoach || log.loggedByUserId == null || log.loggedByUserId == currentUserId
+                        if (canDelete) {
+                            IconButton(
+                                onClick = { onDeleteLog(log.id) },
+                                modifier = Modifier.size(32.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Delete session",
+                                    tint = ShuttlTheme.extended.textTertiary,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            }
                         }
                     }
                 }
