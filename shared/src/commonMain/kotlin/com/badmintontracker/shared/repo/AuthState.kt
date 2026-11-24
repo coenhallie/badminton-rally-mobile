@@ -5,6 +5,9 @@ import io.github.jan.supabase.auth.status.SessionStatus
 /** Platform-friendly projection of Supabase's SessionStatus (easy to consume from Swift). */
 enum class AuthState { LOADING, AUTHENTICATED, UNAUTHENTICATED }
 
+/** Account role from the signed-in JWT's `app_metadata.account_role`. Legacy accounts default to COACH. */
+enum class AccountRole { COACH, PLAYER }
+
 // No `else`: SessionStatus is sealed, and a status supabase-kt adds later should
 // stop the build here rather than be filed under "signed out" by default, which is
 // how RefreshFailure came to throw a coach out of a match.
