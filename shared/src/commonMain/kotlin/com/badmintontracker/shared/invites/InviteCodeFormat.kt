@@ -62,6 +62,33 @@ fun formatInviteInput(raw: String): String {
     return if (chars.length > 4) "${chars.substring(0, 4)}-${chars.substring(4)}" else chars
 }
 
+/** One box of the code entry: the character typed into it ("" while empty), and whether a code can contain it. */
+data class InviteCodeCell(val text: String, val isAllowed: Boolean)
+
+/**
+ * What has been typed into the invite code boxes: at most [INVITE_CODE_LENGTH]
+ * uppercased letters and digits, with the QR prefix, hyphens and spaces dropped.
+ * Both apps draw their boxes from this, so they agree on what each box shows,
+ * which boxes are flagged, and when the code is complete.
+ */
+class InviteCodeEntry internal constructor(val chars: String) {
+    /** Always [INVITE_CODE_LENGTH] boxes, filled from the left. */
+    val cells: List<InviteCodeCell> = List(INVITE_CODE_LENGTH) { i ->
+        val ch = chars.getOrNull(i)
+        InviteCodeCell(text = ch?.toString() ?: "", isAllowed = ch == null || ch in ALLOWED_CHARS)
+    }
+
+    /** True when any box holds a character no code contains (0, O, 1, I, L). */
+    val hasDisallowedChar: Boolean = chars.any { it !in ALLOWED_CHARS }
+
+    /** The code, once all eight boxes hold characters a code can contain; null until then. */
+    val completeCode: String? = normalizeInviteCode(chars)
+}
+
+/** Reads typed or pasted text into the code boxes; see [InviteCodeEntry]. */
+fun inviteCodeEntry(raw: String): InviteCodeEntry =
+    InviteCodeEntry(formatInviteInput(raw).filter { it != '-' })
+
 /** Encodes a code into the app's QR payload (`shuttl-invite:K7M4QP9R`). */
 fun qrPayloadForCode(code: String): String {
     val normalized = normalizeInviteCode(code)

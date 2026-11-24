@@ -27,7 +27,6 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
 import com.badmintontracker.android.ui.components.ErrorBanner
 import com.badmintontracker.android.ui.components.ShuttlButton
-import com.badmintontracker.android.ui.components.ShuttlOutlinedTextField
 import com.badmintontracker.shared.invites.InviteErrorKind
 import com.badmintontracker.shared.invites.PlayerInviteCopy
 import com.badmintontracker.shared.invites.RedeemedInvite
@@ -126,15 +125,15 @@ fun RedeemInviteSheet(
                 }
             }
             Spacer(Modifier.height(12.dp))
-            ShuttlOutlinedTextField(
+            InviteCodeField(
                 value = codeInput,
                 onValueChange = {
                     codeInput = formatInviteInput(it)
                     error = null
                 },
-                label = PlayerInviteCopy.JOIN_CODE_LABEL,
+                onSubmit = { submitCode(codeInput) },
                 enabled = !submitting,
-                onDone = { submitCode(codeInput) },
+                autoFocus = true,
                 modifier = Modifier.fillMaxWidth(),
             )
             error?.let { msg ->

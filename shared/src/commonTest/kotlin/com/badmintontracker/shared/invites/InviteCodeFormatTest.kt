@@ -46,4 +46,37 @@ class InviteCodeFormatTest {
         formatInviteInput("k7m4-qp9r-extra") shouldBe "K7M4-QP9R"
         formatInviteInput("k7m") shouldBe "K7M"
     }
+
+    @Test
+    fun inviteCodeEntry_keeps_only_code_characters_uppercased_and_capped_at_eight() {
+        inviteCodeEntry("shuttl-invite:k7m4-qp9r").chars shouldBe "K7M4QP9R"
+        inviteCodeEntry(" k7m4 qp9r extra").chars shouldBe "K7M4QP9R"
+        inviteCodeEntry("k7-m").chars shouldBe "K7M"
+        inviteCodeEntry("").chars shouldBe ""
+    }
+
+    @Test
+    fun inviteCodeEntry_fills_the_eight_boxes_from_the_left() {
+        inviteCodeEntry("k7m").cells.map { it.text } shouldBe
+            listOf("K", "7", "M", "", "", "", "", "")
+        inviteCodeEntry("").cells.map { it.text } shouldBe
+            listOf("", "", "", "", "", "", "", "")
+    }
+
+    @Test
+    fun inviteCodeEntry_flags_characters_no_code_can_contain() {
+        val entry = inviteCodeEntry("K0M4QP1R")
+        entry.cells.map { it.isAllowed } shouldBe
+            listOf(true, false, true, true, true, true, false, true)
+        entry.hasDisallowedChar shouldBe true
+        inviteCodeEntry("k7m").hasDisallowedChar shouldBe false
+        inviteCodeEntry("ILO").hasDisallowedChar shouldBe true
+    }
+
+    @Test
+    fun inviteCodeEntry_is_complete_only_when_all_eight_boxes_hold_allowed_characters() {
+        inviteCodeEntry("K7M4QP9").completeCode shouldBe null
+        inviteCodeEntry("K7M4QP9O").completeCode shouldBe null
+        inviteCodeEntry("k7m4-qp9r").completeCode shouldBe "K7M4QP9R"
+    }
 }

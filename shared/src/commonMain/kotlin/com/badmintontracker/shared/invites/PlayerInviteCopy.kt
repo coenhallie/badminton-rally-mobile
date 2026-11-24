@@ -74,6 +74,8 @@ object PlayerInviteCopy {
     const val JOIN_TITLE = "Join your coach"
     const val JOIN_CODE_LABEL = "Invite code"
     const val JOIN_CODE_PLACEHOLDER = "XXXX-XXXX"
+    /** Under the code boxes while one holds a character no code contains. */
+    const val JOIN_CODE_CHAR_HINT = "Codes never use 0, O, 1, I or L."
     const val JOIN_SCAN_QR = "Scan QR"
     const val JOIN_VERIFY = "Continue"
     const val JOIN_VERIFYING = "Checking code…"

@@ -128,15 +128,12 @@ fun JoinInviteScreen(
                     .fillMaxWidth()
                     .padding(top = 12.dp, bottom = 24.dp),
             ) {
-                ShuttlOutlinedTextField(
+                InviteCodeField(
                     value = state.codeInput,
                     onValueChange = vm::onCodeChange,
-                    label = PlayerInviteCopy.JOIN_CODE_LABEL,
+                    onSubmit = vm::verifyCode,
                     enabled = !state.isCheckingCode && !state.isSubmitting,
-                    onDone = {
-                        focusManager.clearFocus()
-                        vm.verifyCode()
-                    },
+                    autoFocus = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
 

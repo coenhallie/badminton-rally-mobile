@@ -28,19 +28,14 @@ struct JoinInviteView: View {
     @State private var showQrScanner = false
 
     @FocusState private var focus: Field?
-    private enum Field { case code, email, password }
+    private enum Field { case email, password }
 
     var body: some View {
         let copy = PlayerInviteCopy.shared
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    ShuttlTextField(copy.JOIN_CODE_LABEL, text: $codeInput)
-                        .textInputAutocapitalization(.characters)
-                        .autocorrectionDisabled()
-                        .submitLabel(.go)
-                        .focused($focus, equals: .code)
-                        .onSubmit(verifyCode)
+                    InviteCodeField(text: $codeInput, autoFocus: true, onSubmit: verifyCode)
                         .disabled(isCheckingCode || isSubmitting)
                         .onChange(of: codeInput) { _, raw in
                             let formatted = InviteCodeFormatKt.formatInviteInput(raw: raw)

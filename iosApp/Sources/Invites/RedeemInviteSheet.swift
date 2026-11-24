@@ -18,11 +18,7 @@ struct RedeemInviteSheet: View {
         let copy = PlayerInviteCopy.shared
         NavigationStack {
             VStack(alignment: .leading, spacing: 16) {
-                ShuttlTextField(copy.JOIN_CODE_LABEL, text: $codeInput)
-                    .textInputAutocapitalization(.characters)
-                    .autocorrectionDisabled()
-                    .submitLabel(.go)
-                    .onSubmit { submit(codeInput) }
+                InviteCodeField(text: $codeInput, autoFocus: true) { submit(codeInput) }
                     .disabled(isSubmitting)
                     .onChange(of: codeInput) { _, raw in
                         let formatted = InviteCodeFormatKt.formatInviteInput(raw: raw)

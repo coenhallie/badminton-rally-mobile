@@ -63,6 +63,21 @@ final class PlayerInviteFlowTests: XCTestCase {
         XCTAssertTrue(loaded)
     }
 
+    /// The code boxes read everything from shared's `inviteCodeEntry`; this pins
+    /// the shape InviteCodeField relies on as Swift sees it.
+    func testInviteCodeEntryDrivesTheBoxesFromSwift() {
+        let partial = InviteCodeFormatKt.inviteCodeEntry(raw: "k7-0")
+        XCTAssertEqual(partial.chars, "K70")
+        XCTAssertEqual(partial.cells.map(\.text), ["K", "7", "0", "", "", "", "", ""])
+        XCTAssertEqual(partial.cells.map(\.isAllowed), [true, true, false, true, true, true, true, true])
+        XCTAssertTrue(partial.hasDisallowedChar)
+        XCTAssertNil(partial.completeCode)
+
+        let pasted = InviteCodeFormatKt.inviteCodeEntry(raw: "shuttl-invite:k7m4-qp9r")
+        XCTAssertEqual(pasted.completeCode, "K7M4QP9R")
+        XCTAssertFalse(pasted.hasDisallowedChar)
+    }
+
     func testQrImageGenerationProducesImageForInvitePayload() {
         let payload = InviteCodeFormatKt.qrPayloadForCode(code: "K7M4QP9R")
         XCTAssertEqual(payload, "shuttl-invite:K7M4QP9R")
