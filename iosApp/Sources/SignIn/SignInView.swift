@@ -12,17 +12,20 @@ import Shared
 /// cannot reach Settings.
 struct SignInView: View {
     let rally: RallyApp
+    @Binding var isLinkingInvite: Bool
     @State private var email = ""
     @State private var password = ""
     @State private var isSubmitting = false
     @State private var error: String? = nil
     @State private var themeMode: ThemeMode
+    @State private var showJoinInvite = false
     @FocusState private var focus: Field?
 
     private enum Field { case email, password }
 
-    init(rally: RallyApp) {
+    init(rally: RallyApp, isLinkingInvite: Binding<Bool> = .constant(false)) {
         self.rally = rally
+        self._isLinkingInvite = isLinkingInvite
         // Seeded from the stored preference, as SettingsView's is: the
         // `.task` below only delivers it after the first frame, so in dark
         // theme the button first drew the moon and "Switch to dark mode".
@@ -66,6 +69,9 @@ struct SignInView: View {
             var announcement = AttributedString(message)
             announcement.accessibilitySpeechAnnouncementPriority = .high
             AccessibilityNotification.Announcement(announcement).post()
+        }
+        .sheet(isPresented: $showJoinInvite) {
+            JoinInviteView(rally: rally, isLinkingInvite: $isLinkingInvite)
         }
     }
 
@@ -115,8 +121,26 @@ struct SignInView: View {
             .disabled(isSubmitting)
             .padding(.top, 24)
 
+            HStack(spacing: 12) {
+                Rectangle().fill(Shuttl.border).frame(height: 1)
+                Text(PlayerInviteCopy.shared.SIGN_IN_INVITE_DIVIDER)
+                    .shuttlType(ShuttlType.bodySmall)
+                    .foregroundStyle(Shuttl.textTertiary)
+                    .fixedSize()
+                Rectangle().fill(Shuttl.border).frame(height: 1)
+            }
+            .padding(.top, 24)
+
+            Button(PlayerInviteCopy.shared.SIGN_IN_HAVE_CODE) {
+                focus = nil
+                showJoinInvite = true
+            }
+            .buttonStyle(SecondaryPillButtonStyle())
+            .disabled(isSubmitting)
+            .padding(.top, 16)
+
             Group {
-                Text(SignInCopy.shared.FOOTNOTE)
+                Text(PlayerInviteCopy.shared.SIGN_IN_FOOTNOTE_INVITE_ONLY)
                     .padding(.top, 24)
                 Text(versionLabel())
                     .padding(.top, 8)

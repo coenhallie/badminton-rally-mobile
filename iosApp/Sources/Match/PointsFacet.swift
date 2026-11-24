@@ -21,6 +21,7 @@ struct PointsFacet: View {
     let tally: ScoreTagSummary
     let timeline: [TimelineEntry]
     let match: MatchState?
+    var canScore: Bool = true
     /// `MatchView` pushes the board itself now, rather than this being a bare
     /// `NavigationLink(value:)` resolved by an ambient destination - the match
     /// page it lands back on after a finish must be this exact instance, not a
@@ -42,9 +43,9 @@ struct PointsFacet: View {
                 Text([card?.statusLine, log.format?.label, rulesSummary(log.rules)].compactMap { $0 }.joined(separator: " · "))
                     .shuttlType(ShuttlType.bodySmall)
                     .foregroundStyle(Shuttl.textSecondary)
-                // Absent rather than disabled on a finished match: there is
+                // Absent rather than disabled on a finished or read-only match: there is
                 // nothing left to score, and undo lives on the board itself.
-                if log.status == .live {
+                if canScore && log.status == .live {
                     Button(action: onScore) {
                         Text(match.map { ScoreMatchCardKt.scoreButtonLabel(state: $0) } ?? "Score")
                             .shuttlType(ShuttlType.titleLarge)

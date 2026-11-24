@@ -103,7 +103,9 @@ final class PlayerViewTests: XCTestCase {
             cloudProgress: [:], deviceRuns: [:],
             storedTrackIds: [], storedSkeletonIds: [],
             deviceClipCounts: [:], localNoteCounts: [:],
-            players: [marco]
+            players: [marco],
+            linkedProfiles: [],
+            linkedScoreLogs: []
         ))
     }
 
@@ -168,7 +170,9 @@ final class PlayerViewTests: XCTestCase {
             storedTrackIds: [], storedSkeletonIds: [],
             deviceClipCounts: ["e-older": KotlinInt(int: 5), "e-newer": KotlinInt(int: 3)],
             localNoteCounts: [:],
-            players: [marco, li]
+            players: [marco, li],
+            linkedProfiles: [],
+            linkedScoreLogs: []
         ))
 
         let summaries = PlayersScreen.playerSummaries(from: matchList)

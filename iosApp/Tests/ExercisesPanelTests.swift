@@ -223,7 +223,8 @@ final class ExercisesPanelTests: XCTestCase {
             setsTarget: 2,
             durationSeconds: 180,
             effort: .solid,
-            note: "Sharp base"
+            note: "Sharp base",
+            loggedByUserId: nil
         )
         let summary = DrillProgressRepositoryKt.progressForExercise(
             logs: [sampleLog],

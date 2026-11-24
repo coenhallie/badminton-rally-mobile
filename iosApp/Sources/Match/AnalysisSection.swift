@@ -27,6 +27,12 @@ struct AnalysisSection: View {
     /// Who stands at each end (`courtSideNames`); nil while the match does not
     /// say which end Home was at.
     let sideNames: CourtSideNames?
+    var hasCloudPose: Bool = false
+    var onCloudPoseInstalled: (() -> Void)? = nil
+    var currentUserId: String? = nil
+    var otherPartyLabel: String? = nil
+    var isCoach: Bool = true
+    var onSyncDrills: (() -> Void)? = nil
 
     @State private var chosen: AnalyticsPanel = .heatmap
 
@@ -54,6 +60,11 @@ struct AnalysisSection: View {
     /// which cuts nothing on this phone. Without these the Base panel could never
     /// appear for a cloud run, however good its track.
     @State private var cloudClips: [RallyClip] = []
+    @State private var diskLoaded = false
+    @State private var downloading = false
+    @State private var downloadProgress: Float = 0
+    @State private var downloadError: String? = nil
+    @State private var downloadAttempt = 0
 
     private var panels: [AnalyticsPanel] {
         AnalyticsPanelKt.availablePanels(
@@ -84,6 +95,14 @@ struct AnalysisSection: View {
     /// rally list included - at the rate of the progress bar.
     private var runSettled: Bool {
         localAnalysis?.settledRuns.contains(analysisId) ?? false
+    }
+
+    private struct DownloadKey: Equatable {
+        let analysisId: String
+        let hasCloudPose: Bool
+        let diskLoaded: Bool
+        let hasSource: Bool
+        let attempt: Int
     }
 
     var body: some View {
@@ -137,7 +156,11 @@ struct AnalysisSection: View {
                         windows: windows,
                         sideNames: sideNames,
                         drillProgress: rally.drillProgress,
-                        matchId: analysisId
+                        matchId: analysisId,
+                        currentUserId: currentUserId,
+                        otherPartyLabel: otherPartyLabel,
+                        isCoach: isCoach,
+                        onSyncDrills: onSyncDrills
                     )
                 }
             }
@@ -153,12 +176,56 @@ struct AnalysisSection: View {
         // id, which races in SwiftUI): reads disk immediately, then watches the
         // clip cache so cloud runs landing after open bring in the Base panel.
         .task(id: analysisId) {
+            diskLoaded = false
+            downloadError = nil
             await reload()
+            diskLoaded = true
             for await latest in rally.clips.observeClips() {
                 guard !Task.isCancelled else { break }
                 cloudClips = latest
                 await reload()
             }
+        }
+        .task(id: DownloadKey(
+            analysisId: analysisId,
+            hasCloudPose: hasCloudPose,
+            diskLoaded: diskLoaded,
+            hasSource: source != nil,
+            attempt: downloadAttempt
+        )) {
+            guard diskLoaded, source == nil, hasCloudPose, !downloading, downloadError == nil else { return }
+            downloading = true
+            downloadProgress = 0
+            let runner = localAnalysis
+            let videoId = analysisId
+            do {
+                let err = try await AnalyzeCoordinatorIosKt.installCloudPoseOrMessage(
+                    rally: rally,
+                    videoId: videoId,
+                    onProgress: { frac in
+                        let v = frac.floatValue
+                        Task { @MainActor in downloadProgress = v }
+                    },
+                    saveCloudAnalysis: { id, outcome in
+                        try? runner?.saveCloudAnalysis(entryId: id, outcome: outcome)
+                    }
+                )
+                guard !Task.isCancelled else {
+                    downloading = false
+                    return
+                }
+                if let err {
+                    downloadError = err
+                } else {
+                    await reload()
+                    onCloudPoseInstalled?()
+                }
+            } catch {
+                if !Task.isCancelled {
+                    downloadError = PlayerInviteCopy.shared.ANALYSIS_DOWNLOAD_FAILED
+                }
+            }
+            downloading = false
         }
         .onChange(of: runSettled) { _, _ in Task { await reload() } }
     }
@@ -257,6 +324,37 @@ struct AnalysisSection: View {
                         : nil
                 )
             }
+        } else if downloading || (hasCloudPose && !diskLoaded) {
+            VStack(spacing: 12) {
+                Text(PlayerInviteCopy.shared.ANALYSIS_DOWNLOADING)
+                    .shuttlType(ShuttlType.bodyMedium)
+                    .foregroundStyle(Shuttl.textSecondary)
+                if downloadProgress > 0 {
+                    ProgressView(value: Double(downloadProgress), total: 1.0)
+                        .tint(Shuttl.accent)
+                } else {
+                    ProgressView()
+                        .tint(Shuttl.accent)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, ShuttlGutter.page)
+            .padding(.vertical, 32)
+        } else if let downloadError {
+            VStack(spacing: 14) {
+                Text(downloadError)
+                    .shuttlType(ShuttlType.bodyMedium)
+                    .foregroundStyle(Shuttl.textSecondary)
+                    .multilineTextAlignment(.center)
+                Button(PlayerInviteCopy.shared.ANALYSIS_RETRY) {
+                    self.downloadError = nil
+                    downloadAttempt += 1
+                }
+                .buttonStyle(CompactPillButtonStyle(secondary: true, fullTarget: true))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, ShuttlGutter.page)
+            .padding(.vertical, 32)
         } else {
             // A run's state lives in memory, so it is gone after a termination.
             // Said plainly rather than drawing an empty court, which would read

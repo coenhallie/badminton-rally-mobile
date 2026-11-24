@@ -25,11 +25,15 @@ final class ClipListModel {
     /// nothing to observe a change on - `refreshGeneration` is that signal
     /// instead. See `MatchThumbnail.CoverRetryKey`.
     private(set) var refreshGeneration = 0
+    /// Bumped whenever on-demand cloud poses land on disk so `MatchListFeed` re-probes.
+    private(set) var storedResultsRefreshGeneration = 0
     var isRefreshing = false
     var error: String? = nil
     private var sharerByVideoId: [String: String] = [:]
     private var metadataByVideoId: [String: MatchMetadata] = [:]
     private var scoreLogs: [ScoreLog] = []
+    private var linkedScoreLogs: [ScoreLog] = []
+    private var linkedProfiles: [LinkedPlayerProfile] = []
     private var progressByEntryId: [String: AnalyzeProgress] = [:]
     /// On-device runs, from `LocalAnalysisRunner.deviceRuns` via `.feedsMatchList`:
     /// the runner is owned by the app, not this model, and either screen that
@@ -71,6 +75,8 @@ final class ClipListModel {
     private let localAnnotations: LocalAnnotationsRepository
     private let shares: SharesRepository
     private let playersRepo: PlayersRepository
+    private let playerAccessRepo: PlayerAccessRepository
+    private let drillProgressRepo: DrillProgressRepository
     /// Who is signed in. `rally.auth`'s unless a test says, since a test's
     /// `RallyApp` has no session. Not isolated to the main actor: the players
     /// refresh asks it again from shared code after the request, on whatever
@@ -87,6 +93,8 @@ final class ClipListModel {
         localAnnotations: LocalAnnotationsRepository? = nil,
         shares: SharesRepository? = nil,
         players: PlayersRepository? = nil,
+        playerAccess: PlayerAccessRepository? = nil,
+        drillProgress: DrillProgressRepository? = nil,
         currentUserId: (@Sendable () -> String?)? = nil,
         liveDeviceRuns: @escaping @MainActor () -> [String: DeviceRun] = { [:] }
     ) {
@@ -99,9 +107,13 @@ final class ClipListModel {
         self.localAnnotations = localAnnotations ?? rally.localAnnotations
         self.shares = shares ?? rally.shares
         self.playersRepo = players ?? rally.players
+        self.playerAccessRepo = playerAccess ?? rally.playerAccess
+        self.drillProgressRepo = drillProgress ?? rally.drillProgress
         let auth = rally.auth
         self.currentUserId = currentUserId ?? { auth.currentUserId() }
         self.liveDeviceRuns = liveDeviceRuns
+        self.linkedProfiles = self.playerAccessRepo.linkedProfiles.value
+        self.linkedScoreLogs = self.scoreLogsRepo.linkedLogs.value
     }
 
     /// Runs for as long as a screen that reads the list is on screen: the
@@ -199,12 +211,35 @@ final class ClipListModel {
                     self.regroup()
                 }
             }
+            group.addTask { @MainActor [weak self] in
+                guard let self else { return }
+                for await logs in self.scoreLogsRepo.linkedLogs {
+                    self.linkedScoreLogs = logs
+                    self.regroup()
+                }
+            }
+            group.addTask { @MainActor [weak self] in
+                guard let self else { return }
+                for await profiles in self.playerAccessRepo.linkedProfiles {
+                    self.linkedProfiles = profiles
+                    self.regroup()
+                }
+            }
         }
+    }
+
+    func refreshStoredResults() {
+        storedResultsRefreshGeneration += 1
+    }
+
+    func syncDrills() {
+        Task { _ = try? await drillProgressRepo.syncDrillLogsOrMessage() }
     }
 
     func refresh() async {
         isRefreshing = true
         error = nil
+        let isCoach = rally.auth.accountRole() == .coach
         do {
             try await clipsRepo.refresh()
         } catch {
@@ -218,36 +253,22 @@ final class ClipListModel {
                 }
             )
         }
-        // A success lands in the repository's cache, which `observe()` follows.
-        // Same soft-failure contract as the shares lookup: a failure leaves the
-        // previous map alone rather than blanking every name the user can see.
         _ = try? await SwiftInteropKt.listMatchMetadataOrNull(videos)
-        // The players before the score log sync, so a player deleted on another
-        // device is forgotten in the cached logs (see `forgetVanishedPlayers`)
-        // before the sync pushes them: a log still naming the deleted id would be
-        // refused and fail the whole batch. The forget is guarded inside, on a
-        // successful refresh for an unchanged signed-in owner. Mirrors Android's
-        // `ClipListViewModel.refresh`.
-        //
-        // Both soft failures, same contract as the shares and metadata reads: the
-        // players stay cached and the matches are all still on this phone, so
-        // there is nothing to say and nothing for the user to do about it.
-        _ = try? await DeletePlayerKt.refreshPlayersAndForgetVanishedOrMessage(
-            players: playersRepo, scoreLogs: scoreLogsRepo, localVideos: localVideos,
-            currentOwnerId: currentUserId
-        )
-        _ = try? await scoreLogsRepo.syncScoreLogsOrMessage()
+        if isCoach {
+            _ = try? await DeletePlayerKt.refreshPlayersAndForgetVanishedOrMessage(
+                players: playersRepo, scoreLogs: scoreLogsRepo, localVideos: localVideos,
+                currentOwnerId: currentUserId
+            )
+            _ = try? await scoreLogsRepo.syncScoreLogsOrMessage()
+            _ = try? await SwiftInteropKt.refreshAccessStatesOrMessage(playerAccessRepo)
+        }
+        _ = try? await scoreLogsRepo.refreshLinkedLogsOrMessage()
+        _ = try? await SwiftInteropKt.refreshLinkedProfilesOrMessage(playerAccessRepo)
+        _ = try? await drillProgressRepo.syncDrillLogsOrMessage()
+        linkedProfiles = playerAccessRepo.linkedProfiles.value
+        linkedScoreLogs = scoreLogsRepo.linkedLogs.value
         regroup()
-        // Unconditionally, even when `clipsRepo.refresh()` above threw: every
-        // one of this method's requests fails softly on its own (the clips
-        // failure is the only one that sets `error`, and the others just leave
-        // their caches alone), so "the pull failed" is not one clean outcome
-        // to gate this on - a cover clip's own fetch is another, independent
-        // request that this generation exists to let retry,
-        // and it can succeed even when the clips list itself did not change at
-        // all. A retry that finds nothing new costs one redundant signed-URL
-        // fetch; refusing one that would have worked leaves a coach staring at
-        // a glyph tile his next pull-to-refresh was supposed to fix.
+        storedResultsRefreshGeneration += 1
         refreshGeneration += 1
         isRefreshing = false
     }
@@ -478,7 +499,9 @@ final class ClipListModel {
             storedSkeletonIds: storedSkeletonIds,
             deviceClipCounts: deviceClipCounts,
             localNoteCounts: localNoteCounts,
-            players: players
+            players: players,
+            linkedProfiles: linkedProfiles,
+            linkedScoreLogs: linkedScoreLogs
         ))
     }
 }

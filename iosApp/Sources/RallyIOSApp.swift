@@ -20,10 +20,13 @@ struct RallyIOSApp: App {
             deleteLocalVideoFile: { LocalVideoFiles.delete(relativePath: $0) },
             deleteLocalAnalysis: { AnalysisFiles.deleteAll(entryId: $0, reason: $1) }
         )
-        // Before anything can import: reclaim files whose entry is already gone.
-        // Analyzed videos removed by builds that did not delete the file are pure
-        // dead weight in the container, and the user has no way to get at them.
-        LocalVideoFiles.sweepOrphans(referenced: rally.localVideos.entries.value.map(\.uri))
+        // Before anything can import: reclaim files not referenced by ANY account
+        // on this phone (so launching signed-out or under a second account never
+        // deletes another account's recorded videos).
+        LocalVideoFiles.sweepOrphans(referenced: rally.localVideos.allPersistedUris())
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
+            AnalysisFiles.setActiveOwner(rally.auth.currentUserId())
+        }
         let runner = localAnalysis
         analyze = AnalyzeCoordinatorIosKt.createIosAnalyzeCoordinator(
             rally: rally,

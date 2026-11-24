@@ -49,7 +49,9 @@ final class MatchListBridgingTests: XCTestCase {
             storedTrackIds: tracks, storedSkeletonIds: skeletons,
             deviceClipCounts: clipCounts,
             localNoteCounts: localNotes,
-            players: players
+            players: players,
+            linkedProfiles: [],
+            linkedScoreLogs: []
         )
     }
 

@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Shared
 
 /// Where an on-device analysis keeps what it produced.
@@ -20,16 +21,62 @@ enum AnalysisFiles {
     enum Failure: LocalizedError {
         case invalidEntryId(String)
         case invalidPath(String)
+        case signedOut
 
         var errorDescription: String? {
             switch self {
             case .invalidEntryId(let id): return "invalid analysis entry id: \(id)"
             case .invalidPath(let path): return "invalid analysis path: \(path)"
+            case .signedOut: return "no signed-in account for analysis storage"
             }
         }
     }
 
+    private enum OwnerScope {
+        case unscoped
+        case signedOut
+        case user(String)
+    }
+
     private static let root = "Analysis"
+    private static let legacyOwnerMarker = ".analysis-legacy-owner"
+    private static let ownerScope = OSAllocatedUnfairLock<OwnerScope>(initialState: .unscoped)
+
+    /// Updates the active signed-in user ID for on-disk track/skeleton isolation.
+    /// Passing `nil` hides all accounts' cached files while signed out.
+    static func setActiveOwner(_ ownerId: String?) {
+        ownerScope.withLock { state in
+            if let ownerId, isValidEntryId(ownerId) {
+                state = .user(ownerId)
+            } else {
+                state = .signedOut
+            }
+        }
+    }
+
+    /// Restores legacy unscoped behavior (used in unit tests).
+    static func resetOwnerScopeForTesting() {
+        ownerScope.withLock { $0 = .unscoped }
+    }
+
+    /// Resolves the per-account root directory under `baseDir`. The first
+    /// signed-in account claims `baseDir` so pre-upgrade coach files stay
+    /// intact; subsequent accounts live under `baseDir/users/<ownerId>`.
+    static func accountRoot(baseDir: URL, ownerId: String?) -> URL? {
+        guard let ownerId, isValidEntryId(ownerId) else { return nil }
+        let marker = baseDir.appendingPathComponent(legacyOwnerMarker)
+        let existing = (try? String(contentsOf: marker, encoding: .utf8))?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let existing, !existing.isEmpty {
+            if existing == ownerId { return baseDir }
+            let usersDir = baseDir.appendingPathComponent("users", isDirectory: true)
+            let candidate = usersDir.appendingPathComponent(ownerId, isDirectory: true)
+            return isStrictlyInside(candidate, base: usersDir) ? candidate : nil
+        }
+        try? FileManager.default.createDirectory(at: baseDir, withIntermediateDirectories: true)
+        try? ownerId.write(to: marker, atomically: true, encoding: .utf8)
+        return baseDir
+    }
 
     /// Validates that `entryId` matches `^[A-Za-z0-9_-]{1,128}$` so it can
     /// never traverse directories or escape its store.
@@ -54,34 +101,49 @@ enum AnalysisFiles {
     }
 
     static func validatedFile(in store: String, entryId: String, suffix: String) -> URL? {
-        guard isValidEntryId(entryId) else { return nil }
-        let base = directory.appendingPathComponent(store, isDirectory: true)
+        guard isValidEntryId(entryId), let rootDir = activeDirectory else { return nil }
+        let base = rootDir.appendingPathComponent(store, isDirectory: true)
         let target = base.appendingPathComponent(entryId + suffix)
         guard isStrictlyInside(target, base: base) else { return nil }
         return target
     }
 
     static func validatedSubdirectory(in store: String, entryId: String) -> URL? {
-        guard isValidEntryId(entryId) else { return nil }
-        let base = directory.appendingPathComponent(store, isDirectory: true)
+        guard isValidEntryId(entryId), let rootDir = activeDirectory else { return nil }
+        let base = rootDir.appendingPathComponent(store, isDirectory: true)
         let target = base.appendingPathComponent(entryId, isDirectory: true)
         guard isStrictlyInside(target, base: base) else { return nil }
         return target
+    }
+
+    /// Base unscoped Analysis folder in Application Support.
+    static var baseDirectory: URL {
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return support.appendingPathComponent(root, isDirectory: true)
+    }
+
+    /// Active per-account Analysis folder, or nil when explicitly signed out.
+    private static var activeDirectory: URL? {
+        let scope = ownerScope.withLock { $0 }
+        switch scope {
+        case .unscoped: return baseDirectory
+        case .signedOut: return nil
+        case .user(let uid): return accountRoot(baseDir: baseDirectory, ownerId: uid)
+        }
     }
 
     /// Paths are relative to this and resolved on every use, never persisted:
     /// the app container path changes across updates, which is the same reason
     /// `LocalVideoFiles` persists paths relative to Documents.
     static var directory: URL {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return support.appendingPathComponent(root, isDirectory: true)
+        activeDirectory ?? baseDirectory
     }
 
     /// Creates a subdirectory of the analysis root, excluding the root from
     /// backup the first time it is made.
     @discardableResult
     static func directory(_ name: String) throws -> URL {
-        var base = directory
+        guard var base = activeDirectory else { throw Failure.signedOut }
         let existed = FileManager.default.fileExists(atPath: base.path)
         let url = base.appendingPathComponent(name, isDirectory: true)
         guard isStrictlyInside(url, base: base) else { throw Failure.invalidPath(name) }
@@ -125,10 +187,10 @@ enum AnalysisFiles {
     /// Mirrors Android's `AnalysisFiles.deleteAll`, over the same six names and
     /// the same rule.
     static func deleteAll(entryId: String, reason: LocalVideoRemoval) {
-        guard isValidEntryId(entryId) else { return }
+        guard isValidEntryId(entryId), let rootDir = activeDirectory else { return }
         let stores = reason == .discarded ? videoStores + trackStores : videoStores
         for store in stores {
-            let base = directory.appendingPathComponent(store, isDirectory: true)
+            let base = rootDir.appendingPathComponent(store, isDirectory: true)
             // Two shapes: a directory named for the entry (clips) and a file
             // named for it with an extension (the rest). Removing a path that
             // is not there is not an error worth reporting.

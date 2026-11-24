@@ -17,6 +17,7 @@ struct RootView: View {
     @State private var backgroundWork: BackgroundWorkModel
     @Environment(\.scenePhase) private var scenePhase
     @State private var authState: AuthState? = nil
+    @State private var isLinkingInvite = false
     @State private var themeMode: ThemeMode
     @State private var uploading = false
     /// Where the scoring board says it is on screen. See `KeepAwake`.
@@ -44,22 +45,34 @@ struct RootView: View {
             switch authState {
             case nil, .loading:
                 SplashView()
-            case .authenticated:
-                // The scope is what reads `work` and so what re-evaluates on
-                // every progress callback; Home is built by this body and handed
-                // in, so only the bars that actually read the environment follow.
-                BackgroundWorkScope(model: backgroundWork) {
-                    HomeView(rally: rally, analyze: analyze, localAnalysis: localAnalysis)
+            case .authenticated where !isLinkingInvite:
+                if rally.auth.accountRole() == .player {
+                    PlayerHomeView(rally: rally, analyze: analyze, localAnalysis: localAnalysis)
+                } else {
+                    // The scope is what reads `work` and so what re-evaluates on
+                    // every progress callback; Home is built by this body and handed
+                    // in, so only the bars that actually read the environment follow.
+                    BackgroundWorkScope(model: backgroundWork) {
+                        HomeView(rally: rally, analyze: analyze, localAnalysis: localAnalysis)
+                    }
                 }
-            case .unauthenticated:
-                SignInView(rally: rally)
+            case .unauthenticated, .authenticated:
+                SignInView(rally: rally, isLinkingInvite: $isLinkingInvite)
             case .some:
                 SplashView()
             }
         }
         .preferredColorScheme(themeMode == .dark ? .dark : .light)
         .task {
+            let isRunningTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
             for await state in rally.authState {
+                if !isRunningTests {
+                    if state == .authenticated {
+                        AnalysisFiles.setActiveOwner(rally.auth.currentUserId())
+                    } else if state == .unauthenticated {
+                        AnalysisFiles.setActiveOwner(nil)
+                    }
+                }
                 authState = state
             }
         }

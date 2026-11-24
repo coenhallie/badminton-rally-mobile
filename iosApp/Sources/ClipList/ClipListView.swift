@@ -54,6 +54,8 @@ struct MatchesList: View {
     /// The chosen order, applied through `effectiveSort` on the same rule, and
     /// held by the screen for the same reason.
     @Binding var sort: MatchListSort
+    /// Empty-state message when `playerId` is set and has no matches yet.
+    var emptyMessage: String = PlayersCopy.shared.MATCHES_EMPTY_BODY
 
     @State private var shareTarget: ShareTarget? = nil
     @State private var thumbnails = LocalThumbnails()
@@ -252,7 +254,7 @@ struct MatchesList: View {
                     ShuttlEmptyState(
                         systemImage: "trophy",
                         title: PlayersCopy.shared.NO_MATCHES_YET,
-                        message: PlayersCopy.shared.MATCHES_EMPTY_BODY
+                        message: emptyMessage
                     ) { EmptyView() }
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 48)

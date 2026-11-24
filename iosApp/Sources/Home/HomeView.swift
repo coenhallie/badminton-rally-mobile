@@ -71,6 +71,8 @@ struct HomeView: View {
     @State private var listModel: ClipListModel
     /// The coach's players, one instance for the same reasons as `listModel`.
     @State private var playersModel: PlayersModel
+    /// Coach-side player access statuses + dual-role linked profiles.
+    @State private var accessModel: PlayerAccessModel
     /// The auto-open case only: straight after a record/import that isn't for
     /// an existing match, so the coach can name it. Shown over whatever screen
     /// is in front. The row menu's own "Edit details" keeps a separate,
@@ -111,6 +113,7 @@ struct HomeView: View {
             liveDeviceRuns: { [localAnalysis] in localAnalysis?.deviceRuns ?? [:] }
         ))
         _playersModel = State(initialValue: PlayersModel(rally: rally))
+        _accessModel = State(initialValue: PlayerAccessModel(rally: rally))
     }
 
     var body: some View {
@@ -124,7 +127,9 @@ struct HomeView: View {
             PlayersScreen(
                 model: playersModel,
                 listModel: listModel,
+                accessModel: accessModel,
                 onOpenPlayer: { path = HomePath.toPlayer($0, in: path) },
+                onOpenLinkedProfile: { path.append(.linkedProfile(id: $0)) },
                 onAllMatches: { path.append(.allMatches) },
                 onAdd: { openAddSheet(for: nil) },
                 onSettings: { path.append(.settings) },
@@ -144,6 +149,11 @@ struct HomeView: View {
         // own loop stops while another is pushed over it. Players runs its
         // own as well; the two write the same values.
         .task { await playersModel.observe() }
+        .task { await accessModel.observe() }
+        .task {
+            await accessModel.refreshAccessStates()
+            await accessModel.refreshLinkedProfiles()
+        }
         // Inside the stack, because every destination that carries the indicator
         // is inside it and the path this rewrites is Home's.
         .environment(\.backgroundWorkClick, goToAllMatches)
@@ -185,7 +195,7 @@ struct HomeView: View {
         case .player(let id):
             PlayerView(
                 rally: rally, analyze: analyze, intake: intake, playerId: id,
-                model: playersModel, listModel: listModel,
+                model: playersModel, listModel: listModel, accessModel: accessModel,
                 onSwitchPlayer: { path = HomePath.toPlayer($0, in: path) },
                 onGone: { path = HomePath.closingPlayer(id, in: path) },
                 onMatchTap: { path.append(.match($0)) },
@@ -198,6 +208,17 @@ struct HomeView: View {
             // A fresh page per player: one switched to opens on Profile, at
             // the top, with nothing of the last player's left in its state.
             .id(id)
+        case .linkedProfile(let id):
+            LinkedProfileView(
+                rally: rally,
+                analyze: analyze,
+                intake: intake,
+                initialPlayerId: id,
+                accessModel: accessModel,
+                listModel: listModel,
+                playersModel: playersModel,
+                onMatchTap: { path.append(.match($0)) }
+            )
         case .match(let matchRoute):
             MatchView(
                 rally: rally, analyze: analyze,
@@ -209,7 +230,16 @@ struct HomeView: View {
                 localAnalysis: localAnalysis, entryId: markingRoute.entryId
             )
         case .settings:
-            SettingsView(rally: rally)
+            SettingsView(
+                rally: rally,
+                accountRole: .coach,
+                accessModel: accessModel,
+                onLinkedCoach: { redeemed in
+                    Task { await listModel.refresh() }
+                    path.removeAll()
+                    post(PlayerInviteCopy.shared.linkedSuccessToast(playerName: redeemed.playerName))
+                }
+            )
         case .newMatch(let playerId):
             NewMatchView(rally: rally, playerId: playerId) { id in
                 // Straight to the board, in the form's place, not back to
@@ -408,6 +438,11 @@ struct HomeView: View {
         .onChange(of: playersModel.errorMessage) { _, error in
             guard let error else { return }
             playersModel.errorShown()
+            post(error)
+        }
+        .onChange(of: accessModel.errorMessage) { _, error in
+            guard let error else { return }
+            accessModel.errorShown()
             post(error)
         }
         .onChange(of: toasts.showing) { _, _ in deliverToast() }

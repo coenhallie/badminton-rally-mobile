@@ -54,7 +54,7 @@ targets:
           - Archivo-Bold.ttf
         UIRequiresFullScreen: true
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
-        NSCameraUsageDescription: Shuttl uses the camera to record match videos.
+        NSCameraUsageDescription: Shuttl uses the camera to record match videos and scan coach invite QR codes.
         NSMicrophoneUsageDescription: Shuttl records audio with your match videos.
         NSPhotoLibraryAddUsageDescription: Shuttl saves your recordings to the Photos library.
         NSLocationWhenInUseUsageDescription: Shuttl adds the town you are in to a new match's name.

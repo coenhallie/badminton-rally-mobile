@@ -31,6 +31,7 @@ struct PlayerView: View {
     let playerId: String
     let model: PlayersModel
     let listModel: ClipListModel
+    var accessModel: PlayerAccessModel? = nil
     /// Another player picked in the title's menu: their page replaces this one.
     let onSwitchPlayer: (String) -> Void
     /// The player has left the list: see `gone`.
@@ -55,6 +56,7 @@ struct PlayerView: View {
     @State private var renaming = false
     @State private var choosingHand = false
     @State private var confirmingDelete = false
+    @State private var inviteSheetOpen = false
     /// Any sheet or dialog the Matches tab's list has open.
     @State private var listOverlayOpen = false
     /// The Matches tab's filter and order, kept here so they outlive a trip
@@ -83,7 +85,7 @@ struct PlayerView: View {
     }
 
     private var overlayOpen: Bool {
-        renaming || choosingHand || confirmingDelete || listOverlayOpen
+        renaming || choosingHand || confirmingDelete || inviteSheetOpen || listOverlayOpen
     }
 
     var body: some View {
@@ -132,11 +134,40 @@ struct PlayerView: View {
                     renaming = false
                     choosingHand = false
                     confirmingDelete = false
+                    inviteSheetOpen = false
                 }
             }
             .modifier(Dialogs(
                 player: player, model: model, renaming: $renaming, choosingHand: $choosingHand
             ))
+            .sheet(isPresented: $inviteSheetOpen) {
+                if let shown = player ?? lastPlayer, let accessModel {
+                    let accessState = accessModel.accessByPlayerId[playerId]
+                    let phoneOnlyCount = listModel.matchList.forPlayer(playerId: playerId)
+                        .filter { $0.`where` == .phone }
+                        .count
+                    PlayerInviteSheet(
+                        playerName: shown.name,
+                        code: accessState?.pendingCode,
+                        expiresAt: accessState?.pendingExpiresAt,
+                        phoneOnlyMatchCount: phoneOnlyCount,
+                        loading: accessModel.busyPlayerId == playerId,
+                        onCopyCode: {
+                            toast = ToastMessage(text: PlayerInviteCopy.shared.CODE_COPIED, actionLabel: nil, action: nil)
+                        },
+                        onGenerateNewCode: {
+                            Task { await accessModel.createInvite(playerId: playerId) }
+                        },
+                        onCancelInvite: {
+                            Task {
+                                if await accessModel.revokeInvite(playerId: playerId) {
+                                    inviteSheetOpen = false
+                                }
+                            }
+                        }
+                    )
+                }
+            }
             .onChange(of: overlayOpen, initial: true) { _, open in onOverlayChange(open) }
             // Leaving the page takes its sheets with it, whatever was last said.
             .onDisappear { onOverlayChange(false) }
@@ -166,7 +197,32 @@ struct PlayerView: View {
                 // Profile and Matches stay mounted so `MatchesList` keeps its scroll
                 // position across tab switches; Drills mounts when active.
                 ZStack {
-                    ProfileTab(player: shown, summary: summary)
+                    ProfileTab(
+                        player: shown,
+                        summary: summary,
+                        accessState: accessModel?.accessByPlayerId[playerId],
+                        showAccessCard: accessModel != nil,
+                        accessBusy: accessModel?.busyPlayerId == playerId,
+                        onOpenInvite: {
+                            guard let accessModel else { return }
+                            let current = accessModel.accessByPlayerId[playerId]
+                            inviteSheetOpen = true
+                            if current?.status != .pending || current?.pendingCode == nil {
+                                Task {
+                                    if await accessModel.createInvite(playerId: playerId) == nil,
+                                       accessModel.accessByPlayerId[playerId]?.pendingCode == nil {
+                                        inviteSheetOpen = false
+                                    }
+                                }
+                            }
+                        },
+                        onCancelInvite: {
+                            Task { _ = await accessModel?.revokeInvite(playerId: playerId) }
+                        },
+                        onRemoveAccess: {
+                            Task { _ = await accessModel?.unlinkPlayer(playerId: playerId) }
+                        }
+                    )
                         .opacity(tab == Self.profileTab ? 1 : 0)
                         .zIndex(tab == Self.profileTab ? 1 : 0)
                         .allowsHitTesting(tab == Self.profileTab)
@@ -193,7 +249,11 @@ struct PlayerView: View {
                         PlayerDrillsTab(
                             playerId: playerId,
                             racketArm: shown.racketArm,
-                            drillProgress: rally.drillProgress
+                            drillProgress: rally.drillProgress,
+                            currentUserId: rally.auth.currentUserId(),
+                            otherPartyLabel: shown.name,
+                            isCoach: true,
+                            onSyncDrills: { listModel.syncDrills() }
                         )
                         .zIndex(2)
                     }
@@ -377,6 +437,12 @@ private struct TitleRow: View {
 private struct ProfileTab: View {
     let player: Player
     let summary: PlayerSummary
+    var accessState: PlayerAccessState? = nil
+    var showAccessCard: Bool = false
+    var accessBusy: Bool = false
+    var onOpenInvite: () -> Void = {}
+    var onCancelInvite: () -> Void = {}
+    var onRemoveAccess: () -> Void = {}
 
     var body: some View {
         let copy = PlayersCopy.shared
@@ -397,6 +463,17 @@ private struct ProfileTab: View {
                     .init(value: String(summary.rallyCount), label: copy.TILE_RALLIES),
                     .init(value: PlayerMatchesKt.lastMatchTile(summary: summary), label: copy.TILE_LAST_MATCH),
                 ])
+                if showAccessCard {
+                    PlayerAccessCard(
+                        playerName: player.name,
+                        accessState: accessState,
+                        busy: accessBusy,
+                        onOpenInvite: onOpenInvite,
+                        onCancelInvite: onCancelInvite,
+                        onRemoveAccess: onRemoveAccess
+                    )
+                    .padding(.top, 8)
+                }
             }
             .padding(.horizontal, ShuttlGutter.page)
             .padding(.top, MatchPageLayout.sectionGap)

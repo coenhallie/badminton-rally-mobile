@@ -48,7 +48,8 @@ private struct MatchListFeed: ViewModifier {
         StoredResultsKey(
             entries: model.localEntries.map { "\($0.id):\($0.stage)" },
             videoIds: Set(model.clips.map(\.videoId)),
-            settled: localAnalysis?.settledRuns ?? []
+            settled: localAnalysis?.settledRuns ?? [],
+            refreshGeneration: model.storedResultsRefreshGeneration
         )
     }
 
@@ -84,4 +85,5 @@ private struct StoredResultsKey: Hashable {
     let entries: [String]
     let videoIds: Set<String>
     let settled: Set<String>
+    let refreshGeneration: Int
 }

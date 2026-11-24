@@ -20,6 +20,8 @@ enum HomeRoute: Hashable {
     /// One player's page, over Players. Never more than one on the path: the
     /// page's switcher replaces it (`HomePath.toPlayer`).
     case player(id: String)
+    /// Dual-role coach viewing one of their own linked player profiles from another coach.
+    case linkedProfile(id: String)
     case match(MatchRoute)
     case courtMarking(CourtMarkingRoute)
     case settings

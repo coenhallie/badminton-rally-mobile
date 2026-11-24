@@ -12,6 +12,10 @@ struct ExercisesPanel: View {
     let sideNames: CourtSideNames?
     let drillProgress: DrillProgressRepository
     let matchId: String
+    var currentUserId: String? = nil
+    var otherPartyLabel: String? = nil
+    var isCoach: Bool = true
+    var onSyncDrills: (() -> Void)? = nil
 
     /// Precomputed reports for every tracked side so switching `SideToggle` is
     /// instantaneous and never races or shows the previous side's exercises.
@@ -76,7 +80,8 @@ struct ExercisesPanel: View {
                 racketArm: launch.racketArm,
                 playerId: launch.playerId,
                 matchId: matchId,
-                drillProgress: drillProgress
+                drillProgress: drillProgress,
+                onSessionSaved: onSyncDrills
             )
         }
     }
@@ -119,7 +124,13 @@ struct ExercisesPanel: View {
                 TrainingProgressStrip(
                     logs: scopedLogs,
                     nowMs: nowMs,
-                    onDeleteLog: { drillProgress.deleteSession(logId: $0) },
+                    currentUserId: currentUserId,
+                    otherPartyLabel: otherPartyLabel,
+                    isCoach: isCoach,
+                    onDeleteLog: {
+                        drillProgress.deleteSession(logId: $0)
+                        onSyncDrills?()
+                    },
                     onRepeatDrill: launchDrill,
                     topPadding: 18
                 )
@@ -262,6 +273,10 @@ struct PlayerDrillsTab: View {
     let playerId: String
     let racketArm: RacketArm?
     let drillProgress: DrillProgressRepository
+    var currentUserId: String? = nil
+    var otherPartyLabel: String? = nil
+    var isCoach: Bool = true
+    var onSyncDrills: (() -> Void)? = nil
 
     @State private var allLogs: [DrillSessionLog] = []
     @State private var activeSession: ActiveDrillSession? = nil
@@ -285,7 +300,13 @@ struct PlayerDrillsTab: View {
                     TrainingProgressStrip(
                         logs: playerLogs,
                         nowMs: nowMs,
-                        onDeleteLog: { drillProgress.deleteSession(logId: $0) },
+                        currentUserId: currentUserId,
+                        otherPartyLabel: otherPartyLabel,
+                        isCoach: isCoach,
+                        onDeleteLog: {
+                            drillProgress.deleteSession(logId: $0)
+                            onSyncDrills?()
+                        },
                         onRepeatDrill: launchDrill,
                         topPadding: 16
                     )
@@ -323,7 +344,8 @@ struct PlayerDrillsTab: View {
                 racketArm: launch.racketArm,
                 playerId: launch.playerId,
                 matchId: nil,
-                drillProgress: drillProgress
+                drillProgress: drillProgress,
+                onSessionSaved: onSyncDrills
             )
         }
     }
@@ -381,6 +403,9 @@ func exercisesMessage(
 private struct TrainingProgressStrip: View {
     let logs: [DrillSessionLog]
     let nowMs: Int64
+    var currentUserId: String? = nil
+    var otherPartyLabel: String? = nil
+    var isCoach: Bool = true
     let onDeleteLog: (String) -> Void
     let onRepeatDrill: (Exercise) -> Void
     let topPadding: CGFloat
@@ -432,8 +457,14 @@ private struct TrainingProgressStrip: View {
                                 nowEpochMs: nowMs
                             )
                             let clock = DrillSessionKt.formatClockSeconds(seconds: log.durationSeconds)
+                            let authorTag: String? = {
+                                guard let loggerId = log.loggedByUserId, let currentUserId, let otherPartyLabel else { return nil }
+                                return loggerId == currentUserId ? "Logged by you" : "Logged by \(otherPartyLabel)"
+                            }()
                             let baseDetail = "\(ago) · \(log.setsCompleted)/\(log.setsTarget) sets · \(clock) · \(log.effort.label)"
-                            let detail = log.note.isEmpty ? baseDetail : "\(baseDetail) · \(log.note)"
+                            let withAuthor = authorTag.map { "\(baseDetail) · \($0)" } ?? baseDetail
+                            let detail = log.note.isEmpty ? withAuthor : "\(withAuthor) · \(log.note)"
+                            let canDelete = isCoach || log.loggedByUserId == nil || log.loggedByUserId == currentUserId
                             HStack(alignment: .center, spacing: 6) {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(title)
@@ -461,17 +492,19 @@ private struct TrainingProgressStrip: View {
                                     .accessibilityLabel("\(ExercisesCopy.shared.REPEAT_DRILL_LABEL): \(title)")
                                 }
 
-                                Button {
-                                    onDeleteLog(log.id)
-                                } label: {
-                                    Image(systemName: "xmark")
-                                        .imageScale(.small)
-                                        .foregroundStyle(Shuttl.textTertiary)
-                                        .frame(width: 28, height: 28)
-                                        .contentShape(Rectangle())
+                                if canDelete {
+                                    Button {
+                                        onDeleteLog(log.id)
+                                    } label: {
+                                        Image(systemName: "xmark")
+                                            .imageScale(.small)
+                                            .foregroundStyle(Shuttl.textTertiary)
+                                            .frame(width: 28, height: 28)
+                                            .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel("Delete session")
                                 }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("Delete session")
                             }
                         }
                     }

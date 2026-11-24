@@ -15,7 +15,9 @@ import Shared
 struct PlayersScreen: View {
     let model: PlayersModel
     let listModel: ClipListModel
+    var accessModel: PlayerAccessModel? = nil
     let onOpenPlayer: (String) -> Void
+    var onOpenLinkedProfile: (String) -> Void = { _ in }
     let onAllMatches: () -> Void
     let onAdd: () -> Void
     let onSettings: () -> Void
@@ -138,7 +140,9 @@ struct PlayersScreen: View {
     private func refresh() async {
         async let playersRefresh: Void = model.refresh()
         async let matchesRefresh: Void = listModel.refresh()
-        _ = await (playersRefresh, matchesRefresh)
+        async let accessRefresh: Void = accessModel?.refreshAccessStates() ?? ()
+        async let linkedRefresh: Void = accessModel?.refreshLinkedProfiles() ?? ()
+        _ = await (playersRefresh, matchesRefresh, accessRefresh, linkedRefresh)
     }
 
     private var list: some View {
@@ -146,14 +150,20 @@ struct PlayersScreen: View {
         // match list per player row.
         let summaries = Self.playerSummaries(from: listModel.matchList)
         let emptySummary = PlayerSummary(matchCount: 0, rallyCount: 0, lastMatchAtEpochMs: nil)
+        let linkedProfiles = accessModel?.linkedProfiles ?? []
         return ScrollView {
             LazyVStack(spacing: DrawerList.rowGap) {
+                if let primaryLinked = linkedProfiles.first {
+                    myProfileCard(profile: primaryLinked, totalCount: linkedProfiles.count)
+                        .padding(.bottom, 6)
+                }
                 ForEach(model.players, id: \.id) { player in
                     PlayerRow(
                         player: player,
                         detail: PlayerMatchesKt.playerRowDetail(
                             summary: summaries[player.id] ?? emptySummary
                         ),
+                        accessStatus: accessModel?.accessByPlayerId[player.id]?.status,
                         onTap: { onOpenPlayer(player.id) }
                     )
                 }
@@ -172,6 +182,47 @@ struct PlayersScreen: View {
         .safeAreaPadding(.bottom, 88)
     }
 
+    private func myProfileCard(profile: LinkedPlayerProfile, totalCount: Int) -> some View {
+        let shape = RoundedRectangle(cornerRadius: ShuttlRadius.medium)
+        let subtitle = totalCount > 1
+            ? "\(PlayerInviteCopy.shared.coachedBy(coachEmail: profile.coachEmail)) · +\(totalCount - 1)"
+            : PlayerInviteCopy.shared.coachedBy(coachEmail: profile.coachEmail)
+        return VStack(alignment: .leading, spacing: 6) {
+            Text(PlayerInviteCopy.shared.MY_PROFILE_SECTION.uppercased())
+                .shuttlType(ShuttlType.labelSmall)
+                .foregroundStyle(Shuttl.textSecondary)
+            Button {
+                onOpenLinkedProfile(profile.playerId)
+            } label: {
+                HStack(spacing: DrawerList.gap) {
+                    PlayerAvatar(name: profile.name, size: PlayerAvatar.rowSize)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(profile.name)
+                            .shuttlType(ShuttlType.titleMedium)
+                            .foregroundStyle(Shuttl.text)
+                            .lineLimit(1)
+                        Text(subtitle)
+                            .shuttlType(ShuttlType.bodySmall)
+                            .foregroundStyle(Shuttl.textSecondary)
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Image(systemName: "chevron.right")
+                        .shuttlType(ShuttlType.labelMedium)
+                        .foregroundStyle(Shuttl.textSecondary)
+                        .accessibilityHidden(true)
+                }
+                .padding(.horizontal, DrawerList.rowPaddingH)
+                .padding(.vertical, DrawerList.rowPaddingV)
+                .background(Shuttl.bgSecondary, in: shape)
+                .overlay(shape.strokeBorder(Shuttl.border, lineWidth: 1))
+                .contentShape(shape)
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
+        }
+    }
+
     /// No players to list: the first-run invitation, or, when the load failed
     /// with nothing cached, a retry, so a failed load never reads as "no
     /// players yet" and invites a duplicate. All matches stays below either
@@ -182,8 +233,14 @@ struct PlayersScreen: View {
     /// a fixed offset, as the match list's empty state is.
     private var noPlayers: some View {
         let copy = PlayersCopy.shared
+        let linkedProfiles = accessModel?.linkedProfiles ?? []
         return ScrollView {
             VStack(spacing: 8) {
+                if let primaryLinked = linkedProfiles.first {
+                    myProfileCard(profile: primaryLinked, totalCount: linkedProfiles.count)
+                        .padding(.horizontal, DrawerList.sideMargin)
+                        .padding(.bottom, 16)
+                }
                 if model.loadFailed {
                     ShuttlEmptyState(
                         systemImage: "figure.stand",
@@ -208,7 +265,7 @@ struct PlayersScreen: View {
                 allMatchesButton
                     .padding(.horizontal, DrawerList.sideMargin)
             }
-            .padding(.top, 48)
+            .padding(.top, linkedProfiles.isEmpty ? 48 : DrawerList.listTopInset)
         }
         .refreshable { await refresh() }
         .safeAreaPadding(.bottom, 88)
@@ -225,7 +282,16 @@ struct PlayersScreen: View {
 private struct PlayerRow: View {
     let player: Player
     let detail: String
+    var accessStatus: PlayerAccessStatus? = nil
     let onTap: () -> Void
+
+    private var statusDotColor: Color? {
+        switch accessStatus {
+        case .linked: return Shuttl.accent
+        case .pending: return Shuttl.warning
+        default: return nil
+        }
+    }
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: ShuttlRadius.medium)
@@ -243,6 +309,16 @@ private struct PlayerRow: View {
                         .lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                if let dotColor = statusDotColor {
+                    Circle()
+                        .fill(dotColor)
+                        .frame(width: 8, height: 8)
+                        .accessibilityLabel(
+                            accessStatus == .linked
+                                ? PlayerInviteCopy.shared.ACCESS_BADGE_CONNECTED
+                                : PlayerInviteCopy.shared.ACCESS_BADGE_PENDING
+                        )
+                }
                 Image(systemName: "chevron.right")
                     .shuttlType(ShuttlType.labelMedium)
                     .foregroundStyle(Shuttl.textSecondary)

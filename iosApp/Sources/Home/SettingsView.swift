@@ -7,18 +7,30 @@ import Shared
 /// theme toggle; it is outside the signed-in stack.
 struct SettingsView: View {
     let rally: RallyApp
+    var accountRole: AccountRole = .coach
+    var accessModel: PlayerAccessModel? = nil
+    var onLinkedCoach: ((RedeemedInvite) -> Void)? = nil
 
     @State private var themeMode: ThemeMode
     /// Registered here rather than on HomeView: Labels is pushed from this
     /// page, and a destination belongs on the view that is on screen when it
     /// is pushed, not on one under it.
     @State private var showLabels = false
+    @State private var showJoinCoach = false
     @State private var confirmSignOut = false
     @State private var isSigningOut = false
     @State private var signOutError: String? = nil
 
-    init(rally: RallyApp) {
+    init(
+        rally: RallyApp,
+        accountRole: AccountRole = .coach,
+        accessModel: PlayerAccessModel? = nil,
+        onLinkedCoach: ((RedeemedInvite) -> Void)? = nil
+    ) {
         self.rally = rally
+        self.accountRole = accountRole
+        self.accessModel = accessModel
+        self.onLinkedCoach = onLinkedCoach
         // Seeded from the stored preference, not a fixed .light: the `.task`
         // below only delivers it after the first frame, so a coach in dark
         // theme saw the switch start off and flip on.
@@ -29,27 +41,52 @@ struct SettingsView: View {
         ScrollView {
             VStack(spacing: 12) {
                 card {
-                    Button { showLabels = true } label: {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(HomeCopy.shared.SETTINGS_LABELS)
-                                    .shuttlType(ShuttlType.bodyLarge)
-                                    .foregroundStyle(Shuttl.textHeading)
-                                Text(HomeCopy.shared.SETTINGS_LABELS_DETAIL)
+                    if accountRole == .coach {
+                        Button { showLabels = true } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(HomeCopy.shared.SETTINGS_LABELS)
+                                        .shuttlType(ShuttlType.bodyLarge)
+                                        .foregroundStyle(Shuttl.textHeading)
+                                    Text(HomeCopy.shared.SETTINGS_LABELS_DETAIL)
+                                        .shuttlType(ShuttlType.bodySmall)
+                                        .foregroundStyle(Shuttl.textSecondary)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right")
                                     .shuttlType(ShuttlType.bodySmall)
                                     .foregroundStyle(Shuttl.textSecondary)
+                                    .accessibilityHidden(true)
                             }
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .shuttlType(ShuttlType.bodySmall)
-                                .foregroundStyle(Shuttl.textSecondary)
-                                .accessibilityHidden(true)
+                            .settingsRow()
                         }
-                        .settingsRow()
+                        .buttonStyle(.plain)
+                        .accessibilityElement(children: .combine)
+                        Divider().overlay(Shuttl.border)
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityElement(children: .combine)
-                    Divider().overlay(Shuttl.border)
+                    if accessModel != nil {
+                        Button { showJoinCoach = true } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(PlayerInviteCopy.shared.JOIN_ANOTHER_COACH)
+                                        .shuttlType(ShuttlType.bodyLarge)
+                                        .foregroundStyle(Shuttl.textHeading)
+                                    Text(PlayerInviteCopy.shared.JOIN_ANOTHER_COACH_DETAIL)
+                                        .shuttlType(ShuttlType.bodySmall)
+                                        .foregroundStyle(Shuttl.textSecondary)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .shuttlType(ShuttlType.bodySmall)
+                                    .foregroundStyle(Shuttl.textSecondary)
+                                    .accessibilityHidden(true)
+                            }
+                            .settingsRow()
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityElement(children: .combine)
+                        Divider().overlay(Shuttl.border)
+                    }
                     Toggle(isOn: Binding(
                         get: { themeMode == .dark },
                         set: { _ in rally.themePrefs.toggle() }
@@ -108,12 +145,22 @@ struct SettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .shuttlNavigationBarBackground()
         .toolbar {
-            // The chrome indicator, on every bar androidApp puts it on. See
-            // `BackgroundWorkAction`.
-            ToolbarItem(placement: .topBarTrailing) { BackgroundWorkAction() }
+            if accountRole == .coach {
+                // The chrome indicator, on every bar androidApp puts it on. See
+                // `BackgroundWorkAction`.
+                ToolbarItem(placement: .topBarTrailing) { BackgroundWorkAction() }
+            }
         }
         .navigationDestination(isPresented: $showLabels) {
             LabelsView(rally: rally)
+        }
+        .sheet(isPresented: $showJoinCoach) {
+            if let accessModel {
+                RedeemInviteSheet(
+                    onRedeem: { await accessModel.redeemExistingCode($0) },
+                    onLinked: { redeemed in onLinkedCoach?(redeemed) }
+                )
+            }
         }
         .alert("Sign out?", isPresented: $confirmSignOut) {
             Button("Cancel", role: .cancel) {}

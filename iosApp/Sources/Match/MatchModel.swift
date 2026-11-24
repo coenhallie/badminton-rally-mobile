@@ -23,9 +23,12 @@ final class MatchModel {
 
     /// Nil for a video-first or shared match, and for one deleted while open.
     private(set) var log: ScoreLog? = nil
+    /// True only when `log` belongs to the signed-in user (never for a read-only
+    /// linked coach log). Gates every score-log write affordance on `MatchView`.
+    private(set) var isOwnedLog: Bool = false
     private(set) var match: MatchState? = nil
-    /// The coach's players: a side a profile holds is named from these, on the
-    /// card, the Points facet, the header and the exported text.
+    /// The coach's players plus any linked profiles: a side a profile holds is
+    /// named from these, on the card, the Points facet, the header and exported text.
     private(set) var players: [Player] = []
     private(set) var card: ScoreMatchCard? = nil
     private(set) var tally: ScoreTagSummary = ScoreTagSummary.companion.EMPTY
@@ -53,8 +56,11 @@ final class MatchModel {
     private let localAnnotations: LocalAnnotationsRepository
     /// Nil in tests that name no player: every side then reads its typed names.
     private let playersRepository: PlayersRepository?
+    private let playerAccessRepository: PlayerAccessRepository?
 
     private var localEntries: [LocalVideoEntry]
+    private var ownedRoster: [Player]
+    private var linkedProfiles: [LinkedPlayerProfile]
 
     init(
         scoreLogs: ScoreLogsRepository,
@@ -63,6 +69,7 @@ final class MatchModel {
         videos: VideosRepository,
         localAnnotations: LocalAnnotationsRepository,
         players: PlayersRepository? = nil,
+        playerAccess: PlayerAccessRepository? = nil,
         scoreLogId: String?
     ) {
         self.scoreLogs = scoreLogs
@@ -71,7 +78,9 @@ final class MatchModel {
         self.videos = videos
         self.localAnnotations = localAnnotations
         self.playersRepository = players
-        self.players = players?.players.value ?? []
+        self.playerAccessRepository = playerAccess
+        self.ownedRoster = players?.players.value ?? []
+        self.linkedProfiles = playerAccess?.linkedProfiles.value ?? []
         self.scoreLogId = scoreLogId
         self.localEntries = localVideos.entries.value
         readStore()
@@ -81,7 +90,7 @@ final class MatchModel {
         self.init(
             scoreLogs: rally.scoreLogs, localVideos: rally.localVideos,
             clips: rally.clips, videos: rally.videos, localAnnotations: rally.localAnnotations,
-            players: rally.players, scoreLogId: scoreLogId
+            players: rally.players, playerAccess: rally.playerAccess, scoreLogId: scoreLogId
         )
     }
 
@@ -175,7 +184,7 @@ final class MatchModel {
     /// Android's `MatchViewModel.removeVideo`.
     @discardableResult
     func removeVideo() async -> Bool {
-        guard let scoreLogId else { return false }
+        guard let scoreLogId, scoreLogs.get(id: scoreLogId) != nil else { return false }
         // A previous failure must not sit over a fresh attempt: the banner has no
         // timeout of its own, matching every other ErrorBanner in the app.
         error = nil
@@ -233,12 +242,27 @@ final class MatchModel {
                     self.readStore()
                 }
             }
+            group.addTask { @MainActor [weak self] in
+                guard let self else { return }
+                for await _ in self.scoreLogs.linkedLogs {
+                    self.readStore()
+                }
+            }
             if let playersRepository {
                 group.addTask { @MainActor [weak self] in
                     guard let self else { return }
                     // The card is stored, not computed, so a rename re-reads it.
                     for await list in playersRepository.players {
-                        self.players = list
+                        self.ownedRoster = list
+                        self.readStore()
+                    }
+                }
+            }
+            if let playerAccessRepository {
+                group.addTask { @MainActor [weak self] in
+                    guard let self else { return }
+                    for await profiles in playerAccessRepository.linkedProfiles {
+                        self.linkedProfiles = profiles
                         self.readStore()
                     }
                 }
@@ -251,9 +275,36 @@ final class MatchModel {
     /// for the same reason: not every caller can afford to wait on the flow.
     func reload() { readStore() }
 
+    private func mergedPlayers() -> [Player] {
+        var seen = Set<String>()
+        var result: [Player] = []
+        for p in ownedRoster where seen.insert(p.id).inserted {
+            result.append(p)
+        }
+        for profile in linkedProfiles where seen.insert(profile.playerId).inserted {
+            result.append(profile.toPlayer())
+        }
+        return result
+    }
+
     private func readStore() {
-        guard let scoreLogId, let found = scoreLogs.get(id: scoreLogId) else {
+        players = mergedPlayers()
+        guard let scoreLogId else {
             log = nil
+            isOwnedLog = false
+            match = nil
+            card = nil
+            tally = ScoreTagSummary.companion.EMPTY
+            canAddVideo = false
+            canRemoveVideo = false
+            hasServerVideo = false
+            return
+        }
+        let owned = scoreLogs.get(id: scoreLogId)
+        let found = owned ?? scoreLogs.linkedLogs.value.first { $0.id == scoreLogId }
+        guard let found else {
+            log = nil
+            isOwnedLog = false
             match = nil
             card = nil
             tally = ScoreTagSummary.companion.EMPTY
@@ -263,6 +314,7 @@ final class MatchModel {
             return
         }
         log = found
+        isOwnedLog = owned != nil
         let state = found.state()
         match = state
         card = ScoreMatchCardKt.buildScoreMatchCard(log: found, players: players)
@@ -275,8 +327,8 @@ final class MatchModel {
         // without finishing, deliberately, so that a match ended on a mis-tap can
         // still be undone - which leaves a won match sitting at .live. This is the
         // predicate every surface should ask, rather than either half of it.
-        canAddVideo = !found.isPlayable() && found.videoId == nil && !hasPendingEntry
-        canRemoveVideo = MatchVideoRemovalKt.scoreLogCanRemoveVideo(log: found, entries: localEntries)
+        canAddVideo = isOwnedLog && !found.isPlayable() && found.videoId == nil && !hasPendingEntry
+        canRemoveVideo = isOwnedLog && MatchVideoRemovalKt.scoreLogCanRemoveVideo(log: found, entries: localEntries)
         hasServerVideo = found.videoId != nil
     }
 }

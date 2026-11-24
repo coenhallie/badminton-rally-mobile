@@ -256,20 +256,27 @@ struct MatchView: View {
         return rally.localVideos.get(id: entryId)
     }
 
+    /// True only when this match belongs to the signed-in user (never for a
+    /// shared video or a linked coach match). Gates every write affordance.
+    private func isOwnedMatch(ownedVideo: MatchSummary?) -> Bool {
+        item?.isOwned ?? (matchModel.isOwnedLog || ownedVideo != nil)
+    }
+
     /// Whether "Edit details" is offered: see the overflow in `toolbarContent`.
     /// Exactly the cases `detailsSheet` draws something for, so the item never
     /// opens an empty sheet (an owned video's clips not read yet, an entry
     /// removed from the phone).
     private func editsDetails(ownedVideo: MatchSummary?) -> Bool {
-        matchModel.log != nil || ownedVideo != nil || detailsEntry != nil
+        isOwnedMatch(ownedVideo: ownedVideo)
+            && (matchModel.isOwnedLog || ownedVideo != nil || detailsEntry != nil)
     }
 
     // The score log's details when there is one, the video's own otherwise: a
     // scored match that was later filmed keeps the log as its record. A video's
     // own players are the list row's, whose sides read a profile's name, for
-    // the coach's matches (Ruling 11).
+    // both the coach's matches and linked player matches (Ruling 11).
     private func detailsLine(ownedVideo: MatchSummary?) -> String? {
-        let videoLine = item?.isOwned == true ? item?.playersLine : ownedVideo?.playersLine
+        let videoLine = item?.playersLine ?? ownedVideo?.playersLine
         return MatchDetailsKt.matchDetailsLine(
             playersLine: matchModel.log?.playersLine(players: matchModel.players) ?? videoLine,
             format: matchModel.log?.format ?? ownedVideo?.format
@@ -383,7 +390,8 @@ struct MatchView: View {
                         // attach in progress while simultaneously still offering
                         // "Add video", because canAddVideo used to close only on
                         // a videoId.
-                        if let item, MatchPageSectionKt.showsStatusBanner(item: item) {
+                        if let item, isOwnedMatch(ownedVideo: currentOwnedVideo),
+                           MatchPageSectionKt.showsStatusBanner(item: item) {
                             StatusBanner(item: item) { bannerAction(item) }
                         }
                         // A row over one section is a control that does nothing,
@@ -700,7 +708,13 @@ struct MatchView: View {
                     // Who stands at each end, for the toggles and a profile's
                     // hand; the players are followed, so a list still loading
                     // names them once it lands.
-                    sideNames: CourtSideNamesKt.courtSideNames(item: item, players: matchModel.players)
+                    sideNames: CourtSideNamesKt.courtSideNames(item: item, players: matchModel.players),
+                    hasCloudPose: item.hasCloudPose,
+                    onCloudPoseInstalled: { listModel.refreshStoredResults() },
+                    currentUserId: rally.auth.currentUserId(),
+                    otherPartyLabel: item.isOwned ? nil : "Coach",
+                    isCoach: item.isOwned,
+                    onSyncDrills: { listModel.syncDrills() }
                 )
             }
         case nil:
@@ -747,9 +761,9 @@ struct MatchView: View {
     // does nothing visible. Mirrors androidApp's Rallies section.
     @ViewBuilder
     private func refreshingIfCloud(_ list: some View) -> some View {
-        if effectiveVideoId != nil {
+        if effectiveVideoId != nil || route.scoreLogId != nil {
             list.refreshable {
-                try? await rally.clips.refresh()
+                await listModel.refresh()
                 await refreshSummary(supersede: true)
             }
         } else {
@@ -959,6 +973,7 @@ struct MatchView: View {
                         log: log, players: matchModel.players, card: matchModel.card, tally: matchModel.tally,
                         timeline: matchModel.match.map { MatchTimelineKt.matchTimeline(state: $0) } ?? [],
                         match: matchModel.match,
+                        canScore: isOwnedMatch(ownedVideo: ownedVideo) && matchModel.isOwnedLog,
                         onScore: { scoringTarget = ScoringRoute(scoreLogId: log.id) }
                     )
                 }
@@ -988,12 +1003,15 @@ struct MatchView: View {
 
     @ToolbarContentBuilder
     private func toolbarContent(ownedVideo: MatchSummary?) -> some ToolbarContent {
-        let isOwned = ownedVideo != nil
+        let isOwned = isOwnedMatch(ownedVideo: ownedVideo)
+        let isOwnedVideo = isOwned && ownedVideo != nil
         let canEditDetails = editsDetails(ownedVideo: ownedVideo)
-        // The chrome indicator, on every bar androidApp puts it on. See
-        // `BackgroundWorkAction`.
-        ToolbarItem(placement: .topBarTrailing) { BackgroundWorkAction() }
-        if isOwned, effectiveVideoId != nil {
+        let canAnalyzeAgain = isOwned && item?.canAnalyzeAgain == true
+        // The chrome indicator, on coach matches only. See `BackgroundWorkAction`.
+        if isOwned {
+            ToolbarItem(placement: .topBarTrailing) { BackgroundWorkAction() }
+        }
+        if isOwnedVideo, effectiveVideoId != nil {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     activeSheet = .share
@@ -1005,7 +1023,7 @@ struct MatchView: View {
         }
         // A finished match with no video yet - the one condition
         // `MatchModel.canAddVideo` is true for.
-        if matchModel.canAddVideo {
+        if isOwned && matchModel.canAddVideo {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button("Import video") { attachVideo(.importVideo) }
@@ -1026,9 +1044,9 @@ struct MatchView: View {
         // details to edit, and so does every other match the coach owns, whose
         // players can be said wherever its record lives (`canEditPlayers`: a
         // video with no clips yet, on the phone or uploaded). A video on this
-        // phone that can be analyzed again has that to offer. A shared match
-        // has none of these, so it gets no menu at all.
-        if canEditDetails || item?.canAnalyzeAgain == true {
+        // phone that can be analyzed again has that to offer. A shared or
+        // linked match has none of these, so it gets no menu at all.
+        if canEditDetails || canAnalyzeAgain {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     // First, because it is the one a coach comes here for: the
@@ -1041,14 +1059,14 @@ struct MatchView: View {
                             Label("Edit details", systemImage: "pencil")
                         }
                     }
-                    if let log = matchModel.log {
+                    if matchModel.isOwnedLog, let log = matchModel.log {
                         ShareLink(item: ScoreTagSummaryKt.exportMatchText(log: log, players: matchModel.players)) {
                             Label("Export as text", systemImage: "doc.text")
                         }
                     }
                     // The row's own menu item, here too: the same entry, through
                     // the same resume-or-mark-court decision.
-                    if let item, item.canAnalyzeAgain, let entryId = item.entryId {
+                    if canAnalyzeAgain, let item, let entryId = item.entryId {
                         Button(MatchListCopy.shared.MENU_ANALYZE_AGAIN) { analyzeEntry(entryId) }
                     }
                     // Offered whenever this match has a video and nothing is in
@@ -1058,7 +1076,7 @@ struct MatchView: View {
                     // up…" dead end with no action on it at all. See the
                     // 2026-08-29 design. An on-device run counts as in flight:
                     // only the row sees it, see `pageOffersVideoRemoval`.
-                    if MatchPageSectionKt.pageOffersVideoRemoval(canRemoveVideo: matchModel.canRemoveVideo, item: item) {
+                    if isOwned && MatchPageSectionKt.pageOffersVideoRemoval(canRemoveVideo: matchModel.canRemoveVideo, item: item) {
                         Button("Change video") { videoAction = .change }
                             .disabled(isImportingVideo)
                         Button("Remove video", role: .destructive) { videoAction = .remove }

@@ -27,7 +27,7 @@ final class RowSwipeTests: XCTestCase {
             homePlayers: [], awayPlayers: [], homePlayerId: nil, awayPlayerId: nil, format: nil,
             rules: ScoringRules.companion.BWF_21, setup: MatchSetup(firstServer: .home),
             events: [], status: videoId != nil ? .bound : .unbound,
-            createdAt: at, updatedAt: at
+            createdAt: at, updatedAt: at, ownerId: nil
         )
     }
 
@@ -52,7 +52,9 @@ final class RowSwipeTests: XCTestCase {
             storedTrackIds: [], storedSkeletonIds: [],
             deviceClipCounts: [:],
             localNoteCounts: [:],
-            players: []
+            players: [],
+            linkedProfiles: [],
+            linkedScoreLogs: []
         )
         let list = MatchListBuilderKt.buildMatchList(input: input)
         return (list.mine + list.shared)[0]
@@ -103,7 +105,9 @@ final class RowSwipeTests: XCTestCase {
             deviceRuns: ["e1": run], storedTrackIds: [], storedSkeletonIds: [],
             deviceClipCounts: [:],
             localNoteCounts: [:],
-            players: []
+            players: [],
+            linkedProfiles: [],
+            linkedScoreLogs: []
         )
         let match = MatchListBuilderKt.buildMatchList(input: input).mine[0]
         XCTAssertEqual(match.delete, .none)

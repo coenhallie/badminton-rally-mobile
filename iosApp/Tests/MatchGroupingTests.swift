@@ -109,7 +109,8 @@ final class MatchGroupingTests: XCTestCase {
                 "v1": MatchMetadata(
                     videoId: "v1", title: "Thu League vs Marco", description: "Indoor court 2.",
                     homePlayers: [], awayPlayers: [], format: nil,
-                    homePlayerId: nil, awayPlayerId: nil, nearSide: nil, homeNames: [], awayNames: []
+                    homePlayerId: nil, awayPlayerId: nil, nearSide: nil, homeNames: [], awayNames: [],
+                    hasCloudPose: false
                 )
             ]
         )
@@ -130,7 +131,8 @@ final class MatchGroupingTests: XCTestCase {
                     videoId: "v1", title: "Club final", description: nil,
                     homePlayers: ["Coen", "Ana"], awayPlayers: ["Marco", "Li"], format: .mixedDoubles,
                     homePlayerId: nil, awayPlayerId: nil, nearSide: nil,
-                    homeNames: ["Coen", "Ana"], awayNames: ["Marco", "Li"]
+                    homeNames: ["Coen", "Ana"], awayNames: ["Marco", "Li"],
+                    hasCloudPose: false
                 )
             ]
         )

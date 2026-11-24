@@ -13,6 +13,7 @@ struct DrillSessionSheet: View {
     let playerId: String?
     let matchId: String?
     let drillProgress: DrillProgressRepository
+    var onSessionSaved: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @Environment(KeepAwake.self) private var keepAwake: KeepAwake?
@@ -29,13 +30,15 @@ struct DrillSessionSheet: View {
         racketArm: RacketArm?,
         playerId: String?,
         matchId: String?,
-        drillProgress: DrillProgressRepository
+        drillProgress: DrillProgressRepository,
+        onSessionSaved: (() -> Void)? = nil
     ) {
         self.exercise = exercise
         self.racketArm = racketArm
         self.playerId = playerId
         self.matchId = matchId
         self.drillProgress = drillProgress
+        self.onSessionSaved = onSessionSaved
         let initialPlan = drillProgress.planForExercise(exercise: exercise)
         _state = State(initialValue: DrillSessionKt.createDrillSessionWithPlan(exercise: exercise, plan: initialPlan))
     }
@@ -471,6 +474,7 @@ struct DrillSessionSheet: View {
                         effort: selectedEffort,
                         note: noteText
                     )
+                    onSessionSaved?()
                     dismiss()
                 }
                 .buttonStyle(PrimaryButtonStyle())
