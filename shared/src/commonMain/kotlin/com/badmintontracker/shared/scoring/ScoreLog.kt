@@ -63,6 +63,12 @@ data class ScoreLog(
     val status: ScoreLogStatus,
     @SerialName("created_at")   val createdAt: Instant,
     @SerialName("updated_at")   val updatedAt: Instant,
+    /**
+     * Owning coach user id when read from the server. Intentionally NOT
+     * `@EncodeDefault` so locally created score logs omit `owner_id` on upsert
+     * and let Postgres fill `default auth.uid()`.
+     */
+    @SerialName("owner_id")     val ownerId: String? = null,
 ) {
     fun state(): MatchState = foldMatchState(rules, setup, events)
 }

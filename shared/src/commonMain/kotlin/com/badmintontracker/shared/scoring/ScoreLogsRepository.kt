@@ -13,6 +13,7 @@ import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Order
+import io.github.jan.supabase.postgrest.rpc
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -112,6 +113,12 @@ class ScoreLogsRepository internal constructor(
         @SerialName("pending_deletes") val pendingDeletes: List<String> = emptyList(),
     )
 
+    @Serializable
+    private data class CachedLinkedLogs(
+        @SerialName("owner_id") val ownerId: String?,
+        val logs: List<ScoreLog>,
+    )
+
     private class Loaded(val logs: List<StoredLog>, val pendingDeletes: Set<String>)
 
     /**
@@ -143,6 +150,11 @@ class ScoreLogsRepository internal constructor(
     /** Newest first, which is the order the match list renders. */
     val logs: StateFlow<List<ScoreLog>> = state.asStateFlow()
 
+    private val linkedState = MutableStateFlow(loadLinked(loadedOwner))
+
+    /** Read-only coached score logs returned by `list_linked_score_logs()`. Never pushed or mutated. */
+    val linkedLogs: StateFlow<List<ScoreLog>> = linkedState.asStateFlow()
+
     // Serializes read-modify-write cycles. The scoring surface writes from the main
     // thread and sync writes from a background dispatcher.
     private val lock = SyncLock()
@@ -152,6 +164,10 @@ class ScoreLogsRepository internal constructor(
     private val syncMutex = Mutex()
 
     fun get(id: String): ScoreLog? = state.value.firstOrNull { it.id == id }
+
+    /** Looks up an owned score log first, then a read-only coached score log. */
+    fun getAny(id: String): ScoreLog? =
+        state.value.firstOrNull { it.id == id } ?: linkedState.value.firstOrNull { it.id == id }
 
     fun create(
         title: String,
@@ -360,12 +376,45 @@ class ScoreLogsRepository internal constructor(
      * so recovery costs neither of them a new call site. Public because that is not
      * a guarantee to rely on forever.
      */
+    private fun loadLinked(owner: String?): List<ScoreLog> {
+        if (owner == null) return emptyList()
+        val cached = settings.getStringOrNull(KEY_LINKED_CACHE)
+            ?.let { runCatching { json.decodeFromString(CachedLinkedLogs.serializer(), it) }.getOrNull() }
+            ?: return emptyList()
+        return if (cached.ownerId == owner) cached.logs.sortedByDescending { it.createdAt } else emptyList()
+    }
+
+    /**
+     * Refreshes the signed-in player's read-only coached score logs via
+     * `list_linked_score_logs()`. Never touches the writable [logs] cache.
+     */
+    suspend fun refreshLinkedLogs(): Result<Unit> {
+        reloadForCurrentOwner()
+        val postgrest = client?.postgrest ?: return Result.failure(
+            IllegalStateException("Not signed in.")
+        )
+        return runCatching {
+            val rows = postgrest.rpc("list_linked_score_logs")
+                .decodeList<ScoreLog>()
+                .sortedByDescending { it.createdAt }
+            val owner = currentOwnerId()
+            linkedState.value = rows
+            if (owner != null) {
+                settings.putString(
+                    KEY_LINKED_CACHE,
+                    json.encodeToString(CachedLinkedLogs.serializer(), CachedLinkedLogs(owner, rows)),
+                )
+            }
+        }
+    }
+
     fun reloadForCurrentOwner() {
         val owner = currentOwnerId()
         if (owner == loadedOwner) return
         lock.withLock {
             adopt(owner)
             state.value = stored.map { it.log }
+            linkedState.value = loadLinked(owner)
         }
     }
 
@@ -473,6 +522,7 @@ class ScoreLogsRepository internal constructor(
 
     internal companion object {
         const val KEY_CACHE = "score_logs_cache"
+        const val KEY_LINKED_CACHE = "linked_score_logs_cache_v1"
         const val TABLE = "score_logs"
     }
 }

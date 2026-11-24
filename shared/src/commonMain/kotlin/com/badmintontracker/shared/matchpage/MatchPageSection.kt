@@ -114,7 +114,7 @@ fun analysisId(item: MatchListItem): String? = item.heatmapId ?: item.entryId
  * cloud video finds a row that still has its file here.
  */
 fun MatchList.matchPageItem(scoreLogId: String?, videoId: String?, entryId: String?): MatchListItem? {
-    val all = mine + shared
+    val all = mine + coached + shared
     if (scoreLogId != null) all.firstOrNull { it.scoreLogId == scoreLogId }?.let { return it }
     for (id in listOfNotNull(videoId, entryId)) {
         all.firstOrNull { it.videoId == id || it.entryId == id }?.let { return it }

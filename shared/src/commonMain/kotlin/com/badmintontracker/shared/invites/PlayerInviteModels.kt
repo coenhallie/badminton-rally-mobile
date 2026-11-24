@@ -1,5 +1,6 @@
 package com.badmintontracker.shared.invites
 
+import com.badmintontracker.shared.players.Player
 import com.badmintontracker.shared.prefs.RacketArm
 import kotlinx.datetime.Instant
 import kotlinx.serialization.SerialName
@@ -57,6 +58,16 @@ data class LinkedPlayerProfile(
     val name: String,
     @SerialName("racket_arm") val racketArm: RacketArm? = null,
     @SerialName("linked_at") val linkedAt: Instant,
+)
+
+/** Projects a [LinkedPlayerProfile] to [Player] for shared read-only formatters (`courtSideNames`, `buildScoreMatchCard`). */
+fun LinkedPlayerProfile.toPlayer(): Player = Player(
+    id = playerId,
+    ownerId = coachId,
+    name = name,
+    racketArm = racketArm,
+    createdAt = linkedAt,
+    updatedAt = linkedAt,
 )
 
 /** Typed failure categories for invite creation, preview, and redemption. */

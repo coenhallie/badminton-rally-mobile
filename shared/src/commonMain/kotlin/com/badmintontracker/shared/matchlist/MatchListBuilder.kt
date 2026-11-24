@@ -1,5 +1,6 @@
 package com.badmintontracker.shared.matchlist
 
+import com.badmintontracker.shared.invites.toPlayer
 import com.badmintontracker.shared.localvideo.AnalyzeStage
 import com.badmintontracker.shared.localvideo.LocalVideoEntry
 import com.badmintontracker.shared.localvideo.canEditLocalVideoDetails
@@ -125,16 +126,42 @@ internal fun buildMatchList(input: MatchListInput, timeZone: TimeZone): MatchLis
         mine += videoItem(entry, ownedVideo(entry.id), input, timeZone)
     }
 
+    // Coached score-born matches for linked player profiles (read-only).
+    val linkedPlayerIds = input.linkedProfiles.map { it.playerId }.toSet()
+    val linkedPlayersAsProfiles = input.linkedProfiles.map { it.toPlayer() }
+    val coached = mutableListOf<MatchListItem>()
+    val coachedVideoClaimedBy = mutableMapOf<String, String>()
+    for (log in input.linkedScoreLogs) {
+        val videoId = log.videoId?.takeIf { it !in claimed && it !in coachedVideoClaimedBy }
+        if (videoId != null) {
+            coachedVideoClaimedBy[videoId] = log.id
+            claimed += videoId
+        }
+        val clips = videoId?.let(clipsByVideo::get).orEmpty()
+        coached += coachedScoreItem(log, videoId, clips, input, linkedPlayersAsProfiles, timeZone)
+    }
+
     val shared = mutableListOf<MatchListItem>()
     for ((videoId, clips) in clipsByVideo) {
         // (e) Skip anything a score row already claimed.
         if (videoId in claimed) continue
         claimed += videoId
-        if (clips.first().isOwnedBy(input.currentUserId)) mine += videoItem(null, clips, input, timeZone)
-        else shared += videoItem(null, clips, input, timeZone, sharer = input.sharerByVideoId[videoId])
+        val meta = input.metadataByVideoId[videoId]
+        val isCoachedVideo = !clips.first().isOwnedBy(input.currentUserId) &&
+            meta != null &&
+            (meta.homePlayerId in linkedPlayerIds || meta.awayPlayerId in linkedPlayerIds)
+        when {
+            clips.first().isOwnedBy(input.currentUserId) -> mine += videoItem(null, clips, input, timeZone)
+            isCoachedVideo -> coached += coachedVideoItem(clips, meta!!, input, timeZone)
+            else -> shared += videoItem(null, clips, input, timeZone, sharer = input.sharerByVideoId[videoId])
+        }
     }
 
-    return MatchList(mine = mine.sortedWith(NEWEST_FIRST), shared = shared.sortedWith(NEWEST_FIRST))
+    return MatchList(
+        mine = mine.sortedWith(NEWEST_FIRST),
+        shared = shared.sortedWith(NEWEST_FIRST),
+        coached = coached.sortedWith(NEWEST_FIRST),
+    )
 }
 
 private fun RallyClip.isOwnedBy(userId: String?) = userId != null && ownerId == userId
@@ -175,7 +202,9 @@ private fun deviceRunHoldsFile(entry: LocalVideoEntry, input: MatchListInput): B
 private fun analysesFor(entry: LocalVideoEntry?, videoId: String?, cloudClips: Int, input: MatchListInput): Pair<List<MatchAnalysis>, String?> {
     val ids = listOfNotNull(entry?.id, videoId).distinct()
     val deviceClips = entry?.let { input.deviceClipCounts[it.id] } ?: 0
+    val cloudPoseAvailable = videoId != null && input.metadataByVideoId[videoId]?.hasCloudPose == true
     val heatmapId = ids.firstOrNull { it in input.storedTrackIds }
+        ?: videoId.takeIf { cloudPoseAvailable }
     val list = buildList {
         if (cloudClips > 0 || deviceClips > 0) add(MatchAnalysis.RALLIES)
         if (heatmapId != null) add(MatchAnalysis.HEATMAP)
@@ -317,6 +346,7 @@ private fun videoItem(
         nearSide = nearSideOf(entry, videoId, input),
         playersTarget = target,
         canEditPlayers = owned && target != null,
+        hasCloudPose = meta?.hasCloudPose == true,
     )
 }
 
@@ -407,6 +437,129 @@ private fun scoreItem(
         nearSide = nearSideOf(entry, videoId, input),
         playersTarget = target,
         canEditPlayers = target != null,
+        hasCloudPose = videoId?.let { input.metadataByVideoId[it]?.hasCloudPose } == true,
+    )
+}
+
+/** Read-only coached video match linked to one of the signed-in player's profiles. */
+private fun coachedVideoItem(
+    clips: List<RallyClip>,
+    meta: MatchMetadata,
+    input: MatchListInput,
+    timeZone: TimeZone,
+): MatchListItem {
+    val videoId = clips.first().videoId
+    val (analyses, heatmapId) = analysesFor(null, videoId, clips.size, input)
+    val sortAt = clips.minOf { it.createdAt }.toEpochMilliseconds()
+    val rallies = clips.size
+    val detail = listOfNotNull(
+        ralliesText(rallies),
+        formatMatchDate(sortAt, timeZone),
+    ).joinToString(" · ")
+    val where = whereOf(null, clips.size)
+    val sides = Sides(
+        homePlayerId = meta.homePlayerId,
+        awayPlayerId = meta.awayPlayerId,
+        homeNames = meta.homeNames,
+        awayNames = meta.awayNames,
+    )
+    return MatchListItem(
+        key = "video-$videoId",
+        sortAtEpochMs = sortAt,
+        title = meta.title ?: clips.matchTitle() ?: "Match · ${formatMatchDate(sortAt, timeZone)}",
+        detail = detail,
+        playersLine = sides.line,
+        sharedBy = null,
+        where = where,
+        analyses = analyses,
+        statusText = null,
+        statusIsError = false,
+        action = MatchAction.NONE,
+        entryId = null,
+        videoId = videoId,
+        scoreLogId = null,
+        localUri = null,
+        coverClip = clips.minByOrNull { it.rallyIndex },
+        scoreText = null,
+        isOwned = false,
+        canShare = false,
+        canEditDetails = false,
+        canAnalyzeAgain = false,
+        canRemoveFromPhone = false,
+        delete = MatchDelete.NONE,
+        deviceClipCount = 0,
+        rallyCount = rallies,
+        noteCount = noteCount(null, clips, input),
+        heatmapId = heatmapId,
+        accessibilityStatus = statusDescription(where, analyses, null),
+        homePlayerId = sides.homePlayerId,
+        awayPlayerId = sides.awayPlayerId,
+        homeNames = sides.homeNames,
+        awayNames = sides.awayNames,
+        nearSide = meta.nearSide,
+        playersTarget = null,
+        canEditPlayers = false,
+        hasCloudPose = meta.hasCloudPose,
+    )
+}
+
+/** Read-only coached score match (with or without bound cloud video) linked to a player profile. */
+private fun coachedScoreItem(
+    log: ScoreLog,
+    videoId: String?,
+    clips: List<RallyClip>,
+    input: MatchListInput,
+    linkedPlayers: List<Player>,
+    timeZone: TimeZone,
+): MatchListItem {
+    val card = buildScoreMatchCard(log, linkedPlayers)
+    val state = log.state()
+    val started = state.points.isNotEmpty() || state.completedGames.isNotEmpty()
+    val effectiveVideoId = clips.firstOrNull()?.videoId ?: videoId
+    val meta = effectiveVideoId?.let(input.metadataByVideoId::get)
+    val (runAnalyses, heatmapId) = analysesFor(null, effectiveVideoId, clips.size, input)
+    val analyses = if (started) runAnalyses + MatchAnalysis.SCORE else runAnalyses
+    val rallies = clips.size
+    val where = whereOf(null, clips.size)
+    val sides = Sides.of(log.matchPlayers, linkedPlayers)
+    return MatchListItem(
+        key = "score-${log.id}",
+        sortAtEpochMs = card.createdAtEpochMs,
+        title = card.title,
+        detail = listOfNotNull(card.scoreLine, ralliesText(rallies), formatMatchDate(card.createdAtEpochMs, timeZone))
+            .joinToString(" · "),
+        playersLine = sides.line,
+        sharedBy = null,
+        where = where,
+        analyses = analyses,
+        statusText = null,
+        statusIsError = false,
+        action = MatchAction.NONE,
+        entryId = null,
+        videoId = effectiveVideoId,
+        scoreLogId = log.id,
+        localUri = null,
+        coverClip = clips.minByOrNull { it.rallyIndex },
+        scoreText = card.scoreLine.takeIf { started }?.substringAfterLast(", "),
+        isOwned = false,
+        canShare = false,
+        canEditDetails = false,
+        canAnalyzeAgain = false,
+        canRemoveFromPhone = false,
+        delete = MatchDelete.NONE,
+        deviceClipCount = 0,
+        rallyCount = rallies,
+        noteCount = noteCount(null, clips, input),
+        heatmapId = heatmapId,
+        accessibilityStatus = statusDescription(where, analyses, null),
+        homePlayerId = sides.homePlayerId,
+        awayPlayerId = sides.awayPlayerId,
+        homeNames = sides.homeNames,
+        awayNames = sides.awayNames,
+        nearSide = meta?.nearSide,
+        playersTarget = null,
+        canEditPlayers = false,
+        hasCloudPose = meta?.hasCloudPose == true,
     )
 }
 

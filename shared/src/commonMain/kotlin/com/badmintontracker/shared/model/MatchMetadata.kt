@@ -31,4 +31,6 @@ data class MatchMetadata(
      */
     @SerialName("home_names") val homeNames: List<String> = emptyList(),
     @SerialName("away_names") val awayNames: List<String> = emptyList(),
+    /** True when Phase 2 uploaded a cloud pose artifact and court marks are present. */
+    @SerialName("has_cloud_pose") val hasCloudPose: Boolean = false,
 )

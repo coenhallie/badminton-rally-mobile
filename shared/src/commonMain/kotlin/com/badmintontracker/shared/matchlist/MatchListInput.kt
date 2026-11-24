@@ -1,5 +1,6 @@
 package com.badmintontracker.shared.matchlist
 
+import com.badmintontracker.shared.invites.LinkedPlayerProfile
 import com.badmintontracker.shared.localvideo.AnalyzeProgress
 import com.badmintontracker.shared.localvideo.DevicePhase
 import com.badmintontracker.shared.localvideo.LocalAnnotation
@@ -48,7 +49,44 @@ data class MatchListInput(
     val localNoteCounts: Map<String, Int>,
     /** The coach's players, which a side holding a profile is named from. */
     val players: List<Player>,
-)
+    /** Coach-owned player profiles linked to this account via `player_logins`. */
+    val linkedProfiles: List<LinkedPlayerProfile> = emptyList(),
+    /** Read-only score logs belonging to [linkedProfiles] from `list_linked_score_logs()`. */
+    val linkedScoreLogs: List<ScoreLog> = emptyList(),
+) {
+    /** 13-arg convenience constructor preserving existing Swift call sites. */
+    constructor(
+        clips: List<RallyClip>,
+        currentUserId: String?,
+        sharerByVideoId: Map<String, String>,
+        metadataByVideoId: Map<String, MatchMetadata>,
+        scoreLogs: List<ScoreLog>,
+        localEntries: List<LocalVideoEntry>,
+        cloudProgress: Map<String, AnalyzeProgress>,
+        deviceRuns: Map<String, DeviceRun>,
+        storedTrackIds: Set<String>,
+        storedSkeletonIds: Set<String>,
+        deviceClipCounts: Map<String, Int>,
+        localNoteCounts: Map<String, Int>,
+        players: List<Player>,
+    ) : this(
+        clips = clips,
+        currentUserId = currentUserId,
+        sharerByVideoId = sharerByVideoId,
+        metadataByVideoId = metadataByVideoId,
+        scoreLogs = scoreLogs,
+        localEntries = localEntries,
+        cloudProgress = cloudProgress,
+        deviceRuns = deviceRuns,
+        storedTrackIds = storedTrackIds,
+        storedSkeletonIds = storedSkeletonIds,
+        deviceClipCounts = deviceClipCounts,
+        localNoteCounts = localNoteCounts,
+        players = players,
+        linkedProfiles = emptyList(),
+        linkedScoreLogs = emptyList(),
+    )
+}
 
 /**
  * [MatchListInput.localNoteCounts] from the phone's note store

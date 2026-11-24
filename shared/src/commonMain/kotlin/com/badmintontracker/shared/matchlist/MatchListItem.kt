@@ -103,6 +103,8 @@ data class MatchListItem(
     val playersTarget: PlayersTarget?,
     /** Whether this coach may change who is playing: an own match with somewhere to save it. */
     val canEditPlayers: Boolean,
+    /** True when the server holds a cloud pose artifact (`poses.raw`) downloadable on demand. */
+    val hasCloudPose: Boolean = false,
 ) {
     val isRaised: Boolean get() = action != MatchAction.NONE
 
@@ -125,7 +127,14 @@ data class MatchListItem(
 data class MatchList(
     val mine: List<MatchListItem>,
     val shared: List<MatchListItem>,
+    val coached: List<MatchListItem> = emptyList(),
 ) {
+    /** Two-arg convenience constructor for existing callers and Swift tests. */
+    constructor(
+        mine: List<MatchListItem>,
+        shared: List<MatchListItem>,
+    ) : this(mine = mine, shared = shared, coached = emptyList())
+
     /**
      * The row with [key] as this list draws it now, or null once it is gone.
      *
@@ -137,7 +146,9 @@ data class MatchList(
      * heatmap the row itself was drawing.
      */
     fun itemWithKey(key: String): MatchListItem? =
-        mine.firstOrNull { it.key == key } ?: shared.firstOrNull { it.key == key }
+        mine.firstOrNull { it.key == key }
+            ?: coached.firstOrNull { it.key == key }
+            ?: shared.firstOrNull { it.key == key }
 
     /**
      * The row an open [kind] confirmation is for, as drawn now, or null when

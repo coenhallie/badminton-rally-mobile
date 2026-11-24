@@ -16,7 +16,7 @@ import kotlin.time.Instant
  * belongs to one of this coach's players, whatever its ids say.
  */
 fun MatchList.forPlayer(playerId: String): List<MatchListItem> =
-    mine.filter { it.homePlayerId == playerId || it.awayPlayerId == playerId }
+    (mine + coached).filter { it.homePlayerId == playerId || it.awayPlayerId == playerId }
 
 /**
  * What a player's row and profile tiles say about their matches. Computed from
