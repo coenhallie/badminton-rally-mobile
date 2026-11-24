@@ -26,18 +26,59 @@ enum class RacketArm {
  * another build can never fail on a type mismatch; an unknown string reads
  * as unset.
  */
-class RacketArmPreferenceRepository(private val settings: Settings) {
+class RacketArmPreferenceRepository(
+    private val settings: Settings,
+    private val ownerId: (() -> String?)? = null,
+) {
 
-    fun racketArm(entryId: String): RacketArm? =
-        settings.getStringOrNull(key(entryId))?.let { stored -> RacketArm.entries.firstOrNull { it.name == stored } }
-
-    fun setRacketArm(entryId: String, arm: RacketArm?) {
-        if (arm == null) settings.remove(key(entryId)) else settings.putString(key(entryId), arm.name)
+    fun racketArm(entryId: String): RacketArm? {
+        val scope = currentScope() ?: return null
+        if (scope == LOCAL_SCOPE) {
+            return parseArm(settings.getStringOrNull(legacyKey(entryId)))
+        }
+        val scoped = settings.getStringOrNull(scopedKey(scope, entryId))
+        if (scoped != null) return parseArm(scoped)
+        // First upgraded user inherits pre-scoped picks lazily; other accounts never see them.
+        val legacyOwner = claimLegacyOwner(scope)
+        if (legacyOwner == scope) {
+            val legacy = settings.getStringOrNull(legacyKey(entryId))
+            if (legacy != null) {
+                settings.putString(scopedKey(scope, entryId), legacy)
+                settings.remove(legacyKey(entryId))
+                return parseArm(legacy)
+            }
+        }
+        return null
     }
 
-    private fun key(entryId: String) = "$KEY_PREFIX$entryId"
+    fun setRacketArm(entryId: String, arm: RacketArm?) {
+        val scope = currentScope() ?: return
+        val k = if (scope == LOCAL_SCOPE) legacyKey(entryId) else {
+            claimLegacyOwner(scope)
+            scopedKey(scope, entryId)
+        }
+        if (arm == null) settings.remove(k) else settings.putString(k, arm.name)
+    }
+
+    private fun currentScope(): String? = if (ownerId == null) LOCAL_SCOPE else ownerId.invoke()
+
+    private fun claimLegacyOwner(scope: String): String {
+        val existing = settings.getStringOrNull(KEY_LEGACY_OWNER)
+        if (existing != null) return existing
+        settings.putString(KEY_LEGACY_OWNER, scope)
+        return scope
+    }
+
+    private fun parseArm(stored: String?): RacketArm? =
+        stored?.let { name -> RacketArm.entries.firstOrNull { it.name == name } }
+
+    private fun legacyKey(entryId: String) = "$KEY_PREFIX$entryId"
+    private fun scopedKey(scope: String, entryId: String) = "$KEY_SCOPED_PREFIX$scope:$entryId"
 
     private companion object {
+        const val LOCAL_SCOPE = "__local__"
         const val KEY_PREFIX = "racket_arm:"
+        const val KEY_SCOPED_PREFIX = "racket_arm_v2:"
+        const val KEY_LEGACY_OWNER = "racket_arm_legacy_owner_v1"
     }
 }

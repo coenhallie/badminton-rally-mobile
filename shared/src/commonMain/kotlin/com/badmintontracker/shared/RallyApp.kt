@@ -1,6 +1,8 @@
 package com.badmintontracker.shared
 
 import com.badmintontracker.shared.exercises.DrillProgressRepository
+import com.badmintontracker.shared.invites.PlayerAccessRepository
+import com.badmintontracker.shared.invites.PlayerAccessRepositoryImpl
 import com.badmintontracker.shared.localvideo.AnalyzeCoordinator
 import com.badmintontracker.shared.localvideo.LocalAnnotationsRepository
 import com.badmintontracker.shared.local.DeviceThroughputRepository
@@ -75,29 +77,33 @@ class RallyApp(
     private val clipsImpl = ClipsRepositoryImpl(client)
     private val mediaImpl = MediaRepositoryImpl(client)
     private val videosImpl = VideosRepositoryImpl(client)
+    private val playerAccessImpl = PlayerAccessRepositoryImpl(client, settings)
 
-    val auth:        AuthRepository        = AuthRepositoryImpl(client)
-    val clips:       ClipsRepository       = clipsImpl
-    val annotations: AnnotationsRepository = AnnotationsRepositoryImpl(client)
-    val labels:      AnnotationLabelsRepository = AnnotationLabelsRepositoryImpl(client, settings)
-    val players:     PlayersRepository     = PlayersRepositoryImpl(client, settings)
-    val media:       MediaRepository       = mediaImpl
-    val shares:      SharesRepository      = SharesRepositoryImpl(client)
-    val videos:      VideosRepository      = videosImpl
-    val cloudPoses:  CloudPoseRepository   = CloudPoseRepositoryImpl(client)
+    val auth:         AuthRepository             = AuthRepositoryImpl(client)
+    val clips:        ClipsRepository            = clipsImpl
+    val annotations:  AnnotationsRepository      = AnnotationsRepositoryImpl(client)
+    val labels:       AnnotationLabelsRepository = AnnotationLabelsRepositoryImpl(client, settings)
+    val players:      PlayersRepository          = PlayersRepositoryImpl(client, settings)
+    val playerAccess: PlayerAccessRepository     = playerAccessImpl
+    val media:        MediaRepository            = mediaImpl
+    val shares:       SharesRepository           = SharesRepositoryImpl(client)
+    val videos:       VideosRepository           = videosImpl
+    val cloudPoses:   CloudPoseRepository        = CloudPoseRepositoryImpl(client)
 
     // distinct, because several statuses now share a value: a refresh that fails
     // and then succeeds is AUTHENTICATED three times over, and no screen should be
     // told the session changed when it did not.
     val authState: Flow<AuthState> = auth.sessionFlow.map { it.toAuthState() }.distinctUntilChanged()
 
-    // On-device local video registry + annotations (shared persistence, native UI).
-    val localVideos:      LocalVideoRepository         = LocalVideoRepository(settings, onLocalVideoRemoved)
-    val localAnnotations: LocalAnnotationsRepository   = LocalAnnotationsRepository(settings)
-    val themePrefs:       ThemePreferenceRepository    = ThemePreferenceRepository(settings)
-    val playbackPrefs:    PlaybackPreferenceRepository = PlaybackPreferenceRepository(settings)
-    val racketArmPrefs:   RacketArmPreferenceRepository = RacketArmPreferenceRepository(settings)
-    val drillProgress:    DrillProgressRepository      = DrillProgressRepository(settings) {
+    private val currentOwnerId: () -> String? = { client.auth.currentUserOrNull()?.id }
+
+    // On-device local video registry + annotations (account-scoped persistence, native UI).
+    val localVideos:      LocalVideoRepository          = LocalVideoRepository(settings, onLocalVideoRemoved, currentOwnerId)
+    val localAnnotations: LocalAnnotationsRepository    = LocalAnnotationsRepository(settings, currentOwnerId)
+    val themePrefs:       ThemePreferenceRepository     = ThemePreferenceRepository(settings)
+    val playbackPrefs:    PlaybackPreferenceRepository  = PlaybackPreferenceRepository(settings)
+    val racketArmPrefs:   RacketArmPreferenceRepository = RacketArmPreferenceRepository(settings, currentOwnerId)
+    val drillProgress:    DrillProgressRepository       = DrillProgressRepository(client, settings) {
         Clock.System.now().toEpochMilliseconds()
     }
 
@@ -150,10 +156,14 @@ class RallyApp(
             when (status) {
                 is SessionStatus.Authenticated -> {
                     val nextOwner = status.session.user?.id
-                    if (lastOwner != null && nextOwner != lastOwner) {
-                        clearAccountCaches()
+                    if (nextOwner != lastOwner) {
+                        if (lastOwner != null) {
+                            clearAccountCaches()
+                        } else {
+                            reloadLocalStoresForOwner()
+                        }
+                        lastOwner = nextOwner
                     }
-                    lastOwner = nextOwner
                 }
                 is SessionStatus.NotAuthenticated -> {
                     if (lastOwner != null) {
@@ -170,7 +180,15 @@ class RallyApp(
         clipsImpl.clear()
         videosImpl.clear()
         mediaImpl.clear()
+        playerAccessImpl.clear()
+        reloadLocalStoresForOwner()
+    }
+
+    private fun reloadLocalStoresForOwner() {
         scoreLogs.reloadForCurrentOwner()
+        localVideos.reloadForCurrentOwner()
+        localAnnotations.reloadForCurrentOwner()
+        drillProgress.reloadForCurrentOwner()
     }
 
     /**

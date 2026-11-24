@@ -325,7 +325,7 @@ insert into public.drill_session_logs (
     '66666666-0000-0000-0000-000000000001',
     'bbbbbbbb-0000-0000-0000-000000000001',
     'base-mark-6-corner-shadow',
-    now(), 4, 4, 240, 'just_right', 'Felt sharp'
+    now(), 4, 4, 240, 'solid', 'Felt sharp'
 );
 
 -- Coach logs a session for Marco too and sees Marco's session.

@@ -1,5 +1,13 @@
 package com.badmintontracker.shared
 
+import com.badmintontracker.shared.exercises.DrillProgressRepository
+import com.badmintontracker.shared.invites.CreatedInvite
+import com.badmintontracker.shared.invites.InviteErrorKind
+import com.badmintontracker.shared.invites.InviteException
+import com.badmintontracker.shared.invites.InvitePreview
+import com.badmintontracker.shared.invites.PlayerAccessRepository
+import com.badmintontracker.shared.invites.PlayerInviteCopy
+import com.badmintontracker.shared.invites.RedeemedInvite
 import com.badmintontracker.shared.local.LocalAnalysisCoordinator
 import com.badmintontracker.shared.local.LocalAnalysisOutcome
 import com.badmintontracker.shared.model.CourtKeypoints
@@ -206,3 +214,62 @@ suspend fun LocalAnalysisCoordinator.analyzeThrowing(
     keypoints: CourtKeypoints,
     onProgress: (Float) -> Unit,
 ): LocalAnalysisOutcome = analyze(videoPath, keypoints, onProgress).getOrThrow()
+
+// --- Player invites, linked score logs, and synced drill progress ---
+
+class CreateInviteOutcome(val invite: CreatedInvite?, val errorMessage: String?)
+
+class PreviewInviteOutcome(val preview: InvitePreview?, val errorKind: InviteErrorKind?, val errorMessage: String?)
+
+class RedeemInviteOutcome(val redeemed: RedeemedInvite?, val errorKind: InviteErrorKind?, val errorMessage: String?)
+
+private fun Throwable.inviteErrorKind(): InviteErrorKind =
+    (this as? InviteException)?.kind ?: InviteErrorKind.UNKNOWN
+
+private fun Throwable.inviteErrorMessage(): String =
+    (this as? InviteException)?.message ?: PlayerInviteCopy.errorMessage(InviteErrorKind.UNKNOWN)
+
+suspend fun PlayerAccessRepository.refreshAccessStatesOrMessage(): String? =
+    refreshAccessStates().exceptionOrNull()?.inviteErrorMessage()
+
+suspend fun PlayerAccessRepository.createInviteForSwift(playerId: String): CreateInviteOutcome =
+    createInvite(playerId).fold(
+        onSuccess = { CreateInviteOutcome(it, null) },
+        onFailure = { CreateInviteOutcome(null, it.inviteErrorMessage()) },
+    )
+
+suspend fun PlayerAccessRepository.revokeInviteOrMessage(playerId: String): String? =
+    revokeInvite(playerId).exceptionOrNull()?.inviteErrorMessage()
+
+suspend fun PlayerAccessRepository.unlinkPlayerOrMessage(playerId: String): String? =
+    unlinkPlayer(playerId).exceptionOrNull()?.inviteErrorMessage()
+
+suspend fun PlayerAccessRepository.refreshLinkedProfilesOrMessage(): String? =
+    refreshLinkedProfiles().exceptionOrNull()?.inviteErrorMessage()
+
+suspend fun PlayerAccessRepository.previewInviteForSwift(code: String): PreviewInviteOutcome =
+    previewInvite(code).fold(
+        onSuccess = { PreviewInviteOutcome(it, null, null) },
+        onFailure = { PreviewInviteOutcome(null, it.inviteErrorKind(), it.inviteErrorMessage()) },
+    )
+
+suspend fun PlayerAccessRepository.redeemInviteNewAccountForSwift(
+    code: String,
+    email: String,
+    password: String,
+): RedeemInviteOutcome = redeemInviteNewAccount(code, email, password).fold(
+    onSuccess = { RedeemInviteOutcome(it, null, null) },
+    onFailure = { RedeemInviteOutcome(null, it.inviteErrorKind(), it.inviteErrorMessage()) },
+)
+
+suspend fun PlayerAccessRepository.redeemInviteExistingAccountForSwift(code: String): RedeemInviteOutcome =
+    redeemInviteExistingAccount(code).fold(
+        onSuccess = { RedeemInviteOutcome(it, null, null) },
+        onFailure = { RedeemInviteOutcome(null, it.inviteErrorKind(), it.inviteErrorMessage()) },
+    )
+
+suspend fun ScoreLogsRepository.refreshLinkedLogsOrMessage(): String? =
+    refreshLinkedLogs().exceptionOrNull()?.userFacingMessage("Couldn't refresh matches.")
+
+suspend fun DrillProgressRepository.syncDrillLogsOrMessage(): String? =
+    sync().exceptionOrNull()?.userFacingMessage("Couldn't sync drill sessions.")

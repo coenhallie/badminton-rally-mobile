@@ -46,31 +46,18 @@ enum class LocalVideoRemoval {
     VIDEO_ONLY,
 }
 
-/** Registry of on-device recordings, persisted as JSON in Settings. */
+/** Registry of on-device recordings, persisted as JSON in Settings, isolated per signed-in account. */
 class LocalVideoRepository(
     private val settings: Settings,
-    /**
-     * Releases whatever backs a departing entry. iOS keeps its own copy of the
-     * video inside the app container and this entry is the only reference to it,
-     * so a removal that skips the file strands it with no way for the user to
-     * reclaim the space. Android stores a content:// reference into the user's
-     * gallery and leaves it alone, which is why the default does nothing.
-     *
-     * Belongs here rather than at each call site so "the entry owns the file" is a
-     * property of the store, not something three unrelated callers must remember.
-     *
-     * [LocalVideoRemoval] rides along because the hook also drives the derived
-     * stores, and those two cases genuinely differ. The reason is a parameter
-     * rather than a second hook so a platform cannot wire one and forget the
-     * other - there is one cleanup path, told what kind of cleanup it is.
-     */
     private val onRemoved: (LocalVideoEntry, LocalVideoRemoval) -> Unit = { _, _ -> },
+    private val ownerId: (() -> String?)? = null,
 ) {
 
     private val json = Json { ignoreUnknownKeys = true }
     private val serializer = ListSerializer(LocalVideoEntry.serializer())
 
-    private val state = MutableStateFlow(load())
+    private var loadedScope: String? = currentScope()
+    private val state = MutableStateFlow(loadForScope(loadedScope))
     val entries: StateFlow<List<LocalVideoEntry>> = state.asStateFlow()
 
     // Serializes read-modify-write cycles: concurrent analyze pipelines mutate
@@ -96,8 +83,9 @@ class LocalVideoRepository(
 
     private fun drop(id: String, reason: LocalVideoRemoval) {
         val removed = lock.withLock {
+            ensureScopeCurrentLocked()
             val entry = state.value.firstOrNull { it.id == id } ?: return@withLock null
-            persist(state.value.filterNot { it.id == id })
+            persistLocked(state.value.filterNot { it.id == id })
             entry
         }
         // Outside the lock, and only once the registry no longer lists the entry:
@@ -109,24 +97,72 @@ class LocalVideoRepository(
 
     fun get(id: String): LocalVideoEntry? = state.value.firstOrNull { it.id == id }
 
+    /** Reloads per-account local entries when the signed-in account changes. */
+    fun reloadForCurrentOwner() = lock.withLock {
+        val scope = currentScope()
+        if (scope == loadedScope) return@withLock
+        loadedScope = scope
+        state.value = loadForScope(scope)
+    }
+
     private fun mutate(transform: (List<LocalVideoEntry>) -> List<LocalVideoEntry>) = lock.withLock {
-        persist(transform(state.value))
+        ensureScopeCurrentLocked()
+        persistLocked(transform(state.value))
+    }
+
+    private fun currentScope(): String? = if (ownerId == null) LOCAL_SCOPE else ownerId.invoke()
+
+    private fun ensureScopeCurrentLocked() {
+        val scope = currentScope()
+        if (scope != loadedScope) {
+            loadedScope = scope
+            state.value = loadForScope(scope)
+        }
     }
 
     /** Caller must hold [lock]. */
-    private fun persist(entries: List<LocalVideoEntry>) {
+    private fun persistLocked(entries: List<LocalVideoEntry>) {
         val next = entries.sortedByDescending { it.addedAtEpochMs }
-        settings.putString(KEY, json.encodeToString(serializer, next))
         state.value = next
+        val scope = loadedScope ?: return
+        val key = if (scope == LOCAL_SCOPE) KEY else "$KEY_PREFIX$scope"
+        settings.putString(key, json.encodeToString(serializer, next))
     }
 
-    private fun load(): List<LocalVideoEntry> =
-        settings.getStringOrNull(KEY)
-            ?.let { runCatching { json.decodeFromString(serializer, it) }.getOrNull() }
+    private fun loadForScope(scope: String?): List<LocalVideoEntry> {
+        if (scope == null) return emptyList()
+        if (scope == LOCAL_SCOPE) return loadRaw(KEY)
+        val scopedKey = "$KEY_PREFIX$scope"
+        val existing = settings.getStringOrNull(scopedKey)
+        if (existing != null) return decodeEntries(existing)
+        // One-time migration of pre-upgrade un-scoped entries to the first signed-in user.
+        if (settings.getStringOrNull(KEY_LEGACY_MIGRATED) == null) {
+            val legacy = loadRaw(KEY)
+            settings.putString(KEY_LEGACY_MIGRATED, scope)
+            if (legacy.isNotEmpty()) {
+                settings.putString(scopedKey, json.encodeToString(serializer, legacy))
+                settings.remove(KEY)
+                return legacy
+            }
+        }
+        return emptyList()
+    }
+
+    private fun loadRaw(key: String): List<LocalVideoEntry> =
+        settings.getStringOrNull(key)?.let(::decodeEntries) ?: emptyList()
+
+    private fun decodeEntries(raw: String): List<LocalVideoEntry> =
+        runCatching { json.decodeFromString(serializer, raw) }
+            .getOrNull()
             ?.sortedByDescending { it.addedAtEpochMs }
             ?: emptyList()
 
-    private companion object { const val KEY = "local_videos" }
+    private companion object {
+        const val LOCAL_SCOPE = "__local__"
+        const val KEY = "local_videos"
+        const val KEY_PREFIX = "local_videos:"
+        const val KEY_LEGACY_MIGRATED = "local_videos_legacy_migrated_v1"
+    }
 }
 
 /** Marks a FAILED entry's result dialog as seen (Swift-friendly single-purpose mutation). */

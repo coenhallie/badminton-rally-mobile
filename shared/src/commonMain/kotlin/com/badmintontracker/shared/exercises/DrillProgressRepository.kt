@@ -1,19 +1,30 @@
 package com.badmintontracker.shared.exercises
 
+import com.badmintontracker.shared.repo.selectAllPages
+import com.badmintontracker.shared.util.SyncLock
+import com.badmintontracker.shared.util.randomUuid
+import com.badmintontracker.shared.util.withLock
 import com.russhwolf.settings.Settings
+import io.github.jan.supabase.SupabaseClient
+import io.github.jan.supabase.auth.auth
+import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlin.math.max
 import kotlin.math.roundToInt
 
-/** One completed drill practice session stored locally on the device. */
+/** One completed drill practice session stored offline-first and synced via Supabase. */
 @Serializable
 data class DrillSessionLog(
     val id: String,
@@ -26,6 +37,8 @@ data class DrillSessionLog(
     val durationSeconds: Int,
     val effort: DrillEffort,
     val note: String = "",
+    /** User who recorded the session (coach or linked player). Null for legacy offline rows. */
+    val loggedByUserId: String? = null,
 )
 
 /** Compact completion badge summary for one exercise card. */
@@ -49,23 +62,101 @@ private const val SEVEN_DAYS_MS: Long = 7L * MILLIS_PER_DAY
 private const val MAX_STORED_LOGS: Int = 500
 private const val MAX_SAVED_PLANS: Int = 128
 
+private val UUID_RE = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+private fun DrillEffort.toWire(): String = when (this) {
+    DrillEffort.EASY -> "easy"
+    DrillEffort.SOLID -> "solid"
+    DrillEffort.HARD -> "hard"
+}
+
+private fun drillEffortFromWire(raw: String): DrillEffort = when (raw.lowercase()) {
+    "easy" -> DrillEffort.EASY
+    "hard" -> DrillEffort.HARD
+    else -> DrillEffort.SOLID
+}
+
 /**
- * Local-first persistence for completed drill sessions and per-drill custom
- * plans, backed by [Settings].
+ * Local-first, account-scoped persistence and Supabase cloud sync for completed
+ * drill sessions and per-drill custom plans.
  *
- * Keyed with optional `playerId` and `matchId` so sessions recorded on this
- * branch work 100% offline with zero backend migration and can sync cleanly to
- * Supabase later without changing the model.
+ * When constructed without a [SupabaseClient] (unit tests), persists locally
+ * under the legacy keys with no network calls. When constructed with a client
+ * (`RallyApp`), scopes local caches per signed-in user ID (one-time migrating
+ * pre-upgrade legacy logs to the first signed-in user) and syncs player-linked
+ * sessions through `public.drill_session_logs`.
  */
-class DrillProgressRepository(
+class DrillProgressRepository internal constructor(
+    private val client: SupabaseClient?,
     private val settings: Settings,
     private val nowEpochMs: () -> Long,
+    private val ownerId: (() -> String?)?,
 ) {
-    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
-    private val logsState = MutableStateFlow(loadLogs())
-    val logs: StateFlow<List<DrillSessionLog>> = logsState.asStateFlow()
+    /** Local-only constructor for offline tests. */
+    constructor(settings: Settings, nowEpochMs: () -> Long) :
+        this(client = null, settings = settings, nowEpochMs = nowEpochMs, ownerId = null)
 
-    private var savedPlans: Map<String, DrillPlan> = loadPlans()
+    /** Cloud-synced, account-scoped constructor used by [com.badmintontracker.shared.RallyApp]. */
+    constructor(client: SupabaseClient, settings: Settings, nowEpochMs: () -> Long) :
+        this(client = client, settings = settings, nowEpochMs = nowEpochMs, ownerId = { client.auth.currentUserOrNull()?.id })
+
+    @Serializable
+    private data class StoredDrillLog(val log: DrillSessionLog, val dirty: Boolean)
+
+    @Serializable
+    private data class AccountDrillState(
+        val logs: List<StoredDrillLog> = emptyList(),
+        @SerialName("pending_deletes") val pendingDeletes: List<String> = emptyList(),
+        @SerialName("saved_plans") val savedPlans: Map<String, DrillPlan> = emptyMap(),
+    )
+
+    @Serializable
+    private data class RemoteDrillRow(
+        val id: String,
+        @SerialName("player_id") val playerId: String,
+        @SerialName("logged_by_user_id") val loggedByUserId: String? = null,
+        @SerialName("exercise_id") val exerciseId: String,
+        @SerialName("match_id") val matchId: String? = null,
+        @SerialName("completed_at") val completedAt: Instant,
+        @SerialName("sets_completed") val setsCompleted: Int,
+        @SerialName("sets_target") val setsTarget: Int,
+        @SerialName("duration_seconds") val durationSeconds: Int,
+        val effort: String,
+        val note: String = "",
+    )
+
+    @Serializable
+    private data class UpsertDrillRow(
+        val id: String,
+        @SerialName("player_id") val playerId: String,
+        @SerialName("exercise_id") val exerciseId: String,
+        @SerialName("match_id") val matchId: String?,
+        @SerialName("completed_at") val completedAt: Instant,
+        @SerialName("sets_completed") val setsCompleted: Int,
+        @SerialName("sets_target") val setsTarget: Int,
+        @SerialName("duration_seconds") val durationSeconds: Int,
+        val effort: String,
+        val note: String,
+    )
+
+    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+    private val lock = SyncLock()
+    private val syncMutex = Mutex()
+
+    private var loadedScope: String? = currentScope()
+    private var storedLogs: List<StoredDrillLog>
+    private var pendingDeletes: Set<String>
+    private var savedPlans: Map<String, DrillPlan>
+
+    init {
+        val loaded = loadForScope(loadedScope)
+        storedLogs = loaded.logs
+        pendingDeletes = loaded.pendingDeletes.toSet()
+        savedPlans = loaded.savedPlans
+    }
+
+    private val logsState = MutableStateFlow(storedLogs.map { it.log })
+    val logs: StateFlow<List<DrillSessionLog>> = logsState.asStateFlow()
 
     /** Records a finished drill session and persists it immediately. */
     fun recordSession(
@@ -77,12 +168,11 @@ class DrillProgressRepository(
         durationSeconds: Int,
         effort: DrillEffort,
         note: String,
-    ): DrillSessionLog {
+    ): DrillSessionLog = lock.withLock {
+        ensureScopeCurrentLocked()
         val now = nowEpochMs()
-        val existing = logsState.value
-        val uniqueSuffix = existing.count { it.completedAtEpochMs == now }
         val entry = DrillSessionLog(
-            id = "drill_${now}_$uniqueSuffix",
+            id = randomUuid(),
             exerciseId = exerciseId,
             playerId = playerId,
             matchId = matchId,
@@ -92,22 +182,30 @@ class DrillProgressRepository(
             durationSeconds = durationSeconds.coerceAtLeast(0),
             effort = effort,
             note = note.trim(),
+            loggedByUserId = ownerId?.invoke(),
         )
-        val updated = (listOf(entry) + existing).take(MAX_STORED_LOGS)
-        persistLogs(updated)
-        return entry
+        val updated = (listOf(StoredDrillLog(entry, dirty = playerId != null)) + storedLogs)
+            .sortedByDescending { it.log.completedAtEpochMs }
+            .take(MAX_STORED_LOGS)
+        persistLocked(updated, pendingDeletes, savedPlans)
+        entry
     }
 
-    /** Deletes one logged session by [logId]. */
-    fun deleteSession(logId: String) {
-        val updated = logsState.value.filterNot { it.id == logId }
-        if (updated.size != logsState.value.size) {
-            persistLogs(updated)
+    /** Deletes one logged session by [logId]. Queues a server delete when cloud-backed. */
+    fun deleteSession(logId: String) = lock.withLock {
+        ensureScopeCurrentLocked()
+        val updated = storedLogs.filterNot { it.log.id == logId }
+        val nextDeletes = if (client != null && UUID_RE.matches(logId)) pendingDeletes + logId else pendingDeletes
+        if (updated.size != storedLogs.size || nextDeletes != pendingDeletes) {
+            persistLocked(updated, nextDeletes, savedPlans)
         }
     }
 
     /** Returns the previously customized [DrillPlan] for [exerciseId], or null if never customized. */
-    fun savedPlanFor(exerciseId: String): DrillPlan? = savedPlans[exerciseId]
+    fun savedPlanFor(exerciseId: String): DrillPlan? = lock.withLock {
+        ensureScopeCurrentLocked()
+        savedPlans[exerciseId]
+    }
 
     /**
      * Returns the saved custom [DrillPlan] for [exercise] when compatible with
@@ -115,13 +213,14 @@ class DrillProgressRepository(
      */
     fun planForExercise(exercise: Exercise): DrillPlan {
         val defaultPlan = defaultPlanFor(exercise)
-        val saved = savedPlans[exercise.id] ?: return defaultPlan
+        val saved = savedPlanFor(exercise.id) ?: return defaultPlan
         return if (saved.mode == defaultPlan.mode) saved else defaultPlan
     }
 
     /** Persists a customized [DrillPlan] for [exerciseId] so future runs pre-fill it. */
-    fun savePlan(exerciseId: String, plan: DrillPlan) {
-        if (savedPlans[exerciseId] == plan) return
+    fun savePlan(exerciseId: String, plan: DrillPlan) = lock.withLock {
+        ensureScopeCurrentLocked()
+        if (savedPlans[exerciseId] == plan) return@withLock
         val next = LinkedHashMap<String, DrillPlan>(savedPlans.size + 1)
         next.putAll(savedPlans)
         next[exerciseId] = plan
@@ -129,37 +228,201 @@ class DrillProgressRepository(
             val oldestKey = next.keys.firstOrNull() ?: break
             next.remove(oldestKey)
         }
-        persistPlans(next)
+        persistLocked(storedLogs, pendingDeletes, next)
     }
 
-    private fun persistLogs(list: List<DrillSessionLog>) {
-        settings.putString(KEY_DRILL_LOGS, json.encodeToString(list))
-        logsState.value = list
+    /** Reloads per-account local state after sign-in, sign-out, or account switch. */
+    fun reloadForCurrentOwner() = lock.withLock {
+        val nextScope = currentScope()
+        if (nextScope == loadedScope) return@withLock
+        adoptScopeLocked(nextScope)
     }
 
-    private fun loadLogs(): List<DrillSessionLog> {
-        val raw = settings.getStringOrNull(KEY_DRILL_LOGS) ?: return emptyList()
+    /**
+     * Offline-first two-way sync with `public.drill_session_logs`:
+     * deletes queued removals, upserts dirty player-linked sessions, and merges
+     * all visible sessions for both coach and linked player.
+     */
+    suspend fun sync(): Result<Unit> = syncMutex.withLock {
+        reloadForCurrentOwner()
+        val postgrest = client?.postgrest ?: return Result.success(Unit)
+        val activeOwner = ownerId?.invoke() ?: return Result.failure(IllegalStateException("Not signed in."))
+        runCatching {
+            val deletes = lock.withLock { pendingDeletes.toList() }
+            if (deletes.isNotEmpty()) {
+                postgrest.from(TABLE).delete { filter { isIn("id", deletes) } }
+                lock.withLock {
+                    persistLocked(storedLogs, pendingDeletes - deletes.toSet(), savedPlans)
+                }
+            }
+
+            val dirtyRows = lock.withLock {
+                storedLogs.filter { it.dirty && it.log.playerId != null && UUID_RE.matches(it.log.playerId) }
+                    .map { it.log }
+            }
+            if (dirtyRows.isNotEmpty()) {
+                val payload = dirtyRows.map { log ->
+                    UpsertDrillRow(
+                        id = log.id,
+                        playerId = log.playerId!!,
+                        exerciseId = log.exerciseId,
+                        matchId = log.matchId?.takeIf { UUID_RE.matches(it) },
+                        completedAt = Instant.fromEpochMilliseconds(log.completedAtEpochMs),
+                        setsCompleted = log.setsCompleted,
+                        setsTarget = log.setsTarget,
+                        durationSeconds = log.durationSeconds,
+                        effort = log.effort.toWire(),
+                        note = log.note.take(500),
+                    )
+                }
+                postgrest.from(TABLE).upsert(payload)
+            }
+
+            val remote = postgrest.from(TABLE).selectAllPages<RemoteDrillRow> {
+                order("completed_at", Order.DESCENDING)
+                order("id", Order.ASCENDING)
+            }
+
+            lock.withLock {
+                if (ownerId?.invoke() != activeOwner) return@withLock
+                val pushedIds = dirtyRows.map { it.id }.toSet()
+                val remoteLogs = remote
+                    .filterNot { it.id in pendingDeletes }
+                    .map { row ->
+                        StoredDrillLog(
+                            log = DrillSessionLog(
+                                id = row.id,
+                                exerciseId = row.exerciseId,
+                                playerId = row.playerId,
+                                matchId = row.matchId,
+                                completedAtEpochMs = row.completedAt.toEpochMilliseconds(),
+                                setsCompleted = row.setsCompleted,
+                                setsTarget = row.setsTarget,
+                                durationSeconds = row.durationSeconds,
+                                effort = drillEffortFromWire(row.effort),
+                                note = row.note,
+                                loggedByUserId = row.loggedByUserId,
+                            ),
+                            dirty = false,
+                        )
+                    }
+                val remoteIds = remoteLogs.map { it.log.id }.toSet()
+                val keptLocal = storedLogs.filter { item ->
+                    val id = item.log.id
+                    id !in remoteIds && id !in pendingDeletes &&
+                        (item.log.playerId == null || !UUID_RE.matches(item.log.playerId) || (item.dirty && id !in pushedIds))
+                }
+                val merged = (remoteLogs + keptLocal)
+                    .sortedByDescending { it.log.completedAtEpochMs }
+                    .take(MAX_STORED_LOGS)
+                persistLocked(merged, pendingDeletes, savedPlans)
+            }
+        }
+    }
+
+    private fun currentScope(): String? = if (ownerId == null) LOCAL_SCOPE else ownerId.invoke()
+
+    private fun ensureScopeCurrentLocked() {
+        val scope = currentScope()
+        if (scope != loadedScope) adoptScopeLocked(scope)
+    }
+
+    private fun adoptScopeLocked(scope: String?) {
+        loadedScope = scope
+        val loaded = loadForScope(scope)
+        storedLogs = loaded.logs
+        pendingDeletes = loaded.pendingDeletes.toSet()
+        savedPlans = loaded.savedPlans
+        logsState.value = storedLogs.map { it.log }
+    }
+
+    private fun persistLocked(
+        nextLogs: List<StoredDrillLog>,
+        nextDeletes: Set<String>,
+        nextPlans: Map<String, DrillPlan>,
+    ) {
+        storedLogs = nextLogs
+        pendingDeletes = nextDeletes
+        savedPlans = nextPlans
+        logsState.value = nextLogs.map { it.log }
+        val scope = loadedScope ?: return
+        if (scope == LOCAL_SCOPE) {
+            settings.putString(KEY_LEGACY_LOGS, json.encodeToString(nextLogs.map { it.log }))
+            settings.putString(KEY_LEGACY_PLANS, json.encodeToString(nextPlans))
+        } else {
+            val payload = AccountDrillState(
+                logs = nextLogs,
+                pendingDeletes = nextDeletes.toList(),
+                savedPlans = nextPlans,
+            )
+            settings.putString(accountKey(scope), json.encodeToString(AccountDrillState.serializer(), payload))
+        }
+    }
+
+    private fun loadForScope(scope: String?): AccountDrillState {
+        if (scope == null) return AccountDrillState()
+        if (scope == LOCAL_SCOPE) {
+            return AccountDrillState(
+                logs = loadLegacyLogs().map { StoredDrillLog(it, dirty = false) },
+                savedPlans = loadLegacyPlans(),
+            )
+        }
+        val scopedRaw = settings.getStringOrNull(accountKey(scope))
+        if (scopedRaw != null) {
+            val decoded = runCatching { json.decodeFromString(AccountDrillState.serializer(), scopedRaw) }.getOrNull()
+            if (decoded != null) {
+                return decoded.copy(logs = decoded.logs.sortedByDescending { it.log.completedAtEpochMs })
+            }
+        }
+        // One-time migration of pre-upgrade un-scoped logs/plans to the first signed-in user.
+        if (settings.getStringOrNull(KEY_LEGACY_MIGRATED) == null) {
+            val legacyLogs = loadLegacyLogs()
+            val legacyPlans = loadLegacyPlans()
+            if (legacyLogs.isNotEmpty() || legacyPlans.isNotEmpty()) {
+                val migratedLogs = legacyLogs.map { log ->
+                    val syncable = log.playerId != null && UUID_RE.matches(log.playerId)
+                    val migratedId = if (syncable && !UUID_RE.matches(log.id)) randomUuid() else log.id
+                    StoredDrillLog(
+                        log = log.copy(id = migratedId, loggedByUserId = log.loggedByUserId ?: scope),
+                        dirty = syncable,
+                    )
+                }.sortedByDescending { it.log.completedAtEpochMs }
+                val migrated = AccountDrillState(logs = migratedLogs, savedPlans = legacyPlans)
+                settings.putString(accountKey(scope), json.encodeToString(AccountDrillState.serializer(), migrated))
+                settings.putString(KEY_LEGACY_MIGRATED, scope)
+                settings.remove(KEY_LEGACY_LOGS)
+                settings.remove(KEY_LEGACY_PLANS)
+                return migrated
+            }
+            settings.putString(KEY_LEGACY_MIGRATED, scope)
+        }
+        return AccountDrillState()
+    }
+
+    private fun loadLegacyLogs(): List<DrillSessionLog> {
+        val raw = settings.getStringOrNull(KEY_LEGACY_LOGS) ?: return emptyList()
         return runCatching {
             json.decodeFromString<List<DrillSessionLog>>(raw)
                 .sortedByDescending { it.completedAtEpochMs }
         }.getOrDefault(emptyList())
     }
 
-    private fun persistPlans(plans: Map<String, DrillPlan>) {
-        settings.putString(KEY_DRILL_PLANS, json.encodeToString(plans))
-        savedPlans = plans
-    }
-
-    private fun loadPlans(): Map<String, DrillPlan> {
-        val raw = settings.getStringOrNull(KEY_DRILL_PLANS) ?: return emptyMap()
+    private fun loadLegacyPlans(): Map<String, DrillPlan> {
+        val raw = settings.getStringOrNull(KEY_LEGACY_PLANS) ?: return emptyMap()
         return runCatching {
             json.decodeFromString<Map<String, DrillPlan>>(raw)
         }.getOrDefault(emptyMap())
     }
 
+    private fun accountKey(owner: String): String = "$KEY_ACCOUNT_PREFIX$owner"
+
     private companion object {
-        const val KEY_DRILL_LOGS = "drill_session_logs_v1"
-        const val KEY_DRILL_PLANS = "drill_custom_plans_v1"
+        const val TABLE = "drill_session_logs"
+        const val LOCAL_SCOPE = "__local__"
+        const val KEY_LEGACY_LOGS = "drill_session_logs_v1"
+        const val KEY_LEGACY_PLANS = "drill_custom_plans_v1"
+        const val KEY_LEGACY_MIGRATED = "drill_progress_legacy_migrated_v1"
+        const val KEY_ACCOUNT_PREFIX = "drill_progress_v2:"
     }
 }
 

@@ -445,7 +445,7 @@ create table if not exists public.drill_session_logs (
     sets_completed    int not null check (sets_completed >= 0),
     sets_target       int not null check (sets_target >= 1),
     duration_seconds  int not null check (duration_seconds >= 0),
-    effort            text not null check (effort in ('easy', 'just_right', 'hard')),
+    effort            text not null check (effort in ('easy', 'solid', 'hard')),
     note              text not null default '' check (char_length(note) <= 500),
     created_at        timestamptz not null default now()
 );
